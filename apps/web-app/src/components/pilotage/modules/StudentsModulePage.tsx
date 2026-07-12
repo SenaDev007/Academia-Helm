@@ -17,6 +17,7 @@ import {
   Plus,
   Search,
   User,
+  Users,
   FileText,
   Edit,
   Trash2,
@@ -63,6 +64,7 @@ import StudentAnalyticsContent from '@/components/students/StudentAnalyticsConte
 // ⭐ StudentComplianceContent et StudentSettingsContent supprimés — onglets retirés du module
 import StudentAuditContent from '@/components/students/StudentAuditContent';
 import StudentTransferContent from '@/components/students/StudentTransferContent';
+import StudentClassListsContent from '@/components/students/StudentClassListsContent';
 // ⭐ AbsencesContent supprimé — l'onglet Absences a été retiré du module Élèves
 import StudentSaraAssistant from '@/components/students/StudentSaraAssistant';
 import { ArrowRightLeft, BarChart3 } from 'lucide-react';
@@ -425,6 +427,7 @@ export default function StudentsModulePage() {
             { id: 'admissions', label: 'Admissions', icon: <UserPlus className="w-4 h-4" /> },
             { id: 'enrollments', label: 'Inscriptions', icon: <GraduationCap className="w-4 h-4" /> },
             { id: 'assignments', label: 'Affectations & Mouvements', icon: <Share2 className="w-4 h-4" /> },
+            { id: 'class-lists', label: 'Liste des Élèves', icon: <Users className="w-4 h-4" /> },
             { id: 'movements', label: 'Sorties & Abandons', icon: <History className="w-4 h-4" /> },
             { id: 'cards', label: 'Cartes Scolaires', icon: <IdCard className="w-4 h-4" /> },
             { id: 'dossiers', label: 'Dossiers Élèves', icon: <FileText className="w-4 h-4" /> },
@@ -471,6 +474,11 @@ export default function StudentsModulePage() {
             ? {
                 layout: 'default',
                 children: <StudentAffectationsMouvementsContent />,
+              }
+            : activeSubModuleId === 'class-lists'
+            ? {
+                layout: 'default',
+                children: <StudentClassListsContent />,
               }
             : activeSubModuleId === 'movements'
             ? {

@@ -853,11 +853,12 @@ class StudentsService {
    * Génère le PDF de la liste d'élèves d'une classe et retourne une blob URL
    * + le nom du fichier pour affichage dans un DocumentPreviewModal.
    *
-   * BFF : GET /api/students/class-list/:classId/pdf?academicYearId=...
+   * BFF : GET /api/students/class-list/:classId/pdf?academicYearId=...&mode=...
    * (proxy vers backend NestJS)
    *
    * En-tête adapté au niveau (Maternelle/Primaire vs Secondaire).
    *
+   * @param mode 'physical' (défaut, sections CE1-A/CE1-B...) ou 'official' (classes officielles CE1/CP/6ème...)
    * @returns { url: string; fileName: string } — blob URL à passer à l'iframe/img
    *          + nom du fichier pour le bouton Télécharger du modal
    *          ⚠️ L'appelant DOIT faire URL.revokeObjectURL(url) à la fermeture du modal
@@ -865,9 +866,10 @@ class StudentsService {
   async generateClassListPdf(
     classId: string,
     academicYearId: string,
+    mode: 'physical' | 'official' = 'physical',
   ): Promise<{ url: string; fileName: string }> {
     const res = await fetch(
-      `/api/students/class-list/${encodeURIComponent(classId)}/pdf?academicYearId=${encodeURIComponent(academicYearId)}`,
+      `/api/students/class-list/${encodeURIComponent(classId)}/pdf?academicYearId=${encodeURIComponent(academicYearId)}&mode=${mode}`,
       { credentials: 'include' },
     );
     if (!res.ok) {
@@ -893,17 +895,20 @@ class StudentsService {
    * visualiser ensuite instantanément sans regénérer.
    *
    * BFF : POST /api/students/class-list/:classId/pdf/generate
+   *
+   * @param mode 'physical' (défaut) ou 'official'
    */
   async generateAndStoreClassListPdf(
     classId: string,
     academicYearId: string,
+    mode: 'physical' | 'official' = 'physical',
   ): Promise<{ success: boolean; documentId: string; fileName: string; fileSize: number; generatedAt: string }> {
     const res = await fetch(
       `/api/students/class-list/${encodeURIComponent(classId)}/pdf/generate`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ academicYearId }),
+        body: JSON.stringify({ academicYearId, mode }),
         credentials: 'include',
       },
     );
@@ -919,13 +924,16 @@ class StudentsService {
    * Lance une erreur si aucun PDF n'a été généré.
    *
    * BFF : GET /api/students/class-list/:classId/pdf/stored
+   *
+   * @param mode 'physical' (défaut) ou 'official'
    */
   async getStoredClassListPdf(
     classId: string,
     academicYearId: string,
+    mode: 'physical' | 'official' = 'physical',
   ): Promise<{ url: string; fileName: string }> {
     const res = await fetch(
-      `/api/students/class-list/${encodeURIComponent(classId)}/pdf/stored?academicYearId=${encodeURIComponent(academicYearId)}`,
+      `/api/students/class-list/${encodeURIComponent(classId)}/pdf/stored?academicYearId=${encodeURIComponent(academicYearId)}&mode=${mode}`,
       { credentials: 'include' },
     );
     if (!res.ok) {
@@ -946,13 +954,16 @@ class StudentsService {
    * Vérifie si un PDF a déjà été généré pour cette classe.
    *
    * BFF : GET /api/students/class-list/:classId/pdf/exists
+   *
+   * @param mode 'physical' (défaut) ou 'official'
    */
   async checkClassListPdfExists(
     classId: string,
     academicYearId: string,
+    mode: 'physical' | 'official' = 'physical',
   ): Promise<{ exists: boolean; documentId?: string; generatedAt?: string; fileName?: string }> {
     const res = await fetch(
-      `/api/students/class-list/${encodeURIComponent(classId)}/pdf/exists?academicYearId=${encodeURIComponent(academicYearId)}`,
+      `/api/students/class-list/${encodeURIComponent(classId)}/pdf/exists?academicYearId=${encodeURIComponent(academicYearId)}&mode=${mode}`,
       { credentials: 'include' },
     );
     if (!res.ok) return { exists: false };

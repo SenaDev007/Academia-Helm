@@ -8,6 +8,14 @@
  *   - Secondaire : "Ministère de l'Enseignement Secondaire, de la Formation
  *     Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes"
  *
+ * ⭐ Deux modes de génération :
+ *   - 'physical' (défaut) : regroupe par classe PHYSIQUE (Class, table `classes`).
+ *     Utilisé par l'onglet « Liste des élèves » (sections physiques : CE1-A, CE1-B...).
+ *     Les élèves sont récupérés via StudentEnrollment.classId.
+ *   - 'official' : regroupe par classe OFFICIELLE (AcademicClass, table `pedagogy_academic_classes`).
+ *     Utilisé par l'onglet « Inscriptions » (classes officielles : CE1, CP, 6ème...).
+ *     Les élèves sont récupérés via StudentEnrollment.academicClassId.
+ *
  * Utilise PuppeteerPoolService (HTML → PDF) comme les autres services PDF.
  * ============================================================================
  */
@@ -16,6 +24,8 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
 import { ConfigService } from '@nestjs/config';
+
+export type ClassListPdfMode = 'physical' | 'official';
 
 @Injectable()
 export class ClassListPdfService {
@@ -30,22 +40,171 @@ export class ClassListPdfService {
   /**
    * Génère le PDF de la liste d'élèves d'une classe.
    *
-   * @param classId - ID de la classe
+   * @param classId - ID de la classe (Class si mode='physical', AcademicClass si mode='official')
    * @param tenantId - ID du tenant
    * @param academicYearId - ID de l'année académique
+   * @param mode - 'physical' (défaut) ou 'official'
    * @returns Objet contenant le buffer PDF et les métadonnées (className, schoolName, studentsCount)
    */
   async generateClassListPdf(
     classId: string,
     tenantId: string,
     academicYearId: string,
+    mode: ClassListPdfMode = 'physical',
   ): Promise<{ buffer: Buffer; className: string; schoolName: string; studentsCount: number }> {
-    // 1. Récupérer les données
+    // 1. Récupérer les données selon le mode
+    const ctx = await this.resolveClassContext(classId, tenantId, academicYearId, mode);
+
+    // 2. Récupérer le branding du tenant
+    const branding = await this.getTenantBranding(tenantId);
+
+    // 3. Déterminer le niveau (Maternelle/Primaire vs Secondaire)
+    const levelName = (ctx.schoolLevelName || '').toUpperCase();
+    const isSecondary = levelName.includes('SECONDAIRE');
+
+    // 4. Construire le HTML
+    const html = this.buildHtml({
+      className: ctx.className,
+      classNameSubtitle: ctx.classNameSubtitle,
+      schoolName: branding.schoolName,
+      schoolLogo: branding.schoolLogo,
+      schoolAddress: branding.schoolAddress,
+      schoolPhone: branding.schoolPhone,
+      schoolEmail: branding.schoolEmail,
+      schoolSlogan: branding.schoolSlogan,
+      academicYearName: ctx.academicYearName,
+      isSecondary,
+      students: ctx.students.map((s, i) => ({
+        num: i + 1,
+        name: `${s.lastName.toUpperCase()} ${s.firstName}`,
+        matricule: s.matricule || s.studentCode || '—',
+        gender: s.gender === 'M' ? 'M' : s.gender === 'F' ? 'F' : '—',
+        dateOfBirth: s.dateOfBirth
+          ? new Date(s.dateOfBirth).toLocaleDateString('fr-FR')
+          : '—',
+      })),
+    });
+
+    // 5. Générer le PDF via le pool Puppeteer partagé
+    const { page } = await this.puppeteerPool.acquirePage();
+    let pdfBuffer: Buffer;
+    try {
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      const rawPdf = await page.pdf({
+        format: 'A4',
+        margin: { top: '15mm', bottom: '15mm', left: '15mm', right: '15mm' },
+        printBackground: true,
+      });
+      pdfBuffer = Buffer.from(rawPdf);
+    } finally {
+      await this.puppeteerPool.releasePage(page);
+    }
+
+    this.logger.log(
+      `Class list PDF generated (mode=${mode}): class=${ctx.className}, ${ctx.students.length} students, ${pdfBuffer.length} bytes`,
+    );
+
+    return {
+      buffer: pdfBuffer,
+      className: ctx.className,
+      schoolName: branding.schoolName,
+      studentsCount: ctx.students.length,
+    };
+  }
+
+  /**
+   * Résout le contexte de la classe (physique ou officielle) et récupère les élèves.
+   */
+  private async resolveClassContext(
+    classId: string,
+    tenantId: string,
+    academicYearId: string,
+    mode: ClassListPdfMode,
+  ): Promise<{
+    className: string;
+    classNameSubtitle?: string;
+    schoolLevelName: string;
+    academicYearName: string;
+    students: Array<{
+      id: string;
+      firstName: string;
+      lastName: string;
+      matricule: string | null;
+      studentCode: string | null;
+      gender: string | null;
+      dateOfBirth: Date | null;
+    }>;
+  }> {
+    if (mode === 'official') {
+      // ── Mode OFFICIEL : AcademicClass + StudentEnrollment.academicClassId ──
+      const ac = await this.prisma.academicClass.findFirst({
+        where: { id: classId, tenantId },
+        include: {
+          level: true,
+          academicYear: true,
+        },
+      });
+      if (!ac) {
+        throw new NotFoundException('Classe officielle non trouvée');
+      }
+
+      const enrollments = await this.prisma.studentEnrollment.findMany({
+        where: {
+          tenantId,
+          academicClassId: classId,
+          academicYearId,
+          status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
+        },
+        include: {
+          student: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              matricule: true,
+              studentCode: true,
+              gender: true,
+              dateOfBirth: true,
+            },
+          },
+        },
+        orderBy: { student: { lastName: 'asc' } },
+      });
+
+      // Sous-titre : indiquer qu'on affiche tous les élèves de la classe officielle
+      // (toutes sections physiques confondues)
+      const sectionsCount = await this.prisma.class.count({
+        where: { tenantId, academicYearId, officialClassId: classId },
+      });
+      const classNameSubtitle =
+        sectionsCount > 0
+          ? `Classe officielle — ${sectionsCount} section${sectionsCount > 1 ? 's' : ''} physique${sectionsCount > 1 ? 's' : ''}`
+          : 'Classe officielle';
+
+      return {
+        className: ac.name,
+        classNameSubtitle,
+        schoolLevelName: ac.level?.name || '',
+        academicYearName: ac.academicYear?.name || '',
+        students: enrollments.map((e) => ({
+          id: e.student.id,
+          firstName: e.student.firstName,
+          lastName: e.student.lastName,
+          matricule: e.student.matricule,
+          studentCode: e.student.studentCode,
+          gender: e.student.gender,
+          dateOfBirth: e.student.dateOfBirth,
+        })),
+      };
+    }
+
+    // ── Mode PHYSIQUE (défaut) : Class + StudentEnrollment.classId ──
     const cls = await this.prisma.class.findFirst({
       where: { id: classId, tenantId },
       include: {
         schoolLevel: true,
         academicYear: true,
+        officialClass: true,
       },
     });
     if (!cls) throw new NotFoundException('Classe non trouvée');
@@ -55,7 +214,6 @@ export class ClassListPdfService {
         tenantId,
         classId,
         academicYearId,
-        // Inclure tous les statuts sauf WITHDRAWN et TRANSFERRED
         status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
       },
       include: {
@@ -74,61 +232,22 @@ export class ClassListPdfService {
       orderBy: { student: { lastName: 'asc' } },
     });
 
-    // 2. Récupérer le branding du tenant
-    const branding = await this.getTenantBranding(tenantId);
-
-    // 3. Déterminer le niveau (Maternelle/Primaire vs Secondaire)
-    const levelName = (cls.schoolLevel?.name || '').toUpperCase();
-    const isSecondary = levelName.includes('SECONDAIRE');
-
-    // 4. Construire le HTML
-    const html = this.buildHtml({
-      className: cls.name,
-      schoolName: branding.schoolName,
-      schoolLogo: branding.schoolLogo,
-      schoolAddress: branding.schoolAddress,
-      schoolPhone: branding.schoolPhone,
-      schoolEmail: branding.schoolEmail,
-      schoolSlogan: branding.schoolSlogan,
-      academicYearName: cls.academicYear?.name || '',
-      isSecondary,
-      students: enrollments.map((e, i) => ({
-        num: i + 1,
-        name: `${e.student.lastName.toUpperCase()} ${e.student.firstName}`,
-        matricule: e.student.matricule || e.student.studentCode || '—',
-        gender: e.student.gender === 'M' ? 'M' : e.student.gender === 'F' ? 'F' : '—',
-        dateOfBirth: e.student.dateOfBirth
-          ? new Date(e.student.dateOfBirth).toLocaleDateString('fr-FR')
-          : '—',
-      })),
-    });
-
-    // 5. Générer le PDF via le pool Puppeteer partagé
-    // ⚠️ page.pdf() retourne un Uint8Array — il faut Buffer.from() pour un vrai Buffer Node.js
-    // Sans cette conversion, le PDF est corrompu (Adobe Reader ne peut pas l'ouvrir)
-    const { page } = await this.puppeteerPool.acquirePage();
-    let pdfBuffer: Buffer;
-    try {
-      await page.setContent(html, { waitUntil: 'networkidle0' });
-      const rawPdf = await page.pdf({
-        format: 'A4',
-        margin: { top: '15mm', bottom: '15mm', left: '15mm', right: '15mm' },
-        printBackground: true,
-      });
-      pdfBuffer = Buffer.from(rawPdf);
-    } finally {
-      await this.puppeteerPool.releasePage(page);
-    }
-
-    this.logger.log(
-      `Class list PDF generated: class=${cls.name}, ${enrollments.length} students, ${pdfBuffer.length} bytes`,
-    );
-
     return {
-      buffer: pdfBuffer,
       className: cls.name,
-      schoolName: branding.schoolName,
-      studentsCount: enrollments.length,
+      classNameSubtitle: cls.officialClass?.name
+        ? `Section physique — classe officielle : ${cls.officialClass.name}`
+        : 'Section physique',
+      schoolLevelName: cls.schoolLevel?.name || '',
+      academicYearName: cls.academicYear?.name || '',
+      students: enrollments.map((e) => ({
+        id: e.student.id,
+        firstName: e.student.firstName,
+        lastName: e.student.lastName,
+        matricule: e.student.matricule,
+        studentCode: e.student.studentCode,
+        gender: e.student.gender,
+        dateOfBirth: e.student.dateOfBirth,
+      })),
     };
   }
 
@@ -137,6 +256,7 @@ export class ClassListPdfService {
    */
   private buildHtml(data: {
     className: string;
+    classNameSubtitle?: string;
     schoolName: string;
     schoolLogo?: string | null;
     schoolAddress?: string | null;
@@ -185,6 +305,10 @@ export class ClassListPdfService {
       `).join('')
       : `<tr><td colspan="5" style="text-align:center;padding:20px;border:1px solid #ddd;color:#999;">Aucun élève inscrit dans cette classe</td></tr>`;
 
+    const subtitleBlock = data.classNameSubtitle
+      ? `<div style="text-align:center;font-size:11px;color:#666;margin-bottom:15px;font-style:italic;">${data.classNameSubtitle}</div>`
+      : '';
+
     return `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -204,7 +328,6 @@ export class ClassListPdfService {
   .republique {
     font-size: 14px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;
   }
-  /* Séparateur design : ligne + losange CSS + ligne */
   .divider {
     margin: 6px auto; width: 55%;
     display: flex; align-items: center; justify-content: center; gap: 6px;
@@ -286,6 +409,8 @@ export class ClassListPdfService {
 
   <!-- TITRE DU DOCUMENT -->
   <div class="document-title">Liste des Élèves</div>
+
+  ${subtitleBlock}
 
   <!-- INFOS CLASSE — 3 colonnes alignées -->
   <div class="class-info">

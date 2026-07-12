@@ -1614,6 +1614,7 @@ export class StudentsLifecycleService {
         },
         class: true,
         // ⭐ Inclure la classe officielle (AcademicClass) pour l'affichage frontend
+        // et le groupement par classe officielle dans l'onglet Inscriptions (mode=official).
         academicClass: {
           include: {
             level: true,

@@ -72,6 +72,15 @@ interface Enrollment {
     }>;
   };
   class?: { id: string; name: string; schoolLevelId?: string };
+  // ⭐ Classe officielle (AcademicClass) — utilisée pour le groupement dans l'onglet Inscriptions.
+  // L'inscription est rattachée à la classe officielle (admission) ; l'affectation à une section
+  // physique (classId) est une étape ultérieure.
+  academicClass?: {
+    id: string;
+    name: string;
+    code?: string;
+    level?: { id: string; name: string };
+  };
   enrollmentType: string;
   enrollmentDate: string;
   status: string;
@@ -82,7 +91,8 @@ interface ClassInfo {
   name: string;
   schoolLevelId?: string;
   schoolLevel?: { id: string; name: string; code?: string };
-  // ⭐ Champs pour AcademicClass (classes officielles)
+  // ⭐ Champs pour AcademicClass (classes officielles) — niveau pédagogique (AcademicLevel)
+  // mappé vers un SchoolLevel pour l'affichage dans l'arborescence.
   levelId?: string;
   level?: { id: string; name: string; code?: string };
   code?: string;
@@ -219,13 +229,14 @@ export default function EnrollmentsContent() {
 
   // ─── Vérifier quels PDFs existent déjà en DB ─────────────────────────
   // Permet d'afficher un check ✅ sur les classes qui ont déjà un PDF généré
+  // ⭐ Mode 'official' car l'onglet Inscriptions travaille sur les classes officielles.
   useEffect(() => {
     if (!academicYear || classes.length === 0) return;
     const checkAll = async () => {
       const results = await Promise.all(
         classes.map(async (cls) => {
           try {
-            const res = await studentsService.checkClassListPdfExists(cls.id, academicYear.id);
+            const res = await studentsService.checkClassListPdfExists(cls.id, academicYear.id, 'official');
             return res.exists ? cls.id : null;
           } catch { return null; }
         }),
@@ -268,7 +279,18 @@ export default function EnrollmentsContent() {
           return [];
         }),
       ]);
-      setClasses(Array.isArray(classesRes) ? classesRes : []);
+      // ⭐ Normaliser les AcademicClass vers ClassInfo pour réutiliser la même arborescence.
+      // On mappe level.id → schoolLevelId pour le groupement par niveau dans le tree.
+      const academicClasses: ClassInfo[] = (Array.isArray(classesRes) ? classesRes : [])
+        .filter((ac: any) => ac && ac.id && ac.name)
+        .map((ac: any) => ({
+          id: ac.id,
+          name: ac.name,
+          schoolLevelId: ac.level?.id || ac.schoolLevelId || 'unknown',
+          schoolLevel: ac.level ? { id: ac.level.id, name: ac.level.name, code: ac.level.code } : undefined,
+          level: ac.level ? { id: ac.level.id, name: ac.level.name } : undefined,
+        }));
+      setClasses(academicClasses);
       setEnrollments(Array.isArray(enrollmentsData) ? enrollmentsData : []);
       setAcademicYears(Array.isArray(yearsRes) ? yearsRes : []);
       setOrionKpis(orionKpisData);
@@ -285,7 +307,9 @@ export default function EnrollmentsContent() {
     }
   };
 
-  // ─── Arborescence niveau → classe → élèves ──────────────────────────
+  // ─── Arborescence niveau → classe officielle → élèves ─────────────────
+  // ⭐ L'onglet Inscriptions groupe par classe OFFICIELLE (AcademicClass).
+  // Les élèves sont rattachés via StudentEnrollment.academicClassId.
   const treeData = useMemo(() => {
     // ⭐ Détecter si les classes sont des AcademicClass (ont levelId/level) ou Class (ont schoolLevelId/schoolLevel)
     // const isAcademic = classes.some(c => c.levelId || c.level);
@@ -1031,8 +1055,9 @@ export default function EnrollmentsContent() {
                                         onClick={() => {
                                           if (!academicYear) return;
                                           setPdfGeneratingClassId(classInfo.id);
-                                          // Générer + stocker en DB (pattern RH contrats)
-                                          studentsService.generateAndStoreClassListPdf(classInfo.id, academicYear.id)
+                                          // ⭐ Mode 'official' : on génère le PDF par classe officielle (AcademicClass).
+                                          // Toutes les sections physiques (CE1-A, CE1-B...) sont regroupées dans ce PDF.
+                                          studentsService.generateAndStoreClassListPdf(classInfo.id, academicYear.id, 'official')
                                             .then(() => {
                                               // Marquer la classe comme ayant un PDF
                                               setPdfExistsClasses(prev => new Set(prev).add(classInfo.id));
@@ -1062,7 +1087,8 @@ export default function EnrollmentsContent() {
                                           if (!academicYear) return;
                                           setPdfGeneratingClassId(classInfo.id);
                                           try {
-                                            const { url, fileName } = await studentsService.getStoredClassListPdf(classInfo.id, academicYear.id);
+                                            // ⭐ Mode 'official' : récupère le PDF officiel stocké en DB.
+                                            const { url, fileName } = await studentsService.getStoredClassListPdf(classInfo.id, academicYear.id, 'official');
                                             setPreviewClassPdf({ filePath: url, fileName, mimeType: 'application/pdf' });
                                           } catch (err: any) {
                                             toast({ title: '⚠️ Aucun PDF', description: 'Générez d\'abord le document', variant: 'info' });

@@ -1,0 +1,531 @@
+'use client';
+
+/**
+ * ============================================================================
+ * STUDENT CLASS LISTS CONTENT — Onglet « Liste des Élèves »
+ * ============================================================================
+ *
+ * Affiche les élèves par classe PHYSIQUE (Class, table `classes`).
+ * C'est le complément de l'onglet « Inscriptions » qui affiche les élèves par
+ * classe OFFICIELLE (AcademicClass).
+ *
+ * Différences avec EnrollmentsContent :
+ *   - Ici on groupe par `StudentEnrollment.classId` (classe physique, ex: CE1-A).
+ *   - Le PDF généré utilise `mode='physical'` — une feuille par section physique.
+ *   - Onglet allégé : juste l'arborescence + recherche + PDF, sans gestion d'inscriptions.
+ *
+ * Inscriptions vs Liste des élèves :
+ *   - Inscriptions : « quelle classe officielle l'élève a-t-il intégrée ? » (admission)
+ *   - Liste des élèves : « dans quelle section physique l'élève est-il assis ? » (affectation)
+ * ============================================================================
+ */
+
+import { useState, useEffect, useMemo } from 'react';
+import {
+  Search, ChevronDown, ChevronRight, Users, Loader2,
+  FileText, BookOpen, Baby, GraduationCap, AlertCircle,
+  FileDown,
+} from 'lucide-react';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { motion, AnimatePresence } from 'framer-motion';
+import DocumentPreviewModal from './DocumentPreviewModal';
+import { studentsService } from '@/services/students.service';
+import { toast } from '@/components/ui/toast';
+import { cn } from '@/lib/utils';
+
+interface Enrollment {
+  id: string;
+  student: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    matricule?: string | null;
+    studentCode?: string;
+    dateOfBirth?: string | null;
+    gender?: string | null;
+    photoUrl?: string | null;
+  };
+  class?: { id: string; name: string; schoolLevelId?: string };
+  enrollmentType: string;
+  enrollmentDate: string;
+  status: string;
+}
+
+interface ClassInfo {
+  id: string;
+  name: string;
+  schoolLevelId: string;
+  schoolLevel?: { id: string; name: string; code?: string };
+  officialClass?: { id: string; name: string } | null;
+  capacity?: number | null;
+  mainTeacher?: { id: string; firstName: string; lastName: string } | null;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────
+
+const STATUS_COLORS: Record<string, string> = {
+  ACTIVE: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  ADMITTED: 'bg-amber-50 text-amber-700 border-amber-200',
+  RE_ENROLLED: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  PENDING: 'bg-orange-50 text-orange-700 border-orange-200',
+  TRANSFERRED: 'bg-slate-50 text-slate-600 border-slate-200',
+  WITHDRAWN: 'bg-rose-50 text-rose-700 border-rose-200',
+};
+
+const getLevelIcon = (name: string) => {
+  const n = name.toUpperCase();
+  if (n.includes('MATERNELLE')) return <Baby className="w-5 h-5 text-pink-600" />;
+  if (n.includes('PRIMAIRE')) return <BookOpen className="w-5 h-5 text-blue-600" />;
+  if (n.includes('SECONDAIRE')) return <GraduationCap className="w-5 h-5 text-purple-600" />;
+  return <BookOpen className="w-5 h-5 text-slate-600" />;
+};
+
+const getLevelBgColor = (name: string) => {
+  const n = name.toUpperCase();
+  if (n.includes('MATERNELLE')) return 'bg-pink-50';
+  if (n.includes('PRIMAIRE')) return 'bg-blue-50';
+  if (n.includes('SECONDAIRE')) return 'bg-purple-50';
+  return 'bg-slate-50';
+};
+
+const getLevelBadgeColor = (name: string) => {
+  const n = name.toUpperCase();
+  if (n.includes('MATERNELLE')) return 'bg-pink-50 text-pink-700';
+  if (n.includes('PRIMAIRE')) return 'bg-blue-50 text-blue-700';
+  if (n.includes('SECONDAIRE')) return 'bg-purple-50 text-purple-700';
+  return 'bg-slate-50 text-slate-700';
+};
+
+const getLevelHoverColor = (name: string) => {
+  const n = name.toUpperCase();
+  if (n.includes('MATERNELLE')) return 'hover:bg-pink-50/40';
+  if (n.includes('PRIMAIRE')) return 'hover:bg-blue-50/40';
+  if (n.includes('SECONDAIRE')) return 'hover:bg-purple-50/40';
+  return 'hover:bg-slate-50/40';
+};
+
+const getLevelButtonHover = (name: string) => {
+  const n = name.toUpperCase();
+  if (n.includes('MATERNELLE')) return 'hover:bg-pink-100 hover:text-pink-600';
+  if (n.includes('PRIMAIRE')) return 'hover:bg-blue-100 hover:text-blue-600';
+  if (n.includes('SECONDAIRE')) return 'hover:bg-purple-100 hover:text-purple-600';
+  return 'hover:bg-slate-100 hover:text-slate-600';
+};
+
+const getLevelGeneratedColor = (name: string) => {
+  const n = name.toUpperCase();
+  if (n.includes('MATERNELLE')) return 'text-pink-600';
+  if (n.includes('PRIMAIRE')) return 'text-blue-600';
+  if (n.includes('SECONDAIRE')) return 'text-purple-600';
+  return 'text-emerald-600';
+};
+
+const getLevelDisplayName = (name: string) => {
+  const n = name.toUpperCase();
+  if (n.includes('MATERNELLE')) return 'Maternelle';
+  if (n.includes('PRIMAIRE')) return 'Primaire';
+  if (n.includes('SECONDAIRE')) return 'Secondaire';
+  return name;
+};
+
+export default function StudentClassListsContent() {
+  const { academicYear, schoolLevel } = useModuleContext();
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [classes, setClasses] = useState<ClassInfo[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [expandedLevels, setExpandedLevels] = useState<Set<string>>(new Set());
+  const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
+
+  // Tracking de la génération PDF par classe
+  const [pdfGeneratingClassId, setPdfGeneratingClassId] = useState<string | null>(null);
+  const [pdfExistsClasses, setPdfExistsClasses] = useState<Set<string>>(new Set());
+  const [previewClassPdf, setPreviewClassPdf] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
+
+  useEffect(() => {
+    if (academicYear) loadData();
+  }, [academicYear, schoolLevel]);
+
+  // Vérifier quels PDFs existent déjà (mode physique)
+  useEffect(() => {
+    if (!academicYear || classes.length === 0) return;
+    const checkAll = async () => {
+      const results = await Promise.all(
+        classes.map(async (cls) => {
+          try {
+            const res = await studentsService.checkClassListPdfExists(cls.id, academicYear.id, 'physical');
+            return res.exists ? cls.id : null;
+          } catch { return null; }
+        }),
+      );
+      setPdfExistsClasses(new Set(results.filter(Boolean) as string[]));
+    };
+    checkAll();
+  }, [academicYear, classes]);
+
+  const loadData = async () => {
+    if (!academicYear) return;
+    setIsLoading(true);
+    try {
+      const [classesRes, enrollmentsData] = await Promise.all([
+        // ⭐ Classes PHYSIQUES (table `classes`) — sections CE1-A, CE1-B, etc.
+        fetch(`/api/all-classes`, { cache: 'no-store' })
+          .then(r => r.ok ? r.json() : []).catch(() => []),
+        studentsService.getEnrollments({ academicYearId: academicYear.id }).catch(() => []),
+      ]);
+      setClasses(Array.isArray(classesRes) ? classesRes : []);
+      setEnrollments(Array.isArray(enrollmentsData) ? enrollmentsData : []);
+    } catch (e: any) {
+      console.error('[StudentClassListsContent] loadData error:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ─── Arborescence niveau → classe physique → élèves ──────────────────
+  const treeData = useMemo(() => {
+    const levelMap = new Map<string, { id: string; name: string }>();
+    for (const cls of classes) {
+      const levelId = cls.schoolLevelId;
+      if (!levelMap.has(levelId)) {
+        const levelName = cls.schoolLevel?.name || cls.schoolLevel?.code || '';
+        if (levelName) levelMap.set(levelId, { id: levelId, name: levelName });
+      }
+    }
+
+    const classesByLevel = new Map<string, ClassInfo[]>();
+    for (const cls of classes) {
+      if (!classesByLevel.has(cls.schoolLevelId)) classesByLevel.set(cls.schoolLevelId, []);
+      classesByLevel.get(cls.schoolLevelId)!.push(cls);
+    }
+
+    // ⭐ Grouper par classe PHYSIQUE (classId)
+    const enrollmentsByClass = new Map<string, Enrollment[]>();
+    for (const enr of enrollments) {
+      const classId = enr.class?.id || 'unassigned';
+      if (!enrollmentsByClass.has(classId)) enrollmentsByClass.set(classId, []);
+      enrollmentsByClass.get(classId)!.push(enr);
+    }
+    for (const [, list] of enrollmentsByClass) {
+      list.sort((a, b) => `${a.student.lastName} ${a.student.firstName}`.localeCompare(
+        `${b.student.lastName} ${b.student.firstName}`));
+    }
+
+    const levelOrder = (name: string) => {
+      const n = name.toUpperCase();
+      if (n.includes('MATERNELLE')) return 0;
+      if (n.includes('PRIMAIRE')) return 1;
+      if (n.includes('SECONDAIRE')) return 2;
+      return 3;
+    };
+
+    const classOrder = (name: string): number => {
+      const n = (name || '').trim().toUpperCase();
+      if (n === 'MATERNELLE 1' || n === 'M1' || n === 'MAT1') return 0;
+      if (n === 'MATERNELLE 2' || n === 'M2' || n === 'MAT2') return 1;
+      if (n === 'CI') return 10;
+      if (n === 'CP') return 11;
+      if (n === 'CE1') return 12;
+      if (n === 'CE2') return 13;
+      if (n === 'CM1') return 14;
+      if (n === 'CM2') return 15;
+      if (n === '6E' || n === '6ÈME' || n === '6EME') return 20;
+      if (n === '5E' || n === '5ÈME' || n === '5EME') return 21;
+      if (n === '4E' || n === '4ÈME' || n === '4EME') return 22;
+      if (n === '3E' || n === '3ÈME' || n === '3EME') return 23;
+      if (n === '2NDE') return 24;
+      if (n === '1ERE' || n === '1ÈRE') return 25;
+      if (n === 'TERMINALE' || n === 'TLE') return 26;
+      return 100 + name.charCodeAt(0);
+    };
+
+    return Array.from(levelMap.values())
+      .sort((a, b) => levelOrder(a.name) - levelOrder(b.name))
+      .map(level => {
+        const levelClasses = (classesByLevel.get(level.id) || []).sort((a, b) => classOrder(a.name) - classOrder(b.name));
+        const levelEnrollments = enrollments.filter(e => {
+          const cls = classes.find(c => c.id === e.class?.id);
+          return cls?.schoolLevelId === level.id;
+        });
+        return {
+          level,
+          classes: levelClasses.map(cls => ({
+            classInfo: cls,
+            students: enrollmentsByClass.get(cls.id) || [],
+          })),
+          totalStudents: levelEnrollments.length,
+        };
+      });
+  }, [classes, enrollments]);
+
+  const filteredTree = useMemo(() => {
+    if (!searchQuery.trim()) return treeData;
+    const q = searchQuery.toLowerCase();
+    return treeData.map(node => ({
+      ...node,
+      classes: node.classes.map(c => ({
+        ...c,
+        students: c.students.filter(s =>
+          `${s.student.lastName} ${s.student.firstName}`.toLowerCase().includes(q) ||
+          (s.student.matricule || '').toLowerCase().includes(q)
+        ),
+      })),
+    }));
+  }, [treeData, searchQuery]);
+
+  const toggleLevel = (id: string) => {
+    setExpandedLevels(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleClass = (id: string) => {
+    setExpandedClasses(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  // ─── Stats globales ──────────────────────────────────────────────────
+  const totalStudents = useMemo(() => enrollments.length, [enrollments]);
+  const totalClasses = useMemo(() => classes.length, [classes]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600 mr-2" />
+        <span className="text-slate-500">Chargement des listes...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header — white card cohérent avec les autres onglets */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
+              <Users className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Liste des Élèves par Classe</h2>
+              <p className="text-xs text-slate-500">
+                Listes par section physique (CE1-A, CE1-B...). Le PDF regroupe les élèves affectés à chaque section.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-700 font-bold">{totalClasses} classe{totalClasses > 1 ? 's' : ''}</span>
+            <span className="px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-bold">{totalStudents} élève{totalStudents > 1 ? 's' : ''}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Barre de recherche */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Rechercher un élève par nom ou matricule..."
+            className="w-full pl-10 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+          />
+        </div>
+      </div>
+
+      {/* Arborescence */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        {filteredTree.length === 0 ? (
+          <div className="py-20 text-center">
+            <AlertCircle className="w-12 h-12 text-slate-200 mx-auto mb-3" />
+            <p className="text-slate-400 text-sm">Aucune classe physique trouvée pour ce contexte.</p>
+            <p className="text-slate-400 text-xs mt-1">
+              Les sections physiques sont créées dans l'onglet « Affectations &amp; Mouvements » à partir des classes officielles.
+            </p>
+          </div>
+        ) : (
+          filteredTree.map((node) => {
+            const isExpanded = expandedLevels.has(node.level.id);
+            const levelName = node.level.name;
+            return (
+              <div key={node.level.id}>
+                <button
+                  onClick={() => toggleLevel(node.level.id)}
+                  className={cn('w-full flex items-center gap-3 px-5 py-4 transition-colors text-left group', getLevelHoverColor(levelName))}
+                >
+                  <div className="shrink-0">
+                    {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-400 group-hover:text-blue-600" /> : <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-blue-600" />}
+                  </div>
+                  <div className={cn('p-2.5 rounded-lg shrink-0', getLevelBgColor(levelName))}>{getLevelIcon(levelName)}</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-base font-bold text-slate-800">{getLevelDisplayName(levelName)}</p>
+                    <p className="text-xs text-slate-500">{node.classes.length} classe{node.classes.length > 1 ? 's' : ''} · {node.totalStudents} élève{node.totalStudents > 1 ? 's' : ''}</p>
+                  </div>
+                  <span className="px-3 py-1 bg-slate-100 rounded-full text-sm font-bold text-slate-600 shrink-0">{node.totalStudents}</span>
+                </button>
+
+                <AnimatePresence>
+                  {isExpanded && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
+                      {node.classes.length === 0 ? (
+                        <p className="px-5 py-3 text-xs text-slate-400 italic pl-14">Aucune classe</p>
+                      ) : (
+                        <div className="divide-y divide-slate-50">
+                          {node.classes.map(({ classInfo, students }) => {
+                            const isClassExpanded = expandedClasses.has(classInfo.id);
+                            const filteredStudents = searchQuery.trim()
+                              ? students.filter(s => `${s.student.lastName} ${s.student.firstName}`.toLowerCase().includes(searchQuery.toLowerCase()) || (s.student.matricule || '').toLowerCase().includes(searchQuery.toLowerCase()))
+                              : students;
+                            return (
+                              <div key={classInfo.id}>
+                                <div className={cn('w-full flex items-center gap-3 px-5 py-2.5 transition-colors text-left group', getLevelHoverColor(levelName))}>
+                                  <button
+                                    onClick={() => toggleClass(classInfo.id)}
+                                    className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                                    aria-label={`Basculer la classe ${classInfo.name}`}
+                                  >
+                                    <div className="shrink-0 pl-6">
+                                      {isClassExpanded ? <ChevronDown className="w-4 h-4 text-slate-400 group-hover:text-blue-600" /> : <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600" />}
+                                    </div>
+                                    <div className="p-1.5 bg-slate-100 rounded-lg shrink-0"><Users className="w-4 h-4 text-slate-500" /></div>
+                                    <span className="flex-1 text-sm font-semibold text-slate-700 truncate">{classInfo.name}</span>
+                                    {(classInfo as any).officialClass?.name && (
+                                      <span className="text-[10px] text-slate-400 italic">↳ {(classInfo as any).officialClass.name}</span>
+                                    )}
+                                    <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0', getLevelBadgeColor(levelName))}>{filteredStudents.length} élève{filteredStudents.length > 1 ? 's' : ''}</span>
+                                  </button>
+                                  {/* Bouton Générer PDF — mode physique */}
+                                  <button
+                                    onClick={() => {
+                                      if (!academicYear) return;
+                                      setPdfGeneratingClassId(classInfo.id);
+                                      studentsService.generateAndStoreClassListPdf(classInfo.id, academicYear.id, 'physical')
+                                        .then(() => {
+                                          setPdfExistsClasses(prev => new Set(prev).add(classInfo.id));
+                                          toast({ title: '✅ PDF généré et enregistré', description: classInfo.name, variant: 'success' });
+                                        })
+                                        .catch(err => toast({ title: 'Erreur PDF', description: err.message, variant: 'error' }))
+                                        .finally(() => setPdfGeneratingClassId(null));
+                                    }}
+                                    disabled={pdfGeneratingClassId === classInfo.id}
+                                    className={cn(
+                                      'p-1.5 rounded-lg transition shrink-0',
+                                      pdfGeneratingClassId === classInfo.id
+                                        ? 'bg-blue-100 text-blue-600 cursor-wait'
+                                        : cn('text-slate-400', getLevelButtonHover(levelName)),
+                                    )}
+                                    title="Générer la liste de classe (PDF)"
+                                  >
+                                    {pdfGeneratingClassId === classInfo.id
+                                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      : pdfExistsClasses.has(classInfo.id)
+                                        ? <FileDown className={cn('w-3.5 h-3.5', getLevelGeneratedColor(levelName))} />
+                                        : <FileDown className="w-3.5 h-3.5" />}
+                                  </button>
+                                  {/* Bouton Visualiser */}
+                                  <button
+                                    onClick={async () => {
+                                      if (!academicYear) return;
+                                      setPdfGeneratingClassId(classInfo.id);
+                                      try {
+                                        const { url, fileName } = await studentsService.getStoredClassListPdf(classInfo.id, academicYear.id, 'physical');
+                                        setPreviewClassPdf({ filePath: url, fileName, mimeType: 'application/pdf' });
+                                      } catch (err: any) {
+                                        toast({ title: '⚠️ Aucun PDF', description: 'Générez d\'abord le document', variant: 'info' });
+                                      } finally {
+                                        setPdfGeneratingClassId(null);
+                                      }
+                                    }}
+                                    disabled={pdfGeneratingClassId === classInfo.id || !pdfExistsClasses.has(classInfo.id)}
+                                    className={cn(
+                                      'p-1.5 rounded-lg transition shrink-0',
+                                      pdfExistsClasses.has(classInfo.id)
+                                        ? cn('text-slate-400', getLevelButtonHover(levelName))
+                                        : 'text-slate-300 cursor-not-allowed',
+                                    )}
+                                    title={pdfExistsClasses.has(classInfo.id) ? 'Visualiser la liste de classe' : 'Générez d\'abord le PDF'}
+                                  >
+                                    {pdfGeneratingClassId === classInfo.id
+                                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      : <FileText className="w-3.5 h-3.5" />}
+                                  </button>
+                                </div>
+
+                                {/* Liste des élèves de la classe */}
+                                <AnimatePresence>
+                                  {isClassExpanded && (
+                                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.15 }} className="overflow-hidden">
+                                      {filteredStudents.length === 0 ? (
+                                        <p className="px-5 py-3 text-xs text-slate-400 italic pl-14">Aucun élève affecté à cette section.</p>
+                                      ) : (
+                                        <table className="w-full text-xs">
+                                          <thead className="bg-slate-50/60">
+                                            <tr>
+                                              <th className="px-14 py-2 text-left font-bold text-slate-500 uppercase tracking-wider">N°</th>
+                                              <th className="px-2 py-2 text-left font-bold text-slate-500 uppercase tracking-wider">Nom et Prénom(s)</th>
+                                              <th className="px-2 py-2 text-left font-bold text-slate-500 uppercase tracking-wider">Matricule</th>
+                                              <th className="px-2 py-2 text-left font-bold text-slate-500 uppercase tracking-wider">Sexe</th>
+                                              <th className="px-2 py-2 text-left font-bold text-slate-500 uppercase tracking-wider">Statut</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody className="divide-y divide-slate-50">
+                                            {filteredStudents.map((s, i) => (
+                                              <tr key={s.id} className="hover:bg-blue-50/30 transition-colors">
+                                                <td className="px-14 py-2 text-slate-400">{i + 1}</td>
+                                                <td className="px-2 py-2 font-semibold text-slate-700">
+                                                  {s.student.lastName.toUpperCase()} {s.student.firstName}
+                                                </td>
+                                                <td className="px-2 py-2 font-mono text-slate-500">{s.student.matricule || s.student.studentCode || '—'}</td>
+                                                <td className="px-2 py-2 text-slate-500">{s.student.gender === 'M' ? 'M' : s.student.gender === 'F' ? 'F' : '—'}</td>
+                                                <td className="px-2 py-2">
+                                                  <span className={cn('inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold border', STATUS_COLORS[s.status] || 'bg-slate-50 text-slate-600 border-slate-200')}>
+                                                    {s.status}
+                                                  </span>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      )}
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Modal de visualisation PDF */}
+      {previewClassPdf && (
+        <DocumentPreviewModal
+          doc={{
+            filePath: previewClassPdf.filePath,
+            fileName: previewClassPdf.fileName,
+            mimeType: previewClassPdf.mimeType,
+          }}
+          onClose={() => {
+            if (previewClassPdf?.filePath.startsWith('blob:')) {
+              URL.revokeObjectURL(previewClassPdf.filePath);
+            }
+            setPreviewClassPdf(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}

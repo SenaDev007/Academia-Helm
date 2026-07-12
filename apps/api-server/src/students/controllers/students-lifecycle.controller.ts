@@ -10,7 +10,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { StudentsLifecycleService } from '../services/students-lifecycle.service';
 import { StudentIdCardService } from '../services/student-id-card.service';
 import { EducmasterExcelExportService } from '../services/educmaster-excel-export.service';
-import { ClassListPdfService } from '../services/class-list-pdf.service';
+import { ClassListPdfService, ClassListPdfMode } from '../services/class-list-pdf.service';
 import { PrismaService } from '../../database/prisma.service';
 import type { Response } from 'express';
 
@@ -344,22 +344,29 @@ export class StudentsLifecycleController {
    *   - Secondaire → "Ministère de l'Enseignement Secondaire, de la Formation
    *     Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes"
    *
-   * Query: academicYearId (requis)
+   * Query:
+   *   - academicYearId (requis)
+   *   - mode : 'physical' (défaut) ou 'official'
+   *     'physical' = classe physique (Class, table `classes`) — sections CE1-A, CE1-B...
+   *     'official' = classe officielle (AcademicClass, table `pedagogy_academic_classes`) — CE1, CP, 6ème...
    */
   @Get('class-list/:classId/pdf')
   async generateClassListPdf(
     @TenantId() tenantId: string,
     @Param('classId') classId: string,
     @Query('academicYearId') academicYearId: string,
+    @Query('mode') mode?: string,
     @Res() res: Response,
   ) {
     if (!academicYearId) {
       throw new BadRequestException('academicYearId est requis');
     }
+    const pdfMode: ClassListPdfMode = mode === 'official' ? 'official' : 'physical';
     const { buffer: pdfBuffer, className } = await this.classListPdf.generateClassListPdf(
       classId,
       tenantId,
       academicYearId,
+      pdfMode,
     );
 
     // Nettoyer le nom de la classe pour le nom de fichier (ASCII-safe)
@@ -387,25 +394,28 @@ export class StudentsLifecycleController {
    * Génère le PDF de la liste de classe et le STOCKE en DB (GeneratedDocument).
    * Pattern identique au module RH (contrats) : générer une fois, visualiser ensuite.
    *
-   * Body: { academicYearId }
+   * Body: { academicYearId, mode? }
+   *   - mode : 'physical' (défaut) ou 'official'
    * Returns: { success: true, documentId, fileName, fileSize, generatedAt }
    */
   @Post('class-list/:classId/pdf/generate')
   async generateAndStoreClassListPdf(
     @TenantId() tenantId: string,
     @Param('classId') classId: string,
-    @Body() body: { academicYearId: string },
+    @Body() body: { academicYearId: string; mode?: string },
     @CurrentUser() user: any,
   ) {
     if (!body?.academicYearId) {
       throw new BadRequestException('academicYearId est requis');
     }
+    const pdfMode: ClassListPdfMode = body.mode === 'official' ? 'official' : 'physical';
 
     // Générer le PDF
     const { buffer: pdfBuffer, className, schoolName } = await this.classListPdf.generateClassListPdf(
       classId,
       tenantId,
       body.academicYearId,
+      pdfMode,
     );
 
     // Convertir en data URL base64 pour stockage (pattern data URL comme admission documents)
@@ -417,7 +427,9 @@ export class StudentsLifecycleController {
       .substring(0, 60);
     const fileName = `liste_${safeName}.pdf`;
 
-    // Supprimer l'ancien document stocké s'il existe (même classId + academicYearId)
+    // Supprimer l'ancien document stocké s'il existe (même classId + mode)
+    // ⭐ Inclut 'mode' dans les métadonnées pour éviter les collisions entre
+    // un PDF officiel et un PDF physique de la même classe.
     await this.prisma.generatedDocument.deleteMany({
       where: {
         tenantId,
@@ -440,7 +452,7 @@ export class StudentsLifecycleController {
         fileSize: pdfBuffer.length,
         mimeType: 'application/pdf',
         generatedBy: user?.id || null,
-        metadata: { classId, className, schoolName } as any,
+        metadata: { classId, className, schoolName, mode: pdfMode } as any,
       },
     });
 
@@ -454,28 +466,35 @@ export class StudentsLifecycleController {
   }
 
   /**
-   * GET /students/class-list/:classId/pdf/stored?academicYearId=xxx
+   * GET /students/class-list/:classId/pdf/stored?academicYearId=xxx&mode=xxx
    * Récupère le PDF stocké en DB (sans regénérer). Retourne 404 si non généré.
    *
    * Pattern : l'appelant vérifie d'abord /exists, puis appelle /stored si le doc existe.
+   * ⭐ Le paramètre `mode` est utilisé pour filtrer les métadonnées (évite les collisions
+   *    entre un PDF officiel et un PDF physique de la même classe).
    */
   @Get('class-list/:classId/pdf/stored')
   async getStoredClassListPdf(
     @TenantId() tenantId: string,
     @Param('classId') classId: string,
     @Query('academicYearId') academicYearId: string,
+    @Query('mode') mode?: string,
     @Res() res: Response,
   ) {
     if (!academicYearId) {
       throw new BadRequestException('academicYearId est requis');
     }
+    const pdfMode: ClassListPdfMode = mode === 'official' ? 'official' : 'physical';
 
     const doc = await this.prisma.generatedDocument.findFirst({
       where: {
         tenantId,
         documentType: 'CLASS_LIST_PDF',
         academicYearId,
-        metadata: { path: ['classId'], equals: classId } as any,
+        AND: [
+          { metadata: { path: ['classId'], equals: classId } as any },
+          { metadata: { path: ['mode'], equals: pdfMode } as any },
+        ],
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -501,26 +520,33 @@ export class StudentsLifecycleController {
   }
 
   /**
-   * GET /students/class-list/:classId/pdf/exists?academicYearId=xxx
+   * GET /students/class-list/:classId/pdf/exists?academicYearId=xxx&mode=xxx
    * Vérifie si un PDF a déjà été généré pour cette classe.
    * Retourne { exists: boolean, documentId?, generatedAt? }
+   * ⭐ Le paramètre `mode` est utilisé pour filtrer les métadonnées (évite les collisions
+   *    entre un PDF officiel et un PDF physique de la même classe).
    */
   @Get('class-list/:classId/pdf/exists')
   async checkClassListPdfExists(
     @TenantId() tenantId: string,
     @Param('classId') classId: string,
     @Query('academicYearId') academicYearId: string,
+    @Query('mode') mode?: string,
   ) {
     if (!academicYearId) {
       throw new BadRequestException('academicYearId est requis');
     }
+    const pdfMode: ClassListPdfMode = mode === 'official' ? 'official' : 'physical';
 
     const doc = await this.prisma.generatedDocument.findFirst({
       where: {
         tenantId,
         documentType: 'CLASS_LIST_PDF',
         academicYearId,
-        metadata: { path: ['classId'], equals: classId } as any,
+        AND: [
+          { metadata: { path: ['classId'], equals: classId } as any },
+          { metadata: { path: ['mode'], equals: pdfMode } as any },
+        ],
       },
       orderBy: { createdAt: 'desc' },
       select: { id: true, createdAt: true, fileName: true, fileSize: true },

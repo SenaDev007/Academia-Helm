@@ -153,10 +153,19 @@ export default function ChangementDeSerie() {
   }, [selectedStudentId, enrollments]);
 
   // Élèves filtrés (par recherche + classe physique)
+  // ⭐ IMPORTANT : le changement de série ne concerne QUE les élèves du Secondaire
+  // (les séries A, B, C, D, etc. n'existent qu'au secondaire). On filtre donc
+  // pour ne garder que les élèves dont le schoolLevelId correspond à un niveau
+  // "Secondaire" (code SECONDAIRE/SECONDARY/SECOND).
   const filteredEnrollments = useMemo(() => {
     let list = enrollments;
     // Exclure les élèves sans classe officielle (impossible de changer la série)
     list = list.filter(e => e.academicClassId);
+    // ⭐ Ne garder que les élèves du Secondaire (les séries sont exclusives au secondaire)
+    list = list.filter(e => {
+      const code = (e.schoolLevel?.code || e.class?.schoolLevel?.code || '').toUpperCase();
+      return code === 'SECONDAIRE' || code === 'SECONDARY' || code === 'SECOND';
+    });
     if (filterClassId) {
       list = list.filter(e => e.class?.id === filterClassId);
     }
@@ -277,12 +286,18 @@ export default function ChangementDeSerie() {
                 onChange={(e) => setFilterClassId(e.target.value)}
                 className="w-full border border-slate-200 rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
               >
-                <option value="">Toutes les classes physiques</option>
-                {physicalClasses.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.schoolLevel?.name ? `${c.schoolLevel.name} · ` : ''}{c.name}
-                  </option>
-                ))}
+                <option value="">Toutes les classes physiques (Secondaire)</option>
+                {/* ⭐ Ne lister que les classes physiques du Secondaire (les séries ne concernent que le secondaire) */}
+                {physicalClasses
+                  .filter(c => {
+                    const code = (c.schoolLevel?.code || '').toUpperCase();
+                    return code === 'SECONDAIRE' || code === 'SECONDARY' || code === 'SECOND';
+                  })
+                  .map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.schoolLevel?.name ? `${c.schoolLevel.name} · ` : ''}{c.name}
+                    </option>
+                  ))}
               </select>
             </div>
           </div>

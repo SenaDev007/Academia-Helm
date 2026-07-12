@@ -27,7 +27,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   CreditCard, CheckCircle, XCircle, AlertCircle, Users, RefreshCw,
   FileDown, Loader2, ChevronDown, ChevronRight, Search, Ban, Download,
-  Layers, BookOpen, RotateCw, Settings, Clock, Palette, Eye, Save, X,
+  Layers, BookOpen, RotateCw, Settings, Clock, Palette, Eye, Save, X, Trash2,
 } from 'lucide-react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { studentsService } from '@/services/students.service';
@@ -113,6 +113,11 @@ export default function StudentIdCardsSection() {
   const [previewCard, setPreviewCard] = useState<GroupedCard | null>(null);
   const [revokeReason, setRevokeReason] = useState('');
   const [isRevokeModalOpen, setIsRevokeModalOpen] = useState(false);
+
+  // ⭐ États pour la suppression de cartes (global, par niveau, par classe)
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [deletingLevelId, setDeletingLevelId] = useState<string | null>(null);
+  const [deletingClassId, setDeletingClassId] = useState<string | null>(null);
   // ⭐ Identity + face switcher
   const [identity, setIdentity] = useState<TenantInfo | null>(null);
   const [cardFaces, setCardFaces] = useState<Record<string, 'recto' | 'verso'>>({});
@@ -412,6 +417,83 @@ export default function StudentIdCardsSection() {
     }
   };
 
+  // ⭐ Supprimer TOUTES les cartes (bouton global)
+  const handleDeleteAllCards = async () => {
+    const totalCards = stats?.total || 0;
+    if (totalCards === 0) {
+      toast({ title: 'Aucune carte à supprimer', variant: 'info' });
+      return;
+    }
+    const ok = await confirmDialog.danger(
+      `⚠️ Cette action va SUPPRIMER DÉFINITIVEMENT les ${totalCards} carte(s) scolaire(s) actuellement générées pour l'année en cours. L'historique sera perdu. Vous pourrez ensuite régénérer les cartes avec le nouveau template. Voulez-vous continuer ?`,
+      'Supprimer toutes les cartes',
+    );
+    if (!ok) return;
+
+    setIsDeletingAll(true);
+    try {
+      const result = await studentsService.deleteAllCards(academicYear?.id);
+      toast({
+        title: '✅ Cartes supprimées',
+        description: `${result.deleted} carte(s) supprimée(s). Vous pouvez maintenant régénérer avec le nouveau template.`,
+        variant: 'success',
+      });
+      loadAll();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message || 'Suppression échouée', variant: 'error' });
+    } finally {
+      setIsDeletingAll(false);
+    }
+  };
+
+  // ⭐ Supprimer les cartes d'un niveau (bouton par niveau)
+  const handleDeleteCardsByLevel = async (levelId: string, levelName: string) => {
+    const ok = await confirmDialog.danger(
+      `⚠️ Supprimer toutes les cartes du niveau "${levelName}" ? Cette action est irréversible.`,
+      `Supprimer cartes - ${levelName}`,
+    );
+    if (!ok) return;
+
+    setDeletingLevelId(levelId);
+    try {
+      const result = await studentsService.deleteCardsByLevel(levelId, academicYear?.id);
+      toast({
+        title: '✅ Cartes supprimées',
+        description: `${result.deleted} carte(s) supprimée(s) pour le niveau ${levelName}.`,
+        variant: 'success',
+      });
+      loadAll();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message || 'Suppression échouée', variant: 'error' });
+    } finally {
+      setDeletingLevelId(null);
+    }
+  };
+
+  // ⭐ Supprimer les cartes d'une classe (bouton par classe)
+  const handleDeleteCardsByClass = async (classId: string, className: string) => {
+    const ok = await confirmDialog.danger(
+      `⚠️ Supprimer toutes les cartes de la classe "${className}" ? Cette action est irréversible.`,
+      `Supprimer cartes - ${className}`,
+    );
+    if (!ok) return;
+
+    setDeletingClassId(classId);
+    try {
+      const result = await studentsService.deleteCardsByClass(classId, academicYear?.id);
+      toast({
+        title: '✅ Cartes supprimées',
+        description: `${result.deleted} carte(s) supprimée(s) pour la classe ${className}.`,
+        variant: 'success',
+      });
+      loadAll();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message || 'Suppression échouée', variant: 'error' });
+    } finally {
+      setDeletingClassId(null);
+    }
+  };
+
   // Toggle arborescence
   const toggleLevel = (levelId: string) => {
     setExpandedLevels(prev => {
@@ -466,6 +548,18 @@ export default function StudentIdCardsSection() {
               <Settings className="w-3.5 h-3.5" />
               Paramétrage
             </button>
+            {/* ⭐ Bouton "Supprimer toutes les cartes" (global) */}
+            {(stats?.total || 0) > 0 && (
+              <button
+                onClick={handleDeleteAllCards}
+                disabled={isDeletingAll || isGenerating || isLoading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 disabled:opacity-50 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition"
+                title="Supprimer TOUTES les cartes générées pour régénérer avec le nouveau template"
+              >
+                {isDeletingAll ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                {isDeletingAll ? 'Suppression...' : 'Supprimer toutes les cartes'}
+              </button>
+            )}
             <button
               onClick={handleGenerateBulk}
               disabled={isGenerating || isLoading}
@@ -537,20 +631,34 @@ export default function StudentIdCardsSection() {
               return (
                 <div key={level.level.id}>
                   {/* Niveau scolaire — titre aéré, pas dans un conteneur */}
-                  <button
-                    onClick={() => toggleLevel(level.level.id)}
-                    className="flex items-center gap-2 mb-3 group text-left"
-                  >
-                    {isLevelExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-                    <h3 className="text-base font-bold text-slate-800">{level.level.name}</h3>
-                    <span className="text-[10px] font-mono text-slate-400 uppercase">{level.level.code}</span>
-                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded">
-                      {totalCardsInLevel} carte(s)
-                    </span>
-                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded">
-                      {totalActiveInLevel} active(s)
-                    </span>
-                  </button>
+                  <div className="flex items-center gap-2 mb-3">
+                    <button
+                      onClick={() => toggleLevel(level.level.id)}
+                      className="flex items-center gap-2 group text-left"
+                    >
+                      {isLevelExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                      <h3 className="text-base font-bold text-slate-800">{level.level.name}</h3>
+                      <span className="text-[10px] font-mono text-slate-400 uppercase">{level.level.code}</span>
+                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded">
+                        {totalCardsInLevel} carte(s)
+                      </span>
+                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded">
+                        {totalActiveInLevel} active(s)
+                      </span>
+                    </button>
+                    {/* ⭐ Bouton supprimer cartes du niveau */}
+                    {totalCardsInLevel > 0 && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteCardsByLevel(level.level.id, level.level.name); }}
+                        disabled={deletingLevelId === level.level.id || isDeletingAll}
+                        className="ml-auto inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded border border-rose-200 transition disabled:opacity-50"
+                        title={`Supprimer toutes les cartes du niveau ${level.level.name}`}
+                      >
+                        {deletingLevelId === level.level.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                        Niveau
+                      </button>
+                    )}
+                  </div>
 
                   {isLevelExpanded && (
                     <div className="space-y-5 ml-6">
@@ -584,6 +692,17 @@ export default function StudentIdCardsSection() {
                                 )}
                                 PDF classe
                               </button>
+                              {/* ⭐ Bouton supprimer cartes de la classe */}
+                              {cls.cardsCount > 0 && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteCardsByClass(cls.class.id, cls.class.name); }}
+                                  disabled={deletingClassId === cls.class.id || isDeletingAll}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded border border-rose-200 transition disabled:opacity-50"
+                                  title={`Supprimer toutes les cartes de la classe ${cls.class.name}`}
+                                >
+                                  {deletingClassId === cls.class.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                                </button>
+                              )}
                             </div>
 
                             {/* Cartes de la classe — grille aérée */}

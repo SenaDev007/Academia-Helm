@@ -891,6 +891,40 @@ class StudentsService {
   }
 
   /**
+   * ⭐ Supprime TOUTES les cartes du tenant (optionnellement filtrées par année).
+   * Utilisé pour régénérer les cartes avec un nouveau template.
+   */
+  async deleteAllCards(academicYearId?: string): Promise<{ deleted: number; academicYearFilter?: string }> {
+    const qs = academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : '';
+    return apiFetch(`${BASE_URL}/id-cards/all${qs}`, {
+      method: "DELETE",
+      timeout: 60000,
+    });
+  }
+
+  /**
+   * ⭐ Supprime toutes les cartes d'une classe physique spécifique.
+   */
+  async deleteCardsByClass(classId: string, academicYearId?: string): Promise<{ deleted: number; classId: string }> {
+    const qs = academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : '';
+    return apiFetch(`${BASE_URL}/id-cards/by-class/${encodeURIComponent(classId)}${qs}`, {
+      method: "DELETE",
+      timeout: 60000,
+    });
+  }
+
+  /**
+   * ⭐ Supprime toutes les cartes d'un niveau scolaire.
+   */
+  async deleteCardsByLevel(levelId: string, academicYearId?: string): Promise<{ deleted: number; levelId: string }> {
+    const qs = academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : '';
+    return apiFetch(`${BASE_URL}/id-cards/by-level/${encodeURIComponent(levelId)}${qs}`, {
+      method: "DELETE",
+      timeout: 60000,
+    });
+  }
+
+  /**
    * ⭐ Liste les cartes groupées par niveau scolaire puis par classe.
    */
   async getCardsGroupedByClass(academicYearId: string): Promise<any> {

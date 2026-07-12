@@ -186,6 +186,19 @@ export class AdmissionService {
       },
       include: {
         academicYear: true,
+        // ⭐ Inclure l'étudiant converti avec sa photo
+        convertedStudent: {
+          select: {
+            id: true,
+            photoUrl: true,
+            matricule: true,
+            studentCode: true,
+          },
+        },
+        // ⭐ Inclure la classe officielle souhaitée
+        requestedAcademicClass: {
+          select: { id: true, name: true, code: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });

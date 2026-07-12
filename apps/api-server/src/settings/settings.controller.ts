@@ -1316,6 +1316,9 @@ export class SettingsController {
       officialStartDate?: string;
       startDate?: string;
       endDate?: string;
+      admissionOpenDate?: string;
+      admissionCloseDate?: string;
+      admissionEnabled?: boolean;
     },
   ) {
     const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
@@ -1331,8 +1334,56 @@ export class SettingsController {
       officialStartDate: data?.officialStartDate != null && String(data.officialStartDate).trim() !== '' ? new Date(data.officialStartDate) : undefined,
       startDate: data?.startDate != null && String(data.startDate).trim() !== '' ? new Date(data.startDate) : undefined,
       endDate: data?.endDate != null && String(data.endDate).trim() !== '' ? new Date(data.endDate) : undefined,
+      // ⭐ Paramètres d'admission publique
+      admissionOpenDate: data?.admissionOpenDate != null && String(data.admissionOpenDate).trim() !== '' ? new Date(data.admissionOpenDate) : null,
+      admissionCloseDate: data?.admissionCloseDate != null && String(data.admissionCloseDate).trim() !== '' ? new Date(data.admissionCloseDate) : null,
+      admissionEnabled: data?.admissionEnabled,
     };
     return this.academicYearSettingsService.update(tid, id, body, user.id);
+  }
+
+  /**
+   * ⭐ GET /settings/academic-years/:id/admission-status
+   * Retourne l'état d'ouverture des admissions publiques pour cette année.
+   * Utilisé par le portail public pour savoir si les admissions sont ouvertes.
+   */
+  @Get('academic-years/:id/admission-status')
+  async getAdmissionStatus(
+    @TenantId() tenantId: string | undefined,
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    const fromUser = typeof user?.tenantId === 'string' ? user.tenantId : user?.tenantId?.id ?? user?.tenantId?.tenantId;
+    const fromHeader = req?.headers?.['x-tenant-id'];
+    const tid = tenantId ?? fromUser ?? (Array.isArray(fromHeader) ? fromHeader[0] : fromHeader);
+    if (!tid || typeof tid !== 'string') throw new BadRequestException('Contexte tenant manquant.');
+
+    const year = await this.academicYearSettingsService.getById(tid, id);
+    const now = new Date();
+    let isOpen = year.admissionEnabled !== false; // null/undefined = true par défaut
+    let reason = '';
+
+    if (!isOpen) {
+      reason = 'Admissions désactivées manuellement par l\'établissement.';
+    } else if (year.admissionOpenDate && now < year.admissionOpenDate) {
+      isOpen = false;
+      reason = `Les admissions ouvriront le ${year.admissionOpenDate.toLocaleDateString('fr-FR')}.`;
+    } else if (year.admissionCloseDate && now > year.admissionCloseDate) {
+      isOpen = false;
+      reason = `Les admissions sont closes depuis le ${year.admissionCloseDate.toLocaleDateString('fr-FR')}.`;
+    } else {
+      reason = 'Admissions ouvertes.';
+    }
+
+    return {
+      isOpen,
+      reason,
+      admissionEnabled: year.admissionEnabled !== false,
+      admissionOpenDate: year.admissionOpenDate,
+      admissionCloseDate: year.admissionCloseDate,
+      checkedAt: now.toISOString(),
+    };
   }
 
   @Post('academic-years/:id/activate')

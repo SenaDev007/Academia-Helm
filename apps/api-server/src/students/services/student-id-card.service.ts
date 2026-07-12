@@ -644,59 +644,106 @@ export class StudentIdCardService {
   }
 
   /**
-   * ⭐ Génère le HTML de prévisualisation d'une carte existante (recto + verso).
-   * Utilisé pour afficher la carte visuellement dans l'UI (iframe).
+
+   * ⭐ Supprime TOUTES les cartes d'un tenant (optionnellement filtrées par année scolaire).
+   * Utilisé pour régénérer les cartes avec un nouveau template.
    */
-  async getCardPreviewHtml(cardId: string, tenantId: string): Promise<string> {
-    const card = await this.prisma.studentIdCard.findFirst({
-      where: { id: cardId, tenantId },
-      include: {
-        student: {
-          include: {
-            tenant: true,
-            academicYear: { select: { id: true, name: true, startDate: true, endDate: true } },
-            schoolLevel: { select: { id: true, name: true, code: true, label: true } },
-            identifier: { where: { isOfflineGenerated: false } },
-            studentGuardians: {
-              where: { isPrimary: true },
-              take: 1,
-              include: { guardian: true },
-            },
-          },
-        },
-      },
+  async deleteAllCards(tenantId: string, academicYearId?: string): Promise<{
+    deleted: number;
+    academicYearFilter?: string;
+  }> {
+    const where: any = { tenantId };
+    if (academicYearId) {
+      where.academicYearId = academicYearId;
+    }
+    const countBefore = await this.prisma.studentIdCard.count({ where });
+    await this.prisma.studentIdCard.deleteMany({ where });
+    this.logger.log(
+      `🗑️ ${countBefore} cartes scolaires supprimées pour tenant ${tenantId}` +
+      (academicYearId ? ` (année ${academicYearId})` : ' (toutes années)'),
+    );
+    return {
+      deleted: countBefore,
+      ...(academicYearId ? { academicYearFilter: academicYearId } : {}),
+    };
+  }
+
+  /**
+   * ⭐ Supprime toutes les cartes d'une classe physique spécifique.
+   * Le paramètre classId référence la table `classes` (classe physique).
+   */
+  async deleteCardsByClass(tenantId: string, classId: string, academicYearId?: string): Promise<{
+    deleted: number;
+    classId: string;
+  }> {
+    // Vérifier que la classe existe et appartient au tenant
+    const cls = await this.prisma.class.findFirst({
+      where: { id: classId, tenantId },
+      select: { id: true, name: true },
     });
+    if (!cls) throw new NotFoundException(`Classe physique non trouvée : ${classId}`);
 
-    if (!card) {
-      throw new NotFoundException(`Carte ${cardId} introuvable`);
-    }
-
-    // Récupérer la classe actuelle de l'élève (multi-statut pour couvrir tous les workflows)
-    const enrollment = await this.prisma.studentEnrollment.findFirst({
-      where: {
-        tenantId,
-        academicYearId: card.academicYearId,
-        studentId: card.studentId,
-        status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'PRE_REGISTERED'] },
-      },
-      include: { class: { select: { id: true, name: true } } },
+    // Trouver tous les élèves de cette classe (via StudentEnrollment)
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: { tenantId, classId, ...(academicYearId ? { academicYearId } : {}) },
+      select: { studentId: true },
     });
+    const studentIds = enrollments.map(e => e.studentId);
 
-    const student = card.student as any;
-    student.academicYear = student.academicYear || card.academicYear;
-    student.schoolLevel = student.schoolLevel || card.schoolLevel;
-    // Si l'élève n'a pas d'enrollment chargé, on l'ajoute manuellement
-    if (!student.studentEnrollments) {
-      student.studentEnrollments = enrollment ? [{ class: enrollment.class }] : [];
-    }
-    // S'assurer que l'identifier est présent
-    if (!student.identifier && (student as any).StudentIdentifier) {
-      student.identifier = (student as any).StudentIdentifier;
+    if (studentIds.length === 0) {
+      this.logger.log(`Aucune carte à supprimer pour la classe ${cls.name} (aucun élève)`);
+      return { deleted: 0, classId };
     }
 
-    const matricule = student.identifier?.globalMatricule || card.qrPayload.split(':')[1] || card.cardNumber;
-    const currentClass = enrollment?.class;
-    return await this.generateCardHtml(student, currentClass, matricule, card.qrPayload);
+    const where: any = { tenantId, studentId: { in: studentIds } };
+    if (academicYearId) where.academicYearId = academicYearId;
+
+    const countBefore = await this.prisma.studentIdCard.count({ where });
+    await this.prisma.studentIdCard.deleteMany({ where });
+    this.logger.log(`🗑️ ${countBefore} cartes supprimées pour la classe ${cls.name} (${classId})`);
+    return { deleted: countBefore, classId };
+  }
+
+  /**
+   * ⭐ Supprime toutes les cartes d'un niveau scolaire (Maternelle, Primaire, Secondaire).
+   * Le paramètre levelId référence la table `school_levels`.
+   */
+  async deleteCardsByLevel(tenantId: string, levelId: string, academicYearId?: string): Promise<{
+    deleted: number;
+    levelId: string;
+  }> {
+    // Trouver toutes les classes physiques de ce niveau
+    const classes = await this.prisma.class.findMany({
+      where: { tenantId, schoolLevelId: levelId },
+      select: { id: true, name: true },
+    });
+    if (classes.length === 0) {
+      this.logger.log(`Aucune carte à supprimer pour le niveau ${levelId} (aucune classe)`);
+      return { deleted: 0, levelId };
+    }
+
+    const classIds = classes.map(c => c.id);
+
+    // Trouver tous les élèves de ces classes
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: { tenantId, classId: { in: classIds }, ...(academicYearId ? { academicYearId } : {}) },
+      select: { studentId: true },
+    });
+    const studentIds = enrollments.map(e => e.studentId);
+
+    if (studentIds.length === 0) {
+      this.logger.log(`Aucune carte à supprimer pour le niveau ${levelId} (aucun élève)`);
+      return { deleted: 0, levelId };
+    }
+
+    const where: any = { tenantId, studentId: { in: studentIds } };
+    if (academicYearId) where.academicYearId = academicYearId;
+
+    const countBefore = await this.prisma.studentIdCard.count({ where });
+    await this.prisma.studentIdCard.deleteMany({ where });
+    this.logger.log(`🗑️ ${countBefore} cartes supprimées pour le niveau ${levelId} (${classes.length} classes)`);
+    return { deleted: countBefore, levelId };
+
   }
 
   /**

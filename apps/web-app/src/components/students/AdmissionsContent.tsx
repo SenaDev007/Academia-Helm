@@ -6,6 +6,7 @@ import {
   UserCheck, Calendar, BadgeCheck, AlertCircle, Loader2, Eye,
   Send, Pencil, X, Info, Star, AlertTriangle, Trash2, RotateCcw,
   ExternalLink, ArrowUpDown, ArrowUpAZ, ArrowDownAZ, ArrowDownUp,
+  Settings, Save,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { format } from 'date-fns';
@@ -48,6 +49,15 @@ interface Admission {
   convertedStudentId: string | null;
   schoolLevel?: { id: string; name: string; code?: string };
   academicYear?: { id: string; name: string };
+  // ⭐ Étudiant converti (avec photo) + classe officielle souhaitée
+  convertedStudent?: {
+    id: string;
+    photoUrl: string | null;
+    matricule: string | null;
+    studentCode: string | null;
+  } | null;
+  requestedAcademicClass?: { id: string; name: string; code?: string } | null;
+  requestedAcademicClassId?: string | null;
 }
 
 export default function AdmissionsContent() {
@@ -142,6 +152,16 @@ export default function AdmissionsContent() {
   const [selectedAdmission, setSelectedAdmission] = useState<Admission | null>(null);
   const [isActionPending, setIsActionPending] = useState(false);
 
+  // ⭐ État pour le modal de paramétrage des admissions publiques
+  const [isAdmissionSettingsOpen, setIsAdmissionSettingsOpen] = useState(false);
+  const [admissionSettings, setAdmissionSettings] = useState({
+    admissionEnabled: true,
+    admissionOpenDate: '',
+    admissionCloseDate: '',
+  });
+  const [isLoadingAdmissionSettings, setIsLoadingAdmissionSettings] = useState(false);
+  const [isSavingAdmissionSettings, setIsSavingAdmissionSettings] = useState(false);
+
   // Modal de confirmation personnalisé (remplace window.confirm)
   // Type controls l'icône et la couleur du bouton pour s'adapter au contexte
   // de l'action (info=bleu pour soumettre, success=vert pour accepter/inscrire,
@@ -194,6 +214,65 @@ export default function AdmissionsContent() {
       loadAdmissions();
     }
   }, [academicYear, schoolLevel]);
+
+  // ⭐ Charger les paramètres d'admission quand on ouvre le modal
+  useEffect(() => {
+    if (isAdmissionSettingsOpen && academicYear?.id) {
+      loadAdmissionSettings();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmissionSettingsOpen, academicYear?.id]);
+
+  const loadAdmissionSettings = async () => {
+    if (!academicYear?.id) return;
+    setIsLoadingAdmissionSettings(true);
+    try {
+      const res = await fetch('/api/academic-years', { credentials: 'include', cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        const years = Array.isArray(data) ? data : (data?.data || []);
+        const year = years.find((y: any) => y.id === academicYear.id);
+        if (year) {
+          setAdmissionSettings({
+            admissionEnabled: year.admissionEnabled !== false,
+            admissionOpenDate: year.admissionOpenDate ? year.admissionOpenDate.substring(0, 10) : '',
+            admissionCloseDate: year.admissionCloseDate ? year.admissionCloseDate.substring(0, 10) : '',
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load admission settings:', e);
+    } finally {
+      setIsLoadingAdmissionSettings(false);
+    }
+  };
+
+  const handleSaveAdmissionSettings = async () => {
+    if (!academicYear?.id) return;
+    setIsSavingAdmissionSettings(true);
+    try {
+      const res = await fetch(`/api/settings/academic-years/${academicYear.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          admissionEnabled: admissionSettings.admissionEnabled,
+          admissionOpenDate: admissionSettings.admissionOpenDate || null,
+          admissionCloseDate: admissionSettings.admissionCloseDate || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || err.error || 'Erreur sauvegarde');
+      }
+      toast({ title: '✅ Paramètres enregistrés', description: 'Les admissions publiques ont été configurées.', variant: 'success' });
+      setIsAdmissionSettingsOpen(false);
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'error' });
+    } finally {
+      setIsSavingAdmissionSettings(false);
+    }
+  };
 
   const loadAdmissions = async () => {
     setIsLoading(true);
@@ -912,6 +991,15 @@ export default function AdmissionsContent() {
         </div>
 
         <div className="flex items-center space-x-2">
+          {/* ⭐ Bouton "Paramétrer admissions" — ouvre le modal de config des dates d'ouverture/clôture */}
+          <button
+            onClick={() => setIsAdmissionSettingsOpen(true)}
+            className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 text-sm font-semibold border border-slate-200 transition-all"
+            title="Paramétrer les dates d'ouverture et de clôture des admissions publiques"
+          >
+            <Settings className="w-4 h-4" />
+            <span className="hidden sm:inline">Paramétrer admissions</span>
+          </button>
           <button
             onClick={() => setIsCreateModalOpen(true)}
             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold shadow-md shadow-blue-200 transition-all active:scale-95"
@@ -1074,8 +1162,17 @@ export default function AdmissionsContent() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
-                            <div className="h-10 w-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 font-bold group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">
-                              {admission.firstName[0]}{admission.lastName[0]}
+                            <div className="h-10 w-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 font-bold group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors overflow-hidden shrink-0">
+                              {/* ⭐ Photo de l'élève (si converti avec photo) sinon initiales */}
+                              {admission.convertedStudent?.photoUrl ? (
+                                <img
+                                  src={admission.convertedStudent.photoUrl}
+                                  alt={`${admission.firstName} ${admission.lastName}`}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <>{admission.firstName[0]}{admission.lastName[0]}</>
+                              )}
                             </div>
                             <div className="ml-4">
                               <div className="text-sm font-semibold text-slate-900 group-hover:text-blue-700 transition-colors flex items-center gap-2">
@@ -1909,6 +2006,113 @@ export default function AdmissionsContent() {
           </div>
         );
       })()}
+
+      {/* ⭐ Modal de paramétrage des admissions publiques */}
+      {isAdmissionSettingsOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setIsAdmissionSettingsOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <Settings className="w-4 h-4 text-slate-600" />
+                Paramétrer les admissions publiques
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Configurez la période d'ouverture des admissions sur le portail public.
+                Hors de cette période, le portail public bloquera les nouvelles soumissions.
+              </p>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              {isLoadingAdmissionSettings ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+                </div>
+              ) : (
+                <>
+                  {/* Activation manuelle */}
+                  <label className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 cursor-pointer border border-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={admissionSettings.admissionEnabled}
+                      onChange={(e) => setAdmissionSettings(prev => ({ ...prev, admissionEnabled: e.target.checked }))}
+                      className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div>
+                      <div className="text-sm font-semibold text-slate-700">Admissions activées</div>
+                      <div className="text-xs text-slate-500">
+                        Décochez pour désactiver immédiatement les admissions publiques (priorité sur les dates).
+                      </div>
+                    </div>
+                  </label>
+
+                  {/* Date d'ouverture */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                      Date d'ouverture des admissions
+                    </label>
+                    <input
+                      type="date"
+                      value={admissionSettings.admissionOpenDate}
+                      onChange={(e) => setAdmissionSettings(prev => ({ ...prev, admissionOpenDate: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Laisser vide = les admissions sont ouvertes immédiatement (si activées).
+                    </p>
+                  </div>
+
+                  {/* Date de clôture */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                      Date de clôture des admissions
+                    </label>
+                    <input
+                      type="date"
+                      value={admissionSettings.admissionCloseDate}
+                      onChange={(e) => setAdmissionSettings(prev => ({ ...prev, admissionCloseDate: e.target.value }))}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Laisser vide = les admissions restent ouvertes indéfiniment (si activées).
+                    </p>
+                  </div>
+
+                  {/* Statut actuel */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800">
+                    <Info className="w-4 h-4 inline mr-1" />
+                    <strong>Statut actuel :</strong>{' '}
+                    {admissionSettings.admissionEnabled
+                      ? (() => {
+                          const now = new Date();
+                          const open = admissionSettings.admissionOpenDate ? new Date(admissionSettings.admissionOpenDate) : null;
+                          const close = admissionSettings.admissionCloseDate ? new Date(admissionSettings.admissionCloseDate) : null;
+                          if (open && now < open) return `Ouverture prévue le ${open.toLocaleDateString('fr-FR')}`;
+                          if (close && now > close) return `Clôturées depuis le ${close.toLocaleDateString('fr-FR')}`;
+                          return 'Ouvertes aux soumissions publiques';
+                        })()
+                      : 'Désactivées manuellement'}
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="px-6 py-4 bg-slate-50 flex justify-end gap-2 border-t border-slate-100">
+              <button
+                onClick={() => setIsAdmissionSettingsOpen(false)}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-lg"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleSaveAdmissionSettings}
+                disabled={isSavingAdmissionSettings || isLoadingAdmissionSettings}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg"
+              >
+                {isSavingAdmissionSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                {isSavingAdmissionSettings ? 'Sauvegarde...' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

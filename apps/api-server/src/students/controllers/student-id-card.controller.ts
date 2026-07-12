@@ -20,6 +20,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Param,
   Query,
   Res,
@@ -249,4 +250,103 @@ export class StudentIdCardController {
     }
     return this.idCardService.revokeIdCard(cardId, tenant.id, user.id, data.reason);
   }
+
+
+  /**
+   * Récupère les statistiques des cartes
+   */
+  @Get('stats')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'DIRECTOR', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN', 'SECRETARY')
+  async getIdCardStats(
+    @GetTenant() tenant: any,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.idCardService.getIdCardStats(tenant.id, academicYearId);
+  }
+
+  /**
+   * ⭐ Liste les cartes groupées par niveau scolaire puis par classe.
+   * GET /students/id-cards/grouped-by-class?academicYearId=...
+   */
+  @Get('grouped-by-class')
+  async listCardsGroupedByClass(
+    @GetTenant() tenant: any,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
+    return this.idCardService.listCardsGroupedByClass(tenant.id, academicYearId);
+  }
+
+  /**
+   * ⭐ Génère un PDF groupé contenant toutes les cartes d'une classe.
+   * GET /students/id-cards/class/:classId/bundle-pdf?academicYearId=...
+   */
+  @Get('class/:classId/bundle-pdf')
+  async downloadClassBundlePdf(
+    @GetTenant() tenant: any,
+    @Param('classId') classId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Res() res: Response,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
+    const { buffer, className, cardsCount } = await this.idCardService.generateClassBundlePdf(
+      tenant.id,
+      academicYearId,
+      classId,
+    );
+    const safeName = className.replace(/[^a-zA-Z0-9-_]/g, '_');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="cartes-scolaires-${safeName}-${cardsCount}eleves.pdf"`);
+    return res.send(buffer);
+  }
+
+  /**
+   * ⭐ DELETE /students/id-cards/all?academicYearId=...
+   * Supprime TOUTES les cartes du tenant (optionnellement filtrées par année scolaire).
+   */
+  @Delete('all')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'DIRECTOR', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
+  async deleteAllCards(
+    @GetTenant() tenant: any,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.idCardService.deleteAllCards(tenant.id, academicYearId);
+  }
+
+  /**
+   * ⭐ DELETE /students/id-cards/by-class/:classId?academicYearId=...
+   * Supprime toutes les cartes d'une classe physique spécifique.
+   */
+  @Delete('by-class/:classId')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'DIRECTOR', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
+  async deleteCardsByClass(
+    @GetTenant() tenant: any,
+    @Param('classId') classId: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.idCardService.deleteCardsByClass(tenant.id, classId, academicYearId);
+  }
+
+  /**
+   * ⭐ DELETE /students/id-cards/by-level/:levelId?academicYearId=...
+   * Supprime toutes les cartes d'un niveau scolaire (Maternelle, Primaire, Secondaire).
+   */
+  @Delete('by-level/:levelId')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'DIRECTOR', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
+  async deleteCardsByLevel(
+    @GetTenant() tenant: any,
+    @Param('levelId') levelId: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.idCardService.deleteCardsByLevel(tenant.id, levelId, academicYearId);
+  }
+
 }

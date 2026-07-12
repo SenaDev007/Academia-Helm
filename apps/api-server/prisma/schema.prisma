@@ -533,6 +533,14 @@ model AcademicYear {
   closedAt                         DateTime?
   closedBy                         String?
   subscriptionId                   String?                           @map("subscription_id")
+  // ⭐ Période d'ouverture des admissions publiques (portail public)
+  // Si admissionOpenDate est dans le futur → admissions fermées
+  // Si admissionCloseDate est dans le passé → admissions fermées
+  // Si NULL → admissions toujours ouvertes (pas de restriction temporelle)
+  admissionOpenDate                DateTime?
+  admissionCloseDate               DateTime?
+  // ⭐ Activer/désactiver manuellement les admissions publiques (priorité sur les dates)
+  admissionEnabled                 Boolean                           @default(true)
   periods                          AcademicPeriod[]
   academicYearClosures             AcademicYearClosure[]
   subscription                     Subscription?                     @relation(fields: [subscriptionId], references: [id])

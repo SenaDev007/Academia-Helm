@@ -92,14 +92,21 @@ export default function AffectationVersClassePhysique() {
     if (!academicYear?.id) return;
     setIsLoading(true);
     try {
-      const [studentsData, classesRes] = await Promise.all([
+      const [studentsData, classesRes, academicClassesRes] = await Promise.all([
         studentsService.getStudentsWithoutPhysicalClass(academicYear.id).catch(() => []),
         fetch('/api/all-classes', { cache: 'no-store' })
           .then(r => r.ok ? r.json() : [])
           .catch(() => []),
+        // ⭐ Charger les classes officielles (AcademicClass) séparément
+        // pour que le filtre fonctionne même si studentsWithoutClass est vide
+        fetch('/api/academic-classes?isActive=true', { credentials: 'include' })
+          .then(r => r.ok ? r.json() : [])
+          .then(data => Array.isArray(data) ? data : (data?.data || data?.classes || []))
+          .catch(() => []),
       ]);
       setStudentsWithoutClass(Array.isArray(studentsData) ? studentsData : []);
       setPhysicalClasses(Array.isArray(classesRes) ? classesRes : []);
+      setAcademicClassesList(Array.isArray(academicClassesRes) ? academicClassesRes : []);
     } catch (e: any) {
       console.error('Failed to load:', e);
       toast({ title: 'Erreur', description: e.message, variant: 'error' });
@@ -108,16 +115,27 @@ export default function AffectationVersClassePhysique() {
     }
   };
 
+  // ⭐ État pour stocker les classes officielles chargées depuis /api/academic-classes
+  const [academicClassesList, setAcademicClassesList] = useState<AcademicClassInfo[]>([]);
+
   // Classes officielles distinctes (pour filtre)
+  // ⭐ Utilise la liste chargée depuis /api/academic-classes (plus robuste que
+  // déduire depuis studentsWithoutClass, qui peut être vide si tous les élèves
+  // sont déjà affectés).
   const academicClasses = useMemo(() => {
     const map = new Map<string, AcademicClassInfo>();
+    // D'abord : classes officielles chargées depuis l'API
+    academicClassesList.forEach(ac => {
+      if (!map.has(ac.id)) map.set(ac.id, ac);
+    });
+    // Ensuite : classes officielles des élèves sans classe physique (fallback)
     studentsWithoutClass.forEach(s => {
       if (s.academicClass && !map.has(s.academicClass.id)) {
         map.set(s.academicClass.id, s.academicClass);
       }
     });
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [studentsWithoutClass]);
+  }, [academicClassesList, studentsWithoutClass]);
 
   // Élèves filtrés (par recherche + filtre classe officielle)
   const filteredStudents = useMemo(() => {

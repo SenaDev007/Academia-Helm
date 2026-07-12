@@ -1193,19 +1193,45 @@ export class StudentsLifecycleService {
       },
     });
 
-    // Créer une nouvelle inscription
-    const enrollment = await this.prisma.studentEnrollment.create({
-      data: {
-        tenantId,
+    // ⭐ Au lieu de créer une nouvelle inscription (qui violerait la contrainte unique
+    // @@unique([tenantId, academicYearId, studentId]) car l'inscription WITHDRAWN
+    // existe déjà), on met à jour l'inscription existante.
+    const existingEnrollment = await this.prisma.studentEnrollment.findFirst({
+      where: {
         studentId: data.studentId,
+        tenantId,
         academicYearId: data.academicYearId,
-        schoolLevelId: data.schoolLevelId,
-        classId: data.classId ?? null,
-        enrollmentType: 'NEW',
-        enrollmentDate: new Date(),
-        status: ENROLLMENT_STATUS.ACTIVE,
       },
+      orderBy: { enrollmentDate: 'desc' },
     });
+
+    if (existingEnrollment) {
+      // Mettre à jour l'inscription existante (WITHDRAWN → ACTIVE)
+      await this.prisma.studentEnrollment.update({
+        where: { id: existingEnrollment.id },
+        data: {
+          status: ENROLLMENT_STATUS.ACTIVE,
+          exitDate: null,
+          exitReason: null,
+          ...(data.classId && { classId: data.classId }),
+          ...(data.schoolLevelId && { schoolLevelId: data.schoolLevelId }),
+        },
+      });
+    } else {
+      // Si aucune inscription n'existe pour cette année (cas edge), en créer une
+      await this.prisma.studentEnrollment.create({
+        data: {
+          tenantId,
+          studentId: data.studentId,
+          academicYearId: data.academicYearId,
+          schoolLevelId: data.schoolLevelId,
+          classId: data.classId ?? null,
+          enrollmentType: 'NEW',
+          enrollmentDate: new Date(),
+          status: ENROLLMENT_STATUS.ACTIVE,
+        },
+      });
+    }
 
     await this.logHistory(
       tenantId,

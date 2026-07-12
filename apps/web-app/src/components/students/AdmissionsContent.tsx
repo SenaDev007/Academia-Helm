@@ -1181,7 +1181,10 @@ export default function AdmissionsContent() {
                 <AnimatePresence mode="popLayout">
                   {filteredAdmissions.map((admission, idx) => {
                     const status = getStatusConfig(admission.status);
-                    const canEdit = !['CONVERTED', 'REJECTED'].includes(admission.status);
+                    // ⭐ L'édition est toujours autorisée (même CONVERTED) pour corriger
+                    // des informations, ajouter des notes, etc. Le statut CONVERTED
+                    // ne doit pas empêcher la modification du dossier d'admission.
+                    const canEdit = true;
                     return (
                       <motion.tr
                         key={admission.id}
@@ -1419,16 +1422,21 @@ export default function AdmissionsContent() {
                               </button>
                             )}
 
-                            {/* Delete (only if not CONVERTED) */}
-                            {!admission.convertedStudentId && (
+                            {/* Delete — disponible pour toutes les admissions non converties.
+                                Pour les CONVERTED, on ne peut pas supprimer (l'élève existe déjà). */}
+                            {!admission.convertedStudentId ? (
                               <button
                                 onClick={() => handleDelete(admission.id)}
                                 disabled={isActionPending}
                                 className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-rose-600 transition-all disabled:opacity-50"
-                                title="Supprimer"
+                                title="Supprimer le dossier"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
+                            ) : (
+                              <span className="p-2 text-slate-300" title="Suppression impossible — l'élève est déjà inscrit">
+                                <Trash2 className="w-4 h-4" />
+                              </span>
                             )}
                           </div>
                         </td>

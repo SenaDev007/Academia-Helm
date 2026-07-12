@@ -2,20 +2,21 @@
 
 /**
  * ============================================================================
- * MOUVEMENTS SCOLAIRES — Sorties, départs, abandons, réintégrations, transferts
+ * SORTIES & ABANDONS — Sorties internes, abandons, archivage, réintégrations
  * ============================================================================
  *
  * Selon MODULE ELEVES.md — Onglet 7
  * Fonctionnalités :
- *   - Stats : sorties, transferts, abandons (calculées APRÈS filtre)
- *   - Liste des élèves (actifs + archivés/retirés/transférés)
+ *   - Stats : sorties, abandons, archivés (calculées APRÈS filtre)
+ *   - Liste des élèves (actifs + archivés/retirés)
  *   - Filtres : recherche, statut, niveau scolaire, classe, année
- *   - Action : Archiver/Retirer un élève (avec motif)
+ *   - Action : Retirer un élève (abandon/sortie définitive, avec motif)
+ *   - Action : Archiver un élève (fin d'année)
  *   - Action : Réintégrer un élève
- *   - Action : Transférer vers une autre école
  *
- * Note : Les transferts inter-écoles sont aussi gérés dans l'onglet dédié
- * "Transferts & Mobilité" (StudentTransferContent) qui affiche l'historique.
+ * ⭐ Les transferts inter-écoles sont gérés EXCLUSIVEMENT dans l'onglet
+ * « Transferts & Mobilité » (StudentTransferContent) qui offre un workflow
+ * complet : demande, approbation, confirmation sortie, exécution, notification.
  * ============================================================================
  */
 
@@ -218,7 +219,7 @@ export default function StudentMovementsContent() {
   });
 
   const [actionStudent, setActionStudent] = useState<Student | null>(null);
-  const [actionType, setActionType] = useState<'archive' | 'withdraw' | 'reactivate' | 'transfer' | null>(null);
+  const [actionType, setActionType] = useState<'archive' | 'withdraw' | 'reactivate' | null>(null);
   const [actionReason, setActionReason] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   // Transfert inter-écoles
@@ -441,7 +442,7 @@ export default function StudentMovementsContent() {
     }
   };
 
-  const openAction = (student: Student, type: 'archive' | 'withdraw' | 'reactivate' | 'transfer') => {
+  const openAction = (student: Student, type: 'archive' | 'withdraw' | 'reactivate') => {
     setActionStudent(student);
     setActionType(type);
     setActionReason('');
@@ -661,13 +662,9 @@ export default function StudentMovementsContent() {
                               >
                                 <LogOut className="w-3.5 h-3.5" /> Retirer
                               </button>
-                              <button
-                                onClick={() => openAction(student, 'transfer')}
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition"
-                                title="Transférer vers une autre école"
-                              >
-                                <ArrowRightLeft className="w-3.5 h-3.5" /> Transférer
-                              </button>
+                              {/* ⭐ Le transfert inter-écoles est désormais géré exclusivement
+                                  dans l'onglet « Transferts & Mobilité ». Cet onglet ne gère
+                                  que les sorties internes (retraits, abandons, archivage, réintégration). */}
                               <button
                                 onClick={() => openAction(student, 'archive')}
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition"

@@ -170,7 +170,7 @@ export class AdmissionService {
    */
   async findAll(tenantId: string, filters: any) {
     const { academicYearId, schoolLevelId, status, search } = filters;
-    return this.prisma.admission.findMany({
+    const admissions = await this.prisma.admission.findMany({
       where: {
         tenantId,
         ...(academicYearId && { academicYearId }),
@@ -186,22 +186,31 @@ export class AdmissionService {
       },
       include: {
         academicYear: true,
-        // ⭐ Inclure l'étudiant converti avec sa photo
-        convertedStudent: {
-          select: {
-            id: true,
-            photoUrl: true,
-            matricule: true,
-            studentCode: true,
-          },
-        },
-        // ⭐ Inclure la classe officielle souhaitée
-        requestedAcademicClass: {
-          select: { id: true, name: true, code: true },
-        },
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    // ⭐ Enrichir avec la photo de l'étudiant converti (si applicable)
+    // On le fait manuellement car la relation convertedStudent n'est pas
+    // disponible dans toutes les versions du client Prisma déployé.
+    const convertedStudentIds = admissions
+      .map(a => a.convertedStudentId)
+      .filter((id): id is string => !!id);
+
+    if (convertedStudentIds.length === 0) {
+      return admissions;
+    }
+
+    const students = await this.prisma.student.findMany({
+      where: { id: { in: convertedStudentIds } },
+      select: { id: true, photoUrl: true, matricule: true, studentCode: true },
+    });
+    const studentMap = new Map(students.map(s => [s.id, s]));
+
+    return admissions.map(a => ({
+      ...a,
+      convertedStudent: a.convertedStudentId ? studentMap.get(a.convertedStudentId) ?? null : null,
+    }));
   }
 
   async findOne(id: string, tenantId: string) {

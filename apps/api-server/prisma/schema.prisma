@@ -2284,6 +2284,8 @@ model Student {
   studentPeriodAverages        StudentPeriodAverage[]
   studentSubjectAverages       StudentSubjectAverage[]
   studentCouncilDecisions      StudentCouncilDecision[]
+  /// ⭐ Relation inverse : admissions converties vers cet étudiant
+  convertedAdmissions          Admission[]                   @relation("AdmissionConvertedStudent")
 
   @@unique([tenantId, studentCode])
   @@unique([tenantId, matricule], where: raw("(matricule IS NOT NULL)"))
@@ -3439,7 +3441,7 @@ model TenantIdentityProfile {
   cardFooterText            String?  @default("Academia Helm")
   cardConditionsText        String?  @default("Cette carte est strictement personnelle et incessible. À présenter à toute demande du personnel autorisé. Signaler toute perte ou vol à l'administration.")
 
-  tenant               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, version])
   @@index([tenantId, isActive])
@@ -4455,6 +4457,8 @@ model Admission {
   tenant                 Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   /// ⭐ Relation vers la classe officielle souhaitée (AcademicClass)
   requestedAcademicClass AcademicClass?       @relation("AdmissionRequestedAcademicClass", fields: [requestedAcademicClassId], references: [id], onDelete: SetNull)
+  /// ⭐ Relation vers l'étudiant converti (Student) — permet d'inclure sa photo
+  convertedStudent       Student?             @relation("AdmissionConvertedStudent", fields: [convertedStudentId], references: [id], onDelete: SetNull)
   documents              AdmissionDocument[]
   interviews             AdmissionInterview[]
 

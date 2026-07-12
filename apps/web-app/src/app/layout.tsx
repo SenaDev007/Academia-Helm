@@ -12,6 +12,7 @@ import localFont from 'next/font/local';
 import Script from 'next/script';
 import './globals.css';
 import { ServiceWorkerCleanup } from '@/components/pwa/ServiceWorkerCleanup';
+import OrionWidget from '@/components/OrionWidget';
 import { BRAND } from '@/lib/brand';
 import {
   buildSiteVerification,
@@ -218,6 +219,8 @@ export default function RootLayout({
           `}
         </Script>
         {/* CrispChat déplacé vers app/layout-client.tsx — uniquement pour les pages authentifiées */}
+        {/* ⭐ ORION Widget — disponible dans toute l'application */}
+        <OrionWidget />
       </body>
     </html>
   );

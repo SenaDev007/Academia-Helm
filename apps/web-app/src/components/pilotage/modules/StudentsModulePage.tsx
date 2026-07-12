@@ -432,9 +432,7 @@ export default function StudentsModulePage() {
             { id: 'transfers', label: 'Transferts & Mobilité', icon: <ArrowRightLeft className="w-4 h-4" /> },
             { id: 'history', label: 'Historique Scolaire', icon: <Archive className="w-4 h-4" /> },
             { id: 'educmaster', label: 'EDUCMASTER', icon: <Globe className="w-4 h-4" /> },
-            { id: 'analytics', label: 'ORION & Stats', icon: <Activity className="w-4 h-4" /> },
-            { id: 'audit', label: 'Audit & Conformité', icon: <Fingerprint className="w-4 h-4" /> },
-            { id: 'aggregation', label: 'Agrégation & Bilan Global', icon: <BarChart3 className="w-4 h-4" /> },
+            { id: 'analytics', label: 'ORION, Stats & Audit', icon: <Activity className="w-4 h-4" /> },
           ],
         }}
         content={
@@ -492,30 +490,18 @@ export default function StudentsModulePage() {
             : activeSubModuleId === 'analytics'
             ? {
                 layout: 'default',
-                children: <StudentAnalyticsContent />,
-              }
-            : activeSubModuleId === 'audit'
-            ? {
-                layout: 'default',
-                children: <StudentAuditContent />,
+                // ⭐ Fusion ORION & Stats + Audit & Conformité en un seul onglet
+                children: (
+                  <div className="space-y-4">
+                    <StudentAnalyticsContent />
+                    <StudentAuditContent />
+                  </div>
+                ),
               }
             : activeSubModuleId === 'transfers'
             ? {
                 layout: 'default',
                 children: <StudentTransferContent />,
-              }
-            : activeSubModuleId === 'aggregation'
-            ? {
-                layout: 'default',
-                children: (
-                  <div className="p-6">
-                    <iframe
-                      src="/app/students/aggregation"
-                      className="w-full h-[calc(100vh-200px)] border-0"
-                      title="Agrégation Élèves"
-                    />
-                  </div>
-                ),
               }
             : activeSubModuleId === 'cards'
             ? {

@@ -110,18 +110,20 @@ export default function StudentHistoryContent() {
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
                     {(academicRecords || []).slice(0, 3).map((record: any, idx: number) => (
-                      <div key={record.id} className="relative flex items-center">
+                      <div key={record.id || idx} className="relative flex items-center">
                         <div className={`flex flex-col p-2 rounded-lg border min-w-[120px] ${
                           record.isLocked ? 'bg-gray-50 border-gray-200 shadow-inner' : 'bg-white border-blue-100 shadow-sm'
                         }`}>
                           <div className="flex items-center justify-between mb-1">
-                            <span className="text-[9px] font-bold text-gray-400 uppercase">{record.academicYear.label}</span>
+                            <span className="text-[9px] font-bold text-gray-400 uppercase">
+                              {record.academicYear?.label || record.academicYear?.name || record.enrollmentYear || '—'}
+                            </span>
                             {record.isLocked ? <Lock className="w-2.5 h-2.5 text-gray-400" /> : <Unlock className="w-2.5 h-2.5 text-green-500" />}
                           </div>
-                          <div className="text-xs font-bold text-gray-800 truncate">{record.class?.name || 'Inconnu'}</div>
+                          <div className="text-xs font-bold text-gray-800 truncate">{record.class?.name || record.className || 'Inconnu'}</div>
                           <div className="flex items-center justify-between mt-1">
                             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                              record.decision === 'PROMOTED' ? 'bg-green-100 text-green-700' : 
+                              record.decision === 'PROMOTED' ? 'bg-green-100 text-green-700' :
                               record.decision === 'REPEATED' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'
                             }`}>
                               {record.decision || 'EN COURS'}
@@ -131,7 +133,7 @@ export default function StudentHistoryContent() {
                             )}
                           </div>
                         </div>
-                        {idx < Math.min(item.academicRecords.length, 3) - 1 && (
+                        {idx < Math.min((academicRecords || []).length, 3) - 1 && (
                           <Milestone className="w-4 h-4 text-gray-300 mx-1 flex-shrink-0" />
                         )}
                       </div>

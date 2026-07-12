@@ -547,14 +547,19 @@ export class StudentTransferService {
    * ⭐ Recherche des écoles dans l'annuaire Academia Helm.
    */
   async searchSchools(query: string) {
+    // ⭐ Si pas de query, retourner toutes les écoles actives (limit 50)
+    const where: any = {
+      type: 'SCHOOL',
+      status: 'active',
+    };
+    if (query && query.trim()) {
+      where.name = { contains: query.trim(), mode: 'insensitive' };
+    }
     return this.prisma.tenant.findMany({
-      where: {
-        type: 'SCHOOL',
-        status: 'active',
-        name: { contains: query, mode: 'insensitive' },
-      },
+      where,
       select: { id: true, name: true, slug: true, city: true },
-      take: 20,
+      take: 50,
+      orderBy: { name: 'asc' },
     });
   }
 

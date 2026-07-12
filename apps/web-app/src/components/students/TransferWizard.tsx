@@ -94,19 +94,47 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
         limit: '200',
       };
       if (query) params.search = query;
-      // ⭐ Utiliser l'UUID du schoolLevel (pas le code) pour filtrer côté backend
+
+      // ⭐ Récupérer le schoolLevelId (UUID de school_levels) pour filtrer côté backend.
+      // /api/school-levels retourne { id: education_levels UUID, schoolLevelId: school_levels UUID }
+      // Si schoolLevelId est null (classes non chargées), on utilise l'id directement.
       if (levelId) {
         const level = schoolLevels.find(l => l.id === levelId);
-        if (level?.schoolLevelId) {
-          params.schoolLevelId = level.schoolLevelId;
-        } else {
-          params.schoolLevelId = levelId;
-        }
+        const effectiveSchoolLevelId = level?.schoolLevelId || levelId;
+        params.schoolLevelId = effectiveSchoolLevelId;
       }
+
       const data = await studentsService.getAll(params);
       let list = Array.isArray(data) ? data : (data?.data || []);
+
       // Filtrer uniquement les élèves actifs (transférables)
       list = list.filter((s: any) => s.status === 'ACTIVE' && s.isActive !== false);
+
+      // ⭐ Si le filtre backend n'a pas marché (schoolLevelId null),
+      // filtrer côté client par le code du niveau
+      if (levelId && list.length === 0) {
+        // Récupérer le code du niveau sélectionné
+        const level = schoolLevels.find(l => l.id === levelId);
+        const levelCode = level?.code?.toUpperCase() || '';
+        if (levelCode) {
+          // Refaire la requête sans schoolLevelId et filtrer côté client
+          const params2: Record<string, string> = {
+            academicYearId: academicYear.id,
+            limit: '200',
+          };
+          if (query) params2.search = query;
+          const data2 = await studentsService.getAll(params2);
+          let list2 = Array.isArray(data2) ? data2 : (data2?.data || []);
+          list2 = list2.filter((s: any) => {
+            if (s.status !== 'ACTIVE' || s.isActive === false) return false;
+            // Filtrer par le code du schoolLevel
+            const studentLevelCode = (s.schoolLevel?.code || '').toUpperCase();
+            return studentLevelCode === levelCode;
+          });
+          list = list2;
+        }
+      }
+
       // ⭐ Filtrer par classe si sélectionnée (côté client)
       if (classId) {
         list = list.filter((s: any) => {

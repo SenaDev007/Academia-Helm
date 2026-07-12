@@ -37,7 +37,7 @@ import {
   Archive,
   MessageSquare,
   GraduationCap,
-  BadgeCheck,
+  // BadgeCheck supprimé — onglet Conformité retiré
 } from 'lucide-react';
 import {
   ModuleContainer,
@@ -59,9 +59,8 @@ import StudentFamiliesContent from '@/components/students/StudentFamiliesContent
 import StudentAssignmentsContent from '@/components/students/StudentAssignmentsContent';
 import StudentMovementsContent from '@/components/students/StudentMovementsContent';
 import StudentAffectationsMouvementsContent from '@/components/students/StudentAffectationsMouvementsContent';
-import StudentComplianceContent from '@/components/students/StudentComplianceContent';
 import StudentAnalyticsContent from '@/components/students/StudentAnalyticsContent';
-import StudentSettingsContent from '@/components/students/StudentSettingsContent';
+// ⭐ StudentComplianceContent et StudentSettingsContent supprimés — onglets retirés du module
 import StudentAuditContent from '@/components/students/StudentAuditContent';
 import StudentTransferContent from '@/components/students/StudentTransferContent';
 // ⭐ AbsencesContent supprimé — l'onglet Absences a été retiré du module Élèves
@@ -432,10 +431,8 @@ export default function StudentsModulePage() {
             { id: 'families', label: 'Familles', icon: <User className="w-4 h-4" /> },
             { id: 'transfers', label: 'Transferts & Mobilité', icon: <ArrowRightLeft className="w-4 h-4" /> },
             { id: 'history', label: 'Historique Scolaire', icon: <Archive className="w-4 h-4" /> },
-            { id: 'compliance', label: 'Conformité', icon: <BadgeCheck className="w-4 h-4" /> },
             { id: 'educmaster', label: 'EDUCMASTER', icon: <Globe className="w-4 h-4" /> },
             { id: 'analytics', label: 'ORION & Stats', icon: <Activity className="w-4 h-4" /> },
-            { id: 'settings', label: 'Paramétrage', icon: <Edit className="w-4 h-4" /> },
             { id: 'audit', label: 'Audit & Conformité', icon: <Fingerprint className="w-4 h-4" /> },
             { id: 'aggregation', label: 'Agrégation & Bilan Global', icon: <BarChart3 className="w-4 h-4" /> },
           ],
@@ -487,11 +484,6 @@ export default function StudentsModulePage() {
                 layout: 'default',
                 children: <StudentHistoryContent />,
               }
-            : activeSubModuleId === 'compliance'
-            ? {
-                layout: 'default',
-                children: <StudentComplianceContent />,
-              }
             : activeSubModuleId === 'educmaster'
             ? {
                 layout: 'default',
@@ -501,11 +493,6 @@ export default function StudentsModulePage() {
             ? {
                 layout: 'default',
                 children: <StudentAnalyticsContent />,
-              }
-            : activeSubModuleId === 'settings'
-            ? {
-                layout: 'default',
-                children: <StudentSettingsContent />,
               }
             : activeSubModuleId === 'audit'
             ? {

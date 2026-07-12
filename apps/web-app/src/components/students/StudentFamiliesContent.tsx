@@ -80,7 +80,9 @@ export default function StudentFamiliesContent() {
         schoolLevelId: schoolLevel?.id || '',
         includeGuardians: 'true',
       });
-      setStudents(Array.isArray(data) ? data : []);
+      // ⭐ Gérer la réponse paginée { data, total, ... } ou l'ancien format array
+      const list = Array.isArray(data) ? data : (data?.data || []);
+      setStudents(list);
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message, variant: 'error' });
     } finally {

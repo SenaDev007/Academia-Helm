@@ -47,8 +47,10 @@ export default function StudentHistoryContent() {
         schoolLevelId: schoolLevel?.id || '',
         includeHistory: 'true',
       };
-      const data = await studentsService.getAll(params);
-      setData(data);
+      const result = await studentsService.getAll(params);
+      // ⭐ Gérer la réponse paginée { data, total, ... } ou l'ancien format array
+      const list = Array.isArray(result) ? result : (result?.data || []);
+      setData(list);
     } catch (e: any) {
       console.error(e);
       toast({ title: 'Erreur', description: e.message || 'Impossible de charger l\'historique', variant: 'error' });
@@ -102,7 +104,7 @@ export default function StudentHistoryContent() {
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-                    {item.academicRecords.slice(0, 3).map((record, idx) => (
+                    {(item.academicRecords || []).slice(0, 3).map((record, idx) => (
                       <div key={record.id} className="relative flex items-center">
                         <div className={`flex flex-col p-2 rounded-lg border min-w-[120px] ${
                           record.isLocked ? 'bg-gray-50 border-gray-200 shadow-inner' : 'bg-white border-blue-100 shadow-sm'

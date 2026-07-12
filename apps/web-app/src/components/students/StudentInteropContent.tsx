@@ -1,18 +1,25 @@
-import React, { useState } from 'react';
+/**
+ * ============================================================================
+ * EDUCMASTER — Hub d'interopérabilité nationale
+ * ============================================================================
+ *
+ * Export des données élèves vers les systèmes nationaux (EDUCMASTER, ANIP).
+ * Design cohérent avec les autres onglets du module Élèves.
+ * ============================================================================
+ */
+
+'use client';
+
+import { useState } from 'react';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { toast } from '@/components/ui/toast';
 import { studentsService } from '@/services/students.service';
-import { 
-  Globe, 
-  FileJson, 
-  Loader2, 
-  Download, 
-  RefreshCw, 
-  Zap, 
-  CheckCircle2, 
-  AlertTriangle 
+import {
+  Globe, FileJson, Loader2, Download, RefreshCw, Zap,
+  CheckCircle2, AlertCircle,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 export default function StudentInteropContent() {
   const { academicYear } = useModuleContext();
@@ -22,110 +29,103 @@ export default function StudentInteropContent() {
 
   const handleExportEducmaster = async (level: { id: string; code: string; label: string }) => {
     if (!academicYear) {
-      toast({ 
-        title: 'Erreur', 
-        description: 'Veuillez sélectionner une année scolaire', 
-        variant: 'error' 
-      });
+      toast({ title: 'Erreur', description: 'Veuillez sélectionner une année scolaire', variant: 'error' });
       return;
     }
-
     setSyncingLevelId(level.id);
     try {
       await studentsService.exportEducmasterExcel(academicYear.id, level.id);
-      setLastExport(`${level.label} - ${new Date().toLocaleString('fr-FR')}`);
-      toast({ 
-        title: 'Succès', 
-        description: `Export ${level.label} généré avec succès`, 
-        variant: 'success' 
-      });
+      setLastExport(`${level.label} — ${new Date().toLocaleString('fr-FR')}`);
+      toast({ title: '✅ Export généré', description: `Export EDUCMASTER ${level.label} téléchargé.`, variant: 'success' });
     } catch (e: any) {
-      toast({ 
-        title: 'Erreur', 
-        description: e.message || 'Erreur réseau lors de l\'export', 
-        variant: 'error' 
-      });
+      toast({ title: 'Erreur', description: e.message || 'Erreur réseau lors de l\'export', variant: 'error' });
     } finally {
       setSyncingLevelId(null);
     }
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-700">
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="bg-slate-900 p-8 text-white">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="p-3 bg-blue-500 rounded-2xl shadow-lg shadow-blue-500/20">
-              <Globe className="w-8 h-8 text-white" />
+    <div className="space-y-4">
+      {/* Header — white card cohérent avec les autres onglets */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
+              <Globe className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <h3 className="text-2xl font-black tracking-tight">Hub d'Interopérabilité</h3>
-              <p className="text-slate-400 text-sm">Synchronisation avec les systèmes nationaux et ministériels</p>
+              <h2 className="text-base font-bold text-slate-900">EDUCMASTER — Interopérabilité nationale</h2>
+              <p className="text-xs text-slate-500">Export des données élèves vers les systèmes ministériels</p>
             </div>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {availableLevels.filter(l => l.id !== 'ALL' && ['MATERNELLE', 'PRIMAIRE'].includes(l.code)).map((level) => (
-              <div key={level.id} className="bg-slate-800/50 rounded-2xl p-6 border border-slate-700 hover:border-blue-500/50 transition-colors group">
-                <div className="flex items-center justify-between mb-4">
-                  <FileJson className="w-6 h-6 text-blue-400" />
-                  <span className="text-[10px] font-black bg-blue-500/20 text-blue-400 px-2 py-1 rounded">V1.4 COMPATIBLE</span>
-                </div>
-                <h4 className="text-lg font-bold mb-2">EDUCMASTER - {level.label}</h4>
-                <p className="text-sm text-slate-400 mb-6">Génération du fichier Excel pour le niveau {level.label.toLowerCase()}.</p>
-                <button 
-                  onClick={() => handleExportEducmaster(level)}
-                  disabled={!!syncingLevelId}
-                  className="w-full py-3 bg-white text-slate-900 font-black rounded-xl hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {syncingLevelId === level.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                  EXPORTER {level.code}
-                </button>
-              </div>
-            ))}
-
-            <div className="bg-slate-800/50 rounded-2xl p-6 border border-slate-700 hover:border-purple-500/50 transition-colors group">
-              <div className="flex items-center justify-between mb-4">
-                <RefreshCw className="w-6 h-6 text-purple-400" />
-                <span className="text-[10px] font-black bg-purple-500/20 text-purple-400 px-2 py-1 rounded">API DIRECT</span>
-              </div>
-              <h4 className="text-lg font-bold mb-2">ANIP - Registre NPI</h4>
-              <p className="text-sm text-slate-400 mb-6">Synchronisation directe des identités via le numéro NPI national (Bénin).</p>
-              <button 
-                disabled
-                className="w-full py-3 bg-slate-700 text-slate-500 font-black rounded-xl cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                <Zap className="w-4 h-4" /> BIENTÔT DISPONIBLE
-              </button>
-            </div>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+            <span className="text-[10px] font-bold text-slate-500 uppercase">Service actif</span>
           </div>
         </div>
-
-        <div className="p-6 bg-gray-50 border-t border-gray-200">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-              <span className="text-xs font-bold text-gray-600 uppercase tracking-widest">État du Service ORION</span>
-            </div>
-            {lastExport && (
-              <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase">
-                <CheckCircle2 className="w-4 h-4 text-green-500" />
-                {lastExport}
-              </div>
-            )}
+        {lastExport && (
+          <div className="px-4 py-2 border-t border-slate-100 bg-emerald-50/50 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <span className="text-xs text-emerald-700 font-medium">Dernier export : {lastExport}</span>
           </div>
+        )}
+      </div>
+
+      {/* Cartes d'export */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {/* EDUCMASTER par niveau */}
+        {availableLevels
+          .filter(l => l.id !== 'ALL' && ['MATERNELLE', 'PRIMAIRE'].includes(l.code))
+          .map((level) => (
+            <div key={level.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 hover:shadow-md transition">
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center">
+                  <FileJson className="w-5 h-5 text-blue-600" />
+                </div>
+                <span className="text-[9px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded border border-blue-100">V1.4</span>
+              </div>
+              <h4 className="text-sm font-bold text-slate-800 mb-1">EDUCMASTER — {level.label}</h4>
+              <p className="text-xs text-slate-500 mb-3">Génération du fichier Excel pour le niveau {level.label.toLowerCase()}.</p>
+              <button
+                onClick={() => handleExportEducmaster(level)}
+                disabled={!!syncingLevelId}
+                className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg transition"
+              >
+                {syncingLevelId === level.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                {syncingLevelId === level.id ? 'Export...' : `Exporter ${level.code}`}
+              </button>
+            </div>
+          ))
+        }
+
+        {/* ANIP — bientôt disponible */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center">
+              <RefreshCw className="w-5 h-5 text-purple-600" />
+            </div>
+            <span className="text-[9px] font-bold bg-purple-50 text-purple-600 px-2 py-0.5 rounded border border-purple-100">API</span>
+          </div>
+          <h4 className="text-sm font-bold text-slate-800 mb-1">ANIP — Registre NPI</h4>
+          <p className="text-xs text-slate-500 mb-3">Synchronisation des identités via le numéro NPI national (Bénin).</p>
+          <button
+            disabled
+            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-400 bg-slate-100 rounded-lg cursor-not-allowed"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            Bientôt disponible
+          </button>
         </div>
       </div>
 
-      <div className="bg-blue-50 border border-blue-100 rounded-2xl p-6 flex items-start gap-4">
-        <div className="p-2 bg-blue-100 rounded-lg">
-          <AlertTriangle className="w-5 h-5 text-blue-600" />
-        </div>
+      {/* Rappel de conformité */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+        <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
         <div>
-          <h4 className="text-sm font-bold text-blue-900 mb-1">Rappel de Conformité</h4>
-          <p className="text-xs text-blue-700 leading-relaxed">
-            Avant tout export, assurez-vous que tous les élèves ont un matricule valide et que les données obligatoires (Nom, Prénom, Date de naissance, Lieu de naissance) sont complètes. 
-            Le moteur ORION signalera toute anomalie bloquante.
+          <h4 className="text-sm font-bold text-amber-900 mb-1">Rappel de conformité</h4>
+          <p className="text-xs text-amber-800 leading-relaxed">
+            Avant tout export, assurez-vous que tous les élèves ont un matricule valide et que les données obligatoires
+            (Nom, Prénom, Date de naissance, Lieu de naissance) sont complètes. Le moteur ORION signalera toute anomalie bloquante.
           </p>
         </div>
       </div>

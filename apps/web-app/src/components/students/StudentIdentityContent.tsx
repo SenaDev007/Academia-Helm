@@ -112,6 +112,31 @@ export default function StudentIdentityContent() {
       const allStudents = Array.isArray(studentsData) ? studentsData : (studentsData?.data || []);
       setStudents(allStudents);
       setAllClasses(Array.isArray(classesRes) ? classesRes : []);
+
+      // ⭐ Présélection d'un élève si ?studentId=xxx est présent dans l'URL
+      // (ex: depuis l'onglet Historique Scolaire → bouton « Dossier Complet »).
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const preselectStudentId = urlParams.get('studentId');
+        if (preselectStudentId) {
+          const found = allStudents.find((s: any) => s.id === preselectStudentId);
+          if (found) {
+            setSelectedStudent(found as StudentIdentity);
+          } else {
+            toast({
+              title: 'Élève introuvable',
+              description: 'Aucun dossier élève ne correspond à l\'identifiant demandé.',
+              variant: 'info',
+            });
+          }
+          // Nettoyer l'URL (retirer studentId, garder tab=dossiers)
+          urlParams.delete('studentId');
+          const newUrl = urlParams.toString()
+            ? `${window.location.pathname}?${urlParams.toString()}`
+            : window.location.pathname;
+          window.history.replaceState({}, '', newUrl);
+        }
+      }
     } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'error' }); }
     finally { setIsLoading(false); }
   };
@@ -291,12 +316,24 @@ function StudentDashboard({ student, academicYear, onBack }: { student: StudentI
       setMovementHistory(historyRes.status === 'fulfilled' && Array.isArray(historyRes.value) ? historyRes.value : []);
       setStudentCard(cardRes.status === 'fulfilled' ? cardRes.value : null);
 
-      // ⭐ Compte financier + transactions + fee profile (régime)
+      // ⭐ Compte financier + transactions + fee profile (régime) + breakdown personnalisé
       try {
         const accounts = await financeService.getStudentAccounts({ studentId, academicYearId: academicYear?.id });
         const account = Array.isArray(accounts) ? accounts[0] : (accounts?.data?.[0] || accounts);
         setFinanceAccount(account);
         if (account?.id) {
+          // ⭐ Charger les DÉTAILS du compte (breakdowns + overrides + feeArrears)
+          // pour afficher les montants personnalisés dans l'onglet Frais.
+          try {
+            const details = await financeService.getStudentAccountDetails(account.id);
+            // Fusionner les détails dans l'objet account pour que le rendering
+            // ait accès aux breakdowns, overrides et feeArrears.
+            if (details && typeof details === 'object') {
+              setFinanceAccount({ ...account, ...details });
+            }
+          } catch (e) {
+            console.warn('[StudentDossier] getStudentAccountDetails failed:', e);
+          }
           try {
             const transactions = await financeService.getTransactions({ studentAccountId: account.id, limit: '20' });
             setPayments(Array.isArray(transactions) ? transactions : (transactions?.data || []));
@@ -482,6 +519,61 @@ function StudentDashboard({ student, academicYear, onBack }: { student: StudentI
             )}
             {financeAccount ? (
               <>
+                {/* ⭐ Détail des frais (breakdown) avec montants personnalisés (overrides)
+                    Conforme au module Finance > Compte Élève.
+                    Affiche chaque ligne de frais avec :
+                      - le montant standard (FeeStructure.amount)
+                      - le montant personnalisé si un override existe (FeeOverride.customAmount)
+                      - un badge "Personnalisé" si override appliqué */}
+                {Array.isArray(financeAccount.breakdowns) && financeAccount.breakdowns.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Détail des frais</h4>
+                    <div className="space-y-1.5">
+                      {financeAccount.breakdowns.map((bd: any, idx: number) => {
+                        // ⭐ Chercher s'il existe un override pour ce feeStructure
+                        const overrides = Array.isArray(financeAccount.overrides) ? financeAccount.overrides : [];
+                        const override = overrides.find((ov: any) =>
+                          ov.feeStructureId === bd.feeStructureId || ov.feeStructure?.id === bd.feeStructureId
+                        );
+                        const standardAmount = Number(bd.feeStructure?.amount ?? bd.amount ?? 0);
+                        const personalizedAmount = override ? Number(override.customAmount) : null;
+                        const effectiveAmount = personalizedAmount !== null ? personalizedAmount : standardAmount;
+                        const hasOverride = override != null;
+                        return (
+                          <div key={bd.id || idx} className={`flex items-center gap-3 p-2.5 rounded-lg border ${hasOverride ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100'}`}>
+                            <div className={`p-1.5 rounded ${hasOverride ? 'bg-amber-100' : 'bg-blue-100'}`}>
+                              <Wallet className={`w-3.5 h-3.5 ${hasOverride ? 'text-amber-600' : 'text-blue-600'}`} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-slate-800 truncate">
+                                {bd.feeStructure?.label || bd.feeStructure?.name || `Frais #${bd.feeStructureId?.slice(0, 8) || idx + 1}`}
+                              </p>
+                              <p className="text-[10px] text-slate-400">
+                                {bd.feeStructure?.feeCategory || bd.feeStructure?.category || '—'}
+                                {hasOverride && override?.reason && ` · ${override.reason}`}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              {hasOverride && (
+                                <p className="text-[10px] text-slate-400 line-through">{formatMoney(standardAmount)}</p>
+                              )}
+                              <p className={`text-xs font-bold ${hasOverride ? 'text-amber-700' : 'text-slate-700'}`}>
+                                {formatMoney(effectiveAmount)}
+                              </p>
+                            </div>
+                            {hasOverride && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-300 whitespace-nowrap">
+                                Personnalisé
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Résumé financier */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <FinanceCard label="Total dû" value={formatMoney(financeAccount.totalDue)} color="text-slate-800" />
                   <FinanceCard label="Payé" value={formatMoney(financeAccount.totalPaid)} color="text-emerald-600" />

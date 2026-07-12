@@ -6,16 +6,19 @@
  * sur les 3 dernières années (classe officielle fréquentée + décision du conseil
  * de classe : PROMOTED / REPEATED / EN COURS, avec la moyenne éventuelle).
  *
- * Le bouton « Dossier Complet » ouvre le dossier scolaire numérique complet de
- * l'élève (page dédiée /app/students/[studentId]/dossier) : identité, infos admin,
- * responsables, scolarité, documents, bulletins, etc.
+ * Filtres : Niveau scolaire + Classe (pattern identique au TransferWizard)
+ *           + recherche texte libre (nom / matricule).
+ *
+ * Le bouton « Dossier Complet » bascule vers l'onglet « Dossiers Élèves » du module
+ * et préselectionne la carte de l'élève. Le passage se fait via la query string
+ * ?tab=dossiers&studentId=xxx que StudentsModulePage lit au montage, et que
+ * StudentIdentityContent lit pour précharger l'élève sélectionné.
  * ============================================================================
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useMemo } from 'react';
 import {
   History,
   Milestone,
@@ -24,46 +27,86 @@ import {
   Unlock,
   FileText,
   ExternalLink,
+  Search,
+  Loader2,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { LoadingState } from '@/components/ui/feedback/LoadingState';
 import { studentsService } from '@/services/students.service';
 import { toast } from '@/components/ui/toast';
 
 interface HistoryRecord {
   id: string;
-  student: {
-    firstName: string;
-    lastName: string;
+  firstName?: string;
+  lastName?: string;
+  matricule?: string;
+  photoUrl?: string;
+  student?: {
+    id?: string;
+    firstName?: string;
+    lastName?: string;
     matricule?: string;
     photoUrl?: string;
   };
-  academicRecords: Array<{
+  academicRecords?: Array<{
     id: string;
-    academicYear: { label: string };
-    class?: { name: string };
+    academicYear?: { label?: string; name?: string };
+    class?: { name?: string };
+    className?: string;
+    enrollmentYear?: string;
+    averageScore?: number;
+    decision?: string;
+    isLocked: boolean;
+  }>;
+  studentEnrollments?: Array<{
+    id: string;
+    academicYear?: { label?: string; name?: string };
+    class?: { name?: string };
+    className?: string;
+    enrollmentYear?: string;
     averageScore?: number;
     decision?: string;
     isLocked: boolean;
   }>;
 }
 
+interface ClassInfo {
+  id: string;
+  name: string;
+  schoolLevelId?: string;
+  schoolLevel?: { id: string; name: string; code?: string };
+}
+
 export default function StudentHistoryContent() {
-  const { academicYear, schoolLevel } = useModuleContext();
-  const router = useRouter();
+  const { academicYear } = useModuleContext();
+  const { availableLevels } = useSchoolLevel();
   const [data, setData] = useState<HistoryRecord[]>([]);
+  const [allClasses, setAllClasses] = useState<ClassInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Filtres (pattern TransferWizard)
+  const [filterLevelId, setFilterLevelId] = useState<string>('');
+  const [filterClassId, setFilterClassId] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState('');
+
   useEffect(() => {
-    if (academicYear && schoolLevel) loadHistory();
-  }, [academicYear, schoolLevel]);
+    if (academicYear) loadHistory();
+  }, [academicYear]);
+
+  // Charger les classes physiques (pour le filtre classe)
+  useEffect(() => {
+    fetch('/api/all-classes', { credentials: 'include', cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setAllClasses(Array.isArray(data) ? data : []))
+      .catch(() => setAllClasses([]));
+  }, []);
 
   const loadHistory = async () => {
     setIsLoading(true);
     try {
       const params = {
         academicYearId: academicYear?.id || '',
-        schoolLevelId: schoolLevel?.id || '',
         includeHistory: 'true',
       };
       const result = await studentsService.getAll(params);
@@ -82,6 +125,10 @@ export default function StudentHistoryContent() {
     }
   };
 
+  // ⭐ Ouvrir le dossier complet : bascule vers l'onglet Dossiers Élèves avec
+  // présélection de l'élève. StudentsModulePage lit ?tab=dossiers&studentId=xxx
+  // au montage pour activer l'onglet, et StudentIdentityContent lit studentId
+  // pour précharger la carte de l'élève.
   const handleOpenDossier = (studentId: string) => {
     if (!studentId) {
       toast({
@@ -91,9 +138,71 @@ export default function StudentHistoryContent() {
       });
       return;
     }
-    // Ouvre le dossier scolaire numérique complet dans le même onglet
-    router.push(`/app/students/${studentId}/dossier`);
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', 'dossiers');
+    url.searchParams.set('studentId', studentId);
+    window.location.href = url.toString();
   };
+
+  // ⭐ Filtre classes par niveau (comme TransferWizard)
+  const filteredClasses = useMemo(() => {
+    if (!filterLevelId) return allClasses;
+    const selectedLevel = availableLevels.find((l) => l.id === filterLevelId);
+    const levelCode = (selectedLevel?.code || '').toUpperCase();
+    const levelName = (selectedLevel?.label || selectedLevel?.code || '').toUpperCase();
+    return allClasses.filter((c) => {
+      const classLevelName = (c.schoolLevel?.name || '').toUpperCase();
+      const classLevelCode = (c.schoolLevel?.code || '').toUpperCase();
+      return (
+        classLevelName === levelName ||
+        classLevelCode === levelCode ||
+        classLevelName.includes(levelCode) ||
+        levelCode.includes(classLevelName)
+      );
+    });
+  }, [allClasses, filterLevelId, availableLevels]);
+
+  // ⭐ Filtrage des élèves par niveau + classe + recherche texte
+  const filteredData = useMemo(() => {
+    let result = data;
+    // Filtre par classe (si sélectionnée)
+    if (filterClassId) {
+      // On ne garde que les élèves dont au moins un enrollment a cette classe
+      result = result.filter((item: any) => {
+        const records = item.academicRecords || item.studentEnrollments || [];
+        return records.some((r: any) => r.class?.id === filterClassId || r.classId === filterClassId);
+      });
+    } else if (filterLevelId) {
+      // Filtre par niveau uniquement (si pas de classe sélectionnée)
+      const selectedLevel = availableLevels.find((l) => l.id === filterLevelId);
+      const levelCode = (selectedLevel?.code || '').toUpperCase();
+      const levelName = (selectedLevel?.label || selectedLevel?.code || '').toUpperCase();
+      result = result.filter((item: any) => {
+        const records = item.academicRecords || item.studentEnrollments || [];
+        return records.some((r: any) => {
+          const classLevelName = (r.class?.schoolLevel?.name || r.schoolLevel?.name || '').toUpperCase();
+          const classLevelCode = (r.class?.schoolLevel?.code || r.schoolLevel?.code || '').toUpperCase();
+          return (
+            classLevelName === levelName ||
+            classLevelCode === levelCode ||
+            classLevelName.includes(levelCode) ||
+            levelCode.includes(classLevelName)
+          );
+        });
+      });
+    }
+    // Recherche texte (nom ou matricule)
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((item: any) => {
+        const student = item.student || item;
+        const fullName = `${student.lastName || ''} ${student.firstName || ''}`.toLowerCase();
+        const matricule = (student.matricule || '').toLowerCase();
+        return fullName.includes(q) || matricule.includes(q);
+      });
+    }
+    return result;
+  }, [data, filterLevelId, filterClassId, searchQuery, availableLevels]);
 
   if (isLoading) return <LoadingState message="Reconstitution des parcours..." />;
 
@@ -110,14 +219,14 @@ export default function StudentHistoryContent() {
               <h2 className="text-base font-bold text-slate-900">Historique Scolaire</h2>
               <p className="text-xs text-slate-500">
                 Traçabilité des promotions, redoublements et décisions de conseils de classe.
-                Cliquez sur « Dossier Complet » pour ouvrir le dossier scolaire numérique d'un élève.
+                Filtrez par niveau ou classe, puis cliquez sur « Dossier Complet » pour ouvrir le dossier de l'élève.
               </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Légende pour aider à comprendre les décisions */}
+      {/* Légende */}
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center gap-4 text-[11px] text-slate-600 flex-wrap">
         <span className="font-bold text-slate-700 uppercase tracking-wider">Légende :</span>
         <span className="flex items-center gap-1.5">
@@ -134,12 +243,61 @@ export default function StudentHistoryContent() {
         </span>
         <span className="flex items-center gap-1.5">
           <Lock className="w-3 h-3 text-gray-400" />
-          <span>Année verrouillée (conseau de classe passé)</span>
+          <span>Verrouillée</span>
         </span>
         <span className="flex items-center gap-1.5">
           <Unlock className="w-3 h-3 text-green-500" />
-          <span>Année ouverte (modifiable)</span>
+          <span>Ouverte</span>
         </span>
+      </div>
+
+      {/* Barre de filtres (pattern TransferWizard) */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr] gap-2">
+          {/* Filtre niveau scolaire */}
+          <select
+            value={filterLevelId}
+            onChange={(e) => {
+              setFilterLevelId(e.target.value);
+              setFilterClassId('');
+            }}
+            className="border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Tous les niveaux</option>
+            {availableLevels
+              .filter((l) => l.id !== 'ALL')
+              .map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.label || l.code}
+                </option>
+              ))}
+          </select>
+          {/* Filtre classe */}
+          <select
+            value={filterClassId}
+            onChange={(e) => setFilterClassId(e.target.value)}
+            disabled={!filterLevelId}
+            className="border border-slate-200 rounded-lg px-3 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+          >
+            <option value="">Toutes les classes</option>
+            {filteredClasses.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          {/* Recherche texte */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Rechercher par nom ou matricule..."
+              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Tableau */}
@@ -153,9 +311,7 @@ export default function StudentHistoryContent() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {data.map((item: any) => {
-              // L'API peut retourner soit { student: {...}, academicRecords: [...] }
-              // soit directement l'élève avec ses propriétés (firstName, lastName, etc.)
+            {filteredData.map((item: any) => {
               const student = item.student || item;
               const academicRecords = item.academicRecords || item.studentEnrollments || [];
               const studentId = item.id || student?.id;
@@ -230,10 +386,10 @@ export default function StudentHistoryContent() {
             })}
           </tbody>
         </table>
-        {data.length === 0 && (
+        {filteredData.length === 0 && (
           <div className="py-20 text-center">
             <AlertTriangle className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-            <p className="text-gray-400 text-sm">Aucune donnée historique trouvée pour ce contexte.</p>
+            <p className="text-gray-400 text-sm">Aucun élève ne correspond aux filtres sélectionnés.</p>
           </div>
         )}
       </div>

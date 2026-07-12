@@ -1262,7 +1262,22 @@ class StudentsService {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `Educmaster_${levelCode}_${academicYearId}.xlsx`;
+    // ⭐ Utiliser le nom de fichier fourni par le backend dans Content-Disposition
+    // (format : NomEcole_Niveau.xlsx — ex. EcoleSainteMarie_Maternelle.xlsx).
+    // Fallback sur un nom générique si le header est absent.
+    let filename = `Educmaster_${levelCode}.xlsx`;
+    const cd = res.headers.get('Content-Disposition');
+    if (cd) {
+      const match = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+      if (match) {
+        try {
+          filename = decodeURIComponent(match[1]);
+        } catch {
+          filename = match[1];
+        }
+      }
+    }
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);

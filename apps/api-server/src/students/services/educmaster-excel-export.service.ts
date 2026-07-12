@@ -236,16 +236,18 @@ export class EducmasterExcelExportService {
 
     const raw = await workbook.xlsx.writeBuffer();
     const buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as any);
+    // ⭐ Format du nom de fichier : NomEcole_NiveauMaternelleOuPrimaire.xlsx
+    // (ex. : EcoleSainteMarie_Maternelle.xlsx, EcoleSainteMarie_Primaire.xlsx)
+    // L'utilisateur a demandé ce format — l'export Educmaster produit un fichier par niveau
+    // (Maternelle ou Primaire), pas par classe individuelle. Le fichier contient plusieurs
+    // feuilles (une par classe officielle : Maternelle 1, Maternelle 2 / CI, CP, CE1...).
     const niveauScolaire = this.fileNameSegment(
       this.levelNameForFile(schoolLevel.name || schoolLevel.code || 'Niveau'),
     );
     const nomEcole = this.fileNameSegment(
       (tenant?.schools as { name?: string } | null)?.name ?? tenant?.name ?? 'Ecole',
     );
-    const anneeScolaire = this.fileNameSegment(
-      academicYear?.name || academicYear?.label || new Date().getFullYear().toString(),
-    );
-    const filename = `${niveauScolaire}_${nomEcole}_${anneeScolaire}.xlsx`;
+    const filename = `${nomEcole}_${niveauScolaire}.xlsx`;
 
     return { buffer, filename, sheetNames };
   }

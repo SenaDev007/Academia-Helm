@@ -25,6 +25,8 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { EmailService } from '../communication/services/email.service';
+import { SmsService } from '../auth/services/sms.service';
+import { WhatsAppService } from '../communication/services/whatsapp.service';
 
 @Injectable()
 export class StudentTransferService {
@@ -33,6 +35,8 @@ export class StudentTransferService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
+    private readonly smsService: SmsService,
+    private readonly whatsappService: WhatsAppService,
   ) {}
 
   /**
@@ -849,41 +853,29 @@ export class StudentTransferService {
 
   /**
    * ⭐ Envoie une notification WhatsApp au parent.
-   * Utilise l'API WhatsApp Business (ou Twilio) si configurée.
-   * En attendant, log seulement.
+   * Utilise le WhatsAppService du module Communication (même pattern que Finance).
    */
   private async sendWhatsAppNotification(phone: string, message: string): Promise<void> {
-    // TODO: Intégrer l'API WhatsApp Business quand les credentials seront disponibles
-    // Pour l'instant, on log seulement
     const cleanPhone = phone.replace(/\s+/g, '').replace(/^\+/, '');
-    this.logger.log(`📱 WhatsApp envoyé à ${cleanPhone}: ${message.substring(0, 80)}...`);
-
-    // Quand l'API sera configurée :
-    // await this.httpService.post('https://api.whatsapp.com/send', {
-    //   phone: cleanPhone,
-    //   message,
-    //   apiKey: process.env.WHATSAPP_API_KEY,
-    // });
+    await this.whatsappService.sendWhatsApp({
+      to: cleanPhone,
+      message,
+    });
+    this.logger.log(`📱 WhatsApp envoyé à ${cleanPhone}`);
   }
 
   /**
    * ⭐ Envoie un SMS au parent.
-   * Utilise l'API SMS (Twilio, OVH, ou autre) si configurée.
-   * En attendant, log seulement.
+   * Utilise le SmsService du module Auth (même pattern que Finance).
    */
   private async sendSmsNotification(phone: string, message: string): Promise<void> {
-    // TODO: Intégrer l'API SMS quand les credentials seront disponibles
-    // Pour l'instant, on log seulement
     const cleanPhone = phone.replace(/\s+/g, '').replace(/^\+/, '');
     // Tronquer le message pour le SMS (160 caractères max)
     const smsMessage = message.substring(0, 155);
-    this.logger.log(`📱 SMS envoyé à ${cleanPhone}: ${smsMessage}`);
-
-    // Quand l'API sera configurée :
-    // await this.httpService.post('https://api.twilio.com/2010-04-01/Accounts/.../Messages.json', {
-    //   To: cleanPhone,
-    //   From: process.env.TWILIO_PHONE_NUMBER,
-    //   Body: smsMessage,
-    // });
+    await this.smsService.sendSms({
+      to: cleanPhone,
+      message: smsMessage,
+    });
+    this.logger.log(`📱 SMS envoyé à ${cleanPhone}`);
   }
 }

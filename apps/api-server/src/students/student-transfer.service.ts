@@ -24,12 +24,16 @@
 
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { EmailService } from '../communication/services/email.service';
 
 @Injectable()
 export class StudentTransferService {
   private readonly logger = new Logger(StudentTransferService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly emailService: EmailService,
+  ) {}
 
   /**
    * ⭐ Crée une demande de transfert inter-écoles (côté école source).
@@ -561,8 +565,14 @@ export class StudentTransferService {
         id: true,
         name: true,
         slug: true,
-        // ⭐ city n'existe pas sur tenants — on l'obtient via schools
-        schools: { select: { city: true, address: true } },
+        // ⭐ Inclure les détails de l'école (logo, city, address)
+        schools: {
+          select: {
+            city: true,
+            address: true,
+            logo: true,
+          },
+        },
       },
       take: 50,
       orderBy: { name: 'asc' },
@@ -611,8 +621,8 @@ export class StudentTransferService {
   }
 
   /**
-   * ⭐ Notifie une école (crée une entrée dans la table des notifications).
-   * Dans une implémentation complète, ceci déclencherait aussi un email/SMS.
+   * ⭐ Notifie une école (notification en base + email professionnel).
+   * L'email utilise un design HTML cohérent avec les modules RH et Finance.
    */
   private async notifySchool(
     schoolId: string,
@@ -621,7 +631,7 @@ export class StudentTransferService {
     metadata?: any,
   ) {
     try {
-      // Créer une notification en base
+      // 1. Créer une notification en base
       await this.prisma.notification.create({
         data: {
           tenantId: schoolId,
@@ -632,11 +642,91 @@ export class StudentTransferService {
           createdAt: new Date(),
         },
       });
-      this.logger.log(`📧 Notification envoyée à l'école ${schoolId}: ${title}`);
+      this.logger.log(`📧 Notification en base → École ${schoolId}: ${title}`);
     } catch (e) {
-      // Si la table Notification n'existe pas, on log au minimum
       this.logger.warn(`Notification (fallback) → École ${schoolId}: ${title} — ${message}`);
     }
+
+    // 2. Envoyer un email professionnel à l'école destinataire
+    try {
+      // Récupérer l'email de l'école destinataire
+      const school = await this.prisma.schools.findFirst({
+        where: { tenantId: schoolId },
+        select: { primaryEmail: true, name: true },
+      });
+
+      if (school?.primaryEmail) {
+        const html = this.buildTransferEmailHtml(title, message, school.name);
+        await this.emailService.sendEmail({
+          to: school.primaryEmail,
+          subject: `Academia Helm — ${title}`,
+          html,
+          fromName: 'Academia Helm — Transferts',
+        });
+        this.logger.log(`📧 Email envoyé à ${school.primaryEmail}: ${title}`);
+      } else {
+        this.logger.warn(`Pas d'email trouvé pour l'école ${schoolId}`);
+      }
+    } catch (emailErr: any) {
+      this.logger.warn(`Email non envoyé à l'école ${schoolId}: ${emailErr.message}`);
+    }
+  }
+
+  /**
+   * ⭐ Construit le HTML de l'email de notification de transfert.
+   * Design professionnel cohérent avec les modules RH et Finance.
+   */
+  private buildTransferEmailHtml(title: string, message: string, schoolName: string): string {
+    return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+</head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f8fafc;color:#1e293b;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;min-height:100vh;">
+    <tr>
+      <td align="center" style="padding:40px 20px;">
+        <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
+          <!-- Header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#1e40af 0%,#3b82f6 100%);padding:32px 40px;text-align:center;">
+              <h1 style="color:#ffffff;font-size:24px;font-weight:800;margin:0;letter-spacing:-0.5px;">Academia Helm</h1>
+              <p style="color:#bfdbfe;font-size:12px;margin:4px 0 0;text-transform:uppercase;letter-spacing:2px;font-weight:600;">Mobilité Scolaire Inter-Écoles</p>
+            </td>
+          </tr>
+          <!-- Content -->
+          <tr>
+            <td style="padding:32px 40px;">
+              <h2 style="color:#1e293b;font-size:18px;font-weight:700;margin:0 0 16px;">${title}</h2>
+              <p style="color:#475569;font-size:14px;line-height:1.6;margin:0 0 16px;">Bonjour,</p>
+              <p style="color:#475569;font-size:14px;line-height:1.6;margin:0 0 16px;">${message}</p>
+              <div style="background:#f1f5f9;border-radius:8px;padding:16px;margin:20px 0;">
+                <p style="color:#64748b;font-size:12px;margin:0;">Établissement concerné : <strong style="color:#1e293b;">${schoolName}</strong></p>
+              </div>
+              <p style="color:#475569;font-size:14px;line-height:1.6;margin:16px 0 0;">Connectez-vous à votre espace Academia Helm pour traiter cette demande.</p>
+            </td>
+          </tr>
+          <!-- Button -->
+          <tr>
+            <td style="padding:0 40px 24px;">
+              <a href="https://academiahelm.com/login" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 32px;border-radius:8px;">Accéder à l'espace</a>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="background:#f8fafc;padding:24px 40px;border-top:1px solid #e2e8f0;">
+              <p style="color:#94a3b8;font-size:11px;margin:0;text-align:center;">Cet email a été envoyé automatiquement par Academia Helm. Ne pas répondre.</p>
+              <p style="color:#94a3b8;font-size:11px;margin:4px 0 0;text-align:center;">© 2026 Academia Helm — YEHI OR Tech</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
   }
 
   /**

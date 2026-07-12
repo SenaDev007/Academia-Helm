@@ -42,6 +42,8 @@ interface SchoolItem {
   name: string;
   city?: string | null;
   slug?: string;
+  logo?: string | null;
+  schools?: Array<{ city?: string | null; address?: string | null }>;
 }
 
 export default function TransferWizard({ isOpen, onClose }: TransferWizardProps) {
@@ -155,7 +157,13 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
     setIsLoadingSchools(true);
     try {
       const data = await studentsService.searchSchoolsForTransfer(query || '');
-      setSchools(Array.isArray(data) ? data : []);
+      let schoolsList = Array.isArray(data) ? data : [];
+      // ⭐ Exclure l'école tenante (celle qui initie le transfert) de la liste
+      const currentTenantId = localStorage.getItem('tenantId') || '';
+      if (currentTenantId) {
+        schoolsList = schoolsList.filter((s: any) => s.id !== currentTenantId);
+      }
+      setSchools(schoolsList);
     } catch (e: any) {
       console.error('Failed to load schools:', e);
       setSchools([]);
@@ -372,7 +380,12 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
                 <p className="text-center text-slate-400 text-sm py-8">Aucune école trouvée. Essayez une autre recherche.</p>
               ) : (
                 <div className="space-y-2 max-h-72 overflow-y-auto">
-                  {schools.map(sc => (
+                  {schools.map(sc => {
+                    // ⭐ Récupérer le logo et la ville depuis la relation schools
+                    const schoolInfo = sc.schools?.[0] || {};
+                    const city = schoolInfo.city || '—';
+                    const logo = schoolInfo.logo || null;
+                    return (
                     <button
                       key={sc.id}
                       onClick={() => setSelectedSchool(sc)}
@@ -381,16 +394,21 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
                         selectedSchool?.id === sc.id ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-300' : 'bg-white border-slate-200 hover:border-blue-200'
                       )}
                     >
-                      <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
-                        <Building2 className="w-4 h-4 text-indigo-600" />
+                      <div className="w-9 h-9 rounded-lg overflow-hidden bg-indigo-50 flex items-center justify-center shrink-0">
+                        {logo ? (
+                          <img src={logo} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <Building2 className="w-4 h-4 text-indigo-600" />
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-slate-800 truncate">{sc.name}</p>
-                        <p className="text-[10px] text-slate-400">{sc.city || '—'}</p>
+                        {city !== '—' && <p className="text-[10px] text-slate-400">{city}</p>}
                       </div>
                       {selectedSchool?.id === sc.id && <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -436,12 +454,17 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
                 <div className="bg-slate-50 rounded-lg p-3">
                   <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Élève</p>
                   <p className="font-semibold text-slate-800">{selectedStudent?.lastName} {selectedStudent?.firstName}</p>
-                  <p className="text-[10px] text-slate-400 font-mono">{selectedStudent?.matricule || selectedStudent?.globalStudentId}</p>
+                  {/* ⭐ Afficher le matricule seulement s'il est lisible (pas un UUID/globalStudentId) */}
+                  {selectedStudent?.matricule && !selectedStudent.matricule.startsWith('AH-') && (
+                    <p className="text-[10px] text-slate-400 font-mono">{selectedStudent.matricule}</p>
+                  )}
                 </div>
                 <div className="bg-slate-50 rounded-lg p-3">
                   <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">École destination</p>
                   <p className="font-semibold text-slate-800">{selectedSchool?.name}</p>
-                  <p className="text-[10px] text-slate-400">{selectedSchool?.city || '—'}</p>
+                  {selectedSchool?.city && selectedSchool.city !== '—' && (
+                    <p className="text-[10px] text-slate-400">{selectedSchool.city}</p>
+                  )}
                 </div>
                 {transferMotif && (
                   <div className="bg-slate-50 rounded-lg p-3 col-span-2">

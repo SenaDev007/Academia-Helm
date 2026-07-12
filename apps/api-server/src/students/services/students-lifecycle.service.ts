@@ -1196,41 +1196,52 @@ export class StudentsLifecycleService {
     // ⭐ Au lieu de créer une nouvelle inscription (qui violerait la contrainte unique
     // @@unique([tenantId, academicYearId, studentId]) car l'inscription WITHDRAWN
     // existe déjà), on met à jour l'inscription existante.
-    const existingEnrollment = await this.prisma.studentEnrollment.findFirst({
-      where: {
-        studentId: data.studentId,
-        tenantId,
-        academicYearId: data.academicYearId,
-      },
-      orderBy: { enrollmentDate: 'desc' },
-    });
-
-    if (existingEnrollment) {
-      // Mettre à jour l'inscription existante (WITHDRAWN → ACTIVE)
-      await this.prisma.studentEnrollment.update({
-        where: { id: existingEnrollment.id },
-        data: {
-          status: ENROLLMENT_STATUS.ACTIVE,
-          exitDate: null,
-          exitReason: null,
-          ...(data.classId && { classId: data.classId }),
-          ...(data.schoolLevelId && { schoolLevelId: data.schoolLevelId }),
-        },
-      });
-    } else {
-      // Si aucune inscription n'existe pour cette année (cas edge), en créer une
-      await this.prisma.studentEnrollment.create({
-        data: {
-          tenantId,
+    // ⭐ Wrap dans un try-catch : si l'inscription update échoue pour quelque raison
+    // que ce soit, on ne doit pas faire échouer la réintégration entière — l'élève
+    // est déjà ACTIVE. On log l'erreur et on continue.
+    try {
+      const existingEnrollment = await this.prisma.studentEnrollment.findFirst({
+        where: {
           studentId: data.studentId,
+          tenantId,
           academicYearId: data.academicYearId,
-          schoolLevelId: data.schoolLevelId,
-          classId: data.classId ?? null,
-          enrollmentType: 'NEW',
-          enrollmentDate: new Date(),
-          status: ENROLLMENT_STATUS.ACTIVE,
         },
+        orderBy: { enrollmentDate: 'desc' },
       });
+
+      if (existingEnrollment) {
+        // Mettre à jour l'inscription existante (WITHDRAWN → ACTIVE)
+        await this.prisma.studentEnrollment.update({
+          where: { id: existingEnrollment.id },
+          data: {
+            status: ENROLLMENT_STATUS.ACTIVE,
+            exitDate: null,
+            exitReason: null,
+            ...(data.classId && { classId: data.classId }),
+            ...(data.schoolLevelId && { schoolLevelId: data.schoolLevelId }),
+          },
+        });
+      } else {
+        // Si aucune inscription n'existe pour cette année (cas edge), en créer une
+        await this.prisma.studentEnrollment.create({
+          data: {
+            tenantId,
+            studentId: data.studentId,
+            academicYearId: data.academicYearId,
+            schoolLevelId: data.schoolLevelId,
+            classId: data.classId ?? null,
+            enrollmentType: 'NEW',
+            enrollmentDate: new Date(),
+            status: ENROLLMENT_STATUS.ACTIVE,
+          },
+        });
+      }
+    } catch (enrollmentErr: any) {
+      // ⭐ L'élève est déjà ACTIVE — ne pas faire échouer la réintégration
+      // si la mise à jour de l'inscription échoue (ex: contrainte unique, etc.)
+      this.logger.warn(
+        `Réintégration : élève ${data.studentId} mis à ACTIVE mais erreur sur l'inscription : ${enrollmentErr.message}`,
+      );
     }
 
     await this.logHistory(

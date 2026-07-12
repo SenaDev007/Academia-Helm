@@ -405,40 +405,29 @@ export default function StudentMovementsContent() {
           schoolLevelId: schoolLevel?.id || actionStudent.schoolLevelId || '',
         });
         toast({ title: '✅ Élève réintégré', description: `${actionStudent.firstName} ${actionStudent.lastName} est de nouveau actif.`, variant: 'success' });
-      } else if (actionType === 'transfer') {
-        if (transferSelectedSchool) {
-          await studentsService.transferStudent({
-            studentId: actionStudent.id,
-            academicYearId: effectiveYearId,
-            exitReason: actionReason || 'Transfert inter-écoles',
-          });
-          toast({ title: '✅ Élève transféré', description: `Vers ${transferSelectedSchool.name}`, variant: 'success' });
-        } else if (transferExternalSchoolName.trim()) {
-          await apiFetch(`/students/${actionStudent.id}/archive`, {
-            method: 'POST',
-            body: JSON.stringify({
-              reason: `Transfert vers ${transferExternalSchoolName}`,
-              status: 'TRANSFERRED',
-            }),
-          });
-          toast({ title: '✅ Transfert enregistré', description: `Vers ${transferExternalSchoolName}`, variant: 'success' });
-        } else {
-          toast({ title: 'Erreur', description: 'Sélectionnez une école ou saisissez le nom', variant: 'error' });
-          setIsProcessing(false);
-          return;
-        }
       }
+      // Fermer le modal
       setActionStudent(null);
       setActionType(null);
       setActionReason('');
       setTransferSelectedSchool(null);
       setTransferExternalSchoolName('');
-      loadData();
-      loadGlobalStats(); // ⭐ rafraîchir les stats globales après action
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message || 'Action échouée', variant: 'error' });
+      // ⭐ Fermer le modal même en cas d'erreur (l'action a peut-être partiellement réussi)
+      setActionStudent(null);
+      setActionType(null);
+      setActionReason('');
+      setTransferSelectedSchool(null);
+      setTransferExternalSchoolName('');
     } finally {
+      // ⭐ TOUJOURS recharger les données, même en cas d'erreur.
+      // Ceci garantit que le tableau et les stats reflètent l'état réel
+      // de la base, même si l'action a partiellement réussi (ex: élève
+      // mis à ACTIVE mais erreur sur l'inscription).
       setIsProcessing(false);
+      loadData();
+      loadGlobalStats();
     }
   };
 

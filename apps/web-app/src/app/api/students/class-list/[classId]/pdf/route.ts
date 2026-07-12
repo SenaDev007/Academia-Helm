@@ -37,8 +37,13 @@ export async function GET(
       );
     }
 
+    // ⭐ Forward le paramètre mode (official | physical) au backend.
+    // Sans cela, le backend default à 'physical' même pour l'onglet Inscriptions (qui attend 'official').
+    const mode = request.nextUrl.searchParams.get('mode') || 'physical';
+
     const url = new URL(`${API_URL}/students/class-list/${encodeURIComponent(classId)}/pdf`);
     url.searchParams.append('academicYearId', academicYearId);
+    url.searchParams.append('mode', mode);
 
     const headers = await getProxyAuthHeaders(request);
     // On ne veut pas forcer Accept: application/json pour une réponse binaire

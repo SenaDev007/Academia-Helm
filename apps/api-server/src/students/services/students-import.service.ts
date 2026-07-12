@@ -59,6 +59,9 @@ export interface ImportRow {
   // Résolution (rempli pendant le run)
   resolvedSchoolLevelId?: string;
   resolvedClassId?: string;
+  /** ⭐ Classe officielle (AcademicClass) résolue depuis Class.officialClassId.
+   *  Permet de remplir StudentEnrollment.academicClassId lors de l'import. */
+  resolvedAcademicClassId?: string;
 }
 
 export interface ImportPreviewResult {
@@ -133,7 +136,16 @@ export class StudentsImportService {
     });
     const classes = await this.prisma.class.findMany({
       where: { tenantId },
-      select: { id: true, name: true, code: true, schoolLevelId: true },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        schoolLevelId: true,
+        // ⭐ Inclure la classe officielle (AcademicClass) rattachée à chaque section physique.
+        // Permet à l'import de remplir StudentEnrollment.academicClassId automatiquement.
+        officialClassId: true,
+        officialClass: { select: { id: true, name: true } },
+      },
     });
 
     const rows: ImportRow[] = [];
@@ -234,10 +246,25 @@ export class StudentsImportService {
         const schoolLevel = await this.resolveSchoolLevel(tenantId, row.schoolLevelName);
         const classId = await this.resolveClassId(tenantId, schoolLevel.id, row.className);
 
+        // ⭐ Résoudre la classe officielle (AcademicClass) depuis Class.officialClassId.
+        // Permet de remplir StudentEnrollment.academicClassId pour que l'élève apparaisse
+        // dans l'onglet Inscriptions (qui groupe par classe officielle).
+        let academicClassId: string | undefined = row.resolvedAcademicClassId;
+        if (!academicClassId && classId) {
+          const physicalClass = await this.prisma.class.findFirst({
+            where: { id: classId, tenantId },
+            select: { officialClassId: true },
+          });
+          if (physicalClass?.officialClassId) {
+            academicClassId = physicalClass.officialClassId;
+          }
+        }
+
         // Déterminer enrollmentType
         const enrollmentType = row.isNewStudent === false ? 'REPEAT' : 'NEW';
 
         // Créer l'élève + enrollment
+        // ⭐ On passe AROUND classId (section physique) ET academicClassId (classe officielle).
         const student = await this.lifecycleService.preRegister(tenantId, {
           academicYearId,
           schoolLevelId: schoolLevel.id,
@@ -248,6 +275,8 @@ export class StudentsImportService {
           placeOfBirth: row.placeOfBirth || undefined,
           nationality: row.nationality || undefined,
           classId: classId || undefined,
+          // ⭐ Classe officielle (AcademicClass) — résolue depuis Class.officialClassId
+          academicClassId,
           previousArrears: 0,
           enrollmentType,
         }, userId);
@@ -308,12 +337,16 @@ export class StudentsImportService {
     workbook.created = new Date();
 
     // ⭐ Récupérer toutes les classes physiques du tenant, triées par niveau puis par nom
-    // Note : le modèle Class n'a pas de champ isActive — on prend toutes les classes.
+    // Inclure la classe officielle (officialClass) pour l'afficher dans les instructions
+    // de la feuille — l'admin sait ainsi à quelle classe officielle correspond chaque section.
     const classes = await this.prisma.class.findMany({
       where: { tenantId },
       include: {
         schoolLevel: {
           select: { id: true, name: true, code: true, order: true },
+        },
+        officialClass: {
+          select: { id: true, name: true },
         },
       },
       orderBy: [
@@ -326,17 +359,19 @@ export class StudentsImportService {
       // Fallback : template par défaut avec une seule feuille
       this.logger.warn(`Aucune classe configurée pour le tenant ${tenantId} — template par défaut`);
       const ws = workbook.addWorksheet('Élèves');
-      this.applySheetLayout(ws, '', '');
+      this.applySheetLayout(ws, '', '', undefined);
       this.addInstructionsRow(ws);
     } else {
-      // ⭐ Une feuille par classe
+      // ⭐ Une feuille par classe physique (section)
       for (const cls of classes) {
-        // ⭐ Nom de feuille : nom de la classe (limité à 31 chars — limite Excel)
+        // ⭐ Nom de feuille : nom de la classe physique (limité à 31 chars — limite Excel)
         // + sanitized pour éviter les caractères interdits : \ / ? * [ ]
         const sheetName = this.sanitizeSheetName(cls.name || cls.code || `Classe-${cls.id.substring(0, 8)}`);
         const schoolLevelName = cls.schoolLevel?.name || '';
+        // ⭐ Nom de la classe officielle (AcademicClass) pour les instructions
+        const officialClassName = cls.officialClass?.name;
         const ws = workbook.addWorksheet(sheetName);
-        this.applySheetLayout(ws, schoolLevelName, cls.name);
+        this.applySheetLayout(ws, schoolLevelName, cls.name, officialClassName);
         this.addInstructionsRow(ws);
       }
     }
@@ -368,11 +403,14 @@ export class StudentsImportService {
 
   /**
    * Applique la mise en page standard à une feuille : en-têtes + exemples + bordures.
+   * @param officialClassName Nom de la classe officielle (AcademicClass) si la section
+   *                          physique est rattachée à une classe officielle.
    */
   private applySheetLayout(
     worksheet: ExcelJS.Worksheet,
     schoolLevelName: string,
     className: string,
+    officialClassName?: string,
   ): void {
     // Définir les colonnes avec largeurs
     worksheet.columns = StudentsImportService.HEADERS.map((header) => ({
@@ -422,10 +460,13 @@ export class StudentsImportService {
 
     // ⭐ Note en haut de feuille (ligne 4) indiquant la classe concernée
     worksheet.addRow([]);
-    const noteRow = worksheet.addRow([
-      `🏫 Feuille pour la classe : ${exampleClassName} (${exampleLevel}) — ` +
-      `le niveau et la classe sont déduits automatiquement du nom de cette feuille.`,
-    ]);
+    const noteText = officialClassName
+      ? `🏫 Feuille pour la section : ${exampleClassName} (niveau ${exampleLevel}) — ` +
+        `classe officielle : ${officialClassName}. ` +
+        `Le niveau, la section physique et la classe officielle sont déduits automatiquement du nom de cette feuille.`
+      : `🏫 Feuille pour la classe : ${exampleClassName} (${exampleLevel}) — ` +
+        `le niveau et la classe sont déduits automatiquement du nom de cette feuille.`;
+    const noteRow = worksheet.addRow([noteText]);
     noteRow.font = { italic: true, color: { argb: 'FF92400E' }, size: 10 };
   }
 
@@ -600,6 +641,8 @@ export class StudentsImportService {
         );
         if (clsAnyLevel) {
           row.resolvedClassId = clsAnyLevel.id;
+          // ⭐ Résoudre aussi la classe officielle (AcademicClass)
+          row.resolvedAcademicClassId = clsAnyLevel.officialClassId || undefined;
         } else {
           row.errors.push(
             `Classe "${row.className}" introuvable. Vérifiez le nom exact dans Paramètres > Classes`,
@@ -607,6 +650,8 @@ export class StudentsImportService {
         }
       } else {
         row.resolvedClassId = cls.id;
+        // ⭐ Résoudre aussi la classe officielle (AcademicClass)
+        row.resolvedAcademicClassId = cls.officialClassId || undefined;
       }
     }
     // Type d'élève obligatoire

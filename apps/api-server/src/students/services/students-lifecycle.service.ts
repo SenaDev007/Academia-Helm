@@ -144,6 +144,10 @@ export class StudentsLifecycleService {
       placeOfBirth?: string;
       regimeType?: string;
       classId?: string;
+      /** ⭐ Classe OFFICIELLE (AcademicClass) — ex: CE1, CP, 6ème.
+       *  Si non fournie mais que classId est fourni, on tente de la résoudre
+       *  via Class.officialClassId. */
+      academicClassId?: string;
       photoUrl?: string;
       npi?: string;
       previousArrears?: number;
@@ -157,6 +161,20 @@ export class StudentsLifecycleService {
 
     const enrollmentDate = new Date();
     const enrollmentType = data.enrollmentType || 'NEW';
+
+    // ⭐ Résoudre academicClassId si non fourni mais que classId est fourni.
+    // La classe physique (Class) a un FK officialClassId vers AcademicClass.
+    let resolvedAcademicClassId = data.academicClassId;
+    if (!resolvedAcademicClassId && data.classId) {
+      const physicalClass = await this.prisma.class.findFirst({
+        where: { id: data.classId, tenantId },
+        select: { officialClassId: true },
+      });
+      if (physicalClass?.officialClassId) {
+        resolvedAcademicClassId = physicalClass.officialClassId;
+      }
+    }
+
     const student = await this.prisma.student.create({
       data: {
         tenantId,
@@ -183,6 +201,9 @@ export class StudentsLifecycleService {
         schoolLevelId: data.schoolLevelId,
         studentId: student.id,
         classId: data.classId ?? null,
+        // ⭐ Classe officielle (AcademicClass) — résolue depuis le paramètre
+        // ou depuis Class.officialClassId si seul classId est fourni.
+        academicClassId: resolvedAcademicClassId ?? null,
         enrollmentType,
         enrollmentDate,
         status: ENROLLMENT_STATUS.PRE_REGISTERED,

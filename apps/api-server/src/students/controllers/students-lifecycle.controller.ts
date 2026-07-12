@@ -427,17 +427,17 @@ export class StudentsLifecycleController {
       .substring(0, 60);
     const fileName = `liste_${safeName}.pdf`;
 
-    // Supprimer l'ancien document stocké s'il existe (même classId + mode)
-    // ⭐ Inclut 'mode' dans les métadonnées pour éviter les collisions entre
-    // un PDF officiel et un PDF physique de la même classe.
+    // Supprimer l'ancien document stocké s'il existe (même classId + même mode)
+    // ⭐ Inclut 'mode' dans le filtre deleteMany pour éviter de supprimer un PDF
+    // de l'autre mode (ex: régénérer l'officiel ne doit pas supprimer le physique).
     await this.prisma.generatedDocument.deleteMany({
       where: {
         tenantId,
         documentType: 'CLASS_LIST_PDF',
-        metadata: {
-          path: ['classId'],
-          equals: classId,
-        },
+        AND: [
+          { metadata: { path: ['classId'], equals: classId } as any },
+          { metadata: { path: ['mode'], equals: pdfMode } as any },
+        ],
       },
     }).catch(() => {});
 

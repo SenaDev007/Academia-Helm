@@ -15,11 +15,15 @@ export async function GET(
     const academicYearId = request.nextUrl.searchParams.get('academicYearId');
     if (!academicYearId) return NextResponse.json({ error: 'academicYearId requis' }, { status: 400 });
 
+    // ⭐ Forward le paramètre mode (official | physical) au backend.
+    // Sans cela, le backend default à 'physical' et ne trouve pas un PDF généré en mode 'official'.
+    const mode = request.nextUrl.searchParams.get('mode') || 'physical';
+
     const headers = await getProxyAuthHeaders(request);
     delete (headers as any)['Accept'];
 
     const res = await fetch(
-      normalizeApiUrl(`${API_URL}/students/class-list/${encodeURIComponent(classId)}/pdf/stored?academicYearId=${encodeURIComponent(academicYearId)}`),
+      normalizeApiUrl(`${API_URL}/students/class-list/${encodeURIComponent(classId)}/pdf/stored?academicYearId=${encodeURIComponent(academicYearId)}&mode=${encodeURIComponent(mode)}`),
       { method: 'GET', headers, cache: 'no-store' },
     );
 

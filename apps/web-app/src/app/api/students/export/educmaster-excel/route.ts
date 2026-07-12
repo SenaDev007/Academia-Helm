@@ -19,33 +19,40 @@ export async function GET(request: NextRequest) {
     const url = new URL(`${API_URL}/students/export/educmaster-excel`);
     request.nextUrl.searchParams.forEach((value, key) => url.searchParams.append(key, value));
     const headers = await getProxyAuthHeaders(request);
+    // ⭐ Ne pas forcer Accept: application/json pour une réponse binaire (Excel).
+    // Le header Accept: application/json peut faire que le backend serialize le buffer en JSON.
+    delete (headers as any)['Accept'];
+
     const response = await fetch(normalizeApiUrl(url.toString()), { headers });
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Erreur');
       console.error('[BFF educmaster-excel] Backend error:', response.status, errorText.substring(0, 200));
       return NextResponse.json(
-        { message: errorText || 'Erreur lors de l\'export EDUCMASTER' },
+        { message: errorText || 'Erreur lors de l\'export Educmaster' },
         { status: response.status }
       );
     }
 
-    // Le backend retourne un fichier Excel (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
+    // ⭐ Utiliser Buffer.from(arrayBuffer) comme les routes PDF — passer l'ArrayBuffer
+    // brut à NextResponse peut corrompre le fichier Excel.
     const contentType = response.headers.get('content-type') || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     const disposition = response.headers.get('content-disposition') || 'attachment; filename="export.xlsx"';
-    const buffer = await response.arrayBuffer();
+    const buffer = Buffer.from(await response.arrayBuffer());
 
     return new NextResponse(buffer, {
       status: 200,
       headers: {
         'Content-Type': contentType,
         'Content-Disposition': disposition,
+        'Content-Length': String(buffer.length),
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
       },
     });
   } catch (error: any) {
     console.error('[BFF educmaster-excel] Error:', error.message);
     return NextResponse.json(
-      { message: error.message || 'Erreur lors de l\'export EDUCMASTER' },
+      { message: error.message || 'Erreur lors de l\'export Educmaster' },
       { status: 500 }
     );
   }

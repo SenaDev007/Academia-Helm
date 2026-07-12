@@ -85,26 +85,31 @@ export default function StudentHistoryContent() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {data.map((item) => (
+            {data.map((item: any) => {
+              // ⭐ L'API peut retourner soit { student: {...}, academicRecords: [...] }
+              // soit directement l'élève avec ses propriétés (firstName, lastName, etc.)
+              const student = item.student || item;
+              const academicRecords = item.academicRecords || item.studentEnrollments || [];
+              return (
               <tr key={item.id} className="hover:bg-blue-50/30 transition-colors group">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-gray-100 overflow-hidden flex items-center justify-center font-bold text-gray-400 group-hover:bg-purple-100 group-hover:text-purple-600 transition-all">
-                      {item.student.photoUrl ? (
-                        <img src={item.student.photoUrl} alt={`${item.student.firstName} ${item.student.lastName}`} className="w-full h-full object-cover" />
+                      {student.photoUrl ? (
+                        <img src={student.photoUrl} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        <>{item.student.lastName[0]}</>
+                        <>{student.lastName?.[0] || '?'}</>
                       )}
                     </div>
                     <div>
-                      <div className="text-sm font-bold text-gray-900">{item.student.lastName} {item.student.firstName}</div>
-                      <div className="text-[10px] font-mono text-gray-400 uppercase tracking-tighter">{item.student.matricule || 'Sans matricule'}</div>
+                      <div className="text-sm font-bold text-gray-900">{student.lastName} {student.firstName}</div>
+                      <div className="text-[10px] font-mono text-gray-400 uppercase tracking-tighter">{student.matricule || 'Sans matricule'}</div>
                     </div>
                   </div>
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-                    {(item.academicRecords || []).slice(0, 3).map((record, idx) => (
+                    {(academicRecords || []).slice(0, 3).map((record: any, idx: number) => (
                       <div key={record.id} className="relative flex items-center">
                         <div className={`flex flex-col p-2 rounded-lg border min-w-[120px] ${
                           record.isLocked ? 'bg-gray-50 border-gray-200 shadow-inner' : 'bg-white border-blue-100 shadow-sm'
@@ -131,19 +136,20 @@ export default function StudentHistoryContent() {
                         )}
                       </div>
                     ))}
-                    {item.academicRecords.length === 0 && (
-                      <span className="text-xs text-gray-400 italic">Aucun historique numÃ©risÃ©</span>
+                    {(academicRecords || []).length === 0 && (
+                      <span className="text-xs text-gray-400 italic">Aucun historique</span>
                     )}
                   </div>
                 </td>
                 <td className="px-6 py-4 text-right">
-                  <button className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-black transition-colors shadow-sm">
+                  <button className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 text-white text-xs font-medium rounded-lg hover:bg-slate-900 transition-colors shadow-sm">
                     <FileText className="w-3.5 h-3.5" />
                     Dossier Complet
                   </button>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
         {data.length === 0 && (

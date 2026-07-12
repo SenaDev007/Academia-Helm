@@ -44,6 +44,7 @@ interface StudentWithGuardians {
   firstName: string;
   lastName: string;
   matricule?: string;
+  photoUrl?: string | null;
   studentGuardians: StudentGuardian[];
 }
 
@@ -222,8 +223,12 @@ export default function StudentFamiliesContent() {
               <div className="p-3 flex-1 space-y-2">
                 {/* Enfant */}
                 <div className="flex items-center gap-2 p-2 rounded-lg border border-blue-50 bg-blue-50/30">
-                  <div className="w-8 h-8 rounded-full bg-white border border-blue-100 flex items-center justify-center text-blue-600">
-                    <User className="w-4 h-4" />
+                  <div className="w-8 h-8 rounded-full bg-white border border-blue-100 overflow-hidden flex items-center justify-center text-blue-600 shrink-0">
+                    {student.photoUrl ? (
+                      <img src={student.photoUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <User className="w-4 h-4" />
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-bold text-blue-900 truncate">{student.firstName} {student.lastName}</p>

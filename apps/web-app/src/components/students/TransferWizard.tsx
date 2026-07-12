@@ -57,26 +57,48 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
   const [studentSearch, setStudentSearch] = useState('');
   const [students, setStudents] = useState<StudentItem[]>([]);
   const [isLoadingStudents, setIsLoadingStudents] = useState(false);
+  // ⭐ Filtres niveau + classe (comme dans les autres onglets)
+  const [filterLevelId, setFilterLevelId] = useState<string>('');
+  const [filterClassId, setFilterClassId] = useState<string>('');
+  const [allClasses, setAllClasses] = useState<any[]>([]);
 
   // Recherche écoles
   const [schoolSearch, setSchoolSearch] = useState('');
   const [schools, setSchools] = useState<SchoolItem[]>([]);
   const [isLoadingSchools, setIsLoadingSchools] = useState(false);
 
+  // Charger les classes pour le filtre
+  useEffect(() => {
+    fetch('/api/all-classes', { credentials: 'include', cache: 'no-store' })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setAllClasses(Array.isArray(data) ? data : []))
+      .catch(() => setAllClasses([]));
+  }, []);
+
   // Charger les élèves actifs
-  const loadStudents = useCallback(async (query: string) => {
+  const loadStudents = useCallback(async (query: string, levelId?: string, classId?: string) => {
     if (!academicYear?.id) return;
     setIsLoadingStudents(true);
     try {
       const params: Record<string, string> = {
         academicYearId: academicYear.id,
-        limit: '50',
+        limit: '200',
       };
       if (query) params.search = query;
+      if (levelId && levelId !== 'ALL') params.schoolLevelId = levelId;
       const data = await studentsService.getAll(params);
-      const list = Array.isArray(data) ? data : (data?.data || []);
+      let list = Array.isArray(data) ? data : (data?.data || []);
       // Filtrer uniquement les élèves actifs (transférables)
-      setStudents(list.filter((s: any) => s.status === 'ACTIVE' && s.isActive !== false));
+      list = list.filter((s: any) => s.status === 'ACTIVE' && s.isActive !== false);
+      // ⭐ Filtrer par classe si sélectionnée (côté client)
+      if (classId) {
+        list = list.filter((s: any) => {
+          // Vérifier dans studentEnrollments
+          return s.studentEnrollments?.some((e: any) => e.classId === classId)
+            || s.classId === classId;
+        });
+      }
+      setStudents(list);
     } catch (e: any) {
       console.error('Failed to load students:', e);
     } finally {
@@ -100,9 +122,9 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
 
   useEffect(() => {
     if (isOpen && step === 1) {
-      loadStudents(studentSearch);
+      loadStudents(studentSearch, filterLevelId, filterClassId);
     }
-  }, [isOpen, step, studentSearch, loadStudents]);
+  }, [isOpen, step, studentSearch, filterLevelId, filterClassId, loadStudents]);
 
   useEffect(() => {
     if (isOpen && step === 2) {
@@ -119,6 +141,8 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
     setTransferMessage('');
     setStudentSearch('');
     setSchoolSearch('');
+    setFilterLevelId('');
+    setFilterClassId('');
     onClose();
   };
 
@@ -202,15 +226,42 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
           {/* Étape 1 : Sélection élève */}
           {step === 1 && (
             <div className="space-y-3">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  value={studentSearch}
-                  onChange={(e) => setStudentSearch(e.target.value)}
-                  placeholder="Rechercher par nom ou matricule..."
-                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+              {/* ⭐ Filtres niveau + classe + recherche (comme dans les autres onglets) */}
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr] gap-2">
+                <select
+                  value={filterLevelId}
+                  onChange={(e) => { setFilterLevelId(e.target.value); setFilterClassId(''); }}
+                  className="border border-slate-200 rounded-lg px-2 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Tous les niveaux</option>
+                  <option value="MATERNELLE">Maternelle</option>
+                  <option value="PRIMAIRE">Primaire</option>
+                  <option value="SECONDAIRE">Secondaire</option>
+                </select>
+                <select
+                  value={filterClassId}
+                  onChange={(e) => setFilterClassId(e.target.value)}
+                  disabled={!filterLevelId}
+                  className="border border-slate-200 rounded-lg px-2 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                >
+                  <option value="">Toutes les classes</option>
+                  {allClasses
+                    .filter(c => !filterLevelId || c.schoolLevel?.code === filterLevelId)
+                    .map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))
+                  }
+                </select>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={studentSearch}
+                    onChange={(e) => setStudentSearch(e.target.value)}
+                    placeholder="Rechercher par nom..."
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
               {isLoadingStudents ? (
                 <div className="flex items-center justify-center py-8"><Loader2 className="w-6 h-6 text-blue-500 animate-spin" /></div>

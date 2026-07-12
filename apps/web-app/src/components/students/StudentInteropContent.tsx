@@ -16,10 +16,9 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { toast } from '@/components/ui/toast';
 import { studentsService } from '@/services/students.service';
 import {
-  Globe, FileJson, Loader2, Download, RefreshCw, Zap,
+  Globe, Loader2, Download,
   CheckCircle2, AlertCircle,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 export default function StudentInteropContent() {
   const { academicYear } = useModuleContext();
@@ -79,13 +78,16 @@ export default function StudentInteropContent() {
           .map((level) => (
             <div key={level.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 hover:shadow-md transition">
               <div className="flex items-center justify-between mb-3">
-                <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center">
-                  <FileJson className="w-5 h-5 text-blue-600" />
+                {/* ⭐ Icône Excel officielle (vert Excel) */}
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#E8F5E9' }}>
+                  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="#217346">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 7V3.5L18.5 9H13z"/>
+                    <text x="8" y="18" fontSize="8" fill="white" fontWeight="bold">X</text>
+                  </svg>
                 </div>
-                <span className="text-[9px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded border border-blue-100">V1.4</span>
               </div>
               <h4 className="text-sm font-bold text-slate-800 mb-1">EDUCMASTER — {level.label}</h4>
-              <p className="text-xs text-slate-500 mb-3">Génération du fichier Excel pour le niveau {level.label.toLowerCase()}.</p>
+              <p className="text-xs text-slate-500 mb-3">Génération du fichier Excel conforme au template gouvernemental pour le niveau {level.label.toLowerCase()}.</p>
               <button
                 onClick={() => handleExportEducmaster(level)}
                 disabled={!!syncingLevelId}
@@ -97,25 +99,6 @@ export default function StudentInteropContent() {
             </div>
           ))
         }
-
-        {/* ANIP — bientôt disponible */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center">
-              <RefreshCw className="w-5 h-5 text-purple-600" />
-            </div>
-            <span className="text-[9px] font-bold bg-purple-50 text-purple-600 px-2 py-0.5 rounded border border-purple-100">API</span>
-          </div>
-          <h4 className="text-sm font-bold text-slate-800 mb-1">ANIP — Registre NPI</h4>
-          <p className="text-xs text-slate-500 mb-3">Synchronisation des identités via le numéro NPI national (Bénin).</p>
-          <button
-            disabled
-            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-400 bg-slate-100 rounded-lg cursor-not-allowed"
-          >
-            <Zap className="w-3.5 h-3.5" />
-            Bientôt disponible
-          </button>
-        </div>
       </div>
 
       {/* Rappel de conformité */}

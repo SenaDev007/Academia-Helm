@@ -61,9 +61,13 @@ export class EducmasterExcelExportService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Génère un fichier Excel EDUCMASTER avec une feuille par classe du niveau demandé.
+   * Génère un fichier Excel EDUCMASTER avec une feuille par classe OFFICIELLE (AcademicClass) du niveau demandé.
    * - Maternelle : feuilles "Maternelle 1" et "Maternelle 2".
-   * - Primaire : une feuille par classe (CI, CP, CE1, CE2, CM1, CM2 selon les classes existantes).
+   * - Primaire : une feuille par classe (CI, CP, CE1, CE2, CM1, CM2 selon les classes officielles existantes).
+   *
+   * ⭐ IMPORTANT : On regroupe par CLASSE OFFICIELLE (AcademicClass), pas par classe physique (Class).
+   * Tous les élèves d'une classe officielle (ex: "CE1") sont regroupés dans la même feuille,
+   * quelle que soit leur section physique (CE1-A, CE1-B, etc.).
    */
   async generateWorkbook(options: EducmasterExcelExportOptions): Promise<EducmasterExcelExportResult> {
     const { tenantId, academicYearId, schoolLevelId } = options;
@@ -86,14 +90,27 @@ export class EducmasterExcelExportService {
       throw new NotFoundException('Niveau scolaire non trouvé');
     }
 
-    const classes = await this.prisma.class.findMany({
-      where: { tenantId, academicYearId, schoolLevelId },
+    // ⭐ Récupérer les classes OFFICIELLES (AcademicClass) pour ce niveau et cette année
+    // Les AcademicClass ont un levelId (AcademicLevel) lié au niveau pédagogique.
+    // On filtre par le code du schoolLevel (MATERNELLE, PRIMAIRE, etc.)
+    const schoolLevelCode = (schoolLevel.code || '').toUpperCase();
+    const academicClasses = await this.prisma.academicClass.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        isActive: true,
+        // Filtrer par le niveau pédagogique correspondant au schoolLevel
+        level: {
+          // AcademicLevel.name contient 'Maternelle', 'Primaire', 'Secondaire'
+          name: { contains: schoolLevel.name, mode: 'insensitive' },
+        },
+      },
       orderBy: { code: 'asc' },
     });
 
-    if (classes.length === 0) {
+    if (academicClasses.length === 0) {
       throw new NotFoundException(
-        `Aucune classe trouvée pour ce niveau (année ${academicYearId}, niveau ${schoolLevelId})`,
+        `Aucune classe officielle trouvée pour ce niveau (année ${academicYearId}, niveau ${schoolLevelId})`,
       );
     }
 
@@ -103,15 +120,16 @@ export class EducmasterExcelExportService {
 
     const sheetNames: string[] = [];
 
-    for (const cls of classes) {
-      const sheetName = this.sanitizeSheetName(cls.name);
+    for (const ac of academicClasses) {
+      const sheetName = this.sanitizeSheetName(ac.name);
       const sheet = workbook.addWorksheet(sheetName, {
-        headerFooter: { firstHeader: cls.name, firstFooter: 'Academia Helm - Export EDUCMASTER' },
+        headerFooter: { firstHeader: ac.name, firstFooter: 'Academia Helm - Export EDUCMASTER' },
       });
       sheetNames.push(sheetName);
 
-      const students = await this.getStudentsByClass(tenantId, academicYearId, cls.id);
-      this.writeSheet(sheet, columns, students, cls.name);
+      // ⭐ Récupérer les élèves de cette classe officielle via les inscriptions
+      const students = await this.getStudentsByAcademicClass(tenantId, academicYearId, ac.id);
+      this.writeSheet(sheet, columns, students, ac.name);
     }
 
     const raw = await workbook.xlsx.writeBuffer();
@@ -150,6 +168,80 @@ export class EducmasterExcelExportService {
   private sanitizeSheetName(name: string): string {
     const sanitized = name.replace(/[\\/*?:\[\]]/g, ' ').trim();
     return sanitized.slice(0, 31) || 'Feuille';
+  }
+
+  /**
+   * ⭐ Récupère les élèves d'une classe OFFICIELLE (AcademicClass) via les inscriptions.
+   * Les inscriptions ont un academicClassId qui pointe vers l'AcademicClass.
+   */
+  private async getStudentsByAcademicClass(
+    tenantId: string,
+    academicYearId: string,
+    academicClassId: string,
+  ) {
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        academicClassId,
+        status: { in: ['ACTIVE', 'ADMITTED', 'RE_ENROLLED', 'PENDING'] },
+      },
+      include: {
+        student: {
+          select: {
+            id: true,
+            studentCode: true,
+            firstName: true,
+            lastName: true,
+            dateOfBirth: true,
+            gender: true,
+            placeOfBirth: true,
+            nationality: true,
+            npi: true,
+          },
+        },
+      },
+    });
+
+    const studentIds = [...new Set(enrollments.map((e) => e.studentId))];
+    if (studentIds.length === 0) {
+      return [];
+    }
+
+    const guardiansByStudent = await this.prisma.studentGuardian.findMany({
+      where: { tenantId, studentId: { in: studentIds } },
+      include: { guardian: true },
+    });
+
+    const grouped = new Map<string, any[]>();
+    for (const sg of guardiansByStudent) {
+      const list = grouped.get(sg.studentId) ?? [];
+      list.push({
+        guardian: sg.guardian,
+        relationship: sg.relationship,
+        isPrimary: sg.isPrimary,
+      });
+      grouped.set(sg.studentId, list);
+    }
+
+    const seen = new Set<string>();
+    return enrollments
+      .filter((e) => {
+        if (seen.has(e.studentId)) return false;
+        seen.add(e.studentId);
+        return true;
+      })
+      .map((e) => {
+        const guardians = (grouped.get(e.studentId) ?? []).map((g: any) => ({
+          relationship: g.relationship,
+          isPrimary: g.isPrimary,
+          firstName: g.guardian.firstName,
+          lastName: g.guardian.lastName,
+          phone: g.guardian.phone,
+          address: g.guardian.address,
+        }));
+        return { student: e.student, guardians };
+      });
   }
 
   private async getStudentsByClass(

@@ -431,7 +431,7 @@ export default function StudentsModulePage() {
             { id: 'families', label: 'Familles', icon: <User className="w-4 h-4" /> },
             { id: 'transfers', label: 'Transferts & Mobilité', icon: <ArrowRightLeft className="w-4 h-4" /> },
             { id: 'history', label: 'Historique Scolaire', icon: <Archive className="w-4 h-4" /> },
-            { id: 'educmaster', label: 'EDUCMASTER', icon: <Globe className="w-4 h-4" /> },
+            { id: 'educmaster', label: 'Educmaster', icon: <Globe className="w-4 h-4" /> },
             { id: 'analytics', label: 'ORION, Stats & Audit', icon: <Activity className="w-4 h-4" /> },
           ],
         }}

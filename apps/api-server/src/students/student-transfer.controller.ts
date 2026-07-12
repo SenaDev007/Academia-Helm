@@ -43,13 +43,13 @@ export class StudentTransferController {
   }
 
   @Post(':id/confirm-exit')
-  async confirmExit(@Param('id') id: string) {
-    return this.transferService.confirmSourceExit(id);
+  async confirmExit(@Param('id') id: string, @Req() req: any) {
+    return this.transferService.confirmSourceExit(id, req.user?.userId);
   }
 
   @Post(':id/execute')
-  async execute(@Param('id') id: string) {
-    return this.transferService.executeTransfer(id);
+  async execute(@Param('id') id: string, @Req() req: any) {
+    return this.transferService.executeTransfer(id, req.user?.userId);
   }
 
   @Get(':id/dossier')

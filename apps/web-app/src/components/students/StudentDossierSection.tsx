@@ -26,6 +26,10 @@ import {
   Users,
   Lock,
   Shield,
+  ClipboardList,
+  AlertTriangle,
+  Activity,
+  Settings,
 } from 'lucide-react';
 import { formatGradeLabel, formatCurrency } from '@/lib/utils';
 import { studentsService } from '@/services/students.service';
@@ -46,6 +50,12 @@ interface DossierData {
     matricule: string;
     status: string;
     institution: string;
+    // ⭐ Champs enrichis (Module Élèves §8)
+    primaryLanguage?: string | null;
+    address?: string | null;
+    photoUrl?: string | null;
+    legalDocumentType?: string | null;
+    legalDocumentNumber?: string | null;
   };
   academicRecords: any[];
   disciplinarySummaries: any[];
@@ -88,6 +98,10 @@ interface DossierData {
     beforeData?: any;
     afterData?: any;
   }>;
+  // ⭐ Champs enrichis pour les nouveaux onglets
+  enrollments?: any[];
+  classTransfers?: any[];
+  studentAuditLogs?: any[];
 }
 
 type VerificationQR = { publicUrl: string; qrImage: string; isActive: boolean };
@@ -97,7 +111,7 @@ export default function StudentDossierSection({ studentId }: { studentId: string
   const [dossier, setDossier] = useState<DossierData | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedTab, setSelectedTab] = useState<
-    'identity' | 'academic' | 'documents' | 'finance' | 'history' | 'card' | 'parents' | 'status'
+    'identity' | 'academic' | 'documents' | 'finance' | 'history' | 'card' | 'parents' | 'status' | 'admin' | 'observations' | 'orion' | 'audit'
   >('identity');
   const [academicYearId] = useState<string>('');
   const [historyData, setHistoryData] = useState<any>(null);
@@ -194,12 +208,15 @@ export default function StudentDossierSection({ studentId }: { studentId: string
           <nav className="flex -mb-px">
             {[
               { id: 'identity', label: 'Identité', icon: User },
+              { id: 'admin', label: 'Infos Admin', icon: ClipboardList },
               { id: 'academic', label: 'Scolarité', icon: BookOpen },
-              { id: 'parents', label: 'Parents', icon: Users },
+              { id: 'parents', label: 'Responsables', icon: Users },
               { id: 'finance', label: 'Finance', icon: DollarSign },
               { id: 'documents', label: 'Documents', icon: FileText },
-              { id: 'history', label: 'Historique', icon: History },
-              { id: 'status', label: 'Statut & Parcours', icon: Calendar },
+              { id: 'history', label: 'Parcours', icon: History },
+              { id: 'observations', label: 'Observations', icon: FileText },
+              { id: 'orion', label: 'Alertes ORION', icon: AlertTriangle },
+              { id: 'audit', label: 'Audit', icon: Shield },
               { id: 'card', label: 'Carte scolaire', icon: CreditCard },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -711,6 +728,244 @@ export default function StudentDossierSection({ studentId }: { studentId: string
                   </p>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ⭐ Onglet Informations administratives (Module Élèves §9) */}
+          {selectedTab === 'admin' && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-gray-900">Informations administratives</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Numéro de dossier</label>
+                  <p className="text-sm text-gray-900 font-mono">{dossier.identity.studentCode || 'N/A'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Date création dossier</label>
+                  <p className="text-sm text-gray-900">
+                    {dossier.auditTrail?.[0]?.createdAt
+                      ? new Date(dossier.auditTrail[0].createdAt).toLocaleDateString('fr-FR')
+                      : '—'}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Source du dossier</label>
+                  <p className="text-sm text-gray-900">
+                    {dossier.identity.matricule ? 'Admission' : 'Création directe'}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Statut administratif</label>
+                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                    dossier.identity.status === 'ACTIVE' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                  }`}>
+                    {dossier.identity.status}
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Régime scolaire</label>
+                  <p className="text-sm text-gray-900">
+                    {dossier.identity.regimeType === 'TEACHER_CHILD' ? 'Enfant enseignant'
+                      : dossier.identity.regimeType === 'SCHOLARSHIP' ? 'Boursier'
+                      : dossier.identity.regimeType === 'SPECIAL' ? 'Spécial'
+                      : 'Normal'}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Boursier</label>
+                  <p className="text-sm text-gray-900">
+                    {dossier.identity.regimeType === 'SCHOLARSHIP' ? 'Oui' : 'Non'}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Document légal</label>
+                  <p className="text-sm text-gray-900">
+                    {dossier.identity.legalDocumentType || '—'}
+                    {dossier.identity.legalDocumentNumber ? ` (n° ${dossier.identity.legalDocumentNumber})` : ''}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">NPI</label>
+                  <p className="text-sm text-gray-900 font-mono">{dossier.identity.npi || '—'}</p>
+                </div>
+              </div>
+              {dossier.enrollments && dossier.enrollments.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-900 mb-2">Inscriptions</h4>
+                  <div className="space-y-2">
+                    {dossier.enrollments.map((enr: any) => (
+                      <div key={enr.id} className="bg-gray-50 rounded-lg p-3 flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">
+                            {enr.academicYear?.name || enr.academicYearId}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {enr.class?.name || 'Sans classe'} · {enr.status}
+                          </p>
+                        </div>
+                        <span className="text-xs text-gray-400">
+                          {new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ⭐ Onglet Observations (Module Élèves §14) */}
+          {selectedTab === 'observations' && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-gray-900">Observations</h3>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-xs text-blue-800">
+                  Les observations peuvent être de type : administrative, pédagogique, disciplinaire, financière, familiale ou générale.
+                  Les observations sensibles sont protégées par permission.
+                </p>
+              </div>
+              {dossier.recentDisciplinaryActions && dossier.recentDisciplinaryActions.length > 0 ? (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-semibold text-gray-900">Observations disciplinaires</h4>
+                  {dossier.recentDisciplinaryActions.map((action: any) => (
+                    <div key={action.id} className="bg-gray-50 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-gray-700 uppercase">{action.actionType}</span>
+                        <span className="text-xs text-gray-400">
+                          {new Date(action.actionDate).toLocaleDateString('fr-FR')}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-700">{action.description}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-sm italic">Aucune observation enregistrée.</p>
+              )}
+            </div>
+          )}
+
+          {/* ⭐ Onglet Alertes ORION (Module Élèves §15) */}
+          {selectedTab === 'orion' && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-500" />
+                Alertes ORION — Dossier Élève
+              </h3>
+              <div className="space-y-3">
+                {(() => {
+                  const alerts: Array<{ severity: string; message: string }> = [];
+                  // Dossier incomplet
+                  if (!dossier.identity.matricule) {
+                    alerts.push({ severity: 'HIGH', message: 'Matricule manquant — l\'élève n\'a pas de matricule attribué.' });
+                  }
+                  // Responsable principal absent
+                  if (!dossier.guardians || dossier.guardians.length === 0) {
+                    alerts.push({ severity: 'HIGH', message: 'Aucun responsable légal défini pour cet élève.' });
+                  } else if (!dossier.guardians.some(g => g.isPrimary)) {
+                    alerts.push({ severity: 'MEDIUM', message: 'Aucun responsable principal désigné.' });
+                  }
+                  // Élève sans inscription active
+                  if (!dossier.enrollments || dossier.enrollments.length === 0) {
+                    alerts.push({ severity: 'MEDIUM', message: 'Aucune inscription active pour cette année.' });
+                  }
+                  // Documents manquants
+                  if (!dossier.documents || dossier.documents.length === 0) {
+                    alerts.push({ severity: 'LOW', message: 'Aucun document déposé dans le dossier.' });
+                  }
+                  if (alerts.length === 0) {
+                    return (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3">
+                        <span className="text-2xl">✅</span>
+                        <div>
+                          <p className="text-sm font-semibold text-green-800">Dossier complet</p>
+                          <p className="text-xs text-green-700">Aucune alerte détectée par ORION.</p>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return alerts.map((alert, i) => (
+                    <div key={i} className={`rounded-lg p-4 border flex items-start gap-3 ${
+                      alert.severity === 'HIGH' ? 'bg-rose-50 border-rose-200' :
+                      alert.severity === 'MEDIUM' ? 'bg-amber-50 border-amber-200' :
+                      'bg-blue-50 border-blue-200'
+                    }`}>
+                      <AlertTriangle className={`w-5 h-5 shrink-0 mt-0.5 ${
+                        alert.severity === 'HIGH' ? 'text-rose-600' :
+                        alert.severity === 'MEDIUM' ? 'text-amber-600' :
+                        'text-blue-600'
+                      }`} />
+                      <div>
+                        <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                          alert.severity === 'HIGH' ? 'text-rose-700' :
+                          alert.severity === 'MEDIUM' ? 'text-amber-700' :
+                          'text-blue-700'
+                        }`}>{alert.severity}</span>
+                        <p className="text-sm text-gray-700 mt-0.5">{alert.message}</p>
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* ⭐ Onglet Audit (Module Élèves §22) */}
+          {selectedTab === 'audit' && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Shield className="w-5 h-5 text-slate-600" />
+                Audit du dossier
+              </h3>
+              <p className="text-xs text-gray-500">
+                Traçabilité complète des modifications apportées au dossier de l'élève.
+                Conformément aux règles de sécurité, aucune suppression destructive n'est autorisée.
+              </p>
+              {dossier.auditTrail && dossier.auditTrail.length > 0 ? (
+                <div className="space-y-3">
+                  {dossier.auditTrail.map((entry) => (
+                    <div key={entry.id} className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">{entry.action}</span>
+                        <span className="text-xs text-gray-400">
+                          {new Date(entry.createdAt).toLocaleString('fr-FR')}
+                        </span>
+                      </div>
+                      {entry.userId && (
+                        <p className="text-xs text-gray-500 mb-1">Par : {entry.userId}</p>
+                      )}
+                      {entry.beforeData && entry.afterData && (
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                          <div className="bg-rose-50 rounded p-2">
+                            <p className="text-[10px] font-bold text-rose-700 uppercase mb-1">Avant</p>
+                            <pre className="text-[10px] text-gray-600 overflow-x-auto">{JSON.stringify(entry.beforeData, null, 2)}</pre>
+                          </div>
+                          <div className="bg-emerald-50 rounded p-2">
+                            <p className="text-[10px] font-bold text-emerald-700 uppercase mb-1">Après</p>
+                            <pre className="text-[10px] text-gray-600 overflow-x-auto">{JSON.stringify(entry.afterData, null, 2)}</pre>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : dossier.studentAuditLogs && dossier.studentAuditLogs.length > 0 ? (
+                <div className="space-y-3">
+                  {dossier.studentAuditLogs.map((log: any) => (
+                    <div key={log.id} className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">{log.action}</span>
+                        <span className="text-xs text-gray-400">
+                          {new Date(log.createdAt).toLocaleString('fr-FR')}
+                        </span>
+                      </div>
+                      {log.userId && <p className="text-xs text-gray-500">Par : {log.userId}</p>}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-sm italic">Aucune entrée d'audit disponible.</p>
+              )}
             </div>
           )}
 

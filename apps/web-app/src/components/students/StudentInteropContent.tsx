@@ -26,14 +26,16 @@ export default function StudentInteropContent() {
   const [syncingLevelId, setSyncingLevelId] = useState<string | null>(null);
   const [lastExport, setLastExport] = useState<string | null>(null);
 
-  const handleExportEducmaster = async (level: { id: string; code: string; label: string }) => {
+  const handleExportEducmaster = async (level: { id: string; code: string; label: string; schoolLevelId?: string | null }) => {
     if (!academicYear) {
       toast({ title: 'Erreur', description: 'Veuillez sélectionner une année scolaire', variant: 'error' });
       return;
     }
+    // ⭐ Utiliser schoolLevelId (UUID de school_levels) si disponible, sinon l'id (UUID education_levels)
+    const effectiveSchoolLevelId = level.schoolLevelId || level.id;
     setSyncingLevelId(level.id);
     try {
-      await studentsService.exportEducmasterExcel(academicYear.id, level.id);
+      await studentsService.exportEducmasterExcel(academicYear.id, effectiveSchoolLevelId);
       setLastExport(`${level.label} — ${new Date().toLocaleString('fr-FR')}`);
       toast({ title: '✅ Export généré', description: `Export EDUCMASTER ${level.label} téléchargé.`, variant: 'success' });
     } catch (e: any) {

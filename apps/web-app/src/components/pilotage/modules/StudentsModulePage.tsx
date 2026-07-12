@@ -705,8 +705,8 @@ export default function StudentsModulePage() {
         }
       />
 
-      {/* Assistant Stratégique SARA */}
-      <StudentSaraAssistant />
+      {/* ⭐ StudentSaraAssistant supprimé — le widget ORION global (OrionWidget) 
+           est disponible dans toute l'application via app/layout.tsx */}
 
       {/* Modals */}
       <FormModal

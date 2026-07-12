@@ -79,6 +79,7 @@ import { SyncModule } from './sync/sync.module';
 import { ScolariteModule } from './modules/scolarite/scolarite.module';
 import { FinancesModule } from './modules/finances/finances.module';
 import { AIModule } from './ai/ai.module';
+import { OrionAiModule } from './orion/orion-ai.module';
 import { CommonModule } from './common/common.module';
 import { SecurityModule } from './security/security.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
@@ -295,6 +296,9 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
 
     // IA Infrastructure Module (Gateway, MCP, Tool Calling)
     AIModule,
+
+    // ⭐ ORION AI Module (GLM-5.2 chat + analysis)
+    OrionAiModule,
 
     // IA ATLAS Module
     AtlasModule,

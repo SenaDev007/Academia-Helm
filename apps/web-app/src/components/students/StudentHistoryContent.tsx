@@ -62,26 +62,30 @@ export default function StudentHistoryContent() {
   if (isLoading) return <LoadingState message="Reconstitution des parcours..." />;
 
   return (
-    <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 border-l-4 border-l-purple-600">
-        <div className="flex items-center gap-4">
-          <div className="p-3 bg-purple-50 rounded-xl">
-            <History className="w-6 h-6 text-purple-600" />
-          </div>
-          <div>
-            <h3 className="text-lg font-bold text-gray-900">MÃ©moire Institutionnelle</h3>
-            <p className="text-sm text-gray-500">TrabilitÃ© des promotions, redoublements et dÃ©cisions de conseils</p>
+    <div className="space-y-4">
+      {/* Header — white card cohérent avec les autres onglets */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
+              <History className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Historique Scolaire</h2>
+              <p className="text-xs text-slate-500">Traçabilité des promotions, redoublements et décisions de conseils</p>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50/50">
+      {/* Tableau */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <table className="min-w-full divide-y divide-slate-200">
+          <thead className="bg-slate-50">
             <tr>
-              <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-widest">Ã‰lÃ¨ve</th>
-              <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-widest">Parcours (3 derniÃ¨res annÃ©es)</th>
-              <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-widest">Actions</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Élève</th>
+              <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Parcours (3 dernières années)</th>
+              <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">

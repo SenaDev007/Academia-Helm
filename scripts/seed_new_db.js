@@ -1,0 +1,409 @@
+// Recrée toutes les données essentielles sur la nouvelle BDD
+// 1. Country (Bénin)
+// 2. Tenant (école)
+// 3. School (détails école)
+// 4. User (admin/promoter)
+// 5. Role (PROMOTER)
+// 6. User_Role
+// 7. Academic Year (2026-2027)
+// 8. School Levels (Maternelle, Primaire, Secondaire)
+// 9. Education Levels + Cycles + Grades + Series
+// 10. Academic Levels + Cycles + Classes (officielles)
+// 11. Physical Classes
+
+const { Client } = require('/home/z/my-project/node_modules/pg');
+const crypto = require('crypto');
+
+const NEW_DB = 'postgresql://neondb_owner:npg_6KId8HblkNrZ@ep-mute-dawn-asgj3thg-pooler.c-4.eu-central-1.aws.neon.tech/AcademiaHelm?sslmode=require&channel_binding=require';
+
+// Hash password simple (bcrypt would be better but we'll use the same hash as before)
+// The password "CSPEB.fondé2021" was hashed with bcrypt in the old DB.
+// We'll set a known bcrypt hash.
+const BCRYPT_HASH = '$2b$10$8KzQXxQXxQXxQXxQXxQXxuQXxQXxQXxQXxQXxQXxQXxQXxQXxQXxQ'; // placeholder
+
+async function main() {
+  const client = new Client({ connectionString: NEW_DB, ssl: { rejectUnauthorized: false } });
+  await client.connect();
+  console.log('✅ Connected to new DB\n');
+
+  // IDs fixes (UUIDs générés)
+  const TENANT_ID = '59b8c348-ae5f-4d67-8fbd-af6aefa1f394';
+  const USER_ID = '1eb1cace-3006-4e13-941a-a76b600177ae';
+  const COUNTRY_ID = 'BJ';
+  const ACADEMIC_YEAR_ID = 'a7593470-e4f4-460a-b3b6-4dabe53bec2a';
+
+  // ─── 1. Country ───
+  console.log('🌍 Création du pays (Bénin)...');
+  await client.query(`
+    INSERT INTO "countries" ("id", "code", "name", "code3", "numericCode", "currencyCode", "currencySymbol", "phonePrefix", "flagEmoji", "isDefault", "isActive", "createdAt", "updatedAt")
+    VALUES ($1, 'BJ', 'Bénin', 'BEN', '204', 'XOF', 'FCFA', '+229', '🇧🇯', true, true, NOW(), NOW())
+    ON CONFLICT ("id") DO NOTHING
+  `, [COUNTRY_ID]);
+  console.log('  ✅ Bénin');
+
+  // ─── 2. Tenant ───
+  console.log('\n🏫 Création du tenant...');
+  await client.query(`
+    INSERT INTO "tenants" ("id", "name", "subdomain", "slug", "countryId", "type", "subscriptionStatus", "status", "subscriptionPlan", "createdAt", "updatedAt")
+    VALUES ($1, $2, $3, $4, $5, 'SCHOOL', 'TRIAL', 'active', 'free', NOW(), NOW())
+    ON CONFLICT ("id") DO NOTHING
+  `, [
+    TENANT_ID,
+    'Complexe Scolaire Privé Entrepreneurial et Bilingue - Eveil d\'Afrique Education',
+    'cspeb-eveildafriqueeducation',
+    'cspeb-eveildafriqueeducation',
+    COUNTRY_ID,
+  ]);
+  console.log('  ✅ Tenant créé');
+
+  // ─── 3. School (détails) ───
+  console.log('\n🏫 Création des détails école...');
+  await client.query(`
+    INSERT INTO "schools" ("id", "tenantId", "name", "abbreviation", "motto", "slogan", "address", "primaryPhone", "primaryEmail", "city", "department", "createdAt", "updatedAt")
+    VALUES (gen_random_uuid()::text, $1, $2, 'CSPEB', 'Excellence • Discipline • Travail', $3, 'Parakou', '+22900000000', 'salumerhel2036@gmail.com', 'Parakou', 'Borgou', NOW(), NOW())
+    ON CONFLICT DO NOTHING
+  `, [
+    TENANT_ID,
+    'Complexe Scolaire Privé Entrepreneurial et Bilingue - Eveil d\'Afrique Education',
+    'Eveil d\'Afrique Education',
+  ]);
+  console.log('  ✅ School details');
+
+  // ─── 4. User (admin/promoter) ───
+  // On doit hasher le mot de passe. Neon n'a pas bcrypt, on utilise crypt() de PostgreSQL
+  console.log('\n👤 Création de l\'utilisateur admin...');
+  // Utiliser pgcrypto pour hasher le mot de passe avec bcrypt
+  await client.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
+  await client.query(`
+    INSERT INTO "users" ("id", "tenantId", "email", "passwordHash", "firstName", "lastName", "role", "isSuperAdmin", "status", "createdAt", "updatedAt")
+    VALUES ($1, $2, $3, crypt($4, gen_salt('bf', 10)), $5, $6, 'PROMOTER', false, 'active', NOW(), NOW())
+    ON CONFLICT ("id") DO NOTHING
+  `, [
+    USER_ID,
+    TENANT_ID,
+    'salumerhel2036@gmail.com',
+    'CSPEB.fondé2021',
+    'Erhel',
+    'DEGBE',
+  ]);
+  console.log('  ✅ User créé (salumerhel2036@gmail.com)');
+
+  // ─── 5. Role (PROMOTER) ───
+  console.log('\n🔑 Création du rôle PROMOTER...');
+  const roleId = crypto.randomUUID();
+  await client.query(`
+    INSERT INTO "roles" ("id", "tenantId", "name", "description", "isSystemRole", "canAccessOrion", "canAccessAtlas", "createdAt", "updatedAt")
+    VALUES ($1, $2, 'PROMOTER', $3, true, true, true, NOW(), NOW())
+    ON CONFLICT DO NOTHING
+  `, [roleId, TENANT_ID, 'Promoteur de l\'établissement']);
+  console.log('  ✅ Role PROMOTER');
+
+  // ─── 6. User_Role ───
+  console.log('\n🔗 Assignation du rôle...');
+  await client.query(`
+    INSERT INTO "user_roles" ("userId", "roleId", "tenantId")
+    VALUES ($1, $2, $3)
+    ON CONFLICT DO NOTHING
+  `, [USER_ID, roleId, TENANT_ID]);
+  console.log('  ✅ User_Role');
+
+  // ─── 7. Academic Year ───
+  console.log('\n📅 Création de l\'année scolaire 2026-2027...');
+  await client.query(`
+    INSERT INTO "academic_years" ("id", "tenantId", "name", "label", "startDate", "endDate", "isActive", "isAutoGenerated", "isClosed", "officialStartDate", "admissionEnabled", "createdAt", "updatedAt")
+    VALUES ($1, $2, '2026-2027', 'Année scolaire 2026-2027', '2026-09-21', '2027-06-25', true, true, false, '2026-09-21', true, NOW(), NOW())
+    ON CONFLICT ("id") DO NOTHING
+  `, [ACADEMIC_YEAR_ID, TENANT_ID]);
+  console.log('  ✅ Année 2026-2027');
+
+  // ─── 8. School Levels ───
+  console.log('\n📚 Création des niveaux scolaires...');
+  const levels = [
+    { id: 'ea2e2f8a-d1bf-4c25-a4fd-8a48ad989f80', code: 'MATERNELLE', name: 'Maternelle', label: 'Maternelle', order: 1 },
+    { id: 'bc434610-8cf6-4415-a51a-cc5300cd99da', code: 'PRIMAIRE', name: 'Primaire', label: 'Primaire', order: 2 },
+    { id: '04db39dd-88fe-4431-9d8e-e7a29b501bd0', code: 'SECONDAIRE', name: 'Secondaire', label: 'Secondaire', order: 3 },
+  ];
+  for (const lv of levels) {
+    await client.query(`
+      INSERT INTO "school_levels" ("id", "tenantId", "code", "name", "label", "order", "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+      ON CONFLICT ("id") DO NOTHING
+    `, [lv.id, TENANT_ID, lv.code, lv.name, lv.label, lv.order]);
+  }
+  console.log('  ✅ Maternelle, Primaire, Secondaire');
+
+  // ─── 9. Education Levels ───
+  console.log('\n📖 Création des niveaux d\'enseignement...');
+  const eduLevels = [
+    { name: 'Maternelle', isEnabled: true, order: 1 },
+    { name: 'Primaire', isEnabled: true, order: 2 },
+    { name: 'Secondaire', isEnabled: true, order: 3 },
+  ];
+  for (const el of eduLevels) {
+    await client.query(`
+      INSERT INTO "education_levels" ("id", "tenantId", "name", "isEnabled", "order", "createdAt", "updatedAt")
+      VALUES (gen_random_uuid()::text, $1, $2, $3, $4, NOW(), NOW())
+      ON CONFLICT DO NOTHING
+    `, [TENANT_ID, el.name, el.isEnabled, el.order]);
+  }
+  console.log('  ✅ Education levels');
+
+  // ─── 10. Education Cycles + Grades ───
+  console.log('\n🔄 Création des cycles et grades...');
+
+  // Récupérer les education_levels IDs
+  const eduLevelsRes = await client.query('SELECT id, name FROM "education_levels" WHERE "tenantId" = $1', [TENANT_ID]);
+  const eduLevelMap = {};
+  eduLevelsRes.rows.forEach(r => { eduLevelMap[r.name] = r.id; });
+
+  // Récupérer les education_cycles existants (ou les créer)
+  const existingCycles = await client.query('SELECT id, name FROM "education_cycles"');
+  const cycleMap = {};
+  existingCycles.rows.forEach(r => { cycleMap[r.name] = r.id; });
+
+  // Maternelle cycles
+  let matCycleId = cycleMap['Maternelle'];
+  if (!matCycleId) {
+    matCycleId = crypto.randomUUID();
+    await client.query(`INSERT INTO "education_cycles" ("id", "levelId", "name", "order", "createdAt", "updatedAt")
+      VALUES ($1, $2, 'Maternelle', 1, NOW(), NOW()) ON CONFLICT DO NOTHING`, [matCycleId, eduLevelMap['Maternelle']]);
+  }
+
+  const mat1GradeId = crypto.randomUUID();
+  const mat2GradeId = crypto.randomUUID();
+  await client.query(`INSERT INTO "education_grades" ("id", "cycleId", "name", "code", "order", "createdAt", "updatedAt")
+    VALUES ($1, $2, 'Maternelle 1', 'MAT1', 1, NOW(), NOW()) ON CONFLICT DO NOTHING`, [mat1GradeId, matCycleId]);
+  await client.query(`INSERT INTO "education_grades" ("id", "cycleId", "name", "code", "order", "createdAt", "updatedAt")
+    VALUES ($1, $2, 'Maternelle 2', 'MAT2', 2, NOW(), NOW()) ON CONFLICT DO NOTHING`, [mat2GradeId, matCycleId]);
+
+  // Primaire cycles
+  let priCycleId = cycleMap['Primaire'];
+  if (!priCycleId) {
+    priCycleId = crypto.randomUUID();
+    await client.query(`INSERT INTO "education_cycles" ("id", "levelId", "name", "order", "createdAt", "updatedAt")
+      VALUES ($1, $2, 'Primaire', 1, NOW(), NOW()) ON CONFLICT DO NOTHING`, [priCycleId, eduLevelMap['Primaire']]);
+  }
+
+  const priGrades = [
+    { name: 'CI', code: 'CI', order: 1 },
+    { name: 'CP', code: 'CP', order: 2 },
+    { name: 'CE1', code: 'CE1', order: 3 },
+    { name: 'CE2', code: 'CE2', order: 4 },
+    { name: 'CM1', code: 'CM1', order: 5 },
+    { name: 'CM2', code: 'CM2', order: 6 },
+  ];
+  for (const g of priGrades) {
+    await client.query(`INSERT INTO "education_grades" ("id", "cycleId", "name", "code", "order", "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) ON CONFLICT DO NOTHING`, [crypto.randomUUID(), priCycleId, g.name, g.code, g.order]);
+  }
+
+  // Secondaire cycles
+  let secCycle1Id = cycleMap['Premier cycle'];
+  if (!secCycle1Id) {
+    secCycle1Id = crypto.randomUUID();
+    await client.query(`INSERT INTO "education_cycles" ("id", "levelId", "name", "order", "createdAt", "updatedAt")
+      VALUES ($1, $2, 'Premier cycle', 1, NOW(), NOW()) ON CONFLICT DO NOTHING`, [secCycle1Id, eduLevelMap['Secondaire']]);
+  }
+  let secCycle2Id = cycleMap['Second cycle'];
+  if (!secCycle2Id) {
+    secCycle2Id = crypto.randomUUID();
+    await client.query(`INSERT INTO "education_cycles" ("id", "levelId", "name", "order", "createdAt", "updatedAt")
+      VALUES ($1, $2, 'Second cycle', 2, NOW(), NOW()) ON CONFLICT DO NOTHING`, [secCycle2Id, eduLevelMap['Secondaire']]);
+  }
+
+  const secGrades = [
+    { cycleId: secCycle1Id, name: '6ème', code: '6E', order: 1 },
+    { cycleId: secCycle1Id, name: '5ème', code: '5E', order: 2 },
+    { cycleId: secCycle1Id, name: '4ème', code: '4E', order: 3 },
+    { cycleId: secCycle1Id, name: '3ème', code: '3E', order: 4 },
+    { cycleId: secCycle2Id, name: '2nde', code: '2NDE', order: 5 },
+    { cycleId: secCycle2Id, name: '1ère', code: '1ERE', order: 6 },
+    { cycleId: secCycle2Id, name: 'Terminale', code: 'TLE', order: 7 },
+  ];
+  for (const g of secGrades) {
+    await client.query(`INSERT INTO "education_grades" ("id", "cycleId", "name", "code", "order", "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) ON CONFLICT DO NOTHING`, [crypto.randomUUID(), g.cycleId, g.name, g.code, g.order]);
+  }
+  console.log('  ✅ Cycles et grades créés');
+
+  // ─── 11. Academic Levels + Cycles + Classes (officielles) ───
+  console.log('\n🎓 Création des classes officielles (AcademicClass)...');
+
+  // Récupérer les academic_levels existants (ou les créer)
+  const existingAcLevels = await client.query('SELECT id, name FROM "pedagogy_academic_levels" WHERE "tenantId" = $1', [TENANT_ID]);
+  const acLevelMap = {};
+  existingAcLevels.rows.forEach(r => { acLevelMap[r.name] = r.id; });
+
+  let acLevelMatId = acLevelMap['Maternelle'];
+  if (!acLevelMatId) {
+    acLevelMatId = crypto.randomUUID();
+    await client.query(`INSERT INTO "pedagogy_academic_levels" ("id", "tenantId", "academicYearId", "name", "orderIndex", "isActive", "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, 'Maternelle', 1, true, NOW(), NOW()) ON CONFLICT DO NOTHING`, [acLevelMatId, TENANT_ID, ACADEMIC_YEAR_ID]);
+  }
+  let acLevelPriId = acLevelMap['Primaire'];
+  if (!acLevelPriId) {
+    acLevelPriId = crypto.randomUUID();
+    await client.query(`INSERT INTO "pedagogy_academic_levels" ("id", "tenantId", "academicYearId", "name", "orderIndex", "isActive", "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, 'Primaire', 2, true, NOW(), NOW()) ON CONFLICT DO NOTHING`, [acLevelPriId, TENANT_ID, ACADEMIC_YEAR_ID]);
+  }
+  let acLevelSecId = acLevelMap['Secondaire'];
+  if (!acLevelSecId) {
+    acLevelSecId = crypto.randomUUID();
+    await client.query(`INSERT INTO "pedagogy_academic_levels" ("id", "tenantId", "academicYearId", "name", "orderIndex", "isActive", "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, 'Secondaire', 3, true, NOW(), NOW()) ON CONFLICT DO NOTHING`, [acLevelSecId, TENANT_ID, ACADEMIC_YEAR_ID]);
+  }
+
+  // Récupérer les academic_cycles existants (ou les créer)
+  const existingAcCycles = await client.query('SELECT id, name FROM "pedagogy_academic_cycles" WHERE "tenantId" = $1', [TENANT_ID]);
+  const acCycleMap = {};
+  existingAcCycles.rows.forEach(r => { acCycleMap[r.name] = r.id; });
+
+  let acCycleMatId = acCycleMap['Maternelle'];
+  if (!acCycleMatId) {
+    acCycleMatId = crypto.randomUUID();
+    await client.query(`INSERT INTO "pedagogy_academic_cycles" ("id", "tenantId", "academicYearId", "levelId", "name", "orderIndex", "isActive", "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, $4, 'Maternelle', 1, true, NOW(), NOW()) ON CONFLICT DO NOTHING`, [acCycleMatId, TENANT_ID, ACADEMIC_YEAR_ID, acLevelMatId]);
+  }
+  let acCyclePriId = acCycleMap['Primaire'];
+  if (!acCyclePriId) {
+    acCyclePriId = crypto.randomUUID();
+    await client.query(`INSERT INTO "pedagogy_academic_cycles" ("id", "tenantId", "academicYearId", "levelId", "name", "orderIndex", "isActive", "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, $4, 'Primaire', 1, true, NOW(), NOW()) ON CONFLICT DO NOTHING`, [acCyclePriId, TENANT_ID, ACADEMIC_YEAR_ID, acLevelPriId]);
+  }
+  let acCycleSec1Id = acCycleMap['Premier cycle'];
+  if (!acCycleSec1Id) {
+    acCycleSec1Id = crypto.randomUUID();
+    await client.query(`INSERT INTO "pedagogy_academic_cycles" ("id", "tenantId", "academicYearId", "levelId", "name", "orderIndex", "isActive", "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, $4, 'Premier cycle', 1, true, NOW(), NOW()) ON CONFLICT DO NOTHING`, [acCycleSec1Id, TENANT_ID, ACADEMIC_YEAR_ID, acLevelSecId]);
+  }
+  let acCycleSec2Id = acCycleMap['Second cycle'];
+  if (!acCycleSec2Id) {
+    acCycleSec2Id = crypto.randomUUID();
+    await client.query(`INSERT INTO "pedagogy_academic_cycles" ("id", "tenantId", "academicYearId", "levelId", "name", "orderIndex", "isActive", "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, $4, 'Second cycle', 2, true, NOW(), NOW()) ON CONFLICT DO NOTHING`, [acCycleSec2Id, TENANT_ID, ACADEMIC_YEAR_ID, acLevelSecId]);
+  }
+
+  // Academic Classes (officielles)
+  const acClasses = [
+    { name: 'Maternelle 1', code: 'MAT1', levelId: acLevelMatId, cycleId: acCycleMatId },
+    { name: 'Maternelle 2', code: 'MAT2', levelId: acLevelMatId, cycleId: acCycleMatId },
+    { name: 'CI', code: 'CI', levelId: acLevelPriId, cycleId: acCyclePriId },
+    { name: 'CP', code: 'CP', levelId: acLevelPriId, cycleId: acCyclePriId },
+    { name: 'CE1', code: 'CE1', levelId: acLevelPriId, cycleId: acCyclePriId },
+    { name: 'CE2', code: 'CE2', levelId: acLevelPriId, cycleId: acCyclePriId },
+    { name: 'CM1', code: 'CM1', levelId: acLevelPriId, cycleId: acCyclePriId },
+    { name: 'CM2', code: 'CM2', levelId: acLevelPriId, cycleId: acCyclePriId },
+    { name: '6ème', code: '6E', levelId: acLevelSecId, cycleId: acCycleSec1Id },
+    { name: '5ème', code: '5E', levelId: acLevelSecId, cycleId: acCycleSec1Id },
+    { name: '4ème', code: '4E', levelId: acLevelSecId, cycleId: acCycleSec1Id },
+    { name: '3ème', code: '3E', levelId: acLevelSecId, cycleId: acCycleSec1Id },
+    { name: '2nde', code: '2NDE', levelId: acLevelSecId, cycleId: acCycleSec2Id },
+    { name: '1ère', code: '1ERE', levelId: acLevelSecId, cycleId: acCycleSec2Id },
+    { name: 'Terminale', code: 'TLE', levelId: acLevelSecId, cycleId: acCycleSec2Id },
+  ];
+  for (const ac of acClasses) {
+    await client.query(`
+      INSERT INTO "pedagogy_academic_classes" ("id", "tenantId", "academicYearId", "levelId", "cycleId", "name", "code", "isActive", "createdAt", "updatedAt")
+      VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, true, NOW(), NOW())
+      ON CONFLICT DO NOTHING
+    `, [TENANT_ID, ACADEMIC_YEAR_ID, ac.levelId, ac.cycleId, ac.name, ac.code]);
+  }
+  console.log('  ✅ 15 classes officielles créées');
+
+  // ─── 12. Physical Classes ───
+  console.log('\n🏫 Création des classes physiques...');
+  const schoolLevelIds = {
+    'MATERNELLE': 'ea2e2f8a-d1bf-4c25-a4fd-8a48ad989f80',
+    'PRIMAIRE': 'bc434610-8cf6-4415-a51a-cc5300cd99da',
+    'SECONDAIRE': '04db39dd-88fe-4431-9d8e-e7a29b501bd0',
+  };
+
+  // Récupérer les AcademicClass pour lier les classes physiques
+  const acRes = await client.query(`SELECT id, name, code FROM "pedagogy_academic_classes" WHERE "tenantId" = $1`, [TENANT_ID]);
+  const acMap = new Map(acRes.rows.map(r => [r.name, r.id]));
+
+  const physicalClasses = [
+    { name: 'Maternelle 1 - A', code: 'MAT1', level: 'MATERNELLE', officialName: 'Maternelle 1' },
+    { name: 'Maternelle 2 - A', code: 'MAT2', level: 'MATERNELLE', officialName: 'Maternelle 2' },
+    { name: 'CI - A', code: 'CI', level: 'PRIMAIRE', officialName: 'CI' },
+    { name: 'CP - A', code: 'CP', level: 'PRIMAIRE', officialName: 'CP' },
+    { name: 'CE1 - A', code: 'CE1', level: 'PRIMAIRE', officialName: 'CE1' },
+    { name: 'CE2 - A', code: 'CE2', level: 'PRIMAIRE', officialName: 'CE2' },
+    { name: 'CM1 - A', code: 'CM1', level: 'PRIMAIRE', officialName: 'CM1' },
+    { name: 'CM2 - A', code: 'CM2', level: 'PRIMAIRE', officialName: 'CM2' },
+    { name: '6ème A', code: '6E', level: 'SECONDAIRE', officialName: '6ème' },
+    { name: '5ème A', code: '5E', level: 'SECONDAIRE', officialName: '5ème' },
+    { name: '4ème A', code: '4E', level: 'SECONDAIRE', officialName: '4ème' },
+    { name: '3ème A', code: '3E', level: 'SECONDAIRE', officialName: '3ème' },
+    { name: '2nde A1 - A', code: '2NDE', level: 'SECONDAIRE', officialName: '2nde' },
+    { name: '2nde A2 - A', code: '2NDE', level: 'SECONDAIRE', officialName: '2nde' },
+    { name: '2nde B - A', code: '2NDE', level: 'SECONDAIRE', officialName: '2nde' },
+    { name: '2nde C - A', code: '2NDE', level: 'SECONDAIRE', officialName: '2nde' },
+    { name: '2nde D - A', code: '2NDE', level: 'SECONDAIRE', officialName: '2nde' },
+    { name: '2nde G1 - A', code: '2NDE', level: 'SECONDAIRE', officialName: '2nde' },
+    { name: '1ère A1 - A', code: '1ERE', level: 'SECONDAIRE', officialName: '1ère' },
+    { name: '1ère A2 - A', code: '1ERE', level: 'SECONDAIRE', officialName: '1ère' },
+    { name: '1ère B - A', code: '1ERE', level: 'SECONDAIRE', officialName: '1ère' },
+    { name: '1ère C - A', code: '1ERE', level: 'SECONDAIRE', officialName: '1ère' },
+    { name: '1ère D - A', code: '1ERE', level: 'SECONDAIRE', officialName: '1ère' },
+    { name: '1ère G1 - A', code: '1ERE', level: 'SECONDAIRE', officialName: '1ère' },
+    { name: 'Terminale A1 - A', code: 'TLE', level: 'SECONDAIRE', officialName: 'Terminale' },
+    { name: 'Terminale A2 - A', code: 'TLE', level: 'SECONDAIRE', officialName: 'Terminale' },
+    { name: 'Terminale B - A', code: 'TLE', level: 'SECONDAIRE', officialName: 'Terminale' },
+    { name: 'Terminale C - A', code: 'TLE', level: 'SECONDAIRE', officialName: 'Terminale' },
+    { name: 'Terminale D - A', code: 'TLE', level: 'SECONDAIRE', officialName: 'Terminale' },
+    { name: 'Terminale G1 - A', code: 'TLE', level: 'SECONDAIRE', officialName: 'Terminale' },
+  ];
+
+  for (const pc of physicalClasses) {
+    const officialClassId = acMap.get(pc.officialName) || null;
+    await client.query(`
+      INSERT INTO "classes" ("id", "tenantId", "academicYearId", "schoolLevelId", "name", "code", "capacity", "createdAt", "updatedAt", "officialClassId", "language")
+      VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, 30, NOW(), NOW(), $6, 'FR')
+      ON CONFLICT DO NOTHING
+    `, [TENANT_ID, ACADEMIC_YEAR_ID, schoolLevelIds[pc.level], pc.name, pc.code, officialClassId]);
+  }
+  console.log('  ✅ ' + physicalClasses.length + ' classes physiques créées');
+
+  // ─── 13. Tenant Identity Profile ───
+  console.log('\n📋 Création du profil d\'identité du tenant...');
+  await client.query(`
+    INSERT INTO "tenant_identity_profiles" ("id", "tenantId", "version", "isActive", "schoolName", "schoolType", "country", "currency", "timezone", "createdAt", "updatedAt")
+    VALUES (gen_random_uuid()::text, $1, 1, true, $2, 'PRIVEE', 'BJ', 'XOF', 'Africa/Porto-Novo', NOW(), NOW())
+    ON CONFLICT DO NOTHING
+  `, [TENANT_ID, 'Complexe Scolaire Privé Entrepreneurial et Bilingue - Eveil d\'Afrique Education']);
+  console.log('  ✅ Identity profile');
+
+  // ─── Vérification finale ───
+  console.log('\n📊 Vérification des données créées:');
+  const checks = [
+    { table: 'tenants', label: 'Tenants' },
+    { table: 'users', label: 'Users' },
+    { table: 'roles', label: 'Roles' },
+    { table: 'user_roles', label: 'User roles' },
+    { table: 'academic_years', label: 'Academic years' },
+    { table: 'school_levels', label: 'School levels' },
+    { table: 'education_levels', label: 'Education levels' },
+    { table: 'education_cycles', label: 'Education cycles' },
+    { table: 'education_grades', label: 'Education grades' },
+    { table: 'pedagogy_academic_levels', label: 'Academic levels' },
+    { table: 'pedagogy_academic_cycles', label: 'Academic cycles' },
+    { table: 'pedagogy_academic_classes', label: 'Academic classes' },
+    { table: 'classes', label: 'Physical classes' },
+    { table: 'tenant_identity_profiles', label: 'Identity profiles' },
+    { table: 'schools', label: 'Schools' },
+    { table: 'countries', label: 'Countries' },
+  ];
+  for (const c of checks) {
+    const res = await client.query(`SELECT COUNT(*)::int as c FROM "${c.table}"`);
+    console.log(`  ${res.rows[0].c > 0 ? '✅' : '❌'} ${c.label}: ${res.rows[0].c}`);
+  }
+
+  await client.end();
+  console.log('\n🎉 Données essentielles créées avec succès !');
+  console.log('Vous pouvez maintenant vous connecter avec:');
+  console.log('  Email: salumerhel2036@gmail.com');
+  console.log('  Mot de passe: CSPEB.fondé2021');
+}
+
+main().catch(e => { console.error('❌', e.message); process.exit(1); });

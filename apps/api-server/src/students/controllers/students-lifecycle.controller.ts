@@ -267,21 +267,29 @@ export class StudentsLifecycleController {
    * - Maternelle : 1 fichier, feuilles "Maternelle 1", "Maternelle 2".
    * - Primaire : 1 fichier, feuilles CI, CP, CE1, CE2, CM1, CM2.
    * Nom du fichier : NiveauScolaire_NomEcole_AnnéeScolaire.xlsx
-   * Query: academicYearId, schoolLevelId (obligatoires).
+   *
+   * Query: academicYearId (obligatoire), code OU schoolLevelId (au moins un des deux).
+   *        ⭐ `code` (MATERNELLE/PRIMAIRE/SECONDAIRE) est la méthode recommandée —
+   *        elle élimine l'ambiguïté entre education_levels.id et school_levels.id.
    */
   @Get('export/educmaster-excel')
   async exportEducmasterExcel(
     @TenantId() tenantId: string,
     @Query('academicYearId') academicYearId: string,
-    @Query('schoolLevelId') schoolLevelId: string,
+    @Query('code') code?: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
   ) {
-    if (!academicYearId || !schoolLevelId) {
-      throw new BadRequestException('academicYearId et schoolLevelId sont obligatoires');
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est obligatoire');
+    }
+    if (!code && !schoolLevelId) {
+      throw new BadRequestException('code (MATERNELLE/PRIMAIRE/SECONDAIRE) ou schoolLevelId est obligatoire');
     }
     const result = await this.educmasterExcel.generateWorkbook({
       tenantId,
       academicYearId,
       schoolLevelId,
+      code,
     });
     return new StreamableFile(result.buffer, {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

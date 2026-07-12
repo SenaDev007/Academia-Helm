@@ -5,9 +5,14 @@ import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 const API_URL = getApiBaseUrlForRoutes();
 
 /**
- * GET /api/students/export/educmaster-excel?academicYearId=...&schoolLevelId=...
- * Proxy vers le backend NestJS qui génère le fichier Excel EDUCMASTER.
+ * GET /api/students/export/educmaster-excel?academicYearId=...&code=...
+ * Proxy vers le backend NestJS qui génère le fichier Excel Educmaster.
  * Le backend retourne un StreamableFile (buffer Excel) qui est renvoyé tel quel.
+ *
+ * Query params :
+ *   - academicYearId (obligatoire) : UUID de l'année scolaire
+ *   - code (recommandé)            : MATERNELLE / PRIMAIRE / SECONDAIRE
+ *   - schoolLevelId (fallback)      : UUID de school_levels
  */
 export async function GET(request: NextRequest) {
   try {

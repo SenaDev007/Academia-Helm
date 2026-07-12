@@ -1224,13 +1224,17 @@ class StudentsService {
 
   /**
    * Export Educmaster Excel
+   * @param academicYearId UUID de l'année scolaire
+   * @param levelCode Code du niveau scolaire (MATERNELLE / PRIMAIRE / SECONDAIRE)
+   *                  — envoyé tel quel au backend qui résout le SchoolLevel par code+tenantId
+   *                  (méthode fiable, élimine l'ambiguïté entre education_levels.id et school_levels.id).
    */
   async exportEducmasterExcel(
     academicYearId: string,
-    schoolLevelId: string,
+    levelCode: string,
   ): Promise<void> {
     const res = await fetch(
-      `/api/students/export/educmaster-excel?academicYearId=${encodeURIComponent(academicYearId)}&schoolLevelId=${encodeURIComponent(schoolLevelId)}`,
+      `/api/students/export/educmaster-excel?academicYearId=${encodeURIComponent(academicYearId)}&code=${encodeURIComponent(levelCode)}`,
       {
         headers: {
           "x-tenant-id": localStorage.getItem("tenantId") || "",
@@ -1247,7 +1251,7 @@ class StudentsService {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `EDUCMASTER_EXPORT_${schoolLevelId}_${academicYearId}.xlsx`;
+    a.download = `Educmaster_${levelCode}_${academicYearId}.xlsx`;
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);

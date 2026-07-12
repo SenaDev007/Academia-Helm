@@ -1,9 +1,9 @@
 /**
  * ============================================================================
- * EDUCMASTER — Hub d'interopérabilité nationale
+ * Educmaster — Hub d'interopérabilité nationale
  * ============================================================================
  *
- * Export des données élèves vers les systèmes nationaux (EDUCMASTER, ANIP).
+ * Export des données élèves vers les systèmes nationaux (Educmaster, ANIP).
  * Design cohérent avec les autres onglets du module Élèves.
  * ============================================================================
  */
@@ -31,13 +31,14 @@ export default function StudentInteropContent() {
       toast({ title: 'Erreur', description: 'Veuillez sélectionner une année scolaire', variant: 'error' });
       return;
     }
-    // ⭐ Utiliser schoolLevelId (UUID de school_levels) si disponible, sinon l'id (UUID education_levels)
-    const effectiveSchoolLevelId = level.schoolLevelId || level.id;
+    // ⭐ On envoie le CODE (MATERNELLE/PRIMAIRE) au backend — méthode la plus fiable pour
+    // résoudre le SchoolLevel côté serveur (élimine l'ambiguïté entre education_levels.id
+    // et school_levels.id qui causait le 404 "Niveau scolaire non trouvé").
     setSyncingLevelId(level.id);
     try {
-      await studentsService.exportEducmasterExcel(academicYear.id, effectiveSchoolLevelId);
+      await studentsService.exportEducmasterExcel(academicYear.id, level.code);
       setLastExport(`${level.label} — ${new Date().toLocaleString('fr-FR')}`);
-      toast({ title: '✅ Export généré', description: `Export EDUCMASTER ${level.label} téléchargé.`, variant: 'success' });
+      toast({ title: '✅ Export généré', description: `Export Educmaster ${level.label} téléchargé.`, variant: 'success' });
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message || 'Erreur réseau lors de l\'export', variant: 'error' });
     } finally {
@@ -55,7 +56,7 @@ export default function StudentInteropContent() {
               <Globe className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">EDUCMASTER — Interopérabilité nationale</h2>
+              <h2 className="text-base font-bold text-slate-900">Educmaster — Interopérabilité nationale</h2>
               <p className="text-xs text-slate-500">Export des données élèves vers les systèmes ministériels</p>
             </div>
           </div>
@@ -74,7 +75,7 @@ export default function StudentInteropContent() {
 
       {/* Cartes d'export */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {/* EDUCMASTER par niveau */}
+        {/* Educmaster par niveau */}
         {availableLevels
           .filter(l => l.id !== 'ALL' && ['MATERNELLE', 'PRIMAIRE'].includes(l.code))
           .map((level) => (
@@ -88,7 +89,7 @@ export default function StudentInteropContent() {
                   </svg>
                 </div>
               </div>
-              <h4 className="text-sm font-bold text-slate-800 mb-1">EDUCMASTER — {level.label}</h4>
+              <h4 className="text-sm font-bold text-slate-800 mb-1">Educmaster — {level.label}</h4>
               <p className="text-xs text-slate-500 mb-3">Génération du fichier Excel conforme au template gouvernemental pour le niveau {level.label.toLowerCase()}.</p>
               <button
                 onClick={() => handleExportEducmaster(level)}

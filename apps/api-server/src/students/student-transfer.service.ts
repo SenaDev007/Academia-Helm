@@ -25,7 +25,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { EmailService } from '../communication/services/email.service';
-import { SmsService } from '../auth/services/sms.service';
+import { SmsService } from '../communication/services/sms.service';
 import { WhatsAppService } from '../communication/services/whatsapp.service';
 
 @Injectable()

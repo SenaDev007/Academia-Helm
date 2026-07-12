@@ -57,9 +57,10 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
   const [studentSearch, setStudentSearch] = useState('');
   const [students, setStudents] = useState<StudentItem[]>([]);
   const [isLoadingStudents, setIsLoadingStudents] = useState(false);
-  // ⭐ Filtres niveau + classe (comme dans les autres onglets)
+  // ⭐ Filtres niveau + classe (comme dans AdmissionsContent/EnrollmentsContent)
   const [filterLevelId, setFilterLevelId] = useState<string>('');
   const [filterClassId, setFilterClassId] = useState<string>('');
+  const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
   const [allClasses, setAllClasses] = useState<any[]>([]);
 
   // Recherche écoles
@@ -67,7 +68,15 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
   const [schools, setSchools] = useState<SchoolItem[]>([]);
   const [isLoadingSchools, setIsLoadingSchools] = useState(false);
 
-  // Charger les classes pour le filtre
+  // ⭐ Charger les niveaux scolaires depuis /api/school-levels (comme AdmissionsContent)
+  useEffect(() => {
+    fetch('/api/school-levels', { credentials: 'include' })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => setSchoolLevels(Array.isArray(data) ? data : []))
+      .catch(() => setSchoolLevels([]));
+  }, []);
+
+  // ⭐ Charger les classes physiques depuis /api/all-classes (comme les autres onglets)
   useEffect(() => {
     fetch('/api/all-classes', { credentials: 'include', cache: 'no-store' })
       .then(r => r.ok ? r.json() : [])
@@ -85,7 +94,15 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
         limit: '200',
       };
       if (query) params.search = query;
-      if (levelId && levelId !== 'ALL') params.schoolLevelId = levelId;
+      // ⭐ Utiliser l'UUID du schoolLevel (pas le code) pour filtrer côté backend
+      if (levelId) {
+        const level = schoolLevels.find(l => l.id === levelId);
+        if (level?.schoolLevelId) {
+          params.schoolLevelId = level.schoolLevelId;
+        } else {
+          params.schoolLevelId = levelId;
+        }
+      }
       const data = await studentsService.getAll(params);
       let list = Array.isArray(data) ? data : (data?.data || []);
       // Filtrer uniquement les élèves actifs (transférables)
@@ -93,7 +110,6 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
       // ⭐ Filtrer par classe si sélectionnée (côté client)
       if (classId) {
         list = list.filter((s: any) => {
-          // Vérifier dans studentEnrollments
           return s.studentEnrollments?.some((e: any) => e.classId === classId)
             || s.classId === classId;
         });
@@ -104,7 +120,7 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
     } finally {
       setIsLoadingStudents(false);
     }
-  }, [academicYear?.id]);
+  }, [academicYear?.id, schoolLevels]);
 
   // Charger les écoles destinataires
   const loadSchools = useCallback(async (query: string) => {
@@ -226,7 +242,7 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
           {/* Étape 1 : Sélection élève */}
           {step === 1 && (
             <div className="space-y-3">
-              {/* ⭐ Filtres niveau + classe + recherche (comme dans les autres onglets) */}
+              {/* ⭐ Filtres niveau + classe + recherche (comme dans AdmissionsContent) */}
               <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr] gap-2">
                 <select
                   value={filterLevelId}
@@ -234,9 +250,9 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
                   className="border border-slate-200 rounded-lg px-2 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Tous les niveaux</option>
-                  <option value="MATERNELLE">Maternelle</option>
-                  <option value="PRIMAIRE">Primaire</option>
-                  <option value="SECONDAIRE">Secondaire</option>
+                  {schoolLevels.map(l => (
+                    <option key={l.id} value={l.id}>{l.label || l.name || l.code}</option>
+                  ))}
                 </select>
                 <select
                   value={filterClassId}
@@ -245,12 +261,25 @@ export default function TransferWizard({ isOpen, onClose }: TransferWizardProps)
                   className="border border-slate-200 rounded-lg px-2 py-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                 >
                   <option value="">Toutes les classes</option>
-                  {allClasses
-                    .filter(c => !filterLevelId || c.schoolLevel?.code === filterLevelId)
-                    .map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))
-                  }
+                  {(() => {
+                    // ⭐ Filtrer les classes par niveau (comme AdmissionsContent)
+                    const selectedLevel = schoolLevels.find(l => l.id === filterLevelId);
+                    const levelCode = selectedLevel?.code?.toUpperCase() || '';
+                    const levelName = selectedLevel?.name?.toUpperCase() || '';
+                    return allClasses
+                      .filter(c => {
+                        if (!filterLevelId) return true;
+                        const classLevelName = (c.schoolLevel?.name || '').toUpperCase();
+                        const classLevelCode = (c.schoolLevel?.code || '').toUpperCase();
+                        return classLevelName === levelName ||
+                               classLevelCode === levelCode ||
+                               classLevelName.includes(levelCode) ||
+                               levelCode.includes(classLevelName);
+                      })
+                      .map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ));
+                  })()}
                 </select>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />

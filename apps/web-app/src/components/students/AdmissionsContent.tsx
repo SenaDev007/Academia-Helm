@@ -162,6 +162,9 @@ export default function AdmissionsContent() {
   const [isLoadingAdmissionSettings, setIsLoadingAdmissionSettings] = useState(false);
   const [isSavingAdmissionSettings, setIsSavingAdmissionSettings] = useState(false);
 
+  // ⭐ Sous-onglet actif dans Admissions : 'list' (liste des admissions) ou 'settings' (paramétrage)
+  const [admissionSubTab, setAdmissionSubTab] = useState<'list' | 'settings'>('list');
+
   // Modal de confirmation personnalisé (remplace window.confirm)
   // Type controls l'icône et la couleur du bouton pour s'adapter au contexte
   // de l'action (info=bleu pour soumettre, success=vert pour accepter/inscrire,
@@ -991,15 +994,6 @@ export default function AdmissionsContent() {
         </div>
 
         <div className="flex items-center space-x-2">
-          {/* ⭐ Bouton "Paramétrer admissions" — ouvre le modal de config des dates d'ouverture/clôture */}
-          <button
-            onClick={() => setIsAdmissionSettingsOpen(true)}
-            className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 text-sm font-semibold border border-slate-200 transition-all"
-            title="Paramétrer les dates d'ouverture et de clôture des admissions publiques"
-          >
-            <Settings className="w-4 h-4" />
-            <span className="hidden sm:inline">Paramétrer admissions</span>
-          </button>
           <button
             onClick={() => setIsCreateModalOpen(true)}
             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold shadow-md shadow-blue-200 transition-all active:scale-95"
@@ -1010,6 +1004,50 @@ export default function AdmissionsContent() {
         </div>
       </div>
 
+      {/* ⭐ Sous-onglets Admissions : Liste | Paramétrage */}
+      <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+        <button
+          onClick={() => setAdmissionSubTab('list')}
+          className={cn(
+            'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition',
+            admissionSubTab === 'list'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          )}
+        >
+          <FileText className="w-3.5 h-3.5" />
+          Liste des admissions
+        </button>
+        <button
+          onClick={() => setAdmissionSubTab('settings')}
+          className={cn(
+            'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition',
+            admissionSubTab === 'settings'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          )}
+        >
+          <Settings className="w-3.5 h-3.5" />
+          Paramétrage
+        </button>
+      </div>
+
+      {/* ⭐ Panneau Paramétrage (quand sous-onglet 'settings' est actif) */}
+      {admissionSubTab === 'settings' && (
+        <AdmissionSettingsPanel
+          academicYearId={academicYear?.id}
+          settings={admissionSettings}
+          setSettings={setAdmissionSettings}
+          isLoading={isLoadingAdmissionSettings}
+          isSaving={isSavingAdmissionSettings}
+          onLoad={loadAdmissionSettings}
+          onSave={handleSaveAdmissionSettings}
+        />
+      )}
+
+      {/* ⭐ Contenu Liste (quand sous-onglet 'list' est actif) */}
+      {admissionSubTab === 'list' && (
+      <>
       {/* Filter tabs with counters */}
       <div className="flex flex-wrap gap-1 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
         {FILTER_TABS.map(f => (
@@ -2006,8 +2044,10 @@ export default function AdmissionsContent() {
           </div>
         );
       })()}
+      </>
+      )}
 
-      {/* ⭐ Modal de paramétrage des admissions publiques */}
+      {/* ⭐ Modal de paramétrage des admissions publiques (legacy — garde pour compatibilité) */}
       {isAdmissionSettingsOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setIsAdmissionSettingsOpen(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -2110,6 +2150,167 @@ export default function AdmissionsContent() {
                 {isSavingAdmissionSettings ? 'Sauvegarde...' : 'Enregistrer'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Sous-composant : Panneau de paramétrage des admissions publiques ───
+// Affiché quand le sous-onglet 'settings' est actif dans AdmissionsContent.
+
+interface AdmissionSettingsPanelProps {
+  academicYearId?: string;
+  settings: {
+    admissionEnabled: boolean;
+    admissionOpenDate: string;
+    admissionCloseDate: string;
+  };
+  setSettings: React.Dispatch<React.SetStateAction<{
+    admissionEnabled: boolean;
+    admissionOpenDate: string;
+    admissionCloseDate: string;
+  }>>;
+  isLoading: boolean;
+  isSaving: boolean;
+  onLoad: () => void;
+  onSave: () => void;
+}
+
+function AdmissionSettingsPanel({
+  academicYearId,
+  settings,
+  setSettings,
+  isLoading,
+  isSaving,
+  onLoad,
+  onSave,
+}: AdmissionSettingsPanelProps) {
+  // Charger les paramètres au montage du panneau
+  useEffect(() => {
+    if (academicYearId) {
+      onLoad();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [academicYearId]);
+
+  // Calculer le statut actuel
+  const now = new Date();
+  const open = settings.admissionOpenDate ? new Date(settings.admissionOpenDate) : null;
+  const close = settings.admissionCloseDate ? new Date(settings.admissionCloseDate) : null;
+  let statusText = 'Ouvertes aux soumissions publiques';
+  let statusColor = 'bg-emerald-50 border-emerald-200 text-emerald-800';
+  if (!settings.admissionEnabled) {
+    statusText = 'Désactivées manuellement';
+    statusColor = 'bg-rose-50 border-rose-200 text-rose-800';
+  } else if (open && now < open) {
+    statusText = `Ouverture prévue le ${open.toLocaleDateString('fr-FR')}`;
+    statusColor = 'bg-amber-50 border-amber-200 text-amber-800';
+  } else if (close && now > close) {
+    statusText = `Clôturées depuis le ${close.toLocaleDateString('fr-FR')}`;
+    statusColor = 'bg-slate-100 border-slate-200 text-slate-700';
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+        <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+          <Settings className="w-5 h-5 text-slate-600" />
+          Paramétrage des admissions publiques
+        </h3>
+        <p className="text-xs text-slate-500 mt-1">
+          Configurez la période d'ouverture des admissions sur le portail public.
+          Hors de cette période, le portail public bloquera les nouvelles soumissions.
+        </p>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+        </div>
+      ) : (
+        <div className="px-6 py-6 space-y-6">
+          {/* Statut actuel */}
+          <div className={cn('rounded-lg p-4 border flex items-start gap-3', statusColor)}>
+            <Info className="w-5 h-5 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold">Statut actuel</p>
+              <p className="text-sm mt-0.5">{statusText}</p>
+            </div>
+          </div>
+
+          {/* Activation manuelle */}
+          <div>
+            <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Contrôle manuel</h4>
+            <label className="flex items-start gap-3 p-4 rounded-lg hover:bg-slate-50 cursor-pointer border border-slate-200 transition">
+              <input
+                type="checkbox"
+                checked={settings.admissionEnabled}
+                onChange={(e) => setSettings(prev => ({ ...prev, admissionEnabled: e.target.checked }))}
+                className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 mt-0.5"
+              />
+              <div>
+                <div className="text-sm font-semibold text-slate-700">Admissions activées</div>
+                <div className="text-xs text-slate-500 mt-0.5">
+                  Décochez pour désactiver immédiatement les admissions publiques.
+                  Cette option a la priorité sur les dates ci-dessous.
+                </div>
+              </div>
+            </label>
+          </div>
+
+          {/* Dates d'ouverture et clôture */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">
+                Date d'ouverture
+              </label>
+              <input
+                type="date"
+                value={settings.admissionOpenDate}
+                onChange={(e) => setSettings(prev => ({ ...prev, admissionOpenDate: e.target.value }))}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">
+                Laisser vide = ouvertes immédiatement (si activées).
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">
+                Date de clôture
+              </label>
+              <input
+                type="date"
+                value={settings.admissionCloseDate}
+                onChange={(e) => setSettings(prev => ({ ...prev, admissionCloseDate: e.target.value }))}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">
+                Laisser vide = ouvertes indéfiniment (si activées).
+              </p>
+            </div>
+          </div>
+
+          {/* Note informative */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-xs text-blue-800">
+            <Info className="w-4 h-4 inline mr-1" />
+            <strong>Comment ça fonctionne :</strong> Le portail public d'admissions vérifie
+            ces paramètres à chaque soumission. Si les admissions sont désactivées ou si la
+            date actuelle est hors de la période [ouverture, clôture], le portail affiche un
+            message informant que les admissions sont fermées et bloque la soumission.
+          </div>
+
+          {/* Bouton sauvegarder */}
+          <div className="flex justify-end pt-2 border-t border-slate-100">
+            <button
+              onClick={onSave}
+              disabled={isSaving}
+              className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg shadow-sm transition"
+            >
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {isSaving ? 'Sauvegarde...' : 'Enregistrer les paramètres'}
+            </button>
           </div>
         </div>
       )}

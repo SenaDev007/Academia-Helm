@@ -1,367 +1,736 @@
 /**
- * StudentTransferContent Component
- * 
- * Gestion de la mobilité scolaire : transferts inter-écoles
+ * ============================================================================
+ * TRANSFERTS & MOBILITÉ — Mobilité scolaire inter-écoles
+ * ============================================================================
+ *
+ * Gestion des transferts d'élèves ENTRE établissements du réseau Academia Helm.
+ * Distinct de « Sorties & Abandons » qui gère les sorties internes (archivage,
+ * retrait, réintégration).
+ *
+ * 7 sous-onglets :
+ *   1. Sortants       — transferts initiés par CETTE école vers d'autres
+ *   2. Entrants       — transferts reçus d'autres écoles (à traiter)
+ *   3. Demandes reçues — demandes en attente de validation
+ *   4. Dossiers transférés — transferts complétés
+ *   5. Historique     — tous les transferts (sortants + entrants)
+ *   6. Paramètres     — politiques de transfert + règles offline-first
+ *
+ * Backend : /students/transfers/*
+ * BFF : /api/students/transfers/*
+ * ============================================================================
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
-import { 
-  ArrowRightLeft, 
-  Send, 
-  Inbox, 
-  History as HistoryIcon, 
-  CheckCircle2, 
-  XCircle, 
-  Clock, 
-  Search,
-  Filter,
-  ArrowRight,
-  FileText,
-  User
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  ArrowRightLeft, Send, Inbox, History as HistoryIcon,
+  CheckCircle2, XCircle, Clock, Search, FileText, User,
+  Loader2, AlertCircle, ArrowRight, Settings as SettingsIcon,
+  RefreshCw, Eye, Check, X,
 } from 'lucide-react';
-import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
+import { studentsService } from '@/services/students.service';
+import { toast } from '@/components/ui/toast';
 import TransferWizard from './TransferWizard';
 
-export default function StudentTransferContent() {
-  const [activeTab, setActiveTab] = useState<'INTERNAL' | 'OUTGOING' | 'INCOMING' | 'REQUESTS' | 'DOSSIERS' | 'HISTORY' | 'SETTINGS'>('OUTGOING');
-  const [transfers, setTransfers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isWizardOpen, setIsWizardOpen] = useState(false);
+type SubTab = 'OUTGOING' | 'INCOMING' | 'REQUESTS' | 'DOSSIERS' | 'HISTORY' | 'SETTINGS';
 
-  useEffect(() => {
-    // Simulation de données avec double identification (addendum)
-    setTimeout(() => {
-      setTransfers([
-        {
-          id: 't1',
-          student: { 
-            firstName: 'Alice', 
-            lastName: 'Mensah', 
-            globalId: 'AH-STU-2026-000000045',
-            localMat: 'EPA/2026/045'
-          },
-          targetSchool: { name: "Lycée de l'Excellence" },
-          sourceSchool: { name: 'École Primaire Pilote' },
-          status: 'SENT_TO_DESTINATION',
-          date: new Date().toISOString(),
-          type: 'OUTGOING'
-        },
-        {
-          id: 't2',
-          student: { 
-            firstName: 'Koffi', 
-            lastName: 'Zinsou', 
-            globalId: 'AH-STU-2026-000000123',
-            localMat: 'CSL/2026/085'
-          },
-          targetSchool: { name: 'École Primaire Pilote' },
-          sourceSchool: { name: 'Complexe Scolaire La Joie' },
-          status: 'ACCEPTED_BY_DESTINATION',
-          date: new Date(Date.now() - 86400000).toISOString(),
-          type: 'INCOMING'
-        },
-        {
-          id: 't3',
-          student: { 
-            firstName: 'Aissatou', 
-            lastName: 'Diallo', 
-            globalId: 'AH-STU-2025-000000892',
-            localMat: 'EPA/2025/112'
-          },
-          targetSchool: { name: 'Groupe Scolaire Les Pépites' },
-          sourceSchool: { name: 'École Primaire Pilote' },
-          status: 'COMPLETED',
-          date: new Date(Date.now() - 7 * 86400000).toISOString(),
-          type: 'OUTGOING'
-        }
+interface TransferStudent {
+  id: string;
+  firstName: string;
+  lastName: string;
+  photoUrl?: string | null;
+  matricule?: string | null;
+  studentCode?: string | null;
+  globalStudentId?: string | null;
+}
+
+interface TransferSchool {
+  id: string;
+  name: string;
+  city?: string | null;
+}
+
+interface TransferRecord {
+  id: string;
+  student: TransferStudent;
+  studentId: string;
+  sourceSchoolId: string;
+  sourceSchool?: TransferSchool;
+  targetSchoolId: string;
+  targetSchool?: TransferSchool;
+  status: string;
+  motif?: string | null;
+  message?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  requestedAt?: string | null;
+  executedAt?: string | null;
+  decisionDate?: string | null;
+  academicYearId: string;
+}
+
+const STATUS_META: Record<string, { label: string; color: string }> = {
+  DRAFT: { label: 'Brouillon', color: 'bg-slate-50 text-slate-600 border-slate-200' },
+  REQUESTED: { label: 'Demandé', color: 'bg-amber-50 text-amber-700 border-amber-200' },
+  SENT_TO_DESTINATION: { label: 'Envoyé', color: 'bg-amber-50 text-amber-700 border-amber-200' },
+  ACCEPTED_BY_DESTINATION: { label: 'Accepté par destination', color: 'bg-blue-50 text-blue-700 border-blue-200' },
+  REJECTED_BY_DESTINATION: { label: 'Rejeté par destination', color: 'bg-rose-50 text-rose-700 border-rose-200' },
+  APPROVED_BY_SOURCE: { label: 'Approuvé par source', color: 'bg-blue-50 text-blue-700 border-blue-200' },
+  COMPLETED: { label: 'Complété', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  CANCELLED: { label: 'Annulé', color: 'bg-rose-50 text-rose-700 border-rose-200' },
+  ARCHIVED: { label: 'Archivé', color: 'bg-slate-100 text-slate-500 border-slate-200' },
+};
+
+function formatDate(d?: string | null) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+export default function StudentTransferContent() {
+  const [activeTab, setActiveTab] = useState<SubTab>('OUTGOING');
+  const [outgoing, setOutgoing] = useState<TransferRecord[]>([]);
+  const [incoming, setIncoming] = useState<TransferRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [actionTransfer, setActionTransfer] = useState<TransferRecord | null>(null);
+  const [actionType, setActionType] = useState<'approve' | 'reject' | 'confirm-exit' | 'execute' | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [dossierTransfer, setDossierTransfer] = useState<TransferRecord | null>(null);
+  const [dossierData, setDossierData] = useState<any>(null);
+  const [isLoadingDossier, setIsLoadingDossier] = useState(false);
+
+  // ─── Chargement des données ───
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [outData, inData] = await Promise.all([
+        studentsService.getOutgoingTransfers().catch(() => []),
+        studentsService.getIncomingTransfers().catch(() => []),
       ]);
-      setLoading(false);
-    }, 800);
+      setOutgoing(Array.isArray(outData) ? outData : []);
+      setIncoming(Array.isArray(inData) ? inData : []);
+    } catch (e: any) {
+      console.error('Failed to load transfers:', e);
+      toast({ title: 'Erreur', description: e.message || 'Impossible de charger les transferts', variant: 'error' });
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  const filteredTransfers = transfers.filter(t => t.type === activeTab || (activeTab === 'HISTORY' && ['EXECUTED', 'REJECTED'].includes(t.status)) || (activeTab === 'REQUESTS' && t.type === 'INCOMING' && t.status === 'RECEIVED'));
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // ─── Filtrage par recherche ───
+  const filterBySearch = (list: TransferRecord[]) => {
+    if (!searchQuery.trim()) return list;
+    const q = searchQuery.toLowerCase();
+    return list.filter(t =>
+      `${t.student.firstName} ${t.student.lastName}`.toLowerCase().includes(q) ||
+      (t.student.matricule || '').toLowerCase().includes(q) ||
+      (t.student.globalStudentId || '').toLowerCase().includes(q)
+    );
+  };
+
+  // ─── Listes filtrées par sous-onglet ───
+  const outgoingFiltered = useMemo(() => filterBySearch(outgoing), [outgoing, searchQuery]);
+  const incomingFiltered = useMemo(() => filterBySearch(incoming), [incoming, searchQuery]);
+
+  // Demandes reçues = entrants avec statut SENT_TO_DESTINATION (à traiter)
+  const requestsFiltered = useMemo(
+    () => incoming.filter(t => t.status === 'SENT_TO_DESTINATION' || t.status === 'REQUESTED'),
+    [incoming]
+  );
+
+  // Dossiers transférés = tous les transferts complétés
+  const dossiersFiltered = useMemo(
+    () => [...outgoing, ...incoming].filter(t => t.status === 'COMPLETED'),
+    [outgoing, incoming]
+  );
+
+  // Historique = tous les transferts
+  const historyFiltered = useMemo(
+    () => filterBySearch([...outgoing, ...incoming].sort((a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    )),
+    [outgoing, incoming, searchQuery]
+  );
+
+  // ─── Actions ───
+  const handleAction = async () => {
+    if (!actionTransfer || !actionType) return;
+    setIsProcessing(true);
+    try {
+      if (actionType === 'approve') {
+        await studentsService.approveTransfer(actionTransfer.id);
+        toast({ title: '✅ Transfert approuvé', description: 'L\'élève peut maintenant être inscrit.', variant: 'success' });
+      } else if (actionType === 'reject') {
+        if (!rejectReason.trim()) {
+          toast({ title: 'Motif requis', description: 'Veuillez indiquer un motif de rejet.', variant: 'error' });
+          setIsProcessing(false);
+          return;
+        }
+        await studentsService.rejectTransfer(actionTransfer.id, rejectReason);
+        toast({ title: '✅ Transfert rejeté', description: 'L\'école source a été notifiée.', variant: 'success' });
+      } else if (actionType === 'confirm-exit') {
+        await studentsService.confirmTransferExit(actionTransfer.id);
+        toast({ title: '✅ Sortie confirmée', description: 'L\'élève est officiellement sorti de votre établissement.', variant: 'success' });
+      } else if (actionType === 'execute') {
+        await studentsService.executeTransfer(actionTransfer.id);
+        toast({ title: '✅ Transfert exécuté', description: 'L\'élève est maintenant inscrit dans votre établissement.', variant: 'success' });
+      }
+      setActionTransfer(null);
+      setActionType(null);
+      setRejectReason('');
+      loadData();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message || 'Échec de l\'action', variant: 'error' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleViewDossier = async (transfer: TransferRecord) => {
+    setDossierTransfer(transfer);
+    setDossierData(null);
+    setIsLoadingDossier(true);
+    try {
+      const data = await studentsService.getTransferDossier(transfer.id, 'FULL');
+      setDossierData(data);
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message || 'Impossible de charger le dossier', variant: 'error' });
+    } finally {
+      setIsLoadingDossier(false);
+    }
+  };
+
+  // ─── Stats ───
+  const stats = useMemo(() => ({
+    outgoing: outgoing.length,
+    incoming: incoming.length,
+    pending: requestsFiltered.length,
+    completed: dossiersFiltered.length,
+  }), [outgoing, incoming, requestsFiltered, dossiersFiltered]);
+
+  // ─── Rendu d'une carte de transfert ───
+  const renderTransferCard = (t: TransferRecord, isIncoming: boolean) => {
+    const statusMeta = STATUS_META[t.status] || { label: t.status, color: 'bg-slate-50 text-slate-600 border-slate-200' };
+    const otherSchool = isIncoming ? t.sourceSchool : t.targetSchool;
+    const otherSchoolName = otherSchool?.name || (isIncoming ? 'École source' : 'École destination');
+
+    return (
+      <div key={t.id} className="p-4 hover:bg-slate-50/50 transition-all flex items-center justify-between group border-b border-slate-50">
+        <div className="flex items-center space-x-4">
+          {/* Avatar */}
+          <div className="w-11 h-11 bg-blue-50 rounded-xl overflow-hidden flex items-center justify-center shrink-0">
+            {t.student.photoUrl ? (
+              <img src={t.student.photoUrl} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <User className="w-5 h-5 text-blue-900" />
+            )}
+          </div>
+          <div>
+            <h4 className="text-sm font-bold text-slate-900">
+              {t.student.lastName} {t.student.firstName}
+            </h4>
+            <div className="flex items-center space-x-2 mt-1 flex-wrap gap-y-1">
+              {t.student.globalStudentId && (
+                <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-wider">
+                  {t.student.globalStudentId}
+                </span>
+              )}
+              {t.student.matricule && (
+                <>
+                  <span className="text-slate-200">•</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Mat : {t.student.matricule}
+                  </span>
+                </>
+              )}
+              <span className="text-slate-200">•</span>
+              <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">
+                {isIncoming ? `De : ${otherSchoolName}` : `Vers : ${otherSchoolName}`}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-4">
+          <div className="text-right">
+            <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Statut</p>
+            <span className={cn('px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border', statusMeta.color)}>
+              {statusMeta.label}
+            </span>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => handleViewDossier(t)}
+              className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-slate-200 transition"
+              title="Voir le dossier complet"
+            >
+              <Eye className="w-3.5 h-3.5 inline mr-1" />
+              Dossier
+            </button>
+
+            {/* Actions contextuelles selon le statut */}
+            {isIncoming && t.status === 'SENT_TO_DESTINATION' && (
+              <>
+                <button
+                  onClick={() => { setActionTransfer(t); setActionType('approve'); }}
+                  className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-700 transition"
+                >
+                  <Check className="w-3.5 h-3.5 inline mr-1" />
+                  Approuver
+                </button>
+                <button
+                  onClick={() => { setActionTransfer(t); setActionType('reject'); }}
+                  className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-rose-700 transition"
+                >
+                  <X className="w-3.5 h-3.5 inline mr-1" />
+                  Rejeter
+                </button>
+              </>
+            )}
+
+            {isIncoming && t.status === 'ACCEPTED_BY_DESTINATION' && (
+              <button
+                onClick={() => { setActionTransfer(t); setActionType('execute'); }}
+                className="px-3 py-1.5 bg-blue-900 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-blue-800 transition"
+              >
+                Inscrire l'élève
+              </button>
+            )}
+
+            {!isIncoming && (t.status === 'ACCEPTED_BY_DESTINATION' || t.status === 'APPROVED_BY_SOURCE') && !t.executedAt && (
+              <button
+                onClick={() => { setActionTransfer(t); setActionType('confirm-exit'); }}
+                className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-amber-700 transition"
+              >
+                Confirmer sortie
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ─── Rendu liste vide ───
+  const renderEmpty = (message: string, icon: any) => (
+    <div className="p-16 text-center">
+      <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+        {icon}
+      </div>
+      <p className="text-slate-400 font-bold text-sm">{message}</p>
+    </div>
+  );
+
+  // ─── Liste actuelle selon l'onglet ───
+  const currentList = activeTab === 'OUTGOING' ? outgoingFiltered
+    : activeTab === 'INCOMING' ? incomingFiltered
+    : activeTab === 'REQUESTS' ? requestsFiltered
+    : activeTab === 'DOSSIERS' ? dossiersFiltered
+    : activeTab === 'HISTORY' ? historyFiltered
+    : [];
+
+  const isIncomingContext = activeTab === 'INCOMING' || activeTab === 'REQUESTS';
 
   return (
     <div className="space-y-6">
       {/* Header Inter-Écoles */}
-      <div className="bg-gradient-to-r from-blue-900 to-indigo-900 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
+      <div className="bg-gradient-to-r from-blue-900 to-indigo-900 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 p-4 opacity-10">
-           <ArrowRightLeft className="w-40 h-40" />
+          <ArrowRightLeft className="w-32 h-32" />
         </div>
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h2 className="text-3xl font-black mb-2 flex items-center gap-3">
-              Mobilité Scolaire
+            <h2 className="text-2xl font-black mb-1 flex items-center gap-3">
+              Mobilité Scolaire Inter-Écoles
               <span className="bg-white/20 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-widest">Helm Inter-Connect</span>
             </h2>
-            <p className="text-blue-100/70 font-medium max-w-xl">
+            <p className="text-blue-100/70 font-medium max-w-xl text-sm">
               Gérez les transferts numériques complets des dossiers élèves entre les établissements du réseau Academia Helm.
             </p>
           </div>
-          <button 
+          <button
             onClick={() => setIsWizardOpen(true)}
-            className="px-6 py-3 bg-white text-blue-900 rounded-xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-blue-50 transition-all flex items-center gap-2 self-start md:self-center"
+            className="px-5 py-2.5 bg-white text-blue-900 rounded-xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-blue-50 transition-all flex items-center gap-2 self-start md:self-center"
           >
             <Send className="w-4 h-4" />
             Initier un Transfert
           </button>
         </div>
 
-        <div className="flex items-center space-x-1 mt-8 bg-black/20 p-1 rounded-xl w-fit overflow-x-auto no-scrollbar">
-          <button 
-            onClick={() => setActiveTab('INTERNAL')}
-            className={cn(
-              "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
-              activeTab === 'INTERNAL' ? "bg-white text-blue-900 shadow-md" : "text-white/60 hover:text-white"
-            )}
-          >
-            <ArrowRightLeft className="w-4 h-4" />
-            Internes
-          </button>
-          <button 
-            onClick={() => setActiveTab('OUTGOING')}
-            className={cn(
-              "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
-              activeTab === 'OUTGOING' ? "bg-white text-blue-900 shadow-md" : "text-white/60 hover:text-white"
-            )}
-          >
-            <ArrowRight className="w-4 h-4" />
-            Sortants
-          </button>
-          <button 
-            onClick={() => setActiveTab('INCOMING')}
-            className={cn(
-              "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
-              activeTab === 'INCOMING' ? "bg-white text-blue-900 shadow-md" : "text-white/60 hover:text-white"
-            )}
-          >
-            <Inbox className="w-4 h-4" />
-            Entrants
-          </button>
-          <button 
-            onClick={() => setActiveTab('REQUESTS')}
-            className={cn(
-              "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
-              activeTab === 'REQUESTS' ? "bg-white text-blue-900 shadow-md" : "text-white/60 hover:text-white"
-            )}
-          >
-            <Clock className="w-4 h-4" />
-            Demandes Reçues
-          </button>
-          <button 
-            onClick={() => setActiveTab('DOSSIERS')}
-            className={cn(
-              "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
-              activeTab === 'DOSSIERS' ? "bg-white text-blue-900 shadow-md" : "text-white/60 hover:text-white"
-            )}
-          >
-            <FileText className="w-4 h-4" />
-            Dossiers Transférés
-          </button>
-          <button 
-            onClick={() => setActiveTab('HISTORY')}
-            className={cn(
-              "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
-              activeTab === 'HISTORY' ? "bg-white text-blue-900 shadow-md" : "text-white/60 hover:text-white"
-            )}
-          >
-            <HistoryIcon className="w-4 h-4" />
-            Historique
-          </button>
-          <button 
-            onClick={() => setActiveTab('SETTINGS')}
-            className={cn(
-              "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap",
-              activeTab === 'SETTINGS' ? "bg-white text-blue-900 shadow-md" : "text-white/60 hover:text-white"
-            )}
-          >
-            <Search className="w-4 h-4" /> {/* Or a Settings Icon if imported, but Search is available */}
-            Paramètres
-          </button>
+        {/* Stats rapides */}
+        <div className="flex items-center gap-4 mt-6 text-xs">
+          <div className="bg-white/10 rounded-lg px-3 py-1.5">
+            <span className="font-bold">{stats.outgoing}</span> sortants
+          </div>
+          <div className="bg-white/10 rounded-lg px-3 py-1.5">
+            <span className="font-bold">{stats.incoming}</span> entrants
+          </div>
+          <div className="bg-white/10 rounded-lg px-3 py-1.5">
+            <span className="font-bold">{stats.pending}</span> à traiter
+          </div>
+          <div className="bg-white/10 rounded-lg px-3 py-1.5">
+            <span className="font-bold">{stats.completed}</span> complétés
+          </div>
+        </div>
+
+        {/* Sous-onglets */}
+        <div className="flex items-center space-x-1 mt-5 bg-black/20 p-1 rounded-xl w-fit overflow-x-auto">
+          {([
+            { id: 'OUTGOING', label: 'Sortants', icon: ArrowRight },
+            { id: 'INCOMING', label: 'Entrants', icon: Inbox },
+            { id: 'REQUESTS', label: 'Demandes reçues', icon: Clock },
+            { id: 'DOSSIERS', label: 'Dossiers transférés', icon: FileText },
+            { id: 'HISTORY', label: 'Historique', icon: HistoryIcon },
+            { id: 'SETTINGS', label: 'Paramètres', icon: SettingsIcon },
+          ] as { id: SubTab; label: string; icon: any }[]).map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                'px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-1.5 whitespace-nowrap',
+                activeTab === tab.id ? 'bg-white text-blue-900 shadow-md' : 'text-white/60 hover:text-white'
+              )}
+            >
+              <tab.icon className="w-3.5 h-3.5" />
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Liste des transferts */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-xl overflow-hidden">
-        {loading ? (
-          <div className="p-20 text-center">
-            <div className="w-10 h-10 border-4 border-blue-900/20 border-t-blue-900 rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-gray-500 font-bold">Synchronisation des demandes...</p>
+      {/* Barre de recherche + refresh */}
+      {activeTab !== 'SETTINGS' && (
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Rechercher par nom, matricule ou ID global..."
+              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
           </div>
-        ) : filteredTransfers.length === 0 ? (
-          <div className="p-20 text-center">
-            <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
-              <HistoryIcon className="w-8 h-8 text-gray-300" />
+          <button
+            onClick={loadData}
+            disabled={isLoading}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            title="Rafraîchir"
+          >
+            <RefreshCw className={cn('w-3.5 h-3.5', isLoading && 'animate-spin')} />
+            Rafraîchir
+          </button>
+        </div>
+      )}
+
+      {/* Contenu selon l'onglet */}
+      {activeTab === 'SETTINGS' ? (
+        <TransferSettingsPanel />
+      ) : isLoading ? (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-16 text-center">
+          <Loader2 className="w-8 h-8 text-blue-900 mx-auto mb-3 animate-spin" />
+          <p className="text-slate-500 font-bold text-sm">Synchronisation des demandes...</p>
+        </div>
+      ) : currentList.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+          {activeTab === 'OUTGOING' && renderEmpty('Aucun transfert sortant', <ArrowRight className="w-7 h-7 text-slate-300" />)}
+          {activeTab === 'INCOMING' && renderEmpty('Aucun transfert entrant', <Inbox className="w-7 h-7 text-slate-300" />)}
+          {activeTab === 'REQUESTS' && renderEmpty('Aucune demande en attente', <Clock className="w-7 h-7 text-slate-300" />)}
+          {activeTab === 'DOSSIERS' && renderEmpty('Aucun dossier transféré', <FileText className="w-7 h-7 text-slate-300" />)}
+          {activeTab === 'HISTORY' && renderEmpty('Aucun transfert dans l\'historique', <HistoryIcon className="w-7 h-7 text-slate-300" />)}
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+              {currentList.length} résultat(s)
+            </p>
+          </div>
+          {currentList.map(t => renderTransferCard(t, isIncomingContext))}
+        </div>
+      )}
+
+      {/* Modal d'action (approbation, rejet, etc.) */}
+      {actionTransfer && actionType && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => { setActionTransfer(null); setActionType(null); setRejectReason(''); }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-800">
+                {actionType === 'approve' && 'Approuver le transfert'}
+                {actionType === 'reject' && 'Rejeter le transfert'}
+                {actionType === 'confirm-exit' && 'Confirmer la sortie'}
+                {actionType === 'execute' && 'Inscrire l\'élève'}
+              </h3>
             </div>
-            <p className="text-gray-400 font-bold">Aucun transfert dans cette catégorie</p>
+            <div className="px-6 py-4 space-y-3">
+              <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
+                <div className="w-10 h-10 bg-blue-50 rounded-lg overflow-hidden flex items-center justify-center">
+                  {actionTransfer.student.photoUrl ? (
+                    <img src={actionTransfer.student.photoUrl} alt="" className="w-full h-full object-cover" />
+                  ) : <User className="w-5 h-5 text-blue-900" />}
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-slate-800">{actionTransfer.student.lastName} {actionTransfer.student.firstName}</p>
+                  <p className="text-xs text-slate-500">
+                    {actionType === 'approve' || actionType === 'execute'
+                      ? `De : ${actionTransfer.sourceSchool?.name || '—'}`
+                      : `Vers : ${actionTransfer.targetSchool?.name || '—'}`}
+                  </p>
+                </div>
+              </div>
+
+              {actionType === 'reject' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Motif du rejet</label>
+                  <textarea
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    placeholder="Ex : Dossier incomplet, niveau non disponible..."
+                    rows={3}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+              )}
+
+              {actionType === 'approve' && (
+                <p className="text-xs text-slate-600">
+                  En approuvant ce transfert, vous confirmez que l'élève peut être inscrit dans votre établissement.
+                  Vous pourrez ensuite finaliser l'inscription.
+                </p>
+              )}
+              {actionType === 'confirm-exit' && (
+                <p className="text-xs text-slate-600">
+                  Cette action confirme officiellement la sortie de l'élève de votre établissement.
+                  Le dossier sera transféré définitivement vers l'école destination.
+                </p>
+              )}
+              {actionType === 'execute' && (
+                <p className="text-xs text-slate-600">
+                  Cette action finalise le transfert en inscrivant l'élève dans votre établissement.
+                  Un nouveau matricule local sera attribué.
+                </p>
+              )}
+            </div>
+            <div className="px-6 py-4 bg-slate-50 flex justify-end gap-2">
+              <button
+                onClick={() => { setActionTransfer(null); setActionType(null); setRejectReason(''); }}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-lg"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleAction}
+                disabled={isProcessing}
+                className={cn(
+                  'inline-flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white rounded-lg disabled:opacity-50',
+                  actionType === 'reject' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'
+                )}
+              >
+                {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {actionType === 'approve' && 'Approuver'}
+                {actionType === 'reject' && 'Rejeter'}
+                {actionType === 'confirm-exit' && 'Confirmer'}
+                {actionType === 'execute' && 'Inscrire'}
+              </button>
+            </div>
           </div>
-        ) : (
-          <div className="divide-y divide-gray-50">
-            {activeTab === 'SETTINGS' ? (
-              <div className="p-10 space-y-8">
-                 <div>
-                    <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-4">Politiques de transfert</h3>
-                    <div className="space-y-4">
-                       <label className="flex items-center space-x-3">
-                         <input type="checkbox" className="rounded text-blue-900 focus:ring-blue-900" defaultChecked />
-                         <span className="text-xs font-bold text-gray-600">Exiger le consentement parental avant exécution</span>
-                       </label>
-                       <label className="flex items-center space-x-3">
-                         <input type="checkbox" className="rounded text-blue-900 focus:ring-blue-900" defaultChecked />
-                         <span className="text-xs font-bold text-gray-600">Bloquer les transferts sortants pour impayés</span>
-                       </label>
-                       <label className="flex items-center space-x-3">
-                         <input type="checkbox" className="rounded text-blue-900 focus:ring-blue-900" defaultChecked />
-                         <span className="text-xs font-bold text-gray-600">Notifier le parent à chaque changement de statut</span>
-                       </label>
-                    </div>
-                 </div>
+        </div>
+      )}
 
-                 {/* Règles Offline-First (addendum) */}
-                 <div className="bg-gray-50 border border-gray-100 rounded-2xl p-6">
-                   <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-4 flex items-center gap-2">
-                     <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" /></svg>
-                     Règles Offline-First (Addendum)
-                   </h3>
-                   <div className="space-y-3">
-                     {[
-                       { rule: 'Préparation brouillon (DRAFT)', offline: true },
-                       { rule: 'Sélection des documents à transférer', offline: true },
-                       { rule: 'Prévisualisation du certificat', offline: true },
-                       { rule: 'Envoi officiel de la demande', offline: false },
-                       { rule: 'Notification école destination', offline: false },
-                       { rule: 'Acceptation / Rejet du transfert', offline: false },
-                       { rule: 'Création inscription école destination', offline: false },
-                       { rule: 'Attribution définitive du matricule local', offline: false },
-                       { rule: 'Synchronisation dossier complet', offline: false },
-                     ].map((item, i) => (
-                       <div key={i} className="flex items-center justify-between">
-                         <span className="text-xs font-medium text-gray-700">{item.rule}</span>
-                         <span className={cn(
-                           "text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest",
-                           item.offline ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
-                         )}>
-                           {item.offline ? 'Hors ligne OK' : 'Connexion requise'}
-                         </span>
-                       </div>
-                     ))}
-                   </div>
-                 </div>
-
-                 {/* Double identification */}
-                 <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-6">
-                   <h3 className="text-sm font-black text-indigo-900 uppercase tracking-widest mb-3">Double Identification — Règle système</h3>
-                   <div className="space-y-2 text-xs font-medium text-indigo-700">
-                     <p>• <strong>global_student_id</strong> : identité permanente dans tout Academia Helm (ex. AH-STU-2026-000000123)</p>
-                     <p>• <strong>local_student_matricule</strong> : identifiant administratif attribué par chaque école selon ses standards</p>
-                     <p>• Un transfert conserve toujours le <strong>global_student_id</strong></p>
-                     <p>• L'école destination attribue son propre <strong>local_student_matricule</strong></p>
-                     <p>• Academia Federis utilise le <strong>global_student_id</strong> pour éviter les doublons candidats aux examens</p>
-                   </div>
-                 </div>
-              </div>
-            ) : activeTab === 'INTERNAL' ? (
-               <div className="p-20 text-center">
-                <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <ArrowRightLeft className="w-8 h-8 text-blue-300" />
+      {/* Modal dossier complet */}
+      {dossierTransfer && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => { setDossierTransfer(null); setDossierData(null); }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-blue-600" />
+                Dossier de transfert
+              </h3>
+              <button onClick={() => { setDossierTransfer(null); setDossierData(null); }} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {isLoadingDossier ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
                 </div>
-                <p className="text-gray-400 font-bold">Aucun transfert interne (changement de classe/site) récent.</p>
-              </div>
-            ) : filteredTransfers.length === 0 ? (
-              <div className="p-20 text-center">
-                <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <HistoryIcon className="w-8 h-8 text-gray-300" />
-                </div>
-                <p className="text-gray-400 font-bold">Aucun résultat trouvé dans cette catégorie.</p>
-              </div>
-            ) : (
-              filteredTransfers.map(t => (
-                <div key={t.id} className="p-6 hover:bg-gray-50/50 transition-all flex items-center justify-between group">
-                  <div className="flex items-center space-x-6">
-                    <div className="w-12 h-12 bg-blue-50 rounded-2xl overflow-hidden flex items-center justify-center">
-                      {t.student.photoUrl ? (
-                        <img src={t.student.photoUrl} alt={`${t.student.firstName} ${t.student.lastName}`} className="w-full h-full object-cover" />
-                      ) : (
-                        <User className="w-6 h-6 text-blue-900" />
-                      )}
+              ) : dossierData ? (
+                <div className="space-y-4 text-sm">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-xs font-bold text-slate-400 uppercase">Élève</p>
+                      <p className="font-semibold text-slate-800">{dossierTransfer.student.lastName} {dossierTransfer.student.firstName}</p>
                     </div>
                     <div>
-                      <h4 className="text-sm font-black text-gray-900">{t.student.lastName} {t.student.firstName}</h4>
-                      <div className="flex items-center space-x-3 mt-1 flex-wrap gap-y-1">
-                        {/* ID Global Helm (permanent) */}
-                        <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest flex items-center gap-1">
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" /></svg>
-                          {t.student.globalId}
-                        </span>
-                        <span className="text-gray-200">•</span>
-                        {/* Matricule local de l'école */}
-                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                          Mat : {t.student.localMat}
-                        </span>
-                        <span className="text-gray-200">•</span>
-                        <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">
-                          {t.type === 'OUTGOING' ? `Vers : ${t.targetSchool.name}` : `De : ${t.sourceSchool.name}`}
-                        </span>
-                      </div>
+                      <p className="text-xs font-bold text-slate-400 uppercase">Matricule</p>
+                      <p className="font-mono text-slate-700">{dossierTransfer.student.matricule || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-400 uppercase">ID Global</p>
+                      <p className="font-mono text-xs text-indigo-600">{dossierTransfer.student.globalStudentId || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-400 uppercase">Statut</p>
+                      <span className={cn('inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border', (STATUS_META[dossierTransfer.status] || STATUS_META.DRAFT).color)}>
+                        {(STATUS_META[dossierTransfer.status] || STATUS_META.DRAFT).label}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-400 uppercase">École source</p>
+                      <p className="text-slate-700">{dossierTransfer.sourceSchool?.name || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-400 uppercase">École destination</p>
+                      <p className="text-slate-700">{dossierTransfer.targetSchool?.name || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-400 uppercase">Date demande</p>
+                      <p className="text-slate-700">{formatDate(dossierTransfer.createdAt)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-400 uppercase">Date exécution</p>
+                      <p className="text-slate-700">{formatDate(dossierTransfer.executedAt)}</p>
                     </div>
                   </div>
-
-                  <div className="flex items-center space-x-8">
-                    <div className="text-right">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Statut</p>
-                      <div className="flex items-center space-x-2">
-                         <span className={cn(
-                           "px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest",
-                           t.status === 'SENT_TO_DESTINATION' || t.status === 'REQUESTED' ? "bg-amber-50 text-amber-600" :
-                           t.status === 'ACCEPTED_BY_DESTINATION' || t.status === 'APPROVED_BY_SOURCE' ? "bg-blue-50 text-blue-600" :
-                           t.status === 'COMPLETED' ? "bg-green-50 text-green-600" : 
-                           t.status === 'REJECTED_BY_DESTINATION' || t.status === 'CANCELLED' ? "bg-red-50 text-red-600" : 
-                           t.status === 'ARCHIVED' ? "bg-gray-100 text-gray-500" : "bg-gray-50 text-gray-400"
-                         )}>
-                           {t.status}
-                         </span>
+                  {dossierTransfer.motif && (
+                    <div>
+                      <p className="text-xs font-bold text-slate-400 uppercase mb-1">Motif</p>
+                      <p className="text-slate-700 bg-slate-50 p-3 rounded-lg">{dossierTransfer.motif}</p>
+                    </div>
+                  )}
+                  {dossierTransfer.message && (
+                    <div>
+                      <p className="text-xs font-bold text-slate-400 uppercase mb-1">Message</p>
+                      <p className="text-slate-700 bg-slate-50 p-3 rounded-lg">{dossierTransfer.message}</p>
+                    </div>
+                  )}
+                  {dossierData?.documents && (
+                    <div>
+                      <p className="text-xs font-bold text-slate-400 uppercase mb-1">Documents transférés</p>
+                      <div className="space-y-1">
+                        {Array.isArray(dossierData.documents) && dossierData.documents.map((doc: any, i: number) => (
+                          <div key={i} className="flex items-center gap-2 p-2 bg-slate-50 rounded text-xs">
+                            <FileText className="w-4 h-4 text-slate-400" />
+                            <span className="font-medium text-slate-700">{doc.name || doc.type || `Document ${i + 1}`}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
-
-                    <div className="flex items-center space-x-2">
-                      <button className="px-4 py-2 bg-gray-100 text-gray-900 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-blue-900 hover:text-white transition-all shadow-sm">
-                        Dossier
-                      </button>
-                      {(activeTab === 'INCOMING' || activeTab === 'REQUESTS') && t.status === 'SENT_TO_DESTINATION' && (
-                        <button className="px-4 py-2 bg-blue-900 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-md hover:bg-blue-800 transition-all">
-                          Traiter
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                  )}
                 </div>
-              ))
-            )}
+              ) : (
+                <p className="text-center text-slate-400 py-8">Aucune donnée disponible</p>
+              )}
+            </div>
           </div>
-        )}
-      </div>
-
-      {/* Intelligence de transfert ORION */}
-      <div className="bg-amber-50 border border-amber-100 rounded-2xl p-6 flex items-start space-x-4">
-        <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
-          <AppIcon name="sparkles" size="dashboard" className="text-amber-600" />
         </div>
+      )}
+
+      <TransferWizard isOpen={isWizardOpen} onClose={() => setIsWizardOpen(false)} />
+    </div>
+  );
+}
+
+// ─── Sous-composant : Paramètres de transfert ───
+function TransferSettingsPanel() {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+        <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+          <SettingsIcon className="w-5 h-5 text-slate-600" />
+          Paramètres de mobilité scolaire
+        </h3>
+      </div>
+      <div className="px-6 py-6 space-y-6">
+        {/* Politiques de transfert */}
         <div>
-          <h4 className="text-sm font-black text-amber-900 uppercase tracking-tighter">Analyse Prédictive Mobilité (ORION)</h4>
-          <p className="text-xs font-medium text-amber-800 mt-1 leading-relaxed">
-            Le flux de transferts sortants a augmenté de 12% ce mois-ci. Les motifs principaux sont liés aux déménagements (45%) et à la recherche de spécialités techniques (30%). 
-            <button className="ml-2 underline font-black">Consulter le rapport complet</button>
-          </p>
+          <h4 className="text-xs font-bold text-slate-500 uppercase mb-3">Politiques de transfert</h4>
+          <div className="space-y-3">
+            <label className="flex items-start gap-3 p-3 rounded-lg hover:bg-slate-50 cursor-pointer border border-slate-200">
+              <input type="checkbox" className="rounded text-blue-600 focus:ring-blue-500 mt-0.5" defaultChecked />
+              <div>
+                <div className="text-sm font-semibold text-slate-700">Exiger le consentement parental avant exécution</div>
+                <div className="text-xs text-slate-500 mt-0.5">Le parent doit confirmer le transfert avant qu'il soit finalisé.</div>
+              </div>
+            </label>
+            <label className="flex items-start gap-3 p-3 rounded-lg hover:bg-slate-50 cursor-pointer border border-slate-200">
+              <input type="checkbox" className="rounded text-blue-600 focus:ring-blue-500 mt-0.5" defaultChecked />
+              <div>
+                <div className="text-sm font-semibold text-slate-700">Bloquer les transferts sortants pour impayés</div>
+                <div className="text-xs text-slate-500 mt-0.5">Empêche les transferts si l'élève a des arriérés non réglés.</div>
+              </div>
+            </label>
+            <label className="flex items-start gap-3 p-3 rounded-lg hover:bg-slate-50 cursor-pointer border border-slate-200">
+              <input type="checkbox" className="rounded text-blue-600 focus:ring-blue-500 mt-0.5" defaultChecked />
+              <div>
+                <div className="text-sm font-semibold text-slate-700">Notifier le parent à chaque changement de statut</div>
+                <div className="text-xs text-slate-500 mt-0.5">Email/SMS automatique au parent lors de chaque étape du transfert.</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        {/* Règles Offline-First */}
+        <div className="bg-slate-50 border border-slate-100 rounded-xl p-5">
+          <h4 className="text-xs font-bold text-slate-900 uppercase mb-3 flex items-center gap-2">
+            <RefreshCw className="w-4 h-4 text-blue-600" />
+            Règles Offline-First
+          </h4>
+          <div className="space-y-2">
+            {[
+              { rule: 'Préparation brouillon (DRAFT)', offline: true },
+              { rule: 'Sélection des documents à transférer', offline: true },
+              { rule: 'Prévisualisation du certificat', offline: true },
+              { rule: 'Envoi officiel de la demande', offline: false },
+              { rule: 'Notification école destination', offline: false },
+              { rule: 'Acceptation / Rejet du transfert', offline: false },
+              { rule: 'Création inscription école destination', offline: false },
+              { rule: 'Attribution définitive du matricule local', offline: false },
+              { rule: 'Synchronisation dossier complet', offline: false },
+            ].map((item, i) => (
+              <div key={i} className="flex items-center justify-between">
+                <span className="text-xs font-medium text-slate-700">{item.rule}</span>
+                <span className={cn(
+                  'text-[9px] font-bold px-2 py-1 rounded-full uppercase tracking-widest',
+                  item.offline ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
+                )}>
+                  {item.offline ? 'Hors ligne OK' : 'Connexion requise'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Double identification */}
+        <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-5">
+          <h4 className="text-xs font-bold text-indigo-900 uppercase mb-3">Double Identification — Règle système</h4>
+          <div className="space-y-2 text-xs font-medium text-indigo-700">
+            <p>• <strong>global_student_id</strong> : identité permanente dans tout Academia Helm (ex. AH-STU-2026-000000123)</p>
+            <p>• <strong>local_student_matricule</strong> : identifiant administratif attribué par chaque école selon ses standards</p>
+            <p>• Un transfert conserve toujours le <strong>global_student_id</strong></p>
+            <p>• L'école destination attribue son propre <strong>local_student_matricule</strong></p>
+            <p>• Academia Federis utilise le <strong>global_student_id</strong> pour éviter les doublons candidats aux examens</p>
+          </div>
+        </div>
+
+        {/* Distinction avec Sorties & Abandons */}
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800">
+          <AlertCircle className="w-4 h-4 inline mr-1" />
+          <strong>Distinction importante :</strong> Cet onglet gère les transferts <strong>inter-écoles</strong>
+          (vers une autre école du réseau Academia Helm). Pour les sorties internes (abandons, archivage,
+          réintégrations), utilisez l'onglet <strong>« Sorties & Abandons »</strong>.
         </div>
       </div>
-
-      <TransferWizard 
-        isOpen={isWizardOpen} 
-        onClose={() => setIsWizardOpen(false)} 
-      />
     </div>
   );
 }

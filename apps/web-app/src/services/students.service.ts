@@ -648,6 +648,105 @@ class StudentsService {
     });
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // ⭐ TRANSFERTS INTER-ÉCOLES (StudentTransferRequest)
+  // Backend : /students/transfers/*
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * ⭐ Liste les transferts sortants (depuis cette école vers d'autres).
+   */
+  async getOutgoingTransfers(): Promise<any> {
+    return apiFetch(`${BASE_URL}/transfers/outgoing`);
+  }
+
+  /**
+   * ⭐ Liste les transferts entrants (depuis d'autres écoles vers celle-ci).
+   */
+  async getIncomingTransfers(): Promise<any> {
+    return apiFetch(`${BASE_URL}/transfers/incoming`);
+  }
+
+  /**
+   * ⭐ Crée une demande de transfert inter-écoles.
+   */
+  async createTransferRequest(data: {
+    studentId: string;
+    targetSchoolId: string;
+    academicYearId: string;
+    motif?: string;
+    message?: string;
+    requestedLevelId?: string;
+    requestedClassId?: string;
+  }): Promise<any> {
+    return apiFetch(`${BASE_URL}/transfers`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  /**
+   * ⭐ Recherche d'écoles destinataires (pour transfert inter-écoles).
+   */
+  async searchSchoolsForTransfer(query: string): Promise<any> {
+    const qs = query ? `?q=${encodeURIComponent(query)}` : '';
+    return apiFetch(`${BASE_URL}/transfers/search-schools${qs}`);
+  }
+
+  /**
+   * ⭐ Approuve un transfert entrant (côté école destination).
+   */
+  async approveTransfer(transferId: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/transfers/${encodeURIComponent(transferId)}/approve`, {
+      method: "POST",
+    });
+  }
+
+  /**
+   * ⭐ Rejette un transfert entrant (côté école destination).
+   */
+  async rejectTransfer(transferId: string, reason: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/transfers/${encodeURIComponent(transferId)}/reject`, {
+      method: "POST",
+      body: { reason },
+    });
+  }
+
+  /**
+   * ⭐ Demande un complément d'information pour un transfert entrant.
+   */
+  async requestTransferComplement(transferId: string, message: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/transfers/${encodeURIComponent(transferId)}/request-complement`, {
+      method: "POST",
+      body: { message },
+    });
+  }
+
+  /**
+   * ⭐ Confirme la sortie de l'élève de l'école source.
+   */
+  async confirmTransferExit(transferId: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/transfers/${encodeURIComponent(transferId)}/confirm-exit`, {
+      method: "POST",
+    });
+  }
+
+  /**
+   * ⭐ Exécute un transfert (finalisation côté école destination).
+   */
+  async executeTransfer(transferId: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/transfers/${encodeURIComponent(transferId)}/execute`, {
+      method: "POST",
+    });
+  }
+
+  /**
+   * ⭐ Récupère le dossier complet d'un transfert (élève + documents + historique).
+   */
+  async getTransferDossier(transferId: string, level: 'FULL' | 'MASKED' = 'MASKED'): Promise<any> {
+    return apiFetch(`${BASE_URL}/transfers/${encodeURIComponent(transferId)}/dossier?level=${level}`);
+  }
+
   /**
    * Abandon / sortie définitive d'un élève.
    * Backend : POST /students/withdraw

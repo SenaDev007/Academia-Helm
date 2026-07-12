@@ -426,10 +426,11 @@ export default function StudentsModulePage() {
             { id: 'admissions', label: 'Admissions', icon: <UserPlus className="w-4 h-4" /> },
             { id: 'enrollments', label: 'Inscriptions', icon: <GraduationCap className="w-4 h-4" /> },
             { id: 'assignments', label: 'Affectations & Mouvements', icon: <Share2 className="w-4 h-4" /> },
-            { id: 'movements', label: 'Sorties & Transferts', icon: <History className="w-4 h-4" /> },
+            { id: 'movements', label: 'Sorties & Abandons', icon: <History className="w-4 h-4" /> },
             { id: 'cards', label: 'Cartes Scolaires', icon: <IdCard className="w-4 h-4" /> },
             { id: 'dossiers', label: 'Dossiers Élèves', icon: <FileText className="w-4 h-4" /> },
             { id: 'families', label: 'Familles', icon: <User className="w-4 h-4" /> },
+            { id: 'transfers', label: 'Transferts & Mobilité', icon: <ArrowRightLeft className="w-4 h-4" /> },
             { id: 'history', label: 'Historique Scolaire', icon: <Archive className="w-4 h-4" /> },
             { id: 'compliance', label: 'Conformité', icon: <BadgeCheck className="w-4 h-4" /> },
             { id: 'educmaster', label: 'EDUCMASTER', icon: <Globe className="w-4 h-4" /> },
@@ -437,7 +438,6 @@ export default function StudentsModulePage() {
             { id: 'settings', label: 'Paramétrage', icon: <Edit className="w-4 h-4" /> },
             { id: 'audit', label: 'Audit & Conformité', icon: <Fingerprint className="w-4 h-4" /> },
             { id: 'aggregation', label: 'Agrégation & Bilan Global', icon: <BarChart3 className="w-4 h-4" /> },
-            { id: 'transfers', label: 'Transferts & Mobilité', icon: <ArrowRightLeft className="w-4 h-4" /> },
           ],
         }}
         content={

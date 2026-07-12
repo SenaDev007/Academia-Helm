@@ -330,6 +330,10 @@ export class AcademicYearSettingsService {
   /**
    * Met à jour une année scolaire.
    * Même logique que les périodes : payload explicite (données envoyées ou existantes), un seul prisma.update, retour de l'entité mise à jour.
+   *
+   * ⭐ Inclut les paramètres d'admission publique (admissionEnabled, admissionOpenDate,
+   *    admissionCloseDate) utilisés par le portail public pour savoir si les admissions
+   *    sont ouvertes.
    */
   async update(
     tenantId: string,
@@ -341,6 +345,10 @@ export class AcademicYearSettingsService {
       officialStartDate?: Date;
       startDate?: Date;
       endDate?: Date;
+      // ⭐ Paramètres d'admission publique (portail public)
+      admissionEnabled?: boolean;
+      admissionOpenDate?: Date | null;
+      admissionCloseDate?: Date | null;
     },
     userId: string,
   ) {
@@ -370,6 +378,12 @@ export class AcademicYearSettingsService {
       officialStartDate: data.officialStartDate !== undefined ? data.officialStartDate : existing.officialStartDate,
       startDate: data.startDate !== undefined ? data.startDate : existing.startDate,
       endDate: data.endDate !== undefined ? data.endDate : existing.endDate,
+      // ⭐ Paramètres d'admission publique — utilisés par le portail public.
+      // admissionEnabled : boolean (false si explicitement false, true sinon).
+      // admissionOpenDate / admissionCloseDate : Date | null (null = pas de restriction).
+      admissionEnabled: data.admissionEnabled !== undefined ? data.admissionEnabled : existing.admissionEnabled,
+      admissionOpenDate: data.admissionOpenDate !== undefined ? data.admissionOpenDate : existing.admissionOpenDate,
+      admissionCloseDate: data.admissionCloseDate !== undefined ? data.admissionCloseDate : existing.admissionCloseDate,
     };
 
     const updated = await this.prisma.academicYear.update({

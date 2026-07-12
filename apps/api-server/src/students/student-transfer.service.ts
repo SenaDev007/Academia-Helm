@@ -557,7 +557,13 @@ export class StudentTransferService {
     }
     return this.prisma.tenant.findMany({
       where,
-      select: { id: true, name: true, slug: true, city: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        // ⭐ city n'existe pas sur tenants — on l'obtient via schools
+        schools: { select: { city: true, address: true } },
+      },
       take: 50,
       orderBy: { name: 'asc' },
     });

@@ -6,6 +6,7 @@ import {
   Search, Loader2, Download, Eye, X, CreditCard, FileText,
   History, BookOpen, GraduationCap, Calendar, MapPin, Hash,
   ArrowLeft, HeartPulse, Wallet, Activity, RotateCw,
+  ClipboardList, AlertTriangle,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { studentsService } from '@/services/students.service';
@@ -78,7 +79,7 @@ const ACTION_LABELS: Record<string, { label: string; color: string }> = {
   PROMOTE: { label: 'Promotion', color: 'text-green-600' },
 };
 
-type DetailTab = 'identite' | 'parents' | 'scolarite' | 'documents' | 'carte' | 'frais' | 'medical' | 'bulletins';
+type DetailTab = 'identite' | 'admin' | 'parents' | 'scolarite' | 'documents' | 'carte' | 'frais' | 'medical' | 'bulletins' | 'observations' | 'orion' | 'audit';
 
 const NAVY = '#0D1F6E';
 const LEVEL_ORDER: Record<string, number> = { MATERNELLE: 1, MAT: 1, PRIMAIRE: 2, PRIMARY: 2, SECONDAIRE: 3, SECONDARY: 3 };
@@ -321,13 +322,17 @@ function StudentDashboard({ student, academicYear, onBack }: { student: StudentI
 
   const tabs: Array<{ id: DetailTab; label: string; icon: any }> = [
     { id: 'identite', label: 'Identité', icon: User },
-    { id: 'parents', label: 'Parents', icon: Users },
+    { id: 'admin', label: 'Infos Admin', icon: ClipboardList },
+    { id: 'parents', label: 'Responsables', icon: Users },
     { id: 'scolarite', label: 'Scolarité', icon: GraduationCap },
     { id: 'documents', label: 'Documents', icon: FileText },
     { id: 'carte', label: 'Carte scolaire', icon: CreditCard },
     { id: 'frais', label: 'Frais & Paiements', icon: Wallet },
     { id: 'medical', label: 'Médical', icon: HeartPulse },
     { id: 'bulletins', label: 'Bulletins', icon: BookOpen },
+    { id: 'observations', label: 'Observations', icon: FileText },
+    { id: 'orion', label: 'Alertes ORION', icon: AlertTriangle },
+    { id: 'audit', label: 'Audit', icon: Shield },
   ];
 
   return (
@@ -522,6 +527,131 @@ function StudentDashboard({ student, academicYear, onBack }: { student: StudentI
                 <div key={t} className="p-4 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center"><BookOpen className="w-6 h-6 text-slate-300 mx-auto mb-2" /><p className="text-xs font-semibold text-slate-500">{t} {academicYear?.name || ''}</p><p className="text-[10px] text-slate-400 mt-1">Bientôt disponible</p></div>
               ))}
             </div>
+          </div>
+        ) : activeTab === 'admin' ? (
+          /* ⭐ Onglet Informations administratives (MODULE ELEVES.md §9) */
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Informations administratives</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">Numéro de dossier</p>
+                <p className="text-sm text-slate-800 font-mono">{student.studentCode || student.matricule || 'N/A'}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">Statut administratif</p>
+                <span className={cn('inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border', (STATUS_LABELS[student.status] || STATUS_LABELS.ACTIVE).color)}>{(STATUS_LABELS[student.status] || STATUS_LABELS.ACTIVE).label}</span>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">Régime scolaire</p>
+                <p className="text-sm text-slate-800">{student.regimeType === 'TEACHER_CHILD' ? 'Enfant enseignant' : student.regimeType === 'SCHOLARSHIP' ? 'Boursier' : student.regimeType === 'SPECIAL' ? 'Spécial' : 'Normal'}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">Boursier</p>
+                <p className="text-sm text-slate-800">{student.regimeType === 'SCHOLARSHIP' ? 'Oui' : 'Non'}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">NPI</p>
+                <p className="text-sm text-slate-800 font-mono">{student.npi || 'Non renseigné'}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">Source du dossier</p>
+                <p className="text-sm text-slate-800">{student.matricule ? 'Admission' : 'Création directe'}</p>
+              </div>
+            </div>
+          </div>
+        ) : activeTab === 'observations' ? (
+          /* ⭐ Onglet Observations (MODULE ELEVES.md §14) */
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Observations</h3>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-xs text-blue-800">Types : administrative, pédagogique, disciplinaire, financière, familiale, générale. Les observations sensibles sont protégées par permission.</p>
+            </div>
+            {movementHistory && movementHistory.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-slate-500 uppercase">Historique des mouvements</p>
+                {movementHistory.map((m: any, i: number) => (
+                  <div key={i} className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-bold text-slate-600 uppercase">{m.actionType || m.type || 'Mouvement'}</span>
+                      <span className="text-[10px] text-slate-400">{m.date ? new Date(m.date).toLocaleDateString('fr-FR') : '—'}</span>
+                    </div>
+                    <p className="text-xs text-slate-600">{m.description || m.reason || m.comment || ''}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-slate-400 text-sm italic">Aucune observation enregistrée.</p>
+            )}
+          </div>
+        ) : activeTab === 'orion' ? (
+          /* ⭐ Onglet Alertes ORION (MODULE ELEVES.md §15) */
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              Alertes ORION — Dossier Élève
+            </h3>
+            {(() => {
+              const alerts: Array<{ severity: string; message: string }> = [];
+              if (!student.matricule) alerts.push({ severity: 'HIGH', message: 'Matricule manquant — l\'élève n\'a pas de matricule attribué.' });
+              if (!student.npi) alerts.push({ severity: 'MEDIUM', message: 'NPI non renseigné — numéro d\'identification personnel manquant.' });
+              if (!student.photoUrl) alerts.push({ severity: 'LOW', message: 'Aucune photo de l\'élève dans le dossier.' });
+              if (student.status !== 'ACTIVE') alerts.push({ severity: 'MEDIUM', message: `Statut non actif : ${student.status}.` });
+              if (alerts.length === 0) {
+                return (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 flex items-center gap-3">
+                    <span className="text-xl">✅</span>
+                    <div>
+                      <p className="text-sm font-semibold text-emerald-800">Dossier complet</p>
+                      <p className="text-xs text-emerald-700">Aucune alerte détectée par ORION.</p>
+                    </div>
+                  </div>
+                );
+              }
+              return alerts.map((alert, i) => (
+                <div key={i} className={cn('rounded-lg p-3 border flex items-start gap-3',
+                  alert.severity === 'HIGH' ? 'bg-rose-50 border-rose-200' :
+                  alert.severity === 'MEDIUM' ? 'bg-amber-50 border-amber-200' :
+                  'bg-blue-50 border-blue-200'
+                )}>
+                  <AlertTriangle className={cn('w-4 h-4 shrink-0 mt-0.5',
+                    alert.severity === 'HIGH' ? 'text-rose-600' :
+                    alert.severity === 'MEDIUM' ? 'text-amber-600' : 'text-blue-600'
+                  )} />
+                  <div>
+                    <span className={cn('text-[9px] font-bold uppercase tracking-wider',
+                      alert.severity === 'HIGH' ? 'text-rose-700' :
+                      alert.severity === 'MEDIUM' ? 'text-amber-700' : 'text-blue-700'
+                    )}>{alert.severity}</span>
+                    <p className="text-xs text-slate-700 mt-0.5">{alert.message}</p>
+                  </div>
+                </div>
+              ));
+            })()}
+          </div>
+        ) : activeTab === 'audit' ? (
+          /* ⭐ Onglet Audit (MODULE ELEVES.md §22) */
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide flex items-center gap-2">
+              <Shield className="w-4 h-4 text-slate-500" />
+              Audit du dossier
+            </h3>
+            <p className="text-xs text-slate-400">Traçabilité complète des modifications apportées au dossier de l'élève. Aucune suppression destructive n'est autorisée.</p>
+            {movementHistory && movementHistory.length > 0 ? (
+              <div className="space-y-2">
+                {movementHistory.map((log: any, i: number) => (
+                  <div key={i} className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">{log.actionType || log.type || 'ACTION'}</span>
+                      <span className="text-[10px] text-slate-400">{log.date ? new Date(log.date).toLocaleString('fr-FR') : '—'}</span>
+                    </div>
+                    {log.userId && <p className="text-[10px] text-slate-400">Par : {log.userId}</p>}
+                    {(log.description || log.reason || log.comment) && <p className="text-xs text-slate-600 mt-1">{log.description || log.reason || log.comment}</p>}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-slate-400 text-sm italic">Aucune entrée d'audit disponible.</p>
+            )}
           </div>
         ) : null}
       </div>

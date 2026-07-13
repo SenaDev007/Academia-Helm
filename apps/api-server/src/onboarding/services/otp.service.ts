@@ -178,27 +178,33 @@ export class OtpService {
               'Aucun email promoteur trouvé dans le draft. Veuillez d\'abord saisir votre email à l\'étape 2.',
             );
           }
-          const emailHtml = this.buildOtpEmailHtml(code, draft.schoolName || 'votre établissement');
-          // Utiliser sendCategorized (même méthode que le module RH) pour la traçabilité
-          // + résilience (log automatique en DB même si l'envoi échoue).
-          await this.emailService.sendCategorized({
-            tenantId: 'onboarding',
-            category: 'SECURITE',
-            subCategory: 'otp_verification',
-            module: 'onboarding',
-            to: draft.promoterEmail,
-            toName: `${draft.promoterFirstName || ''} ${draft.promoterLastName || ''}`.trim() || undefined,
-            subject: `🔐 Votre code de vérification — Academia Helm`,
-            html: emailHtml,
-            text: `Votre code de vérification Academia Helm est : ${code}. Ce code est valable 3 minutes. Ne le partagez avec personne.`,
-            fromEmail: process.env.EMAIL_FROM_NOREPLY || process.env.SMTP_FROM || 'noreply@academiahelm.com',
-            fromName: 'Academia Helm',
-            recipientType: 'PROMOTER',
-            triggeredBy: 'SYSTEM',
-          });
-          this.logger.log(`✅ OTP sent via Email to ${draft.promoterEmail}`);
-          if (process.env.NODE_ENV === 'development') {
-            this.logger.log(`\n📧 [DEV MODE] Email OTP to ${draft.promoterEmail}:\nCode: ${code}\n`);
+          {
+            const emailHtml = this.buildOtpEmailHtml(code, draft.schoolName || 'votre établissement');
+            const emailResult = await this.emailService.sendCategorized({
+              tenantId: 'onboarding',
+              category: 'SECURITE',
+              subCategory: 'otp_verification',
+              module: 'onboarding',
+              to: draft.promoterEmail,
+              toName: `${draft.promoterFirstName || ''} ${draft.promoterLastName || ''}`.trim() || undefined,
+              subject: `🔐 Votre code de vérification — Academia Helm`,
+              html: emailHtml,
+              text: `Votre code de vérification Academia Helm est : ${code}. Ce code est valable 3 minutes. Ne le partagez avec personne.`,
+              fromEmail: process.env.EMAIL_FROM_NOREPLY || process.env.SMTP_FROM || 'noreply@academiahelm.com',
+              fromName: 'Academia Helm',
+              recipientType: 'PROMOTER',
+              triggeredBy: 'SYSTEM',
+            });
+            // ⭐ sendCategorized retourne { success, error } sans lancer d'exception.
+            // On doit vérifier le retour manuellement.
+            if (!emailResult.success) {
+              this.logger.error(`❌ Email OTP failed: ${emailResult.error}`);
+              throw new Error(`Email sending failed: ${emailResult.error}`);
+            }
+            this.logger.log(`✅ OTP sent via Email to ${draft.promoterEmail}`);
+            if (process.env.NODE_ENV === 'development') {
+              this.logger.log(`\n📧 [DEV MODE] Email OTP to ${draft.promoterEmail}:\nCode: ${code}\n`);
+            }
           }
           break;
 

@@ -144,9 +144,26 @@ export function IdCardVisual({
   const primaryColor = identity?.cardPrimaryColor || '#0D1F6E';
   const secondaryColor = '#1E40AF';
 
-  // Détection du niveau
+  // Détection du niveau + ministère adapté
   const levelUpper = (card.levelCode || '').toUpperCase();
   const isMaternelle = levelUpper === 'MATERNELLE' || levelUpper === 'MAT';
+  const isSecondaire = levelUpper === 'SECONDAIRE' || levelUpper === 'SECONDARY' || levelUpper === 'SECOND';
+  const isSuperieur = levelUpper === 'SUPERIEUR' || levelUpper === 'UNIVERSITY' || levelUpper === 'HIGHER';
+
+  const ministry = isSuperieur
+    ? 'Ministère de l\u2019Enseignement Supérieur et de la Recherche Scientifique'
+    : isSecondaire
+    ? 'Ministère de l\u2019Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l\u2019Insertion des Jeunes'
+    : 'Ministère des Enseignements Maternel et Primaire';
+
+  // Sigle/acronyme de l'école
+  const acronym = schoolName
+    .split(/\s+/)
+    .filter(w => w.length > 2)
+    .map(w => w[0])
+    .join('')
+    .toUpperCase()
+    .substring(0, 8) || 'ECOLE';
 
   // ─── Logo école ───
   const SchoolLogo = ({ size = 36 }: { size?: number }) => {
@@ -154,14 +171,25 @@ export function IdCardVisual({
     return (
       <div style={{ width: size, height: size, color: primaryColor, fontSize: `${size * 0.35}px` }}
         className="rounded-lg bg-white flex items-center justify-center font-bold shrink-0">
-        {schoolName.split(/\s+/).filter(w => w.length > 2).map(w => w[0]).join('').toUpperCase().substring(0, 3) || 'ECO'}
+        {acronym.substring(0, 3)}
       </div>
     );
   };
 
+  // ─── Drapeau du Bénin (vert à gauche, jaune/rouge à droite) ───
+  const BeninFlag = ({ size = 20 }: { size?: number }) => (
+    <div style={{ width: size * 1.3, height: size }} className="rounded overflow-hidden border border-white/30 shrink-0 flex">
+      <div className="w-1/2 h-full bg-green-600" />
+      <div className="w-1/2 flex flex-col">
+        <div className="h-1/2 bg-yellow-400" />
+        <div className="h-1/2 bg-red-600" />
+      </div>
+    </div>
+  );
+
   // ═══════════════════════════════════════════════════════════════════════
   // RECTO — Face avant
-  // Header bleu (logo + école + slogan) → Photo gauche + champs droite → Bande bas (contact école + signature)
+  // Header bleu (drapeau + République + ministère + école + logo) → Photo gauche + champs droite → Bande bas (contact école + signature)
   // PAS DE QR CODE SUR LE RECTO
   // ═══════════════════════════════════════════════════════════════════════
   if (face === 'recto') {
@@ -169,14 +197,20 @@ export function IdCardVisual({
       <div className="w-full bg-white rounded-xl overflow-hidden shadow-xl border border-gray-300 flex flex-col"
         style={{ aspectRatio: '85.6 / 53.98', fontFamily: 'Inter, Poppins, Arial, sans-serif' }}>
 
-        {/* ═══ HEADER BLEU (logo + école + slogan) — 22% ═══ */}
-        <div className="shrink-0 flex items-center px-3 py-2 gap-2 text-white"
-          style={{ height: '22%', background: `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%)` }}>
-          <SchoolLogo size={32} />
-          <div className="flex-1 min-w-0">
-            <div className="text-[6px] font-bold leading-tight uppercase tracking-wide truncate">{schoolName}</div>
-            <div className="text-[4px] italic leading-tight opacity-80 truncate">{slogan}</div>
+        {/* ═══ HEADER BLEU (drapeau + République + ministère + école + logo) — 24% ═══ */}
+        <div className="shrink-0 flex items-center px-2.5 py-1.5 gap-1.5 text-white"
+          style={{ height: '24%', background: `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%)` }}>
+          {/* Drapeau du Bénin à gauche */}
+          <BeninFlag size={14} />
+          {/* Centre : République + Ministère + École + Slogan */}
+          <div className="flex-1 text-center min-w-0 px-1">
+            <div className="text-[5px] font-bold leading-tight uppercase tracking-wide">RÉPUBLIQUE DU BÉNIN</div>
+            <div className="text-[3px] leading-tight opacity-80 truncate">{ministry}</div>
+            <div className="text-[4px] font-bold leading-tight truncate">{schoolName}</div>
+            <div className="text-[3px] italic leading-tight opacity-70 truncate">{slogan}</div>
           </div>
+          {/* Logo école à droite */}
+          <SchoolLogo size={26} />
         </div>
 
         {/* ═══ CORPS (photo gauche + champs droite) — 56% ═══ */}

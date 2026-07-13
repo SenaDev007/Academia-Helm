@@ -60,11 +60,11 @@ export function DashboardDispatcher() {
   // Direction / Gouvernance
   const directionRoles = [
     'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR',
-    'DEPUTY_DIRECTOR', 'PROMOTEUR', 'SUPER_DIRECTOR', 'DIRECTEUR_GENERAL',
+    'DEPUTY_DIRECTOR', 'PROMOTER', 'PROMOTEUR', 'SUPER_DIRECTOR', 'DIRECTEUR_GENERAL',
     'DIRECTEUR_ETABLISSEMENT', 'director',
   ];
   if (directionRoles.includes(role)) {
-    if (role === 'PROMOTEUR') return <PromoterDashboard />;
+    if (role === 'PROMOTER' || role === 'PROMOTEUR') return <PromoterDashboard />;
     return <DirectorDashboard />;
   }
 

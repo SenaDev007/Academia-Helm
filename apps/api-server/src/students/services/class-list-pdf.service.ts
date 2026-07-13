@@ -113,6 +113,206 @@ export class ClassListPdfService {
   }
 
   /**
+   * ⭐ Génère un PDF de TOUTES les classes officielles d'un niveau.
+   * Chaque classe est sur une nouvelle page, avec en-tête officiel.
+   * Les classes sont regroupées par niveau.
+   *
+   * @param tenantId
+   * @param academicYearId
+   * @param code Code du niveau (MATERNELLE/PRIMAIRE/SECONDAIRE)
+   * @param schoolLevelId Fallback UUID
+   */
+  async generateAllClassesPdf(
+    tenantId: string,
+    academicYearId: string,
+    code?: string,
+    schoolLevelId?: string,
+  ): Promise<{ buffer: Buffer; filename: string }> {
+    // 1. Résoudre le SchoolLevel
+    const schoolLevel = await this.resolveSchoolLevelForAllClasses(tenantId, code, schoolLevelId);
+    if (!schoolLevel) {
+      throw new NotFoundException(
+        `Niveau scolaire non trouvé${code ? ` (code=${code})` : ''}${schoolLevelId ? ` (id=${schoolLevelId})` : ''}`,
+      );
+    }
+
+    // 2. Récupérer les classes officielles (AcademicClass) de ce niveau
+    const schoolLevelCode = (schoolLevel.code || '').toUpperCase();
+    const academicClasses = await this.prisma.academicClass.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        isActive: true,
+        level: {
+          name: { contains: schoolLevel.name, mode: 'insensitive' },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    if (academicClasses.length === 0) {
+      throw new NotFoundException(
+        `Aucune classe officielle trouvée pour le niveau ${schoolLevel.code}.`,
+      );
+    }
+
+    // 3. Récupérer le branding
+    const branding = await this.getTenantBranding(tenantId);
+    const isSecondary = schoolLevelCode.includes('SECONDAIRE');
+
+    // 4. Récupérer l'année scolaire
+    const academicYear = await this.prisma.academicYear.findFirst({
+      where: { id: academicYearId, tenantId },
+    });
+
+    // 5. Construire un seul HTML avec toutes les classes (séparées par page-break)
+    const allHtml: string[] = [];
+    for (const ac of academicClasses) {
+      // Récupérer les élèves de cette classe officielle
+      const enrollments = await this.prisma.studentEnrollment.findMany({
+        where: {
+          tenantId,
+          academicClassId: ac.id,
+          academicYearId,
+          status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
+        },
+        include: {
+          student: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              matricule: true,
+              studentCode: true,
+              gender: true,
+              dateOfBirth: true,
+            },
+          },
+        },
+        orderBy: { student: { lastName: 'asc' } },
+      });
+
+      const html = this.buildHtml({
+        className: ac.name,
+        classNameSubtitle: `Classe officielle — ${enrollments.length} élève(s)`,
+        schoolName: branding.schoolName,
+        schoolLogo: branding.schoolLogo,
+        schoolAddress: branding.schoolAddress,
+        schoolPhone: branding.schoolPhone,
+        schoolEmail: branding.schoolEmail,
+        schoolSlogan: branding.schoolSlogan,
+        academicYearName: academicYear?.name || '',
+        isSecondary,
+        students: enrollments.map((e, i) => ({
+          num: i + 1,
+          name: `${e.student.lastName.toUpperCase()} ${e.student.firstName}`,
+          matricule: e.student.matricule || e.student.studentCode || '—',
+          gender: e.student.gender === 'M' ? 'M' : e.student.gender === 'F' ? 'F' : '—',
+          dateOfBirth: e.student.dateOfBirth
+            ? new Date(e.student.dateOfBirth).toLocaleDateString('fr-FR')
+            : '—',
+        })),
+        // ⭐ Force un page-break après cette classe (sauf la dernière)
+        pageBreakAfter: true,
+      });
+      allHtml.push(html);
+    }
+
+    // 6. Combiner tous les HTML en un seul document
+    const combinedHtml = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Times New Roman', Georgia, serif; color: #1a1a1a; font-size: 13px; }
+  .class-section { page-break-after: always; }
+  .class-section:last-child { page-break-after: auto; }
+  ${allHtml.map((_, i) => i === 0 ? '' : '').join('')}
+</style>
+</head>
+<body>
+${allHtml.map((html, i) => `<div class="class-section">${this.extractBodyContent(html)}</div>`).join('\n')}
+</body>
+</html>`;
+
+    // 7. Générer le PDF
+    const { page } = await this.puppeteerPool.acquirePage();
+    let pdfBuffer: Buffer;
+    try {
+      await page.setContent(combinedHtml, { waitUntil: 'networkidle0' });
+      const rawPdf = await page.pdf({
+        format: 'A4',
+        margin: { top: '15mm', bottom: '15mm', left: '15mm', right: '15mm' },
+        printBackground: true,
+      });
+      pdfBuffer = Buffer.from(rawPdf);
+    } finally {
+      await this.puppeteerPool.releasePage(page);
+    }
+
+    // 8. Nom du fichier
+    const niveauScolaire = this.levelNameForFile(schoolLevel.name || schoolLevel.code || 'Niveau');
+    const nomEcole = (branding.schoolName || 'Ecole').replace(/[/\\:*?"<>|]/g, ' ').replace(/\s+/g, '_').trim().slice(0, 40);
+    const filename = `Listes_${niveauScolaire}_${nomEcole}.pdf`;
+
+    this.logger.log(
+      `All-classes PDF generated: level=${schoolLevel.code}, ${academicClasses.length} classes, ${pdfBuffer.length} bytes`,
+    );
+
+    return { buffer: pdfBuffer, filename };
+  }
+
+  /**
+   * Résout un SchoolLevel par code ou par id (pour generateAllClassesPdf).
+   */
+  private async resolveSchoolLevelForAllClasses(
+    tenantId: string,
+    code?: string,
+    schoolLevelId?: string,
+  ) {
+    if (code && code.trim()) {
+      const upperCode = code.trim().toUpperCase();
+      const byCode = await this.prisma.schoolLevel.findFirst({
+        where: { tenantId, code: upperCode },
+      });
+      if (byCode) return byCode;
+      const byName = await this.prisma.schoolLevel.findFirst({
+        where: {
+          tenantId,
+          OR: [
+            { name: { equals: code, mode: 'insensitive' } },
+            { label: { equals: code, mode: 'insensitive' } },
+          ],
+        },
+      });
+      if (byName) return byName;
+    }
+    if (schoolLevelId) {
+      const byId = await this.prisma.schoolLevel.findFirst({
+        where: { id: schoolLevelId, tenantId },
+      });
+      if (byId) return byId;
+    }
+    return null;
+  }
+
+  /** Extrait le contenu du <body> d'un document HTML. */
+  private extractBodyContent(html: string): string {
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+    return bodyMatch ? bodyMatch[1] : html;
+  }
+
+  /** Libellé du niveau pour le nom de fichier. */
+  private levelNameForFile(codeOrName: string): string {
+    const upper = codeOrName.toUpperCase();
+    if (upper === 'MATERNELLE') return 'Maternelle';
+    if (upper === 'PRIMAIRE') return 'Primaire';
+    if (upper === 'SECONDAIRE') return 'Secondaire';
+    return codeOrName.trim() || 'Niveau';
+  }
+
+  /**
    * Résout le contexte de la classe (physique ou officielle) et récupère les élèves.
    */
   private async resolveClassContext(
@@ -272,6 +472,8 @@ export class ClassListPdfService {
       gender: string;
       dateOfBirth: string;
     }>;
+    /** ⭐ Si true, ajoute un page-break après ce bloc (utilisé par generateAllClassesPdf). */
+    pageBreakAfter?: boolean;
   }): string {
     const ministry = data.isSecondary
       ? `Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes`

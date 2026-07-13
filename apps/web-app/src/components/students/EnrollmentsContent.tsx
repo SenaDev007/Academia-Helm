@@ -212,6 +212,10 @@ export default function EnrollmentsContent() {
   const [pdfExistsClasses, setPdfExistsClasses] = useState<Set<string>>(new Set());
   // PDF liste de classe en cours de visualisation (blob URL + fileName)
   const [previewClassPdf, setPreviewClassPdf] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
+  // ⭐ Export Excel par classe (bouton à côté du PDF)
+  const [excelGeneratingClassId, setExcelGeneratingClassId] = useState<string | null>(null);
+  // ⭐ Export PDF de toutes les classes d'un niveau
+  const [allPdfGeneratingLevelId, setAllPdfGeneratingLevelId] = useState<string | null>(null);
 
   // ─── ORION mini-panel ──────────────────────────────────────────────
   // Alertes ciblées sur les inscriptions : élèves sans matricule, cartes manquantes,
@@ -1008,9 +1012,10 @@ export default function EnrollmentsContent() {
                 return (
                   <div key={node.level.id}>
                     {/* NIVEAU */}
+                    <div className={cn('w-full flex items-center gap-3 px-5 py-4 transition-colors text-left group', getLevelHoverColor(node.level.name))}>
                     <button
                       onClick={() => toggleLevel(node.level.id)}
-                      className={cn('w-full flex items-center gap-3 px-5 py-4 transition-colors text-left group', getLevelHoverColor(node.level.name))}
+                      className="flex items-center gap-3 flex-1 min-w-0 text-left"
                     >
                       <div className="shrink-0">
                         {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-400 group-hover:text-blue-600" /> : <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-blue-600" />}
@@ -1022,6 +1027,43 @@ export default function EnrollmentsContent() {
                       </div>
                       <span className="px-3 py-1 bg-slate-100 rounded-full text-sm font-bold text-slate-600 shrink-0">{node.totalStudents}</span>
                     </button>
+                    {/* ⭐ Bouton : PDF de toutes les classes du niveau */}
+                    <button
+                      onClick={async () => {
+                        if (!academicYear) return;
+                        // Résoudre le code du niveau depuis le nom
+                        const upperName = levelName.toUpperCase();
+                        const levelCode = upperName.includes('MATERNELLE') ? 'MATERNELLE'
+                          : upperName.includes('PRIMAIRE') ? 'PRIMAIRE'
+                          : upperName.includes('SECONDAIRE') ? 'SECONDAIRE' : '';
+                        if (!levelCode) {
+                          toast({ title: 'Erreur', description: 'Code niveau non résolu', variant: 'error' });
+                          return;
+                        }
+                        setAllPdfGeneratingLevelId(node.level.id);
+                        try {
+                          await studentsService.exportAllClassesPdf(academicYear.id, levelCode);
+                          toast({ title: '✅ PDF généré', description: `Toutes les listes ${levelName}`, variant: 'success' });
+                        } catch (e: any) {
+                          toast({ title: 'Erreur PDF', description: e.message, variant: 'error' });
+                        } finally {
+                          setAllPdfGeneratingLevelId(null);
+                        }
+                      }}
+                      disabled={allPdfGeneratingLevelId === node.level.id}
+                      className={cn(
+                        'p-1.5 rounded-lg transition shrink-0',
+                        allPdfGeneratingLevelId === node.level.id
+                          ? 'bg-blue-100 text-blue-600 cursor-wait'
+                          : cn('text-slate-400', getLevelButtonHover(levelName)),
+                      )}
+                      title="Générer le PDF de toutes les classes de ce niveau"
+                    >
+                      {allPdfGeneratingLevelId === node.level.id
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <FileText className="w-4 h-4" />}
+                    </button>
+                    </div>
 
                     {/* CLASSES */}
                     <AnimatePresence>
@@ -1108,6 +1150,33 @@ export default function EnrollmentsContent() {
                                         {pdfGeneratingClassId === classInfo.id
                                           ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                           : <Eye className="w-3.5 h-3.5" />}
+                                      </button>
+                                      {/* ⭐ Bouton Excel — génère un fichier Excel pour cette classe officielle */}
+                                      <button
+                                        onClick={async () => {
+                                          if (!academicYear) return;
+                                          setExcelGeneratingClassId(classInfo.id);
+                                          try {
+                                            await studentsService.exportClassExcel(academicYear.id, classInfo.id, classInfo.name);
+                                            toast({ title: '✅ Excel généré', description: classInfo.name, variant: 'success' });
+                                          } catch (e: any) {
+                                            toast({ title: 'Erreur Excel', description: e.message, variant: 'error' });
+                                          } finally {
+                                            setExcelGeneratingClassId(null);
+                                          }
+                                        }}
+                                        disabled={excelGeneratingClassId === classInfo.id}
+                                        className={cn(
+                                          'p-1.5 rounded-lg transition shrink-0',
+                                          excelGeneratingClassId === classInfo.id
+                                            ? 'bg-green-100 text-green-600 cursor-wait'
+                                            : cn('text-slate-400 hover:bg-green-100 hover:text-green-600'),
+                                        )}
+                                        title="Générer le fichier Excel de cette classe"
+                                      >
+                                        {excelGeneratingClassId === classInfo.id
+                                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                          : <FileSpreadsheet className="w-3.5 h-3.5" />}
                                       </button>
                                     </div>
 

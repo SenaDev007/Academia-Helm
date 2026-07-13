@@ -95,6 +95,7 @@ export default function StudentInteropContent() {
                 onClick={() => handleExportEducmaster(level)}
                 disabled={!!syncingLevelId}
                 className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg transition"
+                title={`Exporter ${level.label} en Excel`}
               >
                 {syncingLevelId === level.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                 {syncingLevelId === level.id ? 'Export...' : `Exporter ${level.code}`}

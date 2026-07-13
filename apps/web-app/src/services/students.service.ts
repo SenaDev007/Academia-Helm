@@ -1301,6 +1301,97 @@ class StudentsService {
     window.URL.revokeObjectURL(url);
     a.remove();
   }
+
+  /**
+   * Export Excel d'UNE classe officielle (AcademicClass).
+   * Une feuille par classe officielle, avec les colonnes Educmaster.
+   * BFF : GET /api/students/export/class-excel?academicYearId=...&classId=...
+   */
+  async exportClassExcel(
+    academicYearId: string,
+    classId: string,
+    className?: string,
+  ): Promise<void> {
+    const res = await fetch(
+      `/api/students/export/class-excel?academicYearId=${encodeURIComponent(academicYearId)}&classId=${encodeURIComponent(classId)}`,
+      {
+        credentials: 'include',
+        headers: {
+          'x-tenant-id': localStorage.getItem('tenantId') || '',
+        },
+      },
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Erreur lors de l\'export' }));
+      throw new Error(err.message || 'Erreur lors de l\'export');
+    }
+    // ⭐ Vérifier Content-Type (pas de HTML)
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      throw new Error('Le fichier Excel n\'a pas pu être généré (réponse HTML inattendue).');
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    let filename = `${className || 'classe'}.xlsx`;
+    const cd = res.headers.get('Content-Disposition');
+    if (cd) {
+      const match = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+      if (match) {
+        try { filename = decodeURIComponent(match[1]); } catch { filename = match[1]; }
+      }
+    }
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+  }
+
+  /**
+   * Export PDF de TOUTES les classes d'un niveau (regroupées par niveau).
+   * BFF : GET /api/students/export/all-classes-pdf?academicYearId=...&code=...
+   */
+  async exportAllClassesPdf(
+    academicYearId: string,
+    levelCode: string,
+  ): Promise<void> {
+    const res = await fetch(
+      `/api/students/export/all-classes-pdf?academicYearId=${encodeURIComponent(academicYearId)}&code=${encodeURIComponent(levelCode)}`,
+      {
+        credentials: 'include',
+        headers: {
+          'x-tenant-id': localStorage.getItem('tenantId') || '',
+        },
+      },
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Erreur lors de l\'export' }));
+      throw new Error(err.message || 'Erreur lors de l\'export');
+    }
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      throw new Error('Le PDF n\'a pas pu être généré (réponse HTML inattendue).');
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    let filename = `Listes_${levelCode}.pdf`;
+    const cd = res.headers.get('Content-Disposition');
+    if (cd) {
+      const match = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+      if (match) {
+        try { filename = decodeURIComponent(match[1]); } catch { filename = match[1]; }
+      }
+    }
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+  }
 }
 
 export const studentsService = new StudentsService();

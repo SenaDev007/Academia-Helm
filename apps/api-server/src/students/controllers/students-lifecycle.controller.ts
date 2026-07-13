@@ -297,6 +297,70 @@ export class StudentsLifecycleController {
     });
   }
 
+  /**
+   * GET /students/export/class-excel?academicYearId=...&classId=...
+   * Génère un fichier Excel pour UNE classe officielle (AcademicClass).
+   * Une feuille par classe, avec les colonnes Educmaster.
+   */
+  @Get('export/class-excel')
+  async exportClassExcel(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('classId') classId: string,
+  ) {
+    if (!academicYearId || !classId) {
+      throw new BadRequestException('academicYearId et classId sont obligatoires');
+    }
+    const result = await this.educmasterExcel.generateWorkbookForSingleClass({
+      tenantId,
+      academicYearId,
+      classId,
+    });
+    return new StreamableFile(result.buffer, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename="${encodeURIComponent(result.filename)}"`,
+    });
+  }
+
+  /**
+   * GET /students/export/all-classes-pdf?academicYearId=...&code=...
+   * Génère un PDF de TOUTES les classes d'un niveau, regroupées par niveau.
+   * Chaque classe commence sur une nouvelle page.
+   */
+  @Get('export/all-classes-pdf')
+  async exportAllClassesPdf(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('code') code?: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
+    @Res() res: Response,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est obligatoire');
+    }
+    if (!code && !schoolLevelId) {
+      throw new BadRequestException('code (MATERNELLE/PRIMAIRE/SECONDAIRE) ou schoolLevelId est obligatoire');
+    }
+    const { buffer: pdfBuffer, filename } = await this.classListPdf.generateAllClassesPdf(
+      tenantId,
+      academicYearId,
+      code,
+      schoolLevelId,
+    );
+    const safeName = filename
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .substring(0, 60);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${safeName}"`,
+      'Content-Length': pdfBuffer.length,
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+    });
+    res.send(pdfBuffer);
+  }
+
   @Get('class/:classId')
   async getByClass(
     @TenantId() tenantId: string,

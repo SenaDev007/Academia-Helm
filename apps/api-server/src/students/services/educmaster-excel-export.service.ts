@@ -253,6 +253,139 @@ export class EducmasterExcelExportService {
   }
 
   /**
+   * ⭐ Génère un fichier Excel pour UNE seule classe officielle (AcademicClass).
+   * Une seule feuille avec les élèves de cette classe.
+   * Utilisé par le bouton Excel à côté de chaque classe dans l'onglet Inscriptions.
+   */
+  async generateWorkbookForSingleClass(options: {
+    tenantId: string;
+    academicYearId: string;
+    classId: string;
+  }): Promise<EducmasterExcelExportResult> {
+    const { tenantId, academicYearId, classId } = options;
+    const columns = EDUCMASTER_EXCEL_COLUMNS;
+
+    // 1. Récupérer la classe officielle (AcademicClass)
+    const ac = await this.prisma.academicClass.findFirst({
+      where: { id: classId, tenantId },
+      include: {
+        level: true,
+        academicYear: true,
+      },
+    });
+    if (!ac) {
+      throw new NotFoundException('Classe officielle non trouvée');
+    }
+
+    // 2. Récupérer les élèves de cette classe officielle
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: {
+        tenantId,
+        academicClassId: classId,
+        academicYearId,
+        status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
+      },
+      include: {
+        student: {
+          select: {
+            id: true,
+            studentCode: true,
+            firstName: true,
+            lastName: true,
+            dateOfBirth: true,
+            gender: true,
+            placeOfBirth: true,
+            nationality: true,
+            npi: true,
+          },
+        },
+      },
+      orderBy: { student: { lastName: 'asc' } },
+    });
+
+    // 3. Récupérer les responsables
+    const studentIds = [...new Set(enrollments.map((e) => e.studentId))];
+    const guardianLinks = await this.prisma.studentGuardian.findMany({
+      where: { tenantId, studentId: { in: studentIds } },
+      include: { guardian: true },
+    });
+    const guardiansByStudent = new Map<string, StudentRow['guardians']>();
+    for (const sg of guardianLinks) {
+      const list = guardiansByStudent.get(sg.studentId) ?? [];
+      list.push({
+        relationship: sg.relationship,
+        isPrimary: sg.isPrimary,
+        firstName: sg.guardian.firstName,
+        lastName: sg.guardian.lastName,
+        phone: sg.guardian.phone,
+        address: sg.guardian.address,
+      });
+      guardiansByStudent.set(sg.studentId, list);
+    }
+
+    // 4. Construire les StudentRow
+    const seen = new Set<string>();
+    const students: StudentRow[] = enrollments
+      .filter((e) => {
+        if (seen.has(e.studentId)) return false;
+        seen.add(e.studentId);
+        return true;
+      })
+      .map((e) => ({
+        student: {
+          id: e.student.id,
+          studentCode: e.student.studentCode,
+          firstName: e.student.firstName,
+          lastName: e.student.lastName,
+          dateOfBirth: e.student.dateOfBirth,
+          gender: e.student.gender,
+          placeOfBirth: e.student.placeOfBirth,
+          nationality: e.student.nationality,
+          npi: e.student.npi,
+        },
+        guardians: guardiansByStudent.get(e.studentId) ?? [],
+      }));
+
+    if (students.length === 0) {
+      throw new NotFoundException(
+        `Aucun élève trouvé dans la classe "${ac.name}" pour cette année.`,
+      );
+    }
+
+    // 5. Récupérer le branding pour le nom de fichier
+    const [tenant, academicYear] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        include: { schools: true },
+      }),
+      this.prisma.academicYear.findFirst({
+        where: { id: academicYearId, tenantId },
+      }),
+    ]);
+
+    // 6. Construire le workbook avec une seule feuille
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Academia Helm';
+    workbook.created = new Date();
+    const sheetName = this.sanitizeSheetName(ac.name);
+    const sheet = workbook.addWorksheet(sheetName);
+    this.writeSheet(sheet, columns, students);
+
+    const raw = await workbook.xlsx.writeBuffer();
+    const buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as any);
+    const nomEcole = this.fileNameSegment(
+      (tenant?.schools as { name?: string } | null)?.name ?? tenant?.name ?? 'Ecole',
+    );
+    const nomClasse = this.fileNameSegment(ac.name);
+    const anneeScolaire = this.fileNameSegment(
+      academicYear?.name || academicYear?.label || new Date().getFullYear().toString(),
+    );
+    const filename = `${nomEcole}_${nomClasse}_${anneeScolaire}.xlsx`;
+
+    return { buffer, filename, sheetNames: [sheetName] };
+  }
+
+  /**
    * Résout un SchoolLevel par code (préféré) ou par id (fallback).
    * Renvoie null si aucune correspondance.
    */

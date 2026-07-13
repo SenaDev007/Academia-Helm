@@ -386,6 +386,31 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     return () => { cancelled = true; };
   }, [tenantIdForApi]);
 
+  // ⭐ Récupérer le statut d'ouverture des admissions publiques.
+  // Si fermées, le formulaire de pré-inscription est masqué et seul le bouton
+  // "Demander des infos" reste disponible.
+  useEffect(() => {
+    if (!tenantIdForApi || portalType !== 'public') return;
+    let cancelled = false;
+    setAdmissionStatusLoading(true);
+    fetch(`/api/public/school-info/${encodeURIComponent(tenantIdForApi)}/admission-status`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then(data => {
+        if (cancelled) return;
+        setAdmissionStatus(data);
+      })
+      .catch((e) => {
+        // Non bloquant : si l'endpoint échoue, on laisse admissionStatus = null
+        // → le formulaire reste visible (comportement par défaut, rétro-compat).
+        console.warn('[public-admission] Failed to fetch admission-status:', e?.message);
+      })
+      .finally(() => { if (!cancelled) setAdmissionStatusLoading(false); });
+    return () => { cancelled = true; };
+  }, [tenantIdForApi, portalType]);
+
+  // ⭐ Les admissions sont-elles fermées ? (true si on a le statut ET isOpen=false)
+  const admissionsAreClosed = !!admissionStatus && !admissionStatus.isOpen;
+
   // ── Mode "admin subdomain" : l'utilisateur vient d'être redirigé depuis ──
   // admin.academiahelm.com (cf. middleware). Après une connexion réussie en tant
   // que PLATFORM_OWNER, on le renvoie vers admin.academiahelm.com${redirectPath}
@@ -504,6 +529,20 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   // Étape 3 : Pièces justificatives + Message + Submit
   // Objectif : fixer la hauteur du formulaire, éviter le scroll vertical.
   const [preEnrollmentStep, setPreEnrollmentStep] = useState<1 | 2 | 3>(1);
+
+  // ⭐ Statut d'ouverture des admissions publiques.
+  // Si les admissions sont fermées (date dépassée ou désactivées manuellement),
+  // le formulaire de pré-inscription est masqué et seul le bouton "Demander des infos"
+  // reste disponible. Évite que le parent remplisse tout avant de découvrir le refus.
+  const [admissionStatus, setAdmissionStatus] = useState<{
+    isOpen: boolean;
+    reason: string;
+    admissionEnabled: boolean;
+    admissionOpenDate: string | null;
+    admissionCloseDate: string | null;
+    academicYearName: string | null;
+  } | null>(null);
+  const [admissionStatusLoading, setAdmissionStatusLoading] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -2163,7 +2202,53 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 )}
 
                 {/* ── PUBLIC : Pré-inscription (aucune authentification requise) ── */}
-                {portalType === 'public' && !preEnrollmentSubmitted && (
+                {portalType === 'public' && !preEnrollmentSubmitted && admissionsAreClosed && (
+                  <div className="public-pre-enrollment space-y-4">
+                    {/* ── Bannière : admissions fermées ── */}
+                    <div className="rounded-xl border-2 p-5 text-center" style={{ borderColor: '#fca5a5', background: '#fef2f2' }}>
+                      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: '#fee2e2' }}>
+                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="#dc2626" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                        </svg>
+                      </div>
+                      <h3 className="text-base font-bold mb-1.5" style={{ color: '#991b1b' }}>
+                        Les admissions sont actuellement fermées
+                      </h3>
+                      <p className="text-sm text-slate-700 leading-relaxed">
+                        {admissionStatus?.reason || 'La période de soumission des demandes d\'admission est terminée pour cette année scolaire.'}
+                      </p>
+                      {admissionStatus?.academicYearName && (
+                        <p className="text-xs text-slate-500 mt-2">
+                          Année scolaire concernée : {admissionStatus.academicYearName}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* ── Option : Demander des infos ── */}
+                    <div className="rounded-xl border-2 p-5 text-center" style={{ borderColor: `${NAVY}20`, background: '#f8fafc' }}>
+                      <h4 className="text-sm font-bold mb-1.5" style={{ color: NAVY }}>
+                        Vous souhaitez obtenir des informations ?
+                      </h4>
+                      <p className="text-xs text-slate-600 leading-relaxed mb-3">
+                        Notre équipe répondra à toutes vos questions sur l'établissement,
+                        les frais de scolarité, les programmes, etc.
+                      </p>
+                      <a
+                        href={`mailto:?subject=Demande d'informations - ${typeof window !== 'undefined' ? window.location.hostname : ''}`}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all hover:opacity-90 min-h-[44px]"
+                        style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+                        </svg>
+                        Demander des informations
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── PUBLIC : Pré-inscription (formulaire complet, admissions ouvertes) ── */}
+                {portalType === 'public' && !preEnrollmentSubmitted && !admissionsAreClosed && (
                   <div className="public-pre-enrollment"> {/* wrapper pour styles compacts (voir globals.css) */}
                     {/* ── En-tête wizard : indicateur d'étapes (3 pastilles) ── */}
                     <div className="flex items-center justify-center gap-1.5 mb-2">
@@ -2712,8 +2797,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
             )}
 
             {/* ── Submit button — palette Helm unifiée ── */}
-            {/* Pour le portail public : n'afficher qu'à l'étape 3 (sinon le bouton "Suivant" gère la navigation) */}
-            {!(portalType === 'public' && preEnrollmentSubmitted) && !(portalType === 'public' && preEnrollmentStep < 3) && (
+            {/* Pour le portail public : n'afficher qu'à l'étape 3 (sinon le bouton "Suivant" gère la navigation).
+                ⭐ Masqué si les admissions sont fermées (pas de soumission possible). */}
+            {!(portalType === 'public' && preEnrollmentSubmitted) && !(portalType === 'public' && preEnrollmentStep < 3) && !(portalType === 'public' && admissionsAreClosed) && (
               <motion.button
                 type="submit"
                 disabled={isLoading}

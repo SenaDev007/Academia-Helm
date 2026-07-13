@@ -126,7 +126,7 @@ export class OnboardingController {
   @HttpCode(HttpStatus.OK)
   async generateOTP(
     @Param('draftId') draftId: string,
-    @Body() body: { phone: string; method?: 'sms' | 'voice' | 'whatsapp' },
+    @Body() body: { phone: string; method?: 'sms' | 'voice' | 'whatsapp' | 'email' },
   ) {
     const method = body.method || 'sms';
     return this.otpService.generateAndSendOTP(draftId, body.phone, method);

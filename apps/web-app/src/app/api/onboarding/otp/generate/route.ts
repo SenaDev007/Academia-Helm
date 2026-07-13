@@ -31,9 +31,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Valider la méthode si fournie
-    if (method && !['sms', 'voice', 'whatsapp'].includes(method)) {
+    if (method && !['sms', 'voice', 'whatsapp', 'email'].includes(method)) {
       return NextResponse.json(
-        { error: 'method must be one of: sms, voice, whatsapp' },
+        { error: 'method must be one of: sms, voice, whatsapp, email' },
         { status: 400 }
       );
     }

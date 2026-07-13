@@ -167,4 +167,76 @@ export class PublicSchoolInfoController {
       schoolLevelId: c.schoolLevelId,
     }));
   }
+
+  /**
+   * GET /students/admissions-public/school-info/:tenantIdentifier/admission-status
+   *
+   * ⭐ Retourne l'état d'ouverture des admissions publiques pour l'année active.
+   * Utilisé par le portail public pour :
+   *   - afficher une bannière "Admissions ouvertes" / "Admissions closes"
+   *   - désactiver le bouton de soumission si les admissions sont fermées
+   *   - afficher la date d'ouverture ou de clôture
+   *
+   * Pas d'authentification requise (portail public).
+   */
+  @Public()
+  @Get('school-info/:tenantIdentifier/admission-status')
+  async getAdmissionStatus(@Param('tenantIdentifier') tenantIdentifier: string) {
+    const tenantId = await this.resolveTenantId(tenantIdentifier);
+
+    // Récupérer l'année active du tenant
+    const activeYear = await this.prisma.academicYear.findFirst({
+      where: { tenantId, isActive: true },
+      orderBy: { startDate: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        admissionEnabled: true,
+        admissionOpenDate: true,
+        admissionCloseDate: true,
+      },
+    });
+
+    if (!activeYear) {
+      return {
+        isOpen: false,
+        reason: 'Aucune année scolaire active. Veuillez contacter l\'établissement.',
+        admissionEnabled: false,
+        admissionOpenDate: null,
+        admissionCloseDate: null,
+        academicYearName: null,
+        checkedAt: new Date().toISOString(),
+      };
+    }
+
+    const now = new Date();
+    let isOpen = activeYear.admissionEnabled !== false; // null/undefined = true par défaut
+    let reason = '';
+
+    if (!isOpen) {
+      reason = 'Les admissions sont désactivées par l\'établissement.';
+    } else if (activeYear.admissionOpenDate && now < activeYear.admissionOpenDate) {
+      isOpen = false;
+      reason = `Les admissions ouvriront le ${activeYear.admissionOpenDate.toLocaleDateString('fr-FR')}.`;
+    } else if (activeYear.admissionCloseDate && now > activeYear.admissionCloseDate) {
+      isOpen = false;
+      reason = `Les admissions sont closes depuis le ${activeYear.admissionCloseDate.toLocaleDateString('fr-FR')}.`;
+    } else {
+      reason = 'Les admissions sont ouvertes.';
+    }
+
+    this.logger.log(
+      `getAdmissionStatus: tenant=${tenantId} year=${activeYear.name} isOpen=${isOpen}`,
+    );
+
+    return {
+      isOpen,
+      reason,
+      admissionEnabled: activeYear.admissionEnabled !== false,
+      admissionOpenDate: activeYear.admissionOpenDate,
+      admissionCloseDate: activeYear.admissionCloseDate,
+      academicYearName: activeYear.name,
+      checkedAt: now.toISOString(),
+    };
+  }
 }

@@ -1129,8 +1129,9 @@ export class AdmissionService {
 
     // Résoudre l'année académique active du tenant si non fournie
     let academicYearId = body.academicYearId;
+    let activeYear: any = null;
     if (!academicYearId) {
-      const activeYear = await this.prisma.academicYear.findFirst({
+      activeYear = await this.prisma.academicYear.findFirst({
         where: { tenantId, isActive: true },
         orderBy: { startDate: 'desc' },
       });
@@ -1138,6 +1139,41 @@ export class AdmissionService {
         throw new BadRequestException('Aucune année académique active pour cet établissement');
       }
       academicYearId = activeYear.id;
+    } else {
+      // Récupérer l'année pour vérifier les paramètres d'admission
+      activeYear = await this.prisma.academicYear.findFirst({
+        where: { id: academicYearId, tenantId },
+      });
+      if (!activeYear) {
+        throw new BadRequestException('Année académique introuvable pour cet établissement');
+      }
+    }
+
+    // ⭐ Vérifier que les admissions publiques sont ouvertes pour cette année.
+    // Les paramètres (admissionEnabled, admissionOpenDate, admissionCloseDate) sont
+    // configurés dans l'onglet Admissions > Paramétrage par l'administrateur.
+    // Si les admissions sont fermées, on rejette la soumission avec un message clair.
+    if (activeYear) {
+      const now = new Date();
+      if (activeYear.admissionEnabled === false) {
+        throw new BadRequestException(
+          'Les admissions sont actuellement fermées pour cet établissement. ' +
+          'Veuillez réessayer plus tard ou contacter l\'établissement directement.',
+        );
+      }
+      if (activeYear.admissionOpenDate && now < activeYear.admissionOpenDate) {
+        const dateStr = activeYear.admissionOpenDate.toLocaleDateString('fr-FR');
+        throw new BadRequestException(
+          `Les admissions ouvriront le ${dateStr}. Veuillez soumettre votre demande à partir de cette date.`,
+        );
+      }
+      if (activeYear.admissionCloseDate && now > activeYear.admissionCloseDate) {
+        const dateStr = activeYear.admissionCloseDate.toLocaleDateString('fr-FR');
+        throw new BadRequestException(
+          `Les admissions sont clôturées depuis le ${dateStr}. ` +
+          'La période de soumission est terminée pour cette année scolaire.',
+        );
+      }
     }
 
     // Résoudre schoolLevelId — la FK admissions.schoolLevelId → education_levels.id

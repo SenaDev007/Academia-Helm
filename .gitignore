@@ -63,3 +63,9 @@ apps/web-app/public/workbox-*.js
 agent-ctx/
 tool-results/
 upload/
+
+# Download folder — generated artifacts only, not tracked in git
+download/
+
+# Divergent repo clones (not the active project)
+repo/

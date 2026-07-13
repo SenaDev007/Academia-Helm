@@ -402,31 +402,6 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   } | null>(null);
   const [admissionStatusLoading, setAdmissionStatusLoading] = useState(false);
 
-  // ⭐ Récupérer le statut d'ouverture des admissions publiques.
-  // Si fermées, le formulaire de pré-inscription est masqué et seul le bouton
-  // "Demander des infos" reste disponible.
-  useEffect(() => {
-    if (!tenantIdForApi || portalType !== 'public') return;
-    let cancelled = false;
-    setAdmissionStatusLoading(true);
-    fetch(`/api/public/school-info/${encodeURIComponent(tenantIdForApi)}/admission-status`, { cache: 'no-store' })
-      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
-      .then(data => {
-        if (cancelled) return;
-        setAdmissionStatus(data);
-      })
-      .catch((e) => {
-        // Non bloquant : si l'endpoint échoue, on laisse admissionStatus = null
-        // → le formulaire reste visible (comportement par défaut, rétro-compat).
-        console.warn('[public-admission] Failed to fetch admission-status:', e?.message);
-      })
-      .finally(() => { if (!cancelled) setAdmissionStatusLoading(false); });
-    return () => { cancelled = true; };
-  }, [tenantIdForApi, portalType]);
-
-  // ⭐ Les admissions sont-elles fermées ? (true si on a le statut ET isOpen=false)
-  const admissionsAreClosed = !!admissionStatus && !admissionStatus.isOpen;
-
   // ── Mode "admin subdomain" : l'utilisateur vient d'être redirigé depuis ──
   // admin.academiahelm.com (cf. middleware). Après une connexion réussie en tant
   // que PLATFORM_OWNER, on le renvoie vers admin.academiahelm.com${redirectPath}
@@ -477,6 +452,32 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       setPortalType(normalized);
     }
   }, [portalParam, accessContext]);
+
+  // ⭐ Récupérer le statut d'ouverture des admissions publiques.
+  // Si fermées, le formulaire de pré-inscription est masqué et seul le bouton
+  // "Demander des infos" reste disponible.
+  // ⚠️ Ce useEffect DOIT être après la déclaration de portalType (TDZ).
+  useEffect(() => {
+    if (!tenantIdForApi || portalType !== 'public') return;
+    let cancelled = false;
+    setAdmissionStatusLoading(true);
+    fetch(`/api/public/school-info/${encodeURIComponent(tenantIdForApi)}/admission-status`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then(data => {
+        if (cancelled) return;
+        setAdmissionStatus(data);
+      })
+      .catch((e) => {
+        // Non bloquant : si l'endpoint échoue, on laisse admissionStatus = null
+        // → le formulaire reste visible (comportement par défaut, rétro-compat).
+        console.warn('[public-admission] Failed to fetch admission-status:', e?.message);
+      })
+      .finally(() => { if (!cancelled) setAdmissionStatusLoading(false); });
+    return () => { cancelled = true; };
+  }, [tenantIdForApi, portalType]);
+
+  // ⭐ Les admissions sont-elles fermées ? (true si on a le statut ET isOpen=false)
+  const admissionsAreClosed = !!admissionStatus && !admissionStatus.isOpen;
 
   // ── School info from sessionStorage ──────────────────────────────────
   const [schoolInfo, setSchoolInfo] = useState<SchoolInfo | null>(null);

@@ -284,55 +284,12 @@ export class PayrollPrismaService {
     const amount = Number(item.netSalary);
     const motif = `Salaire ${item.payroll.month}/${item.payroll.year} — ${item.staff.firstName} ${item.staff.lastName}`;
 
-    // Appeler FedaPay (payout depuis le compte de l'école, pas Academia Helm)
-    // Le tenantId permet au service de résoudre shopId + API key du tenant
-    const result = throw new BadRequestException("Paiement de salaire via Mobile Money temporairement indisponible (FedaPay supprimé). Veuillez configurer une nouvelle intégration payout.");
-    const result = await Promise.resolve({
-      amount,
-      phoneNumber: momoInfo.number,
-      operator: momoInfo.operator,
-      motif,
-    }, undefined, tenantId);
-
-    // Créer l'enregistrement SalaryPayment
-    const salaryPayment = await this.prisma.salaryPayment.create({
-      data: {
-        ...prismaCreateDefaults(),
-        tenantId,
-        academicYearId,
-        payrollItemId,
-        staffId: item.staffId,
-        amount: item.netSalary,
-        paymentMethod: 'MOBILE_MONEY',
-        paymentDate: new Date(),
-        reference: result.reference || null,
-        status: result.success ? 'PENDING' : 'FAILED',
-        notes: result.success
-          ? `Payout initié vers ${momoInfo.number} (${momoInfo.operator})`
-          : `Échec: ${result.message || 'Erreur inconnue'}`,
-      },
-    });
-
-    // Mettre à jour le statut du PayrollItem
-    if (result.success) {
-      await this.prisma.payrollItem.update({
-        where: { id: payrollItemId },
-        data: { ...prismaUpdateDefaults(), status: 'VALIDATED' },
-      });
-    }
-
-    this.logger.log(
-      `Payout initiated for ${item.staff.firstName} ${item.staff.lastName}: ref=${result.reference}, amount=${amount} FCFA`,
+    // ⭐ FedaPay ne supporte pas les payouts. Paiement de salaire via Mobile Money
+    // temporairement indisponible. Lève une erreur explicite.
+    throw new BadRequestException(
+      "Paiement de salaire via Mobile Money temporairement indisponible. " +
+      "Veuillez configurer une nouvelle intégration payout ou payer manuellement."
     );
-
-    return {
-      success: result.success,
-      reference: result.reference,
-      salaryPaymentId: salaryPayment.id,
-      message: result.success
-        ? `Paiement de ${amount} FCFA initié vers ${momoInfo.number} (${momoInfo.operator})`
-        : `Échec du paiement: ${result.message}`,
-    };
   }
 
   /**

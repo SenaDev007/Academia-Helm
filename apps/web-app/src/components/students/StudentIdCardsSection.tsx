@@ -541,12 +541,15 @@ export default function StudentIdCardsSection() {
             Cartes Scolaires
           </h2>
           <div className="flex items-center gap-2">
+            {/* ⭐ Ordre : 1. Générer → 2. Supprimer → 3. Paramétrage */}
             <button
-              onClick={() => setIsSettingsModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200 transition"
+              onClick={handleGenerateBulk}
+              disabled={isGenerating || isLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-sm transition"
+              title="Générer les cartes pour tous les élèves actifs sans carte"
             >
-              <Settings className="w-3.5 h-3.5" />
-              Paramétrage
+              {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
+              {isGenerating ? 'Génération...' : 'Générer les cartes'}
             </button>
             {/* ⭐ Bouton "Supprimer toutes les cartes" (global) */}
             {(stats?.total || 0) > 0 && (
@@ -561,13 +564,11 @@ export default function StudentIdCardsSection() {
               </button>
             )}
             <button
-              onClick={handleGenerateBulk}
-              disabled={isGenerating || isLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-sm transition"
-              title="Générer les cartes pour tous les élèves actifs sans carte"
+              onClick={() => setIsSettingsModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200 transition"
             >
-              {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
-              {isGenerating ? 'Génération...' : 'Générer les cartes'}
+              <Settings className="w-3.5 h-3.5" />
+              Paramétrage
             </button>
           </div>
         </div>

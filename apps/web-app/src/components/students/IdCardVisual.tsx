@@ -5,18 +5,13 @@
  * ID CARD VISUAL — Carte scolaire premium (recto + verso)
  * ============================================================================
  *
- * Design institutionnel conforme au cahier des charges :
+ * Design conforme au template vecteezy_blue-school-id-card-template :
  *   - CR80 paysage (85.60 × 53.98 mm)
- *   - En-tête : drapeau Bénin (gauche) + République/Ministère/École (centre) + logo (droite)
- *   - Corps : photo + QR code (gauche) + 10 champs (droite)
- *   - Pied : contact parent (gauche) + signature Directeur (droite)
- *   - Gradient bleu, coins arrondis, ombres discrètes
+ *   - Recto : header bleu (logo + école + slogan) → photo gauche + champs droite → footer contact + signature
+ *   - Verso : header bleu (Terms & Conditions) → conditions + contact école → QR code droite
+ *   - Couleurs : bleu primaire (configurable) + blanc + accents
  *
- * Ministère adapté au niveau :
- *   Maternel/Primaire → Ministère des Enseignements Maternel et Primaire
- *   Secondaire → Ministère de l'Enseignement Secondaire, de la Formation
- *     Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes
- *   Supérieur → Ministère de l'Enseignement Supérieur et de la Recherche Scientifique
+ * Ministère adapté au niveau (Maternel/Primaire vs Secondaire vs Supérieur)
  * ============================================================================
  */
 
@@ -32,6 +27,9 @@ interface CardStudent {
   photoUrl?: string;
   dateOfBirth?: string;
   gender?: string;
+  placeOfBirth?: string;
+  nationality?: string;
+  bloodType?: string;
 }
 
 interface CardGuardian {
@@ -39,6 +37,7 @@ interface CardGuardian {
   lastName: string;
   phone: string;
   address: string;
+  relationship?: string;
 }
 
 interface CardData {
@@ -52,6 +51,7 @@ interface CardData {
   className: string;
   levelName: string;
   levelCode?: string;
+  academicYearName?: string;
 }
 
 export interface TenantInfo {
@@ -76,24 +76,19 @@ export interface TenantInfo {
   cardConditionsText?: string;
 }
 
-const PRIMARY = '#003087';
-const SECONDARY = '#007BFF';
-const TEXT = '#1F2937';
-const LIGHT_GRAY = '#E5E7EB';
-
 function formatDate(d?: string) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-// ⭐ Composant QR code réel — génère une image base64 depuis le qrPayload
-function RealQRCode({ payload, size = 56 }: { payload?: string; size?: number }) {
+// ⭐ QR code réel — génère une image base64 depuis le qrPayload
+function RealQRCode({ payload, size = 48 }: { payload?: string; size?: number }) {
   const [dataUrl, setDataUrl] = useState<string>('');
 
   useEffect(() => {
     if (payload) {
       QRCode.toDataURL(payload, {
-        width: size * 2, // 2x for retina
+        width: size * 2,
         margin: 0,
         color: { dark: '#000000', light: '#ffffff' },
         errorCorrectionLevel: 'M',
@@ -102,9 +97,8 @@ function RealQRCode({ payload, size = 56 }: { payload?: string; size?: number })
   }, [payload, size]);
 
   if (!payload || !dataUrl) {
-    // Fallback : grille fictive si pas de payload
     return (
-      <div className="border border-gray-200 rounded bg-white p-px" style={{ width: size / 2, height: size / 2 }}>
+      <div className="border border-gray-300 rounded bg-white p-px" style={{ width: size, height: size }}>
         <div className="grid grid-cols-7 grid-rows-7 gap-px w-full h-full">
           {Array.from({ length: 49 }).map((_, i) => (
             <div key={i} className={cn(((i * 11 + 5) % 7 < 4) ? 'bg-black' : 'bg-white')} />
@@ -115,7 +109,7 @@ function RealQRCode({ payload, size = 56 }: { payload?: string; size?: number })
   }
 
   return (
-    <img src={dataUrl} alt="QR Code" style={{ width: size / 2, height: size / 2 }} className="border border-gray-200 rounded bg-white" />
+    <img src={dataUrl} alt="QR Code" style={{ width: size, height: size }} className="border border-gray-300 rounded bg-white" />
   );
 }
 
@@ -141,8 +135,8 @@ export function IdCardVisual({
   const guardianPhone = g?.phone || '—';
   const guardianAddress = g?.address || '—';
 
-  // Paramètres dynamiques de la carte
-  const primaryColor = identity?.cardPrimaryColor || '#003087';
+  const primaryColor = identity?.cardPrimaryColor || '#0D1F6E';
+  const secondaryColor = '#1E40AF';
 
   // Détection du niveau
   const levelUpper = (card.levelCode || '').toUpperCase();
@@ -150,14 +144,12 @@ export function IdCardVisual({
   const isSecondaire = levelUpper === 'SECONDAIRE' || levelUpper === 'SECONDARY' || levelUpper === 'SECOND';
   const isSuperieur = levelUpper === 'SUPERIEUR' || levelUpper === 'UNIVERSITY' || levelUpper === 'HIGHER';
 
-  // Ministère selon le niveau
   const ministry = isSuperieur
     ? 'Ministère de l\u2019Enseignement Supérieur et de la Recherche Scientifique'
     : isSecondaire
     ? 'Ministère de l\u2019Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l\u2019Insertion des Jeunes'
     : 'Ministère des Enseignements Maternel et Primaire';
 
-  // Sigle/acronyme de l'école (premières lettres des mots)
   const acronym = schoolName
     .split(/\s+/)
     .filter(w => w.length > 2)
@@ -166,24 +158,20 @@ export function IdCardVisual({
     .toUpperCase()
     .substring(0, 8) || 'ECOLE';
 
-  const pickupMorning = identity?.maternellePickupMorning || '12:00';
-  const pickupAfternoon = identity?.maternellePickupAfternoon || '16:30';
-  const singleExit = identity?.maternelleSingleExit;
-  const singleExitTime = identity?.maternelleSingleExitTime || '15:30';
-
-  // Logo école
-  const SchoolLogo = ({ size = 'md' }: { size?: 'sm' | 'md' }) => {
-    const cls = size === 'sm' ? 'w-7 h-7' : 'w-9 h-9';
-    if (logoUrl) return <img src={logoUrl} alt="Logo" className={cn(cls, 'rounded-lg object-contain bg-white p-0.5 shrink-0')} />;
+  // ─── Logo école ───
+  const SchoolLogo = ({ size = 36 }: { size?: number }) => {
+    if (logoUrl) return <img src={logoUrl} alt="Logo" style={{ width: size, height: size }} className="rounded-lg object-contain bg-white p-0.5 shrink-0" />;
     return (
-      <div className={cn(cls, 'rounded-lg bg-white flex items-center justify-center font-bold shrink-0')}
-        style={{ color: primaryColor, fontSize: size === 'sm' ? '8px' : '10px' }}>AH</div>
+      <div style={{ width: size, height: size }} className="rounded-lg bg-white flex items-center justify-center font-bold shrink-0"
+        style={{ width: size, height: size, color: primaryColor, fontSize: `${size * 0.35}px` }}>
+        {acronym.substring(0, 3)}
+      </div>
     );
   };
 
-  // Drapeau du Bénin (vert à gauche, jaune/rouge à droite)
-  const BeninFlag = () => (
-    <div className="w-9 h-7 rounded overflow-hidden border border-gray-300 shrink-0 flex">
+  // ─── Drapeau du Bénin ───
+  const BeninFlag = ({ size = 24 }: { size?: number }) => (
+    <div style={{ width: size * 1.3, height: size }} className="rounded overflow-hidden border border-white/30 shrink-0 flex">
       <div className="w-1/2 h-full bg-green-600" />
       <div className="w-1/2 flex flex-col">
         <div className="h-1/2 bg-yellow-400" />
@@ -192,128 +180,125 @@ export function IdCardVisual({
     </div>
   );
 
-  // ─── RECTO ───
+  // ═══════════════════════════════════════════════════════════════════════
+  // RECTO — Face avant de la carte
+  // Layout : Header bleu → Corps (photo gauche + champs droite) → Footer (contact + signature)
+  // ═══════════════════════════════════════════════════════════════════════
   if (face === 'recto') {
     return (
-      <div className="w-full bg-white rounded-2xl overflow-hidden shadow-lg border border-gray-200 flex flex-col"
-        style={{ aspectRatio: '85.6 / 53.98', fontFamily: 'Inter, Poppins, sans-serif' }}>
+      <div className="w-full bg-white rounded-xl overflow-hidden shadow-xl border border-gray-300 flex flex-col"
+        style={{ aspectRatio: '85.6 / 53.98', fontFamily: 'Inter, Poppins, Arial, sans-serif' }}>
 
-        {/* ═══ EN-TÊTE INSTITUTIONNEL (26%) ═══ */}
-        <div className="shrink-0 flex items-center px-2 py-1.5 gap-2 border-b-2"
-          style={{ height: '26%', borderColor: SECONDARY + '40' }}>
-          {/* Drapeau à gauche */}
-          <BeninFlag />
-          {/* Centre : République + Ministère + École + Sigle + Devise */}
-          <div className="flex-1 text-center min-w-0 px-1">
-            <div className="text-[5px] font-bold text-gray-800 leading-tight">RÉPUBLIQUE DU BÉNIN</div>
-            <div className="text-[3px] text-gray-500 leading-tight">{ministry}</div>
-            <div className="text-[4px] font-bold leading-tight truncate" style={{ color: primaryColor }}>{schoolName}</div>
-            <div className="text-[3px] font-semibold text-gray-400 leading-tight">{acronym}</div>
-            <div className="text-[2.5px] italic text-gray-400 leading-tight truncate">{slogan}</div>
+        {/* ═══ HEADER BLEU (logo + école + slogan) — 22% ═══ */}
+        <div className="shrink-0 flex items-center px-2.5 py-1.5 gap-2 text-white"
+          style={{ height: '22%', background: `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%)` }}>
+          <SchoolLogo size={28} />
+          <div className="flex-1 min-w-0 text-center">
+            <div className="text-[5px] font-bold leading-tight uppercase tracking-wide truncate">{schoolName}</div>
+            <div className="text-[3px] leading-tight opacity-80 truncate">{ministry}</div>
+            <div className="text-[3px] italic leading-tight opacity-70 truncate">{slogan}</div>
           </div>
-          {/* Logo école à droite (même taille que drapeau) */}
-          <SchoolLogo size="md" />
+          <BeninFlag size={16} />
         </div>
 
-        {/* ═══ CORPS (52%) ═══ */}
+        {/* ═══ CORPS (photo gauche + champs droite) — 56% ═══ */}
         <div className="flex flex-1 min-h-0 px-2 py-1.5 gap-2">
           {/* Colonne gauche : photo + QR code */}
-          <div className="flex flex-col items-center justify-center gap-1 shrink-0" style={{ width: '26%' }}>
+          <div className="flex flex-col items-center justify-start gap-1 shrink-0" style={{ width: '28%' }}>
             {(identity?.cardShowPhoto !== false) && (
-              <div className="w-full rounded-lg overflow-hidden border-2"
-                style={{ borderColor: SECONDARY, aspectRatio: '0.75', background: '#f3f4f6', maxWidth: '42px' }}>
+              <div className="w-full rounded-md overflow-hidden border-2"
+                style={{ borderColor: primaryColor, aspectRatio: '0.75', background: '#f3f4f6' }}>
                 {s.photoUrl
                   ? <img src={s.photoUrl} alt={`${s.firstName} ${s.lastName}`} className="w-full h-full object-cover" />
                   : <div className="w-full h-full flex items-center justify-center text-[5px] text-gray-400">PHOTO</div>}
               </div>
             )}
-            {/* QR code de vérification réel */}
             {(identity?.cardShowQRCode !== false) && (
-              <RealQRCode payload={card.qrPayload} size={56} />
+              <RealQRCode payload={card.qrPayload} size={32} />
             )}
           </div>
 
-          {/* Colonne droite : 10 champs en 2 colonnes */}
-          <div className="flex-1 grid grid-cols-2 gap-x-2 gap-y-0.5 min-w-0">
-            <InfoField label="N° Inscription" value={s.matricule || s.studentCode || '—'} />
-            <InfoField label="Matricule" value={card.cardNumber} />
-            <InfoField label="Nom et Prénom" value={`${s.lastName} ${s.firstName}`} />
-            <InfoField label="Sexe" value={s.gender === 'M' ? 'Masculin' : s.gender === 'F' ? 'Féminin' : '—'} />
-            <InfoField label="Date de Naissance" value={formatDate(s.dateOfBirth)} />
-            <InfoField label="Classe" value={card.className || '—'} />
-            <InfoField label="Année Scolaire" value={card.levelName || '—'} />
-            <InfoField label="Groupe Sanguin" value="—" />
+          {/* Colonne droite : champs d'information */}
+          <div className="flex-1 flex flex-col gap-0.5 min-w-0">
+            <InfoField label="N° Carte" value={card.cardNumber} primary={primaryColor} />
+            <InfoField label="Matricule" value={s.matricule || s.studentCode || '—'} primary={primaryColor} />
+            <InfoField label="Nom et Prénom" value={`${s.lastName.toUpperCase()} ${s.firstName}`} primary={primaryColor} bold />
+            <div className="grid grid-cols-2 gap-x-2">
+              <InfoField label="Sexe" value={s.gender === 'M' ? 'Masculin' : s.gender === 'F' ? 'Féminin' : '—'} primary={primaryColor} />
+              <InfoField label="Date de Naiss." value={formatDate(s.dateOfBirth)} primary={primaryColor} />
+            </div>
+            <div className="grid grid-cols-2 gap-x-2">
+              <InfoField label="Classe" value={card.className || '—'} primary={primaryColor} />
+              <InfoField label="Année Scolaire" value={card.academicYearName || card.levelName || '—'} primary={primaryColor} />
+            </div>
             {(identity?.cardShowGuardian !== false) && (
-              <InfoField label="Parent / Tuteur" value={guardianName} />
+              <InfoField label="Parent / Tuteur" value={guardianName} primary={primaryColor} />
             )}
             {(identity?.cardShowEmergencyCall !== false) && (
-              <InfoField label="Téléphone Urgence" value={guardianPhone} />
+              <InfoField label="Téléphone Urgence" value={guardianPhone} primary={primaryColor} />
             )}
           </div>
         </div>
 
-        {/* ═══ PIED DE PAGE (22%) ═══ */}
-        <div className="shrink-0 relative" style={{ height: '22%' }}>
-          <div className="absolute inset-0"
-            style={{ background: `linear-gradient(135deg, ${primaryColor} 0%, ${SECONDARY} 100%)` }}>
-            <div className="flex items-center justify-between h-full px-2.5 text-white">
-              {/* Gauche : contact urgence */}
-              {(identity?.cardShowEmergencyCall !== false) ? (
-                <div className="min-w-0 flex-1">
-                  <div className="text-[3px] font-bold uppercase opacity-90 mb-0.5">Contact d'Urgence</div>
-                  <div className="text-[3px] opacity-80 truncate">{guardianName}</div>
-                  <div className="text-[3px] opacity-80 truncate">{guardianPhone}</div>
-                  <div className="text-[3px] opacity-70 truncate">{guardianAddress}</div>
-                </div>
-              ) : (
-                <div className="min-w-0 flex-1" />
-              )}
-              {/* Droite : signature */}
-              <div className="text-right shrink-0 ml-2">
-                <div className="text-[4px] italic opacity-90 mb-px" style={{ fontFamily: 'Brush Script MT, cursive' }}>Le Directeur</div>
-                <div className="text-[3px] opacity-70 border-t border-white/30 pt-px">Signature & Cachet</div>
-              </div>
-            </div>
+        {/* ═══ FOOTER (contact + signature) — 22% ═══ */}
+        <div className="shrink-0 flex items-center px-2.5 text-white"
+          style={{ height: '22%', background: `linear-gradient(135deg, ${secondaryColor} 0%, ${primaryColor} 100%)` }}>
+          {/* Gauche : contact école */}
+          <div className="min-w-0 flex-1">
+            <div className="text-[3px] font-bold uppercase opacity-90 mb-0.5">Contact</div>
+            {schoolPhone && <div className="text-[3px] opacity-80 truncate">Tél : {schoolPhone}</div>}
+            {schoolEmail && <div className="text-[3px] opacity-80 truncate">{schoolEmail}</div>}
+            {(identity?.cardShowSchoolAddress !== false) && schoolAddress && (
+              <div className="text-[3px] opacity-70 truncate">{schoolAddress}</div>
+            )}
+          </div>
+          {/* Droite : signature */}
+          <div className="text-right shrink-0 ml-2">
+            <div className="text-[4px] italic opacity-90 mb-px" style={{ fontFamily: 'Brush Script MT, cursive' }}>Le Directeur</div>
+            <div className="text-[3px] opacity-70 border-t border-white/30 pt-px">Signature & Cachet</div>
           </div>
         </div>
       </div>
     );
   }
 
-  // ─── VERSO ───
+  // ═══════════════════════════════════════════════════════════════════════
+  // VERSO — Face arrière de la carte
+  // Layout : Header bleu (Terms) → Corps (conditions + contact) → QR droite
+  // ═══════════════════════════════════════════════════════════════════════
   return (
-    <div className="w-full bg-white rounded-2xl overflow-hidden shadow-lg border border-gray-200 flex flex-col"
-      style={{ aspectRatio: '85.6 / 53.98', fontFamily: 'Inter, Poppins, sans-serif' }}>
+    <div className="w-full bg-white rounded-xl overflow-hidden shadow-xl border border-gray-300 flex flex-col"
+      style={{ aspectRatio: '85.6 / 53.98', fontFamily: 'Inter, Poppins, Arial, sans-serif' }}>
 
-      {/* En-tête gradient avec TERMS & dates */}
-      <div className="shrink-0 px-3 py-1.5 flex items-center justify-between text-white"
-        style={{ background: `linear-gradient(135deg, ${SECONDARY} 0%, ${primaryColor} 100%)`, height: '18%' }}>
-        <span className="text-[6px] font-bold uppercase tracking-wider">Terms & Conditions</span>
+      {/* ═══ HEADER BLEU (Terms & Conditions + dates) — 18% ═══ */}
+      <div className="shrink-0 flex items-center justify-between px-2.5 py-1.5 text-white"
+        style={{ height: '18%', background: `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%)` }}>
+        <span className="text-[5px] font-bold uppercase tracking-wider">Conditions d'Utilisation</span>
         <div className="text-right text-[3px] leading-tight">
-          <div>Issue: {formatDate(card.generatedAt)}</div>
-          <div>Expiry: {formatDate(card.validUntil)}</div>
+          <div>Émise le : {formatDate(card.generatedAt)}</div>
+          {card.validUntil && <div>Valable jusqu'au : {formatDate(card.validUntil)}</div>}
         </div>
       </div>
 
-      {/* Corps : rules + contact + QR */}
-      <div className="flex flex-1 min-h-0 px-2.5 py-1.5 gap-2">
+      {/* ═══ CORPS (conditions + QR) — 82% ═══ */}
+      <div className="flex flex-1 min-h-0 px-2 py-1.5 gap-2">
         {/* Gauche : conditions + contact école */}
         <div className="flex-1 flex flex-col min-w-0">
           {identity?.cardConditionsText ? (
-            <div className="text-[3px] text-gray-500 leading-tight whitespace-pre-line mb-1" style={{ maxHeight: '42px', overflow: 'hidden' }}>
+            <div className="text-[3px] text-gray-600 leading-tight whitespace-pre-line mb-1" style={{ maxHeight: '48px', overflow: 'hidden' }}>
               {identity.cardConditionsText}
             </div>
           ) : (
             <ul className="space-y-0.5 mb-1">
               {[
-                'This card remains the property of the school.',
-                'Students must carry it every school day.',
-                'Loss must be reported immediately.',
-                'This card is non-transferable.',
-                'Return the card upon leaving the institution.',
+                'Cette carte reste la propriété de l\'établissement.',
+                'L\'élève doit la porter tous les jours d\'école.',
+                'En cas de perte, signaler immédiatement à l\'administration.',
+                'Cette carte est strictement personnelle et non transférable.',
+                'Restituer la carte en cas de départ de l\'établissement.',
               ].map((rule, i) => (
                 <li key={i} className="flex items-start gap-1">
-                  <div className="w-1 h-1 rounded-sm mt-0.5 shrink-0" style={{ background: SECONDARY }} />
+                  <div className="w-1 h-1 rounded-sm mt-0.5 shrink-0" style={{ background: primaryColor }} />
                   <span className="text-[3px] text-gray-600 leading-tight">{rule}</span>
                 </li>
               ))}
@@ -323,36 +308,37 @@ export function IdCardVisual({
           {/* Heures de sortie maternelle */}
           {isMaternelle && (
             <div className="px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 mb-1">
-              <div className="text-[3px] font-bold text-amber-700 uppercase">Pickup Hours</div>
-              {singleExit
-                ? <div className="text-[3px] text-amber-800">Exit: {singleExitTime}</div>
+              <div className="text-[3px] font-bold text-amber-700 uppercase">Heures de Sortie</div>
+              {identity?.maternelleSingleExit
+                ? <div className="text-[3px] text-amber-800">Sortie unique : {identity?.maternelleSingleExitTime || '15:30'}</div>
                 : <>
-                  <div className="text-[3px] text-amber-800">Morning: {pickupMorning}</div>
-                  <div className="text-[3px] text-amber-800">Afternoon: {pickupAfternoon}</div>
+                  <div className="text-[3px] text-amber-800">Matin : {identity?.maternellePickupMorning || '12:00'}</div>
+                  <div className="text-[3px] text-amber-800">Après-midi : {identity?.maternellePickupAfternoon || '16:30'}</div>
                 </>
               }
             </div>
           )}
 
-          {/* Contact area */}
+          {/* Contact école */}
           <div className="mt-auto space-y-0.5">
-            {schoolPhone && <div className="text-[3px] text-gray-500"><span className="font-bold" style={{ color: primaryColor }}>Tel:</span> {schoolPhone}</div>}
-            {schoolEmail && <div className="text-[3px] text-gray-500"><span className="font-bold" style={{ color: primaryColor }}>Email:</span> {schoolEmail}</div>}
-            {schoolWebsite && <div className="text-[3px] text-gray-500"><span className="font-bold" style={{ color: primaryColor }}>Web:</span> {schoolWebsite}</div>}
+            {schoolPhone && <div className="text-[3px] text-gray-500"><span className="font-bold" style={{ color: primaryColor }}>Tél :</span> {schoolPhone}</div>}
+            {schoolEmail && <div className="text-[3px] text-gray-500"><span className="font-bold" style={{ color: primaryColor }}>Email :</span> {schoolEmail}</div>}
+            {schoolWebsite && <div className="text-[3px] text-gray-500"><span className="font-bold" style={{ color: primaryColor }}>Web :</span> {schoolWebsite}</div>}
             {(identity?.cardShowSchoolAddress !== false) && schoolAddress && (
-              <div className="text-[3px] text-gray-500"><span className="font-bold" style={{ color: primaryColor }}>Addr:</span> {schoolAddress}</div>
+              <div className="text-[3px] text-gray-500"><span className="font-bold" style={{ color: primaryColor }}>Adresse :</span> {schoolAddress}</div>
             )}
           </div>
         </div>
 
-        {/* Droite : logo + QR avec fond géométrique */}
+        {/* Droite : QR code + logo */}
         <div className="flex flex-col items-center justify-center gap-1 shrink-0"
-          style={{ width: '24%', background: `linear-gradient(135deg, ${SECONDARY}22 0%, ${primaryColor}11 100%)`, borderRadius: '8px' }}>
-          <SchoolLogo size="sm" />
-          <div className="text-[3px] text-gray-500 text-center leading-tight">{acronym}</div>
+          style={{ width: '26%', background: `linear-gradient(135deg, ${primaryColor}11 0%, ${secondaryColor}08 100%)`, borderRadius: '6px' }}>
+          <SchoolLogo size={24} />
+          <div className="text-[3px] text-gray-500 text-center leading-tight font-bold">{acronym}</div>
           {(identity?.cardShowQRCode !== false) && (
-            <RealQRCode payload={card.qrPayload} size={56} />
+            <RealQRCode payload={card.qrPayload} size={40} />
           )}
+          <div className="text-[2.5px] text-gray-400 text-center leading-tight">Scan pour vérifier</div>
         </div>
       </div>
     </div>
@@ -360,12 +346,11 @@ export function IdCardVisual({
 }
 
 // ─── Sous-composant : champ d'information ───
-
-function InfoField({ label, value }: { label: string; value: string }) {
+function InfoField({ label, value, primary, bold }: { label: string; value: string; primary: string; bold?: boolean }) {
   return (
-    <div className="min-w-0">
-      <p className="text-[3px] font-bold text-gray-400 uppercase leading-tight truncate">{label}</p>
-      <p className="text-[4px] leading-tight truncate" style={{ color: TEXT }}>{value}</p>
+    <div className="min-w-0 flex items-baseline gap-1">
+      <span className="text-[3px] font-bold uppercase shrink-0" style={{ color: primary }}>{label} :</span>
+      <span className={cn('text-[3.5px] truncate', bold ? 'font-bold' : '')} style={{ color: '#1F2937' }}>{value}</span>
     </div>
   );
 }

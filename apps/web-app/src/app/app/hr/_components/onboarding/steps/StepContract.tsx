@@ -119,7 +119,7 @@ export function StepContract({ contract, onUpdate }: StepContractProps) {
         </div>
       )}
 
-      {/* Mobile Money details (conditional) — for salary payment via FeexPay */}
+      {/* Mobile Money details (conditional) — for salary payment via FedaPay */}
       {showMobileMoneyFields && (
         <div className="space-y-4 p-4 bg-emerald-50/50 rounded-xl border border-emerald-100">
           <div className="flex items-center gap-2 mb-1">
@@ -127,7 +127,7 @@ export function StepContract({ contract, onUpdate }: StepContractProps) {
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">Coordonn&eacute;es Mobile Money</span>
           </div>
           <p className="text-[11px] text-slate-500 -mt-1 mb-2">
-            Num&eacute;ro et op&eacute;rateur utilis&eacute;s pour le paiement des salaires via FeexPay.
+            Num&eacute;ro et op&eacute;rateur utilis&eacute;s pour le paiement des salaires via FedaPay.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>

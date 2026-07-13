@@ -845,13 +845,13 @@ export default function StaffDetailPage() {
                   </div>
                 </div>
 
-                {/* Mobile Money — pour le paiement des salaires via FeexPay */}
+                {/* Mobile Money — pour le paiement des salaires via FedaPay */}
                 <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-4 space-y-3">
                   <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-700">
                     <Smartphone className="h-3.5 w-3.5" /> Mobile Money (Paiement des salaires)
                   </div>
                   <p className="text-[11px] text-slate-500 -mt-1">
-                    Numéro et opérateur utilisés pour le paiement des salaires via FeexPay.
+                    Numéro et opérateur utilisés pour le paiement des salaires via FedaPay.
                   </p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>

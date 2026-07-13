@@ -45,7 +45,7 @@ export default function ParentPayFeesPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch('/api/finance/payments/feexpay/initiate', {
+      const res = await fetch('/api/finance/payments/fedapay/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -221,12 +221,12 @@ export default function ParentPayFeesPage() {
           </div>
         </div>
 
-        {/* Info FeexPay */}
+        {/* Info FedaPay */}
         <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <div className="flex items-start gap-2">
             <Smartphone className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
             <p className="text-xs text-blue-800">
-              Le paiement est traité par <strong>FeexPay</strong> (partenaire certifié).
+              Le paiement est traité par <strong>FedaPay</strong> (partenaire certifié).
               L'argent va directement sur le compte de l'école. Vos données sont sécurisées.
             </p>
           </div>

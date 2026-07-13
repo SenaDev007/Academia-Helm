@@ -1047,7 +1047,7 @@ export class PlatformService {
         { name: 'Base de données', status: dbActive ? 'OPERATIONAL' : 'DOWN', latency: 0 },
         { name: 'Web App (Vercel)', status: 'OPERATIONAL', latency: 0 },
         { name: 'Email (Resend)', status: 'OPERATIONAL', latency: 0 },
-        { name: 'Paiement (FeexPay)', status: 'OPERATIONAL', latency: 0 },
+        { name: 'Paiement (FedaPay)', status: 'OPERATIONAL', latency: 0 },
       ],
       stats: {
         totalTenants,

@@ -181,11 +181,11 @@ export class PayrollPrismaController {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // PAIEMENT DES SALAIRES VIA FEEXPAY
+  // PAIEMENT DES SALAIRES VIA FEDAPAY
   // ──────────────────────────────────────────────────────────────────────────
 
   /**
-   * Paie le salaire d'un seul employé via FeexPay (payout Mobile Money).
+   * Paie le salaire d'un seul employé via FedaPay (payout Mobile Money).
    * POST /hr/payroll/items/:id/pay
    */
   @Post('items/:id/pay')
@@ -206,7 +206,7 @@ export class PayrollPrismaController {
   }
 
   /**
-   * Paie les salaires de TOUS les employés d'un lot via FeexPay (paiement groupé).
+   * Paie les salaires de TOUS les employés d'un lot via FedaPay (paiement groupé).
    * POST /hr/payroll/batches/:id/pay-all
    */
   @Post('batches/:id/pay-all')
@@ -240,10 +240,10 @@ export class PayrollPrismaController {
   }
 
   /**
-   * Valide manuellement le paiement d'un salarié (paiement en espèces / hors FeexPay).
+   * Valide manuellement le paiement d'un salarié (paiement en espèces / hors FedaPay).
    *
    * Utilisé quand l'école a payé en cash ou par virement et veut marquer la ligne
-   * comme payée sans passer par FeexPay (en cas de panne électronique, ou paiement
+   * comme payée sans passer par FedaPay (en cas de panne électronique, ou paiement
    * physique direct).
    *
    * POST /hr/payroll/items/:id/manual-validate

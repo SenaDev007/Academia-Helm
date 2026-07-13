@@ -5,7 +5,7 @@
  * 1. Informations établissement
  * 2. Informations promoteur
  * 3. Plan & Options (plans dynamiques depuis pricing_plans)
- * 4. Paiement initial (FeexPay)
+ * 4. Paiement initial (FedaPay)
  *
  * Layout : Header public + Footer public de Academia Helm
  */

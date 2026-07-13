@@ -35,7 +35,7 @@ import {
 import { Public } from '../auth/decorators/public.decorator';
 import { SubscriptionLifecycleService } from './services/subscription-lifecycle.service';
 import { StudentCountVerifierService } from './services/student-count-verifier.service';
-import { FeexPayService } from './services/feexpay.service';
+import { FedaPayService } from './services/fedapay.service';
 import { PricingService } from './services/pricing.service';
 import { InvoiceService } from './services/invoice.service';
 import { PrismaService } from '../database/prisma.service';
@@ -48,7 +48,7 @@ export class SubscriptionLifecycleController {
     private readonly lifecycleService: SubscriptionLifecycleService,
     private readonly studentCountVerifier: StudentCountVerifierService,
     private readonly prisma: PrismaService,
-    private readonly feexpayService: FeexPayService,
+    private readonly fedapayService: FedaPayService,
     private readonly pricingService: PricingService,
     private readonly invoiceService: InvoiceService,
   ) {}
@@ -340,7 +340,7 @@ export class SubscriptionLifecycleController {
 
   /**
    * POST /api/billing/bilingual/activate/:tenantId
-   * Active l'option bilingue avec paiement immédiat via FeexPay.
+   * Active l'option bilingue avec paiement immédiat via FedaPay.
    *
    * Body: {
    *   paymentMethod: 'MOBILE_MONEY' | 'CARD',
@@ -351,9 +351,9 @@ export class SubscriptionLifecycleController {
    * Workflow :
    *   1. Vérifie que le tenant a un abonnement actif
    *   2. Calcule le montant : bilingualMonthly (MONTHLY) ou bilingualYearly (YEARLY)
-   *   3. Crée une transaction FeexPay
+   *   3. Crée une transaction FedaPay
    *   4. Retourne l'URL/les données de checkout
-   *   5. Le webhook FeexPay confirmera le paiement → on active bilingualEnabled
+   *   5. Le webhook FedaPay confirmera le paiement → on active bilingualEnabled
    */
   @Public()
   @Post('bilingual/activate/:tenantId')
@@ -392,24 +392,18 @@ export class SubscriptionLifecycleController {
       throw new BadRequestException('Montant bilingue introuvable');
     }
 
-    // Créer une transaction FeexPay
+    // Créer une transaction FedaPay
     try {
-      const paymentResult = body.paymentMethod === 'MOBILE_MONEY'
-        ? await this.feexpayService.createMobileMoneyPayment({
-            amount,
-            description: `Option bilingue - ${sub.billingCycle === 'YEARLY' ? 'Annuel' : 'Mensuel'}`,
-            phoneNumber: body.phone!,
-            email: body.customer.email,
-            firstName: body.customer.firstname,
-            lastName: body.customer.lastname,
-          })
-        : await this.feexpayService.createCardPayment({
-            amount,
-            description: `Option bilingue - ${sub.billingCycle === 'YEARLY' ? 'Annuel' : 'Mensuel'}`,
-            email: body.customer.email,
-            firstName: body.customer.firstname,
-            lastName: body.customer.lastname,
-          });
+      const paymentResult = await this.fedapayService.createTransaction({
+        amount,
+        description: `Option bilingue - ${sub.billingCycle === 'YEARLY' ? 'Annuel' : 'Mensuel'}`,
+        callback_url: `${process.env.APP_PUBLIC_URL || 'https://academia-helm-api.fly.dev'}/api/billing/fedapay/webhook`,
+        customer: {
+          email: body.customer.email,
+          firstname: body.customer.firstname || '',
+          lastname: body.customer.lastname || '',
+        },
+      });
 
       // Enregistrer l'intention de paiement pour traitement webhook
       await this.prisma.billingEvent.create({
@@ -418,11 +412,11 @@ export class SubscriptionLifecycleController {
           subscriptionId: sub.id,
           type: 'BILINGUAL_ACTIVATION',
           amount,
-          channel: 'FEEXPAY',
+          channel: 'FEDAPAY',
           reference: paymentResult.reference || `bilingual-${tenantId}-${Date.now()}`,
           metadata: {
             action: 'ACTIVATE_BILINGUAL',
-            feexpayStatus: paymentResult.status,
+            fedapayStatus: paymentResult.status,
             billingCycle: sub.billingCycle,
             customer: body.customer,
           },
@@ -448,7 +442,7 @@ export class SubscriptionLifecycleController {
   /**
    * POST /api/billing/bilingual/confirm/:tenantId
    * Confirme l'activation bilingue après paiement réussi (appelé par le webhook
-   * FeexPay ou manuellement par l'admin après vérification).
+   * FedaPay ou manuellement par l'admin après vérification).
    *
    * Body: { transactionId?: string, reference?: string }
    */
@@ -503,7 +497,7 @@ export class SubscriptionLifecycleController {
         subscriptionId: sub.id,
         type: 'BILINGUAL_ACTIVATED',
         amount: 0,
-        channel: 'FEEXPAY',
+        channel: 'FEDAPAY',
         reference: body.reference || body.transactionId || `bilingual-confirm-${tenantId}-${Date.now()}`,
         metadata: {
           action: 'BILINGUAL_CONFIRMED',
@@ -876,7 +870,7 @@ export class SubscriptionLifecycleController {
               tenantId: tenant.id,
               type: 'INITIAL_SUBSCRIPTION' as any,
               amount: setupFee,
-              channel: 'FEEXPAY',
+              channel: 'FEDAPAY',
               reference: `SEED-CSPEB-${Date.now()}`,
               metadata: {
                 seededBy: adminEmail,
@@ -958,7 +952,7 @@ export class SubscriptionLifecycleController {
    *
    * Données insérées :
    *   - HelmInvoice : AH-2026-06-00001, 100 000 FCFA, PAID
-   *   - BillingEvent : INITIAL_SUBSCRIPTION, 100 000 FCFA, FEEXPAY
+   *   - BillingEvent : INITIAL_SUBSCRIPTION, 100 000 FCFA, FEDAPAY
    *   - OnboardingDraft + OnboardingPayment : simulation de la souscription initiale
    */
   @Public()
@@ -1013,7 +1007,7 @@ export class SubscriptionLifecycleController {
           tenantId: cspeb.id,
           type: 'INITIAL_SUBSCRIPTION' as any,
           amount: 100000,
-          channel: 'FEEXPAY',
+          channel: 'FEDAPAY',
           reference: `CSPEB-INIT-${Date.now()}`,
           metadata: {
             seededBy: adminEmail,
@@ -1165,7 +1159,7 @@ export class SubscriptionLifecycleController {
       const payment = await this.prisma.onboardingPayment.create({
         data: {
           draftId: draft.id,
-          provider: 'feexpay',
+          provider: 'fedapay',
           reference: `CSPEB-ONBOARD-${Date.now()}`,
           amount: 100000,
           currency: 'XOF',

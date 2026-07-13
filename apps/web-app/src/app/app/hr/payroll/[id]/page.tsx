@@ -127,14 +127,14 @@ export default function PayrollDetailPage() {
     }
   };
 
-  // ─── Paiement individuel via FeexPay ──
+  // ─── Paiement individuel via FedaPay ──
   const handlePaySalary = async (itemId: string, staffName: string, amount: number) => {
     if (!academicYear?.id) {
       toast({ variant: 'error', title: 'Année académique requise', description: 'Sélectionnez une année académique active.' });
       return;
     }
     const confirmed = window.confirm(
-      `Confirmer le paiement de ${formatCurrency(amount)} à ${staffName} via Mobile Money ?\n\nLe paiement sera initié depuis le compte FeexPay de l'école vers le numéro Mobile Money du personnel.`,
+      `Confirmer le paiement de ${formatCurrency(amount)} à ${staffName} via Mobile Money ?\n\nLe paiement sera initié depuis le compte FedaPay de l'école vers le numéro Mobile Money du personnel.`,
     );
     if (!confirmed) return;
 
@@ -169,7 +169,7 @@ export default function PayrollDetailPage() {
     }
   };
 
-  // ─── Paiement groupé via FeexPay ──
+  // ─── Paiement groupé via FedaPay ──
   const handlePayAll = async () => {
     setShowPayAllConfirm(false);
     try {
@@ -196,7 +196,7 @@ export default function PayrollDetailPage() {
     }
   };
 
-  // ─── Validation manuelle du paiement (espèces / hors FeexPay) ──
+  // ─── Validation manuelle du paiement (espèces / hors FedaPay) ──
   const handleManualValidate = async (itemId: string, staffName: string, amount: number) => {
     if (!academicYear?.id) {
       toast({ variant: 'error', title: 'Année académique requise', description: 'Sélectionnez une année académique active.' });
@@ -205,7 +205,7 @@ export default function PayrollDetailPage() {
     const note = window.prompt(
       `Validation manuelle du paiement de ${formatCurrency(amount)} à ${staffName}.\n\n` +
       `Cette option est utilisée quand le paiement a été fait en espèces ou par virement ` +
-      `(hors FeexPay Mobile Money).\n\n` +
+      `(hors FedaPay Mobile Money).\n\n` +
       `Ajoutez une note (optionnel) :`,
       'Paiement en espèces',
     );
@@ -375,13 +375,13 @@ export default function PayrollDetailPage() {
                   className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 shadow-lg transition-all font-bold text-sm disabled:opacity-50"
                 >
                   {payingAll ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-                  {payingAll ? 'Paiement en cours...' : 'Payer Tout (FeexPay)'}
+                  {payingAll ? 'Paiement en cours...' : 'Payer Tout (FedaPay)'}
                 </button>
                 <button
                   onClick={handleValidateAndPay}
                   disabled={processing}
                   className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-all font-bold text-sm disabled:opacity-50"
-                  title="Marquer comme payé sans FeexPay (paiement manuel)"
+                  title="Marquer comme payé sans FedaPay (paiement manuel)"
                 >
                   <ShieldCheck size={18} />
                   Marquer Payé
@@ -486,7 +486,7 @@ export default function PayrollDetailPage() {
                           <Calculator size={18} />
                         </button>
                       )}
-                      {/* Bouton Paiement individuel via FeexPay */}
+                      {/* Bouton Paiement individuel via FedaPay */}
                       {(period.status === 'CALCULATED' || period.status === 'VALIDATED') &&
                        payroll.salaryPayment?.status !== 'COMPLETED' && (
                         <>
@@ -494,7 +494,7 @@ export default function PayrollDetailPage() {
                           onClick={() => handlePaySalary(payroll.id, `${payroll.staff?.firstName} ${payroll.staff?.lastName}`, Number(payroll.netSalary))}
                           disabled={payingItem === payroll.id}
                           className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all disabled:opacity-50"
-                          title="Payer via FeexPay (Mobile Money)"
+                          title="Payer via FedaPay (Mobile Money)"
                         >
                           {payingItem === payroll.id ? <Loader2 size={14} className="animate-spin" /> : <Wallet size={14} />}
                           Payer
@@ -503,7 +503,7 @@ export default function PayrollDetailPage() {
                           onClick={() => handleManualValidate(payroll.id, `${payroll.staff?.firstName} ${payroll.staff?.lastName}`, Number(payroll.netSalary))}
                           disabled={payingItem === payroll.id}
                           className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-all disabled:opacity-50 border border-gray-200"
-                          title="Valider manuellement (paiement en espèces / hors FeexPay)"
+                          title="Valider manuellement (paiement en espèces / hors FedaPay)"
                         >
                           {payingItem === payroll.id ? <Loader2 size={14} className="animate-spin" /> : <HandCoins size={14} />}
                           Valider
@@ -553,7 +553,7 @@ export default function PayrollDetailPage() {
                 <Send className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h3 className="text-white font-bold text-base">Paiement groupé via FeexPay</h3>
+                <h3 className="text-white font-bold text-base">Paiement groupé via FedaPay</h3>
                 <p className="text-white/70 text-xs mt-0.5">Vérification avant envoi</p>
               </div>
             </div>
@@ -561,7 +561,7 @@ export default function PayrollDetailPage() {
           <div className="p-6 space-y-4">
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
               <p className="text-sm text-blue-800">
-                Vous êtes sur le point de payer <strong>{period.payrolls?.length || 0} salarié(s)</strong> via FeexPay Mobile Money.
+                Vous êtes sur le point de payer <strong>{period.payrolls?.length || 0} salarié(s)</strong> via FedaPay Mobile Money.
               </p>
               <p className="text-sm font-bold text-blue-900 mt-2">
                 Montant total : {formatCurrency(totalNet)}

@@ -241,7 +241,7 @@ export default function BillingPage() {
         }
 
         // 3. Si Mobile Money → confirmer immédiatement (simulé)
-        // En production, le webhook FeexPay confirmera automatiquement
+        // En production, le webhook FedaPay confirmera automatiquement
         const confirmRes = await fetch(`/api/billing/bilingual/confirm/${currentTenantId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -470,7 +470,7 @@ export default function BillingPage() {
               Les modules concernés (matières, classes, évaluations) pourront être configurés dans les deux langues.
               {bilingualStatus.enabled
                 ? ' Désactivez à tout moment — la souscription s\'arrête immédiatement.'
-                : ' Activez maintenant avec paiement sécurisé via FeexPay.'}
+                : ' Activez maintenant avec paiement sécurisé via FedaPay.'}
             </p>
 
             {bilingualStatus.enabled ? (

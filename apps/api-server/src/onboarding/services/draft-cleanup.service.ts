@@ -39,7 +39,9 @@ export class DraftCleanupService {
             lt: expiryThreshold,
           },
           status: {
-            not: 'COMPLETED',
+            // ⭐ Ne JAMAIS supprimer les drafts COMPLETED ou PAYMENT_COMPLETED
+            // (l'activation peut encore être en cours pour PAYMENT_COMPLETED)
+            notIn: ['COMPLETED', 'PAYMENT_COMPLETED'],
           },
         },
       });
@@ -76,7 +78,7 @@ export class DraftCleanupService {
     return this.prisma.onboardingDraft.count({
       where: {
         createdAt: { lt: expiryThreshold },
-        status: { not: 'COMPLETED' },
+        status: { notIn: ['COMPLETED', 'PAYMENT_COMPLETED'] },
       },
     });
   }

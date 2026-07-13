@@ -134,7 +134,7 @@ function getCaisseIcon(reg: CashRegister) {
   if (code === 'MAIN' || name.includes('principal') || name.includes('coffre'))
     return Gem;
 
-  // Paiements en ligne (Fedapay / FeexPay)
+  // Paiements en ligne (Fedapay / FedaPay)
   if (code === 'ONLINE' || name.includes('en ligne') || name.includes('paiement en ligne'))
     return CreditCard;
 
@@ -287,7 +287,7 @@ const PREDEFINED_CAISSES = [
   { name: 'Caisse activités', code: 'ACTIVITES', location: 'Service activités parascolaires', description: 'Caisse pour les activités parascolaires, sorties et événements.' },
   { name: 'Caisse banque', code: 'BANQUE', location: 'Banque partenaire', description: 'Caisse de liaison avec le compte bancaire de l\'établissement.' },
   { name: 'Caisse Tontine / Épargne', code: 'TONTINE', location: 'Coffre-fort / Banque', description: 'Caisse d\'épargne isolée pour constituer une réserve financière. Les cotisations (transferts entrants) augmentent l\'épargne, les retraits (transferts sortants) la diminuent. Le solde représente l\'épargne cumulée de l\'établissement.' },
-  { name: 'Caisse Paiements en Ligne', code: 'ONLINE', location: 'En ligne', description: 'Caisse virtuelle pour les paiements Fedapay et FeexPay (Mobile Money, carte bancaire). Créée automatiquement au premier paiement en ligne.' },
+  { name: 'Caisse Paiements en Ligne', code: 'ONLINE', location: 'En ligne', description: 'Caisse virtuelle pour les paiements Fedapay et FedaPay (Mobile Money, carte bancaire). Créée automatiquement au premier paiement en ligne.' },
 ];
 
 export default function CashRegistersContent() {
@@ -1672,14 +1672,14 @@ export default function CashRegistersContent() {
                                   const methodLabels: Record<string, string> = {
                                     CASH: '💵 Espèces',
                                     FEDAPAY: 'Fedapay',
-                                    FEEXPAY: '📱 FeexPay',
+                                    FEDAPAY: '📱 FedaPay',
                                     WIRE: '🏦 Virement',
                                     MOBILE_MONEY: '📱 Mobile Money',
                                   };
                                   const methodColors: Record<string, string> = {
                                     CASH: 'bg-emerald-50 text-emerald-700',
                                     FEDAPAY: 'bg-violet-50 text-violet-700',
-                                    FEEXPAY: 'bg-amber-50 text-amber-700',
+                                    FEDAPAY: 'bg-amber-50 text-amber-700',
                                     WIRE: 'bg-blue-50 text-blue-700',
                                     MOBILE_MONEY: 'bg-orange-50 text-orange-700',
                                   };

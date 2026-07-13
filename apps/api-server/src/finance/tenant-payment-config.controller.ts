@@ -1,6 +1,6 @@
 /**
  * TENANT PAYMENT CONFIG CONTROLLER
- * Endpoints pour configurer les paiements en ligne (FeexPay / Fedapay)
+ * Endpoints pour configurer les paiements en ligne (FedaPay / Fedapay)
  */
 import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { TenantPaymentConfigService } from './tenant-payment-config.service';
@@ -26,7 +26,7 @@ export class TenantPaymentConfigController {
   /**
    * POST /finance/payment-config
    * Crée ou met à jour la config de paiement.
-   * Body: { provider, isActive, feexpayApiKey, feexpayShopId, ... }
+   * Body: { provider, isActive, fedapayApiKey, fedapayShopId, ... }
    */
   @Post()
   @Roles(
@@ -40,9 +40,9 @@ export class TenantPaymentConfigController {
     @Body() body: {
       provider?: string;
       isActive?: boolean;
-      feexpayApiKey?: string;
-      feexpayShopId?: string;
-      feexpaySecretKey?: string;
+      fedapayApiKey?: string;
+      fedapayShopId?: string;
+      fedapaySecretKey?: string;
       fedapayPublicKey?: string;
       fedapaySecretKey?: string;
       webhookSecret?: string;
@@ -54,8 +54,8 @@ export class TenantPaymentConfigController {
       message: 'Configuration de paiement enregistrée avec succès',
       config: {
         ...config,
-        feexpayApiKey: config.feexpayApiKey ? '****' + config.feexpayApiKey.substring(config.feexpayApiKey.length - 4) : null,
-        feexpaySecretKey: config.feexpaySecretKey ? '****' + config.feexpaySecretKey.substring(config.feexpaySecretKey.length - 4) : null,
+        fedapayApiKey: config.fedapayApiKey ? '****' + config.fedapayApiKey.substring(config.fedapayApiKey.length - 4) : null,
+        fedapaySecretKey: config.fedapaySecretKey ? '****' + config.fedapaySecretKey.substring(config.fedapaySecretKey.length - 4) : null,
         fedapaySecretKey: config.fedapaySecretKey ? '****' + config.fedapaySecretKey.substring(config.fedapaySecretKey.length - 4) : null,
         webhookSecret: config.webhookSecret ? '****' + config.webhookSecret.substring(config.webhookSecret.length - 4) : null,
       },

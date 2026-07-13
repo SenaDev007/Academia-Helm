@@ -35,7 +35,7 @@ import SchoolCalendarConfigSection from '@/components/settings/SchoolCalendarCon
 import { AdminStructureSection } from '@/components/settings/AdminStructureSection';
 import DepartmentsManagement from '@/components/settings/DepartmentsManagement';
 import PositionsManagement from '@/components/settings/PositionsManagement';
-import { PaymentsSettingsSection } from '@/components/settings/feexpay/PaymentsSettingsSection';
+import { PaymentsSettingsSection } from '@/components/settings/fedapay/PaymentsSettingsSection';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import * as settingsService from '@/services/settings.service';
 import { pedagogyService } from '@/services/pedagogy.service';

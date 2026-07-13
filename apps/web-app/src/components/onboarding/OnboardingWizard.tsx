@@ -7,7 +7,7 @@
  * 1. Établissement (nom, type, pays, ville, téléphone, email, bilingue, nb écoles, logo)
  * 2. Promoteur (nom, prénom, téléphone, email, password, OTP)
  * 3. Plan & Options (pricing dynamique, mensuel/annuel, total)
- * 4. Paiement Initial (FeexPay)
+ * 4. Paiement Initial (FedaPay)
  * 
  * ============================================================================
  */
@@ -52,7 +52,7 @@ import {
 import { HELM_PLANS, getRecommendedPlan, type HelmPlanKey, fetchPricingPlans, getPlanForStudentCount, type DynamicPricingPlan } from '@/lib/services/HelmPricingService';
 import { formatCurrency } from '@/lib/utils';
 import { compressImageFileToDataUrl } from '@/lib/media';
-import FeexPayCheckout from './FeexPayCheckout';
+import FedaPayCheckout from './FedaPayCheckout';
 import OnboardingAnimation from './OnboardingAnimation';
 
 interface OnboardingData {
@@ -109,9 +109,9 @@ export default function OnboardingWizard() {
     public_key: string;
     transaction: { amount: number; description: string }; // currency n'est PAS dans transaction pour le checkout intégré
     customer: { email: string; lastname: string; firstname?: string; phone_number?: string };
-    transactionId?: string; // ID de la transaction FeeXPay
+    transactionId?: string; // ID de la transaction FedaPay
     paymentId?: string; // ID du paiement dans notre base
-  } | null>(null); // Données pour le checkout intégré (conformes à la doc FeeXPay)
+  } | null>(null); // Données pour le checkout intégré (conformes à la doc FedaPay)
   const [isUploadingLogo, setIsUploadingLogo] = useState(false); // État de l'upload du logo
   const [logoPreview, setLogoPreview] = useState<string | null>(null); // Aperçu du logo
   const [passwordStrength, setPasswordStrength] = useState<{
@@ -1051,10 +1051,10 @@ export default function OnboardingWizard() {
   };
 
   const handlePaymentComplete = async (transactionData: any) => {
-    console.log('📥 Callback FeeXPay reçu:', transactionData);
+    console.log('📥 Callback FedaPay reçu:', transactionData);
     
     // ⚠️ CRITIQUE : Ne pas faire confiance au callback frontend
-    // Vérifier le statut réel depuis le backend qui interroge FeeXPay
+    // Vérifier le statut réel depuis le backend qui interroge FedaPay
     if (!data.draftId) {
       setErrors({ submit: 'Draft ID manquant' });
       return;
@@ -1092,7 +1092,7 @@ export default function OnboardingWizard() {
 
   const verifyPaymentStatus = async (paymentId: string) => {
     try {
-      // Appeler le backend pour vérifier le statut réel depuis FeeXPay
+      // Appeler le backend pour vérifier le statut réel depuis FedaPay
       const response = await fetch(`/api/onboarding/payment/${paymentId}/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2770,7 +2770,7 @@ export default function OnboardingWizard() {
                 )}
 
                 {showCheckout && checkoutData ? (
-                  <FeexPayCheckout
+                  <FedaPayCheckout
                     publicKey={checkoutData.public_key}
                     transaction={checkoutData.transaction}
                     customer={checkoutData.customer ?? { email: '', lastname: '' }}
@@ -2798,8 +2798,8 @@ export default function OnboardingWizard() {
                   ) : (
                     <>
                           <img 
-                            src="/images/logoFeeXPay.png" 
-                            alt="FeeXPay" 
+                            src="/images/logoFedaPay.png" 
+                            alt="FedaPay" 
                             className="w-16 h-16 mr-3 object-contain"
                           />
                           Payer {formatCurrency(initialPayment)}
@@ -2815,7 +2815,7 @@ export default function OnboardingWizard() {
                         <div>
                           <p className="text-xs font-medium text-blue-900 mb-1">Paiement sécurisé</p>
                           <p className="text-xs text-graphite-700">
-                            Votre paiement est traité de manière sécurisée via FeeXPay directement sur cette page.
+                            Votre paiement est traité de manière sécurisée via FedaPay directement sur cette page.
                           </p>
                         </div>
                       </div>

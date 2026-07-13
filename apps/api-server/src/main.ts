@@ -20,7 +20,15 @@ async function bootstrap() {
     bodyParser: false,
   });
 
-  app.use(json({ limit: BODY_LIMIT }));
+  // ⭐ raw-body middleware — obligatoire pour la vérification de signature
+  // des webhooks FedaPay. Sans req.rawBody, le fallback JSON.stringify(body)
+  // peut produire des bytes différents de l'original → HMAC mismatch.
+  app.use(json({
+    limit: BODY_LIMIT,
+    verify: (req: any, res: any, buf: Buffer) => {
+      req.rawBody = buf;
+    },
+  }));
   app.use(urlencoded({ extended: true, limit: BODY_LIMIT }));
 
   // ✅ Helmet.js — headers HTTP de sécurité (CDC §16.4.3)
@@ -853,7 +861,7 @@ async function bootstrap() {
   // FALLBACK: Migration bilingualEnabled sur HelmSubscription
   // ============================================================================
   // Cette colonne stocke l'état de l'option bilingue (FR + EN) activable
-  // depuis le module paramètres avec paiement FeexPay.
+  // depuis le module paramètres avec paiement FedaPay.
   // Migration 20260621190000_add_bilingual_to_helm_subscription.
   // Note: la table s'appelle "HelmSubscription" (PascalCase, pas de @@map)
   try {
@@ -1133,12 +1141,12 @@ async function bootstrap() {
       `ALTER TABLE "employment_contracts" ADD COLUMN IF NOT EXISTS "schoolLevelId" TEXT`,
     ).catch(() => {});
 
-    // 2. school_settings — feexpayShopId, feexpayApiKey (added for FeexPay integration)
+    // 2. school_settings — fedapayShopId, fedapayApiKey (added for FedaPay integration)
     await prisma.$executeRawUnsafe(
-      `ALTER TABLE "school_settings" ADD COLUMN IF NOT EXISTS "feexpayShopId" TEXT`,
+      `ALTER TABLE "school_settings" ADD COLUMN IF NOT EXISTS "fedapayShopId" TEXT`,
     ).catch(() => {});
     await prisma.$executeRawUnsafe(
-      `ALTER TABLE "school_settings" ADD COLUMN IF NOT EXISTS "feexpayApiKey" TEXT`,
+      `ALTER TABLE "school_settings" ADD COLUMN IF NOT EXISTS "fedapayApiKey" TEXT`,
     ).catch(() => {});
 
     // 3. staff — ensure all columns referenced by contract PDF exist
@@ -1178,7 +1186,7 @@ async function bootstrap() {
       )`,
     ).catch(() => {});
 
-    logger.log('✅ Contract PDF columns ensured (employment_contracts.schoolLevelId, school_settings.feexpay*, staff.bankDetails/mobileMoney*, employee_cnss)');
+    logger.log('✅ Contract PDF columns ensured (employment_contracts.schoolLevelId, school_settings.fedapay*, staff.bankDetails/mobileMoney*, employee_cnss)');
   } catch (contractColsErr: any) {
     logger.warn(`Contract PDF columns migration warning: ${contractColsErr.message}`);
   }

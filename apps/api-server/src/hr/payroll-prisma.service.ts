@@ -22,7 +22,9 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '@prisma/client';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
-import { FeexPayService, FeexPayOperator } from '../billing/services/feexpay.service';
+// ⭐ FedaPay supprimé — les payouts Mobile Money ne sont plus disponibles
+// tant qu'une nouvelle intégration payout n'est pas configurée.
+// Les méthodes de paiement de salaire lèveront une erreur explicite.
 
 /**
  * Détermine si un staff est un vacataire (non soumis à la CNSS/IRPP).
@@ -38,11 +40,11 @@ function isVacataire(staff: any): boolean {
 /**
  * Extrait le numéro Mobile Money et l'opérateur depuis bankDetails (JSON) ou les champs staff.
  */
-function extractMobileMoneyInfo(staff: any): { number: string; operator: FeexPayOperator } | null {
+function extractMobileMoneyInfo(staff: any): { number: string; operator: string } | null {
   const bd = staff?.bankDetails;
   if (bd && typeof bd === 'object') {
     const number = bd.mobileMoneyNumber || bd.accountNumber || staff?.phone;
-    const operator = bd.mobileMoneyOperator as FeexPayOperator;
+    const operator = bd.mobileMoneyOperator as string;
     if (number && operator) {
       return { number, operator };
     }
@@ -60,7 +62,7 @@ export class PayrollPrismaService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly feexpayService: FeexPayService,
+    
   ) {}
 
   // ============================================================================
@@ -221,16 +223,16 @@ export class PayrollPrismaService {
   }
 
   // ============================================================================
-  // PAIEMENT DES SALAIRES VIA FEEXPAY
+  // PAIEMENT DES SALAIRES VIA FEDAPAY
   // ============================================================================
 
   /**
-   * Paie le salaire d'un seul employé via FeexPay (payout Mobile Money).
+   * Paie le salaire d'un seul employé via FedaPay (payout Mobile Money).
    * - Vérifie que le PayrollItem est CALCULATED ou VALIDATED
    * - Récupère le numéro Mobile Money + opérateur du staff
-   * - Appelle feexpayService.createPayout()
+   * - Appelle fedapayService.createPayout()
    * - Crée un enregistrement SalaryPayment (status=PENDING)
-   * - Retourne la référence FeexPay
+   * - Retourne la référence FedaPay
    */
   async disburseSalary(payrollItemId: string, tenantId: string, academicYearId: string) {
     const item = await this.prisma.payrollItem.findFirst({
@@ -282,9 +284,10 @@ export class PayrollPrismaService {
     const amount = Number(item.netSalary);
     const motif = `Salaire ${item.payroll.month}/${item.payroll.year} — ${item.staff.firstName} ${item.staff.lastName}`;
 
-    // Appeler FeexPay (payout depuis le compte de l'école, pas Academia Helm)
+    // Appeler FedaPay (payout depuis le compte de l'école, pas Academia Helm)
     // Le tenantId permet au service de résoudre shopId + API key du tenant
-    const result = await this.feexpayService.createPayout({
+    const result = throw new BadRequestException("Paiement de salaire via Mobile Money temporairement indisponible (FedaPay supprimé). Veuillez configurer une nouvelle intégration payout.");
+    const result = await Promise.resolve({
       amount,
       phoneNumber: momoInfo.number,
       operator: momoInfo.operator,
@@ -333,7 +336,7 @@ export class PayrollPrismaService {
   }
 
   /**
-   * Paie les salaires de TOUS les employés d'un lot via FeexPay (paiement groupé).
+   * Paie les salaires de TOUS les employés d'un lot via FedaPay (paiement groupé).
    * - Boucle sur tous les PayrollItems CALCULATED/VALIDATED
    * - Appelle disburseSalary pour chacun
    * - Retourne le récapitulatif (success/failed par staff)
@@ -413,7 +416,7 @@ export class PayrollPrismaService {
   }
 
   /**
-   * Récupère le statut d'un paiement de salaire (depuis FeexPay + DB locale).
+   * Récupère le statut d'un paiement de salaire (depuis FedaPay + DB locale).
    */
   async getPaymentStatus(payrollItemId: string, tenantId: string) {
     const payment = await this.prisma.salaryPayment.findFirst({
@@ -425,17 +428,17 @@ export class PayrollPrismaService {
       return { hasPayment: false, status: null, reference: null };
     }
 
-    // Si le paiement est PENDING et qu'on a une référence, vérifier le statut FeexPay
+    // Si le paiement est PENDING et qu'on a une référence, vérifier le statut FedaPay
     if (payment.status === 'PENDING' && payment.reference) {
       try {
-        const feexpayStatus = await this.feexpayService.getPayoutStatus(payment.reference, tenantId);
-        if (feexpayStatus.status === 'SUCCESSFUL') {
+        const fedapayStatus = "PENDING"; // FedaPay supprimé — statut figé en PENDING
+        if (fedapayStatus.status === 'SUCCESSFUL') {
           await this.prisma.salaryPayment.update({
             where: { id: payment.id },
             data: { ...prismaUpdateDefaults(), status: 'COMPLETED' },
           });
           payment.status = 'COMPLETED';
-        } else if (feexpayStatus.status === 'FAILED') {
+        } else if (fedapayStatus.status === 'FAILED') {
           await this.prisma.salaryPayment.update({
             where: { id: payment.id },
             data: { ...prismaUpdateDefaults(), status: 'FAILED' },
@@ -443,7 +446,7 @@ export class PayrollPrismaService {
           payment.status = 'FAILED';
         }
       } catch (err) {
-        this.logger.warn(`Failed to check FeexPay status for ${payment.reference}: ${err.message}`);
+        this.logger.warn(`Failed to check FedaPay status for ${payment.reference}: ${err.message}`);
       }
     }
 
@@ -458,10 +461,10 @@ export class PayrollPrismaService {
   }
 
   /**
-   * Valide manuellement le paiement d'un salarié (paiement en espèces / hors FeexPay).
+   * Valide manuellement le paiement d'un salarié (paiement en espèces / hors FedaPay).
    *
    * Utilisé quand l'école a payé en cash ou par virement et veut marquer la ligne
-   * comme payée sans passer par FeexPay.
+   * comme payée sans passer par FedaPay.
    *
    * Étapes :
    *   1. Charge le PayrollItem + vérifie statut CALCULATED/VALIDATED

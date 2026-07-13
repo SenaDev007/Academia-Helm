@@ -305,6 +305,8 @@ export class OnboardingService {
     const initialPayment = await this.pricingService.calculateInitialPaymentPrice(draft.schoolsCount || 1);
 
     // Construire le priceSnapshot avec le breakdown complet
+    // ⭐ Inclure monthlyPrice et yearlPrice pour que HelmSubscription.monthlyAmount
+    // et annualAmount soient correctement remplis lors de l'activation.
     const priceSnapshot = {
       planId: pricingResult.plan.id,
       planCode: pricingResult.plan.code,
@@ -315,6 +317,8 @@ export class OnboardingService {
       bilingualFee: pricingResult.breakdown.bilingualPrice,
       schoolsCount: draft.schoolsCount,
       subscriptionPrice: pricingResult.amount, // Prix de l'abonnement (après 30 jours)
+      monthlyPrice: pricingResult.plan.monthlyPrice?.toNumber?.() ?? Number(pricingResult.plan.monthlyPrice ?? 0),
+      yearlyPrice: pricingResult.plan.yearlyPrice?.toNumber?.() ?? Number(pricingResult.plan.yearlyPrice ?? 0),
       initialPayment, // Prix initial (100k FCFA)
       breakdown: pricingResult.breakdown as unknown as Prisma.InputJsonValue, // Breakdown complet pour audit
       currency: 'XOF',
@@ -1033,7 +1037,9 @@ export class OnboardingService {
     const expiryThreshold = new Date();
     expiryThreshold.setHours(expiryThreshold.getHours() - DRAFT_EXPIRY_HOURS);
 
-    if (draft.createdAt < expiryThreshold && draft.status !== 'COMPLETED') {
+    // ⭐ Ne pas expirer les drafts COMPLETED ou PAYMENT_COMPLETED
+    // (l'activation peut encore être en cours pour PAYMENT_COMPLETED)
+    if (draft.createdAt < expiryThreshold && !['COMPLETED', 'PAYMENT_COMPLETED'].includes(draft.status)) {
       await this.deleteDraft(draftId);
       throw new NotFoundException(`Onboarding draft expired and has been deleted: ${draftId}`);
     }

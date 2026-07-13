@@ -189,7 +189,7 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
   const saveStep4AndAdvance = async () => {
     if (!state.staffId) return;
 
-    // Update staff with CNSS, IFU, bank details (including Mobile Money for FeexPay)
+    // Update staff with CNSS, IFU, bank details (including Mobile Money for FedaPay)
     const bankDetails: any = {};
     if (state.contract.paymentMode === 'BANK' && state.contract.bankName) {
       bankDetails.bankName = state.contract.bankName;

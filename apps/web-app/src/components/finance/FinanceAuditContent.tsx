@@ -54,7 +54,7 @@ const METHOD_LABELS: Record<string, string> = {
   MOBILE_MONEY: 'Mobile Money',
   WIRE: 'Virement',
   FEDAPAY: 'Fedapay',
-  FEEXPAY: 'FeexPay',
+  FEDAPAY: 'FedaPay',
   BANK: 'Banque',
   CHECK: 'Chèque',
 };

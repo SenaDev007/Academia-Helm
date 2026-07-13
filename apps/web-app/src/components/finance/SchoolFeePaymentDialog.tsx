@@ -7,8 +7,8 @@
  *
  * Dialog avec toggle Espèces / Mobile Money.
  *   - Espèces : toujours disponible, crée un Payment status=completed
- *   - Mobile Money : disponible uniquement si FeexPay est configuré.
- *     Initie un paiement FeexPay (payin) → parent reçoit notification.
+ *   - Mobile Money : disponible uniquement si FedaPay est configuré.
+ *     Initie un paiement FedaPay (payin) → parent reçoit notification.
  *
  * Appelle feexPayService.payCash() ou feexPayService.payMobile().
  */
@@ -39,8 +39,8 @@ import { toast } from '@/components/ui/toast';
 import { formatCurrency } from '@/lib/utils';
 import {
   feexPayService,
-  type FeexPayConfig,
-} from '@/services/feexpay.service';
+  type FedaPayConfig,
+} from '@/services/fedapay.service';
 
 const OPERATORS = [
   { value: 'MTN', label: 'MTN MoMo' },
@@ -73,8 +73,8 @@ export interface SchoolFeePaymentDialogProps {
     schoolLevelId?: string;
   }>;
   academicYearId?: string;
-  /** Ouvrir la config FeexPay (depuis le parent) */
-  onConfigureFeexPay?: () => void;
+  /** Ouvrir la config FedaPay (depuis le parent) */
+  onConfigureFedaPay?: () => void;
 }
 
 type PaymentMethod = 'CASH' | 'MOBILE_MONEY';
@@ -86,10 +86,10 @@ export function SchoolFeePaymentDialog({
   student,
   students,
   academicYearId,
-  onConfigureFeexPay,
+  onConfigureFedaPay,
 }: SchoolFeePaymentDialogProps) {
   const [method, setMethod] = useState<PaymentMethod>('CASH');
-  const [feexPayConfig, setFeexPayConfig] = useState<FeexPayConfig | null>(null);
+  const [feexPayConfig, setFedaPayConfig] = useState<FedaPayConfig | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -105,18 +105,18 @@ export function SchoolFeePaymentDialog({
 
   useEffect(() => {
     if (isOpen) {
-      loadFeexPayConfig();
+      loadFedaPayConfig();
       if (student) setSelectedStudentId(student.id);
     }
   }, [isOpen, student]);
 
-  const loadFeexPayConfig = async () => {
+  const loadFedaPayConfig = async () => {
     try {
       setLoadingConfig(true);
       const cfg = await feexPayService.getConfig();
-      setFeexPayConfig(cfg);
+      setFedaPayConfig(cfg);
     } catch {
-      setFeexPayConfig(null);
+      setFedaPayConfig(null);
     } finally {
       setLoadingConfig(false);
     }
@@ -148,8 +148,8 @@ export function SchoolFeePaymentDialog({
       if (!feexPayReady) {
         toast({
           variant: 'error',
-          title: 'FeexPay non configuré',
-          description: 'Configurez FeexPay dans Paramètres > Paiements avant d\'accepter Mobile Money.',
+          title: 'FedaPay non configuré',
+          description: 'Configurez FedaPay dans Paramètres > Paiements avant d\'accepter Mobile Money.',
         });
         return;
       }
@@ -300,16 +300,16 @@ export function SchoolFeePaymentDialog({
                 <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <p className="text-xs text-amber-800">
-                    FeexPay n'est pas configuré. Pour accepter les paiements Mobile Money,
-                    configurez votre compte FeexPay dans les Paramètres.
+                    FedaPay n'est pas configuré. Pour accepter les paiements Mobile Money,
+                    configurez votre compte FedaPay dans les Paramètres.
                   </p>
-                  {onConfigureFeexPay && (
+                  {onConfigureFedaPay && (
                     <button
                       type="button"
-                      onClick={onConfigureFeexPay}
+                      onClick={onConfigureFedaPay}
                       className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-amber-700 hover:text-amber-900"
                     >
-                      <Settings size={12} /> Configurer FeexPay
+                      <Settings size={12} /> Configurer FedaPay
                     </button>
                   )}
                 </div>

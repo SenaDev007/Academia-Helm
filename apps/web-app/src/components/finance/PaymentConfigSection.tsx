@@ -26,9 +26,9 @@ export default function PaymentConfigSection({ tenantId }: { tenantId: string })
       .then((r) => r.json())
       .then((data) => {
         if (data && !data.message) {
-          // Si l'ancienne config avait provider='feexpay', on force à 'fedapay'
-          // (FeexPay n'est plus supporté — voir spécification 2026-07)
-          const provider = data.provider === 'feexpay' ? 'fedapay' : (data.provider || 'fedapay');
+          // Si l'ancienne config avait provider='fedapay', on force à 'fedapay'
+          // (FedaPay n'est plus supporté — voir spécification 2026-07)
+          const provider = data.provider === 'fedapay' ? 'fedapay' : (data.provider || 'fedapay');
           setConfig({
             provider,
             isActive: data.isActive || false,
@@ -115,7 +115,7 @@ export default function PaymentConfigSection({ tenantId }: { tenantId: string })
           </div>
         </div>
         <p className="text-[11px] text-slate-500 mt-2">
-          ℹ️ FeexPay n'est plus disponible. Si vous aviez une configuration FeexPay,
+          ℹ️ FedaPay n'est plus disponible. Si vous aviez une configuration FedaPay,
           elle a été automatiquement réinitialisée vers Fedapay.
         </p>
       </div>

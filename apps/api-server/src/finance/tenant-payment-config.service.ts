@@ -2,7 +2,7 @@
  * ============================================================================
  * TENANT PAYMENT CONFIG SERVICE
  * ============================================================================
- * Gère la configuration des paiements en ligne (FeexPay / Fedapay) par école.
+ * Gère la configuration des paiements en ligne (FedaPay / Fedapay) par école.
  * Chaque école configure son PROPRE compte — l'argent va directement sur le
  * compte de l'école, jamais sur le nôtre.
  * ============================================================================
@@ -27,11 +27,11 @@ export class TenantPaymentConfigService {
     if (!config) {
       return {
         tenantId,
-        provider: 'feexpay',
+        provider: 'fedapay',
         isActive: false,
-        feexpayApiKey: null,
-        feexpayShopId: null,
-        feexpaySecretKey: null,
+        fedapayApiKey: null,
+        fedapayShopId: null,
+        fedapaySecretKey: null,
         fedapayPublicKey: null,
         fedapaySecretKey: null,
         webhookSecret: null,
@@ -40,8 +40,8 @@ export class TenantPaymentConfigService {
     // Masquer les clés secrètes dans la réponse (ne pas exposer les clés complètes)
     return {
       ...config,
-      feexpayApiKey: config.feexpayApiKey ? this.maskKey(config.feexpayApiKey) : null,
-      feexpaySecretKey: config.feexpaySecretKey ? this.maskKey(config.feexpaySecretKey) : null,
+      fedapayApiKey: config.fedapayApiKey ? this.maskKey(config.fedapayApiKey) : null,
+      fedapaySecretKey: config.fedapaySecretKey ? this.maskKey(config.fedapaySecretKey) : null,
       fedapaySecretKey: config.fedapaySecretKey ? this.maskKey(config.fedapaySecretKey) : null,
       webhookSecret: config.webhookSecret ? this.maskKey(config.webhookSecret) : null,
     };
@@ -49,7 +49,7 @@ export class TenantPaymentConfigService {
 
   /**
    * Récupère la config complète SANS masquer les clés (usage interne uniquement).
-   * Utilisé par le service de paiement pour appeler l'API FeexPay/Fedapay.
+   * Utilisé par le service de paiement pour appeler l'API FedaPay/Fedapay.
    */
   async getFullConfig(tenantId: string) {
     return this.prisma.tenantPaymentConfig.findUnique({
@@ -63,9 +63,9 @@ export class TenantPaymentConfigService {
   async upsertConfig(tenantId: string, data: {
     provider?: string;
     isActive?: boolean;
-    feexpayApiKey?: string;
-    feexpayShopId?: string;
-    feexpaySecretKey?: string;
+    fedapayApiKey?: string;
+    fedapayShopId?: string;
+    fedapaySecretKey?: string;
     fedapayPublicKey?: string;
     fedapaySecretKey?: string;
     webhookSecret?: string;
@@ -78,12 +78,12 @@ export class TenantPaymentConfigService {
     const updateData: any = {};
     if (data.provider !== undefined) updateData.provider = data.provider;
     if (data.isActive !== undefined) updateData.isActive = data.isActive;
-    if (data.feexpayShopId !== undefined) updateData.feexpayShopId = data.feexpayShopId;
+    if (data.fedapayShopId !== undefined) updateData.fedapayShopId = data.fedapayShopId;
     if (data.fedapayPublicKey !== undefined) updateData.fedapayPublicKey = data.fedapayPublicKey;
 
     // Ne mettre à jour les clés que si elles ne sont pas masquées
-    if (data.feexpayApiKey && !data.feexpayApiKey.includes('****')) updateData.feexpayApiKey = data.feexpayApiKey;
-    if (data.feexpaySecretKey && !data.feexpaySecretKey.includes('****')) updateData.feexpaySecretKey = data.feexpaySecretKey;
+    if (data.fedapayApiKey && !data.fedapayApiKey.includes('****')) updateData.fedapayApiKey = data.fedapayApiKey;
+    if (data.fedapaySecretKey && !data.fedapaySecretKey.includes('****')) updateData.fedapaySecretKey = data.fedapaySecretKey;
     if (data.fedapaySecretKey && !data.fedapaySecretKey.includes('****')) updateData.fedapaySecretKey = data.fedapaySecretKey;
     if (data.webhookSecret && !data.webhookSecret.includes('****')) updateData.webhookSecret = data.webhookSecret;
 
@@ -91,11 +91,11 @@ export class TenantPaymentConfigService {
       where: { tenantId },
       create: {
         tenantId,
-        provider: data.provider || 'feexpay',
+        provider: data.provider || 'fedapay',
         isActive: data.isActive ?? false,
-        feexpayApiKey: data.feexpayApiKey && !data.feexpayApiKey.includes('****') ? data.feexpayApiKey : null,
-        feexpayShopId: data.feexpayShopId || null,
-        feexpaySecretKey: data.feexpaySecretKey && !data.feexpaySecretKey.includes('****') ? data.feexpaySecretKey : null,
+        fedapayApiKey: data.fedapayApiKey && !data.fedapayApiKey.includes('****') ? data.fedapayApiKey : null,
+        fedapayShopId: data.fedapayShopId || null,
+        fedapaySecretKey: data.fedapaySecretKey && !data.fedapaySecretKey.includes('****') ? data.fedapaySecretKey : null,
         fedapayPublicKey: data.fedapayPublicKey || null,
         fedapaySecretKey: data.fedapaySecretKey && !data.fedapaySecretKey.includes('****') ? data.fedapaySecretKey : null,
         webhookSecret: data.webhookSecret && !data.webhookSecret.includes('****') ? data.webhookSecret : null,
@@ -114,9 +114,9 @@ export class TenantPaymentConfigService {
     if (!config || !config.isActive) return false;
     // Vérifier si AU MOINS UN des deux fournisseurs a ses clés configurées
     // (l'école peut utiliser les deux indépendamment)
-    const feexpayReady = !!(config.feexpayApiKey && config.feexpayShopId);
+    const fedapayReady = !!(config.fedapayApiKey && config.fedapayShopId);
     const fedapayReady = !!(config.fedapayPublicKey && config.fedapaySecretKey);
-    return feexpayReady || fedapayReady;
+    return fedapayReady || fedapayReady;
   }
 
   /**

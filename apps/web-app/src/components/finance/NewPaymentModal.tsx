@@ -19,11 +19,11 @@ import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { FedapayLogo } from './FedapayLogo';
 import {
-  detectFeexPayOperator,
+  detectFedaPayOperator,
   isValidBeninPhone,
   formatPhoneDisplay,
-  type FeexPayOperator,
-} from '@/lib/feexpay/detect-operator';
+  type FedaPayOperator,
+} from '@/lib/fedapay/detect-operator';
 
 // Logos opérateurs Mobile Money (officiels dans /public/images/)
 const OPERATOR_LOGOS = {
@@ -32,7 +32,7 @@ const OPERATOR_LOGOS = {
   celtiis: '/images/celtiis-cash.png',
 } as const;
 
-const OPERATOR_META: Record<FeexPayOperator, { label: string; shortLabel: string; color: string; bg: string; border: string; ring: string }> = {
+const OPERATOR_META: Record<FedaPayOperator, { label: string; shortLabel: string; color: string; bg: string; border: string; ring: string }> = {
   mtn: { label: 'MTN Mobile Money', shortLabel: 'MTN', color: 'text-yellow-700', bg: 'bg-yellow-50', border: 'border-yellow-300', ring: 'ring-yellow-400' },
   moov: { label: 'Moov Money', shortLabel: 'Moov', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-300', ring: 'ring-blue-400' },
   celtiis_bj: { label: 'Celtiis Cash', shortLabel: 'Celtiis', color: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-300', ring: 'ring-orange-400' },
@@ -85,8 +85,8 @@ export default function NewPaymentModal({
   const [selectedLevelId, setSelectedLevelId] = useState('');
   const [selectedClassId, setSelectedClassId] = useState('');
   const [studentSearch, setStudentSearch] = useState('');
-  const [feexpayOperator, setFeexpayOperator] = useState<FeexPayOperator>('mtn');
-  const [feexpayPhone, setFeexpayPhone] = useState('');
+  const [fedapayOperator, setFeexpayOperator] = useState<FedaPayOperator>('mtn');
+  const [fedapayPhone, setFeexpayPhone] = useState('');
 
   // Charge les caisses ouvertes
   useEffect(() => {
@@ -363,10 +363,10 @@ export default function NewPaymentModal({
       return;
     }
 
-    // ── FeexPay désactivé pour le moment — uniquement Fedapay pour les paiements en ligne ──
-    // Pour réactiver FeexPay plus tard, décommenter le bloc ci-dessous.
+    // ── FedaPay désactivé pour le moment — uniquement Fedapay pour les paiements en ligne ──
+    // Pour réactiver FedaPay plus tard, décommenter le bloc ci-dessous.
     /*
-    if (paymentMethod === 'FEEXPAY') { ... }
+    if (paymentMethod === 'FEDAPAY') { ... }
     */
 
     setLoading(true);
@@ -439,9 +439,9 @@ export default function NewPaymentModal({
   };
 
   /**
-   * Handler du widget FeexPay inline — appelé quand le client clique sur
+   * Handler du widget FedaPay inline — appelé quand le client clique sur
    * "Payer X FCFA" dans le widget inline. Déclenche le push USSD via
-   * /api/finance/payments/feexpay/initiate puis crée la FinanceTransaction
+   * /api/finance/payments/fedapay/initiate puis crée la FinanceTransaction
    * côté backend (pour que le reçu soit généré et le solde mis à jour).
    */
 
@@ -606,23 +606,23 @@ export default function NewPaymentModal({
               </SelectContent>
             </Select>
           </div>
-          {/* FeexPay désactivé pour le moment — uniquement Fedapay */}
+          {/* FedaPay désactivé pour le moment — uniquement Fedapay */}
           <div>
             <Label>
               Caisse {paymentMethod === 'CASH' ? '*' : '(optionnel)'}
-              {(paymentMethod === 'FEDAPAY' || paymentMethod === 'FEEXPAY') && (
+              {(paymentMethod === 'FEDAPAY' || paymentMethod === 'FEDAPAY') && (
                 <span className="text-[10px] text-slate-500 ml-1">(auto : Caisse Paiements en Ligne)</span>
               )}
             </Label>
             <Select
               value={cashRegisterId || '_none'}
               onValueChange={(v) => setCashRegisterId(v === '_none' ? '' : v)}
-              disabled={paymentMethod === 'FEDAPAY' || paymentMethod === 'FEEXPAY'}
+              disabled={paymentMethod === 'FEDAPAY' || paymentMethod === 'FEDAPAY'}
             >
               <SelectTrigger><SelectValue placeholder="Sélectionner une caisse ouverte" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="_none">
-                  {paymentMethod === 'FEDAPAY' || paymentMethod === 'FEEXPAY'
+                  {paymentMethod === 'FEDAPAY' || paymentMethod === 'FEDAPAY'
                     ? 'Caisse Paiements en Ligne (automatique)'
                     : '— Aucune caisse —'}
                 </SelectItem>
@@ -638,12 +638,12 @@ export default function NewPaymentModal({
                 ⚠️ Aucune caisse ouverte. Ouvrez une caisse dans l'onglet Multi-caisses.
               </p>
             )}
-            {(paymentMethod === 'FEDAPAY' || paymentMethod === 'FEEXPAY') && (
+            {(paymentMethod === 'FEDAPAY' || paymentMethod === 'FEDAPAY') && (
               <p className="text-xs text-blue-600 mt-1 flex items-center gap-1.5">
                 {paymentMethod === 'FEDAPAY' && (
                   <FedapayLogo className="h-3 w-auto" />
                 )}
-                {paymentMethod === 'FEEXPAY' && (
+                {paymentMethod === 'FEDAPAY' && (
                   <CreditCard className="w-3 h-3" />
                 )}
                 <span>

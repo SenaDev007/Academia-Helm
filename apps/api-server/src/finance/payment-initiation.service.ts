@@ -3,7 +3,7 @@
  * PAYMENT INITIATION SERVICE
  * ============================================================================
  *
- * Stocke les métadonnées des initiations de paiement en ligne (FeexPay/Fedapay)
+ * Stocke les métadonnées des initiations de paiement en ligne (FedaPay/Fedapay)
  * pour que les webhooks puissent créer les FinanceTransactions après confirmation.
  *
  * Flux :
@@ -13,7 +13,7 @@
  *   4. Si échec : markFailed()
  *
  * Sans cette table, le webhook ne sait pas à quel élève/année rattacher le
- * paiement car FeexPay/Fedapay ne transmettent pas ces métadonnées.
+ * paiement car FedaPay/Fedapay ne transmettent pas ces métadonnées.
  * ============================================================================
  */
 
@@ -23,7 +23,7 @@ import { PrismaService } from '../database/prisma.service';
 export interface CreatePaymentInitiationParams {
   tenantId: string;
   reference: string;
-  provider: 'feexpay' | 'fedapay';
+  provider: 'fedapay' | 'fedapay';
   studentAccountId: string;
   academicYearId: string;
   studentName: string;
@@ -41,7 +41,7 @@ export class PaymentInitiationService {
 
   /**
    * Crée une initiation de paiement (statut PENDING).
-   * Appelé par FeexPayService.initiatePayment() ou par un endpoint dédié Fedapay.
+   * Appelé par FedaPayService.initiatePayment() ou par un endpoint dédié Fedapay.
    */
   async create(params: CreatePaymentInitiationParams) {
     try {

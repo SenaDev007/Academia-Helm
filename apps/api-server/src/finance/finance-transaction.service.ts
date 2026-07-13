@@ -37,7 +37,7 @@ export class FinanceTransactionService {
 
   /**
    * Récupère ou crée une caisse virtuelle pour les paiements en ligne
-   * (Fedapay / FeexPay). Cette caisse est automatiquement créée pour chaque
+   * (Fedapay / FedaPay). Cette caisse est automatiquement créée pour chaque
    * tenant afin d'assurer la traçabilité des paiements en ligne dans
    * l'onglet multi-caisses.
    */
@@ -54,7 +54,7 @@ export class FinanceTransactionService {
         tenantId,
         code: 'ONLINE',
         name: 'Caisse Paiements en Ligne',
-        description: 'Caisse virtuelle pour les paiements Fedapay et FeexPay (Mobile Money, carte bancaire)',
+        description: 'Caisse virtuelle pour les paiements Fedapay et FedaPay (Mobile Money, carte bancaire)',
         location: 'En ligne',
         openingBalance: 0,
         currentBalance: 0,
@@ -196,11 +196,11 @@ export class FinanceTransactionService {
     const paymentMethod = (typeof data.paymentMethod === 'string' && PAYMENT_METHODS.includes(data.paymentMethod as PaymentMethod))
       ? (data.paymentMethod as PaymentMethod) : 'CASH';
 
-    // ✅ Pour les paiements en ligne (Fedapay/FeexPay), rattacher automatiquement
+    // ✅ Pour les paiements en ligne (Fedapay/FedaPay), rattacher automatiquement
     // à la caisse virtuelle "Caisse Paiements en Ligne" si aucune caisse n'est fournie.
     // Cela assure la traçabilité dans l'onglet multi-caisses.
     let effectiveCashRegisterId = data.cashRegisterId;
-    if (!effectiveCashRegisterId && (paymentMethod === 'FEDAPAY' || paymentMethod === 'FEEXPAY')) {
+    if (!effectiveCashRegisterId && (paymentMethod === 'FEDAPAY' || paymentMethod === 'FEDAPAY')) {
       try {
         effectiveCashRegisterId = await this.getOrCreateOnlinePaymentCashRegister(tenantId);
         this.logger.log(`Paiement ${paymentMethod} rattaché à la caisse virtuelle ONLINE: ${effectiveCashRegisterId}`);
@@ -237,7 +237,7 @@ export class FinanceTransactionService {
     });
     if (!account) throw new NotFoundException('StudentAccount not found');
 
-    // ✅ Idempotence : si une transaction existe déjà avec cette référence (Fedapay/FeexPay),
+    // ✅ Idempotence : si une transaction existe déjà avec cette référence (Fedapay/FedaPay),
     // on la retourne sans en créer une nouvelle (évite les doublons si le webhook
     // arrive après le onComplete du widget, ou vice-versa).
     if (data.reference) {
@@ -399,12 +399,12 @@ export class FinanceTransactionService {
     }
 
     // ─── Allocation intelligente : caisse ONLINE → caisses de destination ───
-    // Quand un paiement arrive dans la caisse ONLINE (Fedapay/FeexPay),
+    // Quand un paiement arrive dans la caisse ONLINE (Fedapay/FedaPay),
     // le système crédite virtuellement les caisses de destination selon le
     // type de frais (scolarité → ACCUEIL, cantine → CANTEEN, etc.).
     // La caisse ONLINE n'est JAMAIS débitée — son solde reste croissant
     // (il représente le volume total des paiements en ligne).
-    if (paymentMethod === 'FEDAPAY' || paymentMethod === 'FEEXPAY') {
+    if (paymentMethod === 'FEDAPAY' || paymentMethod === 'FEDAPAY') {
       await this.allocateToDestinationCaisses(tenantId, tx.id, updates, effectiveCashRegisterId);
     }
 

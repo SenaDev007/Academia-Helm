@@ -192,7 +192,7 @@ export class CreatePaymentDto {
   @IsNumber()
   amount: number;
 
-  @IsIn(['CASH', 'MOBILE_MONEY', 'FEEXPAY', 'WIRE', 'FEDAPAY'])
+  @IsIn(['CASH', 'MOBILE_MONEY', 'FEDAPAY', 'WIRE', 'FEDAPAY'])
   paymentMethod: string;
 
   @IsOptional()
@@ -216,7 +216,7 @@ export class CreateTransactionDto {
   @IsNumber()
   amount: number;
 
-  @IsIn(['CASH', 'MOBILE_MONEY', 'FEEXPAY', 'WIRE', 'FEDAPAY'])
+  @IsIn(['CASH', 'MOBILE_MONEY', 'FEDAPAY', 'WIRE', 'FEDAPAY'])
   paymentMethod: string;
 
   @IsOptional()

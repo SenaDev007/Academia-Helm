@@ -174,7 +174,7 @@ export class ContractPdfService {
     if (!contract) throw new NotFoundException(`Contrat ${contractId} introuvable`);
 
     // 1b. Charger les données complètes de l'école depuis SchoolSettings / TenantIdentityProfile
-    // Wrap dans try/catch : si une colonne manque (ex: feexpayShopId), on fallback vers null
+    // Wrap dans try/catch : si une colonne manque (ex: fedapayShopId), on fallback vers null
     let schoolSettings: any = null;
     try {
       schoolSettings = await this.prisma.schoolSettings.findFirst({

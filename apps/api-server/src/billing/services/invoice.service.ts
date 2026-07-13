@@ -3,7 +3,7 @@
  * INVOICE SERVICE — Génération et envoi de factures par email
  * ============================================================================
  *
- * FeexPay n'envoie PAS de factures emails automatiquement aux clients
+ * FedaPay n'envoie PAS de factures emails automatiquement aux clients
  * (contrairement à Stripe Billing). Ce service comble ce manque en :
  *
  *   1. Générant un numéro de facture unique (format: AH-YYYY-MM-NNNNN)

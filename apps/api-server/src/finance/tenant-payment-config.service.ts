@@ -112,11 +112,10 @@ export class TenantPaymentConfigService {
       where: { tenantId },
     });
     if (!config || !config.isActive) return false;
-    // Vérifier si AU MOINS UN des deux fournisseurs a ses clés configurées
-    // (l'école peut utiliser les deux indépendamment)
-    const fedapayReady = !!(config.fedapayApiKey && config.fedapayShopId);
-    const fedapayReady = !!(config.fedapayPublicKey && config.fedapaySecretKey);
-    return fedapayReady || fedapayReady;
+    // Vérifier si FedaPay a ses clés configurées
+    const fedapayReady = !!(config.fedapayApiKey && config.fedapayShopId) ||
+                         !!(config.fedapayPublicKey && config.fedapaySecretKey);
+    return fedapayReady;
   }
 
   /**

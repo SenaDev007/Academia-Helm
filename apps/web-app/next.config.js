@@ -304,8 +304,33 @@ if (process.env.NODE_ENV === 'production' && !isVercel) {
         cleanupOutdatedCaches: true,
         cacheId: process.env.VERCEL_GIT_COMMIT_SHA || `local-${Date.now()}`,
         runtimeCaching: [
+          // ⭐ Routes binaires (Excel, PDF, downloads) : JAMAIS de cache.
+          // Ces routes retournent des fichiers binaires (xlsx, pdf, png) qui ne
+          // doivent pas être mis en cache par le Service Worker. Sans cette
+          // exclusion, Workbox peut servir une page HTML mise en cache à la
+          // place du fichier binaire → fichier corrompu.
           {
-            urlPattern: /\/api\/(?!auth\/).*/i,
+            urlPattern: /\/api\/students\/export\/.*/i,
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /\/api\/students\/class-list\/.*\/pdf.*/i,
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /\/api\/students\/id-cards\/.*\/pdf.*/i,
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /\/api\/finance\/.*\/export.*/i,
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /\.(?:xlsx|xls|pdf|csv|zip)$/i,
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /\/api\/(?!auth\/|students\/export\/|students\/class-list\/.*\/pdf|students\/id-cards\/.*\/pdf|finance\/.*\/export).*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',

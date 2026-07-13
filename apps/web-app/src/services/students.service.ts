@@ -1247,6 +1247,10 @@ class StudentsService {
     const res = await fetch(
       `/api/students/export/educmaster-excel?academicYearId=${encodeURIComponent(academicYearId)}&code=${encodeURIComponent(levelCode)}`,
       {
+        // ⭐ credentials: 'include' — obligatoire pour envoyer le cookie JWT au BFF.
+        // Sans cela, le BFF ne peut pas authentifier la requête et le backend
+        // retourne une erreur (ou pire, le Service Worker sert une page HTML cachée).
+        credentials: 'include',
         headers: {
           "x-tenant-id": localStorage.getItem("tenantId") || "",
         },
@@ -1258,6 +1262,20 @@ class StudentsService {
         .catch(() => ({ message: "Erreur lors de l'export" }));
       throw new Error(err.message || "Erreur lors de l'export");
     }
+
+    // ⭐ Vérifier que la réponse est bien un fichier Excel (pas du HTML).
+    // Si le Service Worker ou le BFF retourne une page HTML (erreur de cache,
+    // redirect, etc.), on lève une erreur claire au lieu de télécharger un
+    // fichier .xlsx contenant du HTML.
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      console.error('[exportEducmasterExcel] Réponse HTML reçue au lieu du Excel. Content-Type:', contentType);
+      throw new Error(
+        'Le fichier Excel n\'a pas pu être généré (réponse HTML inattendue). ' +
+        'Videz le cache du navigateur ou réessayez dans quelques minutes.'
+      );
+    }
+
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");

@@ -101,7 +101,7 @@ export default function OnboardingWizard() {
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
   const [otpCode, setOtpCode] = useState<string | null>(null); // Code OTP affiché en dev
-  const [otpMethod, setOtpMethod] = useState<'sms' | 'voice' | 'whatsapp'>('sms'); // Méthode d'envoi OTP
+  const [otpMethod, setOtpMethod] = useState<'sms' | 'voice' | 'whatsapp' | 'email'>('sms'); // Méthode d'envoi OTP
   const [otpExpiresAt, setOtpExpiresAt] = useState<Date | null>(null); // Expiration OTP
   const [resendCooldown, setResendCooldown] = useState(0); // Compteur pour renvoyer l'OTP (en secondes)
   const [showCheckout, setShowCheckout] = useState(false); // Afficher le checkout intégré
@@ -2181,11 +2181,28 @@ export default function OnboardingWizard() {
                           </svg>
                           WhatsApp
                         </button>
+                        {/* Email */}
+                        <button
+                          type="button"
+                          onClick={() => setOtpMethod('email')}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                            otpMethod === 'email'
+                              ? 'border-purple-500 bg-purple-50 text-purple-700'
+                              : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="2" y="4" width="20" height="16" rx="2" />
+                            <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                          </svg>
+                          Email
+                        </button>
                       </div>
                       <p className="mt-1.5 text-[11px] text-gray-400">
                         {otpMethod === 'sms' && 'Code envoyé par SMS'}
                         {otpMethod === 'voice' && 'Code dicté par appel vocal'}
                         {otpMethod === 'whatsapp' && 'Code envoyé sur WhatsApp'}
+                        {otpMethod === 'email' && 'Code envoyé par email'}
                       </p>
                     </div>
                   )}
@@ -2277,6 +2294,7 @@ export default function OnboardingWizard() {
                         {otpMethod === 'sms' && '📨 Code envoyé par SMS'}
                         {otpMethod === 'voice' && '📞 Appel en cours — répondez pour entendre le code'}
                         {otpMethod === 'whatsapp' && '💬 Code envoyé sur WhatsApp'}
+                        {otpMethod === 'email' && '📧 Code envoyé par email — vérifiez votre boîte de réception'}
                       </p>
 
                       {/* Afficher le code OTP en développement */}

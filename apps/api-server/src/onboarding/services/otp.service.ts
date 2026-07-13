@@ -221,8 +221,13 @@ export class OtpService {
     } catch (error: any) {
       this.logger.error(`❌ Failed to send OTP via ${method} to ${phone}: ${error.message}`);
       
-      // En développement, on continue même si l'envoi échoue
-      if (process.env.NODE_ENV === 'production') {
+      // ⭐ Si l'email échoue, ne pas bloquer l'utilisateur — retourner quand même
+      // le code OTP dans la réponse (comme en mode dev). L'email est un "nice to have"
+      // pour l'OTP, pas un canal critique comme le SMS.
+      // En mode production pour SMS/voice, on bloque (le SMS doit marcher).
+      if (method === 'email') {
+        this.logger.warn(`⚠️  Email OTP failed but continuing — returning code in response`);
+      } else if (process.env.NODE_ENV === 'production') {
         throw new BadRequestException(
           `Impossible d'envoyer le code OTP via ${method}. Veuillez réessayer avec une autre méthode.`
         );
@@ -237,6 +242,15 @@ export class OtpService {
       message: 'Code OTP envoyé avec succès',
       expiresAt: expiresAt.toISOString(),
     };
+
+    // ⭐ Si l'email a échoué mais qu'on continue, inclure le code dans la réponse
+    // pour que le frontend puisse l'afficher (comme en mode dev).
+    if (process.env.NODE_ENV !== 'production' || method === 'email') {
+      response.code = code;
+      response.note = method === 'email'
+        ? 'Email non envoyé (configuration SMTP/Resend manquante). Voici votre code :'
+        : 'MODE DÉVELOPPEMENT';
+    }
 
     if (process.env.NODE_ENV === 'development') {
       response.code = code; // Afficher le code en développement

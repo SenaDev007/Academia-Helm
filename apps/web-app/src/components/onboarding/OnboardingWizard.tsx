@@ -2127,192 +2127,197 @@ export default function OnboardingWizard() {
                 </div>
 
                 <div className="border-t pt-6">
-                  <label className="block text-sm font-medium text-gray-900 mb-2">
-                    Code OTP <span className="text-red-600">*</span>
+                  <label className="block text-sm font-medium text-gray-900 mb-3">
+                    Vérification du numéro <span className="text-red-600">*</span>
                   </label>
                   
-                  {/* Sélecteur de méthode d'envoi */}
+                  {/* Sélecteur de méthode d'envoi — minimaliste (icônes uniquement) */}
                   {!otpSent && (
                     <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-3">
-                        Méthode d'envoi
-                      </label>
-                      <div className="grid grid-cols-3 gap-3">
-                        {/* Option SMS */}
+                      <p className="text-xs text-gray-500 mb-2">Choisir le mode d'envoi</p>
+                      <div className="flex items-center gap-2">
+                        {/* SMS */}
                         <button
                           type="button"
                           onClick={() => setOtpMethod('sms')}
-                          className={`flex flex-col items-center justify-center p-4 border-2 rounded-lg transition-all duration-200 ${
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
                             otpMethod === 'sms'
-                              ? 'border-blue-600 bg-blue-50 shadow-md'
-                              : 'border-gray-300 bg-white hover:border-blue-400 hover:bg-blue-50'
+                              ? 'border-blue-500 bg-blue-50 text-blue-700'
+                              : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50'
                           }`}
-                          aria-label="Envoyer le code par SMS"
                         >
-                          <MessageSquare
-                            className={`w-6 h-6 mb-2 ${
-                              otpMethod === 'sms' ? 'text-blue-600' : 'text-gray-600'
-                            }`}
-                          />
-                          <span
-                            className={`text-sm font-medium ${
-                              otpMethod === 'sms' ? 'text-blue-900' : 'text-gray-700'
-                            }`}
-                          >
-                            SMS
-                          </span>
+                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                          </svg>
+                          SMS
                         </button>
-
-                        {/* Option Appel vocal */}
+                        {/* Appel */}
                         <button
                           type="button"
                           onClick={() => setOtpMethod('voice')}
-                          className={`flex flex-col items-center justify-center p-4 border-2 rounded-lg transition-all duration-200 ${
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
                             otpMethod === 'voice'
-                              ? 'border-blue-600 bg-blue-50 shadow-md'
-                              : 'border-gray-300 bg-white hover:border-blue-400 hover:bg-blue-50'
+                              ? 'border-blue-500 bg-blue-50 text-blue-700'
+                              : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50'
                           }`}
-                          aria-label="Envoyer le code par appel vocal"
                         >
-                          <Phone
-                            className={`w-6 h-6 mb-2 ${
-                              otpMethod === 'voice' ? 'text-blue-600' : 'text-gray-600'
-                            }`}
-                          />
-                          <span
-                            className={`text-sm font-medium ${
-                              otpMethod === 'voice' ? 'text-blue-900' : 'text-gray-700'
-                            }`}
-                          >
-                            Appel
-                          </span>
+                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                          </svg>
+                          Appel
                         </button>
-
-                        {/* Option WhatsApp */}
+                        {/* WhatsApp */}
                         <button
                           type="button"
                           onClick={() => setOtpMethod('whatsapp')}
-                          className={`flex flex-col items-center justify-center p-4 border-2 rounded-lg transition-all duration-200 ${
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
                             otpMethod === 'whatsapp'
-                              ? 'border-blue-600 bg-blue-50 shadow-md'
-                              : 'border-gray-300 bg-white hover:border-blue-400 hover:bg-blue-50'
+                              ? 'border-green-500 bg-green-50 text-green-700'
+                              : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50'
                           }`}
-                          aria-label="Envoyer le code par WhatsApp"
                         >
-                          <svg
-                            className="w-6 h-6 mb-2"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                          >
-                            <path
-                              d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"
-                              fill={otpMethod === 'whatsapp' ? '#25D366' : '#6B7280'}
-                            />
+                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
                           </svg>
-                          <span
-                            className={`text-sm font-medium ${
-                              otpMethod === 'whatsapp' ? 'text-blue-900' : 'text-gray-700'
-                            }`}
-                          >
-                            WhatsApp
-                          </span>
+                          WhatsApp
                         </button>
                       </div>
-                      <p className="mt-2 text-xs text-gray-500 text-center">
-                        {otpMethod === 'sms' && 'Le code sera envoyé par SMS'}
-                        {otpMethod === 'voice' && 'Le code sera dicté lors d\'un appel vocal'}
-                        {otpMethod === 'whatsapp' && 'Le code sera envoyé par WhatsApp'}
+                      <p className="mt-1.5 text-[11px] text-gray-400">
+                        {otpMethod === 'sms' && 'Code envoyé par SMS'}
+                        {otpMethod === 'voice' && 'Code dicté par appel vocal'}
+                        {otpMethod === 'whatsapp' && 'Code envoyé sur WhatsApp'}
                       </p>
                     </div>
                   )}
 
-                  <div className="flex gap-3">
-                    <input
-                      type="text"
-                      value={data.otp}
-                      onChange={(e) => handleChange('otp', e.target.value)}
-                      maxLength={6}
-                      className={`flex-1 px-4 py-3 border rounded-md focus:ring-2 focus:ring-blue-600 ${
-                        errors.otp ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                      placeholder="000000"
-                    />
-                    {!otpSent ? (
-                      <button
-                        type="button"
-                        onClick={handleSendOtp}
-                        disabled={isSubmitting || !data.promoterPhone}
-                        className="px-6 py-3 bg-blue-900 text-white rounded-md hover:bg-blue-800 disabled:opacity-50"
-                      >
-                        Envoyer OTP
-                      </button>
-                    ) : !otpVerified ? (
+                  {/* ⭐ Bouton Envoyer OTP (avant l'envoi) */}
+                  {!otpSent && (
+                    <button
+                      type="button"
+                      onClick={handleSendOtp}
+                      disabled={isSubmitting || !data.promoterPhone}
+                      className="w-full px-4 py-2.5 bg-blue-900 text-white rounded-lg text-sm font-semibold hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                    >
+                      {isSubmitting ? (
+                        <><Loader className="w-4 h-4 animate-spin" /> Envoi...</>
+                      ) : (
+                        <><Send className="w-4 h-4" /> Envoyer le code</>
+                      )}
+                    </button>
+                  )}
+
+                  {/* ⭐ OTP Input moderne — 6 cases séparées style Facebook/Termii */}
+                  {otpSent && !otpVerified && (
+                    <div className="space-y-3">
+                      {/* Cases OTP */}
+                      <div className="flex items-center justify-center gap-2">
+                        {[0, 1, 2, 3, 4, 5].map((idx) => (
+                          <input
+                            key={idx}
+                            id={`otp-digit-${idx}`}
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={1}
+                            value={data.otp[idx] || ''}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '');
+                              const newOtp = data.otp.split('');
+                              newOtp[idx] = val;
+                              handleChange('otp', newOtp.join('').slice(0, 6));
+                              // Auto-focus next
+                              if (val && idx < 5) {
+                                const next = document.getElementById(`otp-digit-${idx + 1}`);
+                                next?.focus();
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              // Backspace — go to previous
+                              if (e.key === 'Backspace' && !data.otp[idx] && idx > 0) {
+                                const prev = document.getElementById(`otp-digit-${idx - 1}`);
+                                prev?.focus();
+                              }
+                            }}
+                            onPaste={(e) => {
+                              e.preventDefault();
+                              const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+                              if (pasted) {
+                                handleChange('otp', pasted);
+                                // Focus last filled
+                                const lastIdx = Math.min(pasted.length, 5);
+                                const el = document.getElementById(`otp-digit-${lastIdx}`);
+                                el?.focus();
+                              }
+                            }}
+                            className={`w-11 h-12 text-center text-lg font-bold border-2 rounded-lg focus:outline-none transition-all ${
+                              errors.otp
+                                ? 'border-red-400 focus:border-red-500'
+                                : 'border-gray-200 focus:border-blue-500 bg-gray-50 focus:bg-white'
+                            }`}
+                            placeholder="•"
+                          />
+                        ))}
+                      </div>
+
+                      {/* Bouton vérifier */}
                       <button
                         type="button"
                         onClick={handleVerifyOtp}
-                        disabled={isSubmitting || !data.otp}
-                        className="px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+                        disabled={isSubmitting || data.otp.length < 4}
+                        className="w-full px-4 py-2.5 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                       >
-                        Vérifier
+                        {isSubmitting ? (
+                          <><Loader className="w-4 h-4 animate-spin" /> Vérification...</>
+                        ) : (
+                          <><Check className="w-4 h-4" /> Vérifier le code</>
+                        )}
                       </button>
-                    ) : (
-                      <div className="flex items-center px-6 py-3 bg-green-50 text-green-700 rounded-md">
-                        <Check className="w-5 h-5 mr-2" />
-                        Vérifié
-                      </div>
-                    )}
-                  </div>
-                  {errors.otp && (
-                    <p className="mt-1 text-sm text-red-600">{errors.otp}</p>
-                  )}
-                  {otpSent && !otpVerified && (
-                    <div className="mt-2 space-y-2">
-                      <p className="text-sm text-slate-600">
-                        {otpMethod === 'sms' && 'Code OTP envoyé par SMS. Vérifiez votre téléphone.'}
-                        {otpMethod === 'voice' && 'Appel vocal en cours. Répondez à l\'appel pour entendre le code.'}
-                        {otpMethod === 'whatsapp' && 'Code OTP envoyé par WhatsApp. Vérifiez votre téléphone.'}
+
+                      {/* Message de confirmation d'envoi */}
+                      <p className="text-xs text-center text-slate-500">
+                        {otpMethod === 'sms' && '📨 Code envoyé par SMS'}
+                        {otpMethod === 'voice' && '📞 Appel en cours — répondez pour entendre le code'}
+                        {otpMethod === 'whatsapp' && '💬 Code envoyé sur WhatsApp'}
                       </p>
+
                       {/* Afficher le code OTP en développement */}
                       {otpCode && process.env.NODE_ENV === 'development' && (
-                        <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                          <p className="text-xs font-semibold text-yellow-800 mb-1">
-                            🔓 MODE DÉVELOPPEMENT - Code OTP :
-                          </p>
-                          <p className="text-lg font-mono font-bold text-yellow-900 text-center">
-                            {otpCode}
-                          </p>
-                          <p className="text-xs text-yellow-700 mt-1 text-center">
-                            (Copiez ce code pour tester)
-                          </p>
+                        <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-center">
+                          <p className="text-[10px] font-bold text-amber-700 uppercase">Mode dev — Code OTP</p>
+                          <p className="text-base font-mono font-bold text-amber-900 mt-0.5">{otpCode}</p>
                         </div>
                       )}
-                      {/* Timer d'expiration */}
-                      {otpExpiresAt && (
-                        <div className="text-sm text-slate-600">
-                          Code valide jusqu'à {new Date(otpExpiresAt).toLocaleTimeString('fr-FR')}
-                        </div>
-                      )}
-                      {/* Bouton pour renvoyer le code */}
-                      <div className="mt-3 pt-3 border-t border-gray-200">
-                        <p className="text-xs text-gray-600 mb-2">
-                          Vous n'avez pas reçu le code ?
-                        </p>
+
+                      {/* Timer + Renvoyer */}
+                      <div className="flex items-center justify-center gap-2 pt-2 border-t border-gray-100">
+                        {otpExpiresAt && (
+                          <span className="text-[11px] text-gray-400">
+                            Expire à {new Date(otpExpiresAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
                         <button
                           type="button"
                           onClick={handleSendOtp}
                           disabled={isSubmitting || resendCooldown > 0}
-                          className="flex items-center justify-center w-full px-4 py-2 text-sm font-medium text-blue-900 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
-                          <RotateCcw className={`w-4 h-4 mr-2 ${resendCooldown > 0 ? 'animate-spin' : ''}`} />
-                          {resendCooldown > 0 ? (
-                            <span>Renvoyer le code dans {resendCooldown}s</span>
-                          ) : (
-                            <span>Renvoyer le code</span>
-                          )}
+                          {resendCooldown > 0 ? `Renvoyer dans ${resendCooldown}s` : 'Renvoyer le code'}
                         </button>
                       </div>
                     </div>
+                  )}
+
+                  {/* OTP vérifié */}
+                  {otpVerified && (
+                    <div className="flex items-center gap-2 px-4 py-2.5 bg-green-50 border border-green-200 rounded-lg">
+                      <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
+                        <Check className="w-3 h-3 text-white" />
+                      </div>
+                      <span className="text-sm font-medium text-green-700">Numéro vérifié</span>
+                    </div>
+                  )}
+
+                  {errors.otp && (
+                    <p className="mt-1.5 text-xs text-red-600">{errors.otp}</p>
                   )}
                 </div>
               </div>

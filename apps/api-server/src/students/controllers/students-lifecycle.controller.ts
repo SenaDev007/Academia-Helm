@@ -361,6 +361,143 @@ export class StudentsLifecycleController {
     res.send(pdfBuffer);
   }
 
+  /**
+   * GET /students/export/global-excel?academicYearId=...
+   * Génère un fichier Excel GLOBAL avec TOUTES les classes officielles de TOUS les niveaux.
+   * Une feuille par classe officielle.
+   */
+  @Get('export/global-excel')
+  async exportGlobalExcel(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est obligatoire');
+    }
+    const result = await this.educmasterExcel.generateGlobalWorkbook({
+      tenantId,
+      academicYearId,
+    });
+    return new StreamableFile(result.buffer, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename="${encodeURIComponent(result.filename)}"`,
+    });
+  }
+
+  /**
+   * GET /students/export/global-pdf?academicYearId=...
+   * Génère un PDF GLOBAL avec TOUTES les classes de TOUS les niveaux.
+   * Chaque classe commence sur une nouvelle page.
+   */
+  @Get('export/global-pdf')
+  async exportGlobalPdf(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Res() res: Response,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est obligatoire');
+    }
+    const { buffer: pdfBuffer, filename } = await this.classListPdf.generateGlobalPdf(
+      tenantId,
+      academicYearId,
+    );
+    const safeName = filename
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .substring(0, 60);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${safeName}"`,
+      'Content-Length': pdfBuffer.length,
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+    });
+    res.send(pdfBuffer);
+  }
+
+  /**
+   * GET /students/export/physical-class-excel?academicYearId=...&classId=...
+   * Génère un fichier Excel pour UNE classe PHYSIQUE (Class, section réelle).
+   * Utilisé par l'onglet "Liste des Élèves".
+   */
+  @Get('export/physical-class-excel')
+  async exportPhysicalClassExcel(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('classId') classId: string,
+  ) {
+    if (!academicYearId || !classId) {
+      throw new BadRequestException('academicYearId et classId sont obligatoires');
+    }
+    const result = await this.educmasterExcel.generateWorkbookForSinglePhysicalClass({
+      tenantId,
+      academicYearId,
+      classId,
+    });
+    return new StreamableFile(result.buffer, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename="${encodeURIComponent(result.filename)}"`,
+    });
+  }
+
+  /**
+   * GET /students/export/global-physical-excel?academicYearId=...
+   * Génère un fichier Excel GLOBAL avec TOUTES les classes PHYSIQUES (sections).
+   * Une feuille par section physique.
+   * Utilisé par l'onglet "Liste des Élèves".
+   */
+  @Get('export/global-physical-excel')
+  async exportGlobalPhysicalExcel(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est obligatoire');
+    }
+    const result = await this.educmasterExcel.generateGlobalPhysicalWorkbook({
+      tenantId,
+      academicYearId,
+    });
+    return new StreamableFile(result.buffer, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename="${encodeURIComponent(result.filename)}"`,
+    });
+  }
+
+  /**
+   * GET /students/export/global-physical-pdf?academicYearId=...
+   * Génère un PDF GLOBAL avec TOUTES les classes PHYSIQUES (sections).
+   * Chaque section commence sur une nouvelle page.
+   * Utilisé par l'onglet "Liste des Élèves".
+   */
+  @Get('export/global-physical-pdf')
+  async exportGlobalPhysicalPdf(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Res() res: Response,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est obligatoire');
+    }
+    const { buffer: pdfBuffer, filename } = await this.classListPdf.generateGlobalPhysicalPdf(
+      tenantId,
+      academicYearId,
+    );
+    const safeName = filename
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .substring(0, 60);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${safeName}"`,
+      'Content-Length': pdfBuffer.length,
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+    });
+    res.send(pdfBuffer);
+  }
+
   @Get('class/:classId')
   async getByClass(
     @TenantId() tenantId: string,

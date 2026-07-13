@@ -216,6 +216,9 @@ export default function EnrollmentsContent() {
   const [excelGeneratingClassId, setExcelGeneratingClassId] = useState<string | null>(null);
   // ⭐ Export PDF de toutes les classes d'un niveau
   const [allPdfGeneratingLevelId, setAllPdfGeneratingLevelId] = useState<string | null>(null);
+  // ⭐ Exports globaux (toutes classes confondues)
+  const [isGlobalExcelExporting, setIsGlobalExcelExporting] = useState(false);
+  const [isGlobalPdfExporting, setIsGlobalPdfExporting] = useState(false);
 
   // ─── ORION mini-panel ──────────────────────────────────────────────
   // Alertes ciblées sur les inscriptions : élèves sans matricule, cartes manquantes,
@@ -837,16 +840,58 @@ export default function EnrollmentsContent() {
             <button
               onClick={handleExportCSV}
               className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-emerald-700 bg-white hover:bg-emerald-100 rounded-lg border border-emerald-300 transition"
-              title="Export Excel"
+              title="Export CSV"
             >
-              <FileSpreadsheet className="w-4 h-4 mr-1.5" /> Excel
+              <FileSpreadsheet className="w-4 h-4" />
+            </button>
+            {/* ⭐ Bouton Excel global — TOUTES les classes officielles, une feuille par classe */}
+            <button
+              onClick={async () => {
+                if (!academicYear) return;
+                setIsGlobalExcelExporting(true);
+                try {
+                  await studentsService.exportGlobalExcel(academicYear.id);
+                  toast({ title: '✅ Excel global généré', description: 'Toutes les classes', variant: 'success' });
+                } catch (e: any) {
+                  toast({ title: 'Erreur', description: e.message, variant: 'error' });
+                } finally {
+                  setIsGlobalExcelExporting(false);
+                }
+              }}
+              disabled={isGlobalExcelExporting || isGlobalPdfExporting}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-300 transition disabled:opacity-50"
+              title="Excel global — toutes les classes dans un seul fichier (une feuille par classe)"
+            >
+              {isGlobalExcelExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+              {isGlobalExcelExporting ? '...' : 'Excel global'}
+            </button>
+            {/* ⭐ Bouton PDF global — TOUTES les classes officielles, page-break par classe */}
+            <button
+              onClick={async () => {
+                if (!academicYear) return;
+                setIsGlobalPdfExporting(true);
+                try {
+                  await studentsService.exportGlobalPdf(academicYear.id);
+                  toast({ title: '✅ PDF global généré', description: 'Toutes les classes', variant: 'success' });
+                } catch (e: any) {
+                  toast({ title: 'Erreur', description: e.message, variant: 'error' });
+                } finally {
+                  setIsGlobalPdfExporting(false);
+                }
+              }}
+              disabled={isGlobalExcelExporting || isGlobalPdfExporting}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg border border-rose-300 transition disabled:opacity-50"
+              title="PDF global — toutes les classes dans un seul PDF (page-break par classe)"
+            >
+              {isGlobalPdfExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+              {isGlobalPdfExporting ? '...' : 'PDF global'}
             </button>
             <button
               onClick={() => setIsImportModalOpen(true)}
               className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-lg border border-violet-300 transition"
               title="Importer des élèves depuis Excel"
             >
-              <Upload className="w-4 h-4 mr-1.5" /> Importer
+              <Upload className="w-4 h-4" /> Importer
             </button>
             <button
               onClick={() => setBulkReEnrollOpen(true)}

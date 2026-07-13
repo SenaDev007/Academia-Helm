@@ -264,6 +264,269 @@ ${allHtml.map((html, i) => `<div class="class-section">${this.extractBodyContent
   }
 
   /**
+   * ⭐ Génère un PDF GLOBAL avec TOUTES les classes officielles de TOUS les niveaux.
+   * Chaque classe commence sur une nouvelle page.
+   * Utilisé par le bouton "PDF global" dans l'onglet Inscriptions.
+   */
+  async generateGlobalPdf(
+    tenantId: string,
+    academicYearId: string,
+  ): Promise<{ buffer: Buffer; filename: string }> {
+    // 1. Récupérer TOUTES les classes officielles (AcademicClass) de ce tenant
+    const academicClasses = await this.prisma.academicClass.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        isActive: true,
+      },
+      include: {
+        level: true,
+      },
+      orderBy: [
+        { level: { name: 'asc' } },
+        { name: 'asc' },
+      ],
+    });
+
+    if (academicClasses.length === 0) {
+      throw new NotFoundException(
+        `Aucune classe officielle trouvée pour cette année scolaire.`,
+      );
+    }
+
+    // 2. Récupérer le branding
+    const branding = await this.getTenantBranding(tenantId);
+    const academicYear = await this.prisma.academicYear.findFirst({
+      where: { id: academicYearId, tenantId },
+    });
+
+    // 3. Construire le HTML combiné
+    const allHtml: string[] = [];
+    for (const ac of academicClasses) {
+      const levelName = (ac.level?.name || '').toUpperCase();
+      const isSecondary = levelName.includes('SECONDAIRE');
+
+      const enrollments = await this.prisma.studentEnrollment.findMany({
+        where: {
+          tenantId,
+          academicClassId: ac.id,
+          academicYearId,
+          status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
+        },
+        include: {
+          student: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              matricule: true,
+              studentCode: true,
+              gender: true,
+              dateOfBirth: true,
+            },
+          },
+        },
+        orderBy: { student: { lastName: 'asc' } },
+      });
+
+      const html = this.buildHtml({
+        className: ac.name,
+        classNameSubtitle: `Classe officielle — ${enrollments.length} élève(s)`,
+        schoolName: branding.schoolName,
+        schoolLogo: branding.schoolLogo,
+        schoolAddress: branding.schoolAddress,
+        schoolPhone: branding.schoolPhone,
+        schoolEmail: branding.schoolEmail,
+        schoolSlogan: branding.schoolSlogan,
+        academicYearName: academicYear?.name || '',
+        isSecondary,
+        students: enrollments.map((e, i) => ({
+          num: i + 1,
+          name: `${e.student.lastName.toUpperCase()} ${e.student.firstName}`,
+          matricule: e.student.matricule || e.student.studentCode || '—',
+          gender: e.student.gender === 'M' ? 'M' : e.student.gender === 'F' ? 'F' : '—',
+          dateOfBirth: e.student.dateOfBirth
+            ? new Date(e.student.dateOfBirth).toLocaleDateString('fr-FR')
+            : '—',
+        })),
+        pageBreakAfter: true,
+      });
+      allHtml.push(html);
+    }
+
+    const combinedHtml = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Times New Roman', Georgia, serif; color: #1a1a1a; font-size: 13px; }
+  .class-section { page-break-after: always; }
+  .class-section:last-child { page-break-after: auto; }
+</style>
+</head>
+<body>
+${allHtml.map((html) => `<div class="class-section">${this.extractBodyContent(html)}</div>`).join('\n')}
+</body>
+</html>`;
+
+    const { page } = await this.puppeteerPool.acquirePage();
+    let pdfBuffer: Buffer;
+    try {
+      await page.setContent(combinedHtml, { waitUntil: 'networkidle0' });
+      const rawPdf = await page.pdf({
+        format: 'A4',
+        margin: { top: '15mm', bottom: '15mm', left: '15mm', right: '15mm' },
+        printBackground: true,
+      });
+      pdfBuffer = Buffer.from(rawPdf);
+    } finally {
+      await this.puppeteerPool.releasePage(page);
+    }
+
+    const nomEcole = (branding.schoolName || 'Ecole').replace(/[/\\:*?"<>|]/g, ' ').replace(/\s+/g, '_').trim().slice(0, 40);
+    const filename = `Listes_ToutesClasses_${nomEcole}.pdf`;
+
+    this.logger.log(
+      `Global PDF generated: ${academicClasses.length} classes, ${pdfBuffer.length} bytes`,
+    );
+
+    return { buffer: pdfBuffer, filename };
+  }
+
+  /**
+   * ⭐ Génère un PDF GLOBAL avec TOUTES les classes PHYSIQUES (sections).
+   * Chaque section commence sur une nouvelle page.
+   * Utilisé par le bouton "PDF global" dans l'onglet "Liste des Élèves".
+   */
+  async generateGlobalPhysicalPdf(
+    tenantId: string,
+    academicYearId: string,
+  ): Promise<{ buffer: Buffer; filename: string }> {
+    // 1. Récupérer TOUTES les classes physiques (Class) de ce tenant
+    const physicalClasses = await this.prisma.class.findMany({
+      where: { tenantId, academicYearId },
+      include: {
+        schoolLevel: true,
+        officialClass: true,
+      },
+      orderBy: [
+        { schoolLevel: { order: 'asc' } },
+        { name: 'asc' },
+      ],
+    });
+
+    if (physicalClasses.length === 0) {
+      throw new NotFoundException(
+        `Aucune classe physique trouvée pour cette année scolaire.`,
+      );
+    }
+
+    // 2. Récupérer le branding
+    const branding = await this.getTenantBranding(tenantId);
+    const academicYear = await this.prisma.academicYear.findFirst({
+      where: { id: academicYearId, tenantId },
+    });
+
+    // 3. Construire le HTML combiné
+    const allHtml: string[] = [];
+    for (const cls of physicalClasses) {
+      const levelName = (cls.schoolLevel?.name || '').toUpperCase();
+      const isSecondary = levelName.includes('SECONDAIRE');
+
+      const enrollments = await this.prisma.studentEnrollment.findMany({
+        where: {
+          tenantId,
+          classId: cls.id,
+          academicYearId,
+          status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
+        },
+        include: {
+          student: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              matricule: true,
+              studentCode: true,
+              gender: true,
+              dateOfBirth: true,
+            },
+          },
+        },
+        orderBy: { student: { lastName: 'asc' } },
+      });
+
+      const subtitle = cls.officialClass?.name
+        ? `Section physique — classe officielle : ${cls.officialClass.name}`
+        : 'Section physique';
+
+      const html = this.buildHtml({
+        className: cls.name,
+        classNameSubtitle: `${subtitle} — ${enrollments.length} élève(s)`,
+        schoolName: branding.schoolName,
+        schoolLogo: branding.schoolLogo,
+        schoolAddress: branding.schoolAddress,
+        schoolPhone: branding.schoolPhone,
+        schoolEmail: branding.schoolEmail,
+        schoolSlogan: branding.schoolSlogan,
+        academicYearName: academicYear?.name || '',
+        isSecondary,
+        students: enrollments.map((e, i) => ({
+          num: i + 1,
+          name: `${e.student.lastName.toUpperCase()} ${e.student.firstName}`,
+          matricule: e.student.matricule || e.student.studentCode || '—',
+          gender: e.student.gender === 'M' ? 'M' : e.student.gender === 'F' ? 'F' : '—',
+          dateOfBirth: e.student.dateOfBirth
+            ? new Date(e.student.dateOfBirth).toLocaleDateString('fr-FR')
+            : '—',
+        })),
+        pageBreakAfter: true,
+      });
+      allHtml.push(html);
+    }
+
+    const combinedHtml = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Times New Roman', Georgia, serif; color: #1a1a1a; font-size: 13px; }
+  .class-section { page-break-after: always; }
+  .class-section:last-child { page-break-after: auto; }
+</style>
+</head>
+<body>
+${allHtml.map((html) => `<div class="class-section">${this.extractBodyContent(html)}</div>`).join('\n')}
+</body>
+</html>`;
+
+    const { page } = await this.puppeteerPool.acquirePage();
+    let pdfBuffer: Buffer;
+    try {
+      await page.setContent(combinedHtml, { waitUntil: 'networkidle0' });
+      const rawPdf = await page.pdf({
+        format: 'A4',
+        margin: { top: '15mm', bottom: '15mm', left: '15mm', right: '15mm' },
+        printBackground: true,
+      });
+      pdfBuffer = Buffer.from(rawPdf);
+    } finally {
+      await this.puppeteerPool.releasePage(page);
+    }
+
+    const nomEcole = (branding.schoolName || 'Ecole').replace(/[/\\:*?"<>|]/g, ' ').replace(/\s+/g, '_').trim().slice(0, 40);
+    const filename = `Listes_ToutesSections_${nomEcole}.pdf`;
+
+    this.logger.log(
+      `Global physical PDF generated: ${physicalClasses.length} sections, ${pdfBuffer.length} bytes`,
+    );
+
+    return { buffer: pdfBuffer, filename };
+  }
+
+  /**
    * Résout un SchoolLevel par code ou par id (pour generateAllClassesPdf).
    */
   private async resolveSchoolLevelForAllClasses(

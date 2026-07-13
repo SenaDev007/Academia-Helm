@@ -253,6 +253,156 @@ export class EducmasterExcelExportService {
   }
 
   /**
+   * ⭐ Génère un fichier Excel GLOBAL avec TOUTES les classes officielles de TOUTES les niveaux.
+   * Une feuille par classe officielle, triées par niveau puis par nom de classe.
+   * Utilisé par le bouton "Excel global" dans l'onglet Inscriptions.
+   */
+  async generateGlobalWorkbook(options: {
+    tenantId: string;
+    academicYearId: string;
+  }): Promise<EducmasterExcelExportResult> {
+    const { tenantId, academicYearId } = options;
+    const columns = EDUCMASTER_EXCEL_COLUMNS;
+
+    // 1. Récupérer TOUTES les classes officielles (AcademicClass) de ce tenant pour cette année
+    const academicClasses = await this.prisma.academicClass.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        isActive: true,
+      },
+      include: {
+        level: true,
+      },
+      orderBy: [
+        { level: { name: 'asc' } },
+        { name: 'asc' },
+      ],
+    });
+
+    if (academicClasses.length === 0) {
+      throw new NotFoundException(
+        `Aucune classe officielle trouvée pour cette année scolaire.`,
+      );
+    }
+
+    // 2. Récupérer le branding et l'année scolaire
+    const [tenant, academicYear] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        include: { schools: true },
+      }),
+      this.prisma.academicYear.findFirst({
+        where: { id: academicYearId, tenantId },
+      }),
+    ]);
+
+    // 3. Récupérer TOUTES les inscriptions pour cette année
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
+      },
+      include: {
+        academicClass: true,
+        student: {
+          select: {
+            id: true,
+            studentCode: true,
+            firstName: true,
+            lastName: true,
+            dateOfBirth: true,
+            gender: true,
+            placeOfBirth: true,
+            nationality: true,
+            npi: true,
+          },
+        },
+      },
+    });
+
+    // 4. Récupérer les responsables de TOUS les élèves
+    const studentIds = [...new Set(enrollments.map((e) => e.studentId))];
+    const guardianLinks = await this.prisma.studentGuardian.findMany({
+      where: { tenantId, studentId: { in: studentIds } },
+      include: { guardian: true },
+    });
+    const guardiansByStudent = new Map<string, StudentRow['guardians']>();
+    for (const sg of guardianLinks) {
+      const list = guardiansByStudent.get(sg.studentId) ?? [];
+      list.push({
+        relationship: sg.relationship,
+        isPrimary: sg.isPrimary,
+        firstName: sg.guardian.firstName,
+        lastName: sg.guardian.lastName,
+        phone: sg.guardian.phone,
+        address: sg.guardian.address,
+      });
+      guardiansByStudent.set(sg.studentId, list);
+    }
+
+    // 5. Grouper les élèves par classe officielle
+    const studentsByClass = new Map<string, StudentRow[]>();
+    const seen = new Set<string>();
+    for (const e of enrollments) {
+      if (seen.has(e.studentId)) continue;
+      seen.add(e.studentId);
+      const classId = e.academicClassId || '__NO_CLASS__';
+      if (!studentsByClass.has(classId)) studentsByClass.set(classId, []);
+      studentsByClass.get(classId)!.push({
+        student: {
+          id: e.student.id,
+          studentCode: e.student.studentCode,
+          firstName: e.student.firstName,
+          lastName: e.student.lastName,
+          dateOfBirth: e.student.dateOfBirth,
+          gender: e.student.gender,
+          placeOfBirth: e.student.placeOfBirth,
+          nationality: e.student.nationality,
+          npi: e.student.npi,
+        },
+        guardians: guardiansByStudent.get(e.studentId) ?? [],
+      });
+    }
+
+    // 6. Construire le workbook avec une feuille par classe
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Academia Helm';
+    workbook.created = new Date();
+    const sheetNames: string[] = [];
+
+    for (const ac of academicClasses) {
+      const students = studentsByClass.get(ac.id) || [];
+      if (students.length === 0) continue; // Skip empty classes
+      const sheetName = this.sanitizeSheetName(ac.name);
+      const sheet = workbook.addWorksheet(sheetName);
+      sheetNames.push(sheetName);
+      this.writeSheet(sheet, columns, students);
+    }
+
+    // Ajouter une feuille "Non classés" si des élèves n'ont pas de classe officielle
+    const unassigned = studentsByClass.get('__NO_CLASS__') || [];
+    if (unassigned.length > 0) {
+      const sheet = workbook.addWorksheet('Non classés');
+      sheetNames.push('Non classés');
+      this.writeSheet(sheet, columns, unassigned);
+    }
+
+    const raw = await workbook.xlsx.writeBuffer();
+    const buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as any);
+    const nomEcole = this.fileNameSegment(
+      (tenant?.schools as { name?: string } | null)?.name ?? tenant?.name ?? 'Ecole',
+    );
+    const anneeScolaire = this.fileNameSegment(
+      academicYear?.name || academicYear?.label || new Date().getFullYear().toString(),
+    );
+    const filename = `${nomEcole}_ToutesClasses_${anneeScolaire}.xlsx`;
+
+    return { buffer, filename, sheetNames };
+  }
+
+  /**
    * ⭐ Génère un fichier Excel pour UNE seule classe officielle (AcademicClass).
    * Une seule feuille avec les élèves de cette classe.
    * Utilisé par le bouton Excel à côté de chaque classe dans l'onglet Inscriptions.
@@ -383,6 +533,284 @@ export class EducmasterExcelExportService {
     const filename = `${nomEcole}_${nomClasse}_${anneeScolaire}.xlsx`;
 
     return { buffer, filename, sheetNames: [sheetName] };
+  }
+
+  /**
+   * ⭐ Génère un fichier Excel pour UNE classe PHYSIQUE (Class, section réelle).
+   * Une seule feuille avec les élèves de cette section.
+   * Utilisé par le bouton Excel à côté de chaque classe dans l'onglet "Liste des Élèves".
+   */
+  async generateWorkbookForSinglePhysicalClass(options: {
+    tenantId: string;
+    academicYearId: string;
+    classId: string;
+  }): Promise<EducmasterExcelExportResult> {
+    const { tenantId, academicYearId, classId } = options;
+    const columns = EDUCMASTER_EXCEL_COLUMNS;
+
+    // 1. Récupérer la classe physique (Class)
+    const cls = await this.prisma.class.findFirst({
+      where: { id: classId, tenantId },
+      include: {
+        schoolLevel: true,
+        academicYear: true,
+        officialClass: true,
+      },
+    });
+    if (!cls) {
+      throw new NotFoundException('Classe physique non trouvée');
+    }
+
+    // 2. Récupérer les élèves de cette classe physique
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: {
+        tenantId,
+        classId,
+        academicYearId,
+        status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
+      },
+      include: {
+        student: {
+          select: {
+            id: true,
+            studentCode: true,
+            firstName: true,
+            lastName: true,
+            dateOfBirth: true,
+            gender: true,
+            placeOfBirth: true,
+            nationality: true,
+            npi: true,
+          },
+        },
+      },
+      orderBy: { student: { lastName: 'asc' } },
+    });
+
+    // 3. Récupérer les responsables
+    const studentIds = [...new Set(enrollments.map((e) => e.studentId))];
+    const guardianLinks = await this.prisma.studentGuardian.findMany({
+      where: { tenantId, studentId: { in: studentIds } },
+      include: { guardian: true },
+    });
+    const guardiansByStudent = new Map<string, StudentRow['guardians']>();
+    for (const sg of guardianLinks) {
+      const list = guardiansByStudent.get(sg.studentId) ?? [];
+      list.push({
+        relationship: sg.relationship,
+        isPrimary: sg.isPrimary,
+        firstName: sg.guardian.firstName,
+        lastName: sg.guardian.lastName,
+        phone: sg.guardian.phone,
+        address: sg.guardian.address,
+      });
+      guardiansByStudent.set(sg.studentId, list);
+    }
+
+    // 4. Construire les StudentRow
+    const seen = new Set<string>();
+    const students: StudentRow[] = enrollments
+      .filter((e) => {
+        if (seen.has(e.studentId)) return false;
+        seen.add(e.studentId);
+        return true;
+      })
+      .map((e) => ({
+        student: {
+          id: e.student.id,
+          studentCode: e.student.studentCode,
+          firstName: e.student.firstName,
+          lastName: e.student.lastName,
+          dateOfBirth: e.student.dateOfBirth,
+          gender: e.student.gender,
+          placeOfBirth: e.student.placeOfBirth,
+          nationality: e.student.nationality,
+          npi: e.student.npi,
+        },
+        guardians: guardiansByStudent.get(e.studentId) ?? [],
+      }));
+
+    if (students.length === 0) {
+      throw new NotFoundException(
+        `Aucun élève trouvé dans la section "${cls.name}" pour cette année.`,
+      );
+    }
+
+    // 5. Récupérer le branding
+    const [tenant, academicYear] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        include: { schools: true },
+      }),
+      this.prisma.academicYear.findFirst({
+        where: { id: academicYearId, tenantId },
+      }),
+    ]);
+
+    // 6. Construire le workbook
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Academia Helm';
+    workbook.created = new Date();
+    const sheetName = this.sanitizeSheetName(cls.name);
+    const sheet = workbook.addWorksheet(sheetName);
+    this.writeSheet(sheet, columns, students);
+
+    const raw = await workbook.xlsx.writeBuffer();
+    const buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as any);
+    const nomEcole = this.fileNameSegment(
+      (tenant?.schools as { name?: string } | null)?.name ?? tenant?.name ?? 'Ecole',
+    );
+    const nomClasse = this.fileNameSegment(cls.name);
+    const anneeScolaire = this.fileNameSegment(
+      academicYear?.name || academicYear?.label || new Date().getFullYear().toString(),
+    );
+    const filename = `${nomEcole}_${nomClasse}_${anneeScolaire}.xlsx`;
+
+    return { buffer, filename, sheetNames: [sheetName] };
+  }
+
+  /**
+   * ⭐ Génère un fichier Excel GLOBAL avec TOUTES les classes PHYSIQUES (sections).
+   * Une feuille par section physique, triées par niveau puis par nom.
+   * Utilisé par le bouton "Excel global" dans l'onglet "Liste des Élèves".
+   */
+  async generateGlobalPhysicalWorkbook(options: {
+    tenantId: string;
+    academicYearId: string;
+  }): Promise<EducmasterExcelExportResult> {
+    const { tenantId, academicYearId } = options;
+    const columns = EDUCMASTER_EXCEL_COLUMNS;
+
+    // 1. Récupérer TOUTES les classes physiques (Class) de ce tenant pour cette année
+    const physicalClasses = await this.prisma.class.findMany({
+      where: { tenantId, academicYearId },
+      include: {
+        schoolLevel: true,
+      },
+      orderBy: [
+        { schoolLevel: { order: 'asc' } },
+        { name: 'asc' },
+      ],
+    });
+
+    if (physicalClasses.length === 0) {
+      throw new NotFoundException(
+        `Aucune classe physique trouvée pour cette année scolaire.`,
+      );
+    }
+
+    // 2. Récupérer le branding et l'année
+    const [tenant, academicYear] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        include: { schools: true },
+      }),
+      this.prisma.academicYear.findFirst({
+        where: { id: academicYearId, tenantId },
+      }),
+    ]);
+
+    // 3. Récupérer TOUTES les inscriptions
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
+      },
+      include: {
+        student: {
+          select: {
+            id: true,
+            studentCode: true,
+            firstName: true,
+            lastName: true,
+            dateOfBirth: true,
+            gender: true,
+            placeOfBirth: true,
+            nationality: true,
+            npi: true,
+          },
+        },
+      },
+    });
+
+    // 4. Récupérer les responsables
+    const studentIds = [...new Set(enrollments.map((e) => e.studentId))];
+    const guardianLinks = await this.prisma.studentGuardian.findMany({
+      where: { tenantId, studentId: { in: studentIds } },
+      include: { guardian: true },
+    });
+    const guardiansByStudent = new Map<string, StudentRow['guardians']>();
+    for (const sg of guardianLinks) {
+      const list = guardiansByStudent.get(sg.studentId) ?? [];
+      list.push({
+        relationship: sg.relationship,
+        isPrimary: sg.isPrimary,
+        firstName: sg.guardian.firstName,
+        lastName: sg.guardian.lastName,
+        phone: sg.guardian.phone,
+        address: sg.guardian.address,
+      });
+      guardiansByStudent.set(sg.studentId, list);
+    }
+
+    // 5. Grouper par classe physique (classId)
+    const studentsByClass = new Map<string, StudentRow[]>();
+    const seen = new Set<string>();
+    for (const e of enrollments) {
+      if (seen.has(e.studentId)) continue;
+      seen.add(e.studentId);
+      const classId = e.classId || '__NO_CLASS__';
+      if (!studentsByClass.has(classId)) studentsByClass.set(classId, []);
+      studentsByClass.get(classId)!.push({
+        student: {
+          id: e.student.id,
+          studentCode: e.student.studentCode,
+          firstName: e.student.firstName,
+          lastName: e.student.lastName,
+          dateOfBirth: e.student.dateOfBirth,
+          gender: e.student.gender,
+          placeOfBirth: e.student.placeOfBirth,
+          nationality: e.student.nationality,
+          npi: e.student.npi,
+        },
+        guardians: guardiansByStudent.get(e.studentId) ?? [],
+      });
+    }
+
+    // 6. Construire le workbook
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Academia Helm';
+    workbook.created = new Date();
+    const sheetNames: string[] = [];
+
+    for (const cls of physicalClasses) {
+      const students = studentsByClass.get(cls.id) || [];
+      if (students.length === 0) continue;
+      const sheetName = this.sanitizeSheetName(cls.name);
+      const sheet = workbook.addWorksheet(sheetName);
+      sheetNames.push(sheetName);
+      this.writeSheet(sheet, columns, students);
+    }
+
+    const unassigned = studentsByClass.get('__NO_CLASS__') || [];
+    if (unassigned.length > 0) {
+      const sheet = workbook.addWorksheet('Non affectés');
+      sheetNames.push('Non affectés');
+      this.writeSheet(sheet, columns, unassigned);
+    }
+
+    const raw = await workbook.xlsx.writeBuffer();
+    const buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as any);
+    const nomEcole = this.fileNameSegment(
+      (tenant?.schools as { name?: string } | null)?.name ?? tenant?.name ?? 'Ecole',
+    );
+    const anneeScolaire = this.fileNameSegment(
+      academicYear?.name || academicYear?.label || new Date().getFullYear().toString(),
+    );
+    const filename = `${nomEcole}_ToutesSections_${anneeScolaire}.xlsx`;
+
+    return { buffer, filename, sheetNames };
   }
 
   /**

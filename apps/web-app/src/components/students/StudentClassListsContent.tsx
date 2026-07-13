@@ -24,7 +24,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Search, ChevronDown, ChevronRight, Users, Loader2,
   FileText, BookOpen, Baby, GraduationCap, AlertCircle,
-  FileDown,
+  FileDown, FileSpreadsheet,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -141,6 +141,10 @@ export default function StudentClassListsContent() {
   const [pdfGeneratingClassId, setPdfGeneratingClassId] = useState<string | null>(null);
   const [pdfExistsClasses, setPdfExistsClasses] = useState<Set<string>>(new Set());
   const [previewClassPdf, setPreviewClassPdf] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
+  // ⭐ Export Excel par classe physique + exports globaux
+  const [excelGeneratingClassId, setExcelGeneratingClassId] = useState<string | null>(null);
+  const [isGlobalExcelExporting, setIsGlobalExcelExporting] = useState(false);
+  const [isGlobalPdfExporting, setIsGlobalPdfExporting] = useState(false);
 
   useEffect(() => {
     if (academicYear) loadData();
@@ -325,17 +329,61 @@ export default function StudentClassListsContent() {
         </div>
       </div>
 
-      {/* Barre de recherche */}
+      {/* Barre de recherche + boutons globaux */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Rechercher un élève par nom ou matricule..."
-            className="w-full pl-10 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-          />
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Rechercher un élève par nom ou matricule..."
+              className="w-full pl-10 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+            />
+          </div>
+          {/* ⭐ Bouton Excel global — TOUTES les sections physiques, une feuille par section */}
+          <button
+            onClick={async () => {
+              if (!academicYear) return;
+              setIsGlobalExcelExporting(true);
+              try {
+                await studentsService.exportGlobalPhysicalExcel(academicYear.id);
+                toast({ title: '✅ Excel global généré', description: 'Toutes les sections', variant: 'success' });
+              } catch (e: any) {
+                toast({ title: 'Erreur', description: e.message, variant: 'error' });
+              } finally {
+                setIsGlobalExcelExporting(false);
+              }
+            }}
+            disabled={isGlobalExcelExporting || isGlobalPdfExporting}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-300 transition disabled:opacity-50 whitespace-nowrap"
+            title="Excel global — toutes les sections dans un seul fichier (une feuille par section)"
+          >
+            {isGlobalExcelExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+            {isGlobalExcelExporting ? '...' : 'Excel global'}
+          </button>
+          {/* ⭐ Bouton PDF global — TOUTES les sections physiques, page-break par section */}
+          <button
+            onClick={async () => {
+              if (!academicYear) return;
+              setIsGlobalPdfExporting(true);
+              try {
+                await studentsService.exportGlobalPhysicalPdf(academicYear.id);
+                toast({ title: '✅ PDF global généré', description: 'Toutes les sections', variant: 'success' });
+              } catch (e: any) {
+                toast({ title: 'Erreur', description: e.message, variant: 'error' });
+              } finally {
+                setIsGlobalPdfExporting(false);
+              }
+            }}
+            disabled={isGlobalExcelExporting || isGlobalPdfExporting}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg border border-rose-300 transition disabled:opacity-50 whitespace-nowrap"
+            title="PDF global — toutes les sections dans un seul PDF (page-break par section)"
+          >
+            {isGlobalPdfExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+            {isGlobalPdfExporting ? '...' : 'PDF global'}
+          </button>
         </div>
       </div>
 
@@ -454,6 +502,33 @@ export default function StudentClassListsContent() {
                                     {pdfGeneratingClassId === classInfo.id
                                       ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                       : <FileText className="w-3.5 h-3.5" />}
+                                  </button>
+                                  {/* ⭐ Bouton Excel — génère un fichier Excel pour cette section physique */}
+                                  <button
+                                    onClick={async () => {
+                                      if (!academicYear) return;
+                                      setExcelGeneratingClassId(classInfo.id);
+                                      try {
+                                        await studentsService.exportPhysicalClassExcel(academicYear.id, classInfo.id, classInfo.name);
+                                        toast({ title: '✅ Excel généré', description: classInfo.name, variant: 'success' });
+                                      } catch (e: any) {
+                                        toast({ title: 'Erreur Excel', description: e.message, variant: 'error' });
+                                      } finally {
+                                        setExcelGeneratingClassId(null);
+                                      }
+                                    }}
+                                    disabled={excelGeneratingClassId === classInfo.id}
+                                    className={cn(
+                                      'p-1.5 rounded-lg transition shrink-0',
+                                      excelGeneratingClassId === classInfo.id
+                                        ? 'bg-green-100 text-green-600 cursor-wait'
+                                        : 'text-slate-400 hover:bg-green-100 hover:text-green-600',
+                                    )}
+                                    title="Générer le fichier Excel de cette section"
+                                  >
+                                    {excelGeneratingClassId === classInfo.id
+                                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      : <FileSpreadsheet className="w-3.5 h-3.5" />}
                                   </button>
                                 </div>
 

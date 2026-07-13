@@ -1392,6 +1392,205 @@ class StudentsService {
     window.URL.revokeObjectURL(url);
     a.remove();
   }
+
+  /**
+   * Export Excel GLOBAL — TOUTES les classes officielles de TOUS les niveaux.
+   * Une feuille par classe. BFF : GET /api/students/export/global-excel?academicYearId=...
+   */
+  async exportGlobalExcel(academicYearId: string): Promise<void> {
+    const res = await fetch(
+      `/api/students/export/global-excel?academicYearId=${encodeURIComponent(academicYearId)}`,
+      {
+        credentials: 'include',
+        headers: { 'x-tenant-id': localStorage.getItem('tenantId') || '' },
+      },
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Erreur lors de l\'export' }));
+      throw new Error(err.message || 'Erreur lors de l\'export');
+    }
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      throw new Error('Le fichier Excel n\'a pas pu être généré (réponse HTML inattendue).');
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    let filename = 'ToutesClasses.xlsx';
+    const cd = res.headers.get('Content-Disposition');
+    if (cd) {
+      const match = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+      if (match) {
+        try { filename = decodeURIComponent(match[1]); } catch { filename = match[1]; }
+      }
+    }
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+  }
+
+  /**
+   * Export PDF GLOBAL — TOUTES les classes officielles de TOUS les niveaux.
+   * BFF : GET /api/students/export/global-pdf?academicYearId=...
+   */
+  async exportGlobalPdf(academicYearId: string): Promise<void> {
+    const res = await fetch(
+      `/api/students/export/global-pdf?academicYearId=${encodeURIComponent(academicYearId)}`,
+      {
+        credentials: 'include',
+        headers: { 'x-tenant-id': localStorage.getItem('tenantId') || '' },
+      },
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Erreur lors de l\'export' }));
+      throw new Error(err.message || 'Erreur lors de l\'export');
+    }
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      throw new Error('Le PDF n\'a pas pu être généré (réponse HTML inattendue).');
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    let filename = 'Listes_ToutesClasses.pdf';
+    const cd = res.headers.get('Content-Disposition');
+    if (cd) {
+      const match = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+      if (match) {
+        try { filename = decodeURIComponent(match[1]); } catch { filename = match[1]; }
+      }
+    }
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+  }
+
+  /**
+   * Export Excel d'UNE classe PHYSIQUE (section réelle).
+   * BFF : GET /api/students/export/physical-class-excel?academicYearId=...&classId=...
+   */
+  async exportPhysicalClassExcel(
+    academicYearId: string,
+    classId: string,
+    className?: string,
+  ): Promise<void> {
+    const res = await fetch(
+      `/api/students/export/physical-class-excel?academicYearId=${encodeURIComponent(academicYearId)}&classId=${encodeURIComponent(classId)}`,
+      {
+        credentials: 'include',
+        headers: { 'x-tenant-id': localStorage.getItem('tenantId') || '' },
+      },
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Erreur lors de l\'export' }));
+      throw new Error(err.message || 'Erreur lors de l\'export');
+    }
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      throw new Error('Le fichier Excel n\'a pas pu être généré (réponse HTML inattendue).');
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    let filename = `${className || 'classe'}.xlsx`;
+    const cd = res.headers.get('Content-Disposition');
+    if (cd) {
+      const match = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+      if (match) {
+        try { filename = decodeURIComponent(match[1]); } catch { filename = match[1]; }
+      }
+    }
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+  }
+
+  /**
+   * Export Excel GLOBAL — TOUTES les classes PHYSIQUES (sections).
+   * BFF : GET /api/students/export/global-physical-excel?academicYearId=...
+   */
+  async exportGlobalPhysicalExcel(academicYearId: string): Promise<void> {
+    const res = await fetch(
+      `/api/students/export/global-physical-excel?academicYearId=${encodeURIComponent(academicYearId)}`,
+      {
+        credentials: 'include',
+        headers: { 'x-tenant-id': localStorage.getItem('tenantId') || '' },
+      },
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Erreur lors de l\'export' }));
+      throw new Error(err.message || 'Erreur lors de l\'export');
+    }
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      throw new Error('Le fichier Excel n\'a pas pu être généré (réponse HTML inattendue).');
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    let filename = 'ToutesSections.xlsx';
+    const cd = res.headers.get('Content-Disposition');
+    if (cd) {
+      const match = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+      if (match) {
+        try { filename = decodeURIComponent(match[1]); } catch { filename = match[1]; }
+      }
+    }
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+  }
+
+  /**
+   * Export PDF GLOBAL — TOUTES les classes PHYSIQUES (sections).
+   * BFF : GET /api/students/export/global-physical-pdf?academicYearId=...
+   */
+  async exportGlobalPhysicalPdf(academicYearId: string): Promise<void> {
+    const res = await fetch(
+      `/api/students/export/global-physical-pdf?academicYearId=${encodeURIComponent(academicYearId)}`,
+      {
+        credentials: 'include',
+        headers: { 'x-tenant-id': localStorage.getItem('tenantId') || '' },
+      },
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Erreur lors de l\'export' }));
+      throw new Error(err.message || 'Erreur lors de l\'export');
+    }
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      throw new Error('Le PDF n\'a pas pu être généré (réponse HTML inattendue).');
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    let filename = 'Listes_ToutesSections.pdf';
+    const cd = res.headers.get('Content-Disposition');
+    if (cd) {
+      const match = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+      if (match) {
+        try { filename = decodeURIComponent(match[1]); } catch { filename = match[1]; }
+      }
+    }
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+  }
 }
 
 export const studentsService = new StudentsService();

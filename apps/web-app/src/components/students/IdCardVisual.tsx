@@ -213,10 +213,10 @@ export function IdCardVisual({
           <SchoolLogo size={26} />
         </div>
 
-        {/* ═══ CORPS (photo gauche + champs droite) — 56% ═══ */}
-        <div className="flex flex-1 min-h-0 px-3 py-2 gap-3">
+        {/* ═══ CORPS (photo gauche + champs droite + signature) — 68% ═══ */}
+        <div className="flex flex-1 min-h-0 px-2.5 py-1.5 gap-2">
           {/* Photo élève à gauche — PAS de QR code */}
-          <div className="flex flex-col items-center justify-center shrink-0" style={{ width: '30%' }}>
+          <div className="flex flex-col items-center justify-start shrink-0" style={{ width: '28%' }}>
             {(identity?.cardShowPhoto !== false) && (
               <div className="w-full rounded-md overflow-hidden border-2"
                 style={{ borderColor: primaryColor, aspectRatio: '0.75', background: '#f3f4f6' }}>
@@ -227,44 +227,41 @@ export function IdCardVisual({
             )}
           </div>
 
-          {/* Champs à droite */}
-          <div className="flex-1 flex flex-col justify-center gap-1 min-w-0">
+          {/* Champs à droite — compacts, gap minimal */}
+          <div className="flex-1 flex flex-col justify-start gap-px min-w-0">
             <InfoField label="N° Carte" value={card.cardNumber} primary={primaryColor} />
             <InfoField label="Matricule" value={s.matricule || s.studentCode || '—'} primary={primaryColor} />
-            <InfoField label="Nom et Prénom" value={`${s.lastName.toUpperCase()} ${s.firstName}`} primary={primaryColor} bold />
-            <div className="grid grid-cols-2 gap-x-2">
-              <InfoField label="Sexe" value={s.gender === 'M' ? 'Masculin' : s.gender === 'F' ? 'Féminin' : '—'} primary={primaryColor} />
-              <InfoField label="Date Naiss." value={formatDate(s.dateOfBirth)} primary={primaryColor} />
-            </div>
-            <div className="grid grid-cols-2 gap-x-2">
-              <InfoField label="Classe" value={card.className || '—'} primary={primaryColor} />
-              <InfoField label="Année" value={card.academicYearName || card.levelName || '—'} primary={primaryColor} />
-            </div>
+            <InfoField label="Nom" value={`${s.lastName.toUpperCase()} ${s.firstName}`} primary={primaryColor} bold />
+            <InfoField label="Sexe" value={s.gender === 'M' ? 'Masculin' : s.gender === 'F' ? 'Féminin' : '—'} primary={primaryColor} />
+            <InfoField label="Date Naiss." value={formatDate(s.dateOfBirth)} primary={primaryColor} />
+            <InfoField label="Classe" value={card.className || '—'} primary={primaryColor} />
+            <InfoField label="Année Scolaire" value={card.academicYearName || card.levelName || '—'} primary={primaryColor} />
             {(identity?.cardShowGuardian !== false) && (
               <InfoField label="Parent / Tuteur" value={guardianName} primary={primaryColor} />
             )}
             {(identity?.cardShowEmergencyCall !== false) && (
               <InfoField label="Téléphone Urgence" value={guardianPhone} primary={primaryColor} />
             )}
+            {/* Signature Directeur sur la zone blanche */}
+            <div className="flex justify-end mt-1 pt-px border-t border-gray-200">
+              <div className="text-right">
+                <div className="text-[5px] italic" style={{ fontFamily: 'Brush Script MT, cursive', color: primaryColor }}>Le Directeur</div>
+                <div className="text-[3px] text-gray-400">Signature & Cachet</div>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* ═══ BANDE BAS BLEUE (adresse école + signature Directeur) — 22% ═══ */}
-        <div className="shrink-0 flex items-center px-3 text-white"
-          style={{ height: '22%', background: `linear-gradient(135deg, ${secondaryColor} 0%, ${primaryColor} 100%)` }}>
-          {/* Gauche : adresse + téléphone école */}
-          <div className="min-w-0 flex-1">
+        {/* ═══ BANDE BAS BLEUE (adresse + téléphone école uniquement) — 10% ═══ */}
+        <div className="shrink-0 flex items-center px-2.5 text-white"
+          style={{ height: '10%', background: `linear-gradient(135deg, ${secondaryColor} 0%, ${primaryColor} 100%)` }}>
+          <div className="min-w-0 flex-1 flex items-center gap-2">
             {(identity?.cardShowSchoolAddress !== false) && schoolAddress && (
-              <div className="text-[3.5px] opacity-90 leading-tight truncate">{schoolAddress}</div>
+              <span className="text-[3px] opacity-90 truncate">{schoolAddress}</span>
             )}
             {schoolPhone && (
-              <div className="text-[3.5px] opacity-90 leading-tight truncate">Tél : {schoolPhone}</div>
+              <span className="text-[3px] opacity-90 shrink-0">· Tél : {schoolPhone}</span>
             )}
-          </div>
-          {/* Droite : signature Directeur */}
-          <div className="text-right shrink-0 ml-2">
-            <div className="text-[5px] italic opacity-90" style={{ fontFamily: 'Brush Script MT, cursive' }}>Le Directeur</div>
-            <div className="text-[3.5px] opacity-70 border-t border-white/30 pt-px mt-0.5">Signature & Cachet</div>
           </div>
         </div>
       </div>

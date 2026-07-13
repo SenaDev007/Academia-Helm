@@ -48,6 +48,7 @@ import {
   TrendingDown,
   GraduationCap,
   Compass,
+  Send,
 } from 'lucide-react';
 import { HELM_PLANS, getRecommendedPlan, type HelmPlanKey, fetchPricingPlans, getPlanForStudentCount, type DynamicPricingPlan } from '@/lib/services/HelmPricingService';
 import { formatCurrency } from '@/lib/utils';

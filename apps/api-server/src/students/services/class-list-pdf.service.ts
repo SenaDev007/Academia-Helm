@@ -192,7 +192,7 @@ export class ClassListPdfService {
         orderBy: { student: { lastName: 'asc' } },
       });
 
-      const html = this.buildHtml({
+      const bodyContent = this.buildBodyContent({
         className: ac.name,
         classNameSubtitle: `Classe officielle — ${enrollments.length} élève(s)`,
         schoolName: branding.schoolName,
@@ -215,24 +215,24 @@ export class ClassListPdfService {
         // ⭐ Force un page-break après cette classe (sauf la dernière)
         pageBreakAfter: true,
       });
-      allHtml.push(html);
+      allHtml.push(bodyContent);
     }
 
     // 6. Combiner tous les HTML en un seul document
+    // ⭐ Utilise SHARED_CSS (le même CSS que buildHtml) pour que le formatage
+    // soit identique au PDF par classe — en-tête officiel, tableau stylé, etc.
     const combinedHtml = `<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Times New Roman', Georgia, serif; color: #1a1a1a; font-size: 13px; }
+${this.SHARED_CSS}
   .class-section { page-break-after: always; }
   .class-section:last-child { page-break-after: auto; }
-  ${allHtml.map((_, i) => i === 0 ? '' : '').join('')}
 </style>
 </head>
 <body>
-${allHtml.map((html, i) => `<div class="class-section">${this.extractBodyContent(html)}</div>`).join('\n')}
+${allHtml.map((body) => `<div class="class-section">${body}</div>`).join('\n')}
 </body>
 </html>`;
 
@@ -329,7 +329,7 @@ ${allHtml.map((html, i) => `<div class="class-section">${this.extractBodyContent
         orderBy: { student: { lastName: 'asc' } },
       });
 
-      const html = this.buildHtml({
+      const bodyContent = this.buildBodyContent({
         className: ac.name,
         classNameSubtitle: `Classe officielle — ${enrollments.length} élève(s)`,
         schoolName: branding.schoolName,
@@ -351,7 +351,7 @@ ${allHtml.map((html, i) => `<div class="class-section">${this.extractBodyContent
         })),
         pageBreakAfter: true,
       });
-      allHtml.push(html);
+      allHtml.push(bodyContent);
     }
 
     const combinedHtml = `<!DOCTYPE html>
@@ -359,14 +359,13 @@ ${allHtml.map((html, i) => `<div class="class-section">${this.extractBodyContent
 <head>
 <meta charset="UTF-8">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Times New Roman', Georgia, serif; color: #1a1a1a; font-size: 13px; }
+${this.SHARED_CSS}
   .class-section { page-break-after: always; }
   .class-section:last-child { page-break-after: auto; }
 </style>
 </head>
 <body>
-${allHtml.map((html) => `<div class="class-section">${this.extractBodyContent(html)}</div>`).join('\n')}
+${allHtml.map((body) => `<div class="class-section">${body}</div>`).join('\n')}
 </body>
 </html>`;
 
@@ -461,7 +460,7 @@ ${allHtml.map((html) => `<div class="class-section">${this.extractBodyContent(ht
         ? `Section physique — classe officielle : ${cls.officialClass.name}`
         : 'Section physique';
 
-      const html = this.buildHtml({
+      const bodyContent = this.buildBodyContent({
         className: cls.name,
         classNameSubtitle: `${subtitle} — ${enrollments.length} élève(s)`,
         schoolName: branding.schoolName,
@@ -483,7 +482,7 @@ ${allHtml.map((html) => `<div class="class-section">${this.extractBodyContent(ht
         })),
         pageBreakAfter: true,
       });
-      allHtml.push(html);
+      allHtml.push(bodyContent);
     }
 
     const combinedHtml = `<!DOCTYPE html>
@@ -491,14 +490,13 @@ ${allHtml.map((html) => `<div class="class-section">${this.extractBodyContent(ht
 <head>
 <meta charset="UTF-8">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Times New Roman', Georgia, serif; color: #1a1a1a; font-size: 13px; }
+${this.SHARED_CSS}
   .class-section { page-break-after: always; }
   .class-section:last-child { page-break-after: auto; }
 </style>
 </head>
 <body>
-${allHtml.map((html) => `<div class="class-section">${this.extractBodyContent(html)}</div>`).join('\n')}
+${allHtml.map((body) => `<div class="class-section">${body}</div>`).join('\n')}
 </body>
 </html>`;
 
@@ -738,47 +736,22 @@ ${allHtml.map((html) => `<div class="class-section">${this.extractBodyContent(ht
     /** ⭐ Si true, ajoute un page-break après ce bloc (utilisé par generateAllClassesPdf). */
     pageBreakAfter?: boolean;
   }): string {
-    const ministry = data.isSecondary
-      ? `Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes`
-      : `Ministère des Enseignements Maternel et Primaire`;
-
-    // Drapeau du Bénin en SVG data URL (vert | jaune/rouge)
-    const beninFlagSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 75 50"><rect width="30" height="50" fill="#008751"/><rect x="30" width="45" height="25" fill="#FCD116"/><rect x="30" y="25" width="45" height="25" fill="#E8112D"/></svg>`;
-    const beninFlag = `data:image/svg+xml;base64,${Buffer.from(beninFlagSvg).toString('base64')}`;
-
-    // Logo de l'école à droite (si disponible, sinon initiales)
-    const schoolLogoBlock = data.schoolLogo
-      ? `<img src="${data.schoolLogo}" alt="Logo" style="max-width:60px;max-height:60px;object-fit:contain;" />`
-      : `<div style="width:55px;height:55px;border:2px solid #0D1F6E;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:bold;color:#0D1F6E;">${(data.schoolName || 'EC').substring(0, 2).toUpperCase()}</div>`;
-
-    const contactInfo = [
-      data.schoolSlogan ? `« ${data.schoolSlogan} »` : null,
-      data.schoolAddress,
-      data.schoolPhone ? `Tél : ${data.schoolPhone}` : null,
-      data.schoolEmail ? `Email : ${data.schoolEmail}` : null,
-    ].filter(Boolean).join(' · ');
-
-    const rows = data.students.length > 0
-      ? data.students.map(s => `
-        <tr>
-          <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;">${s.num}</td>
-          <td style="padding:8px 10px;border:1px solid #ddd;font-weight:600;">${s.name}</td>
-          <td style="text-align:center;padding:8px 6px;border:1px solid #ddd;font-size:10px;white-space:nowrap;">${s.matricule}</td>
-          <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;">${s.gender}</td>
-          <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;">${s.dateOfBirth}</td>
-        </tr>
-      `).join('')
-      : `<tr><td colspan="5" style="text-align:center;padding:20px;border:1px solid #ddd;color:#999;">Aucun élève inscrit dans cette classe</td></tr>`;
-
-    const subtitleBlock = data.classNameSubtitle
-      ? `<div style="text-align:center;font-size:11px;color:#666;margin-bottom:15px;font-style:italic;">${data.classNameSubtitle}</div>`
-      : '';
-
     return `<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
 <style>
+${this.SHARED_CSS}
+</style>
+</head>
+<body>
+${this.buildBodyContent(data)}
+</body>
+</html>`;
+  }
+
+  /** CSS partagé par toutes les listes de classe (officiel + physique + global). */
+  private readonly SHARED_CSS = `
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Times New Roman', Georgia, serif; color: #1a1a1a; font-size: 13px; }
 
@@ -847,9 +820,70 @@ ${allHtml.map((html) => `<div class="class-section">${this.extractBodyContent(ht
   .signature { margin-top: 50px; display: flex; justify-content: space-between; }
   .signature-block { text-align: center; font-size: 12px; }
   .signature-line { margin-top: 45px; border-top: 1px solid #333; width: 200px; margin-left: auto; margin-right: auto; }
-</style>
-</head>
-<body>
+`;
+
+  /**
+   * Construit le contenu du <body> pour une liste de classe.
+   * Utilisé par buildHtml (PDF par classe) ET par generateGlobalPdf/generateGlobalPhysicalPdf
+   * (PDF global avec plusieurs classes combinées).
+   */
+  private buildBodyContent(data: {
+    className: string;
+    classNameSubtitle?: string;
+    schoolName: string;
+    schoolLogo?: string | null;
+    schoolAddress?: string | null;
+    schoolPhone?: string | null;
+    schoolEmail?: string | null;
+    schoolSlogan?: string | null;
+    academicYearName: string;
+    isSecondary: boolean;
+    students: Array<{
+      num: number;
+      name: string;
+      matricule: string;
+      gender: string;
+      dateOfBirth: string;
+    }>;
+    pageBreakAfter?: boolean;
+  }): string {
+    const ministry = data.isSecondary
+      ? `Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes`
+      : `Ministère des Enseignements Maternel et Primaire`;
+
+    // Drapeau du Bénin en SVG data URL (vert | jaune/rouge)
+    const beninFlagSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 75 50"><rect width="30" height="50" fill="#008751"/><rect x="30" width="45" height="25" fill="#FCD116"/><rect x="30" y="25" width="45" height="25" fill="#E8112D"/></svg>`;
+    const beninFlag = `data:image/svg+xml;base64,${Buffer.from(beninFlagSvg).toString('base64')}`;
+
+    // Logo de l'école à droite (si disponible, sinon initiales)
+    const schoolLogoBlock = data.schoolLogo
+      ? `<img src="${data.schoolLogo}" alt="Logo" style="max-width:60px;max-height:60px;object-fit:contain;" />`
+      : `<div style="width:55px;height:55px;border:2px solid #0D1F6E;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:bold;color:#0D1F6E;">${(data.schoolName || 'EC').substring(0, 2).toUpperCase()}</div>`;
+
+    const contactInfo = [
+      data.schoolSlogan ? `« ${data.schoolSlogan} »` : null,
+      data.schoolAddress,
+      data.schoolPhone ? `Tél : ${data.schoolPhone}` : null,
+      data.schoolEmail ? `Email : ${data.schoolEmail}` : null,
+    ].filter(Boolean).join(' · ');
+
+    const rows = data.students.length > 0
+      ? data.students.map(s => `
+        <tr>
+          <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;">${s.num}</td>
+          <td style="padding:8px 10px;border:1px solid #ddd;font-weight:600;">${s.name}</td>
+          <td style="text-align:center;padding:8px 6px;border:1px solid #ddd;font-size:10px;white-space:nowrap;">${s.matricule}</td>
+          <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;">${s.gender}</td>
+          <td style="text-align:center;padding:8px 10px;border:1px solid #ddd;">${s.dateOfBirth}</td>
+        </tr>
+      `).join('')
+      : `<tr><td colspan="5" style="text-align:center;padding:20px;border:1px solid #ddd;color:#999;">Aucun élève inscrit dans cette classe</td></tr>`;
+
+    const subtitleBlock = data.classNameSubtitle
+      ? `<div style="text-align:center;font-size:11px;color:#666;margin-bottom:15px;font-style:italic;">${data.classNameSubtitle}</div>`
+      : '';
+
+    return `
   <!-- EN-TÊTE OFFICIEL -->
   <div class="header">
     <table class="header-table">
@@ -916,8 +950,8 @@ ${allHtml.map((html) => `<div class="class-section">${this.extractBodyContent(ht
   <div class="footer">
     Document généré par Academia Helm — ${new Date().toLocaleDateString('fr-FR')}
   </div>
-</body>
-</html>`;
+${data.pageBreakAfter ? '<div style="page-break-after: always;"></div>' : ''}
+`;
   }
 
   /**

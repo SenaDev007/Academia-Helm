@@ -837,13 +837,6 @@ export default function EnrollmentsContent() {
             />
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={handleExportCSV}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-emerald-700 bg-white hover:bg-emerald-100 rounded-lg border border-emerald-300 transition"
-              title="Export CSV"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-            </button>
             {/* ⭐ Bouton Excel global — TOUTES les classes officielles, une feuille par classe */}
             <button
               onClick={async () => {

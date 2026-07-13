@@ -386,6 +386,22 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     return () => { cancelled = true; };
   }, [tenantIdForApi]);
 
+  // ⭐ Statut d'ouverture des admissions publiques.
+  // Si les admissions sont fermées (date dépassée ou désactivées manuellement),
+  // le formulaire de pré-inscription est masqué et seul le bouton "Demander des infos"
+  // reste disponible. Évite que le parent remplisse tout avant de découvrir le refus.
+  // ⚠️ DOIT être déclaré AVANT le useEffect et admissionsAreClosed qui le référencent
+  // (sinon TDZ error : "Cannot access 'admissionStatus' before initialization").
+  const [admissionStatus, setAdmissionStatus] = useState<{
+    isOpen: boolean;
+    reason: string;
+    admissionEnabled: boolean;
+    admissionOpenDate: string | null;
+    admissionCloseDate: string | null;
+    academicYearName: string | null;
+  } | null>(null);
+  const [admissionStatusLoading, setAdmissionStatusLoading] = useState(false);
+
   // ⭐ Récupérer le statut d'ouverture des admissions publiques.
   // Si fermées, le formulaire de pré-inscription est masqué et seul le bouton
   // "Demander des infos" reste disponible.
@@ -529,20 +545,6 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   // Étape 3 : Pièces justificatives + Message + Submit
   // Objectif : fixer la hauteur du formulaire, éviter le scroll vertical.
   const [preEnrollmentStep, setPreEnrollmentStep] = useState<1 | 2 | 3>(1);
-
-  // ⭐ Statut d'ouverture des admissions publiques.
-  // Si les admissions sont fermées (date dépassée ou désactivées manuellement),
-  // le formulaire de pré-inscription est masqué et seul le bouton "Demander des infos"
-  // reste disponible. Évite que le parent remplisse tout avant de découvrir le refus.
-  const [admissionStatus, setAdmissionStatus] = useState<{
-    isOpen: boolean;
-    reason: string;
-    admissionEnabled: boolean;
-    admissionOpenDate: string | null;
-    admissionCloseDate: string | null;
-    academicYearName: string | null;
-  } | null>(null);
-  const [admissionStatusLoading, setAdmissionStatusLoading] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);

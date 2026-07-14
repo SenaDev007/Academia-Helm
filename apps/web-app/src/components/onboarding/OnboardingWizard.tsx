@@ -50,7 +50,7 @@ import {
   Compass,
   Send,
 } from 'lucide-react';
-import { HELM_PLANS, getRecommendedPlan, type HelmPlanKey, fetchPricingPlans, getPlanForStudentCount, type DynamicPricingPlan } from '@/lib/services/HelmPricingService';
+import { HELM_PLANS, fetchPricingPlans, getPlanForStudentCount, type DynamicPricingPlan } from '@/lib/services/HelmPricingService';
 import { formatCurrency } from '@/lib/utils';
 import { compressImageFileToDataUrl } from '@/lib/media';
 import FedaPayCheckout from './FedaPayCheckout';
@@ -250,18 +250,9 @@ export default function OnboardingWizard() {
     return () => clearTimeout(timeoutId);
   }, [data.email, step, data.draftId]); // Vérifier quand l'email change
 
-  // Générer le planCode dynamiquement basé sur estimatedStudentCount
-  useEffect(() => {
-    const generatePlanCode = () => {
-      // Nouveau système : SEED (1-150), GROW (151-400), LEAD (401-800), NETWORK (800+)
-      return getRecommendedPlan(data.estimatedStudentCount);
-    };
-
-    const newPlanCode = generatePlanCode();
-    if (newPlanCode !== data.planCode) {
-      setData({ ...data, planCode: newPlanCode });
-    }
-  }, [data.estimatedStudentCount]);
+  // ⭐ Plus besoin de générer le planCode à partir de estimatedStudentCount :
+  // l'utilisateur sélectionne directement son plan (SEED / GROW / LEAD) sur
+  // l'étape 3, ce qui remplit planCode ET estimatedStudentCount simultanément.
 
   // Charger les plans dynamiques depuis l'API au montage
   useEffect(() => {
@@ -631,9 +622,9 @@ export default function OnboardingWizard() {
 
     if (stepNumber === 3) {
       if (!data.planCode) newErrors.planCode = 'Veuillez sélectionner un plan';
-      if (!data.estimatedStudentCount || data.estimatedStudentCount <= 0) {
-        newErrors.estimatedStudentCount = 'Veuillez saisir un effectif estimé (nombre d\'élèves)';
-      }
+      // ⭐ estimatedStudentCount n'est plus saisi par l'utilisateur — il est
+      // automatiquement rempli quand un plan est sélectionné (1 pour SEED,
+      // 151 pour GROW, 401 pour LEAD). On ne valide donc plus ce champ ici.
     }
 
     setErrors(newErrors);
@@ -1288,7 +1279,7 @@ export default function OnboardingWizard() {
       password: '',
       confirmPassword: '',
       otp: '',
-      planCode: 'BASIC_MONTHLY',
+      planCode: 'SEED',
       billingPeriod: 'monthly',
     });
 
@@ -2356,7 +2347,9 @@ export default function OnboardingWizard() {
                       <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
                         <Check className="w-3 h-3 text-white" />
                       </div>
-                      <span className="text-sm font-medium text-green-700">Numéro vérifié</span>
+                      <span className="text-sm font-medium text-green-700">
+                        {otpMethod === 'email' ? 'Email vérifié' : 'Numéro vérifié'}
+                      </span>
                     </div>
                   )}
 
@@ -2422,60 +2415,125 @@ export default function OnboardingWizard() {
               </div>
               
               <div className="mt-8 space-y-8">
-                {/* Section 0: Effectif estimé + plan recommandé */}
+                {/* Section 0: Sélection du plan (Seed / Grow / Lead) */}
                 <div className="bg-gradient-to-br from-white via-blue-50 to-mist rounded-xl p-6 border border-blue-200">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-                    <div className="flex items-center">
-                      <School className="w-5 h-5 text-blue-700 mr-2" />
-                      <label className="text-base font-semibold text-blue-900">
-                        Effectif actuel estimé (nombre d&apos;élèves inscrits)
-                      </label>
-                    </div>
-                    {data.estimatedStudentCount > 0 && (
-                      <div className="inline-flex items-center px-3 py-1 rounded-full bg-blue-900 text-white text-xs font-semibold">
-                        Plan recommandé&nbsp;:
-                        <span className="ml-1 text-gold-300">
-                          {getRecommendedPlan(data.estimatedStudentCount)}
-                        </span>
-                      </div>
-                    )}
+                  <div className="flex items-center mb-5">
+                    <School className="w-5 h-5 text-blue-700 mr-2" />
+                    <label className="text-base font-semibold text-blue-900">
+                      Choisissez votre plan
+                    </label>
                   </div>
-                  <div className="grid md:grid-cols-[2fr,1fr] gap-4 items-start">
-                    <div>
-                      <input
-                        type="number"
-                        min={1}
-                        placeholder="ex: 150"
-                        value={data.estimatedStudentCount || ''}
-                        onChange={(e) =>
-                          handleChange(
-                            'estimatedStudentCount',
-                            e.target.value ? parseInt(e.target.value, 10) || 0 : 0,
-                          )
-                        }
-                        className={`w-full px-4 py-3 border rounded-md focus:ring-2 focus:ring-blue-600 ${
-                          errors.estimatedStudentCount ? 'border-red-500' : 'border-gray-300'
-                        }`}
-                      />
-                      <p className="mt-2 text-xs text-graphite-600">
-                        Une estimation suffit. Le plan s&apos;ajustera automatiquement si votre école grandit.
-                      </p>
-                      {errors.estimatedStudentCount && (
-                        <p className="mt-1 text-sm text-red-600">{errors.estimatedStudentCount}</p>
-                      )}
-                    </div>
-                    {data.estimatedStudentCount > 0 && (
-                      <div className="text-sm text-graphite-700 bg-white/60 rounded-lg p-3 border border-blue-100">
-                        <p className="font-semibold text-blue-900 mb-1">
-                          {HELM_PLANS[getRecommendedPlan(data.estimatedStudentCount)].name}
-                        </p>
-                        <p>
-                          1–150 élèves → HELM SEED · 151–400 → HELM GROW · 401–800 → HELM LEAD · au‑delà →
-                          HELM NETWORK (contact commercial).
-                        </p>
-                      </div>
-                    )}
+                  <p className="text-xs text-graphite-600 mb-4">
+                    Sélectionnez le plan correspondant à votre effectif. La section montant se met à jour automatiquement.
+                  </p>
+
+                  {/* Cartes de sélection de plan */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {(['SEED', 'GROW', 'LEAD'] as const).map((planKey) => {
+                      const plan = HELM_PLANS[planKey];
+                      const dynamicPlan = pricingPlans.find((p: any) => p.code === planKey);
+                      const isSelected = data.planCode === planKey;
+                      const rangeLabel = planKey === 'SEED'
+                        ? '1 – 150 élèves'
+                        : planKey === 'GROW'
+                          ? '151 – 400 élèves'
+                          : '401 – 800 élèves';
+                      const monthlyAmount = dynamicPlan?.monthlyAmount ?? plan.monthlyPrice ?? 0;
+                      const yearlyAmount = dynamicPlan?.yearlyAmount ?? plan.annualPrice ?? 0;
+                      const setupFee = dynamicPlan?.initialFee ?? plan.setupFee ?? 0;
+
+                      return (
+                        <button
+                          key={planKey}
+                          type="button"
+                          onClick={() => {
+                            // ⭐ Quand l'utilisateur sélectionne un plan, on met à jour
+                            // planCode ET estimatedStudentCount (valeur représentative pour
+                            // la suite du workflow — la validation step 3 l'exige).
+                            const representativeCount =
+                              planKey === 'SEED' ? 1
+                                : planKey === 'GROW' ? 151
+                                  : 401;
+                            setData({
+                              ...data,
+                              planCode: planKey,
+                              estimatedStudentCount: representativeCount,
+                            });
+                            if (errors.planCode || errors.estimatedStudentCount) {
+                              setErrors({ ...errors, planCode: '', estimatedStudentCount: '' });
+                            }
+                          }}
+                          className={`relative p-5 border-2 rounded-xl text-left transition-all duration-300 ${
+                            isSelected
+                              ? 'border-blue-700 bg-white shadow-lg scale-[1.02]'
+                              : 'border-gray-300 bg-white hover:border-blue-400 hover:shadow-md'
+                          }`}
+                        >
+                          {/* Badge "Populaire" pour GROW */}
+                          {plan.badge && (
+                            <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-gold-500 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wide">
+                              {plan.badge}
+                            </div>
+                          )}
+                          {/* Checkmark si sélectionné */}
+                          {isSelected && (
+                            <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-blue-700 flex items-center justify-center">
+                              <Check className="w-3 h-3 text-white" />
+                            </div>
+                          )}
+
+                          {/* Nom du plan + couleur */}
+                          <div className="flex items-center mb-2">
+                            <div
+                              className="w-2.5 h-2.5 rounded-full mr-2"
+                              style={{ backgroundColor: plan.color }}
+                            />
+                            <span className="font-bold text-base text-blue-900">{plan.name}</span>
+                          </div>
+                          <p className="text-xs text-graphite-600 italic mb-3">{plan.tagline}</p>
+
+                          {/* Range d'élèves */}
+                          <div className="text-sm font-semibold text-blue-800 bg-blue-50 rounded-md px-2 py-1 inline-block mb-3">
+                            {rangeLabel}
+                          </div>
+
+                          {/* Prix mensuel */}
+                          <div className="space-y-1">
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-xl font-bold text-blue-900">
+                                {formatCurrency(monthlyAmount)}
+                              </span>
+                              <span className="text-[11px] text-graphite-600">/ mois</span>
+                            </div>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-sm font-semibold text-graphite-700">
+                                {formatCurrency(yearlyAmount)}
+                              </span>
+                              <span className="text-[11px] text-graphite-600">/ an</span>
+                            </div>
+                            <div className="text-[11px] text-graphite-500 mt-1">
+                              Paiement initial : <strong>{formatCurrency(setupFee)}</strong>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
+
+                  {/* Lien pour Network (>800 élèves) */}
+                  <div className="mt-4 text-center text-xs text-graphite-600">
+                    Au‑delà de 800 élèves ?{' '}
+                    <a
+                      href="mailto:contact@academia-helm.com?subject=Demande%20de%20demo%20HELM%20NETWORK"
+                      className="font-semibold text-blue-700 hover:underline"
+                    >
+                      Contactez‑nous pour HELM NETWORK
+                    </a>
+                  </div>
+
+                  {errors.planCode && (
+                    <p className="mt-3 text-sm text-red-600 text-center">{errors.planCode}</p>
+                  )}
                 </div>
 
                 {/* Section 1: Période de facturation - Design premium avec cartes */}

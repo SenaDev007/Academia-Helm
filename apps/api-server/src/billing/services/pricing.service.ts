@@ -153,10 +153,14 @@ export class PricingService {
     );
 
     // 6. Calculer le prix de l'option bilingue (depuis config)
+    // ⭐ Utiliser le prix bilingue du PLAN (pricing_plans.bilingualMonthly/Yearly)
+    // en priorité. Fallback sur config.bilingualMonthlyAddon si le plan n'a pas
+    // de prix bilingue défini.
     const bilingualPrice = this.calculateBilingualPrice(
       input.bilingual,
       input.cycle,
-      config
+      config,
+      plan,
     );
 
     // 7. Calculer le sous-total
@@ -246,15 +250,25 @@ export class PricingService {
       throw new BadRequestException('schoolsCount must be at least 1');
     }
 
-    if (input.schoolsCount > plan.maxSchools) {
+    // ⭐ Vérification maxSchools : pricing_plans n'a pas de colonne maxSchools
+    // (c'était dans l'ancienne table subscription_plans). On utilise studentMax
+    // à la place, ou on saute la vérification si absent.
+    const maxSchools = plan.maxSchools ?? plan.studentMax ?? Infinity;
+    if (input.schoolsCount > maxSchools) {
       throw new BadRequestException(
-        `schoolsCount (${input.schoolsCount}) exceeds plan maxSchools (${plan.maxSchools})`
+        `schoolsCount (${input.schoolsCount}) exceeds plan maxSchools (${maxSchools})`
       );
     }
 
-    if (input.bilingual && !plan.bilingualAllowed) {
-      throw new BadRequestException(
-        `Plan ${plan.code} does not allow bilingual option`
+    // ⭐ Vérification bilingue : TOUS les plans pricing_plans supportent le bilingue
+    // (bilingualMonthly et bilingualYearly sont définis pour SEED/GROW/LEAD/NETWORK).
+    // L'ancienne table subscription_plans avait un champ bilingualAllowed, mais
+    // pricing_plans ne l'a pas — on ne bloque donc plus le bilingue.
+    // Si un plan n'a pas de bilingualMonthly défini, on log un warning mais on
+    // ne bloque pas (le prix sera 0 par défaut).
+    if (input.bilingual && plan.bilingualMonthly == null && plan.bilingualYearly == null) {
+      this.logger?.warn?.(
+        `Plan ${plan.code} has no bilingual pricing defined (bilingualMonthly/bilingualYearly null). Bilingual option will be free.`,
       );
     }
 
@@ -305,22 +319,35 @@ export class PricingService {
   }
 
   /**
-   * Calcule le prix de l'option bilingue
-   * 
-   * ⚠️ Prix depuis config, jamais codé en dur
+   * Calcule le prix de l'option bilingue.
+   *
+   * ⭐ Priorité : prix du PLAN (pricing_plans.bilingualMonthly/Yearly) >
+   * config.bilingualMonthlyAddon (fallback).
    */
   private calculateBilingualPrice(
     bilingual: boolean,
     cycle: 'MONTHLY' | 'YEARLY',
     config: any,
+    plan?: any,
   ): number {
     if (!bilingual) {
       return 0;
     }
 
-    return cycle === 'MONTHLY' 
-      ? config.bilingualMonthlyAddon 
-      : config.bilingualYearlyAddon;
+    // 1. Prix bilingue du plan (pricing_plans)
+    if (plan) {
+      if (cycle === 'MONTHLY' && plan.bilingualMonthly != null) {
+        return Number(plan.bilingualMonthly) || 0;
+      }
+      if (cycle === 'YEARLY' && plan.bilingualYearly != null) {
+        return Number(plan.bilingualYearly) || 0;
+      }
+    }
+
+    // 2. Fallback : config.bilingualMonthlyAddon
+    return cycle === 'MONTHLY'
+      ? (config.bilingualMonthlyAddon || 0)
+      : (config.bilingualYearlyAddon || 0);
   }
 
   /**

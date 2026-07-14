@@ -182,7 +182,7 @@ export class OtpService {
             const emailHtml = this.buildOtpEmailHtml(code, draft.schoolName || 'votre établissement');
             const emailResult = await this.emailService.sendCategorized({
               tenantId: 'onboarding',
-              category: 'SECURITE',
+              category: 'SYSTEM',
               subCategory: 'otp_verification',
               module: 'onboarding',
               to: draft.promoterEmail,

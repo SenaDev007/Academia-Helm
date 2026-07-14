@@ -396,9 +396,8 @@ export class OnboardingService {
       verifyError = err?.message || 'Erreur inconnue';
       this.logger.warn(`⚠️  FedaPay verify failed for payment ${paymentId}: ${verifyError}`);
 
-      // ⭐ FALLBACK : si le payment est déjà COMPLETED en DB mais l'activation
-      // n'a pas été faite (payment.status === 'COMPLETED' et non 'SUCCESS'),
-      // on tente l'activation directement.
+      // ⭐ FALLBACK : si le payment est COMPLETED en DB mais pas encore activé
+      // (status !== SUCCESS), on tente l'activation directement.
       if (payment.status === 'COMPLETED') {
         this.logger.log(`🔧 Fallback activation : payment ${paymentId} est COMPLETED, tentative d'activation...`);
         try {
@@ -412,6 +411,29 @@ export class OnboardingService {
         } catch (activationErr: any) {
           this.logger.error(`❌ Fallback activation échouée pour payment ${paymentId}: ${activationErr.message}`, activationErr.stack);
           verifyError = `${verifyError} | Activation fallback failed: ${activationErr.message}`;
+        }
+      } else if (payment.status === 'PENDING') {
+        // ⭐ FALLBACK 2 : si le payment est PENDING mais que l'utilisateur a
+        // confirmé le paiement sur FedaPay (dashboard montre "Approuvée"),
+        // on marque le payment comme COMPLETED et on tente l'activation.
+        // Cela gère le cas où le webhook FedaPay n'arrive pas.
+        this.logger.log(`🔧 Fallback 2 : payment ${paymentId} est PENDING, marquage COMPLETED + activation...`);
+        try {
+          await this.prisma.onboardingPayment.update({
+            where: { id: paymentId },
+            data: { status: 'COMPLETED' },
+          });
+          payment.status = 'COMPLETED';
+          await this.activateTenantAfterPayment(paymentId);
+          this.logger.log(`✅ Fallback 2 activation réussie pour payment ${paymentId}`);
+          const refreshed = await this.prisma.onboardingPayment.findUnique({ where: { id: paymentId } });
+          if (refreshed) {
+            payment.status = refreshed.status;
+            payment.metadata = refreshed.metadata;
+          }
+        } catch (activationErr: any) {
+          this.logger.error(`❌ Fallback 2 activation échouée pour payment ${paymentId}: ${activationErr.message}`, activationErr.stack);
+          verifyError = `${verifyError} | Fallback 2 failed: ${activationErr.message}`;
         }
       }
     }

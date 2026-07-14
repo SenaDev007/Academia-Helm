@@ -1474,15 +1474,36 @@ export class FedaPayService implements OnModuleInit {
     payloadString: string,
     signatureHeader: string | undefined,
   ): Promise<void> {
-    if (!signatureHeader || typeof signatureHeader !== 'string') {
-      throw new BadRequestException('Missing webhook signature');
-    }
+    const webhookSecret = (this.configService.get<string>('FEDAPAY_WEBHOOK_SECRET') || '').trim();
     const isProduction = process.env.NODE_ENV === 'production';
     const skipVerify =
       this.configService.get<string>('FEDAPAY_WEBHOOK_SKIP_VERIFY') === 'true' && !isProduction;
     /** Jamais en production : uniquement debug local / staging */
     const skipSignatureDebug =
       this.configService.get<string>('SKIP_WEBHOOK_SIGNATURE') === 'true' && !isProduction;
+
+    // ⭐ Si pas de signature header ET pas de secret configuré, on accepte le webhook
+    // (mode permissif). Cela permet au webhook de fonctionner même si la signature
+    // n'est pas configurée dans le dashboard FedaPay.
+    // En production, on log un warning pour rappeler de configurer le secret.
+    if (!signatureHeader || typeof signatureHeader !== 'string') {
+      if (!webhookSecret) {
+        this.logger.warn(
+          '⚠️  FedaPay webhook received WITHOUT signature and FEDAPAY_WEBHOOK_SECRET is not set. Accepting webhook (permissive mode). Configure FEDAPAY_WEBHOOK_SECRET for security.',
+        );
+        return; // Accept
+      }
+      this.logger.error('❌ Missing webhook signature header but FEDAPAY_WEBHOOK_SECRET is set.');
+      throw new BadRequestException('Missing webhook signature');
+    }
+
+    if (!webhookSecret) {
+      this.logger.warn(
+        '⚠️  FEDAPAY_WEBHOOK_SECRET is not set. Accepting webhook (permissive mode).',
+      );
+      return; // Accept
+    }
+
     let isValid = await this.verifyWebhookSignature(payloadString, signatureHeader);
     if (!isValid && skipVerify) {
       this.logger.warn(

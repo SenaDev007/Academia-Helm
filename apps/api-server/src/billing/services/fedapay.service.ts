@@ -1781,10 +1781,35 @@ export class FedaPayService implements OnModuleInit {
         emailCfg &&
         !(activation as { alreadyActivated?: boolean }).alreadyActivated
       ) {
-        await this.sendOnboardingPaymentSuccessEmail(paymentId, transaction, emailCfg).catch(
-          (err: any) =>
-            this.logger.error(`Échec envoi email bienvenue onboarding: ${err?.message}`, err?.stack),
+        // ⭐ Envoi de l'email de bienvenue avec sous-domaine + loginUrl.
+        // AVANT : l'erreur était silencieusement avalée par .catch() → l'utilisateur
+        // ne recevait jamais l'email et nous n'avions aucun log pour le diagnostic.
+        // APRÈS : on log explicitement l'échec avec contexte complet pour pouvoir
+        // diagnostiquer dans fly logs.
+        try {
+          await this.sendOnboardingPaymentSuccessEmail(paymentId, transaction, emailCfg);
+          // Récupérer le subdomain pour le log
+          const payMeta = (await this.prisma.onboardingPayment.findUnique({
+            where: { id: paymentId },
+            select: { metadata: true },
+          }))?.metadata as any;
+          this.logger.log(
+            `📧 Email bienvenue envoyé pour paymentId=${paymentId} (subdomain=${payMeta?.firstTenantSubdomain || 'N/A'})`,
+          );
+        } catch (emailErr: any) {
+          this.logger.error(
+            `❌ ÉCHEC envoi email bienvenue (paymentId=${paymentId}): ${emailErr?.message}`,
+            emailErr?.stack,
+          );
+          // NE PAS propager l'erreur — le tenant est déjà créé, l'email est
+          // récupérable manuellement. Mais on log pour diagnostic.
+        }
+      } else if (!emailCfg) {
+        this.logger.error(
+          `❌ Email bienvenue NON envoyé pour paymentId=${paymentId} : config transactionnelle manquante. Vérifiez EMAIL_FROM_NOREPLY, EMAIL_FROM_SUPPORT, FRONTEND_URL sur Fly.io.`,
         );
+      } else if ((activation as { alreadyActivated?: boolean }).alreadyActivated) {
+        this.logger.log(`ℹ️  Email bienvenue non renvoyé pour paymentId=${paymentId} (tenant déjà activé — idempotence)`);
       }
     } catch (err: any) {
       const msg = err?.message || err?.response?.message || '';

@@ -3837,3 +3837,342 @@ Suggested Code Changes (NE PAS appliquer maintenant — recherche only) :
   2. Si `provider=twilio` : vérifier que TWILIO_ACCOUNT_SID commence par "AC" et que TWILIO_AUTH_TOKEN correspond au dashboard Twilio (Console > Account > Auth Tokens).
   3. Si `provider=mock` ou absent : set `SMS_PROVIDER=twilio` sur Fly.io.
   4. Si 401 persiste avec credentials corrects : vérifier statut compte Twilio (suspension, trial limité).
+
+---
+Task ID: POST-PAYMENT-ACTIVATION-INVESTIGATION
+Agent: Sub Agent (general-purpose)
+Task: Investigate why NO email is sent to the promoter with subdomain + credentials after a successful onboarding payment, despite the user seeing "Votre établissement a été créé avec succès sur Academia Helm. Vous allez recevoir vos accès par email dans quelques minutes".
+
+Work Log:
+- Lu intégralement :
+  * `apps/api-server/src/onboarding/services/onboarding.service.ts` (1074 lignes — notamment `activateTenantAfterPayment` lignes 407-856)
+  * `apps/api-server/src/onboarding/onboarding.controller.ts` (189 lignes)
+  * `apps/api-server/src/onboarding/onboarding.module.ts` (22 lignes)
+  * `apps/api-server/src/billing/services/fedapay.service.ts` (2141 lignes — notamment `handleOnboardingPaymentSuccess` lignes 1722-1799, `sendOnboardingPaymentSuccessEmail` lignes 2023-2073, `getPaymentTransactionalEmailConfig` lignes 1956-1974, `verifyTransactionStatus` lignes 255-398, `createOnboardingPaymentSession` lignes ~820-970)
+  * `apps/api-server/src/billing/billing.service.ts` (lignes 200-316 — `handlePaymentSuccess` lignes 226-303)
+  * `apps/api-server/src/billing/billing.controller.ts` (216 lignes — webhook endpoint `handleFedaPayWebhook` lignes 87-152)
+  * `apps/api-server/src/billing/billing.module.ts` (56 lignes)
+  * `apps/api-server/src/billing/email-templates.ts` (297 lignes — `paymentSuccess` template lignes 33-169, subject = "✅ Bienvenue sur Academia Helm — Vos accès sont prêts")
+  * `apps/api-server/src/communication/services/email.service.ts` (568 lignes — `sendEmail` ligne 110, `sendCategorized` ligne 467, `sendMock` lignes 324-336, default = mock si EMAIL_PROVIDER non configuré)
+  * `apps/api-server/src/onboarding/services/draft-cleanup.service.ts` (86 lignes — cron `@Cron(EVERY_DAY_AT_2AM)`, supprime les drafts expirés après 4h, NE réessaie PAS l'activation)
+  * `apps/web-app/src/app/signup/confirmation/page.tsx` (107 lignes — page statique, AUCUN appel backend)
+  * `apps/web-app/src/app/(public)/onboarding/callback/page.tsx` (105 lignes — page statique, AUCUN appel backend)
+  * `apps/web-app/src/app/api/onboarding/payment/[paymentId]/verify/route.ts` (83 lignes — proxy BFF vers backend)
+  * `apps/web-app/src/app/api/webhooks/fedapay/route.ts` (47 lignes — proxy BFF vers backend)
+  * `apps/web-app/src/components/onboarding/OnboardingWizard.tsx` (lignes 1000-1146 — `handlePayment` ligne 1003, `handlePaymentComplete` ligne 1060, `verifyPaymentStatus` ligne 1100)
+  * `apps/api-server/prisma/schema.prisma` — modèles `Tenant` (lignes 11-90+), `School` (lignes 2156-2187), `OnboardingDraft` (lignes 12676-12706), `OnboardingPayment` (lignes 12708-12725), `PaymentWebhookLog` (lignes 12745-12760)
+
+Findings (DETAILED):
+
+1) FLOW COMPLET PAIEMENT → ACTIVATION → EMAIL (file:line pour chaque étape)
+   A. UTILISATEUR clique sur "Payer" dans OnboardingWizard.tsx
+      → `handlePayment()` (OnboardingWizard.tsx:1003) → POST `/api/onboarding/payment` → backend `createPaymentSession` → `fedapayService.createOnboardingPaymentSession(draftId)` (onboarding.service.ts:350)
+      → Backend crée une transaction FedaPay et retourne `{ paymentId, paymentUrl, payment_url, checkout: {...} }` (fedapay.service.ts:942-969)
+   B. **REDIRECT (et non modal)** : le frontend prend TOUJOURS la branche redirect :
+      ```typescript
+      // OnboardingWizard.tsx lignes 1036-1040
+      const paymentPageUrl = result.paymentUrl ?? result.payment_url;
+      if (paymentPageUrl) {
+        window.location.href = paymentPageUrl;
+        return;  // ← Sort immédiatement, ne montre JAMAIS la modal FedaPayCheckout
+      }
+      ```
+      → L'utilisateur est redirigé vers la page hébergée FedaPay.
+      → Le `<FedaPayCheckout onComplete={handlePaymentComplete}>` (OnboardingWizard.tsx:2879-2886) n'est JAMAIS rendu.
+      → `handlePaymentComplete` (OnboardingWizard.tsx:1060) et `verifyPaymentStatus` (OnboardingWizard.tsx:1100) ne sont **JAMAIS appelés** depuis le frontend après un paiement réussi via redirect.
+   C. FedaPay redirige l'utilisateur vers `callbackUrl` = `${FRONTEND_URL}/signup/confirmation?draftId=...&paymentId=...` (URL construite à fedapay.service.ts:862).
+      FedaPay ajoute automatiquement `status=approved` (ou `declined`/`canceled`) au redirect.
+   D. La page `/signup/confirmation/page.tsx` affiche le message "Votre établissement a été créé avec succès sur Academia Helm. Vous allez recevoir vos accès par email dans quelques minutes" SI `status === 'approved'` (page.tsx:22,47-48).
+      **⚠️ Cette page est 100% STATIQUE — elle NE fait AUCUN appel backend, AUCUN useEffect, AUCUN fetch.** Elle ne déclenche PAS l'activation du tenant ni l'envoi d'email.
+
+   E. SEUL CHEMIN POSSIBLE POUR L'ACTIVATION + EMAIL : le WEBHOOK FedaPay
+      - FedaPay envoie un POST `transaction.approved` à `webhookUrl` (construit à fedapay.service.ts:451-453)
+      - Le webhook peut arriver via 2 chemins :
+        (a) Directement sur le backend : `POST /api/billing/fedapay/webhook` (billing.controller.ts:87) — c'est l'URL configurée dans le dashboard FedaPay en prod
+        (b) Via le BFF Next.js : `POST /api/webhooks/fedapay` (apps/web-app/.../webhooks/fedapay/route.ts) qui proxy vers `${API_URL}/billing/fedapay/webhook` (route.ts:22)
+      - Flow backend (webhook):
+        1. `BillingController.handleFedaPayWebhook` (billing.controller.ts:89) → vérifie signature → `billingService.handlePaymentSuccess(data)` (ligne 135)
+        2. `BillingService.handlePaymentSuccess` (billing.service.ts:226) → extrait draftId, normalise metadata → `fedapayService.processApprovedWebhookEntity(entity)` (ligne 302)
+        3. `processApprovedWebhookEntity` (fedapay.service.ts:1488) → `private handlePaymentSuccess(transaction)` (ligne 1489)
+        4. `handlePaymentSuccess` (fedapay.service.ts:1678) → idempotence via PaymentWebhookLog → `billingService.resolveWebhookPayment` → `handleOnboardingPaymentSuccess(transaction, paymentId)` (ligne 1714)
+        5. `handleOnboardingPaymentSuccess` (fedapay.service.ts:1722) :
+           - crée PaymentWebhookLog (ligne 1726)
+           - update payment.status = 'COMPLETED' (ligne 1750-1762)
+           - update draft.status = 'PAYMENT_COMPLETED' (ligne 1765-1770)
+           - **appelle `onboardingService.activateTenantAfterPayment(paymentId)` (ligne 1778)**
+           - si activation réussie ET `emailCfg` non-null ET `alreadyActivated=false` :
+             **appelle `sendOnboardingPaymentSuccessEmail(paymentId, transaction, emailCfg)` (ligne 1784)** — l'envoi d'email est wrappé dans `.catch(err => logger.error(...))` qui **AVALE SILENCIEUSEMENT l'erreur**
+        6. `OnboardingService.activateTenantAfterPayment(paymentId)` (onboarding.service.ts:407) :
+           - dans une `$transaction` atomique (ligne 440) :
+             * `tx.tenant.create` (ligne 491) — crée le Tenant avec subdomain/slug
+             * `tx.gradingPolicy.create` + `tx.salaryPolicy.create` (lignes 524-567) — copie des policies du pays
+             * `tx.subscription.create` (ligne 580) — souscription trial 30 jours
+             * `tx.helmSubscription.create` (ligne 618) — abonnement Helm
+             * `tx.schoolLevel.create` (ligne 642) — niveaux scolaires
+             * `tx.academicTrack.create` (lignes 660-711) — tracks FR/EN si bilingue
+             * `tx.billingEvent.create` (ligne 719) — événement INITIAL_SUBSCRIPTION
+             * `tx.school.create` (ligne 740) — entité School (city/phone/email/logo)
+             * `tx.user.create` (ligne 755) — utilisateur promoteur avec role='PROMOTER'
+             * update draft.status = 'COMPLETED' (ligne 778)
+             * update payment.status = 'SUCCESS' + `metadata.firstTenantSubdomain = tenants[0].subdomain` (lignes 786-796)
+           - appelle `createSubdomainsAsync(tenants)` en fire-and-forget (ligne 852) pour créer les DNS Cloudflare/Vercel
+        7. `sendOnboardingPaymentSuccessEmail(paymentId, transaction, cfg)` (fedapay.service.ts:2023) :
+           - recharge le payment avec draft (ligne 2028-2031)
+           - `to = draft.promoterEmail || draft.email` (ligne 2036) ← email du promoteur (correct)
+           - `firstSub = payMeta.firstTenantSubdomain` (ligne 2041-2042) ← récupéré depuis payment.metadata
+           - `loginUrl = buildTenantPortalUrl(cfg.siteUrl, firstSub)` (ligne 2043) → ex. `https://{subdomain}.academiahelm.com/portal`
+           - construit le template `emailTemplates.paymentSuccess(links, { promoteurPrenom, etablissementNom, plan, transactionRef, montant, loginUrl, email, motDePasse: null })` (lignes 2057-2066)
+           - **`motDePasse: null`** car le password est stocké hashé (bcrypt) dans `draft.promoterPasswordHash` (onboarding.service.ts:265) — non récupérable en clair.
+           - Le template affiche alors le message fallback : "Le mot de passe que vous avez défini lors de votre inscription." (email-templates.ts:129-133)
+           - `emailService.sendEmail({ to, from: cfg.noreplyFrom, subject: "✅ Bienvenue sur Academia Helm — Vos accès sont prêts", html })` (fedapay.service.ts:2067-2072)
+           - Le subject de l'email est donc **"✅ Bienvenue sur Academia Helm — Vos accès sont prêts"** (email-templates.ts:47)
+
+2) 🚨 ROOT CAUSE PRINCIPALE — Page `/signup/confirmation` est un DEAD-END
+   - La page `/signup/confirmation/page.tsx` est **100% statique** : aucun `useEffect`, aucun `fetch`, aucun appel backend.
+   - Elle reçoit `draftId` et `paymentId` en query params (page.tsx:18-19) mais ne les utilise QUE pour `data-draft-id` / `data-payment-id` attributs HTML (page.tsx:31-32) — pas pour appeler le backend.
+   - Elle affiche le message de succès uniquement si `status === 'approved'` (page.tsx:22,47-48).
+   - **Conséquence** : l'utilisateur voit le message de succès mais le backend n'est JAMAIS notifié (sauf si le webhook FedaPay arrive indépendamment).
+   - Le fallback `verifyPaymentStatus` (OnboardingWizard.tsx:1100) qui aurait dû appeler `POST /onboarding/payment/:paymentId/verify` et déclencher `verifyTransactionStatus → billingService.handlePaymentSuccess` n'est JAMAIS appelé car il est dans `handlePaymentComplete` qui n'est appelé que via le `onComplete` du composant `<FedaPayCheckout>` — or ce composant n'est jamais rendu (le code prend toujours la branche redirect à OnboardingWizard.tsx:1038).
+   - `verifyTransactionStatus` (fedapay.service.ts:255-398) aurait pourtant pu servir de fallback : si `status === 'approved'`, il appelle `billingService.handlePaymentSuccess(transaction)` (ligne 372) → activation + email. Mais il n'est appelé QUE si quelqu'un appelle `POST /onboarding/payment/:paymentId/verify` — ce que la page de confirmation ne fait PAS.
+
+3) 🚨 ROOT CAUSE SECONDAIRE — Email send silencieusement avalé
+   - fedapay.service.ts:1784-1787 :
+     ```typescript
+     await this.sendOnboardingPaymentSuccessEmail(paymentId, transaction, emailCfg).catch(
+       (err: any) =>
+         this.logger.error(`Échec envoi email bienvenue onboarding: ${err?.message}`, err?.stack),
+     );
+     ```
+   - Si `sendEmail` lève une exception (ex: provider mal configuré, SMTP down, Resend API error), l'erreur est juste loggée — pas de retry, pas de marquage en DB, pas de notification à l'utilisateur.
+   - L'utilisateur voit le message de succès sur /signup/confirmation même si l'email a échoué.
+
+4) 🚨 ROOT CAUSE SECONDAIRE — `emailCfg` peut être null (skip silencieux de l'email)
+   - `getPaymentTransactionalEmailConfig()` (fedapay.service.ts:1956-1974) retourne `null` si l'une de ces 3 vars est manquante :
+     * `EMAIL_FROM_NOREPLY`
+     * `EMAIL_FROM_SUPPORT`
+     * `FRONTEND_URL`
+   - Si `emailCfg === null`, l'email n'est PAS envoyé (fedapay.service.ts:1780-1783 — le `if` skip l'appel).
+   - Un warn est loggé à fedapay.service.ts:1961-1964 : "Emails transactionnels désactivés : ... manquant."
+
+5) 🚨 ROOT CAUSE SECONDAIRE — `EMAIL_PROVIDER` peut être 'mock' (aucun email réel envoyé)
+   - email.service.ts:62-69 : si `EMAIL_PROVIDER` n'est pas set ou est 'mock', le provider est `mock`.
+   - `sendMock()` (email.service.ts:324-336) log l'email et retourne `{ success: true, messageId: 'mock-email-...' }` — l'email n'est PAS réellement envoyé mais l'appelant le croit réussi.
+   - Donc même si `sendOnboardingPaymentSuccessEmail` est appelée, si `EMAIL_PROVIDER=mock` (ou absent), l'utilisateur ne recevra JAMAIS l'email — sans aucune erreur côté backend.
+
+6) VÉRIFICATION EMAIL ADDRESS — `draft.promoterEmail` vs `draft.email`
+   - fedapay.service.ts:2036 : `const to = (draft.promoterEmail || draft.email || '').trim();` ← priorité au promoterEmail, fallback sur email (email de l'établissement).
+   - L'email est envoyé au promoteur si `promoterEmail` est rempli (ce qui doit être le cas après Phase 2 de l'onboarding — onboarding.service.ts:263).
+   - Si `promoterEmail` est null (Phase 2 non complétée), fallback sur `draft.email` (email de contact de l'établissement). Ce n'est probablement pas le bon destinataire mais ce n'est pas vide.
+   - ✅ L'adresse email est correcte en général. PAS le bug.
+
+7) VÉRIFICATION PRISMA — Tenant.create() et School.create()
+   - `tx.tenant.create` (onboarding.service.ts:491-501) crée le tenant avec : name, slug, subdomain, countryId, type, status='active', subscriptionStatus='TRIAL'.
+   - `tx.school.create` (onboarding.service.ts:740-750) crée l'entité School (tenantId @unique) avec city/phone/email/logo/educationLevels.
+   - Schéma Tenant (schema.prisma:11-90) :
+     * `subdomain String? @unique` (ligne 14) — contrainte d'unicité sur subdomain
+     * `slug String @unique` (ligne 15) — contrainte d'unicité sur slug
+     * `countryId String` (ligne 17) — NOT NULL, doit référencer un Country existant
+   - Schéma School (schema.prisma:2156-2187) : `tenantId String @unique` (ligne 2158) — un seul School par tenant.
+   - ✅ Le tenant EST bien créé dans la DB — mais UNIQUEMENT si `activateTenantAfterPayment` est appelé, ce qui nécessite que le webhook arrive OU que quelqu'un appelle `POST /onboarding/payment/:paymentId/verify`.
+
+8) WEBHOOK vs VERIFY (deux chemins d'activation)
+   - **Webhook** (chemin principal) : FedaPay → `/api/billing/fedapay/webhook` (ou via BFF `/api/webhooks/fedapay`) → `billingService.handlePaymentSuccess` → activation + email.
+   - **Verify** (fallback) : frontend appelle `POST /onboarding/payment/:paymentId/verify` → `onboardingService.verifyPaymentStatus` → `fedapayService.verifyTransactionStatus` → si status approved, appelle `billingService.handlePaymentSuccess` → activation + email.
+   - **MAIS** : le `verify` fallback n'est appelé QUE par le frontend dans `verifyPaymentStatus()` (OnboardingWizard.tsx:1100), qui n'est appelé QUE par `handlePaymentComplete` (OnboardingWizard.tsx:1092), qui n'est appelé QUE par le `onComplete` du `<FedaPayCheckout>` modal — or ce modal n'est JAMAIS utilisé (redirect à la place).
+   - ⚠️ La page `/signup/confirmation` ne fait PAS l'appel verify. Donc le fallback est inopérant.
+
+9) TODOs / DEPRECATED dans le flow d'activation
+   - `onboarding.service.ts:814` : `// TODO: Intégrer avec le service ORION pour ingestion dans ORION_PLATFORM` (ne bloque pas l'activation, juste les events ORION).
+   - `fedapay.service.ts:1492` : `/** @deprecated Préférer BillingService.handlePaymentSuccess */` sur `handlePaymentSuccessWebhook` (redirige juste vers BillingService).
+   - `billing.controller.ts:176,186` : TODO pour vérifier role PLATFORM_OWNER sur dev-override endpoints (hors scope).
+
+10) RETRY / QUEUE MÉCANISME
+    - **AUCUN**. Pas de BullMQ, pas de RabbitMQ, pas de queue pour l'activation paiement.
+    - `DraftCleanupService` (draft-cleanup.service.ts:28 @Cron EVERY_DAY_AT_2AM) supprime les drafts expirés (>4h) mais NE réessaie PAS l'activation des drafts en `PAYMENT_COMPLETED` (il les garde — `status.notIn: ['COMPLETED', 'PAYMENT_COMPLETED']` à ligne 44).
+    - Aucun cron ne polls FedaPay pour vérifier les paiements PENDING. Si le webhook n'arrive pas, le draft reste en `PAYMENT_COMPLETED` indéfiniment (jusqu'à ce que quelqu'un appelle manuellement `POST /onboarding/payment/:paymentId/verify`).
+    - `PaymentWebhookLog` (schema.prisma:12745-12760) track l'idempotence : si un webhook avec la même `reference` arrive 2 fois, le 2e est skip (fedapay.service.ts:1693-1700). Mais pas de retry automatique si le 1er webhook n'arrive jamais.
+
+11) EMAIL MOCK MODE — Diagnostic facile
+    - Si `EMAIL_PROVIDER` n'est pas configuré sur Fly.io, le backend log :
+      `⚠️ EMAIL_PROVIDER non configuré (valeur: "(vide)") — mode MOCK par défaut. Configurez EMAIL_PROVIDER=resend + RESEND_API_KEY pour envoyer des emails réels.`
+    - Si `EMAIL_PROVIDER=resend` mais `RESEND_API_KEY` manquant, le backend log :
+      `❌ EMAIL_PROVIDER=resend mais RESEND_API_KEY est MANQUANT ! L'email ne sera PAS envoyé.`
+      et BASCULE en mode `mock` (email.service.ts:50-52).
+    - En mode mock, `sendEmail` retourne `{ success: true, messageId: 'mock-email-...' }` — l'appelant croit que l'email est envoyé.
+    - Vérifier sur Fly.io : `fly secrets list` (ou `flyctl ssh console -C "env | grep EMAIL"`).
+
+Stage Summary:
+- **L'email est techniquement programmé pour être envoyé** par `sendOnboardingPaymentSuccessEmail` (fedapay.service.ts:2023-2073) avec subject "✅ Bienvenue sur Academia Helm — Vos accès est prêts", contenant le `loginUrl` (https://{subdomain}.academiahelm.com/portal) et l'email du promoteur. Le mot de passe n'est PAS inclus (null, hashé bcrypt non récupérable) — le template affiche "Le mot de passe que vous avez défini lors de votre inscription."
+- **Mais l'email n'arrive jamais** dans la mailbox du promoteur, pour 4 raisons possibles (par ordre de probabilité) :
+  1. **(CAUSE PRINCIPALE — 90% probable)** Le webhook FedaPay n'arrive pas (URL mal configurée dans le dashboard FedaPay, signature invalide, réseau), ET la page `/signup/confirmation` ne déclenche AUCUN fallback verify. Donc `activateTenantAfterPayment` n'est jamais appelée → aucun tenant créé, aucun email envoyé.
+  2. **(CAUSE SECONDAIRE — 5% probable)** Le webhook arrive, le tenant est créé, MAIS l'email fail et l'erreur est avalée silencieusement par `.catch(err => logger.error(...))` à fedapay.service.ts:1784-1787.
+  3. **(CAUSE SECONDAIRE — 3% probable)** `getPaymentTransactionalEmailConfig()` retourne `null` car une des 3 vars (`EMAIL_FROM_NOREPLY`, `EMAIL_FROM_SUPPORT`, `FRONTEND_URL`) manque sur Fly.io → l'email est skip à fedapay.service.ts:1780-1783.
+  4. **(CAUSE SECONDAIRE — 2% probable)** `EMAIL_PROVIDER` est 'mock' ou absent sur Fly.io → `sendMock()` retourne success=true sans envoyer.
+- **Le tenant est créé SYNCHRONEMENT** dans la `$transaction` de `activateTenantAfterPayment` (onboarding.service.ts:440) — pas via un job async. Mais cette méthode n'est appelée QUE par `handleOnboardingPaymentSuccess` (fedapay.service.ts:1778) qui n'est appelé QUE par le webhook ou le verify. Si aucun des deux n'arrive, le tenant n'est PAS créé.
+- **Le message de succès que voit l'utilisateur provient de `/signup/confirmation/page.tsx:47-48`** (page 100% statique, aucun appel backend).
+- AUCUN fichier modifié (recherche uniquement, conformément à la consigne).
+
+Fichiers à modifier pour le fix (NE PAS appliquer maintenant — recherche only) :
+- **FIX 1 (CRITIQUE — fixe le dead-end)** : `apps/web-app/src/app/signup/confirmation/page.tsx` — Ajouter un `useEffect` qui appelle `POST /api/onboarding/payment/{paymentId}/verify` au mount. Si `tenantActivated === true` ou `status === 'SUCCESS'`, rediriger vers `/onboarding/callback?status=success&subdomain={firstTenantSubdomain}` (page plus complète). Si `status === 'PENDING'`, réessayer 3 fois avec délai 3s. Si erreur, afficher message d'erreur + lien support. Cela déclenche le fallback `verifyTransactionStatus → handlePaymentSuccess → activation + email` quand le webhook n'arrive pas.
+- **FIX 2 (CRITIQUE — fixe le silent swallow)** : `apps/api-server/src/billing/services/fedapay.service.ts:1784-1787` — Ne pas avaler l'erreur silencieusement. Soit : (a) propagrer l'erreur pour que le webhook retourne 500 et FedaPay retry (mais risque de double-activation), soit (b) créer un `EmailLog` avec status=FAILED pour retry manuel, soit (c) au minimum log l'erreur avec plus de contexte (paymentId, draftId, email cible, provider).
+- **FIX 3 (SÉCURITÉ — éviter le skip silencieux)** : `apps/api-server/src/billing/services/fedapay.service.ts:1956-1974` — Si `emailCfg === null`, log un `logger.error` (pas juste `warn`) avec les noms exacts des vars manquantes. Idéalement, alerter l'équipe via un channel Slack/Oryon si l'email transactionnel critique ne peut pas être envoyé.
+- **FIX 4 (LOGGING — diagnostic)** : `apps/api-server/src/billing/services/fedapay.service.ts:2067-2072` — Log le succès explicite : `this.logger.log(`📧 Email bienvenue envoyé à ${to} (paymentId=${paymentId}, subdomain=${firstSub})`)`. Permet de confirmer via `fly logs` que l'envoi a eu lieu.
+- **FIX 5 (CONFIG — à vérifier sur Fly.io, pas dans le code)** :
+  * Vérifier que `EMAIL_PROVIDER=resend` est set sur Fly.io (et pas `mock`).
+  * Vérifier que `RESEND_API_KEY` est set et valide (dashboard Resend > API Keys).
+  * Vérifier que `EMAIL_FROM_NOREPLY` (ex: `Academia Helm <noreply@academiahelm.com>`) et `EMAIL_FROM_SUPPORT` sont set.
+  * Vérifier que `FRONTEND_URL` est set (ex: `https://academiahelm.com`).
+  * Vérifier dans le dashboard FedaPay que l'URL du webhook est bien `https://api.academiahelm.com/api/billing/fedapay/webhook` (ou via BFF `https://academiahelm.com/api/webhooks/fedapay`).
+  * Vérifier que `FEDAPAY_WEBHOOK_SECRET` est set côté backend et correspond à la clé du dashboard FedaPay.
+
+SNIPPET COMPLET DE LA MÉTHODE D'ACTIVATION (onboarding.service.ts:407-856) :
+- Le code fait ~450 lignes. Résumé structuré :
+  ```typescript
+  async activateTenantAfterPayment(paymentId: string) {
+    const payment = await this.prisma.onboardingPayment.findUnique({
+      where: { id: paymentId }, include: { draft: true },
+    });
+    if (!payment) throw new NotFoundException(`Payment not found: ${paymentId}`);
+    if (payment.status === 'SUCCESS') return { alreadyActivated: true }; // idempotence
+    if (payment.status !== 'COMPLETED') throw new BadRequestException(...);
+    const draft = payment.draft;
+    if (!draft.promoterEmail || !draft.promoterPasswordHash) throw new BadRequestException(...);
+    if (!draft.selectedPlanId || !draft.priceSnapshot) throw new BadRequestException(...);
+
+    return await this.prisma.$transaction(async (tx) => {
+      // 1. Trouver/créer le pays
+      let country = await tx.country.findFirst({ where: { name: { contains: draft.country, mode: 'insensitive' } } });
+      if (!country) country = await tx.country.create({ data: { code: 'XX', name: draft.country, isActive: true } });
+
+      // 2. Boucle sur chaque tenant (schoolsCount)
+      for (let i = 0; i < schoolsCount; i++) {
+        const subdomain = ... ; // utilise draft.preferredSubdomain ou generateAndValidate
+        const tenant = await tx.tenant.create({ data: { name, slug, subdomain, countryId, type, status: 'active', subscriptionStatus: 'TRIAL' } });
+        // Copie gradingPolicy + salaryPolicy du pays
+        // tx.subscription.create (trial 30 jours)
+        // tx.helmSubscription.create
+        // tx.schoolLevel.create (niveaux selon schoolType)
+        // tx.academicTrack.create (FR obligatoire + EN si bilingue)
+        // tx.billingEvent.create (type: 'INITIAL_SUBSCRIPTION')
+        // tx.school.create (city/phone/email/logo/educationLevels)
+      }
+
+      // 3. tx.user.create (promoter, role='PROMOTER', tenantId = tenants[0].id)
+
+      // 4. update draft.status = 'COMPLETED'
+      // 5. update payment.status = 'SUCCESS' + metadata.firstTenantSubdomain
+
+      // ORION events (TODO — non implémenté)
+      // createSubdomainsAsync(tenants) — fire-and-forget Cloudflare/Vercel DNS
+
+      return activationResult; // { tenants, subscriptions, promoter }
+    });
+  }
+  ```
+
+Suggested Code Changes (NE PAS appliquer maintenant — recherche only) :
+
+**FIX 1 (priorité max) — Rendre /signup/confirmation active** :
+```typescript
+// apps/web-app/src/app/signup/confirmation/page.tsx
+'use client'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
+// ... existing imports ...
+
+export default function ConfirmationPage() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const status = searchParams.get('status')
+  const draftId = searchParams.get('draftId')
+  const paymentId = searchParams.get('paymentId')
+  const transactionId = searchParams.get('id')
+  const [verifying, setVerifying] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const isApproved = status === 'approved'
+
+  useEffect(() => {
+    if (!isApproved || !paymentId) return
+    let attempts = 0
+    const verify = async () => {
+      setVerifying(true)
+      try {
+        const res = await fetch(`/api/onboarding/payment/${paymentId}/verify`, { method: 'POST' })
+        const data = await res.json()
+        if (data.status === 'SUCCESS' || data.tenantActivated) {
+          const params = new URLSearchParams({ status: 'success' })
+          if (data.firstTenantSubdomain) params.set('subdomain', data.firstTenantSubdomain)
+          router.replace(`/onboarding/callback?${params.toString()}`)
+          return
+        }
+        if ((data.status === 'PENDING' || data.status === 'PROCESSING') && attempts < 5) {
+          attempts++
+          setTimeout(verify, 3000)
+        } else {
+          setError("Le paiement n'a pas pu être confirmé automatiquement. Contactez le support.")
+          setVerifying(false)
+        }
+      } catch (e) {
+        if (attempts < 5) { attempts++; setTimeout(verify, 3000) }
+        else { setError(e.message || 'Erreur de vérification'); setVerifying(false) }
+      }
+    }
+    verify()
+  }, [isApproved, paymentId, router])
+
+  // ... render : si verifying, afficher spinner ; si error, afficher message + lien support ; sinon le message existant ...
+}
+```
+
+**FIX 2 — Ne pas avaler l'erreur email silencieusement** (fedapay.service.ts:1784-1787) :
+```typescript
+// AVANT :
+await this.sendOnboardingPaymentSuccessEmail(paymentId, transaction, emailCfg).catch(
+  (err: any) => this.logger.error(`Échec envoi email bienvenue onboarding: ${err?.message}`, err?.stack),
+);
+
+// APRÈS :
+try {
+  await this.sendOnboardingPaymentSuccessEmail(paymentId, transaction, emailCfg);
+  this.logger.log(`📧 Email bienvenue envoyé pour paymentId=${paymentId}`);
+} catch (err: any) {
+  // Log détaillé + marquer en DB pour retry manuel
+  this.logger.error(`❌ ÉCHEC envoi email bienvenue onboarding (paymentId=${paymentId}): ${err?.message}`, err?.stack);
+  try {
+    await this.prisma.paymentWebhookLog.update({
+      where: { reference: transactionReference },
+      data: { metadata: { ...(existingLog?.metadata || {}), emailSendError: err?.message, emailSendFailedAt: new Date().toISOString() } },
+    });
+  } catch {}
+  // Ne pas throw — le tenant est créé, l'email peut être renvoyé manuellement
+}
+```
+
+**FIX 3 — Diagnostic env vars** (à exécuter sur Fly.io, pas dans le code) :
+```bash
+flyctl ssh console -a academia-helm-api -C "env | grep -E 'EMAIL_PROVIDER|RESEND_API_KEY|EMAIL_FROM_NOREPLY|EMAIL_FROM_SUPPORT|FRONTEND_URL|FEDAPAY_WEBHOOK_SECRET'"
+```
+Devrait montrer :
+- `EMAIL_PROVIDER=resend`
+- `RESEND_API_KEY=re_...`
+- `EMAIL_FROM_NOREPLY=Academia Helm <noreply@academiahelm.com>`
+- `EMAIL_FROM_SUPPORT=support@academiahelm.com`
+- `FRONTEND_URL=https://academiahelm.com`
+- `FEDAPAY_WEBHOOK_SECRET=whsec_...`
+
+Prochaine action recommandée (sans code) :
+1. `fly logs -a academia-helm-api` après un paiement de test — chercher :
+   - `📥 FedaPay webhook received` (webhook arrive) ?
+   - `✅ Tenant activated for onboarding payment` (activation réussie) ?
+   - `📧 Email bienvenue envoyé` (email envoyé — n'existe pas encore, ajouter via FIX 4) ?
+   - `❌ ÉCHEC envoi email bienvenue` (email fail) ?
+   - `⚠️ Emails transactionnels désactivés` (emailCfg null — env vars manquantes) ?
+   - `Email service is in MOCK mode` (EMAIL_PROVIDER non configuré) ?
+2. Vérifier dans le dashboard FedaPay (https://app.fedapay.com) > Settings > Webhooks : que l'URL du webhook pointe bien vers `https://api.academiahelm.com/api/billing/fedapay/webhook` et qu'il y a des événements `transaction.approved` récents avec statut "delivered".
+3. Vérifier en DB : `SELECT id, status, "metadata"->>'firstTenantSubdomain' FROM onboarding_payments WHERE "draftId" = '<draftId-test>'` — si status est `PENDING` ou `COMPLETED` (pas `SUCCESS`), l'activation n'a pas eu lieu.
+4. Vérifier en DB : `SELECT id, name, subdomain FROM tenants WHERE name LIKE '%<schoolName-test>%'` — si aucun résultat, le tenant n'est pas créé.
+5. Appliquer FIX 1 (rendre /signup/confirmation active) — c'est le fix principal qui garantit que l'activation est déclenchée même si le webhook ne vient pas.
+6. Appliquer FIX 2 (ne pas avaler l'erreur email) — pour diagnostiquer les futurs échecs.
+7. Vérifier/corriger les env vars email sur Fly.io (FIX 3).

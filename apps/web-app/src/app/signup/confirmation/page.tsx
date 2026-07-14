@@ -2,17 +2,36 @@
  * Page de confirmation de paiement (succès ou échec)
  *
  * Layout : Header public + Footer public de Academia Helm
+ *
+ * ⭐ CRITIQUE : Cette page ne se contente PLUS d'afficher un message statique.
+ * Quand status=approved, elle appelle POST /api/onboarding/payment/{paymentId}/verify
+ * qui côté backend :
+ *   1. Interroge FedaPay pour confirmer le statut de la transaction
+ *   2. Si approved → déclenche handlePaymentSuccess → activateTenantAfterPayment
+ *      (crée tenant + school + user + subscription dans une transaction Prisma)
+ *   3. Envoie l'email de bienvenue au promoteur avec son sous-domaine + loginUrl
+ *
+ * Sans cet appel, si le webhook FedaPay n'arrive pas (URL mal configurée,
+ * signature mismatch, etc.), le tenant n'est jamais créé et aucun email
+ * n'est envoyé — bien que l'utilisateur voie le message de succès.
+ *
+ * L'appel est retry jusqu'à 5 fois (3s d'intervalle) car l'activation peut
+ * prendre quelques secondes après le retour de FedaPay.
  */
 
 'use client'
 
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Header } from '@/components/ui/header-1'
 import { Footer2 } from '@/components/ui/footer-2'
-import { CheckCircle, XCircle, ExternalLink, RefreshCw, HeadphonesIcon } from 'lucide-react'
+import { CheckCircle, XCircle, ExternalLink, RefreshCw, HeadphonesIcon, Loader2, AlertCircle } from 'lucide-react'
 
-export default function ConfirmationPage() {
+const MAX_RETRIES = 5
+const RETRY_INTERVAL_MS = 3000
+
+function ConfirmationContent() {
   const searchParams = useSearchParams()
   const status = searchParams.get('status')
   const draftId = searchParams.get('draftId')
@@ -20,6 +39,86 @@ export default function ConfirmationPage() {
   const transactionId = searchParams.get('id')
 
   const isApproved = status === 'approved'
+
+  const [verifyState, setVerifyState] = useState<'loading' | 'success' | 'error' | 'idle'>('idle')
+  const [verifyMessage, setVerifyMessage] = useState<string>('')
+  const [subdomain, setSubdomain] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
+
+  useEffect(() => {
+    if (!isApproved || !paymentId) return
+
+    let cancelled = false
+    setVerifyState('loading')
+    setVerifyMessage('Vérification de votre paiement en cours...')
+
+    const verify = async (attemptNum: number) => {
+      if (cancelled) return
+      try {
+        const response = await fetch(`/api/onboarding/payment/${paymentId}/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
+        if (cancelled) return
+
+        const data = await response.json()
+
+        if (cancelled) return
+
+        // Si tenant activé → succès
+        if (data.tenantActivated || data.status === 'SUCCESS') {
+          setVerifyState('success')
+          setVerifyMessage('Votre établissement a été activé. Un email avec vos accès vous a été envoyé.')
+          if (data.firstTenantSubdomain) {
+            setSubdomain(data.firstTenantSubdomain)
+          }
+          return
+        }
+
+        // Si la transaction est approved mais tenant pas encore activé,
+        // retry (le webhook peut être en cours de traitement)
+        if (data.transactionStatus === 'approved' || data.verified) {
+          if (attemptNum < MAX_RETRIES) {
+            setVerifyMessage(`Paiement confirmé, activation en cours... (tentative ${attemptNum + 1}/${MAX_RETRIES})`)
+            setAttempt(attemptNum + 1)
+            setTimeout(() => verify(attemptNum + 1), RETRY_INTERVAL_MS)
+          } else {
+            // After MAX_RETRIES, if payment is approved but tenant not activated,
+            // something is wrong — show a warning but don't block the user
+            setVerifyState('success')
+            setVerifyMessage('Paiement confirmé. L\'activation de votre établissement est en cours de traitement côté serveur. Vous recevrez vos accès par email dans quelques minutes.')
+          }
+          return
+        }
+
+        // Transaction pas encore approved
+        if (attemptNum < MAX_RETRIES) {
+          setVerifyMessage(`Vérification en cours... (tentative ${attemptNum + 1}/${MAX_RETRIES})`)
+          setAttempt(attemptNum + 1)
+          setTimeout(() => verify(attemptNum + 1), RETRY_INTERVAL_MS)
+        } else {
+          setVerifyState('error')
+          setVerifyMessage('Le statut de votre paiement n\'a pas pu être confirmé après plusieurs tentatives. Notre support va vérifier manuellement.')
+        }
+      } catch (err: any) {
+        if (cancelled) return
+        if (attemptNum < MAX_RETRIES) {
+          setVerifyMessage(`Connexion au serveur... (tentative ${attemptNum + 1}/${MAX_RETRIES})`)
+          setAttempt(attemptNum + 1)
+          setTimeout(() => verify(attemptNum + 1), RETRY_INTERVAL_MS)
+        } else {
+          setVerifyState('error')
+          setVerifyMessage(`Erreur lors de la vérification: ${err.message}`)
+        }
+      }
+    }
+
+    verify(0)
+
+    return () => {
+      cancelled = true
+    }
+  }, [isApproved, paymentId])
 
   return (
     <>
@@ -37,33 +136,74 @@ export default function ConfirmationPage() {
             <>
               {/* Succès */}
               <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
-                <CheckCircle className="w-10 h-10 text-green-600" />
+                {verifyState === 'loading' ? (
+                  <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
+                ) : verifyState === 'error' ? (
+                  <AlertCircle className="w-10 h-10 text-amber-500" />
+                ) : (
+                  <CheckCircle className="w-10 h-10 text-green-600" />
+                )}
               </div>
 
               <h1 className="text-2xl font-bold text-blue-900 mb-2">
-                Paiement confirmé !
+                {verifyState === 'loading' ? 'Vérification...' : verifyState === 'error' ? 'Vérification en attente' : 'Paiement confirmé !'}
               </h1>
+
               <p className="text-slate-600 mb-6">
-                Votre établissement a été créé avec succès sur Academia Helm.
-                Vous allez recevoir vos accès par email dans quelques minutes.
+                {verifyMessage || (
+                  <>
+                    Votre établissement a été créé avec succès sur Academia Helm.
+                    Vous allez recevoir vos accès par email dans quelques minutes.
+                  </>
+                )}
               </p>
 
-              <div className="bg-blue-50 rounded-xl p-4 mb-6 text-left border border-blue-100">
+              {/* Subdomain info si disponible */}
+              {subdomain && (
+                <div className="bg-blue-50 rounded-xl p-4 mb-6 text-left border border-blue-100">
+                  <p className="text-sm text-slate-500 mb-1">
+                    Votre URL de connexion
+                  </p>
+                  <p className="font-mono text-sm text-blue-700 break-all">
+                    https://{subdomain}.academiahelm.com/portal
+                  </p>
+                </div>
+              )}
+
+              <div className="bg-slate-50 rounded-xl p-4 mb-6 text-left border border-slate-100">
                 <p className="text-sm text-slate-500 mb-1">
                   Référence de transaction
                 </p>
-                <p className="font-mono text-sm text-blue-700">
+                <p className="font-mono text-sm text-slate-700">
                   #{transactionId}
                 </p>
               </div>
 
+              {verifyState === 'error' && (
+                <div className="flex flex-col gap-3 mb-4">
+                  <Link
+                    href="/contact"
+                    className="block w-full bg-gray-100 text-gray-700 py-3 px-6 rounded-xl font-semibold hover:bg-gray-200 transition-colors flex items-center justify-center"
+                  >
+                    <HeadphonesIcon className="w-5 h-5 mr-2" />
+                    Contacter le support
+                  </Link>
+                </div>
+              )}
+
               <Link
-                href="https://academiahelm.com/portal"
+                href={subdomain ? `https://${subdomain}.academiahelm.com/portal` : 'https://academiahelm.com/portal'}
                 className="btn-primary-gold block w-full py-3 px-6 rounded-xl flex items-center justify-center"
               >
                 <ExternalLink className="w-5 h-5 mr-2" />
                 Accéder à mon portail
               </Link>
+
+              {verifyState === 'loading' && attempt > 0 && (
+                <p className="text-xs text-slate-400 mt-4">
+                  Veuillez patienter pendant l'activation de votre établissement...
+                </p>
+              )}
             </>
           ) : (
             <>
@@ -102,5 +242,17 @@ export default function ConfirmationPage() {
       </main>
       <Footer2 />
     </>
+  )
+}
+
+export default function ConfirmationPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+      </div>
+    }>
+      <ConfirmationContent />
+    </Suspense>
   )
 }

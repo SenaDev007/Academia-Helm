@@ -2,9 +2,21 @@
  * ============================================================================
  * ONBOARDING PLAN API ROUTE
  * ============================================================================
- * 
- * Proxy Next.js pour l'endpoint backend /onboarding/draft/:draftId/plan
- * 
+ *
+ * Proxy BFF (Backend-For-Frontend) vers le endpoint NestJS
+ * /onboarding/draft/:draftId/plan
+ *
+ * Le frontend envoie { draftId, planCode: 'SEED'|'GROW'|'LEAD'|'NETWORK',
+ * billingPeriod: 'monthly'|'yearly' }.
+ *
+ * Le backend OnboardingService.selectPlan() accepte planId (UUID) OU planCode
+ * (SEED/GROW/LEAD/NETWORK) — il détecte automatiquement via la présence de '-'.
+ * On envoie donc directement planCode au backend, sans conversion.
+ *
+ * ⭐ AVANT : ce fichier convertissait planCode SEED → BASIC_MONTHLY (ancien
+ * système de plans). Cela provoquait l'affichage de "Plan Mensuel - 1 École"
+ * au lieu de "Helm Seed" dans l'email de bienvenue.
+ * APRÈS : on envoie planCode tel quel (SEED/GROW/LEAD/NETWORK).
  * ============================================================================
  */
 
@@ -14,103 +26,59 @@ import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { draftId } = body;
+    const { draftId, planCode, billingPeriod } = body;
 
     if (!draftId) {
       return NextResponse.json(
         { error: 'draftId is required' },
-        { status: 400 }
+        { status: 400 },
+      );
+    }
+
+    if (!planCode) {
+      return NextResponse.json(
+        { error: 'planCode is required (SEED, GROW, LEAD, or NETWORK)' },
+        { status: 400 },
       );
     }
 
     const apiBaseUrl = getApiBaseUrlForRoutes();
-    // getApiBaseUrlForRoutes() retourne déjà l'URL avec /api à la fin
     const planUrl = `${apiBaseUrl}/onboarding/draft/${draftId}/plan`;
 
-    // Convertir planCode en planId en récupérant le plan depuis l'API publique
-    let planId: string | null = null;
-    
-    if (body.planCode) {
-      try {
-        // Récupérer tous les plans avec pricing depuis l'API publique
-        const plansUrl = `${apiBaseUrl}/public/pricing`;
-        const normalizedPlansUrl = normalizeApiUrl(plansUrl);
-        const plansResponse = await fetch(normalizedPlansUrl);
-        
-        if (plansResponse.ok) {
-          const plans = await plansResponse.json();
-          const billingPeriod = body.billingPeriod || 'monthly';
-          
-          // Construire le code attendu selon le billingPeriod
-          // Le frontend envoie 'MONTHLY_1_SCHOOL', mais les plans sont 'BASIC_MONTHLY', 'BASIC_YEARLY', etc.
-          let expectedCode = body.planCode;
-          
-          // Si le code ne correspond pas au format attendu, le construire
-          if (!expectedCode.includes('BASIC') && !expectedCode.includes('GROUP')) {
-            // Construire le code selon le nombre d'écoles et la période
-            const schoolsCount = body.schoolsCount || 1;
-            if (schoolsCount === 1) {
-              expectedCode = billingPeriod === 'monthly' ? 'BASIC_MONTHLY' : 'BASIC_YEARLY';
-            } else if (schoolsCount === 2) {
-              expectedCode = billingPeriod === 'monthly' ? 'GROUP_2_MONTHLY' : 'GROUP_2_YEARLY';
-            }
-          } else if (billingPeriod === 'yearly' && expectedCode.includes('MONTHLY')) {
-            expectedCode = expectedCode.replace('MONTHLY', 'YEARLY');
-          }
-          
-          // Chercher le plan correspondant dans la liste
-          // La structure de réponse est un tableau d'objets avec { id, code, name, ... }
-          const matchingPlan = Array.isArray(plans) 
-            ? plans.find((p: any) => 
-                p.code === expectedCode || 
-                p.code === body.planCode ||
-                (p.code?.includes('BASIC') && billingPeriod === 'monthly') ||
-                (p.code?.includes('BASIC') && billingPeriod === 'yearly')
-              )
-            : null;
-          
-          if (matchingPlan?.id) {
-            planId = matchingPlan.id;
-          }
-        }
-      } catch (error) {
-        console.warn('Could not fetch plans to convert planCode to planId:', error);
-      }
-    }
-
-    // Mapper les champs frontend -> backend
-    // Le backend OnboardingService utilise PricingService qui accepte planCode ou planId
-    // Le DTO attend planId, mais on peut passer planCode et le backend gérera via PricingService
+    // ⭐ Envoyer directement planCode au backend.
+    // Le backend OnboardingService.selectPlan() détecte que planCode ne contient
+    // pas de '-' et le passe à PricingService.calculateTenantPrice({ planCode }).
+    // PricingService récupère alors le plan depuis pricing_plans WHERE code = 'SEED'.
+    // Pas de conversion BASIC_MONTHLY — les plans SEED/GROW/LEAD/NETWORK sont
+    // la source de vérité dans pricing_plans.
     const backendBody = {
-      planId: planId || body.planCode, // Utiliser planId si trouvé, sinon planCode (backend gérera via PricingService.getPlan())
-      periodType: body.billingPeriod === 'monthly' ? 'MONTHLY' : 'YEARLY', // Convertir 'monthly' -> 'MONTHLY'
+      planId: planCode, // Le backend gère planCode vs planId via la présence de '-'
+      periodType: (billingPeriod || 'monthly').toUpperCase() === 'YEARLY' ? 'YEARLY' : 'MONTHLY',
     };
 
-    // Normaliser l'URL pour utiliser 127.0.0.1 au lieu de localhost
     const finalUrl = normalizeApiUrl(planUrl);
     const response = await fetch(finalUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(backendBody),
     });
 
     const data = await response.json();
 
     if (!response.ok) {
+      console.error('[Onboarding Plan] Backend error:', response.status, data);
       return NextResponse.json(data, { status: response.status });
     }
 
     return NextResponse.json(data);
   } catch (error: any) {
-    console.error('Onboarding plan API error:', error);
+    console.error('[Onboarding Plan] Error:', error);
     return NextResponse.json(
-      { 
+      {
         error: 'Failed to select plan',
-        message: error.message || 'Erreur lors de la sélection du plan'
+        message: error.message || 'Erreur lors de la sélection du plan',
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

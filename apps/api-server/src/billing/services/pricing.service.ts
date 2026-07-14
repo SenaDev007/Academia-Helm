@@ -213,19 +213,43 @@ export class PricingService {
   }
 
   /**
-   * Récupère un plan par ID ou code
+   * Récupère un plan de tarification.
+   *
+   * ⭐ NOUVEAU SYSTÈME : utilise pricing_plans (SEED/GROW/LEAD/NETWORK).
+   * ANCIEN SYSTÈME : utilisait subscription_plans (BASIC_MONTHLY/GROUP_*).
+   *
+   * On cherche d'abord dans pricing_plans (nouvelle source de vérité).
+   * Si non trouvé, on fallback sur subscription_plans (rétrocompatibilité
+   * pour les anciens drafts créés avant la migration).
    */
   private async getPlan(planId?: string, planCode?: string) {
-    if (planId) {
-      return await this.prisma.subscriptionPlan.findUnique({
+    // 1. Chercher dans pricing_plans (nouvelle source de vérité)
+    if (planId && planId.includes('-')) {
+      // planId est un UUID → chercher dans pricing_plans d'abord
+      const pricingPlan = await this.prisma.pricingPlan.findUnique({
         where: { id: planId },
       });
+      if (pricingPlan) return pricingPlan;
+
+      // Fallback : subscription_plans (ancienne table)
+      const subPlan = await this.prisma.subscriptionPlan.findUnique({
+        where: { id: planId },
+      });
+      if (subPlan) return subPlan;
     }
 
     if (planCode) {
-      return await this.prisma.subscriptionPlan.findUnique({
+      // planCode est un code (SEED/GROW/LEAD/NETWORK ou BASIC_MONTHLY/...)
+      const pricingPlan = await this.prisma.pricingPlan.findUnique({
         where: { code: planCode },
       });
+      if (pricingPlan) return pricingPlan;
+
+      // Fallback : subscription_plans (ancienne table)
+      const subPlan = await this.prisma.subscriptionPlan.findUnique({
+        where: { code: planCode },
+      });
+      if (subPlan) return subPlan;
     }
 
     return null;

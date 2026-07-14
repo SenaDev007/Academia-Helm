@@ -184,29 +184,59 @@ export class FedaPayService implements OnModuleInit {
       return;
     }
 
+    // ⭐ Vérification critique : FEDAPAY_API_KEY doit être une clé SECRÈTE (sk_...)
+    // Les clés publiques (pk_...) ne peuvent PAS créer de transactions côté serveur
+    // → FedaPay retourne 401 Unauthorized.
+    if (this.apiKey.startsWith('pk_')) {
+      this.logger.error(
+        `🚨 FEDAPAY_API_KEY commence par 'pk_' (clé publique). Une clé SÉCRÈTE (sk_sandbox_... ou sk_live_...) est obligatoire pour les opérations serveur. FedaPay retournera 401 Unauthorized.`,
+      );
+    }
+
     // Configurer la clé API du SDK (clé uniquement via variables d’environnement, jamais en dur)
     FedaPay.setApiKey(this.apiKey);
 
+    // ⭐ Détection de l'environnement cohérente avec le constructor.
+    // AVANT : ce bloc écrasait la détection du constructor et passait en 'live'
+    // si NODE_ENV=production ET FEDAPAY_ENVIRONMENT non défini — même si
+    // FEDAPAY_SANDBOX=true ou si la clé commence par sk_sandbox_/sk_test_.
+    // Cela envoyait une clé sandbox à l'endpoint live → 401 Unauthorized.
+    // APRÈS : on respecte l'ordre de priorité suivant :
+    //   1. FEDAPAY_ENVIRONMENT explicite (sandbox|live)
+    //   2. FEDAPAY_SANDBOX=true
+    //   3. Préfixe de la clé (sk_sandbox_/sk_test_ → sandbox, sk_live_ → live)
+    //   4. Fallback : NODE_ENV=production → live, sinon sandbox
     const explicit = (this.configService.get<string>('FEDAPAY_ENVIRONMENT') || '').trim().toLowerCase();
-    const environment: 'live' | 'sandbox' =
-      explicit === 'sandbox'
-        ? 'sandbox'
-        : explicit === 'live'
-          ? 'live'
-          : process.env.NODE_ENV === 'production'
-            ? 'live'
-            : 'sandbox';
+    const envSandbox = this.configService.get<string>('FEDAPAY_SANDBOX') === 'true';
+    const keyIsSandbox =
+      this.apiKey.startsWith('sk_sandbox_') ||
+      this.apiKey.startsWith('sk_test_') ||
+      this.apiKey.startsWith('pk_test_');
+    const keyIsLive = this.apiKey.startsWith('sk_live_') || this.apiKey.startsWith('pk_live_');
+
+    let environment: 'live' | 'sandbox';
+    if (explicit === 'sandbox') {
+      environment = 'sandbox';
+    } else if (explicit === 'live') {
+      environment = 'live';
+    } else if (envSandbox || keyIsSandbox) {
+      environment = 'sandbox';
+    } else if (keyIsLive) {
+      environment = 'live';
+    } else {
+      environment = process.env.NODE_ENV === 'production' ? 'live' : 'sandbox';
+    }
 
     FedaPay.setEnvironment(environment);
 
-    // Aligner fetch direct et logique montants avec le SDK (tests sandbox sur hôte prod : FEDAPAY_ENVIRONMENT=sandbox)
+    // Aligner fetch direct et logique montants avec le SDK
     this.isLiveMode = environment === 'live';
     this.apiBaseUrl = this.isLiveMode ? 'https://api.fedapay.com' : 'https://sandbox-api.fedapay.com';
 
-    this.logger.log(`✅ FedaPay SDK configured for ${environment.toUpperCase()} environment.`);
+    this.logger.log(`✅ FedaPay SDK configured for ${environment.toUpperCase()} environment (isLiveMode=${this.isLiveMode}).`);
 
-    if (explicit === 'sandbox' && process.env.NODE_ENV === 'production') {
-      this.logger.log('🧪 FEDAPAY_ENVIRONMENT=sandbox sur hôte production : paiements de test FedaPay (non live).');
+    if (environment === 'sandbox' && process.env.NODE_ENV === 'production') {
+      this.logger.log('🧪 Mode sandbox sur hôte production : paiements de test FedaPay (non live). Montant plafonné à 20 000 XOF.');
     }
     
     if (this.isLiveMode) {
@@ -626,6 +656,32 @@ export class FedaPayService implements OnModuleInit {
       const amountErr = error.errors?.amount?.[0] ?? '';
       if ((error.status === 400 || error.statusCode === 400) && typeof amountErr === 'string' && amountErr.includes('20000')) {
         errorMessage += ' En sandbox FedaPay le montant max est 20 000 XOF. Ajoutez FEDAPAY_SANDBOX=true dans .env (api-server) et redémarrez l\'API.';
+      }
+
+      // ⭐ Erreur 401/403 = authentification FedaPay refusée.
+      // Causes les plus fréquentes :
+      //   1. FEDAPAY_API_KEY est une clé publique (pk_...) au lieu de sk_...
+      //   2. La clé sandbox (sk_sandbox_...) est envoyée à l'endpoint live (api.fedapay.com)
+      //      — se produit quand NODE_ENV=production ET FEDAPAY_ENVIRONMENT n'est pas défini.
+      //   3. La clé a expiré ou a été révoquée dans le dashboard FedaPay.
+      //   4. Mauvaise valeur de TWILIO... non, c'est FedaPay ici.
+      const httpStatus = error.status ?? error.statusCode;
+      if (httpStatus === 401 || httpStatus === 403) {
+        this.logger.error(`🚨 FedaPay authentification refusée (HTTP ${httpStatus}). Diagnostic :`);
+        this.logger.error(`   → isLiveMode=${this.isLiveMode}, apiBaseUrl=${this.apiBaseUrl}`);
+        this.logger.error(`   → FEDAPAY_API_KEY prefix='${this.apiKey.substring(0, Math.min(12, this.apiKey.length))}...' (attendu: sk_sandbox_... ou sk_live_...)`);
+        this.logger.error(`   → FEDAPAY_ENVIRONMENT=${process.env.FEDAPAY_ENVIRONMENT || '(non défini)'}, FEDAPAY_SANDBOX=${process.env.FEDAPAY_SANDBOX || '(non défini)'}, NODE_ENV=${process.env.NODE_ENV}`);
+        if (this.apiKey.startsWith('pk_')) {
+          this.logger.error(`   → 🚨 CAUSE PROBABLE : FEDAPAY_API_KEY est une clé PUBLIQUE (pk_...). Utilisez une clé SÉCRÈTE (sk_...).`);
+        }
+        if (!this.isLiveMode && this.apiBaseUrl.includes('api.fedapay.com') && !this.apiBaseUrl.includes('sandbox')) {
+          this.logger.error(`   → 🚨 CAUSE PROBABLE : clé sandbox envoyée à l'endpoint LIVE. Définissez FEDAPAY_ENVIRONMENT=sandbox.`);
+        }
+        errorMessage =
+          `Erreur d'authentification FedaPay (HTTP ${httpStatus}). ` +
+          `Vérifiez que FEDAPAY_API_KEY est une clé secrète (sk_...) et non publique (pk_...), ` +
+          `et que FEDAPAY_ENVIRONMENT=sandbox est défini si vous testez. ` +
+          `Détail technique: ${errorMessage}`;
       }
 
       // Si c'est une erreur 500, ajouter plus de détails

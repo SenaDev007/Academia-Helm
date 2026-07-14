@@ -33,10 +33,19 @@ export class SmsService {
 
   /**
    * Envoie un SMS — normalise le numéro avant l'envoi
+   *
+   * ⭐ Pour Twilio (Programmable SMS), les numéros béninois DOIVENT être au format
+   * E.164 strict sans le préfixe trunk "01" :
+   *   - +22995722234 ✅ (8 chiffres après +229)
+   *   - +2290195722234 ❌ (10 chiffres — Twilio retourne l'erreur 21211 "Invalid To")
+   *
+   * Le défaut de normalizePhoneE164() est de GARDER le "01" (utile pour Gupshup
+   * WhatsApp, mais incorrect pour Twilio SMS). On passe donc explicitement
+   * stripBenin01=true ici.
    */
   async sendSMS(to: string, message: string): Promise<{ success: boolean; messageId?: string }> {
     // Normalisation du numéro (ex: 0195722234 → +22995722234)
-    const normalizedTo = normalizePhoneE164(to);
+    const normalizedTo = normalizePhoneE164(to, { stripBenin01: true });
     this.logger.log(`SMS normalisation: raw="${to}" → normalized="${normalizedTo}"`);
     if (!isValidPhoneE164(normalizedTo)) {
       throw new Error(`Numéro SMS invalide: "${to}" → normalisé: "${normalizedTo}". Format attendu: +229XXXXXXXX (E.164)`);

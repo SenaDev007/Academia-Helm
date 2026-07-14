@@ -3535,3 +3535,305 @@ Stage Summary:
 - La section "Période de facturation" (Mensuel/Annuel) et le "Total après essai"
   se mettent à jour automatiquement (déjà géré par le useEffect calculatePrices
   existant qui dépend de data.planCode).
+
+---
+Task ID: FEDA-401-INVESTIGATION
+Agent: Sub Agent (general-purpose)
+Task: Investigate FedaPay 401 sandbox issue when creating a payment transaction in onboarding
+
+Work Log:
+- Lu intégralement `apps/api-server/src/billing/services/fedapay.service.ts` (2085 lignes), `onboarding.controller.ts`, `onboarding.service.ts`, le BFF route `apps/web-app/src/app/api/onboarding/payment/route.ts`, `FedaPayCheckout.tsx`, et la section paiement de `OnboardingWizard.tsx`.
+- Lu `pricing.service.ts` (calculateInitialPaymentPrice) et les seeds pour confirmer le montant initial par défaut.
+- Lu `ENV-COMPLETE.txt` et `CONFIGURATION-PAGES-PAIEMENT-FEDAPAY.md` pour comparer la config documentée vs le code.
+
+Findings (DETAILED):
+
+1) LIEU EXACT DE CRÉATION DE LA TRANSACTION FEDAPAY
+   - Fichier : `apps/api-server/src/billing/services/fedapay.service.ts`
+   - Méthode `createTransaction()` : lignes 437-646
+   - Ligne critique (appel SDK) : **ligne 570** → `const transaction = await Transaction.create(transactionData);`
+   - Appelée depuis `createOnboardingPaymentSession()` ligne 831 (même fichier)
+   - `createOnboardingPaymentSession` est elle-même appelée par `OnboardingService.createPaymentSession()` (onboarding.service.ts ligne 350) → endpoint `POST /onboarding/draft/:draftId/payment` (onboarding.controller.ts ligne 87-91)
+
+2) MONTANT ENVOYÉ À FEDAPAY
+   - `PricingService.calculateInitialPaymentPrice(schoolsCount)` (pricing.service.ts ligne 435) lit `config.initialSubscriptionFee` depuis la DB.
+   - Valeur par défaut seedée = **100 000 XOF (FCFA)** — confirmé dans :
+     * prisma/seed.ts:301 → `initialSubscriptionFee: 100000`
+     * pricing-config-seed.service.ts:51 → `initialSubscriptionFee: 100000`
+     * pricing.service.ts:104 → fallback `initialSubscriptionFee: 100000`
+     * pricing-admin.controller.ts:100 → `data.initialSubscriptionFee || 100000`
+   - 100 000 XOF > 20 000 XOF (limite sandbox FedaPay) — mais CE N'EST PAS LA CAUSE DU 401 (voir point 4).
+
+3) VARIABLES D'ENV LUES PAR LE CODE
+   - `FEDAPAY_API_KEY` (ligne 57) → clé secrète utilisée pour `FedaPay.setApiKey(this.apiKey)` (ligne 188) ET pour `Authorization: Bearer ${this.apiKey}` dans fetch direct (ligne 249)
+   - `FEDAPAY_PUBLIC_KEY` (ligne 59) → envoyée au frontend pour le checkout intégré (lignes 897-898)
+   - `FEDAPAY_API_URL` (ligne 62) → base URL, auto-normalisée
+   - `FEDAPAY_ENVIRONMENT` (lignes 112 & 190) → 'sandbox' ou 'live' (override explicite)
+   - `FEDAPAY_SANDBOX` (ligne 120) → 'true' force le mode sandbox
+   - `FEDAPAY_WEBHOOK_SECRET`, `FEDAPAY_WEBHOOK_BASE_URL`, `FEDAPAY_STATIC_PAGE_SUBSCRIPTION_URL`, `FEDAPAY_STATIC_PAGE_MONTHLY_URL`, `FEDAPAY_WEBHOOK_SKIP_VERIFY`
+   - ⚠️ Les vars `FEDAPAY_SECRET_KEY` et `FEDAPAY_MODE` mentionnées dans ENV-COMPLETE.txt (lignes 154, 162) NE SONT PAS lues par le code — documentation obsolète/mensongère.
+
+4) DÉTECTION SANDBOX — DÉJÀ IMPLÉMENTÉE (et le plafond 20 000 aussi)
+   - Le constructeur (lignes 119-136) détecte le sandbox via 4 signaux :
+     (a) `FEDAPAY_ENVIRONMENT === 'sandbox'`
+     (b) `FEDAPAY_SANDBOX === 'true'`
+     (c) URL contient "sandbox"
+     (d) clé commence par `sk_sandbox_` / `sk_test_` / `pk_test_`
+   - Le plafond 20 000 XOF est DÉJÀ en place à DEUX endroits :
+     * `createTransaction()` lignes 475-481 : `if (isSandbox && amountInteger > 20000) amountInteger = 20000`
+     * `createOnboardingPaymentSession()` lignes 675-679 : `amount = isLiveMode ? amountFromPricing : Math.min(amountFromPricing, 20000)`
+   - Le mode de paiement sandbox `momo_test` est aussi sélectionné (ligne 490).
+   → CONCLUSION : le plafond 20 000 n'est PAS à implémenter, il existe déjà. Le 401 n'est PAS un problème de montant.
+
+5) OÙ LE 401 EST-IL LEVÉ ?
+   - `verifyTransactionStatus()` lignes 290-303 : 401 explicitement géré → throw `BadRequestException('Erreur d'authentification FedaPay...')`.
+   - `createTransaction()` ligne 570 (Transaction.create) : le SDK lève une erreur avec `error.status === 401`, attrapée au catch ligne 582. AUCUN handler spécifique pour 401 dans ce catch — l'erreur tombe dans le generic `BadRequestException` ligne 642-644.
+   - Le 401 vient donc DIRECTEMENT de l'API FedaPay (auth échouée), pas de notre backend.
+
+6) CAUSES PROBABLES DU 401 (auth, pas montant)
+   a) **CLÉ PUBLIQUE utilisée comme FEDAPAY_API_KEY** — suspect #1 :
+      Le fichier `CONFIGURATION-PAGES-PAIEMENT-FEDAPAY.md` ligne 65 contient l'exemple
+      `FEDAPAY_API_KEY=pk_sandbox_wqOUAg2XKEdY1wScET0R4TCv` — une clé PUBLIQUE (pk_) utilisée
+      comme clé API serveur. Les clés publiques NE PEUVENT PAS créer de transactions côté serveur
+      (seules les clés secrètes sk_ le peuvent) → FedaPay renvoie 401.
+      Le code (lignes 153-160) valide `pk_` comme format acceptable, ce qui masque l'erreur.
+   b) **BUG constructor vs onModuleInit** :
+      Le constructeur (lignes 112-139) calcule `isLiveMode` en tenant compte de FEDAPAY_SANDBOX
+      et du préfixe de clé. MAIS `onModuleInit()` (lignes 190-204) ÉCRASE `isLiveMode` et
+      `apiBaseUrl` en utilisant UNIQUEMENT `FEDAPAY_ENVIRONMENT` puis fallback `NODE_ENV`.
+      → Si `FEDAPAY_SANDBOX=true` est set MAIS `FEDAPAY_ENVIRONMENT` n'est PAS set ET
+        `NODE_ENV=production` : le constructeur dit sandbox, mais onModuleInit() force live.
+        Le SDK appelle alors `https://api.fedapay.com` avec une clé `sk_sandbox_...` → 401.
+   c) Clé sandbox expirée / compte FedaPay désactivé (vérifier dashboard FedaPay).
+   d) Mismatch clé sandbox vs URL live (ex: clé sk_sandbox_ + FEDAPAY_API_URL=https://api.fedapay.com sans FEDAPAY_ENVIRONMENT).
+
+7) FICHIERS À MODIFIER POUR LE FIX
+   - **`apps/api-server/src/billing/services/fedapay.service.ts`** (fichier principal) :
+     * FIX 1 (critique) — `onModuleInit()` lignes 190-204 : aligner la logique d'environnement
+       sur le constructeur. Respecter `FEDAPAY_SANDBOX=true` et le préfixe de clé, pas seulement
+       `FEDAPAY_ENVIRONMENT`/NODE_ENV. Sinon le SDK peut partir en live avec une clé sandbox.
+     * FIX 2 — `createTransaction()` catch (vers ligne 582-644) : ajouter un handler 401
+       explicite comme dans `verifyTransactionStatus()` (lignes 290-303), avec message clair
+       distinguant "clé publique utilisée à la place de clé secrète" vs "mismatch env".
+     * FIX 3 (robustesse) — validation format clé (lignes 153-160) : WARN si `FEDAPAY_API_KEY`
+       commence par `pk_` car les opérations serveur (Transaction.create) exigent `sk_`.
+   - **`apps/api-server/ENV-COMPLETE.txt`** (doc) :
+     * Ligne 144 : garder l'exemple `sk_sandbox_...` (déjà correct).
+     * Lignes 154, 162 : supprimer `FEDAPAY_SECRET_KEY` et `FEDAPAY_MODE` (non lus par le code,
+       prêtent à confusion). Mentionner uniquement `FEDAPAY_API_KEY` (sk_), `FEDAPAY_PUBLIC_KEY` (pk_),
+       `FEDAPAY_ENVIRONMENT` (sandbox|live), `FEDAPAY_SANDBOX` (bool).
+   - **`apps/api-server/CONFIGURATION-PAGES-PAIEMENT-FEDAPAY.md`** (doc) :
+     * Ligne 65 : corriger `FEDAPAY_API_KEY=pk_sandbox_...` → `FEDAPAY_API_KEY=sk_sandbox_...`
+       (clé secrète, pas publique).
+     * Ligne 81 : corriger `FEDAPAY_API_KEY=pk_live_...` → `FEDAPAY_API_KEY=sk_live_...`.
+   - **`.env` (api-server, hors repo)** : vérifier que FEDAPAY_API_KEY commence bien par `sk_sandbox_`
+     et que `FEDAPAY_ENVIRONMENT=sandbox` est explicitement set (pour éviter le bug onModuleInit).
+
+8) SNIPPET COMPLET DE CRÉATION DE TRANSACTION (pour écrire le fix)
+   - Préparation + plafond sandbox (fedapay.service.ts lignes 474-491) :
+     ```typescript
+     const SANDBOX_MAX_AMOUNT = 20000;
+     let amountInteger = Math.round(Number(data.amount));
+     const isSandbox = !this.isLiveMode;
+     if (isSandbox && amountInteger > SANDBOX_MAX_AMOUNT) {
+       this.logger.warn(`⚠️  Sandbox FedaPay : montant plafonné à ${SANDBOX_MAX_AMOUNT} XOF (demandé: ${amountInteger})`);
+       amountInteger = SANDBOX_MAX_AMOUNT;
+     }
+     transactionData = {
+       description: data.description,
+       amount: amountInteger,
+       currency: { iso: currencyCode },
+       callback_url: data.callbackUrl,
+       ...(data.cancelUrl?.trim() && { cancel_url: data.cancelUrl.trim() }),
+       mode: data.metadata?.mode || (this.isLiveMode ? 'mtn_open' : 'momo_test'),
+     };
+     ```
+   - Appel SDK (ligne 570) :
+     ```typescript
+     const transaction = await Transaction.create(transactionData);
+     ```
+   - Appelant (createOnboardingPaymentSession lignes 673-679 + 831-863) :
+     ```typescript
+     const amountFromPricing = await this.pricingService.calculateInitialPaymentPrice(draft.schoolsCount || 1);
+     const SANDBOX_MAX = 20000;
+     const amount = this.isLiveMode ? amountFromPricing : Math.min(amountFromPricing, SANDBOX_MAX);
+
+     const transaction = await this.createTransaction({
+       amount,
+       currency,
+       description: `Paiement initial Academia Helm - ${draft.schoolName}`,
+       callbackUrl,
+       cancelUrl,
+       imageUrl,
+       metadata: { draftId, paymentId: payment.id, reference, type: 'onboarding', /* ... */ },
+       customer: { email: draft.promoterEmail || draft.email, /* ... */ },
+     });
+     ```
+   - Init SDK (onModuleInit, lignes 181-215 — le bug est ici) :
+     ```typescript
+     onModuleInit() {
+       if (!this.apiKey) { /* ... */ return; }
+       FedaPay.setApiKey(this.apiKey);
+       const explicit = (this.configService.get<string>('FEDAPAY_ENVIRONMENT') || '').trim().toLowerCase();
+       const environment: 'live' | 'sandbox' =
+         explicit === 'sandbox' ? 'sandbox'
+         : explicit === 'live' ? 'live'
+         : process.env.NODE_ENV === 'production' ? 'live'   // ← BUG : ignore FEDAPAY_SANDBOX et le préfixe de clé
+         : 'sandbox';
+       FedaPay.setEnvironment(environment);
+       this.isLiveMode = environment === 'live';              // ← écrase la détection du constructeur
+       this.apiBaseUrl = this.isLiveMode ? 'https://api.fedapay.com' : 'https://sandbox-api.fedapay.com';
+       /* ... */
+     }
+     ```
+
+Stage Summary:
+- Le plafond 20 000 XOF en sandbox est DÉJÀ implémenté (2 endroits) — ce n'est PAS la cause du 401.
+- Le 401 vient de l'AUTH FedaPay, pas du montant. 3 causes probables identifiées :
+  1. **Clé publique (pk_) utilisée comme FEDAPAY_API_KEY** (ex doc fautif dans CONFIGURATION-PAGES-PAIEMENT-FEDAPAY.md ligne 65).
+  2. **Bug onModuleInit()** : écrase la détection sandbox du constructeur si FEDAPAY_ENVIRONMENT n'est pas explicitement set et NODE_ENV=production → SDK part en live avec clé sandbox → 401.
+  3. Clé sandbox expirée / compte désactivé (vérifier dashboard FedaPay).
+- AUCUN fichier modifié (recherche uniquement, conformément à la consigne).
+- Fichiers à modifier pour le fix : `fedapay.service.ts` (onModuleInit + catch 401 + warn pk_), `ENV-COMPLETE.txt` (cleanup vars fantômes), `CONFIGURATION-PAGES-PAIEMENT-FEDAPAY.md` (pk_ → sk_), `.env` api-server (vérifier sk_sandbox_ + FEDAPAY_ENVIRONMENT=sandbox).
+- Prochaine action recommandée : (a) vérifier dans le .env réel (Railway/Fly.io) que FEDAPAY_API_KEY commence par `sk_sandbox_` (pas pk_), (b) set explicitement `FEDAPAY_ENVIRONMENT=sandbox`, (c) appliquer les 3 FIX du fichier fedapay.service.ts, (d) corriger les 2 docs.
+
+---
+Task ID: SMS-DEBUG-INVESTIGATION
+Agent: Sub Agent (general-purpose)
+Task: Investigate SMS OTP failure ("still doesn't work" after previous "Authentication" error). Twilio configured on Fly.io, was working yesterday at commit c22b0bfb.
+
+Work Log:
+- Lu intégralement : `communication/services/sms.service.ts` (169 lignes),
+  `onboarding/services/otp.service.ts` (425 lignes), `communication/communication.module.ts` (132 lignes),
+  `common/utils/phone.ts` (144 lignes), `auth/services/sms.service.ts` (145 lignes), `auth/auth.module.ts` (73 lignes),
+  `onboarding/onboarding.module.ts`, `onboarding/onboarding.controller.ts` (190 lignes),
+  BFF route `apps/web-app/src/app/api/onboarding/otp/generate/route.ts`,
+  `OnboardingWizard.tsx` (fonctions `normalizePhoneNumber` + `getCountryPhoneCode`).
+- Vérifié git history : seul `otp.service.ts` a changé depuis c22b0bfb (ajouts logs diagnostiques + support email + message utilisateur "auth Twilio").
+  Les fichiers `sms.service.ts`, `phone.ts`, `communication.module.ts`, `onboarding.module.ts` sont IDENTIQUES à c22b0bfb.
+- Vu le commit `4a6de30f` (5 juil 2026) qui a INVERSÉ la normalisation Benin : "garde le 01 pour Twilio".
+  Commentaire du commit : "Le format correct pour Twilio au Bénin est +22901XXXXXXXX (avec le 01)".
+  → Cette affirmation est TECHNIQUEMENT FAUSSE selon ITU-T E.164 (Benin = +229 + 8 digits, pas de trunk "01").
+  → MAIS ce commit est ANTERIEUR à c22b0bfb, donc la version "working yesterday" avait DÉJÀ cette normalisation.
+
+Findings (DETAILED):
+
+1) SmsService CLASSES TROUVÉES (grep "class SmsService" apps/api-server/src/)
+   - **#1 — communication SmsService** : `apps/api-server/src/communication/services/sms.service.ts:25`
+     * Méthode : `sendSMS(to: string, message: string)` — UPPER case, 2 args (positionnels)
+     * Normalise le numéro via `normalizePhoneE164()` (commun/utils/phone.ts)
+     * Exportée par `CommunicationModule` (communication.module.ts lignes 66 + 92)
+   - **#2 — auth SmsService** : `apps/api-server/src/auth/services/sms.service.ts:20`
+     * Méthode : `sendSms(request: SmsRequest)` — camelCase, 1 arg (objet `{to, message}`)
+     * NE normalise PAS le numéro (passe tel quel à Twilio)
+     * Exportée par `AuthModule` (auth.module.ts lignes 52 + 63)
+   - AUCUNE autre classe SmsService dans le codebase (confirmé par grep).
+
+2) OtpService (onboarding) IMPORT LE BON SmsService
+   - `apps/api-server/src/onboarding/services/otp.service.ts:20` → `import { SmsService } from '../../communication/services/sms.service';`
+   - `OnboardingModule` (onboarding.module.ts:9 + 16) importe `CommunicationModule` qui exporte le SmsService #1 (communication).
+   - `OnboardingModule` N'IMPORTE PAS `AuthModule` → pas de shadowing possible par le SmsService #2 (auth).
+   - Au runtime, `this.smsService.sendSMS(phone, smsMessage)` (otp.service.ts:220) appelle bien la méthode de la classe #1 (communication).
+   - ✅ Pas d'erreur d'injection DI. Pas de shadowing.
+
+3) PAS DE CIRCULAR DEPENDENCY impliquant SmsService
+   - `forwardRef` dans `onboarding/` : uniquement pour `BillingModule` (onboarding.module.ts:13) et `OrionAlertsService` (onboarding.service.ts:44,50).
+   - `forwardRef` dans `communication/` : uniquement pour `EmailService` (inbound-email.service.ts:77) et lazy `EmailLogService` via `ModuleRef` (email.service.ts:437).
+   - SmsService n'est JAMAIS impliqué dans un forwardRef. Aucun risque de circular dep pour le path OTP-SMS.
+
+4) AUCUN useExisting / useClass alias pour SmsService
+   - `grep -rn "useExisting|useClass.*SmsService|provide:.*SmsService" apps/api-server/src/` → NO MATCHES.
+   - Aucune indirection DI qui pourrait rediriger l'injection vers la mauvaise classe.
+
+5) LONGUEUR DU SMS MESSAGE — 292 chars / 2 segments GSM-7 (PAS BLOQUANT)
+   - Message exact (otp.service.ts:137) :
+     `Academia Helm - Code de vérification\n\nVotre code de vérification est : ${code}\n\nCe code est valable ${this.OTP_EXPIRY_MINUTES} minutes.\n\nNe partagez jamais ce code avec personne. L'équipe Academia Helm ne vous demandera jamais votre code par téléphone ou email.\n\nSi vous n'avez pas demandé ce code, ignorez ce message.`
+   - Longueur : 292 caractères (avec 8 newlines).
+   - Encodage : GSM-7 (les accents é è à sont dans la table GSM-7 de base, n'obligent pas UCS-2).
+   - Segments Twilio : 2 segments (153 chars/segment en multi-segment GSM-7).
+   - LIMITE Twilio : 1600 chars par message (160 chars par segment unique). → On est bien en-dessous.
+   - ✅ La longueur n'est PAS la cause de l'échec. Twilio facturera 2 segments mais livrera correctement.
+
+6) 🚨 NORMALISATION TÉLÉPHONE — INCOHÉRENCE ENTRE DB ET TWILIO
+   - Frontend `OnboardingWizard.normalizePhoneNumber` (ligne 467) :
+     * Pour Benin, si user tape "0195722234" → retourne "+2290195722234" (GARDE le "01")
+     * Si user tape "+2290195722234" → retourne tel quel
+   - OtpService.normalizePhone (otp.service.ts:47-69) — pour STOCKAGE DB :
+     * Strips le "01" : "+2290195722234" → "+22995722234" (8 digits après +229, E.164 VALIDE)
+     * L'OTP est stocké en DB avec ce format valide.
+   - SmsService.sendSMS → normalizePhoneE164 (phone.ts:31) — pour APPEL TWILIO :
+     * Default opts : `stripBenin01 = false` → GARDE le "01"
+     * "+2290195722234" → "+2290195722234" (10 digits après +229, E.164 INVALIDE pour Benin)
+     * `isValidPhoneE164()` (phone.ts:103) valide juste 7-15 digits → passe (12 digits = OK pour la fonction, mais invalide pour Twilio Benin).
+   - **TRACE COMPLÈTE** :
+     | User input      | Frontend→BFF        | DB (OtpService.normalizePhone) | Twilio (normalizePhoneE164)   |
+     |-----------------|---------------------|--------------------------------|-------------------------------|
+     | 0195722234      | +2290195722234      | +22995722234 (✓ E.164)         | +2290195722234 (⚠️ INVALID)   |
+     | +2290195722234  | +2290195722234      | +22995722234 (✓ E.164)         | +2290195722234 (⚠️ INVALID)   |
+     | 95722234        | +22995722234        | +22995722234 (✓ E.164)         | +22995722234 (✓ E.164)        |
+     | +22995722234    | +22995722234        | +22995722234 (✓ E.164)         | +22995722234 (✓ E.164)        |
+   - **Conséquence** : si l'utilisateur entre le format local Benin avec "01" (le plus courant — tous les numéros MTN/Moov affichés au Bénin ont ce "01"), Twilio reçoit `+2290195722234` qui a 12 digits après +229 — Twilio retourne alors l'erreur 21211 "Invalid 'To' Phone Number" (HTTP 400).
+   - **Note sur le commit 4a6de30f** : l'auteur croyait que Twilio attend le "01", mais la spec E.164 l'exclut. Le commit message mentionne "Twilio Verify" qui est un produit DIFFÉRENT de "Programmable SMS" (qu'on utilise via `client.messages.create()`). Le comportement peut différer entre les deux.
+   - ⚠️ Ce bug ne correspond PAS à l'erreur "Authentication" précédemment rapportée (21211 = HTTP 400, pas 401). Voir point 7.
+
+7) 🚨 CAUSE LA PLUS PROBABLE DE L'ÉCHEC ACTUEL — Configuration Fly.io (pas le code)
+   - Le code SMS est IDENTIQUE à c22b0bfb (version qui fonctionnait hier). Aucune régression code-side.
+   - L'erreur "Authentication" précédente (interceptée par otp.service.ts:246-252 si `error.status===401` ou message contient "auth") correspond à Twilio error 20003 / HTTP 401 = **TWILIO_ACCOUNT_SID ou TWILIO_AUTH_TOKEN invalide**.
+   - Le commit b881e818 (post-c22b0bfb) a ajouté des logs diagnostiques qui DOIVENT maintenant afficher sur Fly.io :
+     * `📱 [SMS] Tentative d'envoi à [numéro] via provider=twilio — TWILIO_ACCOUNT_SID=✅ set, TWILIO_PHONE_NUMBER=✅ set`
+     * Si 401/403 : `❌ Failed to send OTP via sms... → Détails: code=20003, status=401, moreInfo=...`
+   - **Hypothèses prioritaires** (à vérifier dans les logs Fly.io après déploy du commit b881e818) :
+     a) **TWILIO_AUTH_TOKEN rotate/expiré** — la valeur set sur Fly.io ne match plus le dashboard Twilio.
+     b) **SMS_PROVIDER absent ou ='mock'** sur Fly.io → SmsService.sendMock() retourne success silentieux, aucun SMS envoyé, mais user ne voit pas d'erreur (juste "pas de SMS reçu"). Le log dit `provider=mock`.
+     c) **TWILIO_ACCOUNT_SID ne commence pas par 'AC'** → SDK Twilio lève une erreur.
+     d) **TWILIO_PHONE_NUMBER n'est pas un numéro Twilio acheté** → error 21606 (HTTP 400).
+     e) **Compte Twilio suspendu / trial sans numéro vérifié** → error 21608 (HTTP 400).
+   - Hypothèses 2ndaires (liées au téléphone, pas à l'auth) :
+     f) **Numéro Benin avec "01" → erreur 21211** (HTTP 400, message "Invalid To Phone Number" — NE match PAS "auth").
+     g) Numéro non vérifié en trial Twilio → 21608.
+
+8) BUGS SECONDAIRES TROUVÉS (non liés à l'OTP onboarding, à corriger séparément)
+   - `apps/api-server/src/students/student-transfer.service.ts:875` :
+     * Importe `SmsService` depuis `../communication/services/sms.service` (la #1 avec `sendSMS` UPPER)
+     * MAIS appelle `this.smsService.sendSms({to, message})` (camelCase, objet) — méthode qui n'EXISTE PAS sur la #1.
+     * Au runtime : TypeError "this.smsService.sendSms is not a function".
+     * Soit importer la #2 (auth), soit changer l'appel en `sendSMS(to, message)`.
+   - `apps/api-server/src/billing/services/billing-reminder.service.ts:8` importe la #2 (auth) → utilise `sendSms({})` → OK (cohérent).
+   - `apps/api-server/src/auth/services/otp.service.ts:104` importe la #2 (auth) → utilise `sendSms({})` → OK (cohérent).
+   - Les deux SmsService co-existent avec des APIs différentes (`sendSMS` vs `sendSms`) — source de confusion future.
+
+9) AUCUNE SHADOWING DI POUR LE PATH ONBOARDING OTP
+   - `AuthModule` (auth.module.ts:34) importe `CommunicationModule` ET déclare son propre `SmsService` (ligne 52).
+   - Dans le scope de `AuthModule`, `auth/services/otp.service.ts` importe `./sms.service` (la #2) → résolu via le provider local de AuthModule. ✓
+   - `BillingModule` importe À LA FOIS `CommunicationModule` (ligne 25) ET `AuthModule` (ligne 26) → les deux SmsService sont disponibles dans ce scope, MAIS les services de BillingModule qui injectent `SmsService` utilisent l'un ou l'autre selon l'import explicite du fichier. Pas d'ambiguïté car le token DI est la CLASSE (pas le nom).
+   - `OnboardingModule` n'importe PAS `AuthModule` → `OtpService` (onboarding) ne voit QUE le `SmsService` de `CommunicationModule`. ✓ Pas de shadowing.
+
+10) DIAGNOSTIC — Message "Authentication" vu par l'utilisateur
+    - Le message exact affiché à l'utilisateur (otp.service.ts:251) :
+      `"Le service SMS a refusé l'authentification (Twilio). Veuillez réessayer avec la méthode Email, ou contactez le support si le problème persiste. Veuillez réessayer avec une autre méthode."`
+    - Ce message est déclenché (otp.service.ts:246-250) si l'une de ces conditions est vraie :
+      (a) `error.message.toLowerCase().includes('auth')` — Twilio renvoie souvent "Unable to authenticate" ou "Authenticate" pour 401.
+      (b) `error.status === 401`
+      (c) `error.status === 403`
+    - → Ceci confirme que l'erreur côté Twilio est de type AUTH (401/403), PAS de type "numéro invalide" (21211/400).
+    - → Donc le problème ACTUEL n'est PAS la normalisation Benin "01". C'est bien les credentials Twilio.
+
+Stage Summary:
+- **Code SMS inchangé depuis c22b0bfb** (working yesterday). La régression n'est PAS code-side.
+- **2 classes SmsService** dans le codebase : communication (sendSMS, 2 args, normalise) + auth (sendSms, 1 obj, ne normalise pas). OtpService onboarding utilise le BON (communication). Pas de shadowing, pas de circular dep.
+- **SMS message = 292 chars / 2 segments GSM-7** — PAS bloquant (Twilio accepte jusqu'à 1600 chars, 2 segments facturés mais livrés).
+- **🚨 Incohérence normalisation** : DB stocke +229XXXXXXXX (8 digits, E.164 valide via OtpService.normalizePhone), mais Twilio reçoit +22901XXXXXXXX (10 digits, E.164 invalide via normalizePhoneE164). Cause : `phone.ts:38` default `stripBenin01=false`. Committé dans 4a6de30f (5 juil) sur une supposition incorrecte ("Twilio attend le 01"). MAIS l'erreur actuelle est "Authentication" (401), pas 21211 (numéro invalide), donc ce n'est pas la cause immédiate.
+- **Cause la plus probable** : TWILIO_AUTH_TOKEN rotate/expiré sur Fly.io, ou SMS_PROVIDER=mock/absent. Le commit b881e818 (déjà poussé) ajoute les logs pour le confirmer.
+- AUCUN fichier modifié (recherche uniquement).
+
+Suggested Code Changes (NE PAS appliquer maintenant — recherche only) :
+- **FIX A (critical, phone.ts:38)** : Changer le défaut `stripBenin01 = true` (au lieu de false) pour que `normalizePhoneE164` produise un E.164 valide pour Twilio. Ou mieux : toujours stripper le "01" pour Twilio (Programmable SMS) et garder une option explicite `keepBenin01` pour WhatsApp/Gupshup si nécessaire. Corriger aussi le commentaire lines 36-37 qui est faux.
+- **FIX B (sms.service.ts:39)** : Passer `stripBenin01: true` explicitement : `normalizePhoneE164(to, { stripBenin01: true })`. C'est le fix minimal qui ne touche pas au comportement par défaut.
+- **FIX C (otp.service.ts:220)** : Passer le numéro DÉJÀ normalisé (et non le raw) : `await this.smsService.sendSMS(normalizedPhone, smsMessage);` (utilise la variable `normalizedPhone` calculée ligne 117). Ainsi la normalisation OtpService (qui strippe le 01) prime, et la double-normalisation par `normalizePhoneE164` devient idempotente.
+- **FIX D (auth/services/sms.service.ts)** : Soit le déprécier (rediriger vers communication SmsService), soit le renommer en `AuthSmsService` pour éviter la confusion avec la #1. Mettre la méthode en `sendSMS(to, message)` pour cohérence.
+- **FIX E (student-transfer.service.ts:875)** : Corriger l'appel `sendSms({to, message})` → `sendSMS(to, message)` (utilise la #1 importée, pas la #2).
+- **Action immédiate recommandée (sans code)** :
+  1. `fly logs` après un test SMS — vérifier si `provider=twilio` ou `provider=mock`.
+  2. Si `provider=twilio` : vérifier que TWILIO_ACCOUNT_SID commence par "AC" et que TWILIO_AUTH_TOKEN correspond au dashboard Twilio (Console > Account > Auth Tokens).
+  3. Si `provider=mock` ou absent : set `SMS_PROVIDER=twilio` sur Fly.io.
+  4. Si 401 persiste avec credentials corrects : vérifier statut compte Twilio (suspension, trial limité).

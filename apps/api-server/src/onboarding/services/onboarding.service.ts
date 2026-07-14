@@ -24,6 +24,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { SubdomainService } from '../../common/services/subdomain.service';
 import { DomainManagementService } from '../../common/services/domain-management.service';
+import { CacheService } from '../../common/services/cache.service';
 import { OrionAlertsService } from '../../orion/services/orion-alerts.service';
 import { PricingService } from '../../billing/services/pricing.service';
 import { OtpService } from './otp.service';
@@ -39,6 +40,7 @@ export class OnboardingService {
     private readonly prisma: PrismaService,
     private readonly subdomainService: SubdomainService,
     private readonly domainManagementService: DomainManagementService,
+    private readonly cacheService: CacheService,
     private readonly pricingService: PricingService,
     private readonly otpService: OtpService,
     @Inject(forwardRef(() => {
@@ -892,6 +894,18 @@ export class OnboardingService {
       // Important : Les appels API Cloudflare/Vercel sont lents et ne doivent PAS
       // bloquer la transaction DB. On les exécute en arrière-plan.
       this.createSubdomainsAsync(tenants);
+
+      // ⭐ Invalider le cache de la liste publique des écoles pour que le nouveau
+      // tenant apparaisse immédiatement dans le modal de sélection du portail.
+      // Sans cette invalidation, le cache Redis (60s) + cache Next.js BFF
+      // empêchent le nouveau tenant d'apparaître pendant jusqu'à 60 secondes.
+      try {
+        await this.cacheService.invalidate('schools:list:all');
+        await this.cacheService.invalidate('schools:list:with-jobs');
+        this.logger.log(`✅ School list cache invalidated after tenant activation`);
+      } catch (cacheErr: any) {
+        this.logger.warn(`⚠️  Failed to invalidate school list cache: ${cacheErr.message}`);
+      }
 
       return activationResult;
     });

@@ -5053,3 +5053,447 @@ Pour Issue 2 (Option A — recommandée) :
    Utiliser `paymentMeta.amountReal ?? Number(payment.amount)` au lieu de `Number(payment.amount)`.
 
 AUCUN fichier modifié — recherche uniquement.
+
+═══════════════════════════════════════════════════════════════════════
+TASK ID: PORTAL-SCHOOL-LIST-INVESTIGATION
+Date: 2026-07-14 (investigation)
+Type: RESEARCH ONLY — AUCUN fichier modifié
+═══════════════════════════════════════════════════════════════════════
+
+CONTEXTE
+========
+Bug rapporté : Sur https://academiahelm.com/portal, au clic sur « Portail École /
+Enseignant / Parent », le modal qui s'ouvre devrait lister les écoles auxquelles
+l'utilisateur a accès. Or, il n'affiche QUE l'ancienne école CSPEB et PAS la
+nouvelle école « Academia Helm » (subdomain: academia-helm, créée le
+2026-07-14 14:27:12).
+
+MÉTHODE
+=======
+1. Lecture worklog.md (lignes 4995-5055) — travail précédent : sous-domaine
+   onboarding stocké comme slug (pas hostname complet), metadata payment.
+2. Identification du modal : apps/web-app/src/app/portal/page.tsx (1105 lignes)
+   → rendu `<SchoolSearch>` à la ligne 754-758 dans un AnimatePresence modal
+   (lignes 694-822).
+3. SchoolSearch : apps/web-app/src/components/portal/SchoolSearch.tsx — fetch
+   `/api/public/schools/list` (PAS user-scoped, PAS d'auth requise).
+4. BFF route : apps/web-app/src/app/api/public/schools/list/route.ts — proxy vers
+   NestJS `/api/public/schools/list` avec `next: { revalidate: 60 }` (cache Next.js
+   60s).
+5. Backend controller : apps/api-server/src/portal/controllers/public-portal.controller.ts:27
+   (@Get('list') @SkipThrottle() → schoolSearchService.listAllSchools()).
+6. Service query : apps/api-server/src/portal/services/school-search.service.ts:117-182
+   — Prisma findMany avec `where: { status: 'active' }` (production), cache Redis
+   60s sur clé `schools:list:all`, AUCUNE invalidation explicite à la création
+   de tenant.
+7. activateTenantAfterPayment : apps/api-server/src/onboarding/services/onboarding.service.ts:436-898
+   — crée le tenant avec `status: 'active'` (ligne 527) puis crée un nouveau User
+   avec `email: draft.promoterEmail` (ligne 784-794) — `email` est `@unique`.
+8. Schéma Prisma : apps/api-server/prisma/schema.prisma — User.tenantId est
+   String? (mono-tenant), PAS de table UserTenant.
+
+═══════════════════════════════════════════════════════════════════════
+1. LOCALISATION EXACTE DU MODAL QUI LISTE LES ÉCOLES
+═══════════════════════════════════════════════════════════════════════
+- Fichier : apps/web-app/src/app/portal/page.tsx
+- Lignes : 694-822 (modal AnimatePresence "Recherche d'établissement")
+- Composant de liste rendu : ligne 754-758 → `<SchoolSearch ... />`
+- Composant : apps/web-app/src/components/portal/SchoolSearch.tsx (392 lignes)
+- Déclencheur : `handlePortalSelect(portal)` (ligne 193-205) →
+  `setShowSchoolSearch(true)` pour tous les portails sauf PLATFORM.
+
+⚠️ IMPORTANT : Le mental model du rapport de bug est incorrect. Le modal ne
+   liste PAS « les écoles auxquelles l'utilisateur a accès » — il liste TOUTES
+   les écoles publiques actives (aucune auth requise). Le user-scoping n'existe
+   pas dans ce modal. C'est un sélecteur public d'établissement.
+
+═══════════════════════════════════════════════════════════════════════
+2. ENDPOINT API (BFF + BACKEND) QUI SERT LA LISTE
+═══════════════════════════════════════════════════════════════════════
+- Frontend fetch : apps/web-app/src/components/portal/SchoolSearch.tsx:67
+  `fetch('/api/public/schools/list', { signal })` (PAS d'auth, PAS de cache header
+  explicite côté client).
+- BFF route (Next.js) : apps/web-app/src/app/api/public/schools/list/route.ts
+  - `export const dynamic = 'force-dynamic'` (ligne 18)
+  - fetch backend avec `next: { revalidate: 60 }` (ligne 38) — cache Next.js 60s
+  - timeout 30s (ligne 31)
+- Backend NestJS :
+  - Controller : apps/api-server/src/portal/controllers/public-portal.controller.ts:27
+    `@Public() @Get('list') @SkipThrottle() async listAllSchools()`
+  - Service : apps/api-server/src/portal/services/school-search.service.ts:117
+    `async listAllSchools(): Promise<any[]>`
+
+═══════════════════════════════════════════════════════════════════════
+3. REQUÊTE PRISMA EXACTE QUI FETCH LES ÉCOLES
+═══════════════════════════════════════════════════════════════════════
+Fichier : apps/api-server/src/portal/services/school-search.service.ts
+Lignes 75-148 :
+
+```typescript
+private buildPublicSchoolListWhere(): Prisma.TenantWhereInput {
+  const platformOwner =
+    this.configService.get<string>('PLATFORM_OWNER_MODE')?.trim().toLowerCase() === 'true';
+  const nodeEnv = this.configService.get<string>('NODE_ENV') || 'development';
+  if (platformOwner || nodeEnv !== 'production') {
+    return {};  // ← dev / platform-owner : retourne TOUT
+  }
+  return { status: 'active' };  // ← PROD : filtre status='active'
+}
+
+async listAllSchools(): Promise<any[]> {
+  // ── Vérifier le cache Redis ──
+  const cached = await this.cacheService.get<any[]>(CACHE_KEY_ALL_SCHOOLS); // 'schools:list:all'
+  if (cached) {
+    this.logger.log('listAllSchools: returning Redis cached data');
+    return cached;
+  }
+
+  const tenants = await this.prisma.tenant.findMany({
+    where: this.buildPublicSchoolListWhere(),  // ← { status: 'active' } en prod
+    include: {
+      schools: { select: SCHOOL_SELECT },
+      identityProfiles: {
+        where: { isActive: true },
+        take: 1,
+        orderBy: { version: 'desc' },
+        select: IDENTITY_PROFILE_SELECT,
+      },
+      country: { select: { name: true, code: true } },
+    },
+    orderBy: { name: 'asc' },
+  });
+  // ... map + cache Redis 60s (CACHE_TTL_MS = 60_000)
+}
+```
+
+Filtres appliqués en production :
+- `Tenant.status = 'active'` (via buildPublicSchoolListWhere)
+- AUCUN filtre sur `type`, `subscriptionStatus`, ou lien user-tenant
+- AUCUN filtre sur subdomain format
+
+═══════════════════════════════════════════════════════════════════════
+4. ANALYSE DE LA CAUSE RACINE — POURQUOI LE NOUVEAU TENANT N'APPARAÎT PAS
+═══════════════════════════════════════════════════════════════════════
+
+Le modal liste TOUS les tenants actifs (pas user-scoped). Donc le lien
+User-Tenant n'est PAS la cause directe de l'absence dans le modal. La cause
+doit être que la requête `prisma.tenant.findMany({ where: { status: 'active' } })`
+ne retourne PAS « Academia Helm ».
+
+HYPOTHÈSES PAR ORDRE DE PROBABILITÉ :
+
+□ Hypothèse A (LA PLUS PROBABLE) — Transaction activateTenantAfterPayment a
+  échoué silencieusement ou le tenant a un status != 'active'.
+
+  activateTenantAfterPayment crée le tenant (status='active' à la ligne 527),
+  PUIS crée un nouveau User avec `email: draft.promoterEmail` (ligne 784-794).
+  Le champ `User.email` est `@unique` (schema.prisma:1740).
+
+  Scénario : si s.akpovitohou@gmail.com était DÉJÀ un User (par ex. promoter
+  CSPEB), et que le nouvel onboarding réutilise le même email → Prisma lève
+  P2002 (Unique constraint failed) → toute la `$transaction` est annulée →
+  le tenant « Academia Helm » n'existe PAS réellement en DB (rollback).
+
+  Variante : si le tenant existe en DB mais avec un status != 'active' (par ex.
+  'suspended' suite à billing BLOCKED — subscription-lifecycle.service.ts:196-199
+  met `status: 'suspended'` après J+37), il sera filtré par le `where`.
+
+  → VÉRIFICATION À FAIRE :
+    SELECT id, name, slug, subdomain, status, subscription_status,
+           created_at, trial_ends_at
+    FROM tenants
+    WHERE slug = 'academia-helm' OR subdomain = 'academia-helm';
+    SELECT id, email, role, tenant_id, status FROM users
+    WHERE email = 's.akpovitohou@gmail.com';
+
+□ Hypothèse B — Cache stale (Redis 60s + Next.js revalidate 60s).
+  Possible mais limité dans le temps : si la création date de 14:27:12 le
+  2026-07-14 et que le bug est rapporté bien plus tard (>2 min), le cache
+  aurait dû expirer naturellement. AUCUNE invalidation explicite du cache
+  `schools:list:all` n'existe dans le codebase (grep sur CACHE_KEY_ALL_SCHOOLS,
+  cacheService.del, cacheService.invalidate → 0 résultat hors de
+  school-search.service.ts). Donc le cache ne peut pas rester stale
+  indéfiniment, mais un pic de trafic peut le rafraîchir juste avant expiration
+  (renouvelle constamment, mais TTL reste 60s par écriture).
+  → Peut expliquer un délai transitoire mais PAS un bug persistant.
+
+□ Hypothèse C — Le tenant a été créé via une autre voie (POST /api/tenants
+  public, admin platform, seed SQL) avec un status != 'active'.
+  - TenantsController.create (apps/api-server/src/tenants/tenants.controller.ts:23)
+    est @Public() → n'importe qui peut créer un tenant. TenantsService.create
+    ne force pas status='active', donc si l'appelant ne le fournit pas, le
+    défaut schéma est 'active' (schema.prisma:20) — devrait donc apparaître.
+  - platform.service.ts:1350-1356 (updateTenantStatus) peut changer le status
+    via admin platform.
+
+□ Hypothèse D — Le subdomain 'academia-helm' contient un trait d'union qui
+  pourrait poser problème — NON, le filtre where ne porte QUE sur `status`, le
+  subdomain n'est pas filtré. Et `academia-helm` est un slug valide (lettres +
+  traits d'union).
+
+□ Hypothèse E — Row-Level Security PostgreSQL.
+  Présent dans apps/api-server/prisma/migrations/rls-policies.sql — mais
+  Prisma se connecte généralement en tant que rôle superuser qui bypass RLS.
+  Peu probable mais à vérifier si le user DB utilisé par l'API n'est pas
+  superuser.
+
+RÉPONSES AUX SOUS-QUESTIONS :
+- User-Tenant link ? — NON pertinent pour le modal public (qui liste TOUTES
+  les écoles actives, pas seulement celles de l'utilisateur).
+  Mais À CREUSER pour le login : auth.service.ts:196
+  `if (!isPlatformOwner && user.tenantId !== resolvedTenantId)` — un user ne
+  peut se logger QUE sur son unique `tenantId`. Si le user veut accéder à
+  Academia Helm, il FAUT que son `user.tenantId` pointe vers ce tenant, ce qui
+  le détacherait de CSPEB. Le modèle actuel est mono-tenant par User.
+- Cache ? — Possible mais 60s+60s max ; peu probable sur la durée.
+- Filtre subscription ? — NON, le filtre ne porte que sur `status: 'active'`.
+- Subdomain format ? — NON, le subdomain n'est pas filtré.
+
+═══════════════════════════════════════════════════════════════════════
+5. FICHIERS ET LIGNES À MODIFIER POUR FIXER LE BUG
+═══════════════════════════════════════════════════════════════════════
+
+5.1 FIX IMMÉDIAT (si le tenant existe en DB mais n'apparaît pas) :
+
+  - Invalider le cache Redis `schools:list:all` après création/update de tenant.
+    Ajouter dans apps/api-server/src/onboarding/services/onboarding.service.ts,
+    après la transaction activateTenantAfterPayment (~ligne 894, après
+    createSubdomainsAsync), un appel :
+      await this.cacheService.invalidate('schools:list:all');
+      await this.cacheService.invalidate('schools:list:with-jobs');
+    (injecter CacheService dans le constructor d'OnboardingService).
+
+  - Idéalement aussi invalider dans platform.service.ts:1353 (updateTenantStatus)
+    et dans subscription-lifecycle.service.ts:196-199 (suspension/blocking).
+
+5.2 FIX STRUCTUREL (multi-tenant pour un même promoteur) :
+
+  - apps/api-server/prisma/schema.prisma :1737-1740 — ajouter un modèle
+    `UserTenant` (join table) pour permettre à un User d'appartenir à
+    plusieurs tenants :
+      model UserTenant {
+        id        String   @id @default(uuid())
+        userId    String
+        tenantId  String
+        role      String   @default("PROMOTER")
+        createdAt DateTime @default(now())
+        user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+        tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+        @@unique([userId, tenantId])
+      }
+    Ajouter la relation `userTenants UserTenant[]` sur User (l.1737) et sur
+    Tenant (l.11).
+
+  - apps/api-server/src/onboarding/services/onboarding.service.ts:784-803 —
+    remplacer le `tx.user.create` par un `find-or-create / upsert` :
+      const existingUser = await tx.user.findUnique({
+        where: { email: draft.promoterEmail },
+      });
+      let promoter;
+      if (existingUser) {
+        // Update tenantId vers le nouveau tenant OU créer un UserTenant
+        promoter = await tx.user.update({
+          where: { id: existingUser.id },
+          data: { tenantId: tenants[0].id },
+        });
+        // + tx.userTenant.create({ data: { userId, tenantId: tenants[0].id, role: 'PROMOTER' } })
+      } else {
+        promoter = await tx.user.create({
+          data: { email, passwordHash, ..., tenantId: tenants[0].id, role: 'PROMOTER', status: 'active' },
+        });
+      }
+
+  - apps/api-server/src/auth/auth.service.ts:557-640 (getAvailableTenants) —
+    lire la table UserTenant pour retourner TOUS les tenants du user, pas
+    seulement `user.tenantId`. La ligne 636-637 a déjà un TODO à ce sujet.
+
+  - apps/api-server/src/auth/auth.service.ts:196 (login) — assouplir le check
+    `user.tenantId !== resolvedTenantId` pour accepter aussi un UserTenant
+    correspondant.
+
+5.3 FIX CURATIF (si tenant créé avec status != 'active') :
+
+  - Vérifier en DB le status du tenant « Academia Helm ».
+  - Si status='suspended' ou autre, exécuter :
+      UPDATE tenants SET status = 'active' WHERE slug = 'academia-helm';
+    et invalider le cache Redis.
+
+═══════════════════════════════════════════════════════════════════════
+6. EXTRAITS DE CODE COMPLETS
+═══════════════════════════════════════════════════════════════════════
+
+6.1 REQUÊTE PRISMA QUI FETCH LES TENANTS USER (user-scoped, PAS utilisée
+    par le modal du portail, mais utilisée par /api/auth/available-tenants
+    pour le switcher de settings) :
+
+  Fichier : apps/api-server/src/auth/auth.service.ts:600-640
+```typescript
+// Utilisateur normal → retourne son tenant (ou ses tenants si multi-tenant)
+const tenants = [];
+
+// Si l'utilisateur a un tenantId direct
+if (user.tenantId) {
+  const tenant = await this.prisma.tenant.findUnique({
+    where: { id: user.tenantId },
+    include: {
+      schools: { select: { name: true, logo: true } },
+      country: { select: { name: true, code: true } },
+    },
+  });
+
+  if (tenant && tenant.status === 'active') {
+    tenants.push({
+      tenantId: tenant.id,
+      schoolName: tenant.schools?.name || tenant.name,
+      tenantName: tenant.name,
+      slug: tenant.slug,
+      subdomain: tenant.subdomain,
+      logoUrl: tenant.schools?.logo ?? null,
+      country: tenant.country?.name || null,
+    });
+  }
+}
+
+// TODO: Ajouter la logique pour les utilisateurs multi-tenant si nécessaire
+// (par exemple via une table de relation UserTenant)
+
+return tenants;
+```
+
+6.2 activateTenantAfterPayment — CRÉATION DU USER (lié au nouveau tenant) :
+
+  Fichier : apps/api-server/src/onboarding/services/onboarding.service.ts:783-804
+```typescript
+// 3. Créer le promoteur (user avec role PROMOTER) - lié au premier tenant
+const promoter = await tx.user.create({
+  data: {
+    email: draft.promoterEmail,
+    passwordHash: draft.promoterPasswordHash,
+    firstName: draft.promoterFirstName || '',
+    lastName: draft.promoterLastName || '',
+    role: 'PROMOTER',
+    tenantId: tenants[0].id, // Premier tenant comme tenant principal
+    status: 'active',
+  },
+});
+
+// 4. Si plusieurs tenants, créer des entrées UserTenant pour lier le promoteur aux autres tenants
+if (schoolsCount > 1) {
+  // Note: Si une table UserTenant existe, créer les relations ici
+  // Pour l'instant, le promoteur est lié au premier tenant via tenantId
+  // Les autres tenants seront accessibles via la logique d'authentification multi-tenant
+  this.logger.log(
+    `✅ Promoter ${promoter.id} can manage ${tenants.length} tenants (annexes)`
+  );
+}
+```
+
+⚠️ BUG : `tx.user.create` avec un email déjà existant lève Prisma P2002 et
+   annule toute la transaction (y compris le tenant créé ligne 520-530).
+   AUCUN try/catch, AUCUN find-or-create, AUCUNE vérification préalable.
+
+6.3 FETCH FRONTEND + CACHE CONFIG :
+
+  Fichier : apps/web-app/src/components/portal/SchoolSearch.tsx:59-120
+```typescript
+const loadAllSchools = async () => {
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => abortController.abort(), 35000);
+  setIsLoading(true);
+  setFetchError(null);
+  try {
+    const response = await fetch('/api/public/schools/list', {
+      signal: abortController.signal,
+      // ⚠️ PAS de cache: 'no-store' ni next: { revalidate: 0 } côté client
+      // Le cache est géré par la BFF route (next: { revalidate: 60 })
+    });
+    clearTimeout(timeoutId);
+    if (response.ok) {
+      const data = await response.json();
+      if (Array.isArray(data)) setAllSchools(data);
+      else if (data && Array.isArray(data.schools)) setAllSchools(data.schools);
+      else { console.warn('[SchoolSearch] Unexpected response format:', data); setAllSchools([]); }
+    } else { /* fallback search / error */ }
+  } catch (error: any) { /* ... */ }
+};
+```
+
+  Fichier : apps/web-app/src/app/api/public/schools/list/route.ts:20-77
+```typescript
+export const dynamic = 'force-dynamic';
+
+export async function GET(_request: NextRequest) {
+  try {
+    const API_BASE_URL = getApiBaseUrlForRoutes();
+    const apiUrl = API_BASE_URL.endsWith('/api')
+      ? `${API_BASE_URL}/public/schools/list`
+      : `${API_BASE_URL}/api/public/schools/list`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    const response = await fetch(normalizeApiUrl(apiUrl), {
+      method: 'GET',
+      headers: bffHeaders(),
+      next: { revalidate: 60 },  // ⚠️ CACHE NEXT.JS 60s
+      signal: controller.signal,
+    });
+    // ...
+  }
+}
+```
+
+═══════════════════════════════════════════════════════════════════════
+PROCHAINES ACTIONS RECOMMANDÉES (POUR UN AGENT D'IMPLÉMENTATION)
+═══════════════════════════════════════════════════════════════════════
+
+1. DIAGNOSTIC DB IMMÉDIAT (à exécuter sur la base de prod) :
+   SELECT id, name, slug, subdomain, status, subscription_status,
+          created_at, trial_ends_at
+   FROM tenants WHERE slug = 'academia-helm' OR subdomain = 'academia-helm';
+   SELECT id, email, role, tenant_id, status FROM users
+   WHERE email = 's.akpovitohou@gmail.com';
+   SELECT COUNT(*) FROM tenants WHERE status = 'active';
+
+   → Si le tenant n'existe pas : Hypothèse A confirmée (transaction annulée
+     par P2002 sur user.email). Le « créé le 2026-07-14 14:27:12 » vu par
+     l'utilisateur était probablement un seed/test ou la date de création du
+     draft, pas du tenant.
+   → Si le tenant existe avec status != 'active' : UPDATE + invalidate cache.
+   → Si le tenant existe avec status = 'active' mais n'apparaît pas : forcer
+     l'invalidation du cache Redis (`DEL schools:list:all`).
+
+2. FIX PERSISTANT (multi-tenant user) :
+   a. apps/api-server/prisma/schema.prisma : créer le modèle UserTenant
+      (join table) + relations sur User et Tenant + migration Prisma.
+   b. apps/api-server/src/onboarding/services/onboarding.service.ts:784 :
+      remplacer `tx.user.create` par find-or-create + créer un UserTenant.
+   c. apps/api-server/src/auth/auth.service.ts:557 (getAvailableTenants) :
+      requêter UserTenant pour retourner tous les tenants du user.
+   d. apps/api-server/src/auth/auth.service.ts:196 (login) : accepter
+      l'appartenance via UserTenant en plus de user.tenantId.
+
+3. FIX CACHE INVALIDATION :
+   a. Injecter CacheService dans OnboardingService.
+   b. Invalider `schools:list:all` + `schools:list:with-jobs` après création
+      tenant (ligne ~894).
+   c. Invalider aussi dans platform.service.ts:1353 (updateTenantStatus) et
+      subscription-lifecycle.service.ts:196 (suspension/blocking).
+
+4. FIX SECONDARY (BFF route) :
+   apps/web-app/src/app/api/public/schools/list/route.ts:38 — remplacer
+   `next: { revalidate: 60 }` par `cache: 'no-store'` pour éliminer le cache
+   Next.js côté BFF (le cache Redis backend reste actif). Trade-off :
+   légère charge DB supplémentaire, mais cohérence immédiate.
+
+5. CLARIFIER L'UX :
+   Le rapport de bug mentionne « should list the schools the user has access
+   to ». Le modal actuel est PUBLIC (liste toutes les écoles actives, sans
+   auth). Si le besoin métier est de lister UNIQUEMENT les écoles du user :
+   - Remplacer `/api/public/schools/list` par `/api/auth/available-tenants`
+     (qui est JwtAuthGuard) dans SchoolSearch.tsx:67.
+   - Mais cela implique que l'user doit être connecté AVANT de choisir le
+     portail — ce qui contredit le flux actuel (choix école → /login).
+   À discuter avec le product owner.
+
+AUCUN fichier modifié — recherche uniquement.

@@ -35,7 +35,12 @@ export async function GET(_request: NextRequest) {
       response = await fetch(normalizeApiUrl(apiUrl), {
         method: 'GET',
         headers: bffHeaders(),
-        next: { revalidate: 60 },
+        // ⭐ cache: 'no-store' pour ne JAMAIS cacher côté Next.js BFF.
+        // Le cache Redis backend (60s) suffit pour la performance.
+        // AVANT : next: { revalidate: 60 } → les nouveaux tenants créés
+        // pendant l'onboarding n'apparaissaient pas dans le modal portail
+        // pendant 60s (voire plus si le cache Next.js persistait).
+        cache: 'no-store',
         signal: controller.signal,
       });
       clearTimeout(timeoutId);

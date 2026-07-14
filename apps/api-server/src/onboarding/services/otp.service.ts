@@ -180,27 +180,18 @@ export class OtpService {
           }
           {
             const emailHtml = this.buildOtpEmailHtml(code, draft.schoolName || 'votre établissement');
-            const emailResult = await this.emailService.sendCategorized({
-              tenantId: 'onboarding',
-              category: 'ADMINISTRATIF',
-              subCategory: 'otp_verification',
-              module: 'onboarding',
+            // ⭐ Utiliser sendEmail directement (pas sendCategorized) car l'onboarding
+            // n'a pas encore de tenantId valide — EmailLog.tenantId a une FK vers Tenant.
+            // sendCategorized essaie de créer un EmailLog → échec FK → fallback → échec.
+            // sendEmail envoie directement via le provider (Resend) sans log en DB.
+            await this.emailService.sendEmail({
               to: draft.promoterEmail,
-              toName: `${draft.promoterFirstName || ''} ${draft.promoterLastName || ''}`.trim() || undefined,
               subject: `🔐 Votre code de vérification — Academia Helm`,
               html: emailHtml,
               text: `Votre code de vérification Academia Helm est : ${code}. Ce code est valable 3 minutes. Ne le partagez avec personne.`,
-              fromEmail: process.env.EMAIL_FROM_NOREPLY || 'noreply@academiahelm.com',
+              from: process.env.EMAIL_FROM_NOREPLY || 'noreply@academiahelm.com',
               fromName: 'Academia Helm',
-              recipientType: 'EXTERNE',
-              triggeredBy: 'SYSTEM',
             });
-            // ⭐ sendCategorized retourne { success, error } sans lancer d'exception.
-            // On doit vérifier le retour manuellement.
-            if (!emailResult.success) {
-              this.logger.error(`❌ Email OTP failed: ${emailResult.error}`);
-              throw new Error(`Email sending failed: ${emailResult.error}`);
-            }
             this.logger.log(`✅ OTP sent via Email to ${draft.promoterEmail}`);
             if (process.env.NODE_ENV === 'development') {
               this.logger.log(`\n📧 [DEV MODE] Email OTP to ${draft.promoterEmail}:\nCode: ${code}\n`);

@@ -3493,3 +3493,45 @@ Stage Summary:
   * "📱 [SMS] Tentative d'envoi à [numéro] via provider=twilio — TWILIO_ACCOUNT_SID=✅ set, TWILIO_PHONE_NUMBER=✅ set"
   * Si Twilio renvoie 401/403 : "❌ Failed to send OTP via sms... → Détails: code=..., status=401"
   * Cela permettra de distinguer : (a) config Twilio réellement absente, (b) credentials Twilio invalides, (c) numéro de téléphone invalide, (d) autre erreur Twilio.
+
+---
+Task ID: OTP-LABEL-PLAN
+Agent: Main Agent
+Task: 2 correctifs — label 'Numéro vérifié' codé en dur + sélection plan par cartes (étape 3)
+
+Work Log:
+- Constat : le label "Numéro vérifié" était codé en dur dans le bloc otpVerified.
+  Quand l'utilisateur vérifiait son email, le message disait "Numéro vérifié"
+  au lieu de "Email vérifié".
+- Fix 1 : remplacé par {otpMethod === 'email' ? 'Email vérifié' : 'Numéro vérifié'}
+
+- Constat : l'étape 3 demandait à l'utilisateur de saisir un nombre d'élèves
+  dans un input number. Le plan était calculé automatiquement à partir de ce
+  nombre (getRecommendedPlan).
+- Fix 2 : remplacé l'input number par 3 cartes sélectionnables (SEED / GROW / LEAD)
+  avec :
+    * Nom du plan + couleur (HELM_PLANS[planKey].color)
+    * Tagline ("L'essentiel pour bien démarrer" etc.)
+    * Badge "Populaire" pour GROW
+    * Range d'élèves (1-150, 151-400, 401-800)
+    * Prix mensuel + annuel + setup fee (depuis pricingPlans dynamique)
+    * Checkmark bleu quand sélectionné
+  + Lien "Contactez-nous pour HELM NETWORK" pour >800 élèves.
+- Au clic sur une carte : setData({ planCode, estimatedStudentCount }) avec
+  estimatedStudentCount = 1 (SEED) / 151 (GROW) / 401 (LEAD).
+- Supprimé le useEffect qui générait planCode à partir de estimatedStudentCount
+  (n'a plus de sens — l'utilisateur sélectionne directement).
+- Supprimé la validation estimatedStudentCount (step 3) — le planCode est
+  maintenant la source de vérité.
+- Corrigé l'initialisateur de reset (ligne ~1282) qui utilisait
+  planCode: 'BASIC_MONTHLY' (ancien code) → remplacé par 'SEED'.
+- Imports nettoyés : supprimé getRecommendedPlan et HelmPlanKey (plus utilisés).
+- Commit : 8a0fa02a — poussé sur origin/main.
+
+Stage Summary:
+- Label dynamique selon otpMethod (Email vérifié / Numéro vérifié).
+- Étape 3 : UX beaucoup plus claire — l'utilisateur voit les 3 plans côte à côte
+  avec leurs ranges et leurs prix, clique sur celui qui correspond à son école.
+- La section "Période de facturation" (Mensuel/Annuel) et le "Total après essai"
+  se mettent à jour automatiquement (déjà géré par le useEffect calculatePrices
+  existant qui dépend de data.planCode).

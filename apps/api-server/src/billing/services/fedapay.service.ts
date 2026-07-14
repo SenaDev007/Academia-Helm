@@ -1804,13 +1804,8 @@ export class FedaPayService implements OnModuleInit {
         !(activation as { alreadyActivated?: boolean }).alreadyActivated
       ) {
         // ⭐ Envoi de l'email de bienvenue avec sous-domaine + loginUrl.
-        // AVANT : l'erreur était silencieusement avalée par .catch() → l'utilisateur
-        // ne recevait jamais l'email et nous n'avions aucun log pour le diagnostic.
-        // APRÈS : on log explicitement l'échec avec contexte complet pour pouvoir
-        // diagnostiquer dans fly logs.
         try {
           await this.sendOnboardingPaymentSuccessEmail(paymentId, transaction, emailCfg);
-          // Récupérer le subdomain pour le log
           const payMeta = (await this.prisma.onboardingPayment.findUnique({
             where: { id: paymentId },
             select: { metadata: true },
@@ -1823,8 +1818,6 @@ export class FedaPayService implements OnModuleInit {
             `❌ ÉCHEC envoi email bienvenue (paymentId=${paymentId}): ${emailErr?.message}`,
             emailErr?.stack,
           );
-          // NE PAS propager l'erreur — le tenant est déjà créé, l'email est
-          // récupérable manuellement. Mais on log pour diagnostic.
         }
       } else if (!emailCfg) {
         this.logger.error(
@@ -1838,7 +1831,15 @@ export class FedaPayService implements OnModuleInit {
       if (msg.includes('already activated') || msg.includes('status: SUCCESS')) {
         this.logger.log(`✅ Tenant already activated for payment ${paymentId} (idempotent)`);
       } else {
-        throw err;
+        // ⭐ Log détaillé de l'erreur d'activation pour diagnostic.
+        // L'erreur n'est PAS re-thrown pour ne pas casser le webhook FedaPay
+        // (qui retryait indéfiniment). Le payment reste COMPLETED et l'activation
+        // sera retentée au prochain appel verify (page confirmation).
+        this.logger.error(
+          `❌ ÉCHEC activation tenant pour paymentId=${paymentId}: ${msg}`,
+          err?.stack,
+        );
+        this.logger.error(`❌ Détails erreur: code=${err?.code}, meta=${JSON.stringify(err?.meta || {})}`);
       }
     }
 

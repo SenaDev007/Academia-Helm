@@ -669,10 +669,23 @@ export class OnboardingService {
         const trialStart = new Date();
         const trialEnd = new Date(trialStart);
         trialEnd.setDate(trialEnd.getDate() + 30);
+        // ⭐ Récupérer l'UUID du plan depuis le priceSnapshot (pas selectedPlanId
+        // qui peut contenir le code "GROW" au lieu de l'UUID).
+        // On essaie aussi de le récupérer depuis pricing_plans si planId est absent.
+        let planUuid = pricing?.planId as string | undefined;
+        if (!planUuid) {
+          const planCode = pricing?.planCode as string | undefined;
+          if (planCode) {
+            const dbPlan = await tx.pricingPlan.findUnique({ where: { code: planCode } });
+            planUuid = dbPlan?.id;
+          }
+        }
         const subscription = await tx.subscription.create({
           data: {
             tenant: { connect: { id: tenant.id } },
-            subscriptionPlan: { connect: { id: draft.selectedPlanId! } },
+            // ⭐ Si on a un UUID de plan, on le connecte. Sinon on ne connecte pas
+            // (subscriptionPlan est optionnel — @? dans le schéma).
+            ...(planUuid ? { subscriptionPlan: { connect: { id: planUuid } } } : {}),
             plan: (pricing?.planCode as string) || 'UNKNOWN',
             status: 'TRIAL_ACTIVE',
             startDate: trialStart,

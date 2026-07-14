@@ -24,11 +24,12 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Search, ChevronDown, ChevronRight, Users, Loader2,
   FileText, BookOpen, Baby, GraduationCap, AlertCircle,
-  FileDown, FileSpreadsheet,
+  FileDown, FileSpreadsheet, Upload,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import DocumentPreviewModal from './DocumentPreviewModal';
+import ImportElevesModal from './ImportElevesModal';
 import { studentsService } from '@/services/students.service';
 import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
@@ -145,6 +146,8 @@ export default function StudentClassListsContent() {
   const [excelGeneratingClassId, setExcelGeneratingClassId] = useState<string | null>(null);
   const [isGlobalExcelExporting, setIsGlobalExcelExporting] = useState(false);
   const [isGlobalPdfExporting, setIsGlobalPdfExporting] = useState(false);
+  // ⭐ Import en masse (même modal que l'onglet Inscriptions)
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   useEffect(() => {
     if (academicYear) loadData();
@@ -384,6 +387,14 @@ export default function StudentClassListsContent() {
             {isGlobalPdfExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
             {isGlobalPdfExporting ? '...' : 'PDF global'}
           </button>
+          {/* ⭐ Bouton Importer — même modal que l'onglet Inscriptions */}
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-lg border border-violet-300 transition whitespace-nowrap"
+            title="Importer des élèves depuis un fichier Excel (template multi-feuilles par classe physique)"
+          >
+            <Upload className="w-4 h-4" /> Importer
+          </button>
         </div>
       </div>
 
@@ -601,6 +612,16 @@ export default function StudentClassListsContent() {
           }}
         />
       )}
+
+      {/* ⭐ Modal d'import en masse — même modal que l'onglet Inscriptions */}
+      <ImportElevesModal
+        open={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onSuccess={() => {
+          // Recharger la liste des élèves après import
+          window.location.reload();
+        }}
+      />
     </div>
   );
 }

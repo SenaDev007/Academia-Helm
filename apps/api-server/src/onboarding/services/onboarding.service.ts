@@ -417,6 +417,7 @@ export class OnboardingService {
       // à partir de firstTenantSubdomain + .academiahelm.com (fallback).
       firstTenantSubdomain: mergedMeta?.firstTenantSubdomain as string | undefined,
       firstTenantHostname: mergedMeta?.firstTenantHostname as string | undefined,
+      firstTenantSiteUrl: mergedMeta?.firstTenantSiteUrl as string | undefined,
       firstTenantPortalUrl: mergedMeta?.firstTenantPortalUrl as string | undefined,
       // ⭐ Références de transaction (pour affichage sur la page de confirmation).
       // - reference : référence marchand (payment.reference, ex: 'ONB-XXXX-XXXX')
@@ -826,6 +827,14 @@ export class OnboardingService {
         .trim();
       const tenantSlug = tenants[0].subdomain || tenants[0].slug || '';
       const tenantHostname = tenantSlug ? `${tenantSlug}.${baseDomain}` : baseDomain;
+      // ⭐ Construire l'URL de connexion avec paramètres (portal=SCHOOL&tenant=...&school_name=...).
+      // Format : https://{subdomain}.{domaine}/login?portal=SCHOOL&tenant={subdomain}&school_name={encoded}
+      const schoolNameEncoded = encodeURIComponent(draft.schoolName || '');
+      const portalUrlParams = new URLSearchParams({
+        portal: 'SCHOOL',
+        tenant: tenantSlug,
+        school_name: draft.schoolName || '',
+      }).toString();
       await tx.onboardingPayment.update({
         where: { id: paymentId },
         data: {
@@ -834,7 +843,8 @@ export class OnboardingService {
             ...paymentMeta,
             firstTenantSubdomain: tenantSlug,
             firstTenantHostname: tenantHostname,
-            firstTenantPortalUrl: `https://${tenantHostname}/portal`,
+            firstTenantSiteUrl: `https://${tenantHostname}/`,
+            firstTenantPortalUrl: `https://${tenantHostname}/login?${portalUrlParams}`,
           },
         },
       });

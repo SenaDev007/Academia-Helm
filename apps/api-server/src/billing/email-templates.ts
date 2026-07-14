@@ -76,7 +76,10 @@ export const emailTemplates = {
       plan: string;
       transactionRef: string;
       montant: number;
+      /** URL de connexion directe au portail école : https://{subdomain}.{domaine}/login?portal=SCHOOL&tenant=...&school_name=... */
       loginUrl: string;
+      /** URL du site institutionnel du tenant : https://{subdomain}.{domaine}/ */
+      tenantSiteUrl?: string;
       email: string;
       /** Mot de passe en clair si disponible ; sinon le template indique d'utiliser le mot de passe défini à l'inscription */
       motDePasse?: string | null;
@@ -132,9 +135,17 @@ export const emailTemplates = {
               <span style="color:#6b5b12;font-weight:bold;">Email</span><br/>
               <span style="font-family:monospace;font-size:15px;">${escHtml(data.email)}</span>
             </p>
+            ${
+              data.tenantSiteUrl
+                ? `<p style="margin:0 0 10px;font-size:14px;color:#3d3510;">
+              <span style="color:#6b5b12;font-weight:bold;">Site institutionnel</span><br/>
+              <a href="${escHtml(data.tenantSiteUrl)}" style="color:#0D1F6E;font-size:13px;font-weight:600;">${escHtml(data.tenantSiteUrl)}</a>
+            </p>`
+                : ''
+            }
             <p style="margin:0;font-size:14px;color:#3d3510;">
-              <span style="color:#6b5b12;font-weight:bold;">URL de connexion</span><br/>
-              <a href="${escHtml(data.loginUrl)}" style="color:#0D1F6E;font-size:13px;font-weight:600;">${escHtml(data.loginUrl)}</a>
+              <span style="color:#6b5b12;font-weight:bold;">Page de connexion</span><br/>
+              <a href="${escHtml(data.loginUrl)}" style="color:#0D1F6E;font-size:12px;font-weight:600;word-break:break-all;">${escHtml(data.loginUrl)}</a>
             </p>
             ${
               data.motDePasse

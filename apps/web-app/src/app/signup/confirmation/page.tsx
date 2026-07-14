@@ -120,12 +120,13 @@ function ConfirmationContent() {
             setSubdomain(data.firstTenantSubdomain)
           }
           // ⭐ Utiliser l'URL complète renvoyée par le backend (firstTenantPortalUrl)
-          // qui contient le hostname complet (ex: https://academia-helm.academiahelm.com/portal).
+          // qui contient les paramètres portal=SCHOOL&tenant=...&school_name=...
+          // Format : https://{subdomain}.{domaine}/login?portal=SCHOOL&tenant=...&school_name=...
           // Fallback : construire à partir du subdomain si firstTenantPortalUrl absent.
           if (data.firstTenantPortalUrl) {
             setPortalUrl(data.firstTenantPortalUrl)
           } else if (data.firstTenantSubdomain) {
-            setPortalUrl(`https://${data.firstTenantSubdomain}.academiahelm.com/portal`)
+            setPortalUrl(`https://${data.firstTenantSubdomain}.academiahelm.com/login?portal=SCHOOL&tenant=${data.firstTenantSubdomain}`)
           }
           return
         }

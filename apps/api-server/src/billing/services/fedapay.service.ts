@@ -2040,9 +2040,14 @@ export class FedaPayService implements OnModuleInit {
     return null;
   }
 
-  /** URL portail tenant : https://{subdomain}.{domaine du FRONTEND_URL}/portal */
-  private buildTenantPortalUrl(frontendBaseUrl: string, subdomain: string | undefined | null): string {
-    const fallback = `${frontendBaseUrl.replace(/\/$/, '')}/portal`;
+  /**
+   * URL du site institutionnel du tenant : https://{subdomain}.{domaine}/
+   * Exemple : https://cspeb-eveildafriqueeducation.academiahelm.com/
+   *
+   * C'est la page d'accueil publique de l'école, accessible sans authentification.
+   */
+  private buildTenantSiteUrl(frontendBaseUrl: string, subdomain: string | undefined | null): string {
+    const fallback = frontendBaseUrl.replace(/\/$/, '');
     if (!subdomain || !String(subdomain).trim()) {
       return fallback;
     }
@@ -2052,7 +2057,46 @@ export class FedaPayService implements OnModuleInit {
       if (host.startsWith('www.')) {
         host = host.slice(4);
       }
-      return `${u.protocol}//${String(subdomain).trim().toLowerCase()}.${host}/portal`;
+      return `${u.protocol}//${String(subdomain).trim().toLowerCase()}.${host}/`;
+    } catch {
+      return fallback;
+    }
+  }
+
+  /**
+   * URL de connexion au portail école du tenant.
+   * Format : https://{subdomain}.{domaine}/login?portal=SCHOOL&tenant={subdomain}&school_name={encoded}
+   *
+   * Exemple :
+   * https://cspeb-eveildafriqueeducation.academiahelm.com/login?portal=SCHOOL&tenant=cspeb-eveildafriqueeducation&school_name=Complexe%20Scolaire%20...
+   *
+   * Cette URL est celle obtenue quand l'utilisateur clique sur le bouton "École"
+   * sur la page https://{subdomain}.{domaine}/#portails
+   */
+  private buildTenantPortalUrl(
+    frontendBaseUrl: string,
+    subdomain: string | undefined | null,
+    schoolName?: string | undefined | null,
+  ): string {
+    const fallback = `${frontendBaseUrl.replace(/\/$/, '')}/login?portal=SCHOOL`;
+    if (!subdomain || !String(subdomain).trim()) {
+      return fallback;
+    }
+    try {
+      const u = new URL(frontendBaseUrl);
+      let host = u.hostname;
+      if (host.startsWith('www.')) {
+        host = host.slice(4);
+      }
+      const baseUrl = `${u.protocol}//${String(subdomain).trim().toLowerCase()}.${host}`;
+      const params = new URLSearchParams({
+        portal: 'SCHOOL',
+        tenant: String(subdomain).trim().toLowerCase(),
+      });
+      if (schoolName && String(schoolName).trim()) {
+        params.set('school_name', String(schoolName).trim());
+      }
+      return `${baseUrl}/login?${params.toString()}`;
     } catch {
       return fallback;
     }
@@ -2078,7 +2122,12 @@ export class FedaPayService implements OnModuleInit {
     const payMeta = (payment.metadata as Record<string, unknown>) || {};
     const firstSub =
       typeof payMeta.firstTenantSubdomain === 'string' ? payMeta.firstTenantSubdomain : undefined;
-    const loginUrl = this.buildTenantPortalUrl(cfg.siteUrl, firstSub);
+    // ⭐ loginUrl = URL de connexion directe au portail école avec paramètres.
+    // Format : https://{subdomain}.{domaine}/login?portal=SCHOOL&tenant={subdomain}&school_name={encoded}
+    // siteUrl = URL du site institutionnel (page d'accueil publique).
+    // Format : https://{subdomain}.{domaine}/
+    const loginUrl = this.buildTenantPortalUrl(cfg.siteUrl, firstSub, draft.schoolName);
+    const tenantSiteUrl = this.buildTenantSiteUrl(cfg.siteUrl, firstSub);
     const snap = (draft.priceSnapshot as Record<string, unknown>) || {};
 
     // ⭐ Déterminer le nom affichable du plan.
@@ -2160,6 +2209,7 @@ export class FedaPayService implements OnModuleInit {
       // transaction.amount (qui peut être plafonné à 20000 en sandbox FedaPay).
       montant: Number(payment.amount) || 0,
       loginUrl,
+      tenantSiteUrl,
       email: to,
       motDePasse: null,
     });

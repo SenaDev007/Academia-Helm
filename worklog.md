@@ -4176,3 +4176,28 @@ Prochaine action recommandée (sans code) :
 5. Appliquer FIX 1 (rendre /signup/confirmation active) — c'est le fix principal qui garantit que l'activation est déclenchée même si le webhook ne vient pas.
 6. Appliquer FIX 2 (ne pas avaler l'erreur email) — pour diagnostiquer les futurs échecs.
 7. Vérifier/corriger les env vars email sur Fly.io (FIX 3).
+
+---
+Task ID: POST-PAYMENT-FIX
+Agent: Main Agent
+Task: Fix — page confirmation appelle verify → active tenant + envoie email accès
+
+Work Log:
+- Investigation a révélé que /signup/confirmation était 100% statique.
+- L'activation du tenant (création DB + email credentials) ne se faisait QUE via webhook FedaPay.
+- Si webhook manquait → rien ne se passait mais l'utilisateur voyait "créé avec succès".
+- Correction : page confirmation appelle POST /api/onboarding/payment/{paymentId}/verify au montage.
+- Le backend verify interroge FedaPay, déclenche handlePaymentSuccess → activateTenantAfterPayment → sendOnboardingPaymentSuccessEmail.
+- Retry 5x (3s) pour laisser le temps à l'activation.
+- Affiche subdomain + URL de connexion quand tenantActivated=true.
+- Backend : erreur email n'est plus silencieusement avalée — logs explicites.
+- Commit : 38f98d9f — poussé sur origin/main.
+
+Stage Summary:
+- Le tenant DOIT maintenant être créé même si le webhook FedaPay n'arrive pas.
+- L'email de bienvenue avec sous-domaine + loginUrl est envoyé automatiquement.
+- Pour vérifier en DB si l'école a été créée pour le paiement précédent :
+  SELECT id, status, "createdAt" FROM onboarding_payments ORDER BY "createdAt" DESC LIMIT 5;
+  SELECT id, name, subdomain, "createdAt" FROM tenants ORDER BY "createdAt" DESC LIMIT 5;
+  Si le payment est COMPLETED mais pas SUCCESS, et aucun tenant n'existe →
+  appeler manuellement POST /api/onboarding/payment/{paymentId}/verify pour déclencher l'activation.

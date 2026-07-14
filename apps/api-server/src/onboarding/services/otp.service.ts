@@ -182,7 +182,7 @@ export class OtpService {
             const emailHtml = this.buildOtpEmailHtml(code, draft.schoolName || 'votre établissement');
             const emailResult = await this.emailService.sendCategorized({
               tenantId: 'onboarding',
-              category: 'SYSTEM',
+              category: 'ADMINISTRATIF',
               subCategory: 'otp_verification',
               module: 'onboarding',
               to: draft.promoterEmail,
@@ -190,9 +190,9 @@ export class OtpService {
               subject: `🔐 Votre code de vérification — Academia Helm`,
               html: emailHtml,
               text: `Votre code de vérification Academia Helm est : ${code}. Ce code est valable 3 minutes. Ne le partagez avec personne.`,
-              fromEmail: process.env.EMAIL_FROM_NOREPLY || process.env.SMTP_FROM || 'noreply@academiahelm.com',
+              fromEmail: process.env.EMAIL_FROM_NOREPLY || 'noreply@academiahelm.com',
               fromName: 'Academia Helm',
-              recipientType: 'PROMOTER',
+              recipientType: 'EXTERNE',
               triggeredBy: 'SYSTEM',
             });
             // ⭐ sendCategorized retourne { success, error } sans lancer d'exception.

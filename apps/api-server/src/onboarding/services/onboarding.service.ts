@@ -379,7 +379,21 @@ export class OnboardingService {
     }
 
     // Vérifier le statut via FedaPay API
-    const verification = await this.fedapayService.verifyTransactionStatus(transactionId);
+    // ⭐ Si l'API FedaPay échoue (401, timeout, etc.), on ne bloque pas la
+    // réponse — on renvoie quand même les infos disponibles (référence payment,
+    // statut DB) pour que le frontend puisse afficher quelque chose d'utile.
+    let verification: { status: string; amount: number; verified: boolean; paymentId?: string; reference?: string } = {
+      status: payment.status,
+      amount: payment.amount,
+      verified: false,
+    };
+    let verifyError: string | undefined;
+    try {
+      verification = await this.fedapayService.verifyTransactionStatus(transactionId);
+    } catch (err: any) {
+      verifyError = err?.message || 'Erreur inconnue';
+      this.logger.warn(`⚠️  FedaPay verify failed for payment ${paymentId}: ${verifyError}. Retourne les infos DB sans activation.`);
+    }
 
     // Recharger le paiement (après possible activation du tenant dans verifyTransactionStatus)
     const updatedPayment = await this.prisma.onboardingPayment.findUnique({
@@ -404,6 +418,9 @@ export class OnboardingService {
       reference: payment.reference || undefined,
       fedapayReference: verification.reference || undefined,
       transactionId: transactionId,
+      // ⭐ Si l'API FedaPay a échoué, on l'indique pour que le frontend puisse
+      // afficher un message approprié (sans bloquer l'utilisateur).
+      verifyError: verifyError,
     };
   }
 

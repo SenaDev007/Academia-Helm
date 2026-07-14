@@ -75,6 +75,7 @@ function ConfirmationContent() {
   const [subdomain, setSubdomain] = useState<string | null>(null)
   const [fedapayReference, setFedapayReference] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
+  const [verifyErrorDetail, setVerifyErrorDetail] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isApproved || !paymentId) return
@@ -98,9 +99,17 @@ function ConfirmationContent() {
 
         // ⭐ Stocker la vraie référence FedaPay renvoyée par le backend
         // (priorité : fedapayReference > reference > transactionId)
+        // Même si la vérification FedaPay échoue, le backend renvoie maintenant
+        // payment.reference (référence marchand ONB-XXXX) en fallback.
         const realRef = data.fedapayReference || data.reference || data.transactionId
         if (realRef) {
           setFedapayReference(String(realRef))
+        }
+
+        // ⭐ Si le backend signale une erreur de vérification FedaPay,
+        // on l'affiche pour diagnostic (sans bloquer l'utilisateur).
+        if (data.verifyError) {
+          setVerifyErrorDetail(data.verifyError)
         }
 
         // Si tenant activé → succès
@@ -184,7 +193,11 @@ function ConfirmationContent() {
               </div>
 
               <h1 className="text-2xl font-bold text-blue-900 mb-2">
-                {verifyState === 'loading' ? 'Vérification...' : verifyState === 'error' ? 'Vérification en attente' : 'Paiement confirmé !'}
+                {verifyState === 'loading'
+                  ? 'Vérification...'
+                  : verifyState === 'error'
+                    ? 'Paiement reçu — Activation en cours'
+                    : 'Paiement confirmé !'}
               </h1>
 
               <p className="text-slate-600 mb-6">
@@ -195,6 +208,21 @@ function ConfirmationContent() {
                   </>
                 )}
               </p>
+
+              {/* ⭐ Détail de l'erreur de vérification (si FedaPay API a échoué) */}
+              {verifyErrorDetail && verifyState === 'error' && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-6 text-left">
+                  <p className="text-xs text-amber-800 font-medium mb-1">
+                    ℹ️ Information technique
+                  </p>
+                  <p className="text-xs text-amber-700 break-all">
+                    {verifyErrorDetail}
+                  </p>
+                  <p className="text-xs text-amber-600 mt-2">
+                    Notre équipe a été notifiée. Votre paiement sera traité manuellement si nécessaire.
+                  </p>
+                </div>
+              )}
 
               {/* Subdomain info si disponible */}
               {subdomain && (

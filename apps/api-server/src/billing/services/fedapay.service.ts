@@ -2072,12 +2072,22 @@ export class FedaPayService implements OnModuleInit {
       typeof payMeta.firstTenantSubdomain === 'string' ? payMeta.firstTenantSubdomain : undefined;
     const loginUrl = this.buildTenantPortalUrl(cfg.siteUrl, firstSub);
     const snap = (draft.priceSnapshot as Record<string, unknown>) || {};
-    const plan =
-      typeof snap.planCode === 'string'
+    // ⭐ Utiliser planName (ex: "Helm Seed") et NON planCode (ex: "SEED").
+    // Si planName absent, fallback sur planCode, sinon "Academia Helm".
+    // On évite aussi d'afficher un ancien code comme "BASIC_MONTHLY".
+    const rawPlan = typeof snap.planName === 'string'
+      ? snap.planName
+      : typeof snap.planCode === 'string'
         ? snap.planCode
-        : typeof snap.planName === 'string'
-          ? snap.planName
-          : 'Academia Helm';
+        : '';
+    // Si le plan est un code brut (SEED/GROW/LEAD/NETWORK), le convertir en nom affichable.
+    const planDisplayMap: Record<string, string> = {
+      SEED: 'Helm Seed',
+      GROW: 'Helm Grow',
+      LEAD: 'Helm Lead',
+      NETWORK: 'Helm Network',
+    };
+    const plan = (rawPlan && planDisplayMap[rawPlan.toUpperCase()]) || rawPlan || 'Academia Helm';
     const links = {
       siteUrl: cfg.siteUrl,
       portalUrl: cfg.portalUrl,

@@ -205,7 +205,18 @@ export class OtpService {
           break;
 
         case 'sms':
-        default:
+        default: {
+          // ⭐ Diagnostic : si SMS_PROVIDER n'est pas 'twilio', on log un avertissement.
+          // Si c'est 'mock' en production, c'est probablement un oubli de config Fly.io.
+          const smsProvider = process.env.SMS_PROVIDER || 'mock';
+          if (smsProvider !== 'twilio') {
+            this.logger.warn(
+              `⚠️  SMS_PROVIDER=${smsProvider} (pas 'twilio'). Vérifiez la variable SMS_PROVIDER sur Fly.io.`,
+            );
+          }
+          this.logger.log(
+            `📱 [SMS] Tentative d'envoi à ${phone} via provider=${smsProvider} — TWILIO_ACCOUNT_SID=${process.env.TWILIO_ACCOUNT_SID ? '✅ set' : '❌ missing'}, TWILIO_PHONE_NUMBER=${process.env.TWILIO_PHONE_NUMBER ? '✅ set' : '❌ missing'}`,
+          );
           await this.smsService.sendSMS(phone, smsMessage);
           this.logger.log(`✅ OTP sent via SMS to ${phone}`);
           // Afficher le message en mode développement
@@ -213,15 +224,34 @@ export class OtpService {
             this.logger.log(`\n📱 [DEV MODE] SMS Message to ${phone}:\n${smsMessage}\n`);
           }
           break;
+        }
       }
     } catch (error: any) {
-      this.logger.error(`❌ Failed to send OTP via ${method} to ${phone}: ${error.message}`);
+      // ⭐ Log détaillé pour diagnostiquer les échecs SMS (Twilio renvoie souvent
+      // error.code (ex: 21211, 21614) et error.status (401, 403, 400)).
+      this.logger.error(
+        `❌ Failed to send OTP via ${method} to ${phone}: ${error.message}`,
+        error?.stack,
+      );
+      if (error?.code || error?.status) {
+        this.logger.error(
+          `   → Détails: code=${error.code}, status=${error.status}, moreInfo=${error.moreInfo || 'N/A'}`,
+        );
+      }
       
       // En développement, on continue même si l'envoi échoue
       if (process.env.NODE_ENV === 'production') {
-        throw new BadRequestException(
-          `Impossible d'envoyer le code OTP via ${method}. Erreur: ${error.message}. Veuillez réessayer avec une autre méthode.`
-        );
+        // ⭐ Pour SMS : message plus explicite si erreur d'authentification Twilio
+        let userMessage = `Impossible d'envoyer le code OTP via ${method}. Erreur: ${error.message}.`;
+        if (method === 'sms' && (
+          error.message?.toLowerCase().includes('auth') ||
+          error.status === 401 ||
+          error.status === 403
+        )) {
+          userMessage = `Le service SMS a refusé l'authentification (Twilio). Veuillez réessayer avec la méthode Email, ou contactez le support si le problème persiste.`;
+        }
+        userMessage += ' Veuillez réessayer avec une autre méthode.';
+        throw new BadRequestException(userMessage);
       } else {
         this.logger.warn(`⚠️  DEV MODE: Continuing despite ${method} failure`);
       }

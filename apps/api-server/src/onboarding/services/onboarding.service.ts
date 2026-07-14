@@ -381,9 +381,9 @@ export class OnboardingService {
     }
 
     // Vérifier le statut via FedaPay API
-    // ⭐ Le verify NE déclenche PAS l'activation. L'activation est gérée
-    // UNIQUEMENT par le webhook FedaPay (handlePaymentSuccess).
-    // Le verify lit juste le statut FedaPay + le statut DB pour affichage.
+    // ⭐ verifyTransactionStatus déclenche handlePaymentSuccess qui active le tenant.
+    // Si l'API FedaPay échoue mais que le payment est déjà COMPLETED en DB
+    // (webhook déjà traité), on tente quand même l'activation directement.
     let verification: { status: string; amount: number; verified: boolean; paymentId?: string; reference?: string } = {
       status: payment.status,
       amount: payment.amount,
@@ -394,10 +394,26 @@ export class OnboardingService {
       verification = await this.fedapayService.verifyTransactionStatus(transactionId);
     } catch (err: any) {
       verifyError = err?.message || 'Erreur inconnue';
-      this.logger.warn(`⚠️  FedaPay verify failed for payment ${paymentId}: ${verifyError}. Le webhook gère l'activation séparément.`);
-      // ⭐ PAS de fallback activation — c'est le webhook qui active, pas le verify.
-      // Si le webhook n'a pas encore traité, le frontend retry et finira par
-      // voir tenantActivated=true une fois le webhook traité.
+      this.logger.warn(`⚠️  FedaPay verify failed for payment ${paymentId}: ${verifyError}`);
+
+      // ⭐ FALLBACK : si le payment est déjà COMPLETED en DB mais l'activation
+      // n'a pas été faite (payment.status === 'COMPLETED' et non 'SUCCESS'),
+      // on tente l'activation directement.
+      if (payment.status === 'COMPLETED') {
+        this.logger.log(`🔧 Fallback activation : payment ${paymentId} est COMPLETED, tentative d'activation...`);
+        try {
+          await this.activateTenantAfterPayment(paymentId);
+          this.logger.log(`✅ Fallback activation réussie pour payment ${paymentId}`);
+          const refreshed = await this.prisma.onboardingPayment.findUnique({ where: { id: paymentId } });
+          if (refreshed) {
+            payment.status = refreshed.status;
+            payment.metadata = refreshed.metadata;
+          }
+        } catch (activationErr: any) {
+          this.logger.error(`❌ Fallback activation échouée pour payment ${paymentId}: ${activationErr.message}`, activationErr.stack);
+          verifyError = `${verifyError} | Activation fallback failed: ${activationErr.message}`;
+        }
+      }
     }
 
     // Recharger le paiement (après possible activation du tenant dans verifyTransactionStatus)

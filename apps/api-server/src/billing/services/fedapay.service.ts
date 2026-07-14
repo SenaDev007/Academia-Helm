@@ -364,12 +364,34 @@ export class FedaPayService implements OnModuleInit {
       const status = transaction.status || 'pending';
       const amount = transaction.amount || 0;
 
-      // ⭐ Le verify NE déclenche PLUS l'activation. L'activation est gérée
-      // UNIQUEMENT par le webhook FedaPay (handlePaymentSuccess).
-      // Le verify se contente de lire le statut FedaPay et de le retourner
-      // au frontend pour affichage.
-      // Si le webhook n'a pas encore traité le paiement, le frontend retry
-      // (jusqu'à 5x) jusqu'à ce que le webhook ait eu le temps de traiter.
+      // ⭐ Si le paiement est approuvé, traiter comme un webhook (activation).
+      // C'est ce bloc qui déclenche l'activation du tenant + l'email au promoteur.
+      // Il est idempotent : si le webhook a déjà traité, handlePaymentSuccess
+      // détecte 'already processed' et ne refait rien.
+      if (status === 'approved' || status === 'completed') {
+        // Chercher le paiement correspondant dans notre base
+        const payment = await this.prisma.onboardingPayment.findFirst({
+          where: {
+            OR: [
+              { reference: transaction.reference || transaction.id },
+              { metadata: { path: ['transactionId'], equals: transactionId } },
+            ],
+          },
+        });
+
+        if (payment && payment.status !== 'SUCCESS') {
+          try {
+            await this.billingService.handlePaymentSuccess(transaction);
+            this.logger.log(`✅ Transaction verified and processed: ${transactionId}`);
+          } catch (error: any) {
+            if (error.message?.includes('already processed') || error.message?.includes('alreadyProcessed')) {
+              this.logger.log(`✅ Transaction already processed: ${transactionId}`);
+            } else {
+              throw error;
+            }
+          }
+        }
+      }
 
       return {
         status,

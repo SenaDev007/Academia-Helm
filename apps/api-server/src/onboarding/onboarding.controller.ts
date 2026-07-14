@@ -126,10 +126,10 @@ export class OnboardingController {
   @HttpCode(HttpStatus.OK)
   async generateOTP(
     @Param('draftId') draftId: string,
-    @Body() body: { phone: string; method?: 'sms' | 'voice' | 'whatsapp' | 'email' },
+    @Body() body: { phone: string; method?: 'sms' | 'voice' | 'whatsapp' | 'email'; promoterEmail?: string },
   ) {
     const method = body.method || 'sms';
-    return this.otpService.generateAndSendOTP(draftId, body.phone, method);
+    return this.otpService.generateAndSendOTP(draftId, body.phone, method, body.promoterEmail);
   }
 
   /**

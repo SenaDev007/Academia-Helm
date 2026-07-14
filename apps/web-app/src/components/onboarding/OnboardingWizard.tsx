@@ -867,8 +867,15 @@ export default function OnboardingWizard() {
     // ⭐ Accepter un paramètre methodOverride car setOtpMethod + handleSendOtp()
     // appelés séquentiellement ne voient pas la nouvelle valeur (React batch updates).
     const effectiveMethod = methodOverride || otpMethod;
-    if (!data.promoterPhone) {
+
+    // ⭐ Pour SMS : le téléphone est obligatoire.
+    // Pour Email : l'email est obligatoire (pas besoin de téléphone).
+    if (effectiveMethod === 'sms' && !data.promoterPhone) {
       setErrors({ promoterPhone: 'Veuillez entrer votre numéro de téléphone' });
+      return;
+    }
+    if (effectiveMethod === 'email' && !data.promoterEmail) {
+      setErrors({ promoterEmail: 'Veuillez entrer votre email' });
       return;
     }
 
@@ -882,15 +889,18 @@ export default function OnboardingWizard() {
     
     try {
       // Normaliser le numéro de téléphone
-      const normalizedPhone = normalizePhoneNumber(data.promoterPhone, data.country);
+      const normalizedPhone = data.promoterPhone
+        ? normalizePhoneNumber(data.promoterPhone, data.country)
+        : '';
       
       const response = await fetch('/api/onboarding/otp/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           draftId: data.draftId,
-          phone: normalizedPhone,
+          phone: normalizedPhone || 'N/A', // Le backend exige un phone, mais pour email on met N/A
           method: effectiveMethod,
+          promoterEmail: data.promoterEmail || undefined,
         }),
       });
 
@@ -2134,7 +2144,7 @@ export default function OnboardingWizard() {
 
                 <div className="border-t pt-6">
                   <label className="block text-sm font-medium text-gray-900 mb-3">
-                    Vérification du numéro <span className="text-red-600">*</span>
+                    {otpMethod === 'email' ? 'Vérification de l\'email' : 'Vérification du numéro'} <span className="text-red-600">*</span>
                   </label>
                   
                   {/* ⭐ Étape 1 : Bouton "Envoyer le code" (avant la sélection de méthode) */}

@@ -14,7 +14,7 @@ import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { draftId, phone, method } = body;
+    const { draftId, phone, method, promoterEmail } = body;
 
     if (!draftId) {
       return NextResponse.json(
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ phone, method: method || 'sms' }),
+        body: JSON.stringify({ phone, method: method || 'sms', promoterEmail: promoterEmail || undefined }),
         signal: AbortSignal.timeout(8000), // 8 secondes
       });
     } catch (fetchError: any) {

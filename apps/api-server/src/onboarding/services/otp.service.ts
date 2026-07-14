@@ -78,8 +78,16 @@ export class OtpService {
    * @param draftId - ID du draft d'onboarding
    * @param phone - Numéro de téléphone (format international)
    * @param method - Méthode d'envoi : 'sms' | 'voice' | 'whatsapp' | 'email'
+   * @param promoterEmail - Email du promoteur (pour la méthode email). Si non fourni,
+   *   on essaie de le récupérer depuis le draft. Si toujours absent, on utilise
+   *   l'email de contact du draft (champ email de l'établissement).
    */
-  async generateAndSendOTP(draftId: string, phone: string, method: 'sms' | 'voice' | 'whatsapp' | 'email' = 'sms') {
+  async generateAndSendOTP(
+    draftId: string,
+    phone: string,
+    method: 'sms' | 'voice' | 'whatsapp' | 'email' = 'sms',
+    promoterEmail?: string,
+  ) {
     // Vérifier que le draft existe
     const draft = await this.prisma.onboardingDraft.findUnique({
       where: { id: draftId },
@@ -171,31 +179,26 @@ export class OtpService {
           break;
 
         case 'email':
-          // ⭐ Envoi du code OTP par email (fallback si SMS/WhatsApp/Appel échouent).
-          // Suit le même pattern que le module RH (staff-credential.service.ts).
-          if (!draft.promoterEmail) {
-            throw new BadRequestException(
-              'Aucun email promoteur trouvé dans le draft. Veuillez d\'abord saisir votre email à l\'étape 2.',
-            );
-          }
+          // ⭐ Envoi du code OTP par email.
+          // Récupérer l'email : priorité au paramètre, puis draft.promoterEmail,
+          // puis draft.email (email de contact de l'établissement).
           {
+            const emailTo = promoterEmail || draft.promoterEmail || draft.email;
+            if (!emailTo) {
+              throw new BadRequestException(
+                'Aucun email trouvé pour envoyer le code OTP. Veuillez saisir votre email.',
+              );
+            }
             const emailHtml = this.buildOtpEmailHtml(code, draft.schoolName || 'votre établissement');
-            // ⭐ Utiliser sendEmail directement (pas sendCategorized) car l'onboarding
-            // n'a pas encore de tenantId valide — EmailLog.tenantId a une FK vers Tenant.
-            // sendCategorized essaie de créer un EmailLog → échec FK → fallback → échec.
-            // sendEmail envoie directement via le provider (Resend) sans log en DB.
             await this.emailService.sendEmail({
-              to: draft.promoterEmail,
+              to: emailTo,
               subject: `🔐 Votre code de vérification — Academia Helm`,
               html: emailHtml,
               text: `Votre code de vérification Academia Helm est : ${code}. Ce code est valable 3 minutes. Ne le partagez avec personne.`,
               from: process.env.EMAIL_FROM_NOREPLY || 'noreply@academiahelm.com',
               fromName: 'Academia Helm',
             });
-            this.logger.log(`✅ OTP sent via Email to ${draft.promoterEmail}`);
-            if (process.env.NODE_ENV === 'development') {
-              this.logger.log(`\n📧 [DEV MODE] Email OTP to ${draft.promoterEmail}:\nCode: ${code}\n`);
-            }
+            this.logger.log(`✅ OTP sent via Email to ${emailTo}`);
           }
           break;
 

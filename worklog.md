@@ -3464,3 +3464,32 @@ Stage Summary:
 - Le mode édition est maintenant défensif : même si un champ non whitelisté est passé au service, il est filtré
 - L'utilisateur verra désormais le message backend exact dans le toast d'erreur (au lieu de "Request failed with status code 400")
 - Les fichiers modifiés : apps/web-app/src/services/students.service.ts, apps/web-app/src/components/students/EnrollmentsContent.tsx
+
+---
+Task ID: OTP-FINAL
+Agent: Main Agent
+Task: Finaliser les 3 correctifs OTP — template email RH, SMS regression, Renvoyer le code
+
+Work Log:
+- Vérifié que le code SMS (sms.service.ts, phone.ts, communication.module.ts) n'a PAS été modifié depuis le commit c22b0bfb (version qui fonctionnait hier 17h). La régression SMS n'est donc pas due à un changement de code backend.
+- Vérifié que la correction du bouton "Envoyer le code" est bien en place (commit 3de36e77) : disabled={isSubmitting || (!data.promoterPhone && !data.promoterEmail)} au lieu de disabled={isSubmitting || !data.promoterPhone}. C'est cette ligne qui cassait le SMS — le bouton était désactivé tant que le téléphone n'était pas rempli, même pour les utilisateurs qui voulaient l'email.
+- Vérifié que le template email OTP utilise bien renderEmail() du module RH (renderHeader + renderFooter + logo Academia Helm). Personalisation "Bonjour [prénom] [nom]" via draft.promoterFirstName + promoterLastName.
+- Vérifié que le bouton "Renvoyer le code" est un handler synchrone (setOtpSent(false) + setShowMethodPicker(true) + reset OTP) — aucun appel async, aucun JSON.stringify, donc pas d'erreur "converting circular structure to JSON".
+- Ajouté des logs diagnostiques dans otp.service.ts case 'sms' pour tracer exactement ce qui se passe :
+  * Log du SMS_PROVIDER actif
+  * Warning si SMS_PROVIDER != 'twilio'
+  * Log de la présence/absence de TWILIO_ACCOUNT_SID et TWILIO_PHONE_NUMBER
+  * En cas d'erreur : log de error.code, error.status, error.moreInfo (Twilio)
+- Ajouté un message utilisateur spécifique pour erreur d'authentification SMS : "Le service SMS a refusé l'authentification (Twilio)..."
+- Commit final : b881e818 fix: OTP SMS — logs diagnostiques + message utilisateur explicite si auth Twilio
+
+Stage Summary:
+- 3 correctifs OTP confirmés en place :
+  1. ✅ Template email RH (renderHeader + renderFooter + logo AH + "Bonjour [nom promoteur]") — commit ac44e05e
+  2. ✅ SMS bouton (disabled si NI téléphone NI email) — commit 3de36e77
+  3. ✅ Renvoyer le code (reset synchrone, pas de circular JSON) — commit ac44e05e
+- Logs diagnostiques ajoutés pour SMS — commit b881e818
+- Action utilisateur : déployer le dernier commit sur Fly.io et tester SMS. Les logs Fly.io montreront maintenant explicitement :
+  * "📱 [SMS] Tentative d'envoi à [numéro] via provider=twilio — TWILIO_ACCOUNT_SID=✅ set, TWILIO_PHONE_NUMBER=✅ set"
+  * Si Twilio renvoie 401/403 : "❌ Failed to send OTP via sms... → Détails: code=..., status=401"
+  * Cela permettra de distinguer : (a) config Twilio réellement absente, (b) credentials Twilio invalides, (c) numéro de téléphone invalide, (d) autre erreur Twilio.

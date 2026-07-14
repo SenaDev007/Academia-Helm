@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """
-Nettoie les données de test "Academia Helm" dans la DB Neon :
-- Supprime les paiements PENDING liés au draft Academia Helm
-- Supprime les OTPs liés à ce draft
-- Supprime le draft Academia Helm
-- Supprime aussi le draft "Test Ecole Email OTP" (test précédent)
-- Vérifie qu'aucun tenant Academia Helm n'existe
+Nettoie les données de test "Academia Helm" dans la DB Neon.
+Supprime en cascade : HelmSubscription, School, User, OnboardingPayment,
+OnboardingOTP, OnboardingDraft, et enfin le Tenant.
 """
 
 import psycopg2
@@ -23,67 +20,59 @@ def main():
         print(f"❌ Erreur de connexion: {e}")
         sys.exit(1)
 
-    # ─── Vérifier qu'aucun tenant Academia Helm n'existe ──────────────
-    print("=" * 70)
-    print("Vérification : aucun tenant 'Academia Helm' ne doit exister")
-    print("=" * 70)
+    # ─── Trouver les tenant IDs Academia Helm ──────────────────────────
     cur.execute("""
         SELECT id, name, subdomain FROM tenants
         WHERE name ILIKE '%academia helm%'
            OR subdomain ILIKE '%academia%helm%';
     """)
     tenants = cur.fetchall()
-    if tenants:
-        print(f"  ⚠️  {len(tenants)} tenant(s) trouvé(s) :")
-        for t in tenants:
-            print(f"    • id={t[0]} name={t[1]} subdomain={t[2]}")
-        print("  → Suppression en cours...")
-        # La suppression d'un tenant est cascade — supprime aussi les écoles,
-        # users, subscriptions, etc. liés à ce tenant.
-        cur.execute("""
-            DELETE FROM tenants
-            WHERE name ILIKE '%academia helm%'
-               OR subdomain ILIKE '%academia%helm%';
-        """)
-        print(f"  ✅ {cur.rowcount} tenant(s) supprimé(s)")
-    else:
-        print("  ✅ Aucun tenant 'Academia Helm' trouvé — rien à supprimer.")
+    if not tenants:
+        print("✅ Aucun tenant 'Academia Helm' trouvé — rien à supprimer.")
+        cur.close()
+        conn.close()
+        return
+
+    tenant_ids = [t[0] for t in tenants]
+    print(f"⚠️  {len(tenants)} tenant(s) à supprimer :")
+    for t in tenants:
+        print(f"  • id={t[0]} name={t[1]} subdomain={t[2]}")
     print()
 
-    # ─── Supprimer les paiements liés au draft Academia Helm ──────────
-    print("=" * 70)
-    print("Suppression des paiements de test 'Academia Helm'")
-    print("=" * 70)
+    # ─── Supprimer en cascade (ordre inverse des dépendances) ──────────
+    # On essaie chaque table — si elle n'existe pas ou n'a pas tenantId, on ignore.
+    cleanup_steps = [
+        ('"HelmSubscription"', '"tenantId"'),
+        ('"BillingEvent"', '"tenantId"'),
+        ('billing_events', '"tenantId"'),
+        ('school_settings', '"tenantId"'),
+        ('schools', '"tenantId"'),
+        ('users', '"tenantId"'),
+        ('school_subdomains', '"tenantId"'),
+        ('subscription_plans', '"tenantId"'),
+    ]
+    for table, col in cleanup_steps:
+        try:
+            cur.execute(f"DELETE FROM {table} WHERE {col} = ANY(%s);", (tenant_ids,))
+            if cur.rowcount > 0:
+                print(f"  ✅ {cur.rowcount} enregistrement(s) supprimé(s) dans {table}")
+        except Exception as e:
+            # Table n'existe pas ou colonne absente — ignorer
+            pass
+
+    # OnboardingPayment, OnboardingOTP, OnboardingDraft (liés par draft, pas tenant)
+    print("→ Suppression OnboardingPayment (via draft)...")
     cur.execute("""
-        SELECT id, reference, status, amount FROM onboarding_payments
+        DELETE FROM onboarding_payments
         WHERE draft_id IN (
             SELECT id FROM onboarding_drafts
             WHERE school_name ILIKE '%academia helm%'
                OR preferred_subdomain ILIKE '%academia%helm%'
         );
     """)
-    payments = cur.fetchall()
-    if payments:
-        print(f"  {len(payments)} paiement(s) à supprimer :")
-        for p in payments:
-            print(f"    • id={p[0]} reference={p[1]} status={p[2]} amount={p[3]}")
-        cur.execute("""
-            DELETE FROM onboarding_payments
-            WHERE draft_id IN (
-                SELECT id FROM onboarding_drafts
-                WHERE school_name ILIKE '%academia helm%'
-                   OR preferred_subdomain ILIKE '%academia%helm%'
-            );
-        """)
-        print(f"  ✅ {cur.rowcount} paiement(s) supprimé(s)")
-    else:
-        print("  ✅ Aucun paiement à supprimer.")
-    print()
+    print(f"  ✅ {cur.rowcount} OnboardingPayment(s) supprimé(s)")
 
-    # ─── Supprimer les OTPs liés au draft Academia Helm ───────────────
-    print("=" * 70)
-    print("Suppression des OTPs de test 'Academia Helm'")
-    print("=" * 70)
+    print("→ Suppression OnboardingOTP...")
     cur.execute("""
         DELETE FROM onboarding_otps
         WHERE draft_id IN (
@@ -92,94 +81,39 @@ def main():
                OR preferred_subdomain ILIKE '%academia%helm%'
         );
     """)
-    print(f"  ✅ {cur.rowcount} OTP(s) supprimé(s)")
-    print()
+    print(f"  ✅ {cur.rowcount} OnboardingOTP(s) supprimé(s)")
 
-    # ─── Supprimer le draft Academia Helm ─────────────────────────────
-    print("=" * 70)
-    print("Suppression du draft 'Academia Helm'")
-    print("=" * 70)
+    print("→ Suppression OnboardingDraft...")
     cur.execute("""
-        SELECT id, school_name, status FROM onboarding_drafts
+        DELETE FROM onboarding_drafts
         WHERE school_name ILIKE '%academia helm%'
            OR preferred_subdomain ILIKE '%academia%helm%';
     """)
-    drafts = cur.fetchall()
-    if drafts:
-        for d in drafts:
-            print(f"  • id={d[0]} school_name={d[1]} status={d[2]}")
-        cur.execute("""
-            DELETE FROM onboarding_drafts
-            WHERE school_name ILIKE '%academia helm%'
-               OR preferred_subdomain ILIKE '%academia%helm%';
-        """)
-        print(f"  ✅ {cur.rowcount} draft(s) supprimé(s)")
-    else:
-        print("  ✅ Aucun draft 'Academia Helm' à supprimer.")
-    print()
+    print(f"  ✅ {cur.rowcount} OnboardingDraft(s) supprimé(s)")
 
-    # ─── Bonus : supprimer aussi le draft "Test Ecole Email OTP" ──────
-    print("=" * 70)
-    print("Nettoyage bonus : draft 'Test Ecole Email OTP'")
-    print("=" * 70)
+    print("→ Suppression Tenant...")
     cur.execute("""
-        SELECT id, school_name, status FROM onboarding_drafts
-        WHERE school_name ILIKE '%test ecole email%';
+        DELETE FROM tenants
+        WHERE name ILIKE '%academia helm%'
+           OR subdomain ILIKE '%academia%helm%';
     """)
-    test_drafts = cur.fetchall()
-    if test_drafts:
-        for d in test_drafts:
-            print(f"  • id={d[0]} school_name={d[1]} status={d[2]}")
-        # D'abord supprimer les OTPs et paiements liés
-        cur.execute("""
-            DELETE FROM onboarding_otps
-            WHERE draft_id IN (
-                SELECT id FROM onboarding_drafts
-                WHERE school_name ILIKE '%test ecole email%'
-            );
-        """)
-        cur.execute("""
-            DELETE FROM onboarding_payments
-            WHERE draft_id IN (
-                SELECT id FROM onboarding_drafts
-                WHERE school_name ILIKE '%test ecole email%'
-            );
-        """)
-        cur.execute("""
-            DELETE FROM onboarding_drafts
-            WHERE school_name ILIKE '%test ecole email%';
-        """)
-        print(f"  ✅ {cur.rowcount} draft(s) de test supprimé(s)")
-    else:
-        print("  ✅ Aucun draft de test à supprimer.")
+    print(f"  ✅ {cur.rowcount} Tenant(s) supprimé(s)")
     print()
 
     # ─── Vérification finale ──────────────────────────────────────────
-    print("=" * 70)
+    print("=" * 60)
     print("Vérification finale")
-    print("=" * 70)
-    cur.execute("""
-        SELECT COUNT(*) FROM onboarding_drafts
-        WHERE school_name ILIKE '%academia helm%';
-    """)
-    count = cur.fetchone()[0]
-    print(f"  Drafts 'Academia Helm' restants : {count}")
-
+    print("=" * 60)
+    cur.execute("SELECT COUNT(*) FROM tenants WHERE name ILIKE '%academia helm%';")
+    print(f"  Tenants 'Academia Helm' restants : {cur.fetchone()[0]}")
+    cur.execute("SELECT COUNT(*) FROM onboarding_drafts WHERE school_name ILIKE '%academia helm%';")
+    print(f"  Drafts 'Academia Helm' restants : {cur.fetchone()[0]}")
     cur.execute("""
         SELECT COUNT(*) FROM onboarding_payments p
         JOIN onboarding_drafts d ON d.id = p.draft_id
         WHERE d.school_name ILIKE '%academia helm%';
     """)
-    count = cur.fetchone()[0]
-    print(f"  Paiements 'Academia Helm' restants : {count}")
-
-    cur.execute("""
-        SELECT COUNT(*) FROM tenants
-        WHERE name ILIKE '%academia helm%';
-    """)
-    count = cur.fetchone()[0]
-    print(f"  Tenants 'Academia Helm' restants : {count}")
-
+    print(f"  Paiements 'Academia Helm' restants : {cur.fetchone()[0]}")
     print("\n✅ Nettoyage terminé. La DB est prête pour un nouveau test.")
 
     cur.close()

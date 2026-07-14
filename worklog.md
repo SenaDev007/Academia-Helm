@@ -4405,3 +4405,33 @@ Stage Summary:
   3. Frontend signup/confirmation/page.tsx:39,178 — remplacer l'affichage de `transactionId` (query param `id`) par `data.reference || data.fedapayReference` après réception de la réponse verify, avec fallback sur le query param.
 - AUCUN fichier modifié — recherche uniquement.
 
+
+---
+Task ID: REFERENCE-REDIRECT-EMAIL
+Agent: Main Agent
+Task: Vraie référence FedaPay + redirection auto portail + email credentials
+
+Work Log:
+- Investigation : la page confirmation affichait searchParams.get('id') qui est
+  l'ID numérique FedaPay (ex: #1234567), pas la vraie référence marchand.
+- Finance module (NewPaymentModal.tsx) récupère response.reference du widget
+  onComplete — c'est la vraie référence FedaPay.
+- Pour onboarding (redirect flow), on doit récupérer la référence via l'API verify.
+- Corrections appliquées (commit dafbeeef) :
+  1. verifyTransactionStatus() retourne reference: transaction.reference || transaction.id
+  2. verifyPaymentStatus() retourne reference + fedapayReference + transactionId
+  3. Page confirmation affiche data.fedapayReference || data.reference || transactionId
+  4. Nouveau composant AutoRedirectToPortal : redirect après 5s avec compte à rebours
+  5. Script SQL cleanup-academia-helm-tenant.sql pour vérifier/supprimer le tenant
+
+- Email credentials : déjà géré par sendOnboardingPaymentSuccessEmail()
+  - Subject : '✅ Bienvenue sur Academia Helm — Vos accès sont prêts'
+  - Contient : sous-domaine + loginUrl + email promoteur
+  - Mot de passe : 'Le mot de passe que vous avez défini' (hashé bcrypt, non récupérable)
+  - CTA : 'Accéder à mon portail →'
+
+Stage Summary:
+- Page confirmation affiche maintenant la VRAIE référence FedaPay.
+- Redirection auto vers le portail après 5 secondes (avec compte à rebours).
+- Email credentials déjà fonctionnel (vérifié dans email-templates.ts).
+- Script SQL fourni pour vérifier/supprimer le tenant Academia Helm de test.

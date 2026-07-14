@@ -2333,7 +2333,14 @@ export default function OnboardingWizard() {
                         )}
                         <button
                           type="button"
-                          onClick={handleSendOtp}
+                          onClick={() => {
+                            // ⭐ Renvoyer = réinitialiser et réafficher le sélecteur de méthode
+                            setOtpSent(false);
+                            setShowMethodPicker(true);
+                            setData({ ...data, otp: '' });
+                            setOtpVerified(false);
+                            setErrors({});
+                          }}
                           disabled={isSubmitting || resendCooldown > 0}
                           className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >

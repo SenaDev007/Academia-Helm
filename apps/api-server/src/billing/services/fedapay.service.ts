@@ -732,11 +732,14 @@ export class FedaPayService implements OnModuleInit {
     }
 
     // Montant depuis PricingService. En sandbox FedaPay, plafonner à 20 000 XOF (limite API test).
+    // ⭐ Le montant RÉEL (amountFromPricing) est stocké en DB pour la facturation.
+    // Le montant PLAFONNÉ (amount) est envoyé à FedaPay pour la transaction de test.
     const amountFromPricing = await this.pricingService.calculateInitialPaymentPrice(draft.schoolsCount || 1);
     const SANDBOX_MAX = 20000;
     const amount = this.isLiveMode ? amountFromPricing : Math.min(amountFromPricing, SANDBOX_MAX);
-    if (!this.isLiveMode && amountFromPricing > SANDBOX_MAX) {
-      this.logger.log(`🧪 Sandbox : montant onboarding ${amountFromPricing} → ${amount} XOF pour le test`);
+    const isSandboxCapped = !this.isLiveMode && amountFromPricing > SANDBOX_MAX;
+    if (isSandboxCapped) {
+      this.logger.log(`🧪 Sandbox : montant réel ${amountFromPricing} XOF → montant FedaPay ${amount} XOF (plafonné). DB stocke le montant réel ${amountFromPricing} XOF.`);
     }
 
     // Récupérer la devise dynamiquement depuis priceSnapshot ou utiliser XOF par défaut
@@ -802,17 +805,22 @@ export class FedaPayService implements OnModuleInit {
     const reference = `ONB-${draftId.substring(0, 8).toUpperCase()}-${Date.now()}`;
 
     // Créer le paiement dans notre base avec la devise récupérée dynamiquement
+    // ⭐ Stocker le montant RÉEL (amountFromPricing) en DB, pas le montant plafonné.
+    // Le montant plafonné (amount) est seulement envoyé à FedaPay pour la transaction.
+    // L'email de bienvenue et les records de facturation utilisent amountFromPricing.
     const payment = await this.prisma.onboardingPayment.create({
       data: {
         draftId,
         provider: 'fedapay',
         reference,
-        amount,
+        amount: amountFromPricing, // ⭐ Montant RÉEL (pas plafonné)
         currency, // Devise récupérée dynamiquement depuis priceSnapshot
         status: 'PENDING',
         metadata: {
           draftId,
-          amount,
+          amount: amountFromPricing, // ⭐ Montant RÉEL en metadata aussi
+          amountFedapay: amount, // Montant envoyé à FedaPay (plafonné en sandbox)
+          isSandboxCapped,
           currency,
           createdAt: new Date().toISOString(),
         },
@@ -2099,7 +2107,9 @@ export class FedaPayService implements OnModuleInit {
       etablissementNom: draft.schoolName,
       plan,
       transactionRef: String(transaction.reference || transaction.id || payment.reference),
-      montant: Number(transaction.amount ?? payment.amount) || 0,
+      // ⭐ Utiliser payment.amount (montant RÉEL stocké en DB) et NON
+      // transaction.amount (qui peut être plafonné à 20000 en sandbox FedaPay).
+      montant: Number(payment.amount) || 0,
       loginUrl,
       email: to,
       motDePasse: null,

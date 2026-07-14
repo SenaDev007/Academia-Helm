@@ -4435,3 +4435,621 @@ Stage Summary:
 - Redirection auto vers le portail après 5 secondes (avec compte à rebours).
 - Email credentials déjà fonctionnel (vérifié dans email-templates.ts).
 - Script SQL fourni pour vérifier/supprimer le tenant Academia Helm de test.
+
+---
+Task ID: SUBDOMAIN-AMOUNT-INVESTIGATION
+Agent: General-purpose sub-agent
+Task: Investigate subdomain storage (full hostname vs slug) and amount storage (real vs sandbox-capped) in the onboarding payment flow
+
+Work Log:
+- Lu /home/z/my-project/worklog.md (80 dernières lignes) — contexte : le task précédent (REFERENCE-REDIRECT-EMAIL) a corrigé l'affichage de la vraie référence FedaPay, l'auto-redirect vers le portail, et le mail credentials.
+- Lu complètement /home/z/my-project/apps/api-server/src/onboarding/services/onboarding.service.ts (1098 lignes).
+- Lu /home/z/my-project/apps/api-server/prisma/schema.prisma (modèles Tenant ligne 11, OnboardingPayment ligne 12708).
+- Lu /home/z/my-project/apps/api-server/src/billing/services/fedapay.service.ts (2180 lignes) — focus sur createOnboardingPaymentSession (718-975), buildTenantPortalUrl (2036-2051), sendOnboardingPaymentSuccessEmail (2053-2113), createTransaction (490-706).
+- Lu /home/z/my-project/apps/api-server/src/common/services/subdomain.service.ts (validateSubdomain regex ligne 123).
+- Lu /home/z/my-project/apps/api-server/src/common/services/domain-management.service.ts:140-148 (createSchoolSubdomain).
+- Exécuté les grep demandés sur onboarding.service.ts, fedapay.service.ts.
+- Vérifié le frontend signup/confirmation/page.tsx — utilise `${subdomain}.academiahelm.com` (lignes 43, 234, 262).
+
+Stage Summary:
+
+═══════════════════════════════════════════════════════════════════════
+ISSUE 1 : SUBDOMAIN FIELD — slug vs full hostname
+═══════════════════════════════════════════════════════════════════════
+
+🔍 1.1 Où `tenant.subdomain` est défini pendant activateTenantAfterPayment
+──────────────────────────────────────────────────────────────────
+Fichier : apps/api-server/src/onboarding/services/onboarding.service.ts
+
+- Ligne 488 : `let firstTenantSubdomain: string;`
+- Ligne 489-498 : Si `draft.preferredSubdomain` est valide, `firstTenantSubdomain = draft.preferredSubdomain;` (slug utilisateur, ex: "academia-helm")
+- Ligne 500 : Sinon, `firstTenantSubdomain = await this.subdomainService.generateAndValidate(draft.schoolName);` (slug généré, ex: "academia-helm")
+- Ligne 509-511 : Pour schoolsCount > 1, `subdomain = await this.generateAnnexeSubdomain(firstTenantSubdomain, i + 1, tx);`
+- Ligne 512 : `const slug = subdomain;` (alias)
+- Lignes 515-525 : Bloc tenant.create :
+  ```typescript
+  const tenant = await tx.tenant.create({
+    data: {
+      name: schoolsCount > 1 ? `${draft.schoolName} - Annexe ${i + 1}` : draft.schoolName,
+      slug,
+      subdomain,                  // ⭐ LIGNE 519 — stocke le SLUG, pas le hostname
+      countryId: country.id,
+      type: draft.schoolType,
+      status: 'active',
+      subscriptionStatus: 'TRIAL',
+    },
+  });
+  ```
+
+🔍 1.2 Où `firstTenantSubdomain` est stocké dans payment metadata
+──────────────────────────────────────────────────────────────────
+Fichier : apps/api-server/src/onboarding/services/onboarding.service.ts
+
+- Lignes 811-820 :
+  ```typescript
+  await tx.onboardingPayment.update({
+    where: { id: paymentId },
+    data: {
+      status: 'SUCCESS',
+      metadata: {
+        ...paymentMeta,
+        firstTenantSubdomain: tenants[0].subdomain,  // ⭐ LIGNE 817 — slug
+      },
+    },
+  });
+  ```
+
+🔍 1.3 Où `buildTenantPortalUrl` construit l'URL
+──────────────────────────────────────────────────────────────────
+Fichier : apps/api-server/src/billing/services/fedapay.service.ts
+
+- Lignes 2035-2051 :
+  ```typescript
+  /** URL portail tenant : https://{subdomain}.{domaine du FRONTEND_URL}/portal */
+  private buildTenantPortalUrl(frontendBaseUrl: string, subdomain: string | undefined | null): string {
+    const fallback = `${frontendBaseUrl.replace(/\/$/, '')}/portal`;
+    if (!subdomain || !String(subdomain).trim()) {
+      return fallback;
+    }
+    try {
+      const u = new URL(frontendBaseUrl);
+      let host = u.hostname;
+      if (host.startsWith('www.')) {
+        host = host.slice(4);
+      }
+      return `${u.protocol}//${String(subdomain).trim().toLowerCase()}.${host}/portal`;  // ⭐ LIGNE 2047 — append .{host}
+    } catch {
+      return fallback;
+    }
+  }
+  ```
+
+- Appelé à la ligne 2073 dans sendOnboardingPaymentSuccessEmail :
+  ```typescript
+  const firstSub =
+    typeof payMeta.firstTenantSubdomain === 'string' ? payMeta.firstTenantSubdomain : undefined;
+  const loginUrl = this.buildTenantPortalUrl(cfg.siteUrl, firstSub);  // ⭐ LIGNE 2073
+  ```
+
+🔍 1.4 Schéma Prisma — Tenant.subdomain
+──────────────────────────────────────────────────────────────────
+Fichier : apps/api-server/prisma/schema.prisma
+
+- Ligne 11-15 :
+  ```prisma
+  model Tenant {
+    id                               String                            @id @default(uuid())
+    name                             String
+    subdomain                        String?                           @unique  // ⭐ LIGNE 14
+    slug                             String                            @unique
+    // ...
+  }
+  ```
+- `subdomain String? @unique` — nullable string avec contrainte UNIQUE. Aucune contrainte de FORMAT au niveau DB, mais la validation applicative rejette les points.
+
+🔍 1.5 Validation regex (SubdomainService)
+──────────────────────────────────────────────────────────────────
+Fichier : apps/api-server/src/common/services/subdomain.service.ts
+
+- Lignes 122-125 :
+  ```typescript
+  // Format : seulement lettres minuscules, chiffres, tirets
+  if (!/^[a-z0-9-]+$/.test(subdomain)) {
+    return { valid: false, error: 'Subdomain can only contain lowercase letters, numbers, and dashes' };
+  }
+  ```
+- ⚠️ Un hostname complet comme `academia-helm.academiahelm.com` ÉCHOUE à cette validation (contient des points).
+
+🔍 1.6 Autres endroits qui attendent `tenant.subdomain` = slug (PAS full hostname)
+──────────────────────────────────────────────────────────────────
+
+Si on stockait le hostname complet dans `tenant.subdomain`, ces endroits CASSERAIENT :
+
+1. **apps/api-server/src/common/services/domain-management.service.ts:144** :
+   ```typescript
+   const subdomain = `${slug}.${this.baseDomain}`;
+   ```
+   Si `slug = "academia-helm.academiahelm.com"`, on obtient `"academia-helm.academiahelm.com.academiahelm.com"` ❌
+
+2. **apps/api-server/src/tenants/tenants.controller.ts** (3 occurrences) :
+   - Ligne 94 : `domain: \`${t.subdomain}.${process.env.APP_BASE_DOMAIN || 'academiahelm.com'}\``
+   - Ligne 133 : `domain: \`${tenant.subdomain}.${process.env.APP_BASE_DOMAIN || 'academiahelm.com'}\``
+   - Ligne 177 : `const fullDomain = \`${tenant.subdomain}.${baseDomain}\``
+   Toutes ces lignes appendent `.academiahelm.com` — seraient cassées si subdomain contenait déjà le domaine.
+
+3. **apps/api-server/src/onboarding/services/onboarding.service.ts:905** :
+   `this.domainManagementService.createSchoolSubdomain(tenant.subdomain, tenant.id)` — passe le slug au domain management service.
+
+4. **apps/api-server/src/onboarding/services/onboarding.service.ts:494, 943** :
+   `tx.tenant.findUnique({ where: { subdomain: ... } })` — recherche par slug exact.
+
+5. **Frontend apps/web-app/src/app/signup/confirmation/page.tsx** (3 occurrences) :
+   - Ligne 43 : `const portalUrl = \`https://${subdomain}.academiahelm.com/portal\``
+   - Ligne 234 : `https://{subdomain}.academiahelm.com/portal` (affichage)
+   - Ligne 262 : `href={subdomain ? \`https://${subdomain}.academiahelm.com/portal\` : 'https://academiahelm.com/portal'}`
+   Le frontend HARDCODE `.academiahelm.com` — serait cassé si subdomain contenait déjà le domaine.
+
+6. **apps/api-server/src/auth/auth.service.ts:1300** :
+   `subdomain: tenant.subdomain || tenant.slug` — fallback vers slug.
+
+7. **apps/api-server/src/portal/services/school-search.service.ts:157, 257** : passe `tenant.subdomain` au frontend tel quel.
+
+8. **apps/api-server/src/context/context.service.ts:119** : expose `tenant.subdomain` au contexte (pas de traitement).
+
+9. **apps/api-server/src/platform/services/platform.service.ts** : voir grep.
+
+🔍 1.7 Recommandation pour Issue 1
+──────────────────────────────────────────────────────────────────
+
+⚠️ La demande littérale de l'utilisateur ("le sous-domaine devrait être academia-helm.academiahelm.com") casserait au moins 8 endroits du code (voir 1.6).
+
+Trois options possibles :
+
+**OPTION A (recommandée — la moins invasive) : Garder `tenant.subdomain` = slug, mais stocker le hostname COMPLET dans `payment.metadata.firstTenantSubdomain`.**
+
+Modifications nécessaires :
+- `apps/api-server/src/onboarding/services/onboarding.service.ts:817` :
+  ```typescript
+  // AVANT :
+  firstTenantSubdomain: tenants[0].subdomain,
+  // APRÈS :
+  firstTenantSubdomain: `${tenants[0].subdomain}.${process.env.APP_BASE_DOMAIN || 'academiahelm.com'}`,
+  ```
+- `apps/web-app/src/app/signup/confirmation/page.tsx:43, 234, 262` : retirer le suffixe `.academiahelm.com` hardcoded (le `firstTenantSubdomain` est déjà le hostname complet).
+- `apps/api-server/src/billing/services/fedapay.service.ts:2036-2051` (buildTenantPortalUrl) : adapter pour détecter si `subdomain` est déjà un hostname complet (contient un point) et ne pas ré-append `.${host}` dans ce cas.
+- ❗ Attention : la page confirmation est aussi utilisée par le callback redirect FedaPay qui reçoit `?id=...`. Vérifier que `firstTenantSubdomain` est bien exposé via `verifyPaymentStatus` (ligne 413 dans onboarding.service.ts — oui, c'est exposé).
+
+**OPTION B (plus propre architralement) : Ajouter un champ dédié `Tenant.hostname`.**
+
+- Ajouter `hostname String?` au modèle Tenant dans schema.prisma (migration Prisma requise).
+- Dans onboarding.service.ts:515-525, set `hostname: \`${subdomain}.${process.env.APP_BASE_DOMAIN || 'academiahelm.com'}\`` lors de la création du tenant.
+- Dans onboarding.service.ts:817, set `firstTenantSubdomain: tenants[0].hostname` (au lieu de `tenants[0].subdomain`).
+- Mises à jour frontend identiques à Option A (retirer le `.academiahelm.com` suffix).
+- Adapter buildTenantPortalUrl pour accepter le hostname.
+- Garder `tenant.subdomain` = slug pour la compatibilité avec domain-management.service.ts, tenants.controller.ts, etc.
+
+**OPTION C (littérale — NON RECOMMANDÉE) : Stocker le hostname complet dans `tenant.subdomain`.**
+
+Casserait au moins 8 endroits (voir 1.6). Nécessiterait :
+- Migrer toutes les lignes existantes (`UPDATE tenants SET subdomain = subdomain || '.academiahelm.com'`).
+- Modifier validateSubdomain pour accepter les points.
+- Modifier domain-management.service.ts:144 pour ne pas append le base domain.
+- Modifier tenants.controller.ts:94, 133, 177.
+- Modifier buildTenantPortalUrl:2047 pour ne pas append `.${host}`.
+- Modifier frontend confirmation/page.tsx:43, 234, 262.
+
+🔥 CONCLUSION Issue 1 : Recommander OPTION A. La moins invasive, aucun changement de schéma, casse seulement 3 fichiers (backend onboarding.service.ts + fedapay.service.ts, frontend confirmation/page.tsx). Le `tenant.subdomain` reste un slug (cohérent avec tout le reste du codebase), mais ce que l'utilisateur voit (metadata.firstTenantSubdomain → URL portail → email) devient le hostname complet.
+
+═══════════════════════════════════════════════════════════════════════
+ISSUE 2 : REAL AMOUNT VS SANDBOX-CAPPED 20000
+═══════════════════════════════════════════════════════════════════════
+
+🔍 2.1 Où le montant est calculé et plafonné
+──────────────────────────────────────────────────────────────────
+Fichier : apps/api-server/src/billing/services/fedapay.service.ts
+
+- Ligne 735 : `const amountFromPricing = await this.pricingService.calculateInitialPaymentPrice(draft.schoolsCount || 1);` — MONTANT RÉEL depuis PricingService (ex: 100000).
+- Ligne 736 : `const SANDBOX_MAX = 20000;`
+- Ligne 737 : `const amount = this.isLiveMode ? amountFromPricing : Math.min(amountFromPricing, SANDBOX_MAX);` — ⭐ MONTANT PLAFONNÉ (20000 en sandbox, réel en live).
+- Lignes 738-740 : Debug log.
+
+Note : il existe AUSSI un second plafonnement dans `createTransaction()` à la ligne 510-516 :
+```typescript
+const SANDBOX_MAX_AMOUNT = 20000;
+let amountInteger = Math.round(Number(data.amount));
+const isSandbox = !this.isLiveMode;
+if (isSandbox && amountInteger > SANDBOX_MAX_AMOUNT) {
+  this.logger.warn(`⚠️  Sandbox FedaPay : montant plafonné à ${SANDBOX_MAX_AMOUNT} XOF (demandé: ${amountInteger})`);
+  amountInteger = SANDBOX_MAX_AMOUNT;
+}
+```
+→ Double plafonnement, mais le montant d'entrée est déjà plafonné à 20000.
+
+🔍 2.2 Où le montant plafonné est stocké en DB
+──────────────────────────────────────────────────────────────────
+Fichier : apps/api-server/src/billing/services/fedapay.service.ts
+
+- Lignes 805-820 (OnboardingPayment.create) — utilise la variable `amount` (PLAFONNÉE) :
+  ```typescript
+  const payment = await this.prisma.onboardingPayment.create({
+    data: {
+      draftId,
+      provider: 'fedapay',
+      reference,
+      amount,                                          // ⭐ LIGNE 810 — PLAFONNÉ (20000)
+      currency,
+      status: 'PENDING',
+      metadata: {
+        draftId,
+        amount,                                        // ⭐ LIGNE 815 — PLAFONNÉ (dans metadata aussi)
+        currency,
+        createdAt: new Date().toISOString(),
+      },
+    },
+  });
+  ```
+
+- Ligne 893 (createTransaction) — envoie `amount` (PLAFONNÉ) à FedaPay. ✅ CORRECT (FedaPay attend le plafonné).
+  ```typescript
+  const transaction = await this.createTransaction({
+    amount,                                            // ⭐ LIGNE 893 — PLAFONNÉ envoyé à FedaPay
+    currency,
+    description: `Paiement initial Academia Helm - ${draft.schoolName}`,
+    // ...
+  });
+  ```
+
+- Lignes 927-938 (update metadata après createTransaction) : ajoute transactionId, paymentUrl, webhookUrl — ne change pas amount.
+
+- Ligne 952 (response) : `amount,` — retourne le montant PLAFONNÉ au frontend.
+
+🔍 2.3 Où `payment.amount` est utilisé dans l'email
+──────────────────────────────────────────────────────────────────
+Fichier : apps/api-server/src/billing/services/fedapay.service.ts
+
+- Ligne 2102 (sendOnboardingPaymentSuccessEmail) :
+  ```typescript
+  montant: Number(transaction.amount ?? payment.amount) || 0,  // ⭐ LIGNE 2102
+  ```
+  - `transaction.amount` = montant renvoyé par FedaPay API = PLAFONNÉ (20000).
+  - `payment.amount` = montant stocké en DB = PLAFONNÉ (20000).
+  - ⚠️ Donc l'email affiche le montant PLAFONNÉ, pas le réel.
+
+- Ligne 2138 (sendOnboardingPaymentFailedEmailIfApplicable) — même pattern, mais moins critique pour un email d'échec.
+
+🔍 2.4 Où `payment.amount` est utilisé pour la subscription (post-paiement)
+──────────────────────────────────────────────────────────────────
+Fichier : apps/api-server/src/onboarding/services/onboarding.service.ts
+
+- Ligne 613 : `amount: Number(payment.amount) || 0,` — Subscription.amount = PLAFONNÉ.
+- Ligne 634 : `const setupFee = Number(payment.amount) || 0;` — HelmSubscription.setupFee = PLAFONNÉ.
+- Ligne 656 : `lastPaymentAmount: setupFee,` — HelmSubscription.lastPaymentAmount = PLAFONNÉ.
+- Ligne 748 : `amount: payment.amount,` — BillingEvent.amount = PLAFONNÉ.
+
+⭐ Donc, en sandbox, les subscriptions/HelmSubscription/BillingEvent stockent toutes 20000 au lieu du montant réel (ex: 100000). C'est un bug qui fausse la comptabilité en sandbox.
+
+🔍 2.5 Schéma OnboardingPayment
+──────────────────────────────────────────────────────────────────
+Fichier : apps/api-server/prisma/schema.prisma (lignes 12708-12725)
+
+```prisma
+model OnboardingPayment {
+  id        String          @id @default(uuid())
+  draftId   String          @map("draft_id")
+  provider  String          @default("fedapay")
+  reference String          @unique
+  amount    Int                                                   // ⭐ LIGNE 12713 — pas de realAmount/originalAmount
+  currency  String          @default("XOF")
+  status    String          @default("PENDING")
+  metadata  Json?                                                // ⭐ LIGNE 12716 — pourrait stocker realAmount sans migration
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+  draft     OnboardingDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  // ...
+}
+```
+
+⚠️ Aucun champ `realAmount` ou `originalAmount` n'existe. Il faut soit :
+- (A) Ajouter un nouveau champ (migration Prisma).
+- (B) Stocker le montant réel dans `metadata` (pas de migration).
+
+🔍 2.6 Recommandation pour Issue 2
+──────────────────────────────────────────────────────────────────
+
+**OPTION A (recommandée — sans migration Prisma) : Stocker le montant réel dans `metadata.amountReal` et garder `amount` plafonné (pour cohérence avec FedaPay).**
+
+Modifications :
+
+1. `apps/api-server/src/billing/services/fedapay.service.ts:735-740` :
+   ```typescript
+   const amountFromPricing = await this.pricingService.calculateInitialPaymentPrice(draft.schoolsCount || 1);
+   const SANDBOX_MAX = 20000;
+   const realAmount = amountFromPricing;                                    // ⭐ NEW
+   const amount = this.isLiveMode ? amountFromPricing : Math.min(amountFromPricing, SANDBOX_MAX);  // pour FedaPay
+   if (!this.isLiveMode && amountFromPricing > SANDBOX_MAX) {
+     this.logger.log(`🧪 Sandbox : montant onboarding ${amountFromPricing} → ${amount} XOF pour le test (realAmount=${realAmount})`);
+   }
+   ```
+
+2. `apps/api-server/src/billing/services/fedapay.service.ts:805-820` (OnboardingPayment.create) :
+   ```typescript
+   data: {
+     draftId,
+     provider: 'fedapay',
+     reference,
+     amount,                  // ⭐ Garder PLAFONNÉ (pour cohérence avec FedaPay transaction)
+     currency,
+     status: 'PENDING',
+     metadata: {
+       draftId,
+       amount,                // plafonné
+       amountReal: realAmount, // ⭐ NEW — montant réel (ex: 100000)
+       currency,
+       createdAt: new Date().toISOString(),
+     },
+   },
+   ```
+
+3. `apps/api-server/src/billing/services/fedapay.service.ts:2102` (email success) :
+   ```typescript
+   const payMeta = (payment.metadata as any) || {};
+   const realAmount = payMeta.amountReal ?? payment.amount;  // ⭐ Prefer realAmount
+   // ...
+   montant: Number(realAmount) || 0,  // ⭐ Afficher le montant réel
+   ```
+
+4. `apps/api-server/src/onboarding/services/onboarding.service.ts:613, 634, 748` — utiliser realAmount pour subscription/HelmSubscription/BillingEvent :
+   ```typescript
+   const paymentMeta = (payment.metadata as any) || {};
+   const realAmount = paymentMeta.amountReal ?? Number(payment.amount) || 0;
+   // ...
+   amount: realAmount,                              // ligne 613 (Subscription)
+   const setupFee = realAmount;                     // ligne 634 (HelmSubscription)
+   amount: realAmount,                              // ligne 748 (BillingEvent)
+   ```
+
+**OPTION B (plus invasive — migration Prisma requise) : Ajouter une colonne `realAmount Int?` à `OnboardingPayment`.**
+
+- Ajouter `realAmount Int? @map("real_amount")` au modèle OnboardingPayment dans schema.prisma + générer la migration.
+- Mêmes modifications que Option A mais en utilisant `payment.realAmount` au lieu de `payMeta.amountReal`.
+
+🔥 CONCLUSION Issue 2 : Recommander OPTION A (pas de migration, stockage dans metadata). Modifications concentrées dans 2 fichiers : fedapay.service.ts (3 changements) + onboarding.service.ts (3 changements ligne 613, 634, 748).
+
+═══════════════════════════════════════════════════════════════════════
+RÉSULTATS GREP
+═══════════════════════════════════════════════════════════════════════
+
+`grep -n "subdomain" apps/api-server/src/onboarding/services/onboarding.service.ts | head -30` :
+  25: import { SubdomainService } from '../../common/services/subdomain.service';
+  40:   private readonly subdomainService: SubdomainService,
+  90:   const validation = this.subdomainService.validateSubdomain(raw);
+  94:   const exists = await this.subdomainService.subdomainExists(raw);
+  490: const validation = this.subdomainService.validateSubdomain(draft.preferredSubdomain);
+  494: const existing = await tx.tenant.findUnique({ where: { subdomain: draft.preferredSubdomain } });
+  500: firstTenantSubdomain = await this.subdomainService.generateAndValidate(draft.schoolName);
+  509: const subdomain = schoolsCount > 1 ? ... : firstTenantSubdomain;
+  512: const slug = subdomain;
+  519: subdomain,                                  // ⭐ tenant.create
+  678: ✅ Created ... (subdomain)
+  817: firstTenantSubdomain: tenants[0].subdomain,  // ⭐ payment metadata
+  859: subdomain: tenant.subdomain,
+  889, 891, 898, 899, 905, 920, 943, 949 — createSubdomainsAsync + generateAnnexeSubdomain
+
+`grep -n "firstTenantSubdomain" apps/api-server/src/billing/services/fedapay.service.ts` :
+  1802: 📧 Email bienvenue envoyé pour paymentId=... (subdomain=${payMeta?.firstTenantSubdomain || 'N/A'})
+  2072: typeof payMeta.firstTenantSubdomain === 'string' ? payMeta.firstTenantSubdomain : undefined;
+
+`grep -n "SANDBOX_MAX\|amountFromPricing\|amount.*Math\.min" apps/api-server/src/billing/services/fedapay.service.ts` :
+  510: const SANDBOX_MAX_AMOUNT = 20000;                              // ⭐ createTransaction
+  513: if (isSandbox && amountInteger > SANDBOX_MAX_AMOUNT) {
+  514: this.logger.warn(`⚠️  Sandbox FedaPay : montant plafonné à ${SANDBOX_MAX_AMOUNT} XOF ...`);
+  515: amountInteger = SANDBOX_MAX_AMOUNT;
+  735: const amountFromPricing = await this.pricingService.calculateInitialPaymentPrice(...);
+  736: const SANDBOX_MAX = 20000;
+  737: const amount = this.isLiveMode ? amountFromPricing : Math.min(amountFromPricing, SANDBOX_MAX);  // ⭐
+  738: if (!this.isLiveMode && amountFromPricing > SANDBOX_MAX) {
+  739: this.logger.log(`🧪 Sandbox : montant onboarding ${amountFromPricing} → ${amount} XOF pour le test`);
+
+`grep -n "amount:" apps/api-server/src/billing/services/fedapay.service.ts | head -30` :
+  257: amount: number;                          // (type CreateTransactionParams)
+  473: amount: number;                          // (type CreateOnboardingPaymentSessionArgs)
+  519: amount: amountInteger,                   // ⭐ createTransaction → FedaPay (plafonné)
+  615: amount: transaction.amount || data.amount,
+  641: amount: transactionData.amount,
+  793: amount: existingPayment.amount,          // existing payment return
+  962: amount: transaction.amount || amount,    // checkout.transaction.amount
+  + lignes 810, 815, 853, 893, 952 — utilisent la variable plafonnée `amount` (voir Issue 2.2).
+  + lignes 1036, 1078, 1105, 1147, 1313, 1355, 1382, 1424 — createRenewalPaymentSession (autre flux).
+
+`grep -n "buildTenantPortalUrl" apps/api-server/src/billing/services/fedapay.service.ts` :
+  2036: private buildTenantPortalUrl(frontendBaseUrl: string, subdomain: string | undefined | null): string {
+  2073: const loginUrl = this.buildTenantPortalUrl(cfg.siteUrl, firstSub);
+
+═══════════════════════════════════════════════════════════════════════
+CODE SNIPPETS COMPLETS
+═══════════════════════════════════════════════════════════════════════
+
+📄 A. createOnboardingPaymentSession — extrait OnboardingPayment.create (lignes 718-820) :
+```typescript
+async createOnboardingPaymentSession(draftId: string) {
+  const draft = await this.prisma.onboardingDraft.findUnique({
+    where: { id: draftId },
+    include: { payments: true },
+  });
+
+  if (!draft) {
+    throw new BadRequestException(`Onboarding draft not found: ${draftId}`);
+  }
+
+  if (draft.status !== 'PENDING_PAYMENT') {
+    throw new BadRequestException(
+      `Cannot create payment session for draft in status: ${draft.status}`
+    );
+  }
+
+  // Montant depuis PricingService. En sandbox FedaPay, plafonner à 20 000 XOF (limite API test).
+  const amountFromPricing = await this.pricingService.calculateInitialPaymentPrice(draft.schoolsCount || 1);
+  const SANDBOX_MAX = 20000;
+  const amount = this.isLiveMode ? amountFromPricing : Math.min(amountFromPricing, SANDBOX_MAX);  // ⭐ LIGNE 737
+  if (!this.isLiveMode && amountFromPricing > SANDBOX_MAX) {
+    this.logger.log(`🧪 Sandbox : montant onboarding ${amountFromPricing} → ${amount} XOF pour le test`);
+  }
+
+  // Récupérer la devise ...
+  // [lignes 742-775 omises pour brièveté — currency handling]
+
+  // Vérifier s'il existe déjà un paiement en cours
+  const existingPayment = draft.payments.find(
+    (p) => p.status === 'PENDING' || p.status === 'PROCESSING'
+  );
+
+  if (existingPayment) {
+    const existingTransaction = (existingPayment.metadata as any)?.transactionId;
+    if (existingTransaction) {
+      const metadata = existingPayment.metadata as any;
+      return {
+        paymentId: existingPayment.id,
+        reference: existingPayment.reference,
+        paymentUrl: metadata?.paymentUrl,
+        amount: existingPayment.amount,
+        status: existingPayment.status,
+        checkout: metadata?.checkout || null,
+      };
+    }
+  }
+
+  // Générer une référence unique
+  const reference = `ONB-${draftId.substring(0, 8).toUpperCase()}-${Date.now()}`;
+
+  // Créer le paiement dans notre base avec la devise récupérée dynamiquement
+  const payment = await this.prisma.onboardingPayment.create({
+    data: {
+      draftId,
+      provider: 'fedapay',
+      reference,
+      amount,                       // ⭐ LIGNE 810 — amount PLAFONNÉ stocké en DB
+      currency,
+      status: 'PENDING',
+      metadata: {
+        draftId,
+        amount,                     // ⭐ LIGNE 815 — amount PLAFONNÉ dans metadata
+        currency,
+        createdAt: new Date().toISOString(),
+      },
+    },
+  });
+
+  // [lignes 822-956 : static page handling, API transaction creation, response]
+  // ...
+  // LIGNE 893 : const transaction = await this.createTransaction({ amount, ... })  // amount PLAFONNÉ envoyé à FedaPay
+  // LIGNE 952 : return { ..., amount, status: 'PENDING', ... }
+}
+```
+
+📄 B. buildTenantPortalUrl (lignes 2035-2051) :
+```typescript
+/** URL portail tenant : https://{subdomain}.{domaine du FRONTEND_URL}/portal */
+private buildTenantPortalUrl(frontendBaseUrl: string, subdomain: string | undefined | null): string {
+  const fallback = `${frontendBaseUrl.replace(/\/$/, '')}/portal`;
+  if (!subdomain || !String(subdomain).trim()) {
+    return fallback;
+  }
+  try {
+    const u = new URL(frontendBaseUrl);
+    let host = u.hostname;
+    if (host.startsWith('www.')) {
+      host = host.slice(4);
+    }
+    return `${u.protocol}//${String(subdomain).trim().toLowerCase()}.${host}/portal`;  // ⭐ LIGNE 2047
+  } catch {
+    return fallback;
+  }
+}
+```
+
+📄 C. Bloc tenant.create dans activateTenantAfterPayment (lignes 487-525) :
+```typescript
+// Sous-domaine du premier tenant : préférer celui choisi par l'utilisateur si valide et disponible
+let firstTenantSubdomain: string;
+if (draft.preferredSubdomain) {
+  const validation = this.subdomainService.validateSubdomain(draft.preferredSubdomain);
+  if (!validation.valid) {
+    throw new BadRequestException(`Sous-domaine invalide: ${validation.error}`);
+  }
+  const existing = await tx.tenant.findUnique({ where: { subdomain: draft.preferredSubdomain } });
+  if (existing) {
+    throw new BadRequestException('Ce sous-domaine est déjà utilisé. Un nouvel onboarding avec un autre sous-domaine est nécessaire.');
+  }
+  firstTenantSubdomain = draft.preferredSubdomain;          // ⭐ LIGNE 498 — slug utilisateur
+} else {
+  firstTenantSubdomain = await this.subdomainService.generateAndValidate(draft.schoolName);  // ⭐ LIGNE 500 — slug généré
+}
+
+for (let i = 0; i < schoolsCount; i++) {
+  let schoolNameForSubdomain = draft.schoolName;
+  if (schoolsCount > 1) {
+    schoolNameForSubdomain = `${draft.schoolName} - Annexe ${i + 1}`;
+  }
+
+  const subdomain = schoolsCount > 1
+    ? await this.generateAnnexeSubdomain(firstTenantSubdomain, i + 1, tx)
+    : firstTenantSubdomain;
+  const slug = subdomain;
+
+  // Créer le tenant
+  const tenant = await tx.tenant.create({
+    data: {
+      name: schoolsCount > 1 ? `${draft.schoolName} - Annexe ${i + 1}` : draft.schoolName,
+      slug,
+      subdomain,                  // ⭐ LIGNE 519 — slug stocké (pas le hostname complet)
+      countryId: country.id,
+      type: draft.schoolType,
+      status: 'active',
+      subscriptionStatus: 'TRIAL',
+    },
+  });
+
+  tenants.push(tenant);
+  // [suite : grading policies, salary policies, subscription, HelmSubscription, school levels, ...]
+}
+```
+
+📄 D. Stockage de firstTenantSubdomain dans payment metadata (lignes 809-820) :
+```typescript
+// 6. Mettre à jour le paiement (statut SUCCESS + sous-domaine pour la redirection)
+const paymentMeta = (payment.metadata as Record<string, unknown>) || {};
+await tx.onboardingPayment.update({
+  where: { id: paymentId },
+  data: {
+    status: 'SUCCESS',
+    metadata: {
+      ...paymentMeta,
+      firstTenantSubdomain: tenants[0].subdomain,  // ⭐ LIGNE 817 — slug stocké dans metadata
+    },
+  },
+});
+```
+
+═══════════════════════════════════════════════════════════════════════
+PROCHAINES ACTIONS RECOMMANDÉES (POUR UN AUTRE AGENT D'IMPLÉMENTATION)
+═══════════════════════════════════════════════════════════════════════
+
+Pour Issue 1 (Option A — recommandée) :
+1. Modifier apps/api-server/src/onboarding/services/onboarding.service.ts:817 :
+   `firstTenantSubdomain: \`${tenants[0].subdomain}.${process.env.APP_BASE_DOMAIN || 'academiahelm.com'}\``
+2. Modifier apps/api-server/src/billing/services/fedapay.service.ts:2036-2051 (buildTenantPortalUrl) :
+   Détecter si `subdomain` contient déjà un point (hostname complet) et ne pas append `.${host}` dans ce cas.
+3. Modifier apps/web-app/src/app/signup/confirmation/page.tsx:43, 234, 262 :
+   Retirer le suffixe `.academiahelm.com` hardcoded (utiliser `firstTenantSubdomain` tel quel).
+
+Pour Issue 2 (Option A — recommandée) :
+1. Modifier apps/api-server/src/billing/services/fedapay.service.ts:735-740 :
+   Ajouter `const realAmount = amountFromPricing;`
+2. Modifier apps/api-server/src/billing/services/fedapay.service.ts:805-820 :
+   Ajouter `amountReal: realAmount` dans metadata.
+3. Modifier apps/api-server/src/billing/services/fedapay.service.ts:2102 :
+   `montant: Number(payMeta.amountReal ?? payment.amount) || 0`
+4. Modifier apps/api-server/src/onboarding/services/onboarding.service.ts:613, 634, 748 :
+   Utiliser `paymentMeta.amountReal ?? Number(payment.amount)` au lieu de `Number(payment.amount)`.
+
+AUCUN fichier modifié — recherche uniquement.

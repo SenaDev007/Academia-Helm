@@ -410,7 +410,12 @@ export class OnboardingService {
       transactionStatus: verification.status,
       draftId: payment.draftId,
       tenantActivated: updatedPayment?.status === 'SUCCESS',
+      // ⭐ Sous-domaine (slug) + hostname complet + URL portail complète.
+      // Le frontend utilise firstTenantPortalUrl si dispo, sinon construit
+      // à partir de firstTenantSubdomain + .academiahelm.com (fallback).
       firstTenantSubdomain: mergedMeta?.firstTenantSubdomain as string | undefined,
+      firstTenantHostname: mergedMeta?.firstTenantHostname as string | undefined,
+      firstTenantPortalUrl: mergedMeta?.firstTenantPortalUrl as string | undefined,
       // ⭐ Références de transaction (pour affichage sur la page de confirmation).
       // - reference : référence marchand (payment.reference, ex: 'ONB-XXXX-XXXX')
       // - fedapayReference : vraie référence FedaPay (récupérée via l'API verify)
@@ -808,13 +813,26 @@ export class OnboardingService {
 
       // 6. Mettre à jour le paiement (statut SUCCESS + sous-domaine pour la redirection)
       const paymentMeta = (payment.metadata as Record<string, unknown>) || {};
+      // ⭐ Stocker le sous-domaine (slug) ET le nom d'hôte complet.
+      // Le slug (ex: "academia-helm") est utilisé pour les recherches DB et le routing.
+      // Le hostname complet (ex: "academia-helm.academiahelm.com") est utilisé pour
+      // l'affichage à l'utilisateur (email + page confirmation).
+      const baseDomain = (process.env.FRONTEND_URL || 'https://academiahelm.com')
+        .replace(/^https?:\/\//, '')
+        .replace(/^www\./, '')
+        .replace(/\/.*$/, '')
+        .trim();
+      const tenantSlug = tenants[0].subdomain || tenants[0].slug || '';
+      const tenantHostname = tenantSlug ? `${tenantSlug}.${baseDomain}` : baseDomain;
       await tx.onboardingPayment.update({
         where: { id: paymentId },
         data: {
           status: 'SUCCESS',
           metadata: {
             ...paymentMeta,
-            firstTenantSubdomain: tenants[0].subdomain,
+            firstTenantSubdomain: tenantSlug,
+            firstTenantHostname: tenantHostname,
+            firstTenantPortalUrl: `https://${tenantHostname}/portal`,
           },
         },
       });

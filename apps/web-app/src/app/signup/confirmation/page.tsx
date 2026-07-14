@@ -36,11 +36,10 @@ const AUTO_REDIRECT_DELAY_MS = 5000
  * ⭐ Redirige automatiquement l'utilisateur vers son portail tenant après 5 secondes.
  * Affiche un compte à rebours pour ne pas surprendre l'utilisateur.
  */
-function AutoRedirectToPortal({ subdomain }: { subdomain: string }) {
+function AutoRedirectToPortal({ portalUrl }: { portalUrl: string }) {
   const [countdown, setCountdown] = useState(Math.ceil(AUTO_REDIRECT_DELAY_MS / 1000))
 
   useEffect(() => {
-    const portalUrl = `https://${subdomain}.academiahelm.com/portal`
     const interval = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
@@ -52,7 +51,7 @@ function AutoRedirectToPortal({ subdomain }: { subdomain: string }) {
       })
     }, 1000)
     return () => clearInterval(interval)
-  }, [subdomain])
+  }, [portalUrl])
 
   return (
     <p className="text-xs text-slate-500 mt-4">
@@ -73,6 +72,7 @@ function ConfirmationContent() {
   const [verifyState, setVerifyState] = useState<'loading' | 'success' | 'error' | 'idle'>('idle')
   const [verifyMessage, setVerifyMessage] = useState<string>('')
   const [subdomain, setSubdomain] = useState<string | null>(null)
+  const [portalUrl, setPortalUrl] = useState<string | null>(null)
   const [fedapayReference, setFedapayReference] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [verifyErrorDetail, setVerifyErrorDetail] = useState<string | null>(null)
@@ -118,6 +118,14 @@ function ConfirmationContent() {
           setVerifyMessage('Votre établissement a été activé. Un email avec vos accès vous a été envoyé à l\'adresse du promoteur.')
           if (data.firstTenantSubdomain) {
             setSubdomain(data.firstTenantSubdomain)
+          }
+          // ⭐ Utiliser l'URL complète renvoyée par le backend (firstTenantPortalUrl)
+          // qui contient le hostname complet (ex: https://academia-helm.academiahelm.com/portal).
+          // Fallback : construire à partir du subdomain si firstTenantPortalUrl absent.
+          if (data.firstTenantPortalUrl) {
+            setPortalUrl(data.firstTenantPortalUrl)
+          } else if (data.firstTenantSubdomain) {
+            setPortalUrl(`https://${data.firstTenantSubdomain}.academiahelm.com/portal`)
           }
           return
         }
@@ -224,14 +232,14 @@ function ConfirmationContent() {
                 </div>
               )}
 
-              {/* Subdomain info si disponible */}
-              {subdomain && (
+              {/* ⭐ URL de connexion complète (hostname complet, pas juste le slug) */}
+              {portalUrl && (
                 <div className="bg-blue-50 rounded-xl p-4 mb-6 text-left border border-blue-100">
                   <p className="text-sm text-slate-500 mb-1">
                     Votre URL de connexion
                   </p>
                   <p className="font-mono text-sm text-blue-700 break-all">
-                    https://{subdomain}.academiahelm.com/portal
+                    {portalUrl}
                   </p>
                 </div>
               )}
@@ -259,7 +267,7 @@ function ConfirmationContent() {
               )}
 
               <Link
-                href={subdomain ? `https://${subdomain}.academiahelm.com/portal` : 'https://academiahelm.com/portal'}
+                href={portalUrl || 'https://academiahelm.com/portal'}
                 className="btn-primary-gold block w-full py-3 px-6 rounded-xl flex items-center justify-center"
               >
                 <ExternalLink className="w-5 h-5 mr-2" />
@@ -267,8 +275,8 @@ function ConfirmationContent() {
               </Link>
 
               {/* ⭐ Redirection automatique vers le portail après 5 secondes si activation réussie */}
-              {verifyState === 'success' && subdomain && (
-                <AutoRedirectToPortal subdomain={subdomain} />
+              {verifyState === 'success' && portalUrl && (
+                <AutoRedirectToPortal portalUrl={portalUrl} />
               )}
 
               {verifyState === 'loading' && attempt > 0 && (

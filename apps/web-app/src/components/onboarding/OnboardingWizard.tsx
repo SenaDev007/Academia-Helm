@@ -692,10 +692,22 @@ export default function OnboardingWizard() {
       return;
     }
 
+    // ⭐ Helper pour changer d'étape ET remonter en haut de page.
+    // Sans le scrollTo, l'utilisateur reste à la position du bouton "Continuer"
+    // (en bas de page) et voit le footer au lieu du haut de la nouvelle étape.
+    const goToStep = (nextStep: number) => {
+      setStep(nextStep);
+      // Scroll fluide vers le haut — utilise requestAnimationFrame pour
+      // s'assurer que le DOM est mis à jour avant le scroll.
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    };
+
     if (step === 1) {
       // Si un draft existe déjà, passer directement à l'étape suivante
       if (data.draftId) {
-        setStep(2);
+        goToStep(2);
         return;
       }
 
@@ -779,6 +791,7 @@ export default function OnboardingWizard() {
         }
         
         setStep(2);
+        requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
       } catch (error: any) {
         setErrors({ submit: error.message });
       } finally {
@@ -816,6 +829,7 @@ export default function OnboardingWizard() {
         }
 
         setStep(3);
+        requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
       } catch (error: any) {
         setErrors({ submit: error.message });
       } finally {
@@ -846,6 +860,7 @@ export default function OnboardingWizard() {
         }
 
         setStep(4);
+        requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
       } catch (error: any) {
         setErrors({ submit: error.message });
       } finally {
@@ -1149,6 +1164,8 @@ export default function OnboardingWizard() {
     if (step > 1) {
       setStep(step - 1);
       setErrors({});
+      // ⭐ Remonter en haut de page (même logique que handleNext).
+      requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
     }
   };
 
@@ -2195,9 +2212,9 @@ export default function OnboardingWizard() {
                           disabled={isSubmitting}
                           className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-medium border border-gray-200 text-gray-600 hover:border-purple-400 hover:bg-purple-50 hover:text-purple-700 transition-all"
                         >
-                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <rect x="2" y="4" width="20" height="16" rx="2" />
-                            <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                          {/* ⭐ Logo Gmail officiel (icône enveloppe avec M stylisé rouge) */}
+                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path fill="#4285F4" d="M22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6zm-2 0l-8 5-8-5h16zm0 12H4V8l8 5 8-5v10z"/>
                           </svg>
                           Email
                         </button>
@@ -2296,11 +2313,9 @@ export default function OnboardingWizard() {
                         )}
                         {otpMethod === 'email' && (
                           <>
-                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
-                              <path fill="#EA4335" d="M5.457 20c1.89 0 3.586-.754 4.85-2.057L6.06 13.95 2.99 16.38C2.37 15.275 2 13.986 2 12.5c0-.772.108-1.52.326-2.23L0 8.5C.262 14.708 4.837 20 5.457 20z" opacity="0.9"/>
-                              <path fill="#FBBC04" d="M2.99 16.38L6.06 13.95l4.247-3.22 4.248 3.22 3.07 2.43C16.468 18.687 14.064 20 11.5 20c-2.54 0-4.857-1.27-6.51-3.62z" opacity="0.9"/>
-                              <path fill="#34A853" d="M10.307 10.73l4.248 3.22 3.07 2.43C18.767 14.745 19.5 12.457 19.5 10.5c0-4.687-3.582-8.5-8-8.5-3.246 0-6.046 2.043-7.315 5.02L2 8.5l2.185 1.77c1.4-2.07 3.708-3.47 6.315-3.47" opacity="0.9"/>
-                              <path fill="#4285F4" d="M10.5 6.8c-2.607 0-4.915 1.4-6.315 3.47L10.307 10.73l4.248 3.22L10.307 10.73 6.06 13.95l4.247-3.22L14.555 13.95 10.307 10.73 10.5 6.8c2.607 0 4.915 1.4 6.315 3.47L19.5 10.5C18.23 7.543 15.43 5.5 12.185 5.5h-1.685z" opacity="0.9"/>
+                            {/* ⭐ Logo Gmail officiel (icône enveloppe bleue) */}
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                              <path fill="#4285F4" d="M22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6zm-2 0l-8 5-8-5h16zm0 12H4V8l8 5 8-5v10z"/>
                             </svg>
                             Code envoyé par email — vérifiez votre boîte de réception
                           </>

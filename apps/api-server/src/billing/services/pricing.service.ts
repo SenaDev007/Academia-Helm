@@ -213,43 +213,26 @@ export class PricingService {
   }
 
   /**
-   * Récupère un plan de tarification.
+   * Récupère un plan de tarification depuis pricing_plans.
    *
-   * ⭐ NOUVEAU SYSTÈME : utilise pricing_plans (SEED/GROW/LEAD/NETWORK).
-   * ANCIEN SYSTÈME : utilisait subscription_plans (BASIC_MONTHLY/GROUP_*).
-   *
-   * On cherche d'abord dans pricing_plans (nouvelle source de vérité).
-   * Si non trouvé, on fallback sur subscription_plans (rétrocompatibilité
-   * pour les anciens drafts créés avant la migration).
+   * ⭐ Source unique de vérité : pricing_plans (SEED/GROW/LEAD/NETWORK).
+   * L'ancienne table subscription_plans (BASIC_MONTHLY/GROUP_*) a été vidée
+   * et n'est plus utilisée — le fallback a été retiré pour éviter toute
+   * confusion avec d'anciens codes.
    */
   private async getPlan(planId?: string, planCode?: string) {
-    // 1. Chercher dans pricing_plans (nouvelle source de vérité)
     if (planId && planId.includes('-')) {
-      // planId est un UUID → chercher dans pricing_plans d'abord
-      const pricingPlan = await this.prisma.pricingPlan.findUnique({
+      // planId est un UUID → chercher dans pricing_plans
+      return await this.prisma.pricingPlan.findUnique({
         where: { id: planId },
       });
-      if (pricingPlan) return pricingPlan;
-
-      // Fallback : subscription_plans (ancienne table)
-      const subPlan = await this.prisma.subscriptionPlan.findUnique({
-        where: { id: planId },
-      });
-      if (subPlan) return subPlan;
     }
 
     if (planCode) {
-      // planCode est un code (SEED/GROW/LEAD/NETWORK ou BASIC_MONTHLY/...)
-      const pricingPlan = await this.prisma.pricingPlan.findUnique({
+      // planCode est un code (SEED/GROW/LEAD/NETWORK)
+      return await this.prisma.pricingPlan.findUnique({
         where: { code: planCode },
       });
-      if (pricingPlan) return pricingPlan;
-
-      // Fallback : subscription_plans (ancienne table)
-      const subPlan = await this.prisma.subscriptionPlan.findUnique({
-        where: { code: planCode },
-      });
-      if (subPlan) return subPlan;
     }
 
     return null;

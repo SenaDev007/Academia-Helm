@@ -381,9 +381,9 @@ export class OnboardingService {
     }
 
     // Vérifier le statut via FedaPay API
-    // ⭐ Si l'API FedaPay échoue (401, timeout, etc.), on ne bloque pas la
-    // réponse — on renvoie quand même les infos disponibles (référence payment,
-    // statut DB) pour que le frontend puisse afficher quelque chose d'utile.
+    // ⭐ Le verify NE déclenche PAS l'activation. L'activation est gérée
+    // UNIQUEMENT par le webhook FedaPay (handlePaymentSuccess).
+    // Le verify lit juste le statut FedaPay + le statut DB pour affichage.
     let verification: { status: string; amount: number; verified: boolean; paymentId?: string; reference?: string } = {
       status: payment.status,
       amount: payment.amount,
@@ -394,38 +394,10 @@ export class OnboardingService {
       verification = await this.fedapayService.verifyTransactionStatus(transactionId);
     } catch (err: any) {
       verifyError = err?.message || 'Erreur inconnue';
-      this.logger.warn(`⚠️  FedaPay verify failed for payment ${paymentId}: ${verifyError}. Retourne les infos DB sans activation.`);
-
-      // ⭐ FALLBACK CRITIQUE : si le payment est déjà COMPLETED en DB (le webhook
-      // FedaPay l'a marqué comme complété) mais que l'API verify échoue, on tente
-      // quand même l'activation. Sans ça, le promoteur ne reçoit jamais ses
-      // accès et l'email n'est jamais envoyé.
-      if (payment.status === 'COMPLETED') {
-        this.logger.log(`🔧 Fallback activation : payment ${paymentId} est COMPLETED en DB, tentative d'activation malgré l'échec verify...`);
-        try {
-          // Construire un objet transaction minimal pour handlePaymentSuccess
-          const fallbackTransaction = {
-            id: transactionId,
-            reference: payment.reference,
-            status: 'approved',
-            amount: payment.amount,
-            metadata: { paymentId: payment.id, type: 'onboarding' },
-          };
-          // Appeler directement activateTenantAfterPayment (sans passer par
-          // handlePaymentSuccess qui exige une transaction FedaPay valide)
-          await this.activateTenantAfterPayment(paymentId);
-          this.logger.log(`✅ Fallback activation réussie pour payment ${paymentId}`);
-          // Recharger le payment pour voir le nouveau statut
-          const refreshed = await this.prisma.onboardingPayment.findUnique({ where: { id: paymentId } });
-          if (refreshed) {
-            payment.status = refreshed.status;
-            payment.metadata = refreshed.metadata;
-          }
-        } catch (activationErr: any) {
-          this.logger.error(`❌ Fallback activation échouée pour payment ${paymentId}: ${activationErr.message}`, activationErr.stack);
-          verifyError = `${verifyError} | Activation fallback failed: ${activationErr.message}`;
-        }
-      }
+      this.logger.warn(`⚠️  FedaPay verify failed for payment ${paymentId}: ${verifyError}. Le webhook gère l'activation séparément.`);
+      // ⭐ PAS de fallback activation — c'est le webhook qui active, pas le verify.
+      // Si le webhook n'a pas encore traité, le frontend retry et finira par
+      // voir tenantActivated=true une fois le webhook traité.
     }
 
     // Recharger le paiement (après possible activation du tenant dans verifyTransactionStatus)

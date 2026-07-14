@@ -64,21 +64,65 @@ function ConfirmationContent() {
   const searchParams = useSearchParams()
   const status = searchParams.get('status')
   const draftId = searchParams.get('draftId')
-  const paymentId = searchParams.get('paymentId')
-  const transactionId = searchParams.get('id')
+  const paymentIdParam = searchParams.get('paymentId')
+  const transactionId = searchParams.get('id') // ID numérique FedaPay
 
   const isApproved = status === 'approved'
 
-  const [verifyState, setVerifyState] = useState<'loading' | 'success' | 'error' | 'idle'>('idle')
+  const [verifyState, setVerifyState] = useState<'loading' | 'success' | 'error' | 'idle' | 'looking-up'>('idle')
   const [verifyMessage, setVerifyMessage] = useState<string>('')
   const [subdomain, setSubdomain] = useState<string | null>(null)
   const [portalUrl, setPortalUrl] = useState<string | null>(null)
   const [fedapayReference, setFedapayReference] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [verifyErrorDetail, setVerifyErrorDetail] = useState<string | null>(null)
+  const [resolvedPaymentId, setResolvedPaymentId] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!isApproved || !paymentId) return
+    if (!isApproved) return
+
+    // ⭐ Si paymentId est dans l'URL → on l'utilise directement.
+    // Sinon, on essaie de le retrouver via le transactionId FedaPay (param 'id').
+    // FedaPay ne préserve pas les query params d'origine après redirection.
+    const resolvePaymentId = async () => {
+      if (paymentIdParam) {
+        setResolvedPaymentId(paymentIdParam)
+        return
+      }
+
+      if (!transactionId) {
+        setVerifyState('error')
+        setVerifyMessage('Impossible de retrouver votre paiement : aucun identifiant dans l\'URL. Contactez le support.')
+        return
+      }
+
+      // Lookup par transactionId FedaPay
+      setVerifyState('looking-up')
+      setVerifyMessage('Recherche de votre paiement en cours...')
+      try {
+        const res = await fetch(`/api/onboarding/payment/by-transaction/${transactionId}`)
+        const data = await res.json()
+        if (data.found && data.paymentId) {
+          setResolvedPaymentId(data.paymentId)
+          if (data.reference) {
+            setFedapayReference(data.reference)
+          }
+        } else {
+          setVerifyState('error')
+          setVerifyMessage(`Impossible de retrouver votre paiement (transaction FedaPay #${transactionId}). Contactez le support avec cette référence.`)
+        }
+      } catch (err: any) {
+        setVerifyState('error')
+        setVerifyMessage(`Erreur lors de la recherche du paiement: ${err.message}`)
+      }
+    }
+
+    resolvePaymentId()
+  }, [isApproved, paymentIdParam, transactionId])
+
+  // ⭐ Une fois qu'on a le paymentId (direct ou résolu), lancer la vérification.
+  useEffect(() => {
+    if (!isApproved || !resolvedPaymentId) return
 
     let cancelled = false
     setVerifyState('loading')
@@ -87,7 +131,7 @@ function ConfirmationContent() {
     const verify = async (attemptNum: number) => {
       if (cancelled) return
       try {
-        const response = await fetch(`/api/onboarding/payment/${paymentId}/verify`, {
+        const response = await fetch(`/api/onboarding/payment/${resolvedPaymentId}/verify`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
         })
@@ -98,16 +142,11 @@ function ConfirmationContent() {
         if (cancelled) return
 
         // ⭐ Stocker la vraie référence FedaPay renvoyée par le backend
-        // (priorité : fedapayReference > reference > transactionId)
-        // Même si la vérification FedaPay échoue, le backend renvoie maintenant
-        // payment.reference (référence marchand ONB-XXXX) en fallback.
         const realRef = data.fedapayReference || data.reference || data.transactionId
         if (realRef) {
           setFedapayReference(String(realRef))
         }
 
-        // ⭐ Si le backend signale une erreur de vérification FedaPay,
-        // on l'affiche pour diagnostic (sans bloquer l'utilisateur).
         if (data.verifyError) {
           setVerifyErrorDetail(data.verifyError)
         }
@@ -119,10 +158,6 @@ function ConfirmationContent() {
           if (data.firstTenantSubdomain) {
             setSubdomain(data.firstTenantSubdomain)
           }
-          // ⭐ Utiliser l'URL complète renvoyée par le backend (firstTenantPortalUrl)
-          // qui contient les paramètres portal=SCHOOL&tenant=...&school_name=...
-          // Format : https://{subdomain}.{domaine}/login?portal=SCHOOL&tenant=...&school_name=...
-          // Fallback : construire à partir du subdomain si firstTenantPortalUrl absent.
           if (data.firstTenantPortalUrl) {
             setPortalUrl(data.firstTenantPortalUrl)
           } else if (data.firstTenantSubdomain) {
@@ -131,16 +166,13 @@ function ConfirmationContent() {
           return
         }
 
-        // Si la transaction est approved mais tenant pas encore activé,
-        // retry (le webhook peut être en cours de traitement)
+        // Si la transaction est approved mais tenant pas encore activé, retry
         if (data.transactionStatus === 'approved' || data.verified) {
           if (attemptNum < MAX_RETRIES) {
             setVerifyMessage(`Paiement confirmé, activation en cours... (tentative ${attemptNum + 1}/${MAX_RETRIES})`)
             setAttempt(attemptNum + 1)
             setTimeout(() => verify(attemptNum + 1), RETRY_INTERVAL_MS)
           } else {
-            // After MAX_RETRIES, if payment is approved but tenant not activated,
-            // something is wrong — show a warning but don't block the user
             setVerifyState('success')
             setVerifyMessage('Paiement confirmé. L\'activation de votre établissement est en cours de traitement côté serveur. Vous recevrez vos accès par email dans quelques minutes.')
           }
@@ -174,7 +206,7 @@ function ConfirmationContent() {
     return () => {
       cancelled = true
     }
-  }, [isApproved, paymentId])
+  }, [isApproved, resolvedPaymentId])
 
   return (
     <>
@@ -184,7 +216,8 @@ function ConfirmationContent() {
       <main
         className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-white to-blue-50/30 px-4 py-12"
         data-draft-id={draftId ?? undefined}
-        data-payment-id={paymentId ?? undefined}
+        data-payment-id={resolvedPaymentId ?? undefined}
+        data-transaction-id={transactionId ?? undefined}
       >
         <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center border border-slate-100">
 
@@ -192,7 +225,7 @@ function ConfirmationContent() {
             <>
               {/* Succès */}
               <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
-                {verifyState === 'loading' ? (
+                {verifyState === 'loading' || verifyState === 'looking-up' ? (
                   <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
                 ) : verifyState === 'error' ? (
                   <AlertCircle className="w-10 h-10 text-amber-500" />
@@ -202,11 +235,13 @@ function ConfirmationContent() {
               </div>
 
               <h1 className="text-2xl font-bold text-blue-900 mb-2">
-                {verifyState === 'loading'
-                  ? 'Vérification...'
-                  : verifyState === 'error'
-                    ? 'Paiement reçu — Activation en cours'
-                    : 'Paiement confirmé !'}
+                {verifyState === 'looking-up'
+                  ? 'Recherche...'
+                  : verifyState === 'loading'
+                    ? 'Vérification...'
+                    : verifyState === 'error'
+                      ? 'Paiement reçu — Activation en cours'
+                      : 'Paiement confirmé !'}
               </h1>
 
               <p className="text-slate-600 mb-6">

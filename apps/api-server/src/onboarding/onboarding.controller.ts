@@ -186,4 +186,19 @@ export class OnboardingController {
   async verifyPaymentStatus(@Param('paymentId') paymentId: string) {
     return this.onboardingService.verifyPaymentStatus(paymentId);
   }
+
+  /**
+   * ⭐ Retrouver un payment par transactionId FedaPay (l'ID numérique que FedaPay
+   * ajoute à l'URL de redirection après paiement).
+   *
+   * Utilisé par la page /signup/confirmation quand FedaPay redirige vers
+   * /signup/confirmation?id=470323&status=approved SANS le paymentId d'origine.
+   *
+   * Le frontend appelle d'abord cet endpoint pour récupérer le paymentId,
+   * puis appelle /payment/{paymentId}/verify pour vérifier le statut.
+   */
+  @Get('payment/by-transaction/:transactionId')
+  async findPaymentByTransactionId(@Param('transactionId') transactionId: string) {
+    return this.onboardingService.findPaymentByTransactionId(transactionId);
+  }
 }

@@ -433,6 +433,35 @@ export class OnboardingService {
   }
 
   /**
+   * ⭐ Retrouver un payment par transactionId FedaPay.
+   *
+   * FedaPay redirige après paiement vers /signup/confirmation?id=470323&status=approved
+   * SANS préserver les query params d'origine (draftId, paymentId).
+   * Le frontend utilise cet endpoint pour retrouver le paymentId à partir
+   * de l'ID numérique FedaPay (paramètre 'id' dans l'URL).
+   */
+  async findPaymentByTransactionId(transactionId: string) {
+    const payment = await this.prisma.onboardingPayment.findFirst({
+      where: {
+        metadata: { path: ['transactionId'], equals: transactionId },
+      },
+      select: { id: true, reference: true, status: true, draftId: true },
+    });
+    if (!payment) {
+      this.logger.warn(`⚠️  No payment found for FedaPay transactionId: ${transactionId}`);
+      return { found: false, paymentId: null };
+    }
+    this.logger.log(`✅ Found payment ${payment.id} for FedaPay transactionId ${transactionId}`);
+    return {
+      found: true,
+      paymentId: payment.id,
+      reference: payment.reference,
+      status: payment.status,
+      draftId: payment.draftId,
+    };
+  }
+
+  /**
    * Activer le tenant après paiement réussi (transaction atomique).
    * Accepte les statuts COMPLETED (après webhook/vérification FedaPay) et SUCCESS (idempotence).
    */

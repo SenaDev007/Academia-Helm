@@ -4201,3 +4201,207 @@ Stage Summary:
   SELECT id, name, subdomain, "createdAt" FROM tenants ORDER BY "createdAt" DESC LIMIT 5;
   Si le payment est COMPLETED mais pas SUCCESS, et aucun tenant n'existe →
   appeler manuellement POST /api/onboarding/payment/{paymentId}/verify pour déclencher l'activation.
+
+---
+Task ID: FINANCE-ENC-REFERENCE
+Agent: General-purpose subagent (research only — no files modified)
+Task: Investigate Finance "Encaissement" payment collection flow to understand how the REAL FedaPay transaction reference is retrieved after a payment, so the same pattern can be replicated in the onboarding confirmation page.
+
+Work Log:
+- Lu worklog.md (tâches précédentes POST-PAYMENT-FIX, FIX 1/2/3) — la page /signup/confirmation a été câblée pour appeler POST /api/onboarding/payment/{paymentId}/verify au montage. Le sujet ici est : QUELLE RÉFÉRENCE afficher (et d'où la tirer).
+- Inspecté le modal Finance d'encaissement : apps/web-app/src/components/finance/NewPaymentModal.tsx (700 lignes).
+  * Le modal charge le widget JS FedaPay depuis https://cdn.fedapay.com/checkout.js?v=1.1.7
+  * Il initialise le widget via `window.FedaPay.init({ public_key, transaction: { amount, description }, customer, onComplete })` puis `widget.open()`.
+  * C'est un flux en WIDGET INLINE (pas en redirect) : aucun paramètre d'URL n'est utilisé.
+- Le callback `onComplete(response)` (NewPaymentModal.tsx:291) reçoit directement l'objet transaction FedaPay côté browser. La référence est extraite à la ligne 307 :
+    const fedapayReference = response?.reference || response?.id || `FEDAPAY-${Date.now()}`;
+  Puis cette référence est passée au backend via financeService.createTransaction({ reference: fedapayReference, ... }) à la ligne 315 pour créer la FinanceTransaction.
+- Affichage de la référence dans le modal Finance (toast) :
+  * NewPaymentModal.tsx:325 — "Reçu {result.receiptNumber} généré. Référence Fedapay : {fedapayReference}."
+  * NewPaymentModal.tsx:331 — "Référence Fedapay : {fedapayReference}. Le reçu est en cours de génération."
+  * NewPaymentModal.tsx:345 — "Référence Fedapay : {fedapayReference}. Erreur: {err.message}."
+  * Stockée dans le state receipt.receiptNumber (lignes 320, 334-335, 349-350) via result.receiptNumber || fedapayReference.
+- Inspecté le backend Finance verify endpoint : apps/api-server/src/finance/fedapay.controller.ts (lignes 69-76) :
+    @Get(':reference/status') → fedapayService.verifyTransaction(tenantId, reference)
+  - Le paramètre path est :reference (la référence FedaPay, ex. "FED-XXXXXX" ou "ONB-..." ou le numeric ID).
+  - Le service apps/api-server/src/finance/fedapay.service.ts:64-109 appelle GET {FEDAPAY_API_URL}/transactions/{transactionRef} avec la secret key de l'école (config.fedapaySecretKey — chaque école configure son PROPRE compte Fedapay).
+  - Réponse : { status: 'pending'|'approved'|'declined'|'cancelled'|'unknown', amount?, raw? }
+  - raw contient l'objet transaction complet renvoyé par FedaPay (donc raw.reference et raw.id sont disponibles).
+- Inspecté le BFF route onboarding verify : apps/web-app/src/app/api/onboarding/payment/[paymentId]/verify/route.ts
+  * Proxy POST vers {API_URL}/onboarding/payment/{paymentId}/verify (sans auth, timeout 8s).
+  * Passe directement la réponse JSON du backend.
+- Inspecté le backend onboarding verify : apps/api-server/src/onboarding/services/onboarding.service.ts:362-401 (méthode verifyPaymentStatus(paymentId)).
+  * Récupère metadata.transactionId (ID numérique FedaPay stocké à la création — fedapay.service.ts:927).
+  * Appelle this.fedapayService.verifyTransactionStatus(transactionId).
+  * Retourne EXACTEMENT :
+      {
+        paymentId: payment.id,                         // UUID onboarding (DB)
+        status: updatedPayment?.status || payment.status,  // 'SUCCESS' | 'COMPLETED' | 'PENDING'
+        amount: payment.amount,
+        verified: verification.verified,               // bool
+        transactionStatus: verification.status,        // 'approved' | 'completed' | 'pending' (statut FedaPay)
+        draftId: payment.draftId,
+        tenantActivated: updatedPayment?.status === 'SUCCESS',
+        firstTenantSubdomain: mergedMeta?.firstTenantSubdomain,
+      }
+    ⚠️ AUCUNE référence FedaPay (ni merchant reference, ni FedaPay reference, ni FedaPay ID) n'est renvoyée.
+- Inspecté le FedaPay service verifyTransactionStatus : apps/api-server/src/billing/services/fedapay.service.ts:255-398.
+  * Appelle GET {apiBaseUrl}/v1/transactions/{transactionId} avec la secret key globale FEDAPAY_API_KEY.
+  * Récupère l'objet transaction FedaPay complet (avec transaction.id, transaction.reference, transaction.status, transaction.amount).
+  * Retourne EXACTEMENT :
+      {
+        status,              // 'approved' | 'completed' | 'pending' (depuis transaction.status)
+        amount,              // depuis transaction.amount
+        verified: true,
+        paymentId: transaction.id,   // ⚠️ NOM TROMPEUR : c'est l'ID numérique FedaPay, PAS l'onboarding paymentId
+      }
+    ⚠️ transaction.reference est disponible dans la réponse FedaPay mais N'EST PAS retournée par cette méthode.
+- Inspecté la création de session de paiement onboarding : apps/api-server/src/billing/services/fedapay.service.ts:797-969 (createOnboardingPaymentSession).
+  * Génère la merchant reference : `const reference = \`ONB-${draftId.substring(0, 8).toUpperCase()}-${Date.now()}\`;` (ligne 797)
+  * Crée l'onboarding_payment en DB avec payment.reference = "ONB-XXXXXXXX-1234567890" (ligne 804).
+  * callbackUrl = `${frontendUrl}/signup/confirmation?draftId=...&paymentId=...` (ligne 862) — ne passe PAS la reference dans l'URL.
+  * Crée la transaction FedaPay via createTransaction() qui retourne { transactionId, reference: transaction.reference || transaction.id, paymentUrl, status, amount } (lignes 605-611).
+  * Stocke dans metadata : transactionId (numeric), paymentUrl, webhookUrl, staticPage — mais NE STOCKE PAS transaction.reference (la référence générée par FedaPay) en DB (lignes 921-933).
+  * Note : payment.reference (colonne DB) contient la merchant reference "ONB-..." et est accessible via le paiement.
+- Inspecté la page /signup/confirmation : apps/web-app/src/app/signup/confirmation/page.tsx.
+  * Lit les query params : status, draftId, paymentId, transactionId (ligne 39 : `searchParams.get('id')`).
+  * ⚠️ BUG : `id` est ajouté par FedaPay au redirect URL et correspond à l'ID NUMÉRIQUE de la transaction FedaPay (ex. 1234567) — PAS une référence lisible.
+  * Affiche `#{transactionId}` à la ligne 178 dans un bloc "Référence de transaction".
+  * C'est cet ID numérique qui apparaît comme "référence aléatoire" côté utilisateur.
+  * Appelle /api/onboarding/payment/{paymentId}/verify au montage (ligne 58) avec retry 5×3s.
+  * Lit data.tenantActivated, data.status, data.firstTenantSubdomain mais N'UTILISE PAS data.reference (car non retourné par le backend).
+
+Comparison Finance vs Onboarding:
+
+| Aspect                  | Finance (NewPaymentModal)                          | Onboarding (/signup/confirmation)                      |
+|-------------------------|----------------------------------------------------|--------------------------------------------------------|
+| Mode de paiement        | Widget inline FedaPay (checkout.js)                | Redirect FedaPay (page de paiement pleine page)        |
+| Récupération référence  | `onComplete(response)` côté browser               | Query param `id` dans URL de redirect                  |
+| Champ utilisé           | `response?.reference \|\| response?.id`           | `searchParams.get('id')` (= ID numérique FedaPay)       |
+| Verify endpoint         | GET /finance/payments/fedapay/:ref/status          | POST /onboarding/payment/:paymentId/verify              |
+| Réponse verify contient | `raw` (objet complet FedaPay) — pas filtré        | status, transactionStatus, tenantActivated, subdomain  |
+| Référence affichée      | `result.receiptNumber \|\| fedapayReference`      | `#{transactionId}` (ID numérique FedaPay — incorrect)   |
+| FedaPay API key utilisée| Configured par école (config.fedapaySecretKey)     | Globale FEDAPAY_API_KEY (plateforme)                    |
+| Reference en DB         | financeTransaction.reference (col)                 | onboardingPayment.reference (col, "ONB-...")            |
+
+Findings clés:
+
+1. **EXACT field containing real FedaPay transaction reference in Finance flow**:
+   - Frontend (widget onComplete): `response.reference` (fallback `response.id`) — apps/web-app/src/components/finance/NewPaymentModal.tsx:307
+   - Backend verify raw: `result.reference` ou `result.id` — apps/api-server/src/finance/fedapay.service.ts:84 (result est l'objet transaction FedaPay complet, retourné dans `raw`).
+   - Affiché à l'utilisateur : NewPaymentModal.tsx:325, 331, 345 + receiptNumber (NewPaymentModal.tsx:320).
+
+2. **EXACT field in onboarding verify response that should be used (or what to ADD)**:
+   - Le backend onboarding verify ne renvoie AUCUNE référence.
+   - Il faut AJOUTER dans onboarding.service.ts:391-400 :
+       reference: payment.reference,                       // merchant reference "ONB-XXXXXXXX-..."
+       fedapayTransactionId: transactionId,                 // ID numérique FedaPay (metadata.transactionId)
+       fedapayReference: verification.fedapayReference,    // référence générée par FedaPay (à exposer depuis verifyTransactionStatus)
+   - Et modifier fedapay.service.ts:385-390 pour retourner `reference: transaction.reference` (en plus de paymentId: transaction.id).
+
+3. **File:line of Finance modal that displays the reference**:
+   - apps/web-app/src/components/finance/NewPaymentModal.tsx:325 (toast succès)
+   - apps/web-app/src/components/finance/NewPaymentModal.tsx:331 (toast pending)
+   - apps/web-app/src/components/finance/NewPaymentModal.tsx:345 (toast erreur)
+   - apps/web-app/src/components/finance/NewPaymentModal.tsx:320, 334-335, 349-350 (state receipt.receiptNumber)
+
+4. **File:line of onboarding confirmation page that currently shows the WRONG reference**:
+   - apps/web-app/src/app/signup/confirmation/page.tsx:39 — `const transactionId = searchParams.get('id')` (lit l'ID numérique FedaPay du query param ajouté par FedaPay au redirect URL).
+   - apps/web-app/src/app/signup/confirmation/page.tsx:178 — `<p className="font-mono text-sm text-slate-700">#{transactionId}</p>` (affiche l'ID numérique comme si c'était une référence).
+
+5. **Recommendation for the fix**:
+
+   **Backend — apps/api-server/src/billing/services/fedapay.service.ts** (verifyTransactionStatus, lignes 255-398) :
+   - Ajouter `reference` au type de retour et au return statement (ligne 385-390) :
+       return {
+         status,
+         amount,
+         verified: true,
+         paymentId: transaction.id,     // ID numérique FedaPay
+         reference: transaction.reference || transaction.id,  // ⭐ référence FedaPay lisible
+       };
+   - Mettre à jour la signature Promise<{ status; amount; verified; paymentId?; reference? }> à la ligne 255.
+
+   **Backend — apps/api-server/src/onboarding/services/onboarding.service.ts** (verifyPaymentStatus, lignes 391-400) :
+   - Ajouter `reference` et `fedapayReference` au retour :
+       return {
+         paymentId: payment.id,
+         status: updatedPayment?.status || payment.status,
+         amount: payment.amount,
+         verified: verification.verified,
+         transactionStatus: verification.status,
+         transactionId,                            // ⭐ ID numérique FedaPay (depuis metadata)
+         reference: payment.reference,             // ⭐ merchant reference "ONB-XXXXXXXX-..."
+         fedapayReference: verification.reference, // ⭐ référence FedaPay lisible (si exposée par verifyTransactionStatus)
+         draftId: payment.draftId,
+         tenantActivated: updatedPayment?.status === 'SUCCESS',
+         firstTenantSubdomain: mergedMeta?.firstTenantSubdomain as string | undefined,
+       };
+
+   **Frontend — apps/web-app/src/app/signup/confirmation/page.tsx** (lignes 39 et 178) :
+   - Supprimer / déprécier la lecture du query param `id` (FedaPay redirect) qui est un ID numérique, PAS une référence.
+   - Une fois la verify réussie (data.tenantActivated === true ou data.status === 'SUCCESS'), afficher à la place :
+       data.reference            (merchant reference "ONB-XXXXXXXX-...")
+       ou data.fedapayReference  (référence FedaPay lisible)
+       ou data.transactionId     (ID numérique FedaPay — fallback seulement)
+   - Modifier le bloc "Référence de transaction" (ligne 173-180) pour n'afficher la référence qu'APRÈS réception de la réponse verify, avec un fallback sur `data.reference || data.fedapayReference || transactionId || '—'`.
+
+6. **Full response shape of verifyPaymentStatus (onboarding)** — apps/api-server/src/onboarding/services/onboarding.service.ts:391-400 :
+
+   Actuellement (sans les ajouts) :
+   ```typescript
+   {
+     paymentId: string;            // UUID onboarding payment
+     status: 'PENDING' | 'COMPLETED' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
+     amount: number;
+     verified: boolean;
+     transactionStatus: 'approved' | 'completed' | 'pending' | 'declined' | 'cancelled' | string;
+     draftId: string;
+     tenantActivated: boolean;     // true iff status === 'SUCCESS'
+     firstTenantSubdomain?: string;
+   }
+   ```
+
+   Recommandé (avec les ajouts) :
+   ```typescript
+   {
+     paymentId: string;
+     status: 'PENDING' | 'COMPLETED' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
+     amount: number;
+     verified: boolean;
+     transactionStatus: 'approved' | 'completed' | 'pending' | 'declined' | 'cancelled' | string;
+     transactionId: number;          // ⭐ ID numérique FedaPay (metadata.transactionId)
+     reference: string;              // ⭐ merchant reference (payment.reference, ex. "ONB-XXXXXXXX-1234567890")
+     fedapayReference?: string;      // ⭐ référence FedaPay lisible (depuis verifyTransactionStatus)
+     draftId: string;
+     tenantActivated: boolean;
+     firstTenantSubdomain?: string;
+   }
+   ```
+
+7. **Full response shape of Finance verify endpoint** — apps/api-server/src/finance/fedapay.service.ts:64-109 (verifyTransaction) :
+
+   ```typescript
+   {
+     status: 'pending' | 'approved' | 'declined' | 'cancelled' | 'unknown';
+     amount?: number;
+     raw?: any;        // objet transaction complet renvoyé par FedaPay (contient raw.id, raw.reference, raw.status, raw.amount, etc.)
+   }
+   ```
+
+   Note : Le Finance verify expose `raw` (l'objet complet FedaPay) — il serait possible d'extraire `raw.reference` côté frontend. Mais ce n'est PAS ce que fait le modal Finance : il utilise `response.reference` directement depuis le widget `onComplete` (côté browser), pas depuis le verify endpoint.
+
+Stage Summary:
+- Le modal Finance récupère la référence FedaPay DIRECTEMENT depuis le callback `onComplete(response)` du widget checkout.js (côté browser) — champ `response.reference` (fallback `response.id`).
+- L'onboarding utilise un flux redirect (pas de widget), donc le callback `onComplete` n'est PAS disponible. La référence arrive uniquement via :
+  (a) le query param `id` ajouté par FedaPay au redirect URL (ID numérique, PAS une référence),
+  (b) le webhook FedaPay (server-side, stocké dans payment.reference — la merchant reference),
+  (c) l'API FedaPay verify (server-side, non exposée par verifyPaymentStatus aujourd'hui).
+- ⚠️ BUG ACTUEL : la page /signup/confirmation affiche `searchParams.get('id')` qui est l'ID numérique FedaPay (ex. 1234567) comme si c'était une référence. C'est ça qui apparaît comme "référence aléatoire".
+- ⚠️ MISSING : verifyPaymentStatus (onboarding) ne retourne AUCUNE référence. verifyTransactionStatus (fedapay.service) récupère transaction.reference depuis l'API FedaPay mais ne l'expose pas dans son retour.
+- ⚠️ FIX RECOMMENDÉ :
+  1. Backend fedapay.service.ts:255-390 — exposer `reference: transaction.reference || transaction.id` dans le retour de verifyTransactionStatus.
+  2. Backend onboarding.service.ts:391-400 — exposer `reference: payment.reference`, `fedapayReference: verification.reference`, `transactionId` dans le retour de verifyPaymentStatus.
+  3. Frontend signup/confirmation/page.tsx:39,178 — remplacer l'affichage de `transactionId` (query param `id`) par `data.reference || data.fedapayReference` après réception de la réponse verify, avec fallback sur le query param.
+- AUCUN fichier modifié — recherche uniquement.
+

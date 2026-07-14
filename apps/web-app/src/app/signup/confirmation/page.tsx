@@ -30,6 +30,36 @@ import { CheckCircle, XCircle, ExternalLink, RefreshCw, HeadphonesIcon, Loader2,
 
 const MAX_RETRIES = 5
 const RETRY_INTERVAL_MS = 3000
+const AUTO_REDIRECT_DELAY_MS = 5000
+
+/**
+ * ⭐ Redirige automatiquement l'utilisateur vers son portail tenant après 5 secondes.
+ * Affiche un compte à rebours pour ne pas surprendre l'utilisateur.
+ */
+function AutoRedirectToPortal({ subdomain }: { subdomain: string }) {
+  const [countdown, setCountdown] = useState(Math.ceil(AUTO_REDIRECT_DELAY_MS / 1000))
+
+  useEffect(() => {
+    const portalUrl = `https://${subdomain}.academiahelm.com/portal`
+    const interval = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval)
+          window.location.href = portalUrl
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [subdomain])
+
+  return (
+    <p className="text-xs text-slate-500 mt-4">
+      Redirection automatique vers votre portail dans {countdown}s...
+    </p>
+  )
+}
 
 function ConfirmationContent() {
   const searchParams = useSearchParams()
@@ -43,6 +73,7 @@ function ConfirmationContent() {
   const [verifyState, setVerifyState] = useState<'loading' | 'success' | 'error' | 'idle'>('idle')
   const [verifyMessage, setVerifyMessage] = useState<string>('')
   const [subdomain, setSubdomain] = useState<string | null>(null)
+  const [fedapayReference, setFedapayReference] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
@@ -65,10 +96,17 @@ function ConfirmationContent() {
 
         if (cancelled) return
 
+        // ⭐ Stocker la vraie référence FedaPay renvoyée par le backend
+        // (priorité : fedapayReference > reference > transactionId)
+        const realRef = data.fedapayReference || data.reference || data.transactionId
+        if (realRef) {
+          setFedapayReference(String(realRef))
+        }
+
         // Si tenant activé → succès
         if (data.tenantActivated || data.status === 'SUCCESS') {
           setVerifyState('success')
-          setVerifyMessage('Votre établissement a été activé. Un email avec vos accès vous a été envoyé.')
+          setVerifyMessage('Votre établissement a été activé. Un email avec vos accès vous a été envoyé à l\'adresse du promoteur.')
           if (data.firstTenantSubdomain) {
             setSubdomain(data.firstTenantSubdomain)
           }
@@ -170,12 +208,13 @@ function ConfirmationContent() {
                 </div>
               )}
 
+              {/* ⭐ Vraie référence FedaPay (récupérée via l'API verify, pas l'ID numérique de l'URL) */}
               <div className="bg-slate-50 rounded-xl p-4 mb-6 text-left border border-slate-100">
                 <p className="text-sm text-slate-500 mb-1">
-                  Référence de transaction
+                  Référence de transaction FedaPay
                 </p>
-                <p className="font-mono text-sm text-slate-700">
-                  #{transactionId}
+                <p className="font-mono text-sm text-slate-700 break-all">
+                  {fedapayReference || transactionId || '—'}
                 </p>
               </div>
 
@@ -198,6 +237,11 @@ function ConfirmationContent() {
                 <ExternalLink className="w-5 h-5 mr-2" />
                 Accéder à mon portail
               </Link>
+
+              {/* ⭐ Redirection automatique vers le portail après 5 secondes si activation réussie */}
+              {verifyState === 'success' && subdomain && (
+                <AutoRedirectToPortal subdomain={subdomain} />
+              )}
 
               {verifyState === 'loading' && attempt > 0 && (
                 <p className="text-xs text-slate-400 mt-4">

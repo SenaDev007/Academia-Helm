@@ -257,6 +257,7 @@ export class FedaPayService implements OnModuleInit {
     amount: number;
     verified: boolean;
     paymentId?: string;
+    reference?: string;
   }> {
     if (!this.apiKey) {
       throw new BadRequestException('FEDAPAY_API_KEY not configured');
@@ -387,6 +388,10 @@ export class FedaPayService implements OnModuleInit {
         amount,
         verified: true,
         paymentId: transaction.id,
+        // ⭐ Référence réelle FedaPay (ex: 'ONB-XXXX-XXXX' ou ID FedaPay).
+        // Avant, ce champ n'était pas exposé → la page de confirmation affichait
+        // un ID numérique aléatoire au lieu de la vraie référence marchand.
+        reference: transaction.reference || transaction.id || undefined,
       };
     } catch (error: any) {
       if (error instanceof BadRequestException) {

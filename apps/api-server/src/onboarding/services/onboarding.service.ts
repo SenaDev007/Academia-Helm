@@ -397,6 +397,13 @@ export class OnboardingService {
       draftId: payment.draftId,
       tenantActivated: updatedPayment?.status === 'SUCCESS',
       firstTenantSubdomain: mergedMeta?.firstTenantSubdomain as string | undefined,
+      // ⭐ Références de transaction (pour affichage sur la page de confirmation).
+      // - reference : référence marchand (payment.reference, ex: 'ONB-XXXX-XXXX')
+      // - fedapayReference : vraie référence FedaPay (récupérée via l'API verify)
+      // - transactionId : ID numérique FedaPay (fallback seulement)
+      reference: payment.reference || undefined,
+      fedapayReference: verification.reference || undefined,
+      transactionId: transactionId,
     };
   }
 

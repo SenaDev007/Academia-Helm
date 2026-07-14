@@ -395,6 +395,37 @@ export class OnboardingService {
     } catch (err: any) {
       verifyError = err?.message || 'Erreur inconnue';
       this.logger.warn(`⚠️  FedaPay verify failed for payment ${paymentId}: ${verifyError}. Retourne les infos DB sans activation.`);
+
+      // ⭐ FALLBACK CRITIQUE : si le payment est déjà COMPLETED en DB (le webhook
+      // FedaPay l'a marqué comme complété) mais que l'API verify échoue, on tente
+      // quand même l'activation. Sans ça, le promoteur ne reçoit jamais ses
+      // accès et l'email n'est jamais envoyé.
+      if (payment.status === 'COMPLETED') {
+        this.logger.log(`🔧 Fallback activation : payment ${paymentId} est COMPLETED en DB, tentative d'activation malgré l'échec verify...`);
+        try {
+          // Construire un objet transaction minimal pour handlePaymentSuccess
+          const fallbackTransaction = {
+            id: transactionId,
+            reference: payment.reference,
+            status: 'approved',
+            amount: payment.amount,
+            metadata: { paymentId: payment.id, type: 'onboarding' },
+          };
+          // Appeler directement activateTenantAfterPayment (sans passer par
+          // handlePaymentSuccess qui exige une transaction FedaPay valide)
+          await this.activateTenantAfterPayment(paymentId);
+          this.logger.log(`✅ Fallback activation réussie pour payment ${paymentId}`);
+          // Recharger le payment pour voir le nouveau statut
+          const refreshed = await this.prisma.onboardingPayment.findUnique({ where: { id: paymentId } });
+          if (refreshed) {
+            payment.status = refreshed.status;
+            payment.metadata = refreshed.metadata;
+          }
+        } catch (activationErr: any) {
+          this.logger.error(`❌ Fallback activation échouée pour payment ${paymentId}: ${activationErr.message}`, activationErr.stack);
+          verifyError = `${verifyError} | Activation fallback failed: ${activationErr.message}`;
+        }
+      }
     }
 
     // Recharger le paiement (après possible activation du tenant dans verifyTransactionStatus)

@@ -345,12 +345,21 @@ export class FedaPayService implements OnModuleInit {
       }
 
       const result = await response.json();
-      const transaction = result.transaction || result;
+      // ⭐ FedaPay peut renvoyer la transaction sous différentes formes :
+      //   - { transaction: { id, reference, status, ... } }  (format standard)
+      //   - { id, reference, status, ... }                    (format direct)
+      //   - { data: { id, reference, status, ... } }          (format SDK)
+      //   - { v1/transactions: [...] }                        (format liste)
+      // On essaie tous ces chemins.
+      const transaction = result?.transaction || result?.data || result?.['v1/transactions']?.[0] || result;
 
-      if (!transaction.id) {
-        this.logger.error('Invalid FedaPay response:', result);
+      // Log de la réponse brute pour diagnostic (en cas d'erreur de parsing)
+      if (!transaction || (!transaction.id && !transaction.reference)) {
+        this.logger.error('❌ Invalid FedaPay response — no transaction.id or transaction.reference:', JSON.stringify(result).substring(0, 500));
         throw new BadRequestException('Invalid response from FedaPay API');
       }
+
+      this.logger.log(`✅ FedaPay transaction parsed: id=${transaction.id}, reference=${transaction.reference}, status=${transaction.status}`);
 
       const status = transaction.status || 'pending';
       const amount = transaction.amount || 0;

@@ -2080,22 +2080,71 @@ export class FedaPayService implements OnModuleInit {
       typeof payMeta.firstTenantSubdomain === 'string' ? payMeta.firstTenantSubdomain : undefined;
     const loginUrl = this.buildTenantPortalUrl(cfg.siteUrl, firstSub);
     const snap = (draft.priceSnapshot as Record<string, unknown>) || {};
-    // ⭐ Utiliser planName (ex: "Helm Seed") et NON planCode (ex: "SEED").
-    // Si planName absent, fallback sur planCode, sinon "Academia Helm".
-    // On évite aussi d'afficher un ancien code comme "BASIC_MONTHLY".
-    const rawPlan = typeof snap.planName === 'string'
-      ? snap.planName
-      : typeof snap.planCode === 'string'
-        ? snap.planCode
-        : '';
-    // Si le plan est un code brut (SEED/GROW/LEAD/NETWORK), le convertir en nom affichable.
-    const planDisplayMap: Record<string, string> = {
-      SEED: 'Helm Seed',
-      GROW: 'Helm Grow',
-      LEAD: 'Helm Lead',
-      NETWORK: 'Helm Network',
+
+    // ⭐ Déterminer le nom affichable du plan.
+    // On ne fait PLUS confiance à snap.planName car il peut contenir un ancien
+    // nom périmé (ex: "Plan Mensuel - 1 École" pour les drafts créés avant la
+    // migration vers SEED/GROW/LEAD/NETWORK).
+    //
+    // Stratégie (par ordre de priorité) :
+    //   1. Fetch DB pricing_plans par planId (le plus fiable)
+    //   2. Fetch DB pricing_plans par planCode
+    //   3. Conversion planCode → nom affichable via map hardcodée
+    //   4. Fallback "Academia Helm"
+    //
+    // On ajoute aussi la range d'élèves (ex: "Helm Seed · 1 à 150 élèves").
+    const planDisplayMap: Record<string, { name: string; range: string }> = {
+      SEED: { name: 'Helm Seed', range: '1 à 150 élèves' },
+      GROW: { name: 'Helm Grow', range: '151 à 400 élèves' },
+      LEAD: { name: 'Helm Lead', range: '401 à 800 élèves' },
+      NETWORK: { name: 'Helm Network', range: '801 élèves et plus' },
     };
-    const plan = (rawPlan && planDisplayMap[rawPlan.toUpperCase()]) || rawPlan || 'Academia Helm';
+
+    let planName = 'Academia Helm';
+    let planRange = '';
+
+    // 1. Fetch DB par planId (le plus fiable)
+    const snapPlanId = typeof snap.planId === 'string' ? snap.planId : undefined;
+    const snapPlanCode = typeof snap.planCode === 'string' ? snap.planCode : undefined;
+    try {
+      const dbPlan = snapPlanId
+        ? await this.prisma.pricingPlan.findUnique({
+            where: { id: snapPlanId },
+            select: { code: true, name: true, studentMin: true, studentMax: true },
+          })
+        : snapPlanCode
+          ? await this.prisma.pricingPlan.findFirst({
+              where: { code: snapPlanCode },
+              select: { code: true, name: true, studentMin: true, studentMax: true },
+            })
+          : null;
+      if (dbPlan?.name) {
+        planName = dbPlan.name;
+        // Construire la range d'élèves
+        const min = dbPlan.studentMin ?? 0;
+        const max = dbPlan.studentMax;
+        if (max) {
+          planRange = `${min} à ${max} élèves`;
+        } else if (min > 0) {
+          planRange = `${min} élèves et plus`;
+        }
+      } else if (snapPlanCode && planDisplayMap[snapPlanCode.toUpperCase()]) {
+        // 2. Fallback : conversion planCode → nom affichable
+        const mapped = planDisplayMap[snapPlanCode.toUpperCase()];
+        planName = mapped.name;
+        planRange = mapped.range;
+      }
+    } catch (err: any) {
+      this.logger.warn(`⚠️  Could not fetch pricing plan from DB: ${err.message}. Using fallback.`);
+      if (snapPlanCode && planDisplayMap[snapPlanCode.toUpperCase()]) {
+        const mapped = planDisplayMap[snapPlanCode.toUpperCase()];
+        planName = mapped.name;
+        planRange = mapped.range;
+      }
+    }
+
+    // Format final : "Helm Seed" ou "Helm Seed · 1 à 150 élèves"
+    const plan = planRange ? `${planName} · ${planRange}` : planName;
     const links = {
       siteUrl: cfg.siteUrl,
       portalUrl: cfg.portalUrl,

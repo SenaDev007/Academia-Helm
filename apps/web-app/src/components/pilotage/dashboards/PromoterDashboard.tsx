@@ -7,7 +7,7 @@ import {
   BookOpen, Wallet, FileText, Settings, MessageSquare,
   ArrowRight, Loader2, UserCog, Calendar, BarChart3,
 } from 'lucide-react';
-import { useSchoolLevel } from '@/contexts/SchoolLevelContext';
+import { useSchoolLevelContext } from '@/contexts/SchoolLevelContext';
 import KPICards from '@/components/pilotage/KPICards';
 import QuickAnalytics from '@/components/pilotage/QuickAnalytics';
 import OrionAlertsCard from '@/components/pilotage/OrionAlertsCard';
@@ -26,7 +26,7 @@ interface PromoterKpis {
 }
 
 export default function PromoterDashboard({ tenantId }: { tenantId: string }) {
-  const { currentYear, currentLevel } = useSchoolLevel();
+  const { currentYear, currentLevel } = useSchoolLevelContext();
   const [kpis, setKpis] = useState<PromoterKpis | null>(null);
   const [loading, setLoading] = useState(true);
   const [todayRevenue, setTodayRevenue] = useState<number | null>(null);

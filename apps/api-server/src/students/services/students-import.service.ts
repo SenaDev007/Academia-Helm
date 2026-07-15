@@ -35,6 +35,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { StudentsLifecycleService } from './students-lifecycle.service';
 import { StudentAccountService } from '../../finance/student-account.service';
+import { MatriculeService } from './matricule.service';
 import * as ExcelJS from 'exceljs';
 import { Response } from 'express';
 
@@ -115,6 +116,7 @@ export class StudentsImportService {
     private readonly prisma: PrismaService,
     private readonly lifecycleService: StudentsLifecycleService,
     private readonly studentAccountService: StudentAccountService,
+    private readonly matriculeService: MatriculeService,
   ) {}
 
   /**
@@ -264,7 +266,6 @@ export class StudentsImportService {
         const enrollmentType = row.isNewStudent === false ? 'REPEAT' : 'NEW';
 
         // Créer l'élève + enrollment
-        // ⭐ On passe AROUND classId (section physique) ET academicClassId (classe officielle).
         const student = await this.lifecycleService.preRegister(tenantId, {
           academicYearId,
           schoolLevelId: schoolLevel.id,
@@ -275,19 +276,50 @@ export class StudentsImportService {
           placeOfBirth: row.placeOfBirth || undefined,
           nationality: row.nationality || undefined,
           classId: classId || undefined,
-          // ⭐ Classe officielle (AcademicClass) — résolue depuis Class.officialClassId
           academicClassId,
           previousArrears: 0,
           enrollmentType,
         }, userId);
 
-        // Créer le StudentAccount avec les bons frais (INSCRIPTION ou REINSCRIPTION)
-        await this.studentAccountService.getOrCreate(
-          student.id,
-          tenantId,
-          academicYearId,
-          enrollmentType,
-        );
+        // ⭐ Générer le matricule automatiquement après la pré-inscription.
+        // preRegister crée l'élève avec statut PRE_REGISTERED mais SANS matricule.
+        // On génère le matricule ici pour que l'élève soit complet dès l'import.
+        try {
+          const { matricule, enrollmentYear } = await this.matriculeService.generate(
+            tenantId,
+            academicYearId,
+          );
+          await this.prisma.student.update({
+            where: { id: student.id },
+            data: {
+              matricule,
+              enrollmentYear,
+              studentCode: matricule,
+            },
+          });
+          // Passer l'enrollment à ADMITTED (comme admitStudent le ferait)
+          await this.prisma.studentEnrollment.updateMany({
+            where: { studentId: student.id, academicYearId },
+            data: { status: 'ADMITTED' },
+          });
+          this.logger.log(`✅ Matricule generated for imported student ${student.id}: ${matricule}`);
+        } catch (matriculeErr: any) {
+          this.logger.warn(`⚠️ Matricule generation failed for student ${student.id}: ${matriculeErr.message}`);
+          // Ne pas bloquer l'import si le matricule échoue
+        }
+
+        // ⭐ Créer le StudentAccount (compte financier) avec les bons frais
+        try {
+          await this.studentAccountService.getOrCreate(
+            tenantId,
+            student.id,
+            academicYearId,
+          );
+          this.logger.log(`✅ StudentAccount created for imported student ${student.id}`);
+        } catch (accountErr: any) {
+          this.logger.warn(`⚠️ StudentAccount creation failed for student ${student.id}: ${accountErr.message}`);
+          // Ne pas bloquer l'import si le compte financier échoue
+        }
 
         // Créer le guardian si fourni
         if (row.guardianName || row.guardianPhone || row.guardianEmail) {

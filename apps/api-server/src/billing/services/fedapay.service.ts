@@ -662,6 +662,21 @@ export class FedaPayService implements OnModuleInit {
           statusText: response.statusText,
           body: result,
         });
+
+        // ⭐ Détection de la limite 20000 — restriction du COMPTE FedaPay (pas du code).
+        // Le compte FedaPay live a une limite de transaction par défaut de 20000 FCFA.
+        // Pour l'augmenter : contacter support@fedapay.com ou compléter le KYC.
+        const errorStr = JSON.stringify(result);
+        if (errorStr.includes('20000') || errorStr.includes('montant maximum')) {
+          this.logger.error('🚨 LIMITE COMPTE FEDAPAY :');
+          this.logger.error('   Le compte FedaPay live a une limite de 20000 FCFA par transaction.');
+          this.logger.error('   → Ce n\'est PAS un problème de code — c\'est une restriction du compte.');
+          this.logger.error('   → Solutions :');
+          this.logger.error('     1. Contacter support@fedapay.com pour augmenter la limite');
+          this.logger.error('     2. Compléter le KYC dans le dashboard FedaPay (Settings → Verification)');
+          this.logger.error('     3. En attendant, tester avec un montant ≤ 20000 FCFA');
+        }
+
         const errMsg = result?.message || result?.error?.message || `HTTP ${response.status}`;
         const errDetails = result?.errors ? JSON.stringify(result.errors) : '';
         throw new BadRequestException(

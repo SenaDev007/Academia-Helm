@@ -83,6 +83,7 @@ import { ComptaExportController } from './compta-export.controller';
 import { ComptaAutoExportService } from './compta-auto-export.service';
 import { ArrearsImportService } from './arrears-import.service';
 import { ArrearsImportController } from './arrears-import.controller';
+import { CollectionSummaryController } from './collection-summary.controller';
 import { CommunicationModule } from '../communication/communication.module';
 
 @Module({
@@ -124,6 +125,8 @@ import { CommunicationModule } from '../communication/communication.module';
     ComptaExportController,
     // Import d'arriérés via Excel
     ArrearsImportController,
+    // Bilan des encaissements + Récapitulatif
+    CollectionSummaryController,
   ],
   providers: [
     FeesPrismaService,

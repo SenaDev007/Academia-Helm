@@ -99,30 +99,34 @@ export default function AdmissionsContent() {
       })
       .catch(() => setSchoolLevels([]));
 
-    // ⭐ Charger les classes OFFICIELLES (AcademicClass) du tenant.
-    // Le parent exprime un vœu sur la classe officielle (CP, CE1, 6ème…).
-    // L'affectation à une section physique (CE1-A, CE1-B) se fera plus tard.
-    fetch('/api/academic-classes?isActive=true', { credentials: 'include' })
+    // ⭐ Charger les classes physiques et déduire les classes officielles créées.
+    // On utilise /api/all-classes (classes physiques) comme la "Liste des élèves",
+    // puis on déduplique par officialClass.id pour n'avoir que les classes
+    // officielles réellement paramétrées (pas toutes les séries de la structure).
+    fetch('/api/all-classes', { credentials: 'include' })
       .then(res => {
-        if (!res.ok) {
-          console.warn('[AdmissionsContent] /api/academic-classes returned', res.status, res.statusText);
-          return [];
-        }
+        if (!res.ok) return [];
         return res.json();
       })
       .then(data => {
-        // La réponse peut être soit un tableau direct, soit { data: [...] }
-        const classes = Array.isArray(data) ? data : (data?.data || data?.classes || []);
-        console.log('[AdmissionsContent] Academic classes loaded:', classes.length, classes.slice(0, 3).map((c: any) => ({
-          id: c.id?.substring(0, 8),
-          name: c.name,
-          levelId: c.levelId?.substring(0, 8),
-          level: c.level ? { id: c.level.id?.substring(0, 8), name: c.level.name } : null,
-        })));
+        const physicalClasses = Array.isArray(data) ? data : (data?.data || []);
+        // Dédupliquer par officialClass.id pour n'avoir que les classes officielles créées
+        const officialMap = new Map<string, any>();
+        for (const cls of physicalClasses) {
+          if (cls.officialClass && !officialMap.has(cls.officialClass.id)) {
+            officialMap.set(cls.officialClass.id, {
+              id: cls.officialClass.id,
+              name: cls.officialClass.name,
+              levelId: cls.schoolLevelId,
+              level: cls.schoolLevel,
+            });
+          }
+        }
+        const classes = Array.from(officialMap.values()).sort((a, b) => a.name.localeCompare(b.name));
         setSchoolClasses(classes);
       })
       .catch((e) => {
-        console.warn('[AdmissionsContent] Failed to load academic classes:', e?.message);
+        console.warn('[AdmissionsContent] Failed to load classes:', e?.message);
         setSchoolClasses([]);
       });
   }, []);

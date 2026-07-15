@@ -97,16 +97,18 @@ export default function AffectationVersClassePhysique() {
         fetch('/api/all-classes', { cache: 'no-store' })
           .then(r => r.ok ? r.json() : [])
           .catch(() => []),
-        // ⭐ Charger les classes officielles (AcademicClass) séparément
-        // pour que le filtre fonctionne même si studentsWithoutClass est vide
-        fetch('/api/academic-classes?isActive=true', { credentials: 'include' })
-          .then(r => r.ok ? r.json() : [])
-          .then(data => Array.isArray(data) ? data : (data?.data || data?.classes || []))
-          .catch(() => []),
       ]);
       setStudentsWithoutClass(Array.isArray(studentsData) ? studentsData : []);
-      setPhysicalClasses(Array.isArray(classesRes) ? classesRes : []);
-      setAcademicClassesList(Array.isArray(academicClassesRes) ? academicClassesRes : []);
+      const allPhysicalClasses = Array.isArray(classesRes) ? classesRes : [];
+      setPhysicalClasses(allPhysicalClasses);
+      // ⭐ Déduire les classes officielles des classes physiques (comme Liste des élèves)
+      const officialMap = new Map<string, any>();
+      for (const cls of allPhysicalClasses) {
+        if (cls.officialClass && !officialMap.has(cls.officialClass.id)) {
+          officialMap.set(cls.officialClass.id, cls.officialClass);
+        }
+      }
+      setAcademicClassesList(Array.from(officialMap.values()).sort((a: any, b: any) => a.name.localeCompare(b.name)));
     } catch (e: any) {
       console.error('Failed to load:', e);
       toast({ title: 'Erreur', description: e.message, variant: 'error' });

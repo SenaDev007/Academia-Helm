@@ -592,6 +592,11 @@ export class StudentsImportService {
     schoolLevels: any[],
     classes: any[],
   ): void {
+    // ⭐ Seuls le prénom et le nom sont OBLIGATOIRES.
+    // Date de naissance, sexe, type d'élève sont OPTIONNELS — l'utilisateur
+    // pourra les compléter plus tard. Mais si une valeur est fournie et que
+    // le format est invalide, on rejette (ex: date au mauvais format).
+
     // Prénom obligatoire
     if (!row.firstName) {
       row.errors.push('Prénom manquant');
@@ -600,14 +605,14 @@ export class StudentsImportService {
     if (!row.lastName) {
       row.errors.push('Nom manquant');
     }
-    // Date de naissance obligatoire
-    if (!row.dateOfBirth) {
-      row.errors.push('Date de naissance manquante ou format invalide (attendu JJ/MM/AAAA)');
-    }
-    // Sexe obligatoire
-    if (!row.gender) {
-      row.errors.push('Sexe manquant ou invalide (attendu M ou F)');
-    }
+    // Date de naissance — OPTIONNELLE, mais si fournie, doit être valide
+    // (row.dateOfBirth est déjà null si le format est invalide — parsé plus tôt)
+    // On ne pousse plus d'erreur si absente.
+
+    // Sexe — OPTIONNEL, mais si fourni, doit être valide (M ou F)
+    // (row.gender est déjà null si invalide — parsé plus tôt)
+    // On ne pousse plus d'erreur si absent.
+
     // ⭐ Niveau scolaire — déduit du nom de la feuille, mais on vérifie qu'il existe
     if (!row.schoolLevelName) {
       row.errors.push('Niveau scolaire non déduit (feuille sans classe correspondante ?)');
@@ -641,7 +646,6 @@ export class StudentsImportService {
         );
         if (clsAnyLevel) {
           row.resolvedClassId = clsAnyLevel.id;
-          // ⭐ Résoudre aussi la classe officielle (AcademicClass)
           row.resolvedAcademicClassId = clsAnyLevel.officialClassId || undefined;
         } else {
           row.errors.push(
@@ -650,13 +654,13 @@ export class StudentsImportService {
         }
       } else {
         row.resolvedClassId = cls.id;
-        // ⭐ Résoudre aussi la classe officielle (AcademicClass)
         row.resolvedAcademicClassId = cls.officialClassId || undefined;
       }
     }
-    // Type d'élève obligatoire
+    // Type d'élève — OPTIONNEL (plus obligatoire)
+    // Si non fourni, on default à "nouvel élève"
     if (row.isNewStudent === null) {
-      row.errors.push('Type d\'élève manquant (attendu "Nouvel élève" ou "Ancien élève")');
+      row.isNewStudent = true; // Default: nouvel élève
     }
 
     row.isValid = row.errors.length === 0;

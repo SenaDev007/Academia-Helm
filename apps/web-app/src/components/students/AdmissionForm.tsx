@@ -79,31 +79,36 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
     setIsLoadingClasses(true);
     try {
       // ⭐ On utilise /api/academic-classes (route BFF) pour récupérer les
-      // classes OFFICIELLES (AcademicClass : CP, CE1, 6ème…).
-      // Le parent exprime un VŒU sur la classe officielle — l'affectation à une
-      // section physique (CE1-A, CE1-B) se fera plus tard par l'école via le
-      // module Affectations.
+      // ⭐ Charger les classes physiques et déduire les classes officielles créées.
+      // Même pattern que "Liste des élèves" : /api/all-classes → dédupliquer par officialClass.id
       const res = await fetch(
-        '/api/academic-classes?isActive=true',
+        '/api/all-classes',
         { credentials: 'include' }
       );
       if (res.ok) {
         const data = await res.json();
-        // La réponse peut être soit un tableau direct, soit { data: [...] }
-        const allClasses = Array.isArray(data) ? data : (data?.data || data?.classes || []);
-        console.log('[AdmissionForm] Loaded academic classes:', allClasses.length, allClasses.map((c: any) => ({ id: c.id?.substring(0, 8), name: c.name })));
+        const physicalClasses = Array.isArray(data) ? data : (data?.data || []);
+        // Dédupliquer par officialClass.id
+        const officialMap = new Map<string, any>();
+        for (const cls of physicalClasses) {
+          if (cls.officialClass && !officialMap.has(cls.officialClass.id)) {
+            officialMap.set(cls.officialClass.id, {
+              id: cls.officialClass.id,
+              name: cls.officialClass.name,
+              levelId: cls.schoolLevelId,
+              level: cls.schoolLevel,
+            });
+          }
+        }
+        const allClasses = Array.from(officialMap.values()).sort((a: any, b: any) => a.name.localeCompare(b.name));
         // Filtrer côté client par le niveau sélectionné.
-        // Les AcademicClass ont un champ levelId (UUID de academic_levels) et
-        // une relation `level` avec name/code.
         const selectedLevel = levels.find(l => l.id === levelId);
         const levelCode = selectedLevel?.code?.toUpperCase() || '';
         const levelName = selectedLevel?.name?.toUpperCase() || '';
         const filtered = allClasses.filter((c: any) => {
-          // c.level est inclus (relation), avec un champ name
           const classLevelName = (c.level?.name || '').toUpperCase();
           const classLevelCode = (c.level?.code || '').toUpperCase();
-          // Match par nom ou code : MATERNELLE matche MATERNELLE, etc.
-          if (!levelCode && !levelName) return true; // pas de filtre si pas de niveau sélectionné
+          if (!levelCode && !levelName) return true;
           return classLevelName === levelName ||
                  classLevelCode === levelCode ||
                  classLevelName.includes(levelCode) ||

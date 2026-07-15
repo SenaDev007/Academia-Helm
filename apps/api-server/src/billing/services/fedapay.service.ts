@@ -852,10 +852,18 @@ export class FedaPayService implements OnModuleInit {
 
     // Montant depuis PricingService. En sandbox FedaPay, plafonner à 20 000 XOF (limite API test).
     // ⭐ Le montant RÉEL (amountFromPricing) est stocké en DB pour la facturation.
-    // Le montant PLAFONNÉ (amount) est envoyé à FedaPay pour la transaction de test.
+    // Le montant envoyé à FedaPay peut être plafonné via FEDAPAY_MAX_AMOUNT.
+    // En sandbox, plafond automatique à 20 000 XOF (limite API test).
+    // En live, plafond via FEDAPAY_MAX_AMOUNT (ex: 20000 si le compte a une limite).
     const amountFromPricing = await this.pricingService.calculateInitialPaymentPrice(draft.schoolsCount || 1);
     const SANDBOX_MAX = 20000;
-    const amount = this.isLiveMode ? amountFromPricing : Math.min(amountFromPricing, SANDBOX_MAX);
+    const fedapayMaxAmount = parseInt(this.configService.get<string>('FEDAPAY_MAX_AMOUNT') || '0', 10);
+    let amount = this.isLiveMode ? amountFromPricing : Math.min(amountFromPricing, SANDBOX_MAX);
+    // ⭐ Si FEDAPAY_MAX_AMOUNT est défini, plafonner même en live (limite compte FedaPay).
+    if (fedapayMaxAmount > 0 && amount > fedapayMaxAmount) {
+      amount = fedapayMaxAmount;
+      this.logger.warn(`⚠️  FEDAPAY_MAX_AMOUNT=${fedapayMaxAmount} : montant FedaPay plafonné de ${amountFromPricing} → ${amount} XOF. DB stocke le montant réel ${amountFromPricing} XOF.`);
+    }
     const isSandboxCapped = !this.isLiveMode && amountFromPricing > SANDBOX_MAX;
     if (isSandboxCapped) {
       this.logger.log(`🧪 Sandbox : montant réel ${amountFromPricing} XOF → montant FedaPay ${amount} XOF (plafonné). DB stocke le montant réel ${amountFromPricing} XOF.`);

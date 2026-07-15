@@ -24,7 +24,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Search, ChevronDown, ChevronRight, Users, Loader2,
   FileText, BookOpen, Baby, GraduationCap, AlertCircle,
-  FileDown, FileSpreadsheet, Upload,
+  FileDown, FileSpreadsheet, Upload, Zap,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -146,6 +146,7 @@ export default function StudentClassListsContent() {
   const [excelGeneratingClassId, setExcelGeneratingClassId] = useState<string | null>(null);
   const [isGlobalExcelExporting, setIsGlobalExcelExporting] = useState(false);
   const [isGlobalPdfExporting, setIsGlobalPdfExporting] = useState(false);
+  const [bulkSetupLoading, setBulkSetupLoading] = useState(false);
   // ⭐ Import en masse (même modal que l'onglet Inscriptions)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
@@ -394,6 +395,39 @@ export default function StudentClassListsContent() {
             title="Importer des élèves depuis un fichier Excel (template multi-feuilles par classe physique)"
           >
             <Upload className="w-4 h-4" /> Importer
+          </button>
+          {/* ⭐ Bouton Génération en masse — matricule + compte financier + admission */}
+          <button
+            onClick={async () => {
+              if (!academicYear?.id) return;
+              if (!confirm('Générer les matricules, comptes financiers et admissions pour TOUS les élèves sans matricule ? Cela peut prendre quelques minutes.')) return;
+              setBulkSetupLoading(true);
+              try {
+                const res = await fetch('/api/students/bulk-setup', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ academicYearId: academicYear.id }),
+                });
+                const data = await res.json();
+                if (res.ok) {
+                  alert(`✅ Génération terminée :\n• ${data.matriculeGenerated} matricules générés\n• ${data.accountsCreated} comptes financiers créés\n• ${data.enrollmentsUpdated} admissions traitées${data.matriculeFailed > 0 ? `\n• ${data.matriculeFailed} échecs matricule` : ''}${data.accountsFailed > 0 ? `\n• ${data.accountsFailed} échecs compte` : ''}`);
+                  // Recharger les données
+                  window.location.reload();
+                } else {
+                  alert(`❌ Erreur: ${data.message || data.error}`);
+                }
+              } catch (e: any) {
+                alert(`❌ Erreur: ${e.message}`);
+              } finally {
+                setBulkSetupLoading(false);
+              }
+            }}
+            disabled={bulkSetupLoading}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-300 transition whitespace-nowrap disabled:opacity-50"
+            title="Générer en masse les matricules, comptes financiers et admissions pour les élèves qui n'en ont pas"
+          >
+            {bulkSetupLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+            {bulkSetupLoading ? 'Génération...' : 'Générer matricules'}
           </button>
         </div>
       </div>

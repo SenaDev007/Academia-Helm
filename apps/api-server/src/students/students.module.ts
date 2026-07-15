@@ -26,6 +26,7 @@ import { StudentIdentifierService } from './services/student-identifier.service'
 import { StudentIdCardService } from './services/student-id-card.service';
 import { StudentsOrionService } from './services/students-orion.service';
 import { StudentIdentifierController } from './controllers/student-identifier.controller';
+import { BulkSetupController } from './controllers/bulk-setup.controller';
 import { StudentIdCardController } from './controllers/student-id-card.controller';
 import { StudentsOrionController } from './controllers/students-orion.controller';
 // Module 1 - Vérification Publique & Dossier Scolaire
@@ -89,6 +90,7 @@ import { CommunicationModule } from '../communication/communication.module';
     GeneratedDocumentsController,
     TransfersPrismaController,
     StudentsImportController,
+    BulkSetupController,
   ],
   providers: [
     StudentsService,

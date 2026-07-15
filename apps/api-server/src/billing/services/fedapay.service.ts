@@ -699,24 +699,74 @@ export class FedaPayService implements OnModuleInit {
       }
 
       // La réponse FedaPay peut être :
-      //   { transaction: { id, reference, status, amount, payment_url, ... } }
-      //   { id, reference, status, amount, payment_url, ... }
+      //   { "v1/transaction": { id, reference, status, amount, ... } }  ← format réel observé
+      //   { transaction: { id, reference, ... } }
+      //   { id, reference, ... }
       //   { data: { ... } }
       // ⭐ Log de la réponse brute pour diagnostic.
-      this.logger.log(`📦 FedaPay raw response: ${JSON.stringify(result).substring(0, 500)}`);
-      const transaction = result?.transaction || result?.data || result;
+      this.logger.log(`📦 FedaPay raw response: ${JSON.stringify(result).substring(0, 1000)}`);
+      const transaction = result?.['v1/transaction'] || result?.transaction || result?.data || result;
 
-      this.logger.log(`✅ Transaction created successfully via API: id=${transaction?.id}, reference=${transaction?.reference}, payment_url=${transaction?.payment_url || transaction?.url || 'N/A'}`);
+      this.logger.log(`✅ Transaction created successfully via API: id=${transaction?.id}, reference=${transaction?.reference}`);
+
+      // ⭐ FedaPay ne renvoie PAS de payment_url dans la création de transaction.
+      // Il faut générer un token séparément : POST /v1/transactions/{id}/tokens
+      // Puis construire l'URL de checkout : https://fedapay.com/checkout/{id}?token={token}
+      // OU utiliser le widget FedaPay.init({ public_key, transaction_id, token }) côté frontend.
+      let paymentUrl: string | undefined;
+      let checkoutToken: string | undefined;
+
+      if (transaction?.id) {
+        try {
+          // Générer le token de checkout
+          const tokenUrl = `${this.apiBaseUrl}/v1/transactions/${transaction.id}/tokens`;
+          this.logger.log(`🔐 Generating checkout token: POST ${tokenUrl}`);
+          const tokenController = new AbortController();
+          const tokenTimeoutId = setTimeout(() => tokenController.abort(), 15000);
+          const tokenResponse = await fetch(tokenUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${this.apiKey}`,
+              'Accept': 'application/json',
+            },
+            body: JSON.stringify({}),
+            signal: tokenController.signal,
+          });
+          clearTimeout(tokenTimeoutId);
+          const tokenResult = await tokenResponse.json().catch(() => ({}));
+          this.logger.log(`📦 Token response: ${JSON.stringify(tokenResult).substring(0, 500)}`);
+
+          if (tokenResponse.ok) {
+            // Le token peut être dans token.token, token.data.token, ou token['v1/token'].token
+            const tokenObj = tokenResult?.['v1/token'] || tokenResult?.token || tokenResult?.data || tokenResult;
+            checkoutToken = tokenObj?.token || tokenObj?.key;
+            if (checkoutToken) {
+              // Construire l'URL de checkout
+              const checkoutBase = this.isLiveMode ? 'https://fedapay.com' : 'https://sandbox.fedapay.com';
+              paymentUrl = `${checkoutBase}/checkout/${transaction.id}?token=${checkoutToken}`;
+              this.logger.log(`✅ Checkout URL generated: ${paymentUrl}`);
+            } else {
+              this.logger.warn(`⚠️ Token généré mais pas de champ 'token' trouvé. Response: ${JSON.stringify(tokenResult).substring(0, 500)}`);
+            }
+          } else {
+            this.logger.warn(`⚠️ Token generation failed: HTTP ${tokenResponse.status}. Response: ${JSON.stringify(tokenResult).substring(0, 500)}`);
+          }
+        } catch (tokenErr: any) {
+          this.logger.warn(`⚠️ Token generation error: ${tokenErr.message}`);
+        }
+      }
+
+      if (!paymentUrl) {
+        this.logger.warn(`⚠️ FedaPay n'a pas renvoyé de payment_url et la génération de token a échoué. Response: ${JSON.stringify(result).substring(0, 500)}`);
+      }
 
       // Retourner les données dans le format attendu
-      const paymentUrl = transaction?.payment_url || transaction?.url || transaction?.paymentUrl;
-      if (!paymentUrl) {
-        this.logger.warn(`⚠️ FedaPay n'a pas renvoyé de payment_url. Response: ${JSON.stringify(result).substring(0, 500)}`);
-      }
       return {
         transactionId: transaction?.id,
         reference: transaction?.reference || transaction?.id || '',
         paymentUrl: paymentUrl,
+        checkoutToken: checkoutToken,
         status: transaction?.status || 'pending',
         amount: transaction?.amount || data.amount,
       };

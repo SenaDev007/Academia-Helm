@@ -19,7 +19,7 @@
  */
 
 import { Controller, Get, Query, Logger } from '@nestjs/common';
-import { TenantId } from '../auth/decorators/tenant-id.decorator';
+import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { PrismaService } from '../database/prisma.service';
 
 @Controller('finance')

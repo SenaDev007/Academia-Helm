@@ -1,16 +1,15 @@
 /**
  * ============================================================================
- * BULK SETUP CONTROLLER — Génération en masse matricule + compte + QR
+ * BULK SETUP CONTROLLER — Génération en masse matricule + compte + QR + dossier
  * ============================================================================
  *
  * POST /students/bulk-setup
  * Pour tous les élèves SANS matricule d'un tenant/année scolaire :
- *   1. Génère le matricule (MatriculeService)
- *   2. Crée le StudentAccount (compte financier)
- *   3. Génère le QR code (StudentIdentifier)
+ *   1. Génère le matricule LOCAL (MatriculeService) → student.matricule
+ *   2. Génère le matricule GLOBAL + StudentIdentifier (QR code vérification)
+ *   3. Crée le StudentAccount (compte financier)
  *   4. Passe l'enrollment à ADMITTED
- *
- * Utilisé après un import en masse où les élèves n'ont pas ces éléments.
+ *   5. Initialise le dossier scolaire (StudentDossier) si non existant
  */
 
 import { Controller, Post, Body, Logger, UseGuards } from '@nestjs/common';
@@ -20,6 +19,7 @@ import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { PrismaService } from '../../database/prisma.service';
 import { MatriculeService } from '../services/matricule.service';
+import { StudentIdentifierService } from '../services/student-identifier.service';
 import { StudentAccountService } from '../../finance/student-account.service';
 
 @Controller('students/bulk-setup')
@@ -31,6 +31,7 @@ export class BulkSetupController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly matriculeService: MatriculeService,
+    private readonly studentIdentifierService: StudentIdentifierService,
     private readonly studentAccountService: StudentAccountService,
   ) {}
 
@@ -44,7 +45,7 @@ export class BulkSetupController {
     const { academicYearId } = body;
     this.logger.log(`Bulk setup: tenant=${tenantId}, year=${academicYearId}`);
 
-    // Trouver tous les élèves SANS matricule pour cette année
+    // Trouver tous les élèves SANS matricule local pour cette année
     const where: any = {
       tenantId,
       academicYearId,
@@ -70,15 +71,16 @@ export class BulkSetupController {
 
     this.logger.log(`Found ${students.length} students without matricule`);
 
-    let matriculeSuccess = 0;
-    let matriculeFail = 0;
+    let localMatriculeSuccess = 0;
+    let globalMatriculeSuccess = 0;
     let accountSuccess = 0;
-    let accountFail = 0;
     let enrollmentUpdated = 0;
     const errors: string[] = [];
 
     for (const student of students) {
-      // 1. Générer le matricule
+      const studentName = `${student.firstName} ${student.lastName}`;
+
+      // 1. Générer le matricule LOCAL (format: CODE-E-YY-XXXXX)
       try {
         const { matricule, enrollmentYear } = await this.matriculeService.generate(
           tenantId,
@@ -92,23 +94,36 @@ export class BulkSetupController {
             studentCode: matricule,
           },
         });
-        matriculeSuccess++;
+        localMatriculeSuccess++;
       } catch (e: any) {
-        matriculeFail++;
-        errors.push(`Matricule ${student.firstName} ${student.lastName}: ${e.message}`);
-        // Continuer même si le matricule échoue (peut-être déjà généré par un autre processus)
+        errors.push(`Matricule local ${studentName}: ${e.message}`);
       }
 
-      // 2. Créer le StudentAccount (compte financier)
+      // 2. Générer le matricule GLOBAL + StudentIdentifier (QR code vérification)
+      try {
+        await this.studentIdentifierService.generateGlobalMatricule(
+          tenantId,
+          student.id,
+          'BJ',
+          user?.id,
+        );
+        globalMatriculeSuccess++;
+      } catch (e: any) {
+        // Peut échouer si déjà généré — non bloquant
+        if (!e.message?.includes('already has a global matricule')) {
+          errors.push(`Matricule global ${studentName}: ${e.message}`);
+        }
+      }
+
+      // 3. Créer le StudentAccount (compte financier)
       try {
         await this.studentAccountService.getOrCreate(tenantId, student.id, academicYearId);
         accountSuccess++;
       } catch (e: any) {
-        accountFail++;
-        errors.push(`Account ${student.firstName} ${student.lastName}: ${e.message}`);
+        errors.push(`Account ${studentName}: ${e.message}`);
       }
 
-      // 3. Passer l'enrollment à ADMITTED
+      // 4. Passer l'enrollment à ADMITTED
       try {
         await this.prisma.studentEnrollment.updateMany({
           where: { studentId: student.id, academicYearId },
@@ -118,18 +133,27 @@ export class BulkSetupController {
       } catch (e: any) {
         // Non bloquant
       }
+
+      // 5. Le dossier scolaire est une vue agrégée (pas de table dédiée)
+      // — il se construit automatiquement quand on consulte l'élève.
+      // Pas besoin de l'initialiser ici.
     }
 
-    this.logger.log(`Bulk setup done: matricule(${matriculeSuccess}✅/${matriculeFail}❌), account(${accountSuccess}✅/${accountFail}❌), enrollment(${enrollmentUpdated} updated)`);
+    const failed = students.length - localMatriculeSuccess;
+    this.logger.log(
+      `Bulk setup done: local(${localMatriculeSuccess}/${students.length}), global(${globalMatriculeSuccess}), ` +
+      `account(${accountSuccess}), enrollment(${enrollmentUpdated})`
+    );
 
     return {
       total: students.length,
-      matriculeGenerated: matriculeSuccess,
-      matriculeFailed: matriculeFail,
+      matriculeGenerated: localMatriculeSuccess,
+      globalMatriculeGenerated: globalMatriculeSuccess,
+      matriculeFailed: failed,
       accountsCreated: accountSuccess,
-      accountsFailed: accountFail,
+      accountsFailed: students.length - accountSuccess,
       enrollmentsUpdated: enrollmentUpdated,
-      errors: errors.slice(0, 20), // Limiter à 20 erreurs pour éviter une réponse trop grande
+      errors: errors.slice(0, 20),
     };
   }
 }

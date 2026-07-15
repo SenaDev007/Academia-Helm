@@ -532,13 +532,16 @@ export class FedaPayService implements OnModuleInit {
       // Le SDK attend directement les paramètres, pas la structure { transaction: { ... } }
       // IMPORTANT: Vérifier que tous les paramètres requis sont présents
       // Documentation: https://docs.fedapay.com/sdks/fr/nodejs-fr
-      // FedaPay API attend amount en entier. En sandbox, plafond 20 000 XOF (limite FedaPay).
-      const SANDBOX_MAX_AMOUNT = 20000;
+      // FedaPay API attend amount en entier.
+      // ⭐ TEST TEMPORAIRE : plafonner à 20000 XOF même en live mode.
+      // Le compte FedaPay live a une limite de 20000 FCFA par transaction.
+      // On teste le flux complet (webhook → activation → email) avec 20000.
+      // Une fois le compte FedaPay débloqué (limite augmentée), retirer ce plafond.
+      const FEDAPAY_MAX_AMOUNT = 20000;
       let amountInteger = Math.round(Number(data.amount));
-      const isSandbox = !this.isLiveMode;
-      if (isSandbox && amountInteger > SANDBOX_MAX_AMOUNT) {
-        this.logger.warn(`⚠️  Sandbox FedaPay : montant plafonné à ${SANDBOX_MAX_AMOUNT} XOF (demandé: ${amountInteger})`);
-        amountInteger = SANDBOX_MAX_AMOUNT;
+      if (amountInteger > FEDAPAY_MAX_AMOUNT) {
+        this.logger.warn(`⚠️  FedaPay : montant plafonné à ${FEDAPAY_MAX_AMOUNT} XOF (demandé: ${amountInteger}) — limite compte FedaPay`);
+        amountInteger = FEDAPAY_MAX_AMOUNT;
       }
       transactionData = {
         description: data.description,
@@ -751,10 +754,10 @@ export class FedaPayService implements OnModuleInit {
         errorMessage = `${errorMessage}: ${errorDetails}`;
       }
 
-      // Erreur 400 "montant maximum 20000" = sandbox FedaPay
-      const amountErr = error.errors?.amount?.[0] ?? '';
+      // Erreur 400 "montant maximum 20000" = limite compte FedaPay
+      const amountErr = error.errors?.amount?.[0] ?? error.body?.errors?.amount?.[0] ?? '';
       if ((error.status === 400 || error.statusCode === 400) && typeof amountErr === 'string' && amountErr.includes('20000')) {
-        errorMessage += ' En sandbox FedaPay le montant max est 20 000 XOF. Ajoutez FEDAPAY_SANDBOX=true dans .env (api-server) et redémarrez l\'API.';
+        errorMessage += ' Le compte FedaPay a une limite de 20 000 XOF par transaction. Contactez support@fedapay.com pour augmenter la limite.';
       }
 
       // ⭐ Erreur 401/403 = authentification FedaPay refusée.

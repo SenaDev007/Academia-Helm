@@ -37,7 +37,7 @@ primary_region = 'fra'
 # Si ça échoue 3 fois, la machine est redémarrée automatiquement
 [[http_service.checks]]
   interval = "30s"
-  timeout = "10s"
-  grace_period = "60s"
+  timeout = "15s"
+  grace_period = "180s"
   method = "GET"
   path = "/health"

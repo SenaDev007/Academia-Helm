@@ -698,18 +698,27 @@ export class FedaPayService implements OnModuleInit {
         );
       }
 
-      // La réponse FedaPay est { transaction: { id, reference, status, amount, ... } }
-      const transaction = result.transaction || result;
+      // La réponse FedaPay peut être :
+      //   { transaction: { id, reference, status, amount, payment_url, ... } }
+      //   { id, reference, status, amount, payment_url, ... }
+      //   { data: { ... } }
+      // ⭐ Log de la réponse brute pour diagnostic.
+      this.logger.log(`📦 FedaPay raw response: ${JSON.stringify(result).substring(0, 500)}`);
+      const transaction = result?.transaction || result?.data || result;
 
-      this.logger.log(`✅ Transaction created successfully via API: ${transaction.id}`);
+      this.logger.log(`✅ Transaction created successfully via API: id=${transaction?.id}, reference=${transaction?.reference}, payment_url=${transaction?.payment_url || transaction?.url || 'N/A'}`);
 
       // Retourner les données dans le format attendu
+      const paymentUrl = transaction?.payment_url || transaction?.url || transaction?.paymentUrl;
+      if (!paymentUrl) {
+        this.logger.warn(`⚠️ FedaPay n'a pas renvoyé de payment_url. Response: ${JSON.stringify(result).substring(0, 500)}`);
+      }
       return {
-        transactionId: transaction.id,
-        reference: transaction.reference || transaction.id,
-        paymentUrl: transaction.payment_url || transaction.url || transaction.paymentUrl,
-        status: transaction.status || 'pending',
-        amount: transaction.amount || data.amount,
+        transactionId: transaction?.id,
+        reference: transaction?.reference || transaction?.id || '',
+        paymentUrl: paymentUrl,
+        status: transaction?.status || 'pending',
+        amount: transaction?.amount || data.amount,
       };
     } catch (error: any) {
       if (error instanceof BadRequestException) {

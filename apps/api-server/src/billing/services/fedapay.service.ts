@@ -196,6 +196,22 @@ export class FedaPayService implements OnModuleInit {
     // Configurer la clé API du SDK (clé uniquement via variables d’environnement, jamais en dur)
     FedaPay.setApiKey(this.apiKey);
 
+    // ⭐ Détection d'incohérence : le SDK FedaPay détermine son endpoint via le
+    // préfixe de la clé, PAS via setEnvironment(). Si FEDAPAY_ENVIRONMENT=live
+    // mais la clé est sk_sandbox_, le SDK utilise sandbox-api.fedapay.com
+    // (limite 20000 XOF) même si setEnvironment('live') est appelé.
+    const keyPrefixLive = this.apiKey.substring(0, Math.min(12, this.apiKey.length));
+    if (
+      (this.configService.get<string>('FEDAPAY_ENVIRONMENT') || '').trim().toLowerCase() === 'live' &&
+      (this.apiKey.startsWith('sk_sandbox_') || this.apiKey.startsWith('sk_test_'))
+    ) {
+      this.logger.error(
+        `🚨 INCOHÉRENCE : FEDAPAY_ENVIRONMENT=live mais FEDAPAY_API_KEY commence par '${keyPrefixLive}...' (clé sandbox). ` +
+        `Le SDK FedaPay utilise l'endpoint sandbox (limite 20000 XOF) malgré setEnvironment('live'). ` +
+        `→ Remplacez FEDAPAY_API_KEY par une clé sk_live_... dans le dashboard FedaPay > Settings > API Keys > Live.`
+      );
+    }
+
     // ⭐ Détection de l'environnement cohérente avec le constructor.
     // AVANT : ce bloc écrasait la détection du constructor et passait en 'live'
     // si NODE_ENV=production ET FEDAPAY_ENVIRONMENT non défini — même si

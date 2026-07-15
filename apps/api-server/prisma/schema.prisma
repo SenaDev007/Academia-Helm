@@ -442,6 +442,7 @@ model Tenant {
   userDevices                      UserDevice[]
   userRoleAssignments              UserRole[]
   users                            User[]
+  userTenants                      UserTenant[]
   weeklyDutyAssignments            WeeklyDutyAssignment[]
   weeklySemainierDailyEntries      WeeklySemainierDailyEntry[]
   weeklySemainierIncidents         WeeklySemainierIncident[]
@@ -1749,6 +1750,8 @@ model User {
   lastLogin                                 DateTime?
   createdAt                                 DateTime                          @default(now())
   updatedAt                                 DateTime                          @updatedAt
+  // ⭐ Relations multi-tenant : un user peut gérer plusieurs écoles
+  userTenants                               UserTenant[]
   createdAbsences                           Absence[]                         @relation("AbsenceCreator")
   justifiedAbsences                         Absence[]                         @relation("AbsenceJustifier")
   activityLogs                              ActivityLog[]
@@ -15664,4 +15667,26 @@ model TenantContactMessage {
 
   @@index([tenantId, status, createdAt])
   @@map("tenant_contact_messages")
+}
+
+/// ⭐ Table de jointure User ↔ Tenant (multi-école)
+/// Un promoteur peut gérer plusieurs écoles avec le même email/password.
+/// Son compte User est unique (email @unique), mais il peut avoir
+/// plusieurs UserTenant qui le lient à différents tenants.
+model UserTenant {
+  id        String   @id @default(uuid())
+  userId    String
+  tenantId  String
+  role      String   @default("PROMOTER")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@index([userId])
+  @@index([tenantId])
+  @@map("user_tenants")
 }

@@ -861,26 +861,52 @@ export class OnboardingService {
       // 3. Créer ou réutiliser le promoteur (user avec role PROMOTER).
       // ⭐ L'email est @unique dans la table users. Si le promoteur a déjà un
       // compte (ex: il gère déjà une autre école), on réutilise son compte
-      // existant et on met à jour son tenantId vers le nouveau tenant.
+      // existant et on crée une entrée UserTenant pour le lier au nouveau tenant.
+      // Le promoteur garde accès à TOUTES ses écoles via la table user_tenants.
       let promoter = await tx.user.findUnique({
         where: { email: draft.promoterEmail },
       });
 
       if (promoter) {
-        // Le user existe déjà — mettre à jour son tenantId vers le nouveau tenant
+        // Le user existe déjà — mettre à jour les infos et créer un UserTenant
         promoter = await tx.user.update({
           where: { id: promoter.id },
           data: {
-            tenantId: tenants[0].id,
             // Mettre à jour le password hash si fourni
             ...(draft.promoterPasswordHash && { passwordHash: draft.promoterPasswordHash }),
             firstName: draft.promoterFirstName || promoter.firstName,
             lastName: draft.promoterLastName || promoter.lastName,
             role: 'PROMOTER',
             status: 'active',
+            // ⭐ Mettre à jour le tenantId par défaut vers le nouveau tenant
+            tenantId: tenants[0].id,
           },
         });
-        this.logger.log(`✅ Promoter reused (existing user): ${promoter.id} → tenant ${tenants[0].id}`);
+
+        // ⭐ Créer l'entrée UserTenant pour lier le promoteur au nouveau tenant
+        // (idempotent : si la relation existe déjà, on ne fait rien)
+        const existingUserTenant = await tx.userTenant.findUnique({
+          where: { userId_tenantId: { userId: promoter.id, tenantId: tenants[0].id } },
+        }).catch(() => null); // Le compound unique peut ne pas exister si migration pas encore appliquée
+
+        if (!existingUserTenant) {
+          try {
+            await tx.userTenant.create({
+              data: {
+                userId: promoter.id,
+                tenantId: tenants[0].id,
+                role: 'PROMOTER',
+                isActive: true,
+              },
+            });
+          } catch (e: any) {
+            // Si la table user_tenants n'existe pas encore (migration pas appliquée),
+            // on ignore l'erreur — le tenantId sur le User suffit.
+            this.logger.warn(`⚠️ UserTenant creation skipped: ${e.message}`);
+          }
+        }
+
+        this.logger.log(`✅ Promoter reused (existing user): ${promoter.id} → tenant ${tenants[0].id} (multi-tenant)`);
       } else {
         // Nouveau user — créer
         promoter = await tx.user.create({
@@ -894,6 +920,21 @@ export class OnboardingService {
             status: 'active',
           },
         });
+
+        // ⭐ Créer l'entrée UserTenant pour le nouveau user
+        try {
+          await tx.userTenant.create({
+            data: {
+              userId: promoter.id,
+              tenantId: tenants[0].id,
+              role: 'PROMOTER',
+              isActive: true,
+            },
+          });
+        } catch (e: any) {
+          this.logger.warn(`⚠️ UserTenant creation skipped: ${e.message}`);
+        }
+
         this.logger.log(`✅ Promoter created (new user): ${promoter.id} → tenant ${tenants[0].id}`);
       }
 

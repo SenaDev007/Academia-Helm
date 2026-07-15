@@ -37,6 +37,7 @@ import {
   ShieldCheck,
   Settings,
   UserCog,
+  ClipboardList,
 } from 'lucide-react';
 import { ModuleHeader, SubModuleNavigation } from '@/components/modules/blueprint';
 
@@ -47,6 +48,7 @@ const FINANCE_TABS = [
   { id: 'accounts', label: 'Comptes élèves', path: '/app/finance/accounts', icon: Users },
   { id: 'cash-registers', label: 'Multi-caisses', path: '/app/finance/cash-registers', icon: Coins },
   { id: 'payments', label: 'Encaissements', path: '/app/finance/payments', icon: CreditCard },
+  { id: 'collection-summary', label: 'Bilan des encaissements', path: '/app/finance/collection-summary', icon: ClipboardList },
   { id: 'collection', label: 'Recouvrement & Arriérés', path: '/app/finance/collection', icon: AlertCircle },
   { id: 'expenses', label: 'Dépenses', path: '/app/finance/expenses', icon: TrendingDown },
   { id: 'treasury', label: 'Clôture & Trésorerie', path: '/app/finance/treasury', icon: Wallet },

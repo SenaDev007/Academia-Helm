@@ -2194,7 +2194,7 @@ export class FedaPayService implements OnModuleInit {
     }
   }
 
-  private async sendOnboardingPaymentSuccessEmail(
+  async sendOnboardingPaymentSuccessEmail(
     paymentId: string,
     transaction: any,
     cfg: PaymentTransactionalEmailConfig,

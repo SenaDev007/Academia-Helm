@@ -401,12 +401,19 @@ export class OnboardingService {
       if (payment.status === 'COMPLETED') {
         this.logger.log(`🔧 Fallback activation : payment ${paymentId} est COMPLETED, tentative d'activation...`);
         try {
-          await this.activateTenantAfterPayment(paymentId);
+          const activation = await this.activateTenantAfterPayment(paymentId);
           this.logger.log(`✅ Fallback activation réussie pour payment ${paymentId}`);
           const refreshed = await this.prisma.onboardingPayment.findUnique({ where: { id: paymentId } });
           if (refreshed) {
             payment.status = refreshed.status;
             payment.metadata = refreshed.metadata;
+          }
+          // ⭐ Envoyer l'email de bienvenue si l'activation a réussi (pas déjà activé)
+          if (!(activation as any)?.alreadyActivated) {
+            this.logger.log(`📧 Envoi email bienvenue via fallback verify pour payment ${paymentId}...`);
+            await this.sendWelcomeEmailForPayment(paymentId, transactionId).catch((e: any) => {
+              this.logger.error(`❌ ÉCHEC envoi email bienvenue (fallback verify): ${e.message}`);
+            });
           }
         } catch (activationErr: any) {
           this.logger.error(`❌ Fallback activation échouée pour payment ${paymentId}: ${activationErr.message}`, activationErr.stack);
@@ -424,12 +431,19 @@ export class OnboardingService {
             data: { status: 'COMPLETED' },
           });
           payment.status = 'COMPLETED';
-          await this.activateTenantAfterPayment(paymentId);
+          const activation = await this.activateTenantAfterPayment(paymentId);
           this.logger.log(`✅ Fallback 2 activation réussie pour payment ${paymentId}`);
           const refreshed = await this.prisma.onboardingPayment.findUnique({ where: { id: paymentId } });
           if (refreshed) {
             payment.status = refreshed.status;
             payment.metadata = refreshed.metadata;
+          }
+          // ⭐ Envoyer l'email de bienvenue
+          if (!(activation as any)?.alreadyActivated) {
+            this.logger.log(`📧 Envoi email bienvenue via fallback 2 verify pour payment ${paymentId}...`);
+            await this.sendWelcomeEmailForPayment(paymentId, transactionId).catch((e: any) => {
+              this.logger.error(`❌ ÉCHEC envoi email bienvenue (fallback 2 verify): ${e.message}`);
+            });
           }
         } catch (activationErr: any) {
           this.logger.error(`❌ Fallback 2 activation échouée pour payment ${paymentId}: ${activationErr.message}`, activationErr.stack);
@@ -471,6 +485,43 @@ export class OnboardingService {
       // afficher un message approprié (sans bloquer l'utilisateur).
       verifyError: verifyError,
     };
+  }
+
+  /**
+   * ⭐ Envoie l'email de bienvenue au promoteur après activation réussie.
+   * Utilisé par les fallbacks dans verifyPaymentStatus quand le webhook
+   * FedaPay n'est pas reçu — l'email n'est normalement envoyé que par
+   * handleOnboardingPaymentSuccess (webhook), mais si c'est le verify
+   * qui active, on doit aussi envoyer l'email.
+   */
+  private async sendWelcomeEmailForPayment(paymentId: string, transactionId: string): Promise<void> {
+    try {
+      // Construire un objet transaction minimal pour sendOnboardingPaymentSuccessEmail
+      const payment = await this.prisma.onboardingPayment.findUnique({
+        where: { id: paymentId },
+        include: { draft: true },
+      });
+      if (!payment?.draft) return;
+
+      const transaction = {
+        id: transactionId,
+        reference: payment.reference,
+        amount: payment.amount,
+      };
+
+      // Appeler la méthode publique de FedaPayService
+      await this.fedapayService.sendOnboardingPaymentSuccessEmail(paymentId, transaction, {
+        noreplyFrom: process.env.EMAIL_FROM_NOREPLY || 'noreply@academiahelm.com',
+        supportFrom: process.env.EMAIL_FROM_SUPPORT || 'support@academiahelm.com',
+        supportEmail: process.env.EMAIL_FROM_SUPPORT || 'support@academiahelm.com',
+        siteUrl: process.env.FRONTEND_URL || 'https://academiahelm.com',
+        portalUrl: `${process.env.FRONTEND_URL || 'https://academiahelm.com'}/portal`,
+        signupUrl: `${process.env.FRONTEND_URL || 'https://academiahelm.com'}/signup`,
+      });
+      this.logger.log(`📧 Email bienvenue envoyé pour paymentId=${paymentId}`);
+    } catch (err: any) {
+      this.logger.error(`❌ sendWelcomeEmailForPayment failed: ${err.message}`, err.stack);
+    }
   }
 
   /**

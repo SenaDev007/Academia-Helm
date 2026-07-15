@@ -118,15 +118,19 @@ export default function FeeStructuresContent() {
   const [regimeSubmitting, setRegimeSubmitting] = useState(false);
   const [regimeEditSubmitting, setRegimeEditSubmitting] = useState(false);
 
-  // Mapping education_levels UUID → school_levels UUID
-  // levels vient de /api/school-levels (education_levels UUID + code MATERNELLE/PRIMAIRE)
-  // classes vient de /api/academic-classes (classes officielles avec level.code = MATERNELLE/PRIMAIRE/SECONDAIRE)
-  // On mappe en matchant par code
+  // Mapping education_levels UUID → AcademicLevel UUID
+  // levels vient de /api/school-levels (avec code = "MATERNELLE"/"PRIMAIRE"/"SECONDAIRE")
+  // classes vient de /api/academic-classes (avec level.name = "Maternelle"/"Primaire"/"Secondaire")
+  // ⭐ AcademicLevel n'a PAS de champ 'code' — on matche par nom normalisé (minuscules).
   const eduToSchoolLevelMap = useMemo(() => {
     const map: Record<string, string> = {};
     for (const level of levels) {
-      const code = level.code; // MATERNELLE / PRIMAIRE / SECONDAIRE
-      const matchingClass = classes.find((c: any) => c.level?.code === code);
+      const code = (level.code || '').toLowerCase(); // maternelle / primaire / secondaire
+      // Chercher une classe officielle dont level.name correspond (insensible à la casse)
+      const matchingClass = classes.find((c: any) => {
+        const levelName = (c.level?.name || '').toLowerCase();
+        return levelName === code || levelName === (level.label || '').toLowerCase();
+      });
       if (matchingClass) {
         map[level.id] = matchingClass.levelId;
       }

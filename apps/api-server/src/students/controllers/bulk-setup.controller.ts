@@ -14,11 +14,11 @@
  */
 
 import { Controller, Post, Body, Logger, UseGuards } from '@nestjs/common';
-import { GetTenant } from '../common/decorators/get-tenant.decorator';
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { PrismaService } from '../database/prisma.service';
+import { GetTenant } from '../../common/decorators/tenant.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { PrismaService } from '../../database/prisma.service';
 import { MatriculeService } from '../services/matricule.service';
 import { StudentAccountService } from '../../finance/student-account.service';
 

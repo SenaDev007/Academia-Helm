@@ -52,6 +52,12 @@ export class CreateFeeStructureDto {
   @IsString()
   classId?: string;
 
+  /// Classe officielle (AcademicClass) — ex: "CE1", "CM2", "6ème".
+  /// Utilisée pour configurer les frais au niveau officiel (pas physique).
+  @IsOptional()
+  @IsString()
+  academicClassId?: string;
+
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
@@ -94,6 +100,11 @@ export class UpdateFeeStructureDto {
   @IsOptional()
   @IsString()
   classId?: string | null;
+
+  /// Classe officielle (AcademicClass) — ex: "CE1", "CM2", "6ème".
+  @IsOptional()
+  @IsString()
+  academicClassId?: string | null;
 }
 
 // ─── 2. FeeCategory ─────────────────────────────────────────────────────────

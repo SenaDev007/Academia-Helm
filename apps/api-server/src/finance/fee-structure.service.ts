@@ -51,6 +51,8 @@ export class FeeStructureService {
       academicYearId: string;
       levelId?: string;
       classId?: string;
+      /// Classe officielle (AcademicClass) — ex: "CE1", "CM2", "6ème".
+      academicClassId?: string;
       name: string;
       feeType: FeeType | string;
       customFeeTypeLabel?: string;
@@ -115,12 +117,25 @@ export class FeeStructureService {
       }
     }
 
+    // ⭐ Valider academicClassId si fourni (classe officielle).
+    if (data.academicClassId) {
+      const academicClass = await this.prisma.academicClass.findFirst({
+        where: { id: data.academicClassId, tenantId },
+        select: { id: true, name: true },
+      });
+      if (!academicClass) {
+        throw new BadRequestException(`academicClassId not found: ${data.academicClassId}`);
+      }
+    }
+
     const structure = await this.prisma.feeStructure.create({
       data: {
         tenantId,
         academicYearId: data.academicYearId,
         levelId: resolvedLevelId,
         classId: data.classId ?? null,
+        /// ⭐ Stocker la classe officielle (AcademicClass) si fournie.
+        academicClassId: data.academicClassId ?? null,
         name: data.name,
         feeType: feeType as FeeType,
         customFeeTypeLabel: data.customFeeTypeLabel ?? null,
@@ -169,19 +184,25 @@ export class FeeStructureService {
       academicYearId: string;
       levelId?: string;
       classId?: string;
+      academicClassId?: string;
       feeType?: string;
       isActive?: boolean;
     },
   ) {
     const where: any = { tenantId, academicYearId: filters.academicYearId };
 
-    // Si levelId est fourni (sans classId), on inclut :
-    //  - les structures de niveau (levelId = filters.levelId)
-    //  - les structures de classe appartenant à ce niveau (class.schoolLevelId = filters.levelId)
-    if (filters.levelId && !filters.classId) {
+    // ⭐ Si academicClassId est fourni, on filtre par classe officielle.
+    if (filters.academicClassId) {
+      where.academicClassId = filters.academicClassId;
+    } else if (filters.levelId && !filters.classId) {
+      // Si levelId est fourni (sans classId), on inclut :
+      //  - les structures de niveau (levelId = filters.levelId)
+      //  - les structures de classe appartenant à ce niveau (class.schoolLevelId = filters.levelId)
+      //  - les structures de classe officielle appartenant à ce niveau (academicClass.levelId)
       where.OR = [
         { levelId: filters.levelId },
         { class: { schoolLevelId: filters.levelId } },
+        { academicClass: { levelId: filters.levelId } },
       ];
     } else {
       if (filters.levelId) where.levelId = filters.levelId;
@@ -192,7 +213,13 @@ export class FeeStructureService {
 
     return this.prisma.feeStructure.findMany({
       where,
-      include: { structureInstallments: { orderBy: { orderIndex: 'asc' } }, level: true, class: true },
+      include: {
+        structureInstallments: { orderBy: { orderIndex: 'asc' } },
+        level: true,
+        class: true,
+        /// ⭐ Inclure la classe officielle (AcademicClass) dans la réponse.
+        academicClass: { include: { level: true } },
+      },
       orderBy: [{ feeType: 'asc' }, { name: 'asc' }],
     });
   }
@@ -205,6 +232,8 @@ export class FeeStructureService {
         overrides: true,
         level: true,
         class: true,
+        /// ⭐ Inclure la classe officielle (AcademicClass) dans la réponse.
+        academicClass: { include: { level: true } },
       },
     });
     if (!s) throw new NotFoundException(`FeeStructure ${id} not found`);
@@ -227,6 +256,8 @@ export class FeeStructureService {
       isActive: boolean;
       levelId: string | null;
       classId: string | null;
+      /// ⭐ Classe officielle (AcademicClass).
+      academicClassId: string | null;
       installments: {
         label: string;
         amount: number;
@@ -280,9 +311,11 @@ export class FeeStructureService {
         ...(data.isActive !== undefined && { isActive: data.isActive }),
         ...(data.levelId !== undefined && { levelId: resolvedLevelId }),
         ...(data.classId !== undefined && { classId: data.classId || null }),
+        /// ⭐ Mettre à jour academicClassId si fourni.
+        ...(data.academicClassId !== undefined && { academicClassId: data.academicClassId || null }),
         updatedAt: new Date(),
       },
-      include: { structureInstallments: true, level: true, class: true },
+      include: { structureInstallments: true, level: true, class: true, academicClass: { include: { level: true } } },
     });
 
     // Si les installments sont fournis, on remplace la collection existante

@@ -120,31 +120,31 @@ export default function FeeStructuresContent() {
 
   // Mapping education_levels UUID → school_levels UUID
   // levels vient de /api/school-levels (education_levels UUID + code MATERNELLE/PRIMAIRE)
-  // classes vient de /api/all-classes (schoolLevelId = school_levels UUID + schoolLevel.code)
+  // classes vient de /api/academic-classes (classes officielles avec level.code = MATERNELLE/PRIMAIRE/SECONDAIRE)
   // On mappe en matchant par code
   const eduToSchoolLevelMap = useMemo(() => {
     const map: Record<string, string> = {};
     for (const level of levels) {
       const code = level.code; // MATERNELLE / PRIMAIRE / SECONDAIRE
-      const matchingClass = classes.find((c: any) => c.schoolLevel?.code === code);
+      const matchingClass = classes.find((c: any) => c.level?.code === code);
       if (matchingClass) {
-        map[level.id] = matchingClass.schoolLevelId;
+        map[level.id] = matchingClass.levelId;
       }
     }
     return map;
   }, [levels, classes]);
 
-  // Convertir education_levels UUID → school_levels UUID
+  // Convertir education_levels UUID → levelId (AcademicLevel UUID)
   const toSchoolLevelId = (eduId: string): string | undefined => {
     return eduToSchoolLevelMap[eduId] || eduId;
   };
 
-  // Filtrer les classes par niveau
+  // Filtrer les classes officielles par niveau
   const filteredSortedClasses = useMemo(() => {
     if (!filterLevelId) return [...classes].sort((a, b) => classOrder(a.name) - classOrder(b.name));
-    const schoolLevelId = toSchoolLevelId(filterLevelId);
+    const academicLevelId = toSchoolLevelId(filterLevelId);
     return classes
-      .filter((c: any) => c.schoolLevelId === schoolLevelId)
+      .filter((c: any) => c.levelId === academicLevelId)
       .sort((a, b) => classOrder(a.name) - classOrder(b.name));
   }, [classes, filterLevelId, eduToSchoolLevelMap]);
 
@@ -193,23 +193,39 @@ export default function FeeStructuresContent() {
   }, [installmentPopoverId]);
 
   useEffect(() => {
-    // Utiliser la route BFF /api/all-classes (same-origin, pas de Cloudflare)
-    // au lieu de classesService.getAll() qui utilise axios cross-origin
+    // ⭐ Utiliser /api/academic-classes (classes OFFICIELLES : CE1, CM2, 6ème, etc.)
+    // au lieu de /api/all-classes (classes PHYSIQUES : CE1-A, CE1-B, etc.)
+    // Les classes officielles sont utilisées pour la configuration des frais.
     const authHeaders = getClientAuthorizationHeader();
-    fetch('/api/all-classes', { headers: { ...authHeaders }, credentials: 'include', cache: 'no-store' })
-      .then((res) => res.json())
+    
+    // D'abord récupérer l'année académique active pour filtrer les classes officielles
+    getAcademicYears()
       .then((d) => {
-        const cls = Array.isArray(d) ? d : (d.data ?? []);
-        setClasses(cls);
+        const years = Array.isArray(d) ? d : (d.data ?? []);
+        setAcademicYears(years);
+        const activeYear = years.find((y: any) => y.isActive) || years[0];
+        if (activeYear?.id) {
+          // Fetch les classes officielles pour cette année académique
+          return fetch(`/api/academic-classes?academicYearId=${activeYear.id}`, {
+            headers: { ...authHeaders },
+            credentials: 'include',
+            cache: 'no-store',
+          })
+            .then((res) => res.json())
+            .then((d) => {
+              const cls = Array.isArray(d) ? d : (d.data ?? []);
+              setClasses(cls);
+            })
+            .catch(() => setClasses([]));
+        }
+        return null;
       })
-      .catch(() => setClasses([]));
+      .catch(() => setAcademicYears([]));
+    
     fetch('/api/school-levels')
       .then((res) => res.json())
       .then((d) => setLevels(Array.isArray(d) ? d.filter((l: any) => l.id !== 'ALL') : []))
       .catch(() => setLevels([]));
-    getAcademicYears()
-      .then((d) => setAcademicYears(Array.isArray(d) ? d : (d.data ?? [])))
-      .catch(() => setAcademicYears([]));
   }, []);
 
   const levelDisplay = (s: any): string => {
@@ -219,19 +235,24 @@ export default function FeeStructuresContent() {
     return '—';
   };
   const classDisplay = (s: any): string => {
+    // ⭐ Prioriser academicClass (classe officielle) sur class (classe physique).
+    if (s.academicClass?.name) return s.academicClass.name;
     if (s.class?.name) return s.class.name;
+    if (s.academicClassId) { const cls = classes.find((c) => c.id === s.academicClassId); if (cls) return cls.name ?? '—'; }
     if (s.classId) { const cls = classes.find((c) => c.id === s.classId); if (cls) return cls.name ?? '—'; }
     return '—';
   };
 
   // Helper : nom intelligent du frais
-  // Si le frais a une classe (classId) mais que le nom ne contient pas déjà le nom de la classe,
+  // Si le frais a une classe (academicClassId ou classId) mais que le nom ne contient pas déjà le nom de la classe,
   // on enrichit le nom avec " — NomClasse" (ex: "Frais de scolarité" → "Frais de scolarité — CE1")
   // Cas d'usage : création groupée où le nom générique a été utilisé pour toutes les classes
   const feeDisplayName = (s: any): string => {
     const baseName = s.name ?? '';
-    if (!s.classId) return baseName;
-    const className = s.class?.name ?? classes.find((c) => c.id === s.classId)?.name;
+    // ⭐ Prioriser academicClass (classe officielle) sur class (classe physique).
+    const classId = s.academicClassId || s.classId;
+    if (!classId) return baseName;
+    const className = s.academicClass?.name ?? s.class?.name ?? classes.find((c) => c.id === classId)?.name;
     if (!className) return baseName;
     // Si le nom contient déjà le nom de la classe (ex: "Frais de scolarité — CE1"), on garde tel quel
     if (baseName.includes(className)) return baseName;
@@ -279,6 +300,8 @@ export default function FeeStructuresContent() {
       const convertedLevelId = body.levelId ? toSchoolLevelId(body.levelId) : undefined;
 
       // Cas 1 : création groupée pour plusieurs classes (classIds est un tableau)
+      // ⭐ Les classIds sont maintenant des IDs de classes OFFICIELLES (AcademicClass).
+      // On envoie academicClassId au lieu de classId.
       if (Array.isArray(body.classIds) && body.classIds.length > 0) {
         const classIds = body.classIds;
         const basePayload: any = {
@@ -297,7 +320,8 @@ export default function FeeStructuresContent() {
         let failCount = 0;
         for (const cid of classIds) {
           try {
-            await financeService.createFeeStructure({ ...basePayload, classId: cid });
+            // ⭐ Envoyer academicClassId (classe officielle) au lieu de classId (classe physique).
+            await financeService.createFeeStructure({ ...basePayload, academicClassId: cid });
             successCount++;
           } catch {
             failCount++;
@@ -339,10 +363,11 @@ export default function FeeStructuresContent() {
     try {
       const payload = { ...body };
       if (payload.levelId) payload.levelId = toSchoolLevelId(payload.levelId);
-      // En édition : on prend la 1ère classe du tableau classIds (si présent) pour classId
+      // En édition : on prend la 1ère classe du tableau classIds (si présent) pour academicClassId
       // (l'édition reste sur une seule classe à la fois)
+      // ⭐ Les classIds sont maintenant des IDs de classes OFFICIELLES (AcademicClass).
       if (Array.isArray(payload.classIds) && payload.classIds.length > 0) {
-        payload.classId = payload.classIds[0];
+        payload.academicClassId = payload.classIds[0];
       }
       delete payload.classIds;
       await financeService.updateFeeStructure(editingFee.id, payload);

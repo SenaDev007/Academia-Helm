@@ -45,6 +45,8 @@ export class FeeStructureController {
       academicYearId: body.academicYearId,
       levelId: body.levelId,
       classId: body.classId,
+      /// ⭐ Classe officielle (AcademicClass) — transmise depuis le frontend.
+      academicClassId: body.academicClassId,
       name: body.name,
       feeType: body.feeType,
       customFeeTypeLabel: body.customFeeTypeLabel,
@@ -62,6 +64,7 @@ export class FeeStructureController {
     @Query('academicYearId') academicYearId: string,
     @Query('levelId') levelId?: string,
     @Query('classId') classId?: string,
+    @Query('academicClassId') academicClassId?: string,
     @Query('feeType') feeType?: string,
     @Query('isActive') isActive?: string,
   ) {
@@ -72,6 +75,7 @@ export class FeeStructureController {
       academicYearId,
       levelId,
       classId,
+      academicClassId,
       feeType,
       isActive: isActive === 'true' ? true : isActive === 'false' ? false : undefined,
     });

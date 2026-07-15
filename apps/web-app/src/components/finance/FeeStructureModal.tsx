@@ -85,11 +85,13 @@ export default function FeeStructureModal({
   const [totalAmount, setTotalAmount] = useState(initialData?.totalAmount != null ? String(initialData.totalAmount) : '');
   const [isInstallment, setIsInstallment] = useState(initialData?.isInstallment ?? false);
   const [isMandatory, setIsMandatory] = useState(initialData?.isMandatory ?? true);
-  const [applyTo, setApplyTo] = useState<'level' | 'class'>(initialData?.classId ? 'class' : 'level');
+  // ⭐ Prioriser academicClassId (classe officielle) sur classId (classe physique).
+  const initialClassId = initialData?.academicClassId || initialData?.classId;
+  const [applyTo, setApplyTo] = useState<'level' | 'class'>(initialClassId ? 'class' : 'level');
   const [levelId, setLevelId] = useState(initialData?.levelId ?? ''); // education_levels UUID
   // Multi-select : classIds est un tableau (création groupée pour plusieurs classes)
   // En édition, on initialise avec la classe existante (si présente)
-  const [classIds, setClassIds] = useState<string[]>(initialData?.classId ? [initialData.classId] : []);
+  const [classIds, setClassIds] = useState<string[]>(initialClassId ? [initialClassId] : []);
 
   const initialInstallments: Installment[] = initialData?.structureInstallments?.length
     ? initialData.structureInstallments.sort((a: any, b: any) => a.orderIndex - b.orderIndex).map((i: any) => ({
@@ -110,13 +112,13 @@ export default function FeeStructureModal({
       }];
   const [installments, setInstallments] = useState<Installment[]>(initialInstallments);
 
-  // Filtrer les classes par niveau en utilisant le mapping eduToSchoolLevelMap
+  // Filtrer les classes officielles par niveau en utilisant le mapping eduToSchoolLevelMap
   const modalFilteredClasses = useMemo(() => {
     if (!levelId) return [...classes].sort((a, b) => classOrder(a.name) - classOrder(b.name));
-    const schoolLevelId = eduToSchoolLevelMap[levelId];
-    if (!schoolLevelId) return [];
+    const academicLevelId = eduToSchoolLevelMap[levelId];
+    if (!academicLevelId) return [];
     return classes
-      .filter((c: any) => c.schoolLevelId === schoolLevelId)
+      .filter((c: any) => c.levelId === academicLevelId)
       .sort((a, b) => classOrder(a.name) - classOrder(b.name));
   }, [classes, levelId, eduToSchoolLevelMap]);
 

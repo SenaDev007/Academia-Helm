@@ -1000,6 +1000,8 @@ model AcademicClass {
   studentEnrollments  StudentEnrollment[]  @relation("StudentEnrollmentAcademicClass")
   /// ⭐ Demandes d'admission ciblant cette classe officielle
   admissions          Admission[]          @relation("AdmissionRequestedAcademicClass")
+  /// ⭐ Structures de frais configurées pour cette classe officielle
+  feeStructures       FeeStructure[]      @relation("FeeStructureAcademicClass")
   academicYear        AcademicYear         @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   cycle               AcademicCycle        @relation(fields: [cycleId], references: [id])
   level               AcademicLevel        @relation(fields: [levelId], references: [id])
@@ -10159,6 +10161,9 @@ model FeeStructure {
   academicYearId        String
   levelId               String?
   classId               String?
+  /// Classe officielle (AcademicClass) — ex: "CE1", "CM2", "6eme".
+  /// Utilisee pour la configuration des frais au niveau officiel (pas physique).
+  academicClassId       String?
   name                  String
   feeType               FeeType
   /// Libellé personnalisé du type de frais (utilisé uniquement quand feeType = OTHER).
@@ -10176,6 +10181,8 @@ model FeeStructure {
   structureInstallments FeeStructureInstallment[]
   academicYear          AcademicYear              @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   class                 Class?                    @relation("FeeStructureClass", fields: [classId], references: [id])
+  /// Relation vers AcademicClass (classe officielle).
+  academicClass         AcademicClass?            @relation("FeeStructureAcademicClass", fields: [academicClassId], references: [id], onDelete: SetNull)
   creator               User?                     @relation("FeeStructureCreator", fields: [createdById], references: [id])
   level                 SchoolLevel?              @relation("FeeStructureLevel", fields: [levelId], references: [id])
   tenant                Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -10183,6 +10190,7 @@ model FeeStructure {
   @@index([tenantId, academicYearId])
   @@index([levelId])
   @@index([classId])
+  @@index([academicClassId])
   @@index([feeType])
   @@map("fee_structures")
 }

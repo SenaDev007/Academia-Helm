@@ -6,9 +6,11 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import {
-  Download, FileText, Loader2, Filter, ChevronDown, ChevronUp,
+  Download, FileText, Loader2, Filter,
 } from 'lucide-react';
+import { ModuleContentArea } from '@/components/modules/blueprint';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
+import { getAcademicYears } from '@/services/settings.service';
 import { formatCurrency } from '@/lib/utils';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -18,21 +20,6 @@ interface FeeInstallment {
   label: string;
   amount: number;
   orderIndex: number;
-}
-
-interface FeeStructureWithInstallments {
-  id: string;
-  feeType: string;
-  name: string;
-  totalAmount: number;
-  isInstallment: boolean;
-  structureInstallments: FeeInstallment[];
-  academicClassId?: string | null;
-  classId?: string | null;
-  levelId?: string | null;
-  academicClass?: { id: string; name: string; code: string } | null;
-  class?: { id: string; name: string; code: string } | null;
-  level?: { id: string; name: string; code: string } | null;
 }
 
 interface StudentPaymentRow {
@@ -78,19 +65,21 @@ export default function CollectionSummaryContent() {
   const [academicYearId, setAcademicYearId] = useState<string>('');
 
   // Données
-  const [feeStructures, setFeeStructures] = useState<FeeStructureWithInstallments[]>([]);
+  const [installments, setInstallments] = useState<FeeInstallment[]>([]);
   const [studentRows, setStudentRows] = useState<StudentPaymentRow[]>([]);
   const [recapRows, setRecapRows] = useState<RecapRow[]>([]);
 
   // ─── Load school levels + classes + academic year ──────────────────────────
   useEffect(() => {
     const authHeaders = getClientAuthorizationHeader();
+
+    // School levels
     fetch('/api/school-levels', { headers: { ...authHeaders }, credentials: 'include', cache: 'no-store' })
       .then((res) => res.json())
       .then((d) => setSchoolLevels(Array.isArray(d) ? d.filter((l: any) => l.id !== 'ALL') : []))
       .catch(() => setSchoolLevels([]));
 
-    // Fetch classes physiques
+    // Classes physiques
     fetch('/api/all-classes', { headers: { ...authHeaders }, credentials: 'include', cache: 'no-store' })
       .then((res) => res.json())
       .then((d) => {
@@ -99,9 +88,8 @@ export default function CollectionSummaryContent() {
       })
       .catch(() => setClasses([]));
 
-    // Fetch active academic year
-    fetch('/api/academic-years', { headers: { ...authHeaders }, credentials: 'include', cache: 'no-store' })
-      .then((res) => res.json())
+    // Academic year
+    getAcademicYears()
       .then((d) => {
         const years = Array.isArray(d) ? d : (d.data ?? []);
         const active = years.find((y: any) => y.isActive) || years[0];
@@ -112,7 +100,10 @@ export default function CollectionSummaryContent() {
 
   // ─── Load data ─────────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
-    if (!academicYearId) return;
+    if (!academicYearId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -121,29 +112,23 @@ export default function CollectionSummaryContent() {
       if (selectedLevelId) params.set('levelId', selectedLevelId);
       if (selectedClassId) params.set('classId', selectedClassId);
 
-      // Fetch fee structures
-      const feesRes = await fetch(`/api/finance/fee-structures?${params.toString()}`, {
+      const response = await fetch(`/api/finance/collection-summary?${params.toString()}`, {
         headers: { ...authHeaders },
         credentials: 'include',
         cache: 'no-store',
       });
-      const feesData = await feesRes.json();
-      const structures: FeeStructureWithInstallments[] = Array.isArray(feesData) ? feesData : [];
-      setFeeStructures(structures);
 
-      // Fetch student payment data
-      const paymentRes = await fetch(`/api/finance/collection-summary?${params.toString()}`, {
-        headers: { ...authHeaders },
-        credentials: 'include',
-        cache: 'no-store',
-      });
-      if (!paymentRes.ok) {
-        throw new Error('Erreur lors du chargement des données');
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData?.message || errData?.error || `HTTP ${response.status}`);
       }
-      const paymentData = await paymentRes.json();
-      setStudentRows(paymentData.students || []);
-      setRecapRows(paymentData.recap || []);
+
+      const data = await response.json();
+      setInstallments(data.installments || []);
+      setStudentRows(data.students || []);
+      setRecapRows(data.recap || []);
     } catch (err: any) {
+      console.error('[CollectionSummary] Error:', err);
       setError(err.message || 'Erreur lors du chargement');
     } finally {
       setLoading(false);
@@ -154,54 +139,36 @@ export default function CollectionSummaryContent() {
     loadData();
   }, [loadData]);
 
-  // ─── Compute tuition installments columns ──────────────────────────────────
-  const tuitionInstallments = useMemo(() => {
-    // Trouver toutes les structures de frais de type TUITION qui ont des tranches
-    const tuitionStructures = feeStructures.filter(
-      (f) => f.feeType === 'TUITION' && f.isInstallment && f.structureInstallments?.length > 0,
-    );
-    // Collecter tous les installments uniques
-    const installmentsMap = new Map<string, FeeInstallment>();
-    for (const struct of tuitionStructures) {
-      for (const inst of struct.structureInstallments) {
-        if (!installmentsMap.has(inst.id)) {
-          installmentsMap.set(inst.id, inst);
-        }
-      }
-    }
-    return Array.from(installmentsMap.values()).sort((a, b) => a.orderIndex - b.orderIndex);
-  }, [feeStructures]);
-
   // ─── Filtered classes based on selected level ──────────────────────────────
   const filteredClasses = useMemo(() => {
     if (!selectedLevelId) return classes;
+    const selectedLevel = schoolLevels.find((l) => l.id === selectedLevelId);
+    if (!selectedLevel) return classes;
+    const code = (selectedLevel.code || '').toLowerCase();
     return classes.filter((c: any) => {
       const levelCode = (c.schoolLevel?.code || '').toLowerCase();
-      const selectedLevel = schoolLevels.find((l) => l.id === selectedLevelId);
-      return selectedLevel && levelCode === (selectedLevel.code || '').toLowerCase();
+      return levelCode === code;
     });
   }, [classes, selectedLevelId, schoolLevels]);
 
   // ─── Export Excel ───────────────────────────────────────────────────────────
   const handleExportExcel = () => {
-    // TODO: Implement Excel export
     console.log('Export Excel — à implémenter');
   };
 
   // ─── Export PDF ─────────────────────────────────────────────────────────────
   const handleExportPDF = () => {
-    // TODO: Implement PDF export
     console.log('Export PDF — à implémenter');
   };
 
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6">
-      {/* En-tête */}
-      <div className="flex items-center justify-between">
+    <ModuleContentArea>
+      {/* En-tête + actions */}
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-blue-900">Bilan des encaissements</h1>
-          <p className="text-sm text-graphite-700 mt-1">
+          <h1 className="text-2xl font-bold text-navy-900">Bilan des encaissements</h1>
+          <p className="text-sm text-gray-600 mt-1">
             Suivi détaillé des encaissements par élève et récapitulatif par classe
           </p>
         </div>
@@ -216,7 +183,7 @@ export default function CollectionSummaryContent() {
       </div>
 
       {/* Sous-onglets */}
-      <div className="flex gap-1 border-b border-gray-200">
+      <div className="flex gap-1 border-b border-gray-200 mb-6">
         <button
           onClick={() => setActiveSubTab('detail')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
@@ -240,7 +207,7 @@ export default function CollectionSummaryContent() {
       </div>
 
       {/* Filtres */}
-      <div className="flex gap-4 items-end">
+      <div className="flex gap-4 items-end mb-6">
         <div className="flex-1 max-w-xs">
           <label className="block text-xs font-medium text-gray-600 mb-1">Niveau scolaire</label>
           <select
@@ -280,7 +247,7 @@ export default function CollectionSummaryContent() {
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          <span className="ml-3 text-sm text-graphite-700">Chargement...</span>
+          <span className="ml-3 text-sm text-gray-600">Chargement...</span>
         </div>
       ) : error ? (
         <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -289,15 +256,15 @@ export default function CollectionSummaryContent() {
       ) : activeSubTab === 'detail' ? (
         <DetailTable
           studentRows={studentRows}
-          tuitionInstallments={tuitionInstallments}
+          installments={installments}
         />
       ) : (
         <RecapTable
           recapRows={recapRows}
-          tuitionInstallments={tuitionInstallments}
+          installments={installments}
         />
       )}
-    </div>
+    </ModuleContentArea>
   );
 }
 
@@ -305,14 +272,14 @@ export default function CollectionSummaryContent() {
 
 function DetailTable({
   studentRows,
-  tuitionInstallments,
+  installments,
 }: {
   studentRows: StudentPaymentRow[];
-  tuitionInstallments: FeeInstallment[];
+  installments: FeeInstallment[];
 }) {
   if (studentRows.length === 0) {
     return (
-      <div className="p-8 text-center text-sm text-graphite-600 bg-white rounded-xl border border-gray-200">
+      <div className="p-8 text-center text-sm text-gray-600 bg-white rounded-xl border border-gray-200">
         Aucune donnée disponible. Veuillez sélectionner une année scolaire et une classe.
       </div>
     );
@@ -328,8 +295,7 @@ function DetailTable({
             <TableHead>Arriéré</TableHead>
             <TableHead>Inscription</TableHead>
             <TableHead>Réinscription</TableHead>
-            {/* Tranches de scolarité dynamiques */}
-            {tuitionInstallments.map((inst) => (
+            {installments.map((inst) => (
               <TableHead key={inst.id} className="text-center">
                 {inst.label}
               </TableHead>
@@ -355,7 +321,7 @@ function DetailTable({
               <TableCell className="text-sm text-right">
                 {row.reinscriptionPaid > 0 ? formatCurrency(row.reinscriptionPaid) : '—'}
               </TableCell>
-              {tuitionInstallments.map((inst) => {
+              {installments.map((inst) => {
                 const paid = row.tuitionInstallments[inst.id] || 0;
                 return (
                   <TableCell key={inst.id} className="text-sm text-right">
@@ -386,14 +352,14 @@ function DetailTable({
 
 function RecapTable({
   recapRows,
-  tuitionInstallments,
+  installments,
 }: {
   recapRows: RecapRow[];
-  tuitionInstallments: FeeInstallment[];
+  installments: FeeInstallment[];
 }) {
   if (recapRows.length === 0) {
     return (
-      <div className="p-8 text-center text-sm text-graphite-600 bg-white rounded-xl border border-gray-200">
+      <div className="p-8 text-center text-sm text-gray-600 bg-white rounded-xl border border-gray-200">
         Aucune donnée disponible pour le récapitulatif.
       </div>
     );
@@ -410,7 +376,7 @@ function RecapTable({
       acc.reste += row.reste;
       acc.totalPaid += row.totalPaid;
       acc.soldeParClasse += row.soldeParClasse;
-      for (const inst of tuitionInstallments) {
+      for (const inst of installments) {
         acc.installments[inst.id] = (acc.installments[inst.id] || 0) + (row.tuitionInstallments[inst.id] || 0);
       }
       return acc;
@@ -432,8 +398,7 @@ function RecapTable({
             <TableHead>Arriérés</TableHead>
             <TableHead>Inscription</TableHead>
             <TableHead>Réinscription</TableHead>
-            {/* Tranches de scolarité dynamiques */}
-            {tuitionInstallments.map((inst) => (
+            {installments.map((inst) => (
               <TableHead key={inst.id} className="text-center">
                 {inst.label}
               </TableHead>
@@ -458,7 +423,7 @@ function RecapTable({
               <TableCell className="text-sm text-right">
                 {row.reinscription > 0 ? formatCurrency(row.reinscription) : '—'}
               </TableCell>
-              {tuitionInstallments.map((inst) => {
+              {installments.map((inst) => {
                 const amount = row.tuitionInstallments[inst.id] || 0;
                 return (
                   <TableCell key={inst.id} className="text-sm text-right">
@@ -489,7 +454,7 @@ function RecapTable({
             <TableCell className="text-right">{formatCurrency(totals.arrieres)}</TableCell>
             <TableCell className="text-right">{formatCurrency(totals.inscription)}</TableCell>
             <TableCell className="text-right">{formatCurrency(totals.reinscription)}</TableCell>
-            {tuitionInstallments.map((inst) => (
+            {installments.map((inst) => (
               <TableCell key={inst.id} className="text-right">
                 {formatCurrency(totals.installments[inst.id] || 0)}
               </TableCell>

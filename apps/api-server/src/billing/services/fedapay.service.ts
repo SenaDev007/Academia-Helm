@@ -632,6 +632,11 @@ export class FedaPayService implements OnModuleInit {
       this.logger.log(`📝 Description: ${transactionData.description}`);
       this.logger.log(`🔗 Callback URL: ${transactionData.callback_url}`);
       this.logger.log(`🌐 API endpoint: ${this.apiBaseUrl}/v1/transactions (isLiveMode=${this.isLiveMode})`);
+      // ⭐ Log du préfixe de la clé pour diagnostic.
+      // Si la clé commence par sk_sandbox_, FedaPay applique les limites sandbox (20000)
+      // même si la requête va vers api.fedapay.com.
+      const keyPrefix = this.apiKey.substring(0, Math.min(15, this.apiKey.length));
+      this.logger.log(`🔑 API Key prefix: '${keyPrefix}...' (attendu: 'sk_live_...' en mode live)`);
       this.logger.log(`📦 Full transaction data: ${JSON.stringify(transactionData, null, 2)}`);
 
       // ⭐ Utiliser un fetch() direct au lieu du SDK FedaPay.

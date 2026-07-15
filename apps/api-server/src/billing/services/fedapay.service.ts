@@ -621,16 +621,58 @@ export class FedaPayService implements OnModuleInit {
       }
 
       // Log détaillé des données avant envoi au SDK
-      this.logger.log(`📤 Creating transaction with FedaPay SDK`);
+      this.logger.log(`📤 Creating transaction via direct API call (bypass SDK)`);
       this.logger.log(`💰 Amount: ${transactionData.amount}, Currency: ${JSON.stringify(transactionData.currency)}`);
       this.logger.log(`📝 Description: ${transactionData.description}`);
       this.logger.log(`🔗 Callback URL: ${transactionData.callback_url}`);
+      this.logger.log(`🌐 API endpoint: ${this.apiBaseUrl}/v1/transactions (isLiveMode=${this.isLiveMode})`);
       this.logger.log(`📦 Full transaction data: ${JSON.stringify(transactionData, null, 2)}`);
 
-      // Utiliser le SDK officiel pour créer la transaction
-      const transaction = await Transaction.create(transactionData);
+      // ⭐ Utiliser un fetch() direct au lieu du SDK FedaPay.
+      // Le SDK détermine son endpoint via le préfixe de la clé (sk_sandbox_ → sandbox),
+      // ce qui contourne setEnvironment('live'). Avec fetch() direct, on contrôle
+      // explicitement l'endpoint via this.apiBaseUrl (https://api.fedapay.com en live).
+      const apiUrl = `${this.apiBaseUrl}/v1/transactions`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      let response: Response;
+      try {
+        response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify(transactionData),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        this.logger.error('❌ FedaPay fetch error:', fetchError.message);
+        throw new BadRequestException(`Failed to connect to FedaPay API: ${fetchError.message}`);
+      }
 
-      this.logger.log(`✅ Transaction created successfully with SDK: ${transaction.id}`);
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        this.logger.error('❌ FedaPay API error:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: result,
+        });
+        const errMsg = result?.message || result?.error?.message || `HTTP ${response.status}`;
+        const errDetails = result?.errors ? JSON.stringify(result.errors) : '';
+        throw new BadRequestException(
+          `Failed to create payment transaction: ${errMsg}${errDetails ? ' — ' + errDetails : ''}`
+        );
+      }
+
+      // La réponse FedaPay est { transaction: { id, reference, status, amount, ... } }
+      const transaction = result.transaction || result;
+
+      this.logger.log(`✅ Transaction created successfully via API: ${transaction.id}`);
 
       // Retourner les données dans le format attendu
       return {

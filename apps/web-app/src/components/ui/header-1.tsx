@@ -187,6 +187,34 @@ export function Header() {
   const [open, setOpen] = useState(false);
   const scrolled = useScroll(10);
   const { cameFromApp, appReturnUrl } = useCameFromApp();
+  const [tenantLogo, setTenantLogo] = useState<string | null>(null);
+  const [tenantName, setTenantName] = useState<string | null>(null);
+
+  // ⭐ Détecter si on est sur un sous-domaine tenant (ex: cspeb-eveildafriqueeducation.academiahelm.com)
+  // Si oui, fetcher le logo et le nom de l'école pour les afficher dans la navbar.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const hostname = window.location.hostname;
+    // Le sous-domaine est la partie avant .academiahelm.com (ou .localhost)
+    const baseDomain = 'academiahelm.com';
+    const isTenantSubdomain =
+      hostname.endsWith('.' + baseDomain) &&
+      hostname !== 'www.' + baseDomain &&
+      hostname !== baseDomain &&
+      !hostname.startsWith('api.');
+
+    if (!isTenantSubdomain) return;
+
+    const subdomain = hostname.replace('.' + baseDomain, '');
+    // Fetch le branding du tenant
+    fetch(`/api/public/schools/by-subdomain/${subdomain}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.logoUrl) setTenantLogo(data.logoUrl);
+        if (data?.schoolName) setTenantName(data.schoolName);
+      })
+      .catch(() => {});
+  }, []);
 
   // Bloquer le scroll quand le menu mobile est ouvert
   useEffect(() => {
@@ -215,9 +243,9 @@ export function Header() {
           prefetch={true}
           className="flex items-center space-x-2 group transition-transform duration-200 hover:scale-105 flex-shrink-0"
         >
-          <LogoCircle size={38} animated={false} />
+          <LogoCircle size={38} animated={false} logoUrl={tenantLogo || undefined} />
           <span className="font-bold text-base sm:text-lg md:text-xl text-white whitespace-nowrap">
-            Academia<span className="text-amber-300 ml-1">Helm</span>
+            {tenantName || (<>Academia<span className="text-amber-300 ml-1">Helm</span></>)}
           </span>
         </Link>
 

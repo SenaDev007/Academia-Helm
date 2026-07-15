@@ -546,9 +546,15 @@ export class FedaPayService implements OnModuleInit {
         currency: { iso: currencyCode }, // Format SDK: { iso: 'XOF' }
         callback_url: data.callbackUrl,
         ...(data.cancelUrl?.trim() && { cancel_url: data.cancelUrl.trim() }),
-        // En sandbox FedaPay le mode unifié est 'momo_test' (numéros 64000001/66000001 pour succès).
-        // En production utiliser 'mtn_open', 'moov_open', etc.
-        mode: data.metadata?.mode || (this.isLiveMode ? 'mtn_open' : 'momo_test'),
+        // ⭐ NE PAS inclure 'mode' dans la création de transaction.
+        // Selon la documentation FedaPay (https://docs.fedapay.com/integration-api/fr/collects-management-fr),
+        // le champ 'mode' n'est PAS un paramètre de création de transaction.
+        // Il est utilisé uniquement avec sendNow() / sendNowWithToken() pour
+        // l'envoi direct de paiement (push). Les modes valides sont :
+        // 'mtn', 'moov', 'mtn_ci', 'moov_tg'.
+        // En incluant 'mode' dans la création, FedaPay peut interpréter la
+        // transaction différemment et appliquer des restrictions (ex: limite 20000).
+        // L'utilisateur choisira son mode de paiement sur la page de checkout FedaPay.
       };
 
       // Validation des paramètres requis

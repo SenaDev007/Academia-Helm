@@ -533,9 +533,12 @@ export class FedaPayService implements OnModuleInit {
       // IMPORTANT: Vérifier que tous les paramètres requis sont présents
       // Documentation: https://docs.fedapay.com/sdks/fr/nodejs-fr
       // FedaPay API attend amount en entier.
-      // ⭐ En mode LIVE, on envoie le montant réel (pas de plafond).
-      // Le plafond 20000 XOF était uniquement pour le mode sandbox.
-      let amountInteger = Math.round(Number(data.amount));
+      // ⭐ TEST LIVE : montant fixé à 100 FCFA pour tester le flux en live.
+      // Le compte FedaPay live retourne "Le montant maximum de transactions
+      // autorisées est 20000" même en mode live. On teste avec 100 FCFA.
+      // Une fois le problème résolu avec FedaPay, remettre le montant réel.
+      let amountInteger = 100; // TEST LIVE — montant fixe pour test
+      this.logger.warn(`⚠️ TEST LIVE : montant fixé à ${amountInteger} XOF (au lieu de ${Math.round(Number(data.amount))})`);
       transactionData = {
         description: data.description,
         amount: amountInteger,

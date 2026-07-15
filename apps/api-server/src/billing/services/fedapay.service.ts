@@ -710,6 +710,31 @@ export class FedaPayService implements OnModuleInit {
         }
       }
 
+      // ⭐ Erreur 400 = données invalides. Log détaillé pour diagnostic.
+      // En mode LIVE, les causes les plus fréquentes de 400 :
+      //   1. FEDAPAY_SANDBOX=true encore défini → mode sandbox forcé avec clé live
+      //      → amount plafonné à 20000 + mode 'momo_test' (sandbox-only) → 400
+      //   2. mode 'mtn_open' non supporté par le compte FedaPay live
+      //   3. Numéro de téléphone du promoteur invalide pour le live
+      //   4. callback_url rejetée par FedaPay live (domaine non whitelisté)
+      const httpStatus400 = error.status ?? error.statusCode;
+      if (httpStatus400 === 400) {
+        this.logger.error(`🚨 FedaPay 400 Bad Request. Diagnostic mode LIVE :`);
+        this.logger.error(`   → isLiveMode=${this.isLiveMode} (doit être 'true' en live)`);
+        this.logger.error(`   → apiBaseUrl=${this.apiBaseUrl} (doit être 'https://api.fedapay.com' en live)`);
+        this.logger.error(`   → amount envoyé=${transactionData?.amount} (ne doit PAS être plafonné à 20000 en live)`);
+        this.logger.error(`   → mode envoyé=${transactionData?.mode} (doit être 'mtn_open' ou 'moov_open' en live, PAS 'momo_test')`);
+        this.logger.error(`   → FEDAPAY_ENVIRONMENT=${process.env.FEDAPAY_ENVIRONMENT || '(non défini)'}`);
+        this.logger.error(`   → FEDAPAY_SANDBOX=${process.env.FEDAPAY_SANDBOX || '(non défini)'} — doit être ABSENT ou 'false' en live`);
+        this.logger.error(`   → Réponse FedaPay: ${JSON.stringify(responseData)}`);
+        if (process.env.FEDAPAY_SANDBOX === 'true') {
+          this.logger.error(`   → 🚨 CAUSE PROBABLE : FEDAPAY_SANDBOX=true force le mode sandbox. Supprimez cette variable : fly secrets unset FEDAPAY_SANDBOX`);
+        }
+        if (transactionData?.mode === 'momo_test' && this.isLiveMode) {
+          this.logger.error(`   → 🚨 CAUSE PROBABLE : mode 'momo_test' est sandbox-only. Le code devrait utiliser 'mtn_open' en live.`);
+        }
+      }
+
       throw new BadRequestException(
         `Failed to create payment transaction: ${errorMessage}`
       );

@@ -858,18 +858,44 @@ export class OnboardingService {
         this.logger.log(`✅ School created for tenant ${tenant.id} (city=${draft.city || 'N/A'}, logo=${draft.logoUrl ? 'yes' : 'no'})`);
       }
 
-      // 3. Créer le promoteur (user avec role PROMOTER) - lié au premier tenant
-      const promoter = await tx.user.create({
-        data: {
-          email: draft.promoterEmail,
-          passwordHash: draft.promoterPasswordHash,
-          firstName: draft.promoterFirstName || '',
-          lastName: draft.promoterLastName || '',
-          role: 'PROMOTER',
-          tenantId: tenants[0].id, // Premier tenant comme tenant principal
-          status: 'active',
-        },
+      // 3. Créer ou réutiliser le promoteur (user avec role PROMOTER).
+      // ⭐ L'email est @unique dans la table users. Si le promoteur a déjà un
+      // compte (ex: il gère déjà une autre école), on réutilise son compte
+      // existant et on met à jour son tenantId vers le nouveau tenant.
+      let promoter = await tx.user.findUnique({
+        where: { email: draft.promoterEmail },
       });
+
+      if (promoter) {
+        // Le user existe déjà — mettre à jour son tenantId vers le nouveau tenant
+        promoter = await tx.user.update({
+          where: { id: promoter.id },
+          data: {
+            tenantId: tenants[0].id,
+            // Mettre à jour le password hash si fourni
+            ...(draft.promoterPasswordHash && { passwordHash: draft.promoterPasswordHash }),
+            firstName: draft.promoterFirstName || promoter.firstName,
+            lastName: draft.promoterLastName || promoter.lastName,
+            role: 'PROMOTER',
+            status: 'active',
+          },
+        });
+        this.logger.log(`✅ Promoter reused (existing user): ${promoter.id} → tenant ${tenants[0].id}`);
+      } else {
+        // Nouveau user — créer
+        promoter = await tx.user.create({
+          data: {
+            email: draft.promoterEmail,
+            passwordHash: draft.promoterPasswordHash,
+            firstName: draft.promoterFirstName || '',
+            lastName: draft.promoterLastName || '',
+            role: 'PROMOTER',
+            tenantId: tenants[0].id,
+            status: 'active',
+          },
+        });
+        this.logger.log(`✅ Promoter created (new user): ${promoter.id} → tenant ${tenants[0].id}`);
+      }
 
       // 4. Si plusieurs tenants, créer des entrées UserTenant pour lier le promoteur aux autres tenants
       if (schoolsCount > 1) {

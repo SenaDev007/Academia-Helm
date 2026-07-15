@@ -21,7 +21,7 @@ export default function PlanningModulePage() {
       title="Planification & Études"
       subtitle={`${currentLevel?.code === 'MATERNELLE' ? 'Maternelle' :
                  currentLevel?.code === 'PRIMAIRE' ? 'Primaire' :
-                 currentLevel?.code === 'SECONDAIRE' ? 'Secondaire' : currentLevel?.code} | ${currentYear?.name || ''}`}
+                 currentLevel?.code === 'SECONDAIRE' ? 'Secondaire' : currentLevel?.code === 'ALL' ? 'Tous les niveaux' : currentLevel?.code} | ${currentYear?.name || ''}`}
       actions={
         <>
           <button className="flex items-center space-x-2 px-4 py-2 bg-navy-900 text-white rounded-md hover:bg-navy-800 transition-colors">

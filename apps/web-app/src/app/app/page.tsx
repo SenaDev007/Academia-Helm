@@ -15,6 +15,7 @@ import TeacherDashboard from '@/components/pilotage/dashboards/TeacherDashboard'
 import AccountantDashboard from '@/components/pilotage/dashboards/AccountantDashboard';
 import AdminDashboard from '@/components/pilotage/dashboards/AdminDashboard';
 import ParentDashboard from '@/components/pilotage/dashboards/ParentDashboard';
+import PromoterDashboard from '@/components/pilotage/dashboards/PromoterDashboard';
 import type { User } from '@/types';
 
 export default async function AppPage() {
@@ -35,6 +36,9 @@ export default async function AppPage() {
       case 'SUPER_DIRECTOR':
       case 'director':
         return <DirectorDashboard tenantId={tenantId} />;
+      case 'PROMOTER':
+      case 'PROMOTEUR':
+        return <PromoterDashboard tenantId={tenantId} />;
       case 'teacher':
       case 'TEACHER':
       case 'TEACHER_RESP':

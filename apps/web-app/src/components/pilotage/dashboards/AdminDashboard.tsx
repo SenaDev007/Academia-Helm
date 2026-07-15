@@ -32,7 +32,7 @@ export default function AdminDashboard() {
         <p className="text-gray-600">
           {currentYear?.name} • {currentLevel?.code === 'MATERNELLE' ? 'Maternelle' :
                                  currentLevel?.code === 'PRIMAIRE' ? 'Primaire' :
-                                 currentLevel?.code === 'SECONDAIRE' ? 'Secondaire' : currentLevel?.code}
+                                 currentLevel?.code === 'SECONDAIRE' ? 'Secondaire' : currentLevel?.code === 'ALL' ? 'Tous les niveaux' : currentLevel?.code}
         </p>
       </div>
 

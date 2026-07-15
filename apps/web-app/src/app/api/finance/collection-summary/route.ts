@@ -4,7 +4,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes, normalizeApiUrl, getProxyAuthHeaders } from '@/lib/utils/api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 export const dynamic = 'force-dynamic';
 

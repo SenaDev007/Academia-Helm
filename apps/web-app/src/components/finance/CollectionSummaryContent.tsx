@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import {
   Download, FileText, Loader2, Filter, ChevronDown, ChevronUp,
 } from 'lucide-react';
-import { getClientAuthorizationHeader } from '@/lib/api/client-auth';
+import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { formatCurrency } from '@/lib/utils';
 
 // ─── Types ───────────────────────────────────────────────────────────────────

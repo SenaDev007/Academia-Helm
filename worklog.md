@@ -5621,3 +5621,78 @@ Stage Summary:
   * ShopProducts.tsx → Button/Table/Input/Label shadcn + useToast + modals standardisés
 - 7 autres modules non-conformes identifiés (Canteen, Transport, QHSE, Library, Laboratory, Infirmary, EduCast) — refonte reportée (travail massif)
 - 2 commits poussés sur origin/main : f8fec41a (multi-action) + 6deaf3af (corrections Structure + standardisation Boutique)
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: Issue #1 (montant remis + reliquat pour paiements espèces) + Issue #2 (fix config frais toast trompeur + échec création)
+
+Work Log:
+
+Issue #1 — Espèces : montant remis + reliquat
+- Exploration via subagent : schéma FinanceTransaction, service create(), DTO, reçu PDF, messages WhatsApp/SMS, frontend NewPaymentModal, service frontend, routes BFF
+- Backend schéma Prisma : ajout tenderedAmount Decimal? + changeGiven Decimal? au modèle FinanceTransaction (schema.prisma lignes 10534-10539)
+- Backend migration SQL 014 : ALTER TABLE finance_transactions ADD COLUMN tendered_amount NUMERIC(10,2) + change_given NUMERIC(10,2) + COMMENT
+- Backend DTO CreateTransactionDto : ajout tenderedAmount? + changeGiven? avec @IsOptional @IsNumber
+- Backend finance-transaction.controller.ts : passe tenderedAmount + changeGiven au service create()
+- Backend finance-transaction.service.ts create() :
+  * Signature étendue avec tenderedAmount? + changeGiven?
+  * Re-vérification backend du reliquat : changeGiven = max(0, tendered - amount) pour paiements standards
+  * Exception multi-action : si référence contient 'MULTI_ACTION', respecte le changeGiven fourni (calculé sur total combiné frais+boutique)
+  * Log warning si changeGiven incohérent reçu du frontend
+  * prisma.financeTransaction.create() : ajout tenderedAmount + changeGiven dans data
+- Backend multi-action-payment.service.ts : 
+  * MultiActionPaymentInput étendu avec tenderedAmount? + changeGiven?
+  * Pour multi-action, changeGiven calculé sur feeAmount + shopSubTotal (total combiné)
+- Backend receipt-finance.service.ts (Reçu PDF) :
+  * Section 'Mode de paiement' : ajout conditionnel 'Montant remis' + 'Reliquat rendu' (si CASH && tenderedAmount != null)
+  * Récapitulatif Global multi-action : ajout lignes 'Montant remis en espèces' + 'Reliquat rendu au client' après TOTAL ENCAISSÉ
+- Backend finance-transaction.controller.ts (WhatsApp) :
+  * Message WhatsApp : ajout cashPart avec 'Montant remis' + 'Reliquat rendu' (si CASH)
+- Backend receipt-notification-finance.service.ts (SMS) :
+  * sendBySMS() : signature étendue avec paymentMethod? + tenderedAmount? + changeGiven?
+  * Appel dispatch : passe tx.paymentMethod + tx.tenderedAmount + tx.changeGiven
+  * Message SMS : ajout cashPart 'Remis: Xf. Reliquat: Yf.' (si CASH)
+- Frontend NewPaymentModal.tsx :
+  * Nouveau state tenderedAmount (string)
+  * Calcul tenderedNum + changeGiven (max(0, tendered - totalAmount)) + isTenderedInsufficient
+  * Champ 'Montant remis par le client (XOF)' affiché uniquement si paymentMethod === 'CASH'
+  * Affichage reliquat auto dans encart emerald-50 avec icône 💰
+  * Alerte rose si montant remis insuffisant (avec montant manquant)
+  * Validation handleSubmit : bloque si tenderedNum > 0 && isTenderedInsufficient
+  * Passage tenderedAmount + changeGiven aux appels createTransaction + createMultiActionTransaction
+  * handleNewPayment() réinitialise tenderedAmount
+- Frontend finance.service.ts : createMultiActionTransaction() accepte tenderedAmount? + changeGiven?
+
+Issue #2 — Configuration des frais : toast trompeur + échec création
+- Exploration via subagent : FeeStructuresContent.tsx handleCreate, finance.service.ts, route BFF, fee-structure.controller.ts, fee-structure.service.ts create()
+- Cause racine identifiée : toSchoolLevelId() utilisait AcademicClass.levelId (AcademicLevel UUID, table pedagogy_academic_levels) au lieu de level.schoolLevelId (SchoolLevel UUID, table school_levels). Le backend ne trouvait pas l'ID dans school_levels ni education_levels → resolvedLevelId restait inchangé → prisma.feeStructure.create() → FK violation P2003 → HTTP 400 'Référence invalide : levelId' → catch silencieux → toast 'Partiellement réussi' (rouge) avec '0 créés, 2 en échec sur 2 classes'
+- Fix frontend FeeStructuresContent.tsx :
+  * eduToSchoolLevelMap : utilise maintenant level.schoolLevelId (vrai SchoolLevel UUID exposé par /api/school-levels) au lieu de matcher par nom via AcademicClass
+  * toSchoolLevelId() : retourne undefined si non trouvé (au lieu de l'ID brut) — évite d'envoyer un mauvais ID au backend
+  * handleCreateRegime : valide schoolLevelId avant l'appel (toast 'Niveau invalide' si undefined)
+  * handleCreate catch(err) : ne plus avaler silencieusement — console.error + conservation lastError
+  * 3 cas de toast : 'Configuration réussie' (failCount===0) / 'Échec de la configuration' (successCount===0) / 'Configuration partielle' (mixte)
+  * lastError affiché dans la description du toast pour diagnostic
+- Fix backend fee-structure.service.ts (défense en profondeur) :
+  * Ajout Logger au service
+  * Si levelId ni dans school_levels ni dans education_levels → resolvedLevelId = null (au lieu de garder la valeur invalide)
+  * Le frais est créé sans niveau (levelId null) plutôt que de crasher avec FK violation
+  * Log warning pour diagnostic
+- Vérifications TypeScript : 0 erreur frontend (NewPaymentModal, FeeStructuresContent, finance.service) + 0 erreur backend spécifique aux fichiers modifiés
+
+Stage Summary:
+- Issue #1 complètement implémentée :
+  * Schéma + migration SQL prêts (tenderedAmount + changeGiven)
+  * Backend : DTO, service create(), multi-action, reçu PDF, WhatsApp, SMS
+  * Frontend : champ montant remis + reliquat auto + validation
+  * Le reliquat est tracé dans TOUS les canaux : PDF, WhatsApp, SMS
+  * Re-vérification backend du reliquat (sécurité anti-manipulation)
+  * Exception multi-action : reliquat calculé sur total combiné frais+boutique
+- Issue #2 cause racine identifiée et corrigée :
+  * toSchoolLevelId() utilisait le mauvais UUID (AcademicLevel au lieu de SchoolLevel)
+  * Fix frontend : utilise level.schoolLevelId directement
+  * Fix backend : défense en profondeur (null si ID invalide)
+  * Toast amélioré : 3 cas distincts + lastError affiché
+- 1 commit poussé : 3e3d342d (12 fichiers, +256/-22 lignes)
+- ⚠️ En production : après npm install (postinstall = prisma generate) + npx prisma migrate deploy, les champs tenderedAmount/changeGiven seront disponibles

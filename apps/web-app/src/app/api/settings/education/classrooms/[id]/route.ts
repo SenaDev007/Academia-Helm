@@ -41,3 +41,31 @@ export async function PUT(
     return NextResponse.json({ error: 'Failed to update classroom' }, { status: 500 });
   }
 }
+
+/**
+ * DELETE /api/settings/education/classrooms/[id]
+ * Suppression définitive d'une classe officielle (Classroom).
+ * Refusée par le backend si des élèves y sont inscrits ou si des sections
+ * physiques y sont liées.
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  try {
+    const headers = await getAuthHeaders(request);
+    if (!headers['Authorization']) {
+      return NextResponse.json({ error: 'Non authentifie', code: 'UNAUTHORIZED' }, { status: 401 });
+    }
+    const url = new URL(`${API_BASE_URL}/settings/education/classrooms/${id}`);
+    const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
+    if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
+    const response = await fetch(url.toString(), { method: 'DELETE', headers });
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
+  } catch (error) {
+    console.error('Error deleting classroom:', error);
+    return NextResponse.json({ error: 'Failed to delete classroom' }, { status: 500 });
+  }
+}

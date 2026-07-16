@@ -27,7 +27,7 @@ import {
   Bell, Users, Calendar, Save, Loader2, CheckCircle, AlertCircle,
   Mail, UserCog, Lock, Key, Smartphone, CreditCard, Receipt, RefreshCw,
   Upload, Image, CalendarDays, UserCircle, School, Archive, CalendarRange,
-  Pencil, CopyPlus, Layers, Building2, Wallet, Plus, X
+  Pencil, CopyPlus, Layers, Building2, Wallet, Plus, X, Trash2
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import GeneratedStampsSignatures from '@/components/settings/GeneratedStampsSignatures';
@@ -1296,6 +1296,34 @@ export default function SettingsPage() {
     }
   };
 
+  /**
+   * Suppression définitive d'une classe officielle (Classroom).
+   * Affiche un modal de confirmation professionnel expliquant les conséquences
+   * et que l'action est irréversible. Le backend refusera si des élèves y sont
+   * inscrits ou si des sections physiques y sont liées.
+   */
+  const handleDeleteEducationClassroom = async (id: string, name: string) => {
+    const ok = await confirmDialog.danger(
+      `La classe officielle « ${name} » sera définitivement supprimée. Cette action est irréversible.`,
+      'Supprimer définitivement la classe officielle',
+      'Contrairement à l\'archivage, cette suppression retire définitivement la classe des listes. Si des élèves y sont inscrits ou si des sections physiques y sont liées, la suppression sera refusée — réaffectez/supprimez-les d\'abord. L\'historique pédagogique (matières, bulletins passés) est préservé.',
+    );
+    if (!ok) return;
+    try {
+      setStructureBusy(true);
+      await settingsService.deleteEducationClassroom(id, effectiveTenantId ?? undefined);
+      if (structureYearIdOrActive) {
+        const list = await settingsService.getEducationClassrooms(structureYearIdOrActive, effectiveTenantId ?? undefined);
+        setEducationClassrooms(Array.isArray(list) ? list : []);
+      }
+      showToast('success', `Classe officielle « ${name} » supprimée définitivement.`);
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur lors de la suppression');
+    } finally {
+      setStructureBusy(false);
+    }
+  };
+
   const handleDuplicateEducationClassrooms = async () => {
     if (!structureYearIdOrActive || !academicYears.length) {
       showToast('error', 'Sélectionnez une année source.');
@@ -1519,7 +1547,12 @@ export default function SettingsPage() {
   };
 
   const handleDeleteClassSection = async (id: string, name: string) => {
-    if (!confirm(`Supprimer la section « ${name} » ? Cette action est irréversible.`)) return;
+    const ok = await confirmDialog.danger(
+      `La section « ${name} » sera définitivement supprimée. Cette action est irréversible.`,
+      'Supprimer la section',
+      'Si des élèves sont actuellement affectés à cette section, la suppression sera refusée — réaffectez-les d\'abord à une autre section. Une fois la section supprimée, vous pourrez toujours en recréer une via « Synchroniser les sections ».',
+    );
+    if (!ok) return;
     try {
       setSectionsBusy(true);
       const res = await fetch(`/api/pedagogy/academic-structure/sections/${id}`, {
@@ -1531,7 +1564,7 @@ export default function SettingsPage() {
         throw new Error(err.message || err.error || `Erreur ${res.status}`);
       }
       await loadClassSections();
-      showToast('success', 'Section supprimée.');
+      showToast('success', `Section « ${name} » supprimée.`);
     } catch (error: any) {
       showToast('error', error.message || 'Erreur');
     } finally {
@@ -3599,10 +3632,19 @@ export default function SettingsPage() {
                                                 type="button"
                                                 onClick={() => handleArchiveEducationClassroom(c.id)}
                                                 disabled={structureBusy}
-                                                className="text-gray-500 hover:text-red-600 disabled:opacity-50"
-                                                title="Archiver"
+                                                className="text-gray-500 hover:text-amber-600 disabled:opacity-50 text-xs"
+                                                title="Archiver (désactiver sans supprimer)"
                                               >
                                                 Archiver
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDeleteEducationClassroom(c.id, c.name ?? '')}
+                                                disabled={structureBusy}
+                                                className="text-gray-500 hover:text-red-600 disabled:opacity-50"
+                                                title="Supprimer définitivement"
+                                              >
+                                                <Trash2 className="w-3.5 h-3.5" />
                                               </button>
                                             </span>
                                           )}

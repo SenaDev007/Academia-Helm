@@ -2,19 +2,47 @@
  * ============================================================================
  * MODULE BOUTIQUE & ÉCONOMAT - ACADEMIA HELM
  * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern ModuleContainer (comme
+ * FinanceModulePage / StudentsModulePage) pour uniformiser le design à travers
+ * tous les modules. Avant, ce module utilisait ModulePageLayout (obsolète) avec
+ * des onglets pills custom navy-900/uppercase — désormais il utilise
+ * ModuleContainer + SubModuleNavigation standard.
+ *
+ * Sous-modules :
+ *   1. Vue d'ensemble (dashboard)
+ *   2. Catalogue
+ *   3. Articles & Variantes (products)
+ *   4. Commandes (orders)
+ *   5. Ventes POS (pos)
+ *   6. Paiements & Wallet (payments)
+ *   7. Stocks & Inventaires (inventory)
+ *   8. Fournisseurs & Achats (suppliers)
+ *   9. Remises & Promos (discounts)
+ *  10. Kits Scolaires (kits)
+ *  11. Retraits & Livraisons (pickups)
+ *  12. Retours & Échanges (returns)
+ *  13. Rapports & Stats (analysis)
+ *  14. Configuration (settings)
+ *
+ * Note : La navigation par sous-modules est gérée par ModuleContainer.subModules.
+ * Les sous-composants NE doivent PAS inclure leur propre SubModuleNavigation.
+ * ============================================================================
  */
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
-  Plus, Search, Activity, List, Package, Archive, QrCode,
+  Activity, List, Package, Archive, QrCode,
   Wallet, Box, Truck, Tag, Bookmark, Navigation, RotateCcw,
-  BarChart3, Settings, CreditCard, ExternalLink
+  BarChart3, Settings, CreditCard, ExternalLink, Plus, Download,
 } from 'lucide-react';
-import { useAcademicYear } from '@/hooks/useAcademicYear';
-import { useSchoolLevel } from '@/hooks/useSchoolLevel';
-import ModulePageLayout from './ModulePageLayout';
+import { ModuleContainer } from '@/components/modules/blueprint';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { formatCurrency } from '@/lib/utils';
+
+// Sous-composants (aucun ne contient SubModuleNavigation — pattern FinanceModulePage)
 import ShopDashboard from './shop/ShopDashboard';
 import ShopCatalog from './shop/ShopCatalog';
 import ShopProducts from './shop/ShopProducts';
@@ -30,141 +58,135 @@ import ShopReturns from './shop/ShopReturns';
 import ShopReports from './shop/ShopReports';
 import ShopSettings from './shop/ShopSettings';
 
-type TabId =
-  | 'dashboard'
-  | 'catalog'
-  | 'products'
-  | 'orders'
-  | 'pos'
-  | 'payments'
-  | 'inventory'
-  | 'suppliers'
-  | 'discounts'
-  | 'kits'
-  | 'pickups'
-  | 'returns'
-  | 'analysis'
-  | 'settings';
-
 export default function ShopModulePage() {
-  const { currentYear } = useAcademicYear();
-  const { currentLevel } = useSchoolLevel();
-  const [activeTab, setActiveTab] = useState<TabId>('dashboard');
-  const [searchTerm, setSearchTerm] = useState('');
+  const { academicYear, isLoading: contextLoading } = useModuleContext();
+  const [activeSubModuleId, setActiveSubModuleId] = useState<string>('dashboard');
+  const [stats, setStats] = useState<any>(null);
 
-  const tabs = [
-    { id: 'dashboard', label: 'Vue d\'ensemble', icon: Activity },
-    { id: 'catalog', label: 'Catalogue', icon: List },
-    { id: 'products', label: 'Articles & Variantes', icon: Package },
-    { id: 'orders', label: 'Commandes', icon: Archive },
-    { id: 'pos', label: 'Ventes (POS)', icon: QrCode },
-    { id: 'payments', label: 'Paiements & Wallet', icon: Wallet },
-    { id: 'inventory', label: 'Stocks & Inventaires', icon: Box },
-    { id: 'suppliers', label: 'Fournisseurs & Achats', icon: Truck },
-    { id: 'discounts', label: 'Remises & Promos', icon: Tag },
-    { id: 'kits', label: 'Kits Scolaires', icon: Bookmark },
-    { id: 'pickups', label: 'Retraits & Livraisons', icon: Navigation },
-    { id: 'returns', label: 'Retours & Échanges', icon: RotateCcw },
-    { id: 'analysis', label: 'Rapports & Stats', icon: BarChart3 },
-    { id: 'settings', label: 'Configuration', icon: Settings },
-  ];
+  // Charger les stats boutique pour les KPIs du header
+  useEffect(() => {
+    if (academicYear?.id) {
+      loadShopStats();
+    }
+  }, [academicYear?.id]);
 
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'dashboard': return <ShopDashboard />;
-      case 'catalog': return <ShopCatalog />;
-      case 'products': return <ShopProducts />;
-      case 'orders': return <ShopOrders />;
-      case 'pos': return <ShopPOS />;
-      case 'payments': return <ShopPayments />;
-      case 'inventory': return <ShopStocks />;
-      case 'suppliers': return <ShopSuppliers />;
-      case 'discounts': return <ShopDiscounts />;
-      case 'kits': return <ShopKits />;
-      case 'pickups': return <ShopPickups />;
-      case 'returns': return <ShopReturns />;
-      case 'analysis': return <ShopReports />;
-      case 'settings': return <ShopSettings />;
-      default: return <ShopDashboard />;
+  const loadShopStats = async () => {
+    try {
+      const res = await fetch(
+        `/api/modules-complementaires/shop/stats?academicYearId=${academicYear?.id}`,
+        { credentials: 'include' },
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setStats(data);
+      }
+    } catch (e) {
+      console.error('Erreur chargement stats boutique:', e);
     }
   };
 
+  if (contextLoading) return <div className="p-8 text-center">Chargement...</div>;
+
   return (
-    <ModulePageLayout
-      title="Boutique & Économat"
-      subtitle={`${currentLevel?.label || ''} | ${currentYear?.name || ''}`}
-      actions={
-        <div className="flex items-center space-x-3">
-          {/* Lien direct vers le module Finance (encaissements) */}
-          <a
-            href="/app/finance/payments"
-            className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all font-bold text-xs uppercase tracking-widest active:scale-95 shadow-lg shadow-emerald-600/20"
-            title="Aller aux encaissements du module Finance"
-          >
-            <CreditCard className="w-4 h-4" />
-            <span>Encaissements</span>
-            <ExternalLink className="w-3 h-3 opacity-70" />
-          </a>
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Scanner ou rechercher..."
-              className="pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-navy-500 w-64 outline-none transition-all bg-white"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <button className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-xl hover:bg-navy-800 transition-all font-bold text-xs uppercase tracking-widest active:scale-95 shadow-lg shadow-navy-900/20">
-            <Plus className="w-4 h-4" />
-            <span>Nouveau</span>
-          </button>
-        </div>
-      }
-    >
-      <div className="space-y-8">
-        {/* Info : Lien multi-action avec Finance */}
-        <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3 flex items-start gap-3">
-          <CreditCard className="w-4 h-4 text-violet-700 mt-0.5 flex-shrink-0" />
-          <div className="text-xs text-violet-900">
-            <strong>Multi-action :</strong> Pour encaisser simultanément des
-            frais scolaires et des articles boutique (uniforme, tenue, fournitures)
-            en une seule opération avec un reçu unifié, ouvrez le modal
-            « Nouveau paiement » dans le module{' '}
-            <a href="/app/finance/payments" className="underline font-medium text-violet-700 hover:text-violet-900">
-              Finance → Encaissements
+    <ModuleContainer
+      header={{
+        title: 'Boutique & Économat',
+        description:
+          'Gestion des ventes, stocks, fournisseurs, kits scolaires et lien direct avec les encaissements du module Finance',
+        icon: 'package',
+        kpis: stats
+          ? [
+              {
+                label: 'Produits actifs',
+                value: String(stats.totalProducts ?? 0),
+                icon: 'package',
+                trend: 'neutral',
+              },
+              {
+                label: "Recette (30j)",
+                value: formatCurrency(stats.totalRevenueMonth ?? 0),
+                icon: 'trendingUp',
+                trend: 'up',
+              },
+              {
+                label: 'Ventes (30j)',
+                value: String(stats.totalSalesMonth ?? 0),
+                icon: 'shoppingCart',
+                trend: 'up',
+              },
+              {
+                label: 'Alertes stock',
+                value: String(stats.lowStockAlerts ?? 0),
+                icon: 'alertCircle',
+                trend: stats.lowStockAlerts > 0 ? 'up' : 'neutral',
+              },
+            ]
+          : [],
+        actions: (
+          <div className="flex items-center gap-2">
+            {/* Lien direct vers le module Finance (encaissements) — multi-action */}
+            <a
+              href="/app/finance/payments"
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-900/20 hover:bg-emerald-700 transition-all"
+              title="Aller aux encaissements du module Finance (multi-action : frais + boutique)"
+            >
+              <CreditCard className="w-4 h-4" /> Encaissements
+              <ExternalLink className="w-3 h-3 opacity-70" />
             </a>
-            . Les ventes boutique effectuées ici ou via le module Finance
-            apparaissent dans les deux modules.
+            <button
+              onClick={() => setActiveSubModuleId('pos')}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-900/20 hover:bg-indigo-700 transition-all"
+              title="Ouvrir le point de vente"
+            >
+              <Plus className="w-4 h-4" /> Nouvelle vente
+            </button>
+            <button
+              onClick={() => setActiveSubModuleId('analysis')}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold hover:bg-slate-50 transition-all"
+              title="Rapports & statistiques"
+            >
+              <Download className="w-4 h-4" /> Rapports
+            </button>
           </div>
-        </div>
-
-        {/* Navigation Tabs - Style Ultra Premium */}
-        <div className="flex items-center space-x-1 bg-gray-100/80 p-1.5 rounded-[1.25rem] border border-gray-200/50 overflow-x-auto no-scrollbar shadow-inner backdrop-blur-sm sticky top-0 z-30">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as TabId)}
-                className={`flex items-center space-x-2 px-5 py-3 rounded-[1rem] text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
-                  activeTab === tab.id
-                    ? 'bg-white text-navy-900 shadow-md border border-gray-100'
-                    : 'text-gray-400 hover:text-navy-600 hover:bg-white/50'
-                }`}
-              >
-                <Icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-navy-600' : 'text-gray-400'}`} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Content Area */}
-        <div className="pb-12">
-          {renderTabContent()}
-        </div>
-      </div>
-    </ModulePageLayout>
+        ),
+      }}
+      subModules={{
+        activeModuleId: activeSubModuleId,
+        onModuleChange: setActiveSubModuleId,
+        modules: [
+          { id: 'dashboard', label: 'Vue d\'ensemble', icon: <Activity className="w-4 h-4" /> },
+          { id: 'catalog', label: 'Catalogue', icon: <List className="w-4 h-4" /> },
+          { id: 'products', label: 'Articles & Variantes', icon: <Package className="w-4 h-4" /> },
+          { id: 'orders', label: 'Commandes', icon: <Archive className="w-4 h-4" /> },
+          { id: 'pos', label: 'Ventes (POS)', icon: <QrCode className="w-4 h-4" /> },
+          { id: 'payments', label: 'Paiements & Wallet', icon: <Wallet className="w-4 h-4" /> },
+          { id: 'inventory', label: 'Stocks & Inventaires', icon: <Box className="w-4 h-4" /> },
+          { id: 'suppliers', label: 'Fournisseurs & Achats', icon: <Truck className="w-4 h-4" /> },
+          { id: 'discounts', label: 'Remises & Promos', icon: <Tag className="w-4 h-4" /> },
+          { id: 'kits', label: 'Kits Scolaires', icon: <Bookmark className="w-4 h-4" /> },
+          { id: 'pickups', label: 'Retraits & Livraisons', icon: <Navigation className="w-4 h-4" /> },
+          { id: 'returns', label: 'Retours & Échanges', icon: <RotateCcw className="w-4 h-4" /> },
+          { id: 'analysis', label: 'Rapports & Stats', icon: <BarChart3 className="w-4 h-4" /> },
+          { id: 'settings', label: 'Configuration', icon: <Settings className="w-4 h-4" /> },
+        ],
+      }}
+      content={
+        activeSubModuleId === 'dashboard' ? { layout: 'default', children: <ShopDashboard /> } :
+        activeSubModuleId === 'catalog' ? { layout: 'default', children: <ShopCatalog /> } :
+        activeSubModuleId === 'products' ? { layout: 'default', children: <ShopProducts /> } :
+        activeSubModuleId === 'orders' ? { layout: 'default', children: <ShopOrders /> } :
+        activeSubModuleId === 'pos' ? { layout: 'default', children: <ShopPOS /> } :
+        activeSubModuleId === 'payments' ? { layout: 'default', children: <ShopPayments /> } :
+        activeSubModuleId === 'inventory' ? { layout: 'default', children: <ShopStocks /> } :
+        activeSubModuleId === 'suppliers' ? { layout: 'default', children: <ShopSuppliers /> } :
+        activeSubModuleId === 'discounts' ? { layout: 'default', children: <ShopDiscounts /> } :
+        activeSubModuleId === 'kits' ? { layout: 'default', children: <ShopKits /> } :
+        activeSubModuleId === 'pickups' ? { layout: 'default', children: <ShopPickups /> } :
+        activeSubModuleId === 'returns' ? { layout: 'default', children: <ShopReturns /> } :
+        activeSubModuleId === 'analysis' ? { layout: 'default', children: <ShopReports /> } :
+        activeSubModuleId === 'settings' ? { layout: 'default', children: <ShopSettings /> } :
+        { layout: 'default', children: <ShopDashboard /> }
+      }
+    />
   );
 }

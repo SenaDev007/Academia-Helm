@@ -1,5 +1,5 @@
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
 /**
@@ -98,6 +98,7 @@ const DEFAULT_CYCLES_AND_GRADES: Record<
 
 @Injectable()
 export class EducationStructureService {
+  private readonly logger = new Logger(EducationStructureService.name);
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -343,6 +344,101 @@ export class EducationStructureService {
         grade: { include: { cycle: { include: { level: true } }, series: true } },
       },
     });
+  }
+
+  /**
+   * Suppression définitive d'une classe officielle (Classroom).
+   *
+   * Cas d'usage : une école crée une classe officielle en début d'année puis
+   * réalise qu'elle n'est finalement pas utilisée (pas d'élèves, pas de
+   * section physique). Au lieu d'archiver (qui garde la classe visible dans
+   * les listes), l'école peut la supprimer définitivement.
+   *
+   * Sécurités :
+   *   1. Vérifie qu'aucune AcademicClass liée (par nom + année + tenant) n'a
+   *      de StudentEnrollment actif — sinon refuse avec un message clair.
+   *   2. Vérifie qu'aucune section physique (Class) n'est liée à cette classe
+   *      officielle via AcademicClass — sinon refuse (l'utilisateur doit
+   *      d'abord supprimer les sections).
+   *   3. Désactive (sans supprimer) l'AcademicClass correspondante pour
+   *      préserver l'historique pédagogique (matières, emplois du temps…).
+   *
+   * La suppression est irréversible.
+   */
+  async deleteClassroom(tenantId: string, id: string) {
+    const classroom = await this.prisma.classroom.findFirst({
+      where: { id, tenantId },
+      include: {
+        grade: { include: { cycle: { include: { level: true } }, series: true } },
+      },
+    });
+    if (!classroom) {
+      throw new NotFoundException('Classe officielle non trouvée.');
+    }
+
+    // 1. Chercher l'AcademicClass correspondante (par nom, tenant, année académique)
+    const academicClass = await this.prisma.academicClass.findFirst({
+      where: {
+        tenantId,
+        academicYearId: classroom.academicYearId,
+        name: classroom.name,
+      },
+      include: {
+        _count: {
+          select: {
+            studentEnrollments: true,
+            physicalClasses: true,
+          },
+        },
+      },
+    });
+
+    // 2. Sécurités : refuser si des élèves sont affectés à l'AcademicClass
+    if (academicClass && (academicClass as any)._count?.studentEnrollments > 0) {
+      throw new BadRequestException(
+        `Impossible de supprimer la classe officielle « ${classroom.name} » : ` +
+        `${(academicClass as any)._count.studentEnrollments} élève(s) y sont inscrits. ` +
+        `Réaffectez ces élèves à une autre classe avant de la supprimer.`,
+      );
+    }
+
+    // 3. Sécurité : refuser si des sections physiques existent
+    if (academicClass && (academicClass as any)._count?.physicalClasses > 0) {
+      throw new BadRequestException(
+        `Impossible de supprimer la classe officielle « ${classroom.name} » : ` +
+        `${(academicClass as any)._count.physicalClasses} section(s) physique(s) y sont liées. ` +
+        `Supprimez d'abord ces sections dans l'onglet « Sections par classe » avant de supprimer la classe officielle.`,
+      );
+    }
+
+    // 4. Supprimer le Classroom
+    await this.prisma.classroom.delete({ where: { id, tenantId } });
+
+    // 5. Désactiver l'AcademicClass correspondante (sans la supprimer pour
+    // préserver l'historique pédagogique — matières, bulletins passés…)
+    if (academicClass) {
+      await this.prisma.academicClass.update({
+        where: { id: academicClass.id },
+        data: { isActive: false },
+      }).catch((err) => {
+        // Non bloquant : si l'update échoue pour quelque raison que ce soit,
+        // on log mais on ne fait pas échouer la suppression du Classroom.
+        this.logger.warn(
+          `Impossible de désactiver l'AcademicClass ${academicClass.id} après suppression du Classroom ${id}: ${err.message}`,
+        );
+      });
+    }
+
+    this.logger.log(
+      `Classroom ${id} (« ${classroom.name} ») supprimé définitivement par le tenant ${tenantId}.` +
+      (academicClass ? ` AcademicClass ${academicClass.id} désactivée.` : ''),
+    );
+
+    return {
+      success: true,
+      message: `Classe officielle « ${classroom.name} » supprimée définitivement.`,
+      classroomName: classroom.name,
+    };
   }
 
   /**

@@ -2,26 +2,50 @@
  * ============================================================================
  * SHOP DASHBOARD - ACADEMIA HELM
  * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern Finance/Students.
+ *  - Cards : rounded-xl border-gray-200 shadow-sm (au lieu de rounded-3xl)
+ *  - Titres : text-lg font-semibold text-navy-900 (au lieu de font-black uppercase tracking-tight)
+ *  - Table : composants shadcn <Table>/<TableHeader>/... au lieu de <table> HTML
+ *  - Couleur primaire : indigo-600 / blue-600 (au lieu de navy-900 partout)
+ *  - Plus de "Sarah AI Insights" custom (navy-900 + amber) — remplacé par une
+ *    carte sobre "Top Produits" standard
+ * ============================================================================
  */
 
 'use client';
 
 import React from 'react';
-import { 
-  DollarSign, ShoppingBag, Package, TrendingUp, 
-  AlertTriangle, CheckCircle2, Clock, ArrowRight,
-  TrendingDown, ShoppingCart, UserCheck, Zap, BarChart3, Loader2
+import {
+  Package, TrendingUp, ShoppingCart, AlertCircle,
+  Clock, BarChart3, Loader2, ArrowRight,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesDashboard } from '@/lib/modules-complementaires/hooks';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
 
 interface ShopStats {
   totalSales?: number;
   totalOrders?: number;
   pendingOrders?: number;
   lowStockItems?: number;
-  recentOrders?: Array<{ id?: string; refNo: string; name: string; student?: string; items: string; amount: number; mode: string; status: string; time: string }>;
+  recentOrders?: Array<{
+    id?: string;
+    refNo: string;
+    name: string;
+    student?: string;
+    items: string;
+    amount: number;
+    mode: string;
+    status: string;
+    time: string;
+  }>;
   topProducts?: Array<{ id?: string; name?: string; sales?: number; revenue?: number }>;
 }
 
@@ -50,265 +74,222 @@ export default function ShopDashboard() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
+    <div className="space-y-6 animate-in fade-in duration-700">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les statistiques. Affichage des valeurs par défaut.
         </div>
       )}
 
-      {/* KPI Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <KPICard 
-          title="Chiffre d'Affaires (Mois)" 
-          value={formatCurrency(stats.totalSales ?? 0)} 
-          icon={DollarSign} 
-          color="navy" 
-          trend="+15.4%" 
-          trendUp={true}
+      {/* Cartes résumé (secondaires — les KPIs principaux sont dans le ModuleHeader du parent) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <SummaryCard
+          title="Chiffre d'affaires (mois)"
+          value={formatCurrency(stats.totalSales ?? 0)}
+          icon={<TrendingUp className="w-5 h-5" />}
+          accent="emerald"
+          trend="+15.4%"
         />
-        <KPICard 
-          title="Commandes Totales" 
-          value={String(stats.totalOrders ?? 0)} 
-          icon={ShoppingBag} 
-          color="emerald" 
-          trend="+5%" 
-          trendUp={true}
+        <SummaryCard
+          title="Commandes totales"
+          value={String(stats.totalOrders ?? 0)}
+          icon={<ShoppingCart className="w-5 h-5" />}
+          accent="blue"
+          trend="+5%"
         />
-        <KPICard 
-          title="Commandes en Attente" 
-          value={String(stats.pendingOrders ?? 0)} 
-          icon={ShoppingCart} 
-          color="amber" 
+        <SummaryCard
+          title="Commandes en attente"
+          value={String(stats.pendingOrders ?? 0)}
+          icon={<Clock className="w-5 h-5" />}
+          accent="amber"
           sub="À préparer"
         />
-        <KPICard 
-          title="Articles en Rupture" 
-          value={String(stats.lowStockItems ?? 0)} 
-          icon={Package} 
-          color="red" 
+        <SummaryCard
+          title="Articles en rupture"
+          value={String(stats.lowStockItems ?? 0)}
+          icon={<AlertCircle className="w-5 h-5" />}
+          accent="red"
           sub="Action requise"
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main Activity Chart Placeholder */}
-        <div className="lg:col-span-2 bg-white rounded-3xl border border-gray-100 p-8 shadow-sm">
-          <div className="flex items-center justify-between mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* GraphiquePlaceholder — Performance des ventes */}
+        <Card className="lg:col-span-2 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
             <div>
-              <h3 className="text-xl font-black text-navy-900 uppercase tracking-tight">Performance des Ventes</h3>
-              <p className="text-sm text-gray-400 font-medium">Évolution du CA sur les 30 derniers jours</p>
+              <h3 className="text-lg font-semibold text-navy-900">Performance des ventes</h3>
+              <p className="text-sm text-gray-500">Évolution du CA sur les 30 derniers jours</p>
             </div>
-            <select className="bg-gray-50 border-none text-xs font-bold text-navy-600 rounded-xl px-4 py-2 outline-none">
-              <option>30 derniers jours</option>
-              <option>Trimestre en cours</option>
-              <option>Année scolaire</option>
-            </select>
+            <Badge variant="outline" className="text-xs">30 derniers jours</Badge>
           </div>
-          
-          <div className="h-[300px] w-full bg-gradient-to-b from-gray-50 to-white rounded-2xl border border-dashed border-gray-200 flex items-center justify-center relative overflow-hidden group">
-            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5"></div>
-            <div className="text-center z-10">
-              <BarChart3 className="w-12 h-12 text-navy-200 mb-3 mx-auto group-hover:scale-110 transition-transform duration-500" />
-              <p className="text-sm font-bold text-navy-300">Graphique analytique ORION</p>
-              <p className="text-[10px] text-gray-400 uppercase tracking-widest mt-1">Données synchronisées en temps réel</p>
-            </div>
-          </div>
-        </div>
 
-        {/* ORION / Sarah AI Insights */}
-        <div className="space-y-6">
-          <div className="bg-navy-900 rounded-3xl p-8 text-white shadow-2xl relative overflow-hidden group">
-            <div className="absolute -right-4 -top-4 w-24 h-24 bg-navy-800 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700"></div>
-            <div className="relative z-10">
-              <div className="flex items-center space-x-3 mb-6">
-                <div className="p-2 bg-navy-800 rounded-xl">
-                  <Zap className="w-5 h-5 text-amber-400 fill-amber-400" />
+          <div className="h-[300px] w-full bg-gradient-to-b from-gray-50 to-white rounded-xl border border-dashed border-gray-200 flex items-center justify-center">
+            <div className="text-center">
+              <BarChart3 className="w-12 h-12 text-gray-300 mb-3 mx-auto" />
+              <p className="text-sm font-medium text-gray-500">Graphique analytique</p>
+              <p className="text-xs text-gray-400 mt-1">Données synchronisées en temps réel</p>
+            </div>
+          </div>
+        </Card>
+
+        {/* Top Produits */}
+        <Card className="p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-navy-900">Top produits</h3>
+            <Badge variant="outline" className="text-xs">30j</Badge>
+          </div>
+          <div className="space-y-3">
+            {(stats.topProducts?.length ? stats.topProducts : []).slice(0, 5).map((product, i) => (
+              <div
+                key={product.id ?? i}
+                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100 hover:bg-white hover:border-gray-200 transition-all"
+              >
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 rounded-lg bg-blue-100 text-blue-600">
+                    <Package className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-navy-900">{product.name ?? '—'}</p>
+                    <p className="text-xs text-gray-500">{product.sales ?? 0} ventes</p>
+                  </div>
                 </div>
-                <h3 className="font-black text-lg uppercase tracking-tight">Sarah AI Insights</h3>
+                <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
+                  {product.revenue ? formatCurrency(product.revenue) : '—'}
+                </Badge>
               </div>
-              <p className="text-navy-100 text-sm leading-relaxed mb-6 font-medium">
-                "Le kit scolaire <span className="text-white font-bold">CP1</span> est en forte demande cette semaine (+60%). Prévoyez un stock tampon de 50 unités supplémentaires pour le pic de lundi."
-              </p>
-              <button className="w-full py-3 bg-white text-navy-900 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-navy-50 transition-all active:scale-95">
-                Appliquer la recommandation
-              </button>
-            </div>
+            ))}
+            {(!stats.topProducts || stats.topProducts.length === 0) && (
+              <div className="text-center py-8 text-sm text-gray-400">
+                Aucun produit en vedette.
+              </div>
+            )}
           </div>
-
-          <div className="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm">
-            <h3 className="font-black text-navy-900 uppercase tracking-tight mb-6">Top Produits</h3>
-            <div className="space-y-4">
-              {(stats.topProducts?.length ? stats.topProducts : []).map((product, i) => (
-                <div key={product.id ?? i} className="flex items-center justify-between p-4 bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-white hover:border-navy-100 transition-all group cursor-pointer">
-                  <div className="flex items-center space-x-4">
-                    <div className="p-2 rounded-lg bg-blue-100 text-blue-600">
-                      <Package className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-black text-navy-900 group-hover:text-navy-600 transition-colors">{product.name ?? '—'}</p>
-                      <p className="text-[10px] text-gray-400 font-bold uppercase">{product.sales ?? 0} ventes</p>
-                    </div>
-                  </div>
-                  <div className="px-3 py-1 rounded-full text-[10px] font-black border bg-emerald-50 text-emerald-600 border-emerald-100">
-                    {product.revenue ? formatCurrency(product.revenue) : '—'}
-                  </div>
-                </div>
-              ))}
-              {(!stats.topProducts || stats.topProducts.length === 0) && (
-                <div className="text-center py-8 text-sm text-slate-400">
-                  Aucun produit en vedette.
-                </div>
-              )}
-            </div>
-            <button className="w-full mt-6 py-3 border border-gray-100 rounded-xl text-xs font-bold text-gray-500 hover:bg-gray-50 transition-all uppercase tracking-widest">
-              Voir le catalogue
-            </button>
-          </div>
-        </div>
+          <Button variant="outline" size="sm" className="w-full mt-4 text-xs">
+            Voir le catalogue
+            <ArrowRight className="w-3 h-3 ml-1" />
+          </Button>
+        </Card>
       </div>
 
-      {/* Recent Transactions */}
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="p-8 border-b border-gray-50 flex items-center justify-between">
+      {/* Ventes récentes — table standard pattern Finance */}
+      <Card className="shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
           <div>
-            <h3 className="text-xl font-black text-navy-900 uppercase tracking-tight">Ventes Récentes</h3>
-            <p className="text-sm text-gray-400 font-medium">Dernières opérations enregistrées en caisse</p>
+            <h3 className="text-lg font-semibold text-navy-900">Ventes récentes</h3>
+            <p className="text-sm text-gray-500">Dernières opérations enregistrées en caisse</p>
           </div>
-          <button className="px-6 py-2.5 bg-gray-50 text-navy-900 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-100 transition-all">
+          <Button variant="outline" size="sm" className="text-xs">
             Exporter le journal
-          </button>
+          </Button>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-gray-50/50">
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Référence</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Client / Élève</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Articles</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Montant</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Mode</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Statut</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Date & Heure</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50">
+                <TableHead>Référence</TableHead>
+                <TableHead>Client / Élève</TableHead>
+                <TableHead>Articles</TableHead>
+                <TableHead className="text-right">Montant</TableHead>
+                <TableHead>Mode</TableHead>
+                <TableHead>Statut</TableHead>
+                <TableHead>Date & Heure</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {(stats.recentOrders?.length ? stats.recentOrders : []).map((order, i) => (
-                <TransactionRow 
-                  key={order.id ?? i}
-                  refNo={order.refNo} 
-                  name={order.name} 
-                  student={order.student ?? '—'} 
-                  items={order.items} 
-                  amount={order.amount} 
-                  mode={order.mode} 
-                  status={order.status} 
-                  time={order.time}
-                />
+                <TableRow key={order.id ?? i} className="hover:bg-slate-50">
+                  <TableCell className="font-mono text-xs font-medium">{order.refNo}</TableCell>
+                  <TableCell>
+                    <div>
+                      <p className="text-sm font-medium text-navy-900">{order.name}</p>
+                      <p className="text-xs text-gray-500">{order.student ?? '—'}</p>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs text-gray-600 max-w-[200px] truncate">
+                    {order.items}
+                  </TableCell>
+                  <TableCell className="text-right font-semibold text-navy-900">
+                    {formatCurrency(order.amount)}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="text-xs">{order.mode}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          order.status === 'Complété' ? 'bg-emerald-500' : 'bg-amber-500'
+                        }`}
+                      />
+                      <span className="text-xs font-medium text-gray-700">{order.status}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1.5 text-gray-500">
+                      <Clock className="w-3 h-3" />
+                      <span className="text-xs">{order.time}</span>
+                    </div>
+                  </TableCell>
+                </TableRow>
               ))}
               {(!stats.recentOrders || stats.recentOrders.length === 0) && (
-                <tr>
-                  <td colSpan={7} className="px-8 py-12 text-center text-sm text-slate-400">
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-12">
                     Aucune vente récente.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
 
-// Sub-components
-function KPICard({ title, value, icon: Icon, color, trend, trendUp, sub }: any) {
-  const colorMap: any = {
-    navy: 'bg-navy-50 text-navy-600 border-navy-100',
+// ─── Sous-composant carte résumé (style Finance, pas de font-black uppercase) ───
+function SummaryCard({
+  title,
+  value,
+  icon,
+  accent,
+  trend,
+  sub,
+}: {
+  title: string;
+  value: string;
+  icon: React.ReactNode;
+  accent: 'blue' | 'emerald' | 'amber' | 'red';
+  trend?: string;
+  sub?: string;
+}) {
+  const accentMap = {
+    blue: 'bg-blue-50 text-blue-600 border-blue-100',
+    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
     amber: 'bg-amber-50 text-amber-600 border-amber-100',
     red: 'bg-red-50 text-red-600 border-red-100',
-    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
   };
 
   return (
-    <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
-      <div className="flex items-center justify-between mb-6">
-        <div className={`p-4 rounded-2xl border ${colorMap[color]} group-hover:scale-110 transition-transform duration-500`}>
-          <Icon className="w-6 h-6" />
+    <Card className="p-5 shadow-sm hover:shadow-md transition-shadow">
+      <div className="flex items-center justify-between mb-4">
+        <div className={`p-2.5 rounded-lg border ${accentMap[accent]}`}>
+          {icon}
         </div>
         {trend && (
-          <div className={`flex items-center space-x-1 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tighter border ${
-            trendUp ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'
-          }`}>
-            <span>{trend}</span>
-          </div>
+          <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
+            {trend}
+          </Badge>
         )}
       </div>
       <div>
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{title}</p>
-        <div className="flex items-baseline space-x-2">
-          <h4 className="text-2xl font-black text-navy-900">{value}</h4>
-          {sub && <span className="text-[10px] font-bold text-gray-400 uppercase">{sub}</span>}
+        <p className="text-xs font-medium text-gray-500 mb-1">{title}</p>
+        <div className="flex items-baseline gap-2">
+          <p className="text-xl font-bold text-navy-900">{value}</p>
+          {sub && <span className="text-xs text-gray-500">{sub}</span>}
         </div>
       </div>
-    </div>
-  );
-}
-
-function StockAlertItem({ name, stock, threshold, isRupture }: any) {
-  return (
-    <div className="flex items-center justify-between p-4 bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-white hover:border-navy-100 transition-all group cursor-pointer">
-      <div className="flex items-center space-x-4">
-        <div className={`p-2 rounded-lg ${isRupture ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
-          <Package className="w-4 h-4" />
-        </div>
-        <div>
-          <p className="text-xs font-black text-navy-900 group-hover:text-navy-600 transition-colors">{name}</p>
-          <p className="text-[10px] text-gray-400 font-bold uppercase">Seuil: {threshold} unités</p>
-        </div>
-      </div>
-      <div className={`px-3 py-1 rounded-full text-[10px] font-black border ${
-        isRupture ? 'bg-red-50 text-red-600 border-red-100' : 'bg-amber-50 text-amber-600 border-amber-100'
-      }`}>
-        {stock} restants
-      </div>
-    </div>
-  );
-}
-
-function TransactionRow({ refNo, name, student, items, amount, mode, status, time }: any) {
-  return (
-    <tr className="hover:bg-gray-50/50 transition-colors group">
-      <td className="px-8 py-5">
-        <span className="text-xs font-black text-navy-900 group-hover:text-navy-600">{refNo}</span>
-      </td>
-      <td className="px-8 py-5">
-        <div>
-          <p className="text-xs font-bold text-navy-900">{name}</p>
-          <p className="text-[10px] text-gray-400 font-medium">{student}</p>
-        </div>
-      </td>
-      <td className="px-8 py-5">
-        <p className="text-xs text-gray-600 font-medium truncate max-w-[200px]">{items}</p>
-      </td>
-      <td className="px-8 py-5">
-        <span className="text-sm font-black text-navy-900">{formatCurrency(amount)}</span>
-      </td>
-      <td className="px-8 py-5">
-        <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded-lg text-[10px] font-black uppercase tracking-tight">{mode}</span>
-      </td>
-      <td className="px-8 py-5">
-        <div className="flex items-center space-x-2">
-          <div className={`w-1.5 h-1.5 rounded-full ${status === 'Complété' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]'}`}></div>
-          <span className="text-xs font-bold text-gray-600">{status}</span>
-        </div>
-      </td>
-      <td className="px-8 py-5">
-        <div className="flex items-center space-x-2 text-gray-400">
-          <Clock className="w-3.5 h-3.5" />
-          <span className="text-[10px] font-bold uppercase">{time}</span>
-        </div>
-      </td>
-    </tr>
+    </Card>
   );
 }

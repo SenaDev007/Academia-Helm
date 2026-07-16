@@ -882,38 +882,51 @@ export class AcademicStructurePrismaService {
 
   /**
    * Supprime une section (subdivision A/B/C).
-   * Si c'est la dernière section de l'AcademicClass, on empêche la suppression
-   * (il faut toujours au moins une section par classe officielle).
+   *
+   * Règle métier (juillet 2026) : la règle « au moins une section par classe
+   * officielle » a été retirée — il est désormais possible de supprimer toutes
+   * les sections d'une classe officielle. L'utilisateur pourra ensuite :
+   *   - soit re-synchroniser les sections via l'action « sync » (qui recrée
+   *     une section par défaut par AcademicClass),
+   *   - soit supprimer définitivement la classe officielle si elle n'est plus
+   *     utilisée cette année.
+   *
+   * On vérifie simplement qu'aucun élève n'est actuellement affecté à cette
+   * section (StudentEnrollment) pour éviter une suppression incohérente. Si
+   * des élèves y sont affectés, on lève une BadRequestException avec un
+   * message clair invitant à les réaffecter d'abord.
    */
   async deleteClassSection(id: string, tenantId: string): Promise<{ success: boolean }> {
     const section = await this.prisma.class.findFirst({
       where: { id, tenantId },
-      select: { id: true, officialClassId: true, academicYearId: true, name: true },
+      select: {
+        id: true,
+        officialClassId: true,
+        academicYearId: true,
+        name: true,
+        _count: { select: { studentEnrollments: true } },
+      },
     });
     if (!section) {
       throw new NotFoundException(`Section introuvable (id=${id}).`);
     }
 
-    // Si la section est liée à une AcademicClass, vérifier qu'il en reste au moins une
-    if (section.officialClassId) {
-      const otherSectionsCount = await this.prisma.class.count({
-        where: {
-          tenantId,
-          academicYearId: section.academicYearId,
-          officialClassId: section.officialClassId,
-          id: { not: id },
-        },
-      });
-      if (otherSectionsCount === 0) {
-        throw new BadRequestException(
-          `Impossible de supprimer la dernière section de la classe. ` +
-          `Chaque classe officielle doit avoir au moins une section.`,
-        );
-      }
+    // Sécurité : refuser la suppression si des élèves sont actuellement
+    // affectés à cette section (cela évite des données orphelines).
+    const enrollmentCount = (section as any)._count?.studentEnrollments ?? 0;
+    if (enrollmentCount > 0) {
+      throw new BadRequestException(
+        `Impossible de supprimer la section « ${section.name} » : ` +
+        `${enrollmentCount} élève(s) y sont affectés. ` +
+        `Réaffectez ces élèves à une autre section avant de la supprimer.`,
+      );
     }
 
     await this.prisma.class.delete({ where: { id } });
-    this.logger.log(`Section ${id} (« ${section.name} ») supprimée par le tenant ${tenantId}.`);
+    this.logger.log(
+      `Section ${id} (« ${section.name} ») supprimée par le tenant ${tenantId}. ` +
+      `(officialClassId=${section.officialClassId ?? 'null'})`,
+    );
     return { success: true };
   }
 

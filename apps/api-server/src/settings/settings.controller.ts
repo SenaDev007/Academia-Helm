@@ -1810,6 +1810,23 @@ export class SettingsController {
     return this.educationStructureService.archiveClassroom(this.resolveTid(tenantId, user, req), id);
   }
 
+  /**
+   * DELETE /settings/education/classrooms/:id
+   * Suppression définitive d'une classe officielle (Classroom).
+   * Cas d'usage : la classe a été créée par erreur ou n'est plus utilisée
+   * cette année. Refusée si des élèves y sont inscrits ou si des sections
+   * physiques y sont liées (l'utilisateur doit d'abord les réaffecter/supprimer).
+   */
+  @Delete('education/classrooms/:id')
+  async deleteEducationClassroom(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Param('id') id: string,
+  ) {
+    return this.educationStructureService.deleteClassroom(this.resolveTid(tenantId, user, req), id);
+  }
+
   @Post('education/classrooms/duplicate')
   async duplicateEducationClassrooms(
     @TenantId() tenantId: string | undefined,

@@ -519,6 +519,16 @@ export async function archiveEducationClassroom(id: string, tenantId?: string | 
   return fetchWithAuth(`${BASE_URL}/education/classrooms/${id}/archive${qs}`, { method: 'POST' });
 }
 
+/**
+ * Suppression définitive d'une classe officielle (Classroom).
+ * Le backend refusera si des élèves y sont inscrits ou si des sections
+ * physiques y sont liées.
+ */
+export async function deleteEducationClassroom(id: string, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/education/classrooms/${id}${qs}`, { method: 'DELETE' });
+}
+
 export async function duplicateEducationClassrooms(
   oldAcademicYearId: string,
   newAcademicYearId: string,

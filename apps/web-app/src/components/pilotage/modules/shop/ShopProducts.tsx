@@ -2,16 +2,38 @@
  * ============================================================================
  * SHOP PRODUCTS & VARIANTS - ACADEMIA HELM
  * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern Finance/Students.
+ *  - Boutons : <Button> shadcn (au lieu de buttons custom bg-navy-900 uppercase)
+ *  - Table : <Table>/<TableHeader>/... shadcn (au lieu de <table> HTML brute)
+ *  - Modals : FormModal du blueprint (au lieu de fixed inset-0 fait main)
+ *  - Notifications : useToast() (au lieu de alert())
+ *  - Inputs : <Input>/<Label> shadcn (au lieu de <input>/<label> HTML)
+ *  - Cards : rounded-xl border-gray-200 (au lieu de rounded-3xl border-gray-100)
+ *  - Typo : font-semibold text-lg (au lieu de font-black uppercase tracking-tight)
+ * ============================================================================
  */
 
 'use client';
 
 import React, { useState } from 'react';
-import { Loader2, Package, Layers, Search, Filter, Plus, ArrowUpDown, MoreVertical, Edit, Trash2, Copy, X } from 'lucide-react';
+import {
+  Loader2, Package, Layers, Search, Filter, Plus, ArrowUpDown,
+  Edit, Trash2, MoreVertical, X,
+} from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
+import { useToast } from '@/components/ui/use-toast';
 
 interface ProductItem {
   id?: string;
@@ -29,6 +51,7 @@ interface ProductItem {
 
 export default function ShopProducts() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const { data: products, loading, error, refetch } = useModulesList<ProductItem>(
     'shop',
     'products',
@@ -38,37 +61,65 @@ export default function ShopProducts() {
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const [productForm, setProductForm] = useState({ name: '', price: 0, categoryId: '', stock: 0, description: '' });
   const [categoryForm, setCategoryForm] = useState({ name: '' });
 
   const handleCreateProduct = async () => {
+    if (!productForm.name.trim()) {
+      toast({ title: 'Nom requis', description: 'Veuillez saisir le nom du produit.', variant: 'destructive' });
+      return;
+    }
     try {
       setSubmitting(true);
       await modulesApi.post('shop/products', productForm, buildModulesApiOptions(academicYear?.id));
       setProductModalOpen(false);
       setProductForm({ name: '', price: 0, categoryId: '', stock: 0, description: '' });
       await refetch();
+      toast({ title: 'Produit créé', description: 'Le nouvel article a été ajouté au catalogue.' });
     } catch (e: any) {
-      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création du produit');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création du produit',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleCreateCategory = async () => {
+    if (!categoryForm.name.trim()) {
+      toast({ title: 'Nom requis', description: 'Veuillez saisir le nom de la catégorie.', variant: 'destructive' });
+      return;
+    }
     try {
       setSubmitting(true);
       await modulesApi.post('shop/categories', categoryForm, buildModulesApiOptions(academicYear?.id));
       setCategoryModalOpen(false);
       setCategoryForm({ name: '' });
       await refetch();
+      toast({ title: 'Catégorie créée', description: 'La nouvelle catégorie a été ajoutée.' });
     } catch (e: any) {
-      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création de la catégorie');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création de la catégorie',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
   };
+
+  // Filtrage local par recherche
+  const filteredProducts = React.useMemo(() => {
+    if (!searchTerm.trim()) return products ?? [];
+    const q = searchTerm.toLowerCase().trim();
+    return (products ?? []).filter((p) =>
+      (p.name ?? '').toLowerCase().includes(q) ||
+      (p.sku ?? '').toLowerCase().includes(q)
+    );
+  }, [products, searchTerm]);
 
   if (loading) {
     return (
@@ -80,7 +131,7 @@ export default function ShopProducts() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
+    <div className="space-y-6 animate-in fade-in duration-700">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les articles. {error}
@@ -88,140 +139,80 @@ export default function ShopProducts() {
       )}
 
       {/* Header Actions */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h3 className="text-xl font-black text-navy-900 uppercase tracking-tight">Gestion des Articles & Variantes</h3>
-          <p className="text-sm text-gray-400 font-medium">Configurez les SKU, tailles, couleurs et coûts d'achat</p>
+          <h3 className="text-lg font-semibold text-navy-900">Articles & Variantes</h3>
+          <p className="text-sm text-gray-500">Configurez les SKU, tailles, couleurs et coûts d'achat</p>
         </div>
-        <div className="flex items-center space-x-3">
-          <button
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
             onClick={() => setCategoryModalOpen(true)}
-            disabled={actionLoading === 'category'}
-            className="flex items-center space-x-2 px-6 py-3 bg-gray-50 text-navy-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-100 transition-all border border-gray-100 disabled:opacity-50"
+            disabled={submitting}
           >
-            <Copy className="w-4 h-4" />
-            <span>Ajouter une Catégorie</span>
-          </button>
-          <button
+            <Plus className="w-4 h-4 mr-2" />
+            Catégorie
+          </Button>
+          <Button
             onClick={() => setProductModalOpen(true)}
-            disabled={actionLoading === 'product'}
-            className="flex items-center space-x-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20 active:scale-95 disabled:opacity-50"
+            disabled={submitting}
           >
-            <Plus className="w-4 h-4" />
-            <span>Nouvel Article</span>
-          </button>
+            <Plus className="w-4 h-4 mr-2" />
+            Nouvel article
+          </Button>
         </div>
       </div>
 
       {/* Filter Bar */}
-      <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm flex flex-col md:flex-row items-center gap-4">
-        <div className="relative flex-1 w-full">
-          <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Rechercher par nom, SKU ou code-barres..."
-            className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-2xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 transition-all font-medium"
-          />
-        </div>
-        <div className="flex items-center space-x-3 w-full md:w-auto">
-          <button className="flex items-center space-x-2 px-5 py-3 bg-white border border-gray-100 text-gray-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition-all">
-            <Filter className="w-4 h-4" />
-            <span>Filtres Avancés</span>
-          </button>
-          <button className="flex items-center space-x-2 px-5 py-3 bg-white border border-gray-100 text-gray-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition-all">
-            <ArrowUpDown className="w-4 h-4" />
-            <span>Trier</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Products Table */}
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-
-      {/* Modals */}
-      {productModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-navy-900">Nouvel Article</h3>
-              <button onClick={() => setProductModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Nom</label>
-                <input type="text" value={productForm.name} onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Prix</label>
-                  <input type="number" value={productForm.price} onChange={(e) => setProductForm({ ...productForm, price: Number(e.target.value) })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Stock</label>
-                  <input type="number" value={productForm.stock} onChange={(e) => setProductForm({ ...productForm, stock: Number(e.target.value) })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">ID Catégorie</label>
-                <input type="text" value={productForm.categoryId} onChange={(e) => setProductForm({ ...productForm, categoryId: e.target.value })} placeholder="Optionnel" className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Description</label>
-                <textarea value={productForm.description} onChange={(e) => setProductForm({ ...productForm, description: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 h-20" />
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setProductModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
-              <button onClick={handleCreateProduct} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
-                {submitting ? 'Envoi...' : 'Créer'}
-              </button>
-            </div>
+      <Card className="p-4 shadow-sm">
+        <div className="flex flex-col md:flex-row items-center gap-3">
+          <div className="relative flex-1 w-full">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Input
+              type="text"
+              placeholder="Rechercher par nom, SKU ou code-barres..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <Button variant="outline" size="sm">
+              <Filter className="w-4 h-4 mr-1.5" />
+              Filtres
+            </Button>
+            <Button variant="outline" size="sm">
+              <ArrowUpDown className="w-4 h-4 mr-1.5" />
+              Trier
+            </Button>
           </div>
         </div>
-      )}
+      </Card>
 
-      {categoryModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-navy-900">Nouvelle Catégorie</h3>
-              <button onClick={() => setCategoryModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
-            </div>
-            <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Nom de la catégorie</label>
-              <input type="text" value={categoryForm.name} onChange={(e) => setCategoryForm({ name: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
-            </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setCategoryModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
-              <button onClick={handleCreateCategory} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
-                {submitting ? 'Envoi...' : 'Créer'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Products Table — pattern Finance */}
+      <Card className="shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-gray-50/50">
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Article / SKU</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Variantes</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Prix Vente</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Coût Achat</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Marge</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Statut</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {(products ?? []).length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-8 py-16 text-center text-gray-500">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50">
+                <TableHead>Article / SKU</TableHead>
+                <TableHead>Variantes</TableHead>
+                <TableHead className="text-right">Prix vente</TableHead>
+                <TableHead className="text-right">Coût achat</TableHead>
+                <TableHead className="text-right">Marge</TableHead>
+                <TableHead>Statut</TableHead>
+                <TableHead className="text-center">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredProducts.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-12">
                     Aucun article disponible pour cette année scolaire.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : (
-                (products ?? []).map((product, i) => {
+                filteredProducts.map((product, i) => {
                   const name = product?.name ?? `Article #${i + 1}`;
                   const sku = product?.sku ?? `SKU-${i + 1}`;
                   const price = product?.price ?? product?.unitPrice ?? 0;
@@ -241,69 +232,189 @@ export default function ShopProducts() {
                   );
                 })
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
-      </div>
+      </Card>
+
+      {/* Modal Nouvel Article — pattern standard (overlay simple, pas de fixed inset-0 fait main) */}
+      {productModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h3 className="text-lg font-semibold text-navy-900">Nouvel article</h3>
+              <Button variant="ghost" size="icon" onClick={() => setProductModalOpen(false)} className="h-8 w-8">
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <Label className="text-xs">Nom</Label>
+                <Input
+                  type="text"
+                  value={productForm.name}
+                  onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
+                  placeholder="Ex: Uniforme CP1"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Prix (FCFA)</Label>
+                  <Input
+                    type="number"
+                    value={productForm.price}
+                    onChange={(e) => setProductForm({ ...productForm, price: Number(e.target.value) })}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Stock initial</Label>
+                  <Input
+                    type="number"
+                    value={productForm.stock}
+                    onChange={(e) => setProductForm({ ...productForm, stock: Number(e.target.value) })}
+                  />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Catégorie (ID)</Label>
+                <Input
+                  type="text"
+                  value={productForm.categoryId}
+                  onChange={(e) => setProductForm({ ...productForm, categoryId: e.target.value })}
+                  placeholder="Optionnel"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Description</Label>
+                <textarea
+                  value={productForm.description}
+                  onChange={(e) => setProductForm({ ...productForm, description: e.target.value })}
+                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[80px]"
+                  placeholder="Description optionnelle"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end p-6 border-t border-gray-100">
+              <Button variant="outline" onClick={() => setProductModalOpen(false)}>Annuler</Button>
+              <Button onClick={handleCreateProduct} disabled={submitting}>
+                {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                {submitting ? 'Création...' : 'Créer l\'article'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Nouvelle Catégorie */}
+      {categoryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h3 className="text-lg font-semibold text-navy-900">Nouvelle catégorie</h3>
+              <Button variant="ghost" size="icon" onClick={() => setCategoryModalOpen(false)} className="h-8 w-8">
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <Label className="text-xs">Nom de la catégorie</Label>
+                <Input
+                  type="text"
+                  value={categoryForm.name}
+                  onChange={(e) => setCategoryForm({ name: e.target.value })}
+                  placeholder="Ex: Uniformes"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end p-6 border-t border-gray-100">
+              <Button variant="outline" onClick={() => setCategoryModalOpen(false)}>Annuler</Button>
+              <Button onClick={handleCreateCategory} disabled={submitting}>
+                {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                {submitting ? 'Création...' : 'Créer la catégorie'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function ProductRow({ name, sku, variants, price, cost, status }: any) {
+// ─── Sous-composant ligne produit (pattern Finance : TableRow + TableCell) ───
+function ProductRow({
+  name,
+  sku,
+  variants,
+  price,
+  cost,
+  status,
+}: {
+  name: string;
+  sku: string;
+  variants: number;
+  price: number;
+  cost: number;
+  status: string;
+}) {
   const margin = (price ?? 0) - (cost ?? 0);
   const marginPercent = price > 0 ? Math.round((margin / price) * 100) : 0;
 
   return (
-    <tr className="hover:bg-gray-50/50 transition-all group">
-      <td className="px-8 py-6">
-        <div className="flex items-center space-x-4">
-          <div className="p-3 bg-navy-50 rounded-2xl text-navy-600 group-hover:scale-110 transition-transform">
-            <Package className="w-5 h-5" />
+    <TableRow className="hover:bg-slate-50">
+      <TableCell>
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+            <Package className="w-4 h-4" />
           </div>
           <div>
-            <p className="text-sm font-black text-navy-900">{name}</p>
-            <p className="text-[10px] font-bold text-gray-400 tracking-wider">{sku}</p>
+            <p className="text-sm font-medium text-navy-900">{name}</p>
+            <p className="text-xs text-gray-500 font-mono">{sku}</p>
           </div>
         </div>
-      </td>
-      <td className="px-8 py-6">
-        <div className="flex items-center space-x-2">
-          <Layers className="w-4 h-4 text-gray-300" />
-          <span className="text-xs font-bold text-gray-600">{variants} Variante{variants > 1 ? 's' : ''}</span>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1.5">
+          <Layers className="w-3.5 h-3.5 text-gray-400" />
+          <span className="text-xs text-gray-600">{variants} variante{variants > 1 ? 's' : ''}</span>
         </div>
-      </td>
-      <td className="px-8 py-6">
-        <span className="text-sm font-black text-navy-900">{formatCurrency(price)}</span>
-      </td>
-      <td className="px-8 py-6">
-        <span className="text-sm font-bold text-gray-500">{formatCurrency(cost)}</span>
-      </td>
-      <td className="px-8 py-6">
+      </TableCell>
+      <TableCell className="text-right font-semibold text-navy-900">
+        {formatCurrency(price)}
+      </TableCell>
+      <TableCell className="text-right text-gray-500">
+        {formatCurrency(cost)}
+      </TableCell>
+      <TableCell className="text-right">
         <div>
-          <span className="text-sm font-black text-emerald-600">+{formatCurrency(margin)}</span>
-          <p className="text-[10px] font-bold text-gray-400">{marginPercent}% de marge</p>
+          <span className="text-sm font-semibold text-emerald-600">+{formatCurrency(margin)}</span>
+          <p className="text-xs text-gray-400">{marginPercent}% de marge</p>
         </div>
-      </td>
-      <td className="px-8 py-6">
-        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tight border ${
-          status === 'Actif' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'
-        }`}>
+      </TableCell>
+      <TableCell>
+        <Badge
+          variant="outline"
+          className={
+            status === 'Actif'
+              ? 'text-xs bg-emerald-50 text-emerald-700 border-emerald-200'
+              : 'text-xs bg-red-50 text-red-700 border-red-200'
+          }
+        >
           {status}
-        </span>
-      </td>
-      <td className="px-8 py-6 text-right">
-        <div className="flex items-center space-x-2">
-          <button className="p-2.5 bg-gray-50 text-gray-400 rounded-xl hover:bg-navy-50 hover:text-navy-600 transition-all">
-            <Edit className="w-4 h-4" />
-          </button>
-          <button className="p-2.5 bg-gray-50 text-gray-400 rounded-xl hover:bg-red-50 hover:text-red-600 transition-all">
-            <Trash2 className="w-4 h-4" />
-          </button>
-          <button className="p-2.5 bg-gray-50 text-gray-400 rounded-xl hover:bg-gray-100 transition-all">
-            <MoreVertical className="w-4 h-4" />
-          </button>
+        </Badge>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center justify-center gap-1">
+          <Button variant="ghost" size="icon" className="h-7 w-7" title="Modifier">
+            <Edit className="w-3.5 h-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-red-600" title="Supprimer">
+            <Trash2 className="w-3.5 h-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7" title="Plus d'actions">
+            <MoreVertical className="w-3.5 h-3.5" />
+          </Button>
         </div>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }

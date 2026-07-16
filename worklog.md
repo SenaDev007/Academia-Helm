@@ -7385,3 +7385,48 @@ Stage Summary:
 - Triggers SQL respectés : trigger balance après INSERT transaction (auto-update totalPaid/balance) + SET LOCAL app.allow_balance_update='true' pour maj manuelles totalDue
 - Idempotence : ABORT si transactions "Import Excel%" existent déjà (trigger no_delete_finance_transaction bloque suppression)
 - ⏳ Exécution réelle : commande `DRY_RUN=0 node scripts/import-monavenirplus.js` (à lancer après validation par l'utilisateur)
+
+---
+Task ID: 12
+Agent: Main Agent
+Task: Configuration fee structures par classe + personnalisations FE (30%) + abandons ABD
+
+Work Log:
+
+Étape 1 — Fee structures TUITION par classe officielle :
+- 11 nouvelles fee structures créées, une par classe officielle :
+  * Maternelle 1 → 50000, Maternelle 2 → 50000
+  * CE1 → 48000, CE2 → 48000
+  * CM1 → 53000, CM2 → 53000
+  * 6ème → 70000, 5ème → 70000, 4ème → 70000
+  * 3ème → 90000, 2nde D → 110000
+- Total fee structures dans la DB : 25 (INSCRIPTION par niveau + TUITION par classe)
+
+Étape 2 — Personnalisations FE (Fils/Fille d'Enseignant — 30% de réduction) :
+- 15 FeeOverride créés pour les élèves identifiés "FE" dans le fichier Excel
+- customAmount = totalAmount × 0.7 (30% de réduction sur la scolarité)
+- reason = "Fils/Fille d'enseignant (FE) — 30% de réduction"
+- Le breakdown TUITION de chaque élève FE a été mis à jour avec le montant réduit
+- Exemples :
+  * CHALLA Charle (CE2, 48000) → 33600
+  * OROU G M E Exaucee (CI, 43000) → 30100
+  * AGOSSAVI S G Benediction (Maternelle 2, 50000) → 35000
+  * LAWANI Aïcha (5e, 70000 → mais le breakdown existant était 50000) → 35000
+
+Étape 3 — Abandons (ABD) :
+- 21 élèves marqués comme WITHDRAWN (status='WITHDRAWN', isActive=false)
+- StudentEnrollment mis à jour : status='WITHDRAWN', exitDate=NOW(), exitReason='Abandon (ABD)'
+- Tous les élèves ABD du fichier Excel ont été traités
+
+Étape 4 — Recalcul des soldes :
+- Breakdowns mis à jour (paidAmount/remainingAmount depuis les allocations)
+- Student_accounts recalculés (totalDue/totalPaid/balance)
+- Résultat : 158 soldés, 528 avec solde positif, 2 trop-perçus (élèves FE qui ont payé plus que le montant réduit)
+
+Vérification finale :
+- FeeOverrides total : 15
+- Élèves WITHDRAWN : 21
+- Fee structures : 25
+- 0 ENF propre trouvé dans les fichiers Excel (aucun enfant de propriétaire identifié)
+
+Commit 8b5c6fe2 poussé sur origin/main

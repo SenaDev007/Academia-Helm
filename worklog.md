@@ -7299,3 +7299,89 @@ Stage Summary:
 - Module Élève : 5 bugs corrigés (affectation, sortie/abandon, recherche, filtres, pagination dossier+famille)
 - Finance : modal config frais — classes par niveau restauré (filtrage par nom au lieu d'ID)
 - ⏳ Import Excel Mon Avenir Plus / Ndali : en attente des 2 fichiers (primaire + secondaire)
+
+---
+Task ID: 11-a
+Agent: full-stack-developer (Import Excel Mon Avenir Plus)
+Task: Créer script d'import Excel Mon Avenir Plus / Ndali → DB Neon (CSPMON tenant)
+
+Work Log:
+- Lecture contexte : worklog Task 10 mentionnait "en attente des 2 fichiers Excel primaire + secondaire". Fichiers reçus dans /home/z/my-project/upload/.
+- Diagnostic DB préalable :
+  - Tenant CSPMON e0aaa032-bf95-494a-8dfb-7ea62d9fcdeb (PROMOTER: e8873cbe-3035-42fb-837f-f575a02e6373 — seul user du tenant, utilisé comme cashierId)
+  - Année 2025-2026 active (78e862b0...), non clôturée (isClosed=false)
+  - 688 students + 688 student_accounts existent (paid=0 partout)
+  - 194 account_breakdowns TUITION (Maternelle 1/2, CI A/B, CP A/B — classes avec fee_structure TUITION existante) + 688 INSCRIPTION breakdowns
+  - 494 students sans breakdown TUITION (CE1, CE2, CM1, CM2, 6e, 5e, 4e, 3e, 2nde) — fee_structures TUITION manquantes
+  - 0 finance_transactions, 0 fee_arrears
+  - Triggers critiques :
+    - trg_update_balance_after_tx (AFTER INSERT finance_transactions) → met à jour student_accounts.totalPaid/balance automatiquement (appelle set_config('app.allow_balance_update','true',true) en interne — bypass le trigger prevent_balance_update)
+    - prevent_balance_update_trigger (BEFORE UPDATE student_accounts sur totalDue/totalPaid/balance/arrearsAmount) → nécessite SET LOCAL app.allow_balance_update='true' dans la même transaction pour modification manuelle
+    - no_delete_finance_transaction → transactions impossibles à supprimer (idempotence à garantir côté script)
+  - Enum types : FeeType (INSCRIPTION, REINSCRIPTION, TUITION, ANNEX, EXCEPTIONAL, CANTEEN, AMANTS, OTHER, EXAMEN), PaymentMethod (CASH, MOBILE_MONEY, WIRE, FEDAPAY, FEEXPAY), TransactionType (PAYMENT, REVERSAL)
+
+- Étape 1 : Parser Excel (scripts/parse-excel.py — Python + openpyxl)
+  - Détection dynamique de la ligne d'en-tête (recherche "Noms" dans les 5 premières colonnes) car la feuille "CM1 A" est décalée d'une ligne vers le haut vs les autres
+  - Métadonnées scol fee : recherche "Scolarité" (insensible accents) puis lecture colonne suivante
+  - Parsing montant : extraction digits uniquement (gère "5,000", "5.000", "5000", texte "ABD" → 0)
+  - Normalisation nom : NFKD + retire accents + lowercase + retire ponctuation (.,';-_) + collapse espaces
+  - Skip feuilles RECAP, skip ligne TOTAL
+  - Résultat : 19 feuilles parsées (14 primaire + 5 secondaire), 688 élèves (508 + 180 — conforme aux attentes)
+  - Output : scripts/students-data.json (370 Ko)
+
+- Étape 2-3 : Mapping classe Excel → DB + matching élèves (dans scripts/import-monavenirplus.js)
+  - Map statique SHEET_TO_DB_CLASS : "3e "→"3ème", "2nde"→"2nde D", etc. (gère trailing spaces + accents)
+  - 19 classes DB chargées (id + schoolLevelId) — toutes matchées
+  - 688 students chargés → Map normName → student (collision-free)
+  - Résultat matching : 688/688 matchés (100%) — 0 non trouvés ✅
+
+- Étape 4-5 : Mise à jour breakdowns + création transactions (scripts/import-monavenirplus.js)
+  - Pour chaque élève matché, dans une transaction DB :
+    1. SET LOCAL app.allow_balance_update = 'true'
+    2. Garantir fee_structure TUITION pour la classe (création si manquante)
+    3. UPDATE ou CREATE account_breakdowns TUITION (initialAmount=Excel total_scolarité, paidAmount=sum(P1..P6), remainingAmount=initial-paid)
+    4. UPDATE account_breakdowns INSCRIPTION (paidAmount=Excel inscript, remainingAmount=max(0,init-paid))
+    5. UPDATE student_accounts.totalDue = sum(breakdowns.initialAmount)
+    6. INSERT finance_transactions pour chaque paiement > 0 :
+       - Inscript (reference='Import Excel - Inscription')
+       - P1..P6 (reference='Import Excel - Scolarité P{i}')
+       - Uniforme (reference='Import Excel - Uniforme')
+       - Tenue Sport (reference='Import Excel - Tenue Sport')
+       → trigger trg_update_balance_after_tx met à jour totalPaid/balance
+    7. INSERT fee_arrears si Excel arrears > 0 (arrearsLevel='CRITICAL' si >50000 sinon 'WARNING', status='OPEN')
+  - Idempotence : si transactions "Import Excel%" existent déjà → ABORT (sauf en DRY_RUN)
+  - receiptNumber unique : `IMP-EXCEL-${epoch}-${counter}` (constraint UNIQUE sur finance_transactions.receiptNumber)
+  - Transactions DB par élève : 1 BEGIN/COMMIT (rollback individuel en cas d'erreur, continue au suivant)
+  - Tests SQL préalables : tous les INSERT (fee_structures, account_breakdowns, finance_transactions, fee_arrears) validés avec casts $n::"FeeType"/"TransactionType"/"PaymentMethod" — le trigger update_account_balance_after_tx fonctionne correctement (testé avec rollback : +5000 sur totalPaid, -5000 sur balance)
+
+- Étape 6-7 : Mode DRY_RUN
+  - DRY_RUN = true par défaut (env DRY_RUN=0 pour exécution réelle)
+  - Rapport détaillé : feuilles, élèves parsés/matchés/non-trouvés, breakdowns créés/maj, transactions par type et par classe, arriérés
+
+Résultats DRY-RUN :
+- 19 feuilles traitées
+- 688 élèves parsés (508 primaire + 180 secondaire)
+- 688 élèves matchés en DB (100%)
+- 0 non trouvés
+- 13 fee_structures TUITION créées (CE1 A/B, CE2 A/B, CM1 A/B, CM2 A/B, 6e, 5e, 4e, 3e, 2nde D — montants 48000, 53000, 70000, 90000, 110000)
+- 472 account_breakdowns TUITION créés (pour les 494 étudiants des classes manquantes — 22 ont excelTotalScol=0 type abandons)
+- 194 account_breakdowns TUITION maj (classes existantes Maternelle 1/2, CI A/B, CP A/B)
+- 688 account_breakdowns INSCRIPTION maj
+- 688 student_accounts.totalDue recalculés
+- 2550 finance_transactions créées :
+  - INSCRIPT: 165, P1: 657, P2: 575, P3: 493, P4: 356, P5: 199, P6: 105
+  - Répartition par classe : 6e (188), CE2 B (183), CI B (171), 3ème (165), CE1 B (177), CE1 A (162), CE2 A (157), CI A (154), CP A (147), CP B (131), CM1 A (129), CM2 B (127), CM1 B (104), 5ème (122), 4ème (124), CM2 A (120), Maternelle 2 (129), Maternelle 1 (25), 2nde D (35)
+- 28 fee_arrears créés (élèves avec arriéré > 0)
+
+Fichiers livrés :
+- scripts/parse-excel.py (213 lignes) — parser Python openpyxl → JSON
+- scripts/students-data.json (370 Ko) — données parsées intermédiaires
+- scripts/import-monavenirplus.js (440 lignes) — import Node.js pg avec DRY_RUN
+
+Stage Summary:
+- Parser Excel Python opérationnel : 688 élèves extraits (508 primaire + 180 secondaire) sur 19 feuilles
+- Matching 100% : 688/688 élèves Excel retrouvés en DB par normalisation aggressive du nom (NFKD + lowercase + retire ponctuation)
+- Script d'import prêt : 13 fee_structures + 666 breakdowns (472 créés + 194 maj) + 688 INSCRIPTION maj + 688 totalDue recalculés + 2550 transactions + 28 arriérés prévus au dry-run
+- Triggers SQL respectés : trigger balance après INSERT transaction (auto-update totalPaid/balance) + SET LOCAL app.allow_balance_update='true' pour maj manuelles totalDue
+- Idempotence : ABORT si transactions "Import Excel%" existent déjà (trigger no_delete_finance_transaction bloque suppression)
+- ⏳ Exécution réelle : commande `DRY_RUN=0 node scripts/import-monavenirplus.js` (à lancer après validation par l'utilisateur)

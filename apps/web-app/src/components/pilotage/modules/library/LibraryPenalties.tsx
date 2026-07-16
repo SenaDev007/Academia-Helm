@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * LIBRARY PENALTIES & LOSSES
+ * LIBRARY PENALTIES & LOSSES (Standardisé)
  * ============================================================================
  *
  * TODO: endpoint non disponible — garder mock. Aucun endpoint GET library/penalties
@@ -11,10 +11,16 @@
 
 'use client';
 
-import { motion } from 'framer-motion';
 import { AlertCircle, Search, Filter, MoreVertical, CreditCard, Clock, CheckCircle2, Ban } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function LibraryPenalties() {
+  const { toast } = useToast();
   const penalties = [
     { id: 'PN-4001', reader: 'Jean Lawson', book: 'Le Petit Prince', motif: 'RETARD (15 jours)', amount: '1 500 F CFA', status: 'PENDING', date: '12/05/2026' },
     { id: 'PN-4002', reader: 'Saliou Diallo', book: 'Physique 3ème', motif: 'LIVRE ABÎMÉ', amount: '5 000 F CFA', status: 'PAID', date: '10/05/2026' },
@@ -22,94 +28,98 @@ export default function LibraryPenalties() {
     { id: 'PN-4004', reader: 'M. Saliou', book: 'L\'Enfant Noir', motif: 'RETARD (2 jours)', amount: '1 000 F CFA', status: 'CANCELLED', date: '01/05/2026' },
   ];
 
+  const getStatusVariant = (status: string): 'outline' | 'secondary' | 'destructive' => {
+    switch (status) {
+      case 'PAID': return 'outline';
+      case 'PENDING': return 'secondary';
+      case 'OVERDUE': return 'destructive';
+      default: return 'outline';
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Alert Banner for serious issues */}
-      <div className="bg-rose-50 border-2 border-rose-100 rounded-3xl p-6 flex items-center gap-6">
-        <div className="p-3 bg-white rounded-2xl shadow-sm text-rose-600">
+      <div className="bg-rose-50 border border-rose-100 rounded-xl p-6 flex items-center gap-6">
+        <div className="p-3 bg-white rounded-xl shadow-sm text-rose-600">
           <Ban className="w-8 h-8 animate-pulse" />
         </div>
         <div className="flex-1">
-          <h4 className="text-lg font-black text-rose-900 uppercase tracking-tighter">Lecteurs Suspendus</h4>
-          <p className="text-rose-700/80 text-sm font-medium">3 lecteurs ont des pénalités critiques en attente. Leurs droits d'emprunt sont automatiquement bloqués.</p>
+          <h4 className="text-lg font-semibold text-rose-900">Lecteurs Suspendus</h4>
+          <p className="text-rose-700/80 text-sm">3 lecteurs ont des pénalités critiques en attente. Leurs droits d'emprunt sont automatiquement bloqués.</p>
         </div>
-        <button className="px-6 py-2.5 bg-rose-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-rose-700 transition-all shadow-xl shadow-rose-600/20">
+        <Button
+          variant="destructive"
+          onClick={() => toast({ title: 'Blocages', description: 'Gestion des blocages — fonctionnalité à venir.' })}
+        >
           Gérer les blocages
-        </button>
+        </Button>
       </div>
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mt-8">
-        <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Registre des Pénalités</h3>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <h3 className="text-lg font-semibold text-slate-900">Registre des Pénalités</h3>
         <div className="flex gap-2">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input type="text" placeholder="Lecteur..." className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs outline-none shadow-sm" />
+            <Input type="text" placeholder="Lecteur..." className="pl-10 w-48" />
           </div>
-          <button className="p-2 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-blue-600 transition-all">
+          <Button variant="outline" size="icon">
             <Filter className="w-4 h-4" />
-          </button>
+          </Button>
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-              <th className="px-8 py-5">Lecteur & Motif</th>
-              <th className="px-8 py-5">Montant</th>
-              <th className="px-8 py-5">Statut</th>
-              <th className="px-8 py-5">Date</th>
-              <th className="px-8 py-5 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-50">
-            {penalties.map((pn, i) => (
-              <motion.tr
-                key={pn.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: i * 0.05 }}
-                className="hover:bg-slate-50/50 transition-colors group"
-              >
-                <td className="px-8 py-5">
+      <Card className="shadow-sm overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-gray-50">
+              <TableHead className="px-6 py-4">Lecteur & Motif</TableHead>
+              <TableHead className="px-6 py-4">Montant</TableHead>
+              <TableHead className="px-6 py-4">Statut</TableHead>
+              <TableHead className="px-6 py-4">Date</TableHead>
+              <TableHead className="px-6 py-4 text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {penalties.map((pn) => (
+              <TableRow key={pn.id} className="hover:bg-slate-50">
+                <TableCell className="px-6 py-4">
                   <div>
-                    <p className="font-black text-slate-900 group-hover:text-blue-600 transition-colors">{pn.reader}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{pn.motif} • {pn.book}</p>
+                    <p className="font-semibold text-slate-900">{pn.reader}</p>
+                    <p className="text-xs text-slate-400">{pn.motif} • {pn.book}</p>
                   </div>
-                </td>
-                <td className="px-8 py-5">
-                  <span className="text-sm font-black text-slate-900">{pn.amount}</span>
-                </td>
-                <td className="px-8 py-5">
-                  <div className={`inline-flex items-center px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest ${
-                    pn.status === 'PAID' ? 'bg-emerald-50 text-emerald-600' :
-                    pn.status === 'PENDING' ? 'bg-amber-50 text-amber-600' :
-                    pn.status === 'OVERDUE' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'
-                  }`}>
-                    {pn.status === 'PAID' && <CheckCircle2 className="w-3.5 h-3.5 mr-2" />}
-                    {pn.status === 'PENDING' && <Clock className="w-3.5 h-3.5 mr-2" />}
-                    {pn.status === 'OVERDUE' && <Ban className="w-3.5 h-3.5 mr-2" />}
+                </TableCell>
+                <TableCell className="px-6 py-4">
+                  <span className="text-sm font-semibold text-slate-900">{pn.amount}</span>
+                </TableCell>
+                <TableCell className="px-6 py-4">
+                  <Badge variant={getStatusVariant(pn.status)} className={
+                    pn.status === 'PAID' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                    pn.status === 'PENDING' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                    pn.status === 'OVERDUE' ? 'bg-rose-50 text-rose-600 border-rose-100' : ''
+                  }>
+                    {pn.status === 'PAID' && <CheckCircle2 className="w-3 h-3 mr-1" />}
+                    {pn.status === 'PENDING' && <Clock className="w-3 h-3 mr-1" />}
+                    {pn.status === 'OVERDUE' && <Ban className="w-3 h-3 mr-1" />}
                     {pn.status}
-                  </div>
-                </td>
-                <td className="px-8 py-5 text-sm font-bold text-slate-500">{pn.date}</td>
-                <td className="px-8 py-5 text-right">
+                  </Badge>
+                </TableCell>
+                <TableCell className="px-6 py-4 text-sm font-medium text-slate-500">{pn.date}</TableCell>
+                <TableCell className="px-6 py-4 text-right">
                   <div className="flex items-center justify-end gap-2">
-                    <button className="p-2 bg-slate-50 hover:bg-emerald-50 hover:text-emerald-600 rounded-xl transition-all" title="Encaisser">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-emerald-50 hover:text-emerald-600" title="Encaisser">
                       <CreditCard className="w-4 h-4" />
-                    </button>
-                    <button className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8">
                       <MoreVertical className="w-5 h-5 text-slate-300" />
-                    </button>
+                    </Button>
                   </div>
-                </td>
-              </motion.tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-        </div>
-      </div>
+          </TableBody>
+        </Table>
+      </Card>
     </div>
   );
 }

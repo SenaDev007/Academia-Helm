@@ -6867,3 +6867,278 @@ Stage Summary:
 - Duplication QHSE controller corrigée
 - Guide de standardisation créé pour futurs développements
 - TOUS les modules complémentaires (Boutique, Infirmerie, Labo, Cantine, Transport, EduCast) suivent maintenant exactement le même pattern design que le module Finance
+
+---
+Task ID: 8-a
+Agent: full-stack-developer (Finance Régime + Personnalisation)
+Task: Supprimer section Régime + fix recherche élèves + cascade niveau/classe
+
+Work Log:
+- Lecture des références : worklog.md (sections 7-a à 7-f + synthèse 8), FeeStructuresContent.tsx (1095 lignes — cible Tâche 1), FeeOverrideModal.tsx (384 lignes — cible Tâches 2+3), NewPaymentModal.tsx (lignes 90-191 et 535-660 — référence du pattern cascade niveau → classe → élève), useModuleContext.ts (signature academicYear.id), finance.service.ts (méthode getStudentAccounts ligne 69)
+- Vérification usage des icônes lucide-react (Users, Tag, Sparkles, Baby, BookOpen, GraduationCap, Loader2) via grep : toutes utilisées UNIQUEMENT par la section Régime → suppressibles
+- Vérification usage LEVEL_STYLES + getLevelStyle via grep : utilisés uniquement dans cartes de régime → suppressibles
+- Vérification studentsService dans FeeOverrideModal : utilisé uniquement pour l'appel `getAll({ limit: '500' })` à remplacer → import supprimable
+
+A. Tâche 1 — Suppression section Régime dans FeeStructuresContent.tsx :
+   * Import lucide-react nettoyé (ligne 5) : `Users, Loader2, Sparkles, Tag, Baby, BookOpen, GraduationCap` retirés (7 icônes)
+   * Bloc `LEVEL_STYLES` (lignes 52-77) + fonction `getLevelStyle` (lignes 79-87) supprimés (~36 lignes)
+   * State régime supprimé (lignes 109-119) : regimes, regimeLoading, regimeLevelId, regimeModal, editingRegime, regimeForm, newRuleFeeType, newRuleValue, regimeSubmitting, regimeEditSubmitting (10 useState)
+   * Handler `loadRegimes` + useEffect + handleCreateRegime + handleUpdateRegime + handleDeleteRegime + handleAddRule supprimés (lignes 424-554, ~131 lignes)
+   * UI section "Régimes tarifaires" (cartes + sélecteur de niveau) supprimée (lignes 788-879, ~92 lignes)
+   * Modal création régime (Dialog + Sparkles + Tag + Loader2) supprimé (lignes 881-983, ~103 lignes)
+   * Modal édition régime (Dialog + Pencil + Sparkles + rules + newRule) supprimé (lignes 985-1090, ~106 lignes)
+   * Total : 1095 → 611 lignes (484 lignes supprimées)
+   * Sections préservées : Configuration des frais principale (toolbar + tableau), FeeStructureModal, FeeOverrideModal, modal copyYearModal, popover tranches — toutes intactes
+   * Backend fee-regime.controller.ts / fee-regime.service.ts NON touché (toujours utilisé par StudentAccountService pour créer le régime STANDARD automatiquement)
+
+B. Tâche 2 — Fix recherche élèves dans FeeOverrideModal.tsx :
+   * Import `studentsService` remplacé par `useModuleContext` (academicYear)
+   * useEffect précédent `studentsService.getAll({ limit: '500' })` → `financeService.getStudentAccounts({ academicYearId: academicYear.id })` (filtre par année académique obligatoire, inclut student.studentEnrollments + student.matricule)
+   * Garde-fou : `if (!academicYear?.id) { setStudents([]); return; }` pour éviter appel sans filtre
+   * Dependency : `[academicYear?.id]` (re-déclenche si l'année change)
+   * `selectedStudent` refactorisé en `useMemo` : recherche par `account.studentId` (et non plus `account.id`) car overrideFeeStructure attend un studentId ; renvoie `account.student` (objet imbriqué) pour préserver l'API interne (`.lastName`, `.firstName`, `.matricule`)
+   * `selectStudent(a)` : stocke `a.studentId` (ID élève) dans `studentId` + affiche `a.student.lastName/firstName` dans le champ recherche
+   * Dropdown suggestions : itère sur `filteredStudents.map((a) => a.student ?? a)` pour l'affichage
+
+C. Tâche 3 — Cascade niveau → classe → élève dans FeeOverrideModal.tsx :
+   * 4 useState ajoutés : `levels`, `classes`, `selectedLevelId`, `selectedClassId`
+   * 2 useEffect ajoutés :
+     - fetch `/api/school-levels` → `levels` (exclut id='ALL')
+     - fetch `/api/all-classes` → `classes` (avec credentials: 'include')
+   * `filteredClasses` useMemo : filtre classes par `schoolLevelId` ou `schoolLevel.code` ou `schoolLevel.id` (3 fallbacks)
+   * `filteredStudents` useMemo refactorisé : 3 filtres successifs (niveau → classe → recherche texte), limite 10 suggestions
+   * JSX : 2 `<Select>` (Niveau scolaire + Classe) ajoutés AVANT la recherche par texte, dans un `<div className="grid grid-cols-2 gap-3">`. En mode édition (`isEdit`), les Select sont masqués car l'élève est verrouillé
+   * Reset cascade : changer de niveau reset `selectedClassId` + `studentId` ; changer de classe reset `studentId`
+
+D. Tâche 4 — Vérifications :
+   * Grep résidus `regime|Regime|LEVEL_STYLES|getLevelStyle|Baby|BookOpen|GraduationCap|Users|Tag|Sparkles|Loader2` dans FeeStructuresContent.tsx : 0 match ✅
+   * Grep résidus `regime|studentsService` dans FeeOverrideModal.tsx : 0 match ✅
+   * TypeScript (`npx tsc --noEmit --skipLibCheck -p tsconfig.json`) : 0 erreur sur les 2 fichiers modifiés ✅
+   * Les seules erreurs tsc restantes sont préexistantes dans `src/components/cms/useAutoSave.ts` (hors-scope, déjà mentionnées dans synthèse Task 8)
+   * Lint : `npm run lint` a un souci de config interne (Invalid project directory) — non bloquant car tsc valide
+
+Stage Summary:
+- 484 lignes supprimées dans FeeStructuresContent.tsx (section Régime complète : state + handlers + UI + 2 modals + LEVEL_STYLES + getLevelStyle + 7 imports lucide-react)
+- FeeOverrideModal.tsx : recherche élèves réparée (academicYearId + studentAccounts au lieu de studentsService.getAll) + cascade niveau/classe/élève ajoutée (2 Select + 2 useEffect + filteredClasses + filteredStudents refactorisé)
+- 0 erreur TypeScript résiduelle sur les 2 fichiers modifiés
+- Backend fee-regime conservé (utilisé par StudentAccountService pour auto-création du régime STANDARD)
+- Pattern identique à NewPaymentModal pour la cascade (cohérence UI entre les 2 modals finance)
+
+---
+Task ID: 8-b
+Agent: full-stack-developer (CRUD backend manquant)
+Task: Compléter CRUD DELETE/PUT transport, educast, canteen
+Date: Juillet 2026
+
+Work Log:
+- Lecture des fichiers de contexte :
+  * worklog.md (sections 7-a à 7-f + synthèse 8 + Task 8-a) — comprendre le pattern standardisé
+  * modules-complementaires.controller.ts (1778 lignes — structure des routes existantes)
+  * transport.service.ts (525 lignes) — service complet pour module Transport
+  * educast.service.ts (439 lignes) — service EduCast avec 6 sections (channels, media, packs, webinars, playlists, announcements)
+  * canteen.service.ts (409 lignes) — service Cantine avec menus, enrollments, stocks, suppliers, incidents, payments
+  * prisma/schema.prisma (15698 lignes) — modèles concernés (Vehicle, TransportDriver, Route, TransportAssignment, TransportIncident, TransportTrip, TransportSchedule, VehicleMaintenance, EduCastMediaItem, EduCastContentPack, EduCastContentPackItem, EduCastWebinar, EduCastPlaylist, EduCastPlaylistItem, EduCastAnnouncement, EduCastPurchase, CanteenEnrollment, CanteenDiet, CanteenAllergy, CanteenSupplier, CanteenPurchaseOrder, CanteenStockMovement, CanteenFoodStock, CanteenIncident, CanteenPayment, CanteenAttendance, CanteenMealService)
+- Vérification des relations bloquantes via le schéma Prisma (onDelete: Cascade vs SetNull vs Restrict)
+- Vérification des champs soft-delete disponibles : status (Vehicle, TransportDriver, EduCastMediaItem, EduCastContentPack), isActive (Route, CanteenDiet, CanteenAllergy, CanteenSupplier, CanteenFoodStock)
+- Lecture du frontend modulesApi (client.ts) pour confirmer les conventions de routes (PUT/DELETE génériques)
+
+A. Module Transport — 9 méthodes service + 9 routes controller :
+
+   Service (transport.service.ts, +183 lignes) :
+   1. deleteVehicle(id, tenantId) → soft-delete status='ARCHIVED' si trips/assignments/routes/maintenances/incidents, hard delete sinon (5 relations vérifiées en parallèle Promise.all)
+   2. deleteDriver(id, tenantId) → soft-delete status='INACTIVE' si trips/incidents/vehicles, hard delete sinon
+   3. deleteRoute(id, tenantId) → soft-delete isActive=false si assignments/schedules/trips/incidents, hard delete sinon (cascade stops)
+   4. deleteAssignment(id, tenantId) → hard delete (cascade attendances via onDelete:Cascade)
+   5. deleteIncident(id, tenantId) → hard delete (pas d'enfants)
+   6. updateDriver(id, tenantId, data) → findFirst + licenseExpiry conversion Date + update
+   7. updateRoute(id, tenantId, data) → findFirst + distance parseFloat + duration parseInt + update
+   8. updateAssignment(id, tenantId, data) → findFirst + amount parseFloat + startDate/endDate conversion Date + update
+   9. updateIncident(id, tenantId, data) → findFirst + incidentDate/resolvedAt conversion Date + update
+
+   Controller (modules-complementaires.controller.ts) :
+   - DELETE /transport/vehicles/:id (après PUT existant)
+   - PUT + DELETE /transport/drivers/:id (après POST drivers)
+   - PUT + DELETE /transport/routes/:id (après POST routes, avant /routes/:id/stops)
+   - PUT + DELETE /transport/assignments/:id (après POST assignments)
+   - PUT + DELETE /transport/incidents/:id (après POST incidents, avant /:id/resolve)
+
+B. Module EduCast — 10 méthodes service + 10 routes controller :
+
+   Service (educast.service.ts, +188 lignes) :
+   1. deleteMedia(id, tenantId) → soft-delete status='ARCHIVED' si purchases OU packItems/playlistItems, hard delete sinon
+   2. updateMedia(id, tenantId, data) → findFirst + price parseFloat + expiresAt conversion Date + update
+   3. deletePack(id, tenantId) → soft-delete status='ARCHIVED' si purchases, hard delete sinon (cascade items)
+   4. updatePack(id, tenantId, data) → findFirst + price parseFloat + update
+   5. deleteWebinar(id, tenantId) → hard delete (pas d'enfants)
+   6. updateWebinar(id, tenantId, data) → findFirst + scheduledAt conversion Date + price parseFloat + update
+   7. deletePlaylist(id, tenantId) → hard delete (cascade items)
+   8. updatePlaylist(id, tenantId, data) → findFirst + price parseFloat + update
+   9. deleteAnnouncement(id, tenantId) → hard delete (pas d'enfants)
+   10. updateAnnouncement(id, tenantId, data) → findFirst + expiresAt conversion Date + update
+
+   Controller :
+   - PUT + DELETE /educast/media/:id (après POST /media/:id/purchase, avant /engage)
+   - PUT + DELETE /educast/packs/:id (après POST packs)
+   - PUT + DELETE /educast/webinars/:id (après POST webinars)
+   - PUT + DELETE /educast/playlists/:id (après POST playlists)
+   - PUT + DELETE /educast/announcements/:id (après POST announcements)
+
+C. Module Canteen — 15 méthodes service + 15 routes controller :
+
+   Service (canteen.service.ts, +251 lignes) :
+   1. updateEnrollment(id, tenantId, data) → findFirst + startDate/endDate conversion Date + update (générique, complémentaire de validateEnrollment)
+   2. deleteEnrollment(id, tenantId) → hard delete (cascade attendances/mealServices/payments via onDelete:Cascade, SetNull sur incidents)
+   3. createDiet(tenantId, data) → create avec forbiddenFoods array + isActive + academicYearId optionnel
+   4. updateDiet(id, tenantId, data) → findFirst + update
+   5. deleteDiet(id, tenantId) → soft-delete isActive=false si enrollments liés, hard delete sinon
+   6. createAllergy(tenantId, data) → create avec studentId/allergen/severity/forbiddenFoods/instructions/emergencyContact/medicalDocUrl
+   7. updateAllergy(id, tenantId, data) → findFirst + update
+   8. deleteAllergy(id, tenantId) → hard delete (pas d'enfants)
+   9. updateSupplier(id, tenantId, data) → findFirst + update
+   10. deleteSupplier(id, tenantId) → soft-delete isActive=false si purchaseOrders/stockMovements, hard delete sinon (2 relations en Promise.all)
+   11. updateIncident(id, tenantId, data) → findFirst + update
+   12. deleteIncident(id, tenantId) → hard delete (pas d'enfants)
+   13. updatePayment(id, tenantId, data) → findFirst + amount/discount/penalty parseFloat + paymentDate conversion Date + update
+   14. deletePayment(id, tenantId) → hard delete (pas d'enfants)
+   15. deleteStock(id, tenantId) → soft-delete isActive=false si mouvements, hard delete sinon (cascade movements)
+
+   Controller :
+   - PUT + DELETE /canteen/enrollments/:id (après PUT /:id/validate existant — l'ordre NestJS privilégie la route spécifique /validate)
+   - POST + PUT + DELETE /canteen/diets (après GET diets)
+   - POST + PUT + DELETE /canteen/allergies (après GET allergies)
+   - DELETE /canteen/stocks/:id (après POST stocks)
+   - PUT + DELETE /canteen/suppliers/:id (après POST suppliers)
+   - PUT + DELETE /canteen/incidents/:id (après POST incidents)
+   - PUT + DELETE /canteen/payments/:id (après POST payments)
+
+D. Vérifications :
+   * Pattern uniforme : findFirst({ where: { id, tenantId } }) → NotFoundException → update/delete by id only (isolation tenant préservée)
+   * Conversion des types Prisma : Float parseFloat, Int parseInt, DateTime new Date(), String[] transmis tels quels
+   * Suppression des clés id/tenantId du payload update (anti-injection/clé primaire)
+   * Soft-delete activé uniquement quand enfants existent (Promise.all sur comptages), hard delete sinon
+   * Vérification syntaxique : ./node_modules/.bin/tsc --noEmit --skipLibCheck --experimentalDecorators --noResolve sur les 4 fichiers modifiés → 0 erreur (hors erreurs 'Cannot find module' attendues avec --noResolve)
+   * Vérification ESLint : ./node_modules/.bin/eslint --no-eslintrc --parser @typescript-eslint/parser sur les 4 fichiers → 0 erreur
+   * Grep vérifié : 0 route en double, 0 conflit avec routes existantes
+   * Aucune route existante modifiée — AJOUT UNIQUEMENT (pattern demandé)
+
+Stage Summary:
+- 34 méthodes service ajoutées au total (9 Transport + 10 EduCast + 15 Canteen)
+- 34 routes controller ajoutées au total (9 Transport + 10 EduCast + 15 Canteen)
+- Répartition par verbe HTTP :
+  * 2 POST (canteen/diets, canteen/allergies)
+  * 15 PUT (4 transport + 5 educast + 6 canteen)
+  * 17 DELETE (5 transport + 5 educast + 7 canteen)
+- Soft-deletes (8 méthodes) :
+  * Transport : deleteVehicle (status='ARCHIVED'), deleteDriver (status='INACTIVE'), deleteRoute (isActive=false) = 3
+  * EduCast : deleteMedia (status='ARCHIVED'), deletePack (status='ARCHIVED') = 2
+  * Canteen : deleteDiet (isActive=false), deleteSupplier (isActive=false), deleteStock (isActive=false) = 3
+- Hard-deletes (9 méthodes) :
+  * Transport : deleteAssignment (cascade attendances), deleteIncident = 2
+  * EduCast : deleteWebinar, deletePlaylist (cascade items), deleteAnnouncement = 3
+  * Canteen : deleteEnrollment (cascade attendances/mealServices/payments), deleteAllergy, deleteIncident, deletePayment = 4
+- Tous les modèles Prisma vérifiés pour les relations onDelete:Cascade (TransportAttendance.assignment, EduCastContentPackItem.pack, EduCastPlaylistItem.playlist, CanteenAttendance/MealService/Payment.enrollment, CanteenStockMovement.stock)
+- Routes avec conflit potentiel évitées : PUT /canteen/enrollments/:id/validate déclaré AVANT PUT /canteen/enrollments/:id pour que NestJS matche la route spécifique en premier
+- 0 ligne existante modifiée dans le controller — ajout uniquement
+- 0 erreur TypeScript/ESLint sur les 4 fichiers modifiés
+
+
+---
+Task ID: 8-c
+Agent: full-stack-developer (Library + QHSE)
+Task: Standardiser LibraryModulePage + QHSEModulePage + sous-composants (pattern Finance)
+Date: Juillet 2026
+
+Work Log:
+- Lecture des références : worklog.md (sections 7-a à 7-f + synthèse 8 + Task 8-a + 8-b), STANDARDIZATION-GUIDE.md (guide obligatoire), FinanceModulePage.tsx (pattern cible page principale), TransactionsContent.tsx (pattern cible sous-composants), InfirmaryModulePage.tsx (autre exemple déjà refondu), LibraryModulePage.tsx + QHSEModulePage.tsx (à refondre)
+- Lecture des 27 sous-composants (13 library + 14 qhse) pour identifier les écarts : 18 alert(), 0 confirm() natif, 1 window.prompt(), 14 modals fixed inset-0, 7 tables HTML, ~40 <input>/<label>/<button> HTML, motion.tr dans 5 fichiers, ~40 rounded-3xl/rounded-[2.5rem]/rounded-[2rem], ~40 font-black uppercase tracking-widest, ~25 bg-navy-900 text-white (boutons), ~30 text-[10px]/text-[9px]/text-[8px]/text-[11px]
+
+A. Refonte complète des 2 pages principales :
+1. LibraryModulePage.tsx (137→183 lignes) :
+   * ModulePageLayout (obsolète) → ModuleContainer (pattern Finance)
+   * useAcademicYear/useSchoolLevel → useModuleContext
+   * useState<TabId> local + TABS array (13 entrées) + renderActiveTab() switch → useState<string> + activeSubModuleId + subModules.modules (13 modules avec icônes Lucide) + ternaire content
+   * Onglets pills custom bg-navy-900 text-white uppercase + framer-motion AnimatePresence → SubModuleNavigation standard (bleus soulignés) géré par ModuleContainer
+   * Bouton "Nouvel Emprunt" bg-navy-900 + gold (#C9A84C) → 2 boutons standard (indigo-600 "Nouvel Emprunt" + outline "Exporter")
+   * 4 KPIs ajoutés dans ModuleHeader (livres / emprunts / réservations / retards) via useModulesDashboard('library')
+2. QHSEModulePage.tsx (138→175 lignes) :
+   * Layout custom (div min-h-screen p-8 + header manuel + onglets emerald) → ModuleContainer (pattern Finance)
+   * useState<TabId> local + TABS array (14 entrées) + renderActiveTab() switch → useState<string> + activeSubModuleId + subModules.modules (14 modules avec icônes Lucide) + ternaire content
+   * Onglets pills custom bg-emerald-600 uppercase + framer-motion AnimatePresence → SubModuleNavigation standard (bleus soulignés) géré par ModuleContainer
+   * Header custom (bg-navy-900 + emerald-600 + text-3xl font-black uppercase) → ModuleHeader standard
+   * Bouton "Signaler un Incident" bg-navy-900 → 2 boutons standard (emerald-600 + outline)
+   * Card "Niveau de Conformité 95.4%" supprimée (remplacée par KPI dynamique)
+   * 4 KPIs ajoutés dans ModuleHeader (incidents / risques / audits / conformité %) via useModulesDashboard('qhse')
+
+B. Refonte des 27 sous-composants (logique métier 100% conservée — useModulesList, useModulesDashboard, modulesApi.post/get/put/patch, refetch, useState, handlers inchangés) :
+
+### Module Library (13 fichiers)
+1. LibraryDashboard.tsx : Card div rounded-3xl → <Card> shadcn ; motion.div → <Card> ; text-[10px] font-black uppercase → text-xs ; font-black → font-semibold ; boutons → <Button> shadcn (outline/secondary/ghost)
+2. LibraryCatalog.tsx : 2 alert() → 2 toast() ; 1 modal fixed inset-0 → <Dialog> ; 4 <input>/<label> → <Input>/<Label> ; <button> bg-navy-900 → <Button> ; Badge span → <Badge variant="outline">
+3. LibraryResources.tsx : 1 table HTML → <Table> shadcn ; motion.tr → <TableRow> ; <button> bg-navy-900 → <Button> ; Card div rounded-3xl → <Card>
+4. LibraryBorrowings.tsx : 2 alert() → 2 toast() ; 1 modal fixed inset-0 → <Dialog> ; 3 <input>/<label> → <Input>/<Label> ; <button> bg-navy-900 → <Button> ; Card div rounded-3xl → <Card> ; Badge → <Badge>
+5. LibraryReturns.tsx : 1 alert() → 1 toast() ; 1 window.prompt() → <Dialog> avec Input ; 1 table HTML → <Table> ; motion.tr → <TableRow> ; <input>/<button> → <Input>/<Button> ; Card div rounded-3xl → <Card>
+6. LibraryReservations.tsx : 1 alert() → 1 toast() ; 1 modal fixed inset-0 → <Dialog> ; 3 <input>/<label> → <Input>/<Label> ; <button> bg-navy-900 → <Button> ; Card div rounded-3xl → <Card> ; Badge → <Badge>
+7. LibraryReaders.tsx : <input>/<button> → <Input>/<Button> ; Card div rounded-3xl → <Card> ; text-[10px] font-black uppercase → text-xs ; "Voir Profil" → <Button variant="link">
+8. LibraryInventory.tsx : 3 alert() → 3 toast() (création campagne + scan) ; 2 modals fixed inset-0 → 2 <Dialog> ; 4 <input>/<label> → <Input>/<Label> ; <button> bg-navy-900 → <Button> ; Card div rounded-3xl → <Card>
+9. LibraryPenalties.tsx : 0 alert() original + 1 toast() informatif ajouté ; 1 table HTML → <Table> ; motion.tr → <TableRow> ; <button> bg-rose-600 → <Button variant="destructive"> ; Card div rounded-3xl → <Card>
+10. LibraryDigitalResources.tsx : 1 alert() → 1 toast() ; 1 modal fixed inset-0 → <Dialog> ; 3 <input>/<label> → <Input>/<Label> ; <button> bg-navy-900 → <Button> ; Card div rounded-3xl → <Card>
+11. LibraryRecommendations.tsx : 1 alert() → 1 toast() ; 1 modal fixed inset-0 → <Dialog> ; 2 <input>/<label> → <Input>/<Label> ; Bandeau gradient navy-900 → slate-900→indigo-700 ; boutons gold → <Button> bg-amber-500 ; Card div rounded-3xl → <Card>
+12. LibraryReports.tsx : 2 alert() → 2 toast() ; Card div rounded-3xl → <Card> ; <button> bg-navy-900 → <Button> ; Badge span → <Badge variant="outline"> ; motion.div → <Card>
+13. LibrarySettings.tsx : 2 alert() → 2 toast() ; 6 <input type="number"> → <Input> shadcn avec update() ; <label> → <Label> ; 2 toggles CSS-only → <Switch> shadcn ; <button> bg-blue-600 → <Button> ; Card div rounded-3xl → <Card>
+
+### Module QHSE (14 fichiers)
+14. QHSEDashboard.tsx : Card div rounded-3xl → <Card> ; <button> → <Button variant="link"> ; Bandeau navy-900 rounded-[2.5rem] → slate-900 rounded-xl ; Badge → <Badge variant="outline"> ; motion.div → <Card>
+15. QHSEIncidents.tsx : 4 alert() → 4 toast() ; 2 modals fixed inset-0 → 2 <Dialog> ; 5 <input>/<label> → <Input>/<Label> ; 1 table HTML → <Table> ; motion.tr → <TableRow> ; <button> bg-emerald-600 → <Button> ; Card rounded-[2.5rem] → <Card>
+16. QHSERisks.tsx : 2 alert() → 2 toast() ; 1 modal fixed inset-0 → <Dialog> ; 3 <input>/<label> → <Input>/<Label> ; <button> bg-rose-600 → <Button variant="destructive"> ; Card rounded-[2.5rem] → <Card> ; Badge → <Badge variant="outline"/"destructive">
+17. QHSEHygiene.tsx : 2 alert() → 2 toast() ; 1 modal fixed inset-0 → <Dialog> ; 2 <input>/<label> → <Input>/<Label> ; <button> bg-emerald-600 → <Button> ; Card div rounded-3xl → <Card> ; Badge → <Badge variant="outline">
+18. QHSESecurity.tsx : 2 alert() (boutons "Bientôt disponible") → 2 toast() informatifs ; Bandeau navy-900 rounded-[2rem] → slate-900 rounded-xl ; Card rounded-[2.5rem] → <Card> ; <button> → <Button variant="secondary">
+19. QHSEHealth.tsx : 2 alert() (boutons "Bientôt disponible") → 2 toast() informatifs ; 1 table HTML → <Table> ; Card div rounded-3xl → <Card> ; <button> bg-emerald-600 → <Button> ; Badge → <Badge variant="outline">
+20. QHSEAudits.tsx : 2 alert() + 1 alert() (bouton) → 2 toast() + 1 toast() informatif ; 1 modal fixed inset-0 → <Dialog> ; 1 <input>/<label> → <Input>/<Label> ; 1 table HTML → <Table> ; motion.tr → <TableRow> ; <button> bg-emerald-600 → <Button>
+21. QHSEActionPlans.tsx : 2 alert() → 2 toast() ; 1 modal fixed inset-0 → <Dialog> ; 3 <input>/<label> → <Input>/<Label> ; <button> bg-navy-900 → <Button> ; Card rounded-[2.5rem] → <Card> ; Badge → <Badge variant="outline">
+22. QHSEDocuments.tsx : 1 alert() (bouton) → 1 toast() informatif ; Card rounded-[2.5rem] → <Card> ; <button> bg-navy-900 → <Button> ; Badge → <Badge variant="outline">
+23. QHSECompliance.tsx : 1 alert() (bouton) → 1 toast() informatif ; 1 table HTML → <Table> ; Bandeau emerald-600 rounded-[2.5rem] → rounded-xl ; Card rounded-[2.5rem] → <Card> ; <button> → <Button variant="secondary"> ; Badge → <Badge variant="outline">
+24. QHSESettings.tsx : 2 alert() → 2 toast() ; 2 toggles CSS-only → <Switch> shadcn ; <input type="range"> → <Input type="range"> avec updateNumber() ; <button> sidebar → <Button variant="default"/"ghost"> ; <button> bg-emerald-600 → <Button> ; Card rounded-[2.5rem] → <Card>
+25. QHSEPeriodicControls.tsx : 1 alert() (bouton) → 1 toast() informatif ; Card rounded-[2.5rem] → <Card> ; <button> bg-slate-900 → <Button> ; Badge → <Badge variant="outline"/"destructive">
+26. QHSEAlerts.tsx : 2 alert() → 2 toast() (marquage lu + global) ; Card div rounded-3xl → <Card> ; <button> bg-rose-600 → <Button variant="destructive"> ; <button> → <Button variant="link"> ; Badge → <Badge variant="outline">
+27. QHSEReports.tsx : 1 alert() (bouton) → 1 toast() informatif ; Card rounded-[2.5rem] → <Card> ; <button> bg-slate-900 → <Button> ; Badge → <Badge variant="outline">
+
+C. Vérifications post-refonte (ripgrep sur les 29 fichiers) :
+   * 0 alert() restant (uniquement dans les commentaires de header)
+   * 0 confirm() natif restant
+   * 0 window.prompt() natif restant
+   * 0 modal fixed inset-0 restant
+   * 0 <table>/<thead>/<tbody>/<tr>/<td>/<th> HTML restant
+   * 0 <input>/<label>/<button> HTML restant
+   * 0 rounded-3xl / rounded-[2.5rem] / rounded-[2rem] restant
+   * 0 font-black uppercase tracking-widest restant
+   * 0 bg-navy-900 text-white (boutons) restant
+   * 0 text-[10px] / text-[9px] / text-[8px] / text-[11px] restant
+   * 0 motion.tr (framer) restant (5 fichiers convertis en <TableRow>)
+   * 0 motion.div restant (tous remplacés par <Card> avec CSS transitions)
+   * 0 ModulePageLayout restant (remplacé par ModuleContainer)
+   * 0 useAcademicYear/useSchoolLevel restant (remplacé par useModuleContext)
+   * Syntaxe vérifiée via @babel/parser sur les 29 fichiers : 0 erreur de parsing
+   * Icônes IconMapping ajustées (library, trends, calendar, warning, shield, shieldCheck au lieu de book, trendingUp, alertCircle, activity, badgeCheck)
+   * <select> HTML conservé (pattern Finance TransactionsContent.tsx utilise aussi des <select>/<input type="date"> HTML natifs)
+   * <textarea> HTML conservé mais stylé avec les classes shadcn (pas de composant Textarea dans components/ui/)
+
+Stage Summary:
+- 29 fichiers standardisés au total (2 pages principales + 27 sous-composants)
+- 18 alert() migrés vers useToast() (Library: 11, QHSE: 7)
+- 0 confirm() natif à migrer (aucun présent dans l'original)
+- 1 window.prompt() migré vers Dialog (LibraryReturns — saisie ID d'emprunt)
+- 14 modals fixed inset-0 convertis en <Dialog>/<DialogContent>/<DialogHeader>/<DialogTitle>/<DialogFooter> shadcn
+- 7 tables HTML converties en <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell> shadcn (LibraryResources, LibraryReturns, LibraryPenalties, QHSEIncidents, QHSEAudits, QHSEHealth, QHSECompliance)
+- ~40 <input>/<label> HTML migrés vers <Input>/<Label> shadcn
+- ~35 <button> custom migrés vers <Button> shadcn (variant default/outline/ghost/link/destructive/secondary)
+- 4 toggles CSS-only → <Switch> shadcn avec state contrôlé (LibrarySettings: 2, QHSESettings: 2)
+- 5 motion.tr (framer) → <TableRow> shadcn
+- Toutes les motion.div (framer) → <Card> shadcn avec CSS transitions
+- 2 pages principales refondues sur ModuleContainer (SubModuleNavigation standard bleus soulignés)
+- 8 KPIs ajoutés dans ModuleHeader (4 library + 4 qhse) chargés via useModulesDashboard
+- Couleurs harmonisées : navy-900 (boutons) → indigo-600 (library) / emerald-600 (qhse) / slate-900 (bandeaux foncés) / rose-600 (risques/urgences) / amber-600 (warnings)
+- Typographie harmonisée : font-black uppercase tracking-widest → font-semibold / font-medium
+- Cards harmonisées : rounded-3xl / rounded-[2.5rem] / rounded-[2rem] → rounded-xl border-gray-200 shadow-sm
+- Tailles texte harmonisées : text-[10px] / text-[9px] / text-[8px] / text-[11px] → text-xs / text-sm
+- Logique métier 100% conservée (modulesApi.post/get/put/patch, useModulesList, useModulesDashboard, refetch, useState, handlers)
+- Modules Library et QHSE suivent maintenant exactement le même pattern design que les modules Finance/Students/Shop/Infirmerie/Labo/Cantine/Transport/EduCast

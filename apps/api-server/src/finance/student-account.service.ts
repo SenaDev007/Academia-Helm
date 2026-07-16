@@ -419,16 +419,25 @@ export class StudentAccountService {
     const newTotalDue = allBreakdowns.reduce((sum, b) => sum + Number(b.initialAmount), 0);
     const totalPaid = allBreakdowns.reduce((sum, b) => sum + Number(b.paidAmount), 0);
 
-    await this.allowBalanceUpdate();
-    account = await this.prisma.studentAccount.update({
-      where: { id: account.id },
-      data: {
-        totalDue: newTotalDue,
-        totalPaid,
-        balance: newTotalDue - totalPaid,
-        updatedAt: new Date(),
-      },
-      include: { breakdowns: { include: { feeStructure: true } } },
+    // ⭐ Juillet 2026 : SET LOCAL app.allow_balance_update doit être dans la MÊME
+    // transaction que l'UPDATE du studentAccount, sinon le trigger prevent_balance_update
+    // déclenche l'erreur "Direct modification of balance fields is forbidden".
+    // Avant : allowBalanceUpdate() + prisma.studentAccount.update() étaient dans 2
+    // transactions séparées → le flag était perdu.
+    // Maintenant : tout est dans une seule $transaction (pattern identique à
+    // fee-structure.service.ts lignes 641-652 qui fonctionne correctement).
+    account = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
+      return tx.studentAccount.update({
+        where: { id: account.id },
+        data: {
+          totalDue: newTotalDue,
+          totalPaid,
+          balance: newTotalDue - totalPaid,
+          updatedAt: new Date(),
+        },
+        include: { breakdowns: { include: { feeStructure: true } } },
+      });
     });
 
     return account;
@@ -516,16 +525,19 @@ export class StudentAccountService {
     const newTotalDue = Number(account.totalDue) + arrearsAmount;
     const newBalance = Number(account.balance) + arrearsAmount;
 
-    // Active le flag SQL pour autoriser la mise à jour des champs balance
-    await this.allowBalanceUpdate();
-    await this.prisma.studentAccount.update({
-      where: { id: account.id },
-      data: {
-        arrearsAmount: Number(account.arrearsAmount) + arrearsAmount,
-        totalDue: newTotalDue,
-        balance: newBalance,
-        updatedAt: new Date(),
-      },
+    // ⭐ Juillet 2026 : SET LOCAL + UPDATE dans la MÊME $transaction (sinon le flag
+    // est perdu entre les deux appels et le trigger prevent_balance_update déclenche).
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
+      await tx.studentAccount.update({
+        where: { id: account.id },
+        data: {
+          arrearsAmount: Number(account.arrearsAmount) + arrearsAmount,
+          totalDue: newTotalDue,
+          balance: newBalance,
+          updatedAt: new Date(),
+        },
+      });
     });
 
     return this.prisma.studentAccount.findUnique({

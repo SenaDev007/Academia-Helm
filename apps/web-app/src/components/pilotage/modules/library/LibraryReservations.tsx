@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * LIBRARY RESERVATIONS — Branché sur backend réel
+ * LIBRARY RESERVATIONS — Branché sur backend réel (Standardisé)
  * ============================================================================
  *
  * Endpoint (lecture)   : GET  /modules-complementaires/library/reservations
@@ -11,11 +11,17 @@
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Calendar, Clock, Book, XCircle, Timer, MoreVertical, Loader2 } from 'lucide-react';
+import { Calendar, Clock, Book, XCircle, Timer, MoreVertical, Loader2, Plus } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 interface ReservationItem {
   id: string;
@@ -46,6 +52,7 @@ const emptyReservationForm: NewReservationFormData = { bookId: '', readerId: '',
 
 export default function LibraryReservations() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const [modalOpen, setModalOpen] = useState(false);
   const [formData, setFormData] = useState<NewReservationFormData>(emptyReservationForm);
   const [submitting, setSubmitting] = useState(false);
@@ -66,9 +73,10 @@ export default function LibraryReservations() {
       setModalOpen(false);
       setFormData(emptyReservationForm);
       await refetch();
+      toast({ title: 'Réservation créée', description: 'La nouvelle réservation a été enregistrée.' });
     } catch (e: any) {
       console.error('Erreur création réservation :', e?.message || e);
-      alert(e?.message || 'Erreur lors de la création de la réservation');
+      toast({ title: 'Erreur', description: e?.message || 'Erreur lors de la création de la réservation', variant: 'destructive' });
     } finally {
       setSubmitting(false);
     }
@@ -93,27 +101,24 @@ export default function LibraryReservations() {
 
       <div className="flex justify-between items-center">
         <div className="space-y-1">
-          <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter flex items-center">
-            <Timer className="w-6 h-6 mr-3 text-blue-600" />
+          <h3 className="text-lg font-semibold text-slate-900 flex items-center">
+            <Timer className="w-5 h-5 mr-2 text-blue-600" />
             File d'Attente des Réservations
           </h3>
-          <p className="text-slate-500 text-sm font-medium">Gérez les priorités et les délais de retrait.</p>
+          <p className="text-slate-500 text-sm">Gérez les priorités et les délais de retrait.</p>
         </div>
-        <button
-          onClick={() => setModalOpen(true)}
-          className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/10"
-        >
-          Nouvelle Réservation
-        </button>
+        <Button onClick={() => setModalOpen(true)}>
+          <Plus className="w-4 h-4 mr-2" /> Nouvelle Réservation
+        </Button>
       </div>
 
       {reservations.length === 0 ? (
-        <div className="text-center py-16 text-gray-500 bg-white rounded-3xl border border-slate-200">
+        <Card className="text-center py-16 text-gray-500 shadow-sm">
           Aucune réservation pour cette année scolaire.
-        </div>
+        </Card>
       ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {reservations.map((res, i) => {
+        {reservations.map((res) => {
           const reader = res.reader ?? res.readerName ?? res.student ?? res.user ?? '—';
           const bookTitle = res.book ?? res.bookTitle ?? res.title ?? '—';
           const date = res.date ?? res.reservedAt ?? '—';
@@ -121,15 +126,9 @@ export default function LibraryReservations() {
           const status = (res.status ?? 'WAITING').toString().toUpperCase();
           const priority = (res.priority ?? 'NORMALE').toString().toUpperCase();
           return (
-          <motion.div
-            key={res.id}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.05 }}
-            className={`bg-white rounded-3xl border border-slate-200 p-8 shadow-sm hover:shadow-xl transition-all relative overflow-hidden group ${
-              status === 'AVAILABLE' ? 'border-emerald-200' : ''
-            }`}
-          >
+          <Card key={res.id} className={`p-6 shadow-sm hover:shadow-md transition-all relative overflow-hidden ${
+            status === 'AVAILABLE' ? 'border-emerald-200' : ''
+          }`}>
             {status === 'AVAILABLE' && (
               <div className="absolute top-0 right-0 p-4">
                 <span className="flex h-3 w-3">
@@ -139,40 +138,40 @@ export default function LibraryReservations() {
               </div>
             )}
 
-            <div className="space-y-6">
+            <div className="space-y-4">
               <div className="flex items-start justify-between">
                 <div>
-                  <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${
-                    priority === 'HAUTE' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'
-                  }`}> Priorité {priority}</span>
-                  <h4 className="text-lg font-black text-slate-900 mt-2 leading-tight">{reader}</h4>
+                  <Badge variant={priority === 'HAUTE' ? 'destructive' : 'outline'} className={priority === 'HAUTE' ? '' : 'bg-slate-50 text-slate-500'}>
+                    Priorité {priority}
+                  </Badge>
+                  <h4 className="text-lg font-semibold text-slate-900 mt-2 leading-tight">{reader}</h4>
                 </div>
-                <button className="p-2 hover:bg-slate-50 rounded-xl transition-colors">
+                <Button variant="ghost" size="icon" className="h-8 w-8">
                   <MoreVertical className="w-5 h-5 text-slate-300" />
-                </button>
+                </Button>
               </div>
 
-              <div className="p-4 bg-slate-50 rounded-2xl flex items-center gap-4">
-                <div className="p-2.5 bg-white rounded-xl shadow-sm text-slate-400">
+              <div className="p-4 bg-slate-50 rounded-xl flex items-center gap-4">
+                <div className="p-2.5 bg-white rounded-lg shadow-sm text-slate-400">
                   <Book className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-black text-slate-900 truncate">{bookTitle}</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ID: {res.id}</p>
+                  <p className="text-sm font-semibold text-slate-900 truncate">{bookTitle}</p>
+                  <p className="text-xs text-slate-400">ID: {res.id}</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Réservé le</p>
-                  <p className="text-xs font-black text-slate-700 flex items-center">
+                  <p className="text-xs text-slate-400 mb-1">Réservé le</p>
+                  <p className="text-sm font-semibold text-slate-700 flex items-center">
                     <Calendar className="w-3.5 h-3.5 mr-2 text-slate-300" />
                     {date}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Expire le</p>
-                  <p className={`text-xs font-black flex items-center ${status === 'EXPIRED' ? 'text-rose-600' : 'text-slate-700'}`}>
+                  <p className="text-xs text-slate-400 mb-1">Expire le</p>
+                  <p className={`text-sm font-semibold flex items-center ${status === 'EXPIRED' ? 'text-rose-600' : 'text-slate-700'}`}>
                     <Clock className="w-3.5 h-3.5 mr-2 text-slate-300" />
                     {expires}
                   </p>
@@ -181,84 +180,77 @@ export default function LibraryReservations() {
 
               <div className="pt-4 flex items-center gap-3">
                 {status === 'AVAILABLE' ? (
-                  <button className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20">
+                  <Button variant="default" className="flex-1 bg-emerald-600 hover:bg-emerald-700">
                     Prêt pour retrait
-                  </button>
+                  </Button>
                 ) : status === 'WAITING' ? (
-                  <div className="flex-1 py-2.5 bg-blue-50 text-blue-600 text-center rounded-xl text-[10px] font-black uppercase tracking-widest">
+                  <div className="flex-1 py-2.5 bg-blue-50 text-blue-600 text-center rounded-lg text-sm font-medium">
                     En attente de retour
                   </div>
                 ) : (
-                  <div className="flex-1 py-2.5 bg-slate-100 text-slate-400 text-center rounded-xl text-[10px] font-black uppercase tracking-widest">
+                  <div className="flex-1 py-2.5 bg-slate-100 text-slate-400 text-center rounded-lg text-sm font-medium">
                     Réservation expirée
                   </div>
                 )}
-                <button className="p-2.5 bg-slate-50 text-slate-400 hover:text-rose-600 rounded-xl transition-all">
+                <Button variant="ghost" size="icon" className="text-slate-400 hover:text-rose-600">
                   <XCircle className="w-5 h-5" />
-                </button>
+                </Button>
               </div>
             </div>
-          </motion.div>
+          </Card>
           );
         })}
       </div>
       )}
 
       {/* Modal Nouvelle Réservation */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <h3 className="text-lg font-black text-slate-900">Nouvelle Réservation</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Livre (ID)</label>
-                <input
-                  type="text"
-                  placeholder="ex : book-456"
-                  value={formData.bookId}
-                  onChange={(e) => setFormData({ ...formData, bookId: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Lecteur (ID)</label>
-                <input
-                  type="text"
-                  placeholder="ex : student-123"
-                  value={formData.readerId}
-                  onChange={(e) => setFormData({ ...formData, readerId: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Date souhaitée</label>
-                <input
-                  type="date"
-                  value={formData.date}
-                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nouvelle Réservation</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="res-book">Livre (ID)</Label>
+              <Input
+                id="res-book"
+                type="text"
+                placeholder="ex : book-456"
+                value={formData.bookId}
+                onChange={(e) => setFormData({ ...formData, bookId: e.target.value })}
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                onClick={() => setModalOpen(false)}
-                disabled={submitting}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handleCreateReservation}
-                disabled={submitting}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-              >
-                {submitting ? 'Envoi…' : 'Créer'}
-              </button>
+            <div className="space-y-1.5">
+              <Label htmlFor="res-reader">Lecteur (ID)</Label>
+              <Input
+                id="res-reader"
+                type="text"
+                placeholder="ex : student-123"
+                value={formData.readerId}
+                onChange={(e) => setFormData({ ...formData, readerId: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="res-date">Date souhaitée</Label>
+              <Input
+                id="res-date"
+                type="date"
+                value={formData.date}
+                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)} disabled={submitting}>
+              Annuler
+            </Button>
+            <Button onClick={handleCreateReservation} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Envoi…' : 'Créer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

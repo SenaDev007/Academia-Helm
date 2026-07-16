@@ -436,4 +436,192 @@ export class EduCastService {
       lastUpdate: new Date(),
     };
   }
+
+  // ============================================================================
+  // ⭐ CRUD COMPLÉMENTAIRE (Task 8-b) — DELETE + UPDATE manquants
+  // ============================================================================
+  // Patterns :
+  //  - findFirst({ where: { id, tenantId } }) pour l'isolation tenant
+  //  - NotFoundException si l'entité n'existe pas
+  //  - Soft-delete (status = 'ARCHIVED' | 'INACTIVE') si enfants existent,
+  //    hard delete sinon
+  // ============================================================================
+
+  /**
+   * DELETE /educast/media/:id
+   * Soft-delete (status = 'ARCHIVED') si purchases existent, hard delete sinon.
+   * EduCastMediaItem a un champ `status` (default "DRAFT").
+   */
+  async deleteMedia(id: string, tenantId: string): Promise<{ success: boolean }> {
+    const media = await this.prisma.eduCastMediaItem.findFirst({ where: { id, tenantId } });
+    if (!media) throw new NotFoundException(`Contenu EduCast introuvable (id=${id}).`);
+
+    const [purchasesCount, packItemsCount, playlistItemsCount] = await Promise.all([
+      this.prisma.eduCastPurchase.count({ where: { mediaItemId: id } }),
+      this.prisma.eduCastContentPackItem.count({ where: { mediaItemId: id } }),
+      this.prisma.eduCastPlaylistItem.count({ where: { mediaItemId: id } }),
+    ]);
+
+    if (purchasesCount > 0) {
+      // On conserve l'historique des achats — on archive seulement.
+      await this.prisma.eduCastMediaItem.update({
+        where: { id },
+        data: { status: 'ARCHIVED' },
+      });
+      return { success: true };
+    }
+
+    // Pas d'achats — on peut supprimer. Les packItems/playlistItems/engagement/
+    // favorites/resources sont en onDelete: Cascade sur mediaItemId.
+    // Mais si le média est référencé dans un pack/playlist sans achat, on archive
+    // plutôt que de casser le pack.
+    if (packItemsCount + playlistItemsCount > 0) {
+      await this.prisma.eduCastMediaItem.update({
+        where: { id },
+        data: { status: 'ARCHIVED' },
+      });
+      return { success: true };
+    }
+
+    await this.prisma.eduCastMediaItem.delete({ where: { id } });
+    return { success: true };
+  }
+
+  /**
+   * PUT /educast/media/:id — mise à jour générique d'un média EduCast.
+   */
+  async updateMedia(id: string, tenantId: string, data: any) {
+    const media = await this.prisma.eduCastMediaItem.findFirst({ where: { id, tenantId } });
+    if (!media) throw new NotFoundException(`Contenu EduCast introuvable (id=${id}).`);
+
+    const updateData: any = { ...data };
+    if (data.price !== undefined && data.price !== null) updateData.price = parseFloat(data.price);
+    if (data.expiresAt) updateData.expiresAt = new Date(data.expiresAt);
+    delete updateData.id;
+    delete updateData.tenantId;
+
+    return this.prisma.eduCastMediaItem.update({ where: { id }, data: updateData });
+  }
+
+  /**
+   * DELETE /educast/packs/:id
+   * Vérifier purchases avant delete. Si purchases → soft-delete (status = 'ARCHIVED').
+   * Sinon hard delete (items en cascade).
+   */
+  async deletePack(id: string, tenantId: string): Promise<{ success: boolean }> {
+    const pack = await this.prisma.eduCastContentPack.findFirst({ where: { id, tenantId } });
+    if (!pack) throw new NotFoundException(`Pack EduCast introuvable (id=${id}).`);
+
+    const purchasesCount = await this.prisma.eduCastPurchase.count({
+      where: { packId: id },
+    });
+
+    if (purchasesCount > 0) {
+      // On conserve l'historique des achats liés au pack.
+      await this.prisma.eduCastContentPack.update({
+        where: { id },
+        data: { status: 'ARCHIVED' },
+      });
+      return { success: true };
+    }
+
+    // Hard delete — les items sont supprimés en cascade (onDelete: Cascade sur packId)
+    await this.prisma.eduCastContentPack.delete({ where: { id } });
+    return { success: true };
+  }
+
+  /**
+   * PUT /educast/packs/:id — mise à jour générique d'un pack.
+   */
+  async updatePack(id: string, tenantId: string, data: any) {
+    const pack = await this.prisma.eduCastContentPack.findFirst({ where: { id, tenantId } });
+    if (!pack) throw new NotFoundException(`Pack EduCast introuvable (id=${id}).`);
+
+    const updateData: any = { ...data };
+    if (data.price !== undefined && data.price !== null) updateData.price = parseFloat(data.price);
+    delete updateData.id;
+    delete updateData.tenantId;
+
+    return this.prisma.eduCastContentPack.update({ where: { id }, data: updateData });
+  }
+
+  /**
+   * DELETE /educast/webinars/:id — hard delete (pas d'enfants).
+   */
+  async deleteWebinar(id: string, tenantId: string): Promise<{ success: boolean }> {
+    const webinar = await this.prisma.eduCastWebinar.findFirst({ where: { id, tenantId } });
+    if (!webinar) throw new NotFoundException(`Webinaire introuvable (id=${id}).`);
+
+    await this.prisma.eduCastWebinar.delete({ where: { id } });
+    return { success: true };
+  }
+
+  /**
+   * PUT /educast/webinars/:id — mise à jour générique d'un webinaire.
+   */
+  async updateWebinar(id: string, tenantId: string, data: any) {
+    const webinar = await this.prisma.eduCastWebinar.findFirst({ where: { id, tenantId } });
+    if (!webinar) throw new NotFoundException(`Webinaire introuvable (id=${id}).`);
+
+    const updateData: any = { ...data };
+    if (data.scheduledAt) updateData.scheduledAt = new Date(data.scheduledAt);
+    if (data.price !== undefined && data.price !== null) updateData.price = parseFloat(data.price);
+    delete updateData.id;
+    delete updateData.tenantId;
+
+    return this.prisma.eduCastWebinar.update({ where: { id }, data: updateData });
+  }
+
+  /**
+   * DELETE /educast/playlists/:id — hard delete (cascade items).
+   * Les EduCastPlaylistItem sont supprimés en cascade (onDelete: Cascade sur playlistId).
+   */
+  async deletePlaylist(id: string, tenantId: string): Promise<{ success: boolean }> {
+    const playlist = await this.prisma.eduCastPlaylist.findFirst({ where: { id, tenantId } });
+    if (!playlist) throw new NotFoundException(`Playlist introuvable (id=${id}).`);
+
+    await this.prisma.eduCastPlaylist.delete({ where: { id } });
+    return { success: true };
+  }
+
+  /**
+   * PUT /educast/playlists/:id — mise à jour générique d'une playlist.
+   */
+  async updatePlaylist(id: string, tenantId: string, data: any) {
+    const playlist = await this.prisma.eduCastPlaylist.findFirst({ where: { id, tenantId } });
+    if (!playlist) throw new NotFoundException(`Playlist introuvable (id=${id}).`);
+
+    const updateData: any = { ...data };
+    if (data.price !== undefined && data.price !== null) updateData.price = parseFloat(data.price);
+    delete updateData.id;
+    delete updateData.tenantId;
+
+    return this.prisma.eduCastPlaylist.update({ where: { id }, data: updateData });
+  }
+
+  /**
+   * DELETE /educast/announcements/:id — hard delete (pas d'enfants).
+   */
+  async deleteAnnouncement(id: string, tenantId: string): Promise<{ success: boolean }> {
+    const announcement = await this.prisma.eduCastAnnouncement.findFirst({ where: { id, tenantId } });
+    if (!announcement) throw new NotFoundException(`Annonce introuvable (id=${id}).`);
+
+    await this.prisma.eduCastAnnouncement.delete({ where: { id } });
+    return { success: true };
+  }
+
+  /**
+   * PUT /educast/announcements/:id — mise à jour générique d'une annonce.
+   */
+  async updateAnnouncement(id: string, tenantId: string, data: any) {
+    const announcement = await this.prisma.eduCastAnnouncement.findFirst({ where: { id, tenantId } });
+    if (!announcement) throw new NotFoundException(`Annonce introuvable (id=${id}).`);
+
+    const updateData: any = { ...data };
+    if (data.expiresAt) updateData.expiresAt = new Date(data.expiresAt);
+    delete updateData.id;
+    delete updateData.tenantId;
+
+    return this.prisma.eduCastAnnouncement.update({ where: { id }, data: updateData });
+  }
 }

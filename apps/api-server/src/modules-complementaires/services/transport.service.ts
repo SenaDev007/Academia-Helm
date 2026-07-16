@@ -522,4 +522,187 @@ export class TransportService {
       attendanceRate: Math.round(attendanceRate * 10) / 10,
     };
   }
+
+  // ============================================================================
+  // ⭐ CRUD COMPLÉMENTAIRE (Task 8-b) — DELETE + UPDATE manquants
+  // ============================================================================
+  // Patterns :
+  //  - findFirst({ where: { id, tenantId } }) pour l'isolation tenant
+  //  - NotFoundException si l'entité n'existe pas
+  //  - Soft-delete (status = 'ARCHIVED' | 'INACTIVE' | isActive=false) si enfants
+  //    existent, hard delete sinon
+  // ============================================================================
+
+  /**
+   * DELETE /transport/vehicles/:id
+   * Soft-delete (status = 'ARCHIVED') si trips/assignments/routes/maintenances
+   * existent, hard delete sinon. Le modèle Vehicle n'a pas d'isActive, mais a un
+   * champ `status` (default "ACTIVE") — on l'utilise pour le soft-delete.
+   */
+  async deleteVehicle(id: string, tenantId: string): Promise<{ success: boolean }> {
+    const vehicle = await this.prisma.vehicle.findFirst({ where: { id, tenantId } });
+    if (!vehicle) throw new NotFoundException(`Véhicule introuvable (id=${id}).`);
+
+    const [tripsCount, assignmentsCount, routesCount, maintenancesCount, incidentsCount] = await Promise.all([
+      this.prisma.transportTrip.count({ where: { vehicleId: id } }),
+      this.prisma.transportAssignment.count({ where: { vehicleId: id } }),
+      this.prisma.route.count({ where: { vehicleId: id } }),
+      this.prisma.vehicleMaintenance.count({ where: { vehicleId: id } }),
+      this.prisma.transportIncident.count({ where: { vehicleId: id } }),
+    ]);
+
+    if (tripsCount + assignmentsCount + routesCount + maintenancesCount + incidentsCount > 0) {
+      // Soft-delete — on archive pour préserver l'historique
+      await this.prisma.vehicle.update({ where: { id }, data: { status: 'ARCHIVED' } });
+      return { success: true };
+    }
+
+    await this.prisma.vehicle.delete({ where: { id } });
+    return { success: true };
+  }
+
+  /**
+   * DELETE /transport/drivers/:id
+   * Soft-delete (status = 'INACTIVE') si trips/incidents/vehicles liés,
+   * hard delete sinon.
+   */
+  async deleteDriver(id: string, tenantId: string): Promise<{ success: boolean }> {
+    const driver = await this.prisma.transportDriver.findFirst({ where: { id, tenantId } });
+    if (!driver) throw new NotFoundException(`Chauffeur introuvable (id=${id}).`);
+
+    const [tripsCount, incidentsCount, vehiclesCount] = await Promise.all([
+      this.prisma.transportTrip.count({ where: { driverId: id } }),
+      this.prisma.transportIncident.count({ where: { driverId: id } }),
+      this.prisma.vehicle.count({ where: { driverId: id } }),
+    ]);
+
+    if (tripsCount + incidentsCount + vehiclesCount > 0) {
+      await this.prisma.transportDriver.update({ where: { id }, data: { status: 'INACTIVE' } });
+      return { success: true };
+    }
+
+    await this.prisma.transportDriver.delete({ where: { id } });
+    return { success: true };
+  }
+
+  /**
+   * DELETE /transport/routes/:id
+   * Vérifier assignments/schedules/trips/incidents avant delete.
+   * Si enfants → soft-delete (isActive = false). Sinon hard delete.
+   */
+  async deleteRoute(id: string, tenantId: string): Promise<{ success: boolean }> {
+    const route = await this.prisma.route.findFirst({ where: { id, tenantId } });
+    if (!route) throw new NotFoundException(`Itinéraire introuvable (id=${id}).`);
+
+    const [assignmentsCount, schedulesCount, tripsCount, incidentsCount] = await Promise.all([
+      this.prisma.transportAssignment.count({ where: { routeId: id } }),
+      this.prisma.transportSchedule.count({ where: { routeId: id } }),
+      this.prisma.transportTrip.count({ where: { routeId: id } }),
+      this.prisma.transportIncident.count({ where: { routeId: id } }),
+    ]);
+
+    if (assignmentsCount + schedulesCount + tripsCount + incidentsCount > 0) {
+      // Soft-delete — désactiver l'itinéraire pour préserver l'historique
+      await this.prisma.route.update({ where: { id }, data: { isActive: false } });
+      return { success: true };
+    }
+
+    // Hard delete — les stops sont supprimés en cascade (onDelete: Cascade)
+    await this.prisma.route.delete({ where: { id } });
+    return { success: true };
+  }
+
+  /**
+   * DELETE /transport/assignments/:id
+   * Hard delete — les attendances sont supprimées en cascade
+   * (TransportAttendance.assignment → onDelete: Cascade).
+   */
+  async deleteAssignment(id: string, tenantId: string): Promise<{ success: boolean }> {
+    const assignment = await this.prisma.transportAssignment.findFirst({ where: { id, tenantId } });
+    if (!assignment) throw new NotFoundException(`Affectation introuvable (id=${id}).`);
+
+    await this.prisma.transportAssignment.delete({ where: { id } });
+    return { success: true };
+  }
+
+  /**
+   * DELETE /transport/incidents/:id
+   * Hard delete — pas d'enfants sur TransportIncident.
+   */
+  async deleteIncident(id: string, tenantId: string): Promise<{ success: boolean }> {
+    const incident = await this.prisma.transportIncident.findFirst({ where: { id, tenantId } });
+    if (!incident) throw new NotFoundException(`Incident transport introuvable (id=${id}).`);
+
+    await this.prisma.transportIncident.delete({ where: { id } });
+    return { success: true };
+  }
+
+  /**
+   * PUT /transport/drivers/:id
+   * Mise à jour générique d'un chauffeur.
+   */
+  async updateDriver(id: string, tenantId: string, data: any) {
+    const driver = await this.prisma.transportDriver.findFirst({ where: { id, tenantId } });
+    if (!driver) throw new NotFoundException(`Chauffeur introuvable (id=${id}).`);
+
+    const updateData: any = { ...data };
+    if (data.licenseExpiry) updateData.licenseExpiry = new Date(data.licenseExpiry);
+    // Éviter de modifier les clés primaires/relations
+    delete updateData.id;
+    delete updateData.tenantId;
+
+    return this.prisma.transportDriver.update({ where: { id }, data: updateData });
+  }
+
+  /**
+   * PUT /transport/routes/:id
+   * Mise à jour générique d'un itinéraire.
+   */
+  async updateRoute(id: string, tenantId: string, data: any) {
+    const route = await this.prisma.route.findFirst({ where: { id, tenantId } });
+    if (!route) throw new NotFoundException(`Itinéraire introuvable (id=${id}).`);
+
+    const updateData: any = { ...data };
+    if (data.distance !== undefined) updateData.distance = data.distance !== null ? parseFloat(data.distance) : null;
+    if (data.duration !== undefined) updateData.duration = data.duration !== null ? parseInt(data.duration) : null;
+    delete updateData.id;
+    delete updateData.tenantId;
+
+    return this.prisma.route.update({ where: { id }, data: updateData });
+  }
+
+  /**
+   * PUT /transport/assignments/:id
+   * Mise à jour générique d'une affectation élève.
+   */
+  async updateAssignment(id: string, tenantId: string, data: any) {
+    const assignment = await this.prisma.transportAssignment.findFirst({ where: { id, tenantId } });
+    if (!assignment) throw new NotFoundException(`Affectation introuvable (id=${id}).`);
+
+    const updateData: any = { ...data };
+    if (data.amount !== undefined && data.amount !== null) updateData.amount = parseFloat(data.amount);
+    if (data.startDate) updateData.startDate = new Date(data.startDate);
+    if (data.endDate) updateData.endDate = new Date(data.endDate);
+    delete updateData.id;
+    delete updateData.tenantId;
+
+    return this.prisma.transportAssignment.update({ where: { id }, data: updateData });
+  }
+
+  /**
+   * PUT /transport/incidents/:id
+   * Mise à jour générique d'un incident transport.
+   */
+  async updateIncident(id: string, tenantId: string, data: any) {
+    const incident = await this.prisma.transportIncident.findFirst({ where: { id, tenantId } });
+    if (!incident) throw new NotFoundException(`Incident transport introuvable (id=${id}).`);
+
+    const updateData: any = { ...data };
+    if (data.incidentDate) updateData.incidentDate = new Date(data.incidentDate);
+    if (data.resolvedAt) updateData.resolvedAt = new Date(data.resolvedAt);
+    delete updateData.id;
+    delete updateData.tenantId;
+
+    return this.prisma.transportIncident.update({ where: { id }, data: updateData });
+  }
 }

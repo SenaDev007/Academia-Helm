@@ -1,17 +1,23 @@
 /**
  * ============================================================================
- * QHSE ACTION PLANS
+ * QHSE ACTION PLANS (Standardisé)
  * ============================================================================
  */
 
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { CheckCircle2, Clock, User, AlertTriangle, ArrowRight, MoreVertical, Plus, Filter, LayoutGrid, List, Loader2, X } from 'lucide-react';
+import { CheckCircle2, Clock, MoreVertical, Plus, Filter, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 interface ActionPlanItem {
   id: string | number;
@@ -32,6 +38,7 @@ const EMPTY_FORM = { planId: '', description: '', responsible: '', dueDate: '' }
 
 export default function QHSEActionPlans() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const { data: plans, loading, error, refetch } = useModulesList<ActionPlanItem>('qhse', 'action-plans', academicYear?.id);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -40,7 +47,7 @@ export default function QHSEActionPlans() {
 
   const handleAddAction = async () => {
     if (!formData.planId || !formData.description) {
-      alert('L\'ID du plan et la description sont requis');
+      toast({ title: 'Champs requis', description: "L'ID du plan et la description sont requis", variant: 'destructive' });
       return;
     }
     try {
@@ -57,8 +64,9 @@ export default function QHSEActionPlans() {
       setModalOpen(false);
       setFormData(EMPTY_FORM);
       await refetch();
+      toast({ title: 'Action ajoutée', description: "L'action corrective a été ajoutée au plan." });
     } catch (e: any) {
-      alert(e?.message || 'Erreur lors de l\'ajout de l\'action');
+      toast({ title: 'Erreur', description: e?.message || 'Erreur lors de l\'ajout de l\'action', variant: 'destructive' });
     } finally {
       setSubmitting(false);
     }
@@ -74,7 +82,7 @@ export default function QHSEActionPlans() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les données. {error}
@@ -83,29 +91,26 @@ export default function QHSEActionPlans() {
 
       <div className="flex justify-between items-center">
         <div className="space-y-1">
-          <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter flex items-center">
-            <CheckCircle2 className="w-6 h-6 mr-3 text-emerald-600" /> Plans d'Action QHSE
+          <h3 className="text-lg font-semibold text-slate-900 flex items-center">
+            <CheckCircle2 className="w-5 h-5 mr-2 text-emerald-600" /> Plans d'Action QHSE
           </h3>
-          <p className="text-slate-500 text-sm font-medium">Suivi des actions correctives et préventives.</p>
+          <p className="text-slate-500 text-sm">Suivi des actions correctives et préventives.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="p-3 bg-white border border-slate-100 rounded-xl text-slate-400">
+          <Button variant="outline" size="icon">
             <Filter className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => setModalOpen(true)}
-            className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10 hover:bg-navy-800 transition-all flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
+          </Button>
+          <Button onClick={() => setModalOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" />
             Nouvelle Action
-          </button>
+          </Button>
         </div>
       </div>
 
       {plans.length === 0 ? (
-        <div className="text-center py-16 text-slate-500 bg-white rounded-[2.5rem] border border-slate-100">
+        <Card className="text-center py-16 text-slate-500 shadow-sm">
           Aucun plan d'action pour cette année scolaire.
-        </div>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {plans.map((plan, i) => {
@@ -115,37 +120,30 @@ export default function QHSEActionPlans() {
             const priority = plan.priority || 'MOYENNE';
             const deadline = plan.deadline || plan.dueDate || '—';
             const progress = plan.progress ?? 0;
-            const status = plan.status || 'A_FAIRE';
             return (
-              <motion.div
-                key={plan.id ?? i}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.1 }}
-                className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col group hover:shadow-xl transition-all"
-              >
-                <div className="flex justify-between items-start mb-6">
-                  <span className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest ${
-                    priority === 'CRITIQUE' ? 'bg-rose-50 text-rose-600' : 
-                    priority === 'HAUTE' || priority === 'HIGH' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'
-                  }`}>
+              <Card key={plan.id ?? i} className="p-6 shadow-sm flex flex-col hover:shadow-md transition-all">
+                <div className="flex justify-between items-start mb-4">
+                  <Badge variant="outline" className={
+                    priority === 'CRITIQUE' ? 'bg-rose-50 text-rose-600 border-rose-100' :
+                    priority === 'HAUTE' || priority === 'HIGH' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-blue-50 text-blue-600 border-blue-100'
+                  }>
                     {priority}
-                  </span>
-                  <button className="p-1 hover:bg-slate-50 rounded-lg">
+                  </Badge>
+                  <Button variant="ghost" size="icon" className="h-7 w-7">
                     <MoreVertical className="w-4 h-4 text-slate-300" />
-                  </button>
+                  </Button>
                 </div>
 
-                <div className="flex-1 space-y-4">
+                <div className="flex-1 space-y-3">
                   <div>
-                    <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight line-clamp-2">{title}</h4>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Origine : {origin}</p>
+                    <h4 className="text-sm font-semibold text-slate-900 line-clamp-2">{title}</h4>
+                    <p className="text-xs text-slate-400 mt-1">Origine : {origin}</p>
                   </div>
 
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
                       <span className="text-slate-400 italic">Progression</span>
-                      <span className="text-slate-900">{progress}%</span>
+                      <span className="text-slate-900 font-semibold">{progress}%</span>
                     </div>
                     <div className="w-full h-1.5 bg-slate-50 rounded-full overflow-hidden">
                       <div className={`h-full transition-all duration-1000 ${
@@ -154,95 +152,84 @@ export default function QHSEActionPlans() {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                  <div className="flex items-center justify-between pt-3 border-t border-slate-100">
                     <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center text-[8px] font-black text-slate-400">
+                      <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center text-xs font-semibold text-slate-400">
                         {responsible[0]}
                       </div>
-                      <span className="text-[10px] font-bold text-slate-600">{responsible}</span>
+                      <span className="text-xs font-medium text-slate-600">{responsible}</span>
                     </div>
                     <div className="flex items-center gap-1 text-slate-400">
                       <Clock className="w-3 h-3" />
-                      <span className="text-[9px] font-black">{deadline}</span>
+                      <span className="text-xs">{deadline}</span>
                     </div>
                   </div>
                 </div>
-              </motion.div>
+              </Card>
             );
           })}
         </div>
       )}
 
       {/* Modal: Ajouter une action */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900">Ajouter une action</h3>
-              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-slate-100 rounded-lg">
-                <X className="w-5 h-5 text-slate-400" />
-              </button>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ajouter une action</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="ap-plan">ID du plan d'action</Label>
+              <Input
+                id="ap-plan"
+                type="text"
+                value={formData.planId}
+                onChange={(e) => setFormData({ ...formData, planId: e.target.value })}
+                placeholder="Ex: 123 ou uuid"
+              />
             </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ID du plan d'action</label>
-                <input
-                  type="text"
-                  value={formData.planId}
-                  onChange={(e) => setFormData({ ...formData, planId: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20"
-                  placeholder="Ex: 123 ou uuid"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Description</label>
-                <textarea
-                  rows={3}
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
-                  placeholder="Décrivez l'action..."
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Responsable</label>
-                <input
-                  type="text"
-                  value={formData.responsible}
-                  onChange={(e) => setFormData({ ...formData, responsible: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20"
-                  placeholder="Ex: M. Dupont"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Date d'échéance</label>
-                <input
-                  type="date"
-                  value={formData.dueDate}
-                  onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ap-desc">Description</Label>
+              <textarea
+                id="ap-desc"
+                rows={3}
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+                placeholder="Décrivez l'action..."
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handleAddAction}
-                disabled={submitting}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold hover:bg-navy-800 disabled:opacity-60 flex items-center gap-2"
-              >
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {submitting ? 'Envoi...' : 'Ajouter'}
-              </button>
+            <div className="space-y-1.5">
+              <Label htmlFor="ap-resp">Responsable</Label>
+              <Input
+                id="ap-resp"
+                type="text"
+                value={formData.responsible}
+                onChange={(e) => setFormData({ ...formData, responsible: e.target.value })}
+                placeholder="Ex: M. Dupont"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ap-due">Date d'échéance</Label>
+              <Input
+                id="ap-due"
+                type="date"
+                value={formData.dueDate}
+                onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)}>
+              Annuler
+            </Button>
+            <Button onClick={handleAddAction} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Envoi...' : 'Ajouter'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

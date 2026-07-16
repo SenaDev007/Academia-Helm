@@ -132,6 +132,31 @@ export class ModulesComplementairesController {
     return this.canteenService.validateEnrollment(id, status);
   }
 
+  /**
+   * PUT /canteen/enrollments/:id — mise à jour générique (pas seulement validate).
+   * ⭐ Task 8-b : route PUT manquante.
+   */
+  @Put('canteen/enrollments/:id')
+  async updateCanteenEnrollment(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.canteenService.updateEnrollment(id, tenantId, data);
+  }
+
+  /**
+   * DELETE /canteen/enrollments/:id — hard delete (cascade attendances/mealServices/payments).
+   * ⭐ Task 8-b : route DELETE manquante.
+   */
+  @Delete('canteen/enrollments/:id')
+  async deleteCanteenEnrollment(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.canteenService.deleteEnrollment(id, tenantId);
+  }
+
   @Post('canteen/meal-services')
   async recordCanteenMealService(
     @TenantId() tenantId: string,
@@ -155,9 +180,84 @@ export class ModulesComplementairesController {
     return this.canteenService.findAllDiets(tenantId);
   }
 
+  /**
+   * POST /canteen/diets — création d'un régime alimentaire.
+   * ⭐ Task 8-b : route POST manquante.
+   */
+  @Post('canteen/diets')
+  async createCanteenDiet(
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.canteenService.createDiet(tenantId, data);
+  }
+
+  /**
+   * PUT /canteen/diets/:id — mise à jour générique d'un régime.
+   * ⭐ Task 8-b : route PUT manquante.
+   */
+  @Put('canteen/diets/:id')
+  async updateCanteenDiet(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.canteenService.updateDiet(id, tenantId, data);
+  }
+
+  /**
+   * DELETE /canteen/diets/:id — soft-delete (isActive=false) si enrollments,
+   * hard delete sinon.
+   * ⭐ Task 8-b : route DELETE manquante.
+   */
+  @Delete('canteen/diets/:id')
+  async deleteCanteenDiet(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.canteenService.deleteDiet(id, tenantId);
+  }
+
   @Get('canteen/allergies')
   async getCanteenAllergies(@TenantId() tenantId: string) {
     return this.canteenService.findAllAllergies(tenantId);
+  }
+
+  /**
+   * POST /canteen/allergies — création d'une allergy.
+   * ⭐ Task 8-b : route POST manquante.
+   */
+  @Post('canteen/allergies')
+  async createCanteenAllergy(
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.canteenService.createAllergy(tenantId, data);
+  }
+
+  /**
+   * PUT /canteen/allergies/:id — mise à jour générique d'une allergy.
+   * ⭐ Task 8-b : route PUT manquante.
+   */
+  @Put('canteen/allergies/:id')
+  async updateCanteenAllergy(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.canteenService.updateAllergy(id, tenantId, data);
+  }
+
+  /**
+   * DELETE /canteen/allergies/:id — hard delete.
+   * ⭐ Task 8-b : route DELETE manquante.
+   */
+  @Delete('canteen/allergies/:id')
+  async deleteCanteenAllergy(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.canteenService.deleteAllergy(id, tenantId);
   }
 
   @Get('canteen/stocks')
@@ -173,6 +273,19 @@ export class ModulesComplementairesController {
     return this.canteenService.updateStock(tenantId, data);
   }
 
+  /**
+   * DELETE /canteen/stocks/:id — soft-delete (isActive=false) si mouvements,
+   * hard delete sinon.
+   * ⭐ Task 8-b : route DELETE manquante.
+   */
+  @Delete('canteen/stocks/:id')
+  async deleteCanteenStock(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.canteenService.deleteStock(id, tenantId);
+  }
+
   @Get('canteen/suppliers')
   async getCanteenSuppliers(@TenantId() tenantId: string) {
     return this.canteenService.findAllSuppliers(tenantId);
@@ -184,6 +297,32 @@ export class ModulesComplementairesController {
     @Body() data: any,
   ) {
     return this.canteenService.createSupplier(tenantId, data);
+  }
+
+  /**
+   * PUT /canteen/suppliers/:id — mise à jour générique d'un fournisseur.
+   * ⭐ Task 8-b : route PUT manquante.
+   */
+  @Put('canteen/suppliers/:id')
+  async updateCanteenSupplier(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.canteenService.updateSupplier(id, tenantId, data);
+  }
+
+  /**
+   * DELETE /canteen/suppliers/:id — soft-delete (isActive=false) si purchaseOrders,
+   * hard delete sinon.
+   * ⭐ Task 8-b : route DELETE manquante.
+   */
+  @Delete('canteen/suppliers/:id')
+  async deleteCanteenSupplier(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.canteenService.deleteSupplier(id, tenantId);
   }
 
   @Get('canteen/incidents')
@@ -203,6 +342,31 @@ export class ModulesComplementairesController {
     return this.canteenService.reportIncident(tenantId, academicYearId, data);
   }
 
+  /**
+   * PUT /canteen/incidents/:id — mise à jour générique d'un incident cantine.
+   * ⭐ Task 8-b : route PUT manquante.
+   */
+  @Put('canteen/incidents/:id')
+  async updateCanteenIncident(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.canteenService.updateIncident(id, tenantId, data);
+  }
+
+  /**
+   * DELETE /canteen/incidents/:id — hard delete.
+   * ⭐ Task 8-b : route DELETE manquante.
+   */
+  @Delete('canteen/incidents/:id')
+  async deleteCanteenIncident(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.canteenService.deleteIncident(id, tenantId);
+  }
+
   @Get('canteen/payments')
   async getCanteenPayments(
     @TenantId() tenantId: string,
@@ -217,6 +381,31 @@ export class ModulesComplementairesController {
     @Body() data: any,
   ) {
     return this.canteenService.recordPayment(tenantId, data);
+  }
+
+  /**
+   * PUT /canteen/payments/:id — mise à jour générique d'un paiement.
+   * ⭐ Task 8-b : route PUT manquante.
+   */
+  @Put('canteen/payments/:id')
+  async updateCanteenPayment(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.canteenService.updatePayment(id, tenantId, data);
+  }
+
+  /**
+   * DELETE /canteen/payments/:id — hard delete.
+   * ⭐ Task 8-b : route DELETE manquante.
+   */
+  @Delete('canteen/payments/:id')
+  async deleteCanteenPayment(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.canteenService.deletePayment(id, tenantId);
   }
 
   @Get('canteen/settings')
@@ -272,6 +461,20 @@ export class ModulesComplementairesController {
     return this.transportService.updateVehicle(id, tenantId, data);
   }
 
+  /**
+   * DELETE /transport/vehicles/:id
+   * Soft-delete (status = 'ARCHIVED') si trips/assignments/routes/maintenances
+   * existent, hard delete sinon.
+   * ⭐ Task 8-b : route DELETE manquante — ajoutée pour compléter le CRUD véhicules.
+   */
+  @Delete('transport/vehicles/:id')
+  async deleteVehicle(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.transportService.deleteVehicle(id, tenantId);
+  }
+
   // --- Personnel (Chauffeurs & Accompagnateurs) ---
   @Get('transport/drivers')
   async getDrivers(
@@ -288,6 +491,32 @@ export class ModulesComplementairesController {
     @Body() data: any,
   ) {
     return this.transportService.createDriver(tenantId, academicYearId, data);
+  }
+
+  /**
+   * PUT /transport/drivers/:id — mise à jour générique d'un chauffeur.
+   * ⭐ Task 8-b : route PUT manquante.
+   */
+  @Put('transport/drivers/:id')
+  async updateDriver(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.transportService.updateDriver(id, tenantId, data);
+  }
+
+  /**
+   * DELETE /transport/drivers/:id — soft-delete si trips/incidents/vehicles liés,
+   * hard delete sinon.
+   * ⭐ Task 8-b : route DELETE manquante.
+   */
+  @Delete('transport/drivers/:id')
+  async deleteDriver(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.transportService.deleteDriver(id, tenantId);
   }
 
   @Get('transport/attendants')
@@ -335,6 +564,32 @@ export class ModulesComplementairesController {
     return this.transportService.createRoute(tenantId, academicYearId, data);
   }
 
+  /**
+   * PUT /transport/routes/:id — mise à jour générique d'un itinéraire.
+   * ⭐ Task 8-b : route PUT manquante.
+   */
+  @Put('transport/routes/:id')
+  async updateRoute(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.transportService.updateRoute(id, tenantId, data);
+  }
+
+  /**
+   * DELETE /transport/routes/:id — soft-delete (isActive=false) si
+   * assignments/schedules/trips/incidents existent, hard delete sinon.
+   * ⭐ Task 8-b : route DELETE manquante.
+   */
+  @Delete('transport/routes/:id')
+  async deleteRoute(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.transportService.deleteRoute(id, tenantId);
+  }
+
   @Post('transport/routes/:id/stops')
   async addRouteStop(
     @Param('id') id: string,
@@ -360,6 +615,31 @@ export class ModulesComplementairesController {
     @Body() data: any,
   ) {
     return this.transportService.assignStudent(tenantId, academicYearId, data);
+  }
+
+  /**
+   * PUT /transport/assignments/:id — mise à jour générique d'une affectation élève.
+   * ⭐ Task 8-b : route PUT manquante.
+   */
+  @Put('transport/assignments/:id')
+  async updateAssignment(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.transportService.updateAssignment(id, tenantId, data);
+  }
+
+  /**
+   * DELETE /transport/assignments/:id — hard delete (cascade attendances).
+   * ⭐ Task 8-b : route DELETE manquante.
+   */
+  @Delete('transport/assignments/:id')
+  async deleteAssignment(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.transportService.deleteAssignment(id, tenantId);
   }
 
   // --- Planning & Trajets Réels ---
@@ -429,6 +709,31 @@ export class ModulesComplementairesController {
     @Body() data: any,
   ) {
     return this.transportService.reportIncident(tenantId, academicYearId, data, user.id);
+  }
+
+  /**
+   * PUT /transport/incidents/:id — mise à jour générique d'un incident transport.
+   * ⭐ Task 8-b : route PUT manquante.
+   */
+  @Put('transport/incidents/:id')
+  async updateTransportIncident(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.transportService.updateIncident(id, tenantId, data);
+  }
+
+  /**
+   * DELETE /transport/incidents/:id — hard delete.
+   * ⭐ Task 8-b : route DELETE manquante.
+   */
+  @Delete('transport/incidents/:id')
+  async deleteTransportIncident(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.transportService.deleteIncident(id, tenantId);
   }
 
   /**
@@ -1512,6 +1817,32 @@ export class ModulesComplementairesController {
     return this.educastService.purchaseMedia(user.id, id, tenantId);
   }
 
+  /**
+   * PUT /educast/media/:id — mise à jour générique d'un média.
+   * ⭐ Task 8-b : route PUT manquante.
+   */
+  @Put('educast/media/:id')
+  async updateEduCastMedia(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.educastService.updateMedia(id, tenantId, data);
+  }
+
+  /**
+   * DELETE /educast/media/:id — soft-delete (status = 'ARCHIVED') si
+   * purchases/packItems/playlistItems existent, hard delete sinon.
+   * ⭐ Task 8-b : route DELETE manquante.
+   */
+  @Delete('educast/media/:id')
+  async deleteEduCastMedia(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.educastService.deleteMedia(id, tenantId);
+  }
+
   @Post('educast/media/:id/engage')
   async trackEduCastEngagement(
     @Param('id') id: string,
@@ -1536,6 +1867,32 @@ export class ModulesComplementairesController {
   ) {
     // Note: data.channelId should be provided from teacher channel
     return this.educastService.createPack(tenantId, academicYearId, data, data.channelId);
+  }
+
+  /**
+   * PUT /educast/packs/:id — mise à jour générique d'un pack.
+   * ⭐ Task 8-b : route PUT manquante.
+   */
+  @Put('educast/packs/:id')
+  async updateEduCastPack(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.educastService.updatePack(id, tenantId, data);
+  }
+
+  /**
+   * DELETE /educast/packs/:id — soft-delete (status = 'ARCHIVED') si purchases,
+   * hard delete sinon (items en cascade).
+   * ⭐ Task 8-b : route DELETE manquante.
+   */
+  @Delete('educast/packs/:id')
+  async deleteEduCastPack(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.educastService.deletePack(id, tenantId);
   }
 
   // Financials
@@ -1571,6 +1928,31 @@ export class ModulesComplementairesController {
     return this.educastService.createWebinar(tenantId, academicYearId, data, user.id);
   }
 
+  /**
+   * PUT /educast/webinars/:id — mise à jour générique d'un webinaire.
+   * ⭐ Task 8-b : route PUT manquante.
+   */
+  @Put('educast/webinars/:id')
+  async updateEduCastWebinar(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.educastService.updateWebinar(id, tenantId, data);
+  }
+
+  /**
+   * DELETE /educast/webinars/:id — hard delete (pas d'enfants).
+   * ⭐ Task 8-b : route DELETE manquante.
+   */
+  @Delete('educast/webinars/:id')
+  async deleteEduCastWebinar(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.educastService.deleteWebinar(id, tenantId);
+  }
+
   @Get('educast/playlists')
   async getEduCastPlaylists(
     @TenantId() tenantId: string,
@@ -1590,6 +1972,31 @@ export class ModulesComplementairesController {
     return this.educastService.createPlaylist(tenantId, academicYearId, data, user.id);
   }
 
+  /**
+   * PUT /educast/playlists/:id — mise à jour générique d'une playlist.
+   * ⭐ Task 8-b : route PUT manquante.
+   */
+  @Put('educast/playlists/:id')
+  async updateEduCastPlaylist(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.educastService.updatePlaylist(id, tenantId, data);
+  }
+
+  /**
+   * DELETE /educast/playlists/:id — hard delete (cascade items).
+   * ⭐ Task 8-b : route DELETE manquante.
+   */
+  @Delete('educast/playlists/:id')
+  async deleteEduCastPlaylist(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.educastService.deletePlaylist(id, tenantId);
+  }
+
   @Get('educast/announcements')
   async getEduCastAnnouncements(@TenantId() tenantId: string, @Query('academicYearId') academicYearId: string) {
     return this.educastService.findAllAnnouncements(tenantId, academicYearId);
@@ -1603,6 +2010,31 @@ export class ModulesComplementairesController {
     @Body() data: any,
   ) {
     return this.educastService.createAnnouncement(tenantId, academicYearId, data, user.id);
+  }
+
+  /**
+   * PUT /educast/announcements/:id — mise à jour générique d'une annonce.
+   * ⭐ Task 8-b : route PUT manquante.
+   */
+  @Put('educast/announcements/:id')
+  async updateEduCastAnnouncement(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: any,
+  ) {
+    return this.educastService.updateAnnouncement(id, tenantId, data);
+  }
+
+  /**
+   * DELETE /educast/announcements/:id — hard delete.
+   * ⭐ Task 8-b : route DELETE manquante.
+   */
+  @Delete('educast/announcements/:id')
+  async deleteEduCastAnnouncement(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+  ) {
+    return this.educastService.deleteAnnouncement(id, tenantId);
   }
 
   @Get('educast/settings')

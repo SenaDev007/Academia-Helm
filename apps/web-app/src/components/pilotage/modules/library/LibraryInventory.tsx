@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * LIBRARY INVENTORY — Branché sur backend réel
+ * LIBRARY INVENTORY — Branché sur backend réel (Standardisé)
  * ============================================================================
  *
  * Endpoint (création campagne) : POST /modules-complementaires/library/inventory/campaigns
@@ -14,10 +14,16 @@
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { ClipboardCheck, Barcode, ShieldCheck, AlertCircle, Plus, ChevronRight, PackageSearch, Loader2 } from 'lucide-react';
+import { ClipboardCheck, Barcode, Plus, ChevronRight, PackageSearch, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 interface NewCampaignFormData {
   title: string;
@@ -28,6 +34,7 @@ const emptyCampaignForm: NewCampaignFormData = { title: '', period: '' };
 
 export default function LibraryInventory() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const [modalOpen, setModalOpen] = useState(false);
   const [scanModalOpen, setScanModalOpen] = useState(false);
   const [campaignForm, setCampaignForm] = useState<NewCampaignFormData>(emptyCampaignForm);
@@ -45,10 +52,10 @@ export default function LibraryInventory() {
       );
       setModalOpen(false);
       setCampaignForm(emptyCampaignForm);
-      alert('Campagne d\'inventaire créée avec succès.');
+      toast({ title: 'Campagne créée', description: "La campagne d'inventaire a été créée avec succès." });
     } catch (e: any) {
       console.error('Erreur création campagne :', e?.message || e);
-      alert(e?.message || 'Erreur lors de la création de la campagne');
+      toast({ title: 'Erreur', description: e?.message || 'Erreur lors de la création de la campagne', variant: 'destructive' });
     } finally {
       setSubmittingCampaign(false);
     }
@@ -64,10 +71,10 @@ export default function LibraryInventory() {
       );
       setScanModalOpen(false);
       setScanCode('');
-      alert('Exemplaire scanné avec succès.');
+      toast({ title: 'Exemplaire scanné', description: 'Le scan a été enregistré avec succès.' });
     } catch (e: any) {
       console.error('Erreur scan :', e?.message || e);
-      alert(e?.message || 'Erreur lors du scan');
+      toast({ title: 'Erreur', description: e?.message || 'Erreur lors du scan', variant: 'destructive' });
     } finally {
       setSubmittingScan(false);
     }
@@ -80,60 +87,46 @@ export default function LibraryInventory() {
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header & Quick Action */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
-          <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter flex items-center">
-            <PackageSearch className="w-6 h-6 mr-3 text-blue-600" />
+          <h3 className="text-lg font-semibold text-slate-900 flex items-center">
+            <PackageSearch className="w-5 h-5 mr-2 text-blue-600" />
             Campagnes d'Inventaire
           </h3>
-          <p className="text-slate-500 text-sm font-medium">Contrôlez l'intégrité de votre patrimoine documentaire.</p>
+          <p className="text-slate-500 text-sm">Contrôlez l'intégrité de votre patrimoine documentaire.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setScanModalOpen(true)}
-            className="flex items-center space-x-2 px-6 py-3 bg-white border border-slate-200 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-50 transition-all"
-          >
-            <Barcode className="w-4 h-4 text-slate-400" />
-            <span>Mode Scan</span>
-          </button>
-          <button
-            onClick={() => setModalOpen(true)}
-            className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/10"
-          >
-            <Plus className="w-4 h-4 text-[#C9A84C]" />
-            <span>Nouvelle Campagne</span>
-          </button>
+          <Button variant="outline" onClick={() => setScanModalOpen(true)}>
+            <Barcode className="w-4 h-4 mr-2" /> Mode Scan
+          </Button>
+          <Button onClick={() => setModalOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" /> Nouvelle Campagne
+          </Button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6">
-        {campaigns.map((camp, i) => (
-          <motion.div
-            key={camp.id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-            className="bg-white rounded-3xl border border-slate-200 p-8 shadow-sm hover:shadow-xl transition-all group"
-          >
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8">
-              <div className="space-y-4 flex-1">
+        {campaigns.map((camp) => (
+          <Card key={camp.id} className="p-6 shadow-sm hover:shadow-md transition-all">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+              <div className="space-y-3 flex-1">
                 <div className="flex items-center gap-3">
-                  <h4 className="text-xl font-black text-slate-900 group-hover:text-blue-600 transition-colors">{camp.title}</h4>
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                    camp.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-600' :
-                    camp.status === 'VALIDATED' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-400'
-                  }`}>
+                  <h4 className="text-lg font-semibold text-slate-900">{camp.title}</h4>
+                  <Badge variant="outline" className={
+                    camp.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                    camp.status === 'VALIDATED' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-slate-50 text-slate-500'
+                  }>
                     {camp.status}
-                  </span>
+                  </Badge>
                 </div>
                 <div className="flex items-center gap-6">
-                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
+                  <div className="text-xs text-slate-400 flex items-center">
                     <ClipboardCheck className="w-3.5 h-3.5 mr-2" />
                     Période: {camp.period}
                   </div>
-                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
+                  <div className="text-xs text-slate-400 flex items-center">
                     <Barcode className="w-3.5 h-3.5 mr-2" />
                     ID: {camp.id}
                   </div>
@@ -141,112 +134,98 @@ export default function LibraryInventory() {
               </div>
 
               <div className="flex-1 max-w-sm">
-                <div className="flex justify-between text-[10px] font-black uppercase tracking-widest mb-2">
+                <div className="flex justify-between text-xs mb-2">
                   <span className="text-slate-500">Progression</span>
-                  <span className="text-slate-900">{camp.progress}% ({camp.found}/{camp.total})</span>
+                  <span className="text-slate-900 font-semibold">{camp.progress}% ({camp.found}/{camp.total})</span>
                 </div>
-                <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200">
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${camp.progress}%` }}
-                    className={`h-full rounded-full ${camp.progress === 100 ? 'bg-emerald-500' : 'bg-blue-600'}`}
+                <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${camp.progress === 100 ? 'bg-emerald-500' : 'bg-blue-600'}`}
+                    style={{ width: `${camp.progress}%` }}
                   />
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <button className="flex items-center px-6 py-3 bg-slate-50 hover:bg-navy-900 hover:text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all">
+                <Button variant="outline">
                   Rapport
                   <ChevronRight className="w-4 h-4 ml-2" />
-                </button>
+                </Button>
               </div>
             </div>
-          </motion.div>
+          </Card>
         ))}
       </div>
 
       {/* Modal Nouvelle Campagne */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <h3 className="text-lg font-black text-slate-900">Nouvelle Campagne d&rsquo;Inventaire</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Titre</label>
-                <input
-                  type="text"
-                  placeholder="ex : Inventaire Annuel - Section Collège"
-                  value={campaignForm.title}
-                  onChange={(e) => setCampaignForm({ ...campaignForm, title: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Période</label>
-                <input
-                  type="text"
-                  placeholder="ex : Mai 2026"
-                  value={campaignForm.period}
-                  onChange={(e) => setCampaignForm({ ...campaignForm, period: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nouvelle Campagne d&rsquo;Inventaire</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="camp-title">Titre</Label>
+              <Input
+                id="camp-title"
+                type="text"
+                placeholder="ex : Inventaire Annuel - Section Collège"
+                value={campaignForm.title}
+                onChange={(e) => setCampaignForm({ ...campaignForm, title: e.target.value })}
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                onClick={() => setModalOpen(false)}
-                disabled={submittingCampaign}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handleCreateCampaign}
-                disabled={submittingCampaign}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-              >
-                {submittingCampaign ? 'Envoi…' : 'Créer'}
-              </button>
+            <div className="space-y-1.5">
+              <Label htmlFor="camp-period">Période</Label>
+              <Input
+                id="camp-period"
+                type="text"
+                placeholder="ex : Mai 2026"
+                value={campaignForm.period}
+                onChange={(e) => setCampaignForm({ ...campaignForm, period: e.target.value })}
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)} disabled={submittingCampaign}>
+              Annuler
+            </Button>
+            <Button onClick={handleCreateCampaign} disabled={submittingCampaign}>
+              {submittingCampaign && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submittingCampaign ? 'Envoi…' : 'Créer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal Mode Scan */}
-      {scanModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <h3 className="text-lg font-black text-slate-900">Scanner un exemplaire</h3>
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Code-barres / ID</label>
-              <input
+      <Dialog open={scanModalOpen} onOpenChange={setScanModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Scanner un exemplaire</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="scan-code">Code-barres / ID</Label>
+              <Input
+                id="scan-code"
                 type="text"
                 placeholder="ex : BC-1234"
                 value={scanCode}
                 onChange={(e) => setScanCode(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                onClick={() => setScanModalOpen(false)}
-                disabled={submittingScan}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handleScan}
-                disabled={submittingScan}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-              >
-                {submittingScan ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                {submittingScan ? 'Scan…' : 'Scanner'}
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setScanModalOpen(false)} disabled={submittingScan}>
+              Annuler
+            </Button>
+            <Button onClick={handleScan} disabled={submittingScan}>
+              {submittingScan && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submittingScan ? 'Scan…' : 'Scanner'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * LIBRARY CATALOG — Branché sur backend réel
+ * LIBRARY CATALOG — Branché sur backend réel (Standardisé)
  * ============================================================================
  *
  * Endpoint (lecture)        : GET  /modules-complementaires/library/books
@@ -12,11 +12,17 @@
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Search, Filter, BookOpen, MoreVertical, Bookmark, Star, ChevronRight, Loader2, Plus } from 'lucide-react';
+import { Search, Filter, BookOpen, Bookmark, Star, ChevronRight, Loader2, Plus } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 interface BookItem {
   id: string;
@@ -43,6 +49,7 @@ const emptyBookForm: NewBookFormData = { title: '', author: '', category: '', to
 
 export default function LibraryCatalog() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -64,9 +71,10 @@ export default function LibraryCatalog() {
         buildModulesApiOptions(academicYear?.id),
       );
       await refetch();
+      toast({ title: 'Favori mis à jour', description: 'Le statut favori du livre a été modifié.' });
     } catch (e: any) {
       console.error('Erreur favori :', e?.message || e);
-      alert(e?.message || 'Erreur lors de la mise à jour du favori');
+      toast({ title: 'Erreur', description: e?.message || 'Erreur lors de la mise à jour du favori', variant: 'destructive' });
     } finally {
       setActionLoading(null);
     }
@@ -83,9 +91,10 @@ export default function LibraryCatalog() {
       setModalOpen(false);
       setFormData(emptyBookForm);
       await refetch();
+      toast({ title: 'Livre créé', description: 'Le nouveau livre a été ajouté au catalogue.' });
     } catch (e: any) {
       console.error('Erreur création livre :', e?.message || e);
-      alert(e?.message || 'Erreur lors de la création du livre');
+      toast({ title: 'Erreur', description: e?.message || 'Erreur lors de la création du livre', variant: 'destructive' });
     } finally {
       setSubmitting(false);
     }
@@ -112,34 +121,29 @@ export default function LibraryCatalog() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="relative flex-1 max-w-xl">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-          <input 
-            type="text" 
+          <Input
+            type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Rechercher par titre, auteur, ISBN..."
-            className="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-200 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500/20 outline-none transition-all shadow-sm"
+            className="w-full pl-12 pr-4 h-11"
           />
         </div>
-        <div className="flex items-center space-x-2">
-          <button className="flex items-center space-x-2 px-6 py-3.5 bg-white border border-slate-200 rounded-2xl text-slate-600 font-bold text-sm hover:bg-slate-50 transition-all">
-            <Filter className="w-4 h-4" />
-            <span>Filtres Avancés</span>
-          </button>
-          <button
-            onClick={() => setModalOpen(true)}
-            className="flex items-center space-x-2 px-4 py-3.5 bg-navy-900 text-white rounded-2xl font-bold text-sm hover:bg-navy-800 transition-all shadow-lg shadow-navy-900/10"
-          >
-            <Plus className="w-4 h-4 text-[#C9A84C]" />
-            <span>Ajouter un livre</span>
-          </button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline">
+            <Filter className="w-4 h-4 mr-2" /> Filtres Avancés
+          </Button>
+          <Button onClick={() => setModalOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" /> Ajouter un livre
+          </Button>
         </div>
       </div>
 
       {/* Catalog Grid */}
       {books.length === 0 ? (
-        <div className="text-center py-16 text-gray-500 bg-white rounded-3xl border border-slate-200">
+        <Card className="text-center py-16 text-gray-500 shadow-sm">
           Aucune donnée disponible pour cette année scolaire.
-        </div>
+        </Card>
       ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {books.map((book, i) => {
@@ -147,13 +151,7 @@ export default function LibraryCatalog() {
           const total = book.total ?? 0;
           const title = book.title ?? book.name ?? '—';
           return (
-          <motion.div
-            key={book.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.05 }}
-            className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm hover:shadow-xl hover:border-blue-200 transition-all group"
-          >
+          <Card key={book.id} className="p-6 shadow-sm hover:shadow-md hover:border-blue-200 transition-all group">
             <div className="flex gap-6">
               <div className="w-24 h-32 bg-slate-50 rounded-xl flex-shrink-0 flex items-center justify-center text-slate-300 relative overflow-hidden group-hover:scale-105 transition-transform">
                 <BookOpen className="w-8 h-8" />
@@ -164,117 +162,112 @@ export default function LibraryCatalog() {
               <div className="flex-1 space-y-3">
                 <div className="flex justify-between items-start">
                   <div>
-                    <h4 className="text-lg font-black text-slate-900 leading-tight group-hover:text-blue-600 transition-colors line-clamp-1">{title}</h4>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{book.author ?? '—'}</p>
+                    <h4 className="text-lg font-semibold text-slate-900 leading-tight group-hover:text-blue-600 transition-colors line-clamp-1">{title}</h4>
+                    <p className="text-xs text-slate-400">{book.author ?? '—'}</p>
                   </div>
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => handleToggleFavorite(book.id)}
                     disabled={actionLoading === book.id}
                     title="Ajouter aux favoris"
-                    className="p-1.5 hover:bg-slate-50 rounded-lg text-slate-300 hover:text-amber-500 transition-colors disabled:opacity-50"
+                    className="h-8 w-8"
                   >
                     <Bookmark className="w-4 h-4" />
-                  </button>
+                  </Button>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  <span className="px-2 py-1 bg-slate-100 text-slate-600 text-[9px] font-black uppercase tracking-widest rounded-lg">{book.category ?? '—'}</span>
-                  <span className="px-2 py-1 bg-blue-50 text-blue-600 text-[9px] font-black uppercase tracking-widest rounded-lg">{book.level ?? '—'}</span>
+                  <Badge variant="outline">{book.category ?? '—'}</Badge>
+                  <Badge variant="outline" className="bg-blue-50 text-blue-600 border-blue-100">{book.level ?? '—'}</Badge>
                 </div>
 
                 <div className="pt-2 flex items-end justify-between">
                   <div>
-                    <p className="text-xs font-bold text-slate-500">Disponibilité</p>
+                    <p className="text-xs font-medium text-slate-500">Disponibilité</p>
                     <div className="flex items-center gap-2">
                       <div className="flex gap-1">
                         {[1, 2, 3, 4, 5].map((dot) => (
                           <div key={dot} className={`w-1.5 h-1.5 rounded-full ${availability >= (total / 5) * dot ? 'bg-emerald-500' : 'bg-slate-100'}`} />
                         ))}
                       </div>
-                      <span className={`text-[10px] font-black ${availability > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      <Badge variant={availability > 0 ? 'outline' : 'destructive'} className={availability > 0 ? 'text-emerald-600 border-emerald-100' : ''}>
                         {availability}/{total}
-                      </span>
+                      </Badge>
                     </div>
                   </div>
-                  <button className="flex items-center text-blue-600 font-black text-xs uppercase tracking-widest hover:translate-x-1 transition-transform">
+                  <Button variant="link" className="text-blue-600 h-auto p-0">
                     Détails
                     <ChevronRight className="w-4 h-4 ml-1" />
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
-          </motion.div>
+          </Card>
           );
         })}
       </div>
       )}
 
       {/* Modal Ajouter un livre */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <h3 className="text-lg font-black text-slate-900">Ajouter un livre</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Titre</label>
-                <input
-                  type="text"
-                  placeholder="Titre du livre"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Auteur</label>
-                <input
-                  type="text"
-                  placeholder="Auteur"
-                  value={formData.author}
-                  onChange={(e) => setFormData({ ...formData, author: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Catégorie</label>
-                <input
-                  type="text"
-                  placeholder="ex : Sciences, Littérature..."
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nombre d'exemplaires</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={formData.total}
-                  onChange={(e) => setFormData({ ...formData, total: Number(e.target.value) })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ajouter un livre</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="book-title">Titre</Label>
+              <Input
+                id="book-title"
+                type="text"
+                placeholder="Titre du livre"
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                onClick={() => setModalOpen(false)}
-                disabled={submitting}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handleCreateBook}
-                disabled={submitting}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-              >
-                {submitting ? 'Envoi…' : 'Créer'}
-              </button>
+            <div className="space-y-1.5">
+              <Label htmlFor="book-author">Auteur</Label>
+              <Input
+                id="book-author"
+                type="text"
+                placeholder="Auteur"
+                value={formData.author}
+                onChange={(e) => setFormData({ ...formData, author: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="book-category">Catégorie</Label>
+              <Input
+                id="book-category"
+                type="text"
+                placeholder="ex : Sciences, Littérature..."
+                value={formData.category}
+                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="book-total">Nombre d'exemplaires</Label>
+              <Input
+                id="book-total"
+                type="number"
+                min={1}
+                value={formData.total}
+                onChange={(e) => setFormData({ ...formData, total: Number(e.target.value) })}
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)} disabled={submitting}>
+              Annuler
+            </Button>
+            <Button onClick={handleCreateBook} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Envoi…' : 'Créer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

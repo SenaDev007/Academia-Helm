@@ -1,13 +1,16 @@
 /**
  * ============================================================================
- * QHSE SECURITE SCOLAIRE
+ * QHSE SECURITE SCOLAIRE (Standardisé)
  * ============================================================================
  */
 
 'use client';
 
-import { motion } from 'framer-motion';
-import { HardHat, Lock, ShieldCheck, Video, Users, Bell, Eye, Search, Plus, Map, Radio, Loader2 } from 'lucide-react';
+import { ShieldCheck, Lock, Video, Users, Bell, Eye, Radio, Map, Loader2 } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 
@@ -39,6 +42,7 @@ function pickLabelIcon(label?: string) {
 
 export default function QHSESecurity() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const { data: securityItems, loading, error } = useModulesList<SecurityItem>('qhse', 'security', academicYear?.id);
 
   if (loading) {
@@ -51,7 +55,7 @@ export default function QHSESecurity() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les données. {error}
@@ -59,31 +63,32 @@ export default function QHSESecurity() {
       )}
 
       {/* Real-time Monitoring Bar */}
-      <div className="bg-navy-900 text-white p-6 rounded-[2rem] flex items-center justify-between shadow-xl shadow-navy-900/20">
+      <div className="bg-slate-900 text-white p-6 rounded-xl flex items-center justify-between shadow-xl">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Système Live</span>
+            <span className="text-xs font-semibold text-emerald-400">Système Live</span>
           </div>
-          <div className="flex items-center gap-4 text-xs font-bold text-white/60 uppercase tracking-widest border-l border-white/10 pl-6">
+          <div className="flex items-center gap-4 text-xs text-white/60 border-l border-white/10 pl-6">
             <Radio className="w-4 h-4" /> {securityItems.length} Équipements suivis
           </div>
-          <div className="flex items-center gap-4 text-xs font-bold text-white/60 uppercase tracking-widest border-l border-white/10 pl-6">
+          <div className="flex items-center gap-4 text-xs text-white/60 border-l border-white/10 pl-6">
             <Users className="w-4 h-4" /> 45 Visiteurs déclarés
           </div>
         </div>
-        <button
-          onClick={() => alert('Bientôt disponible')}
-          className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+        <Button
+          variant="secondary"
+          className="bg-white/10 hover:bg-white/20 text-white"
+          onClick={() => toast({ title: 'Information', description: 'Poste de contrôle — fonctionnalité à venir.' })}
         >
           Accéder au Poste de Contrôle
-        </button>
+        </Button>
       </div>
 
       {securityItems.length === 0 ? (
-        <div className="text-center py-16 text-slate-500 bg-white rounded-[2.5rem] border border-slate-100">
+        <Card className="text-center py-16 text-slate-500 shadow-sm">
           Aucun équipement de sécurité enregistré pour cette année scolaire.
-        </div>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {securityItems.map((item, i) => {
@@ -94,77 +99,71 @@ export default function QHSESecurity() {
             const status = item.status || 'OPERATIONNEL';
             const lastCheck = item.lastCheck || item.lastCheckedAt || '—';
             return (
-              <motion.div
-                key={item.id ?? i}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.1 }}
-                className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col items-center text-center group hover:shadow-xl transition-all"
-              >
-                <div className={`p-5 rounded-3xl ${bg} ${color} mb-6 group-hover:scale-110 transition-transform`}>
+              <Card key={item.id ?? i} className="p-6 shadow-sm flex flex-col items-center text-center hover:shadow-md transition-all">
+                <div className={`p-5 rounded-xl ${bg} ${color} mb-4`}>
                   <Icon className="w-8 h-8" />
                 </div>
-                <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight mb-1">{label}</h4>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">{lastCheck}</p>
-                <span className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border ${
-                  status === 'OPERATIONNEL' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
+                <h4 className="text-sm font-semibold text-slate-900 mb-1">{label}</h4>
+                <p className="text-xs text-slate-400 mb-3">{lastCheck}</p>
+                <Badge variant="outline" className={
+                  status === 'OPERATIONNEL' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
                   status === 'MAINTENANCE' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-rose-50 text-rose-600 border-rose-100'
-                }`}>
+                }>
                   {status}
-                </span>
-              </motion.div>
+                </Badge>
+              </Card>
             );
           })}
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Visitors Log */}
-        <div className="bg-white rounded-[2.5rem] border border-slate-100 p-8 space-y-6 shadow-sm">
+        <Card className="p-6 space-y-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter flex items-center">
-              <Users className="w-6 h-6 mr-3 text-slate-400" /> Registre Visiteurs
+            <h3 className="text-lg font-semibold text-slate-900 flex items-center">
+              <Users className="w-5 h-5 mr-2 text-slate-400" /> Registre Visiteurs
             </h3>
-            <button className="text-emerald-600 font-black text-[10px] uppercase tracking-widest hover:underline">Voir Tout</button>
+            <Button variant="link" className="text-emerald-600 h-auto p-0">Voir Tout</Button>
           </div>
-          <div className="space-y-4">
+          <div className="space-y-3">
             {/* TODO: endpoint dédié au registre visiteurs non disponible, données locales */}
             {[
               { id: 1, name: 'Jean Dupont', target: 'Mme Koffi', time: '08:15', type: 'Parent' },
               { id: 2, name: 'Saliou Service', target: 'Direction', time: '09:30', type: 'Fournisseur' },
               { id: 3, name: 'Amina Diallo', target: 'Secrétariat', time: '10:15', type: 'Ancien élève' },
             ].map((v) => (
-              <div key={v.id} className="p-4 bg-slate-50/50 rounded-2xl flex items-center justify-between group cursor-pointer hover:bg-slate-50 transition-all">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-slate-400 font-black text-xs">
+              <div key={v.id} className="p-4 bg-slate-50 rounded-xl flex items-center justify-between hover:bg-slate-100 transition-all">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-slate-400 font-semibold text-xs">
                     {v.name[0]}
                   </div>
                   <div>
-                    <p className="text-sm font-black text-slate-900 leading-tight">{v.name}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{v.type} • Rdv avec {v.target}</p>
+                    <p className="text-sm font-semibold text-slate-900 leading-tight">{v.name}</p>
+                    <p className="text-xs text-slate-400">{v.type} • Rdv avec {v.target}</p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs font-black text-slate-900">{v.time}</p>
-                  <p className="text-[8px] font-black text-emerald-600 uppercase tracking-widest">Entrée Validée</p>
+                  <p className="text-xs font-semibold text-slate-900">{v.time}</p>
+                  <p className="text-xs text-emerald-600">Entrée Validée</p>
                 </div>
               </div>
             ))}
           </div>
-        </div>
+        </Card>
 
         {/* Security Map Preview */}
-        <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white flex flex-col justify-center items-center relative overflow-hidden shadow-xl shadow-slate-900/20 group">
-          <Map className="w-24 h-24 mb-6 text-white/20 group-hover:scale-110 transition-transform" />
-          <h3 className="text-2xl font-black uppercase tracking-tighter text-center">Plan d'Évacuation & Points Chauds</h3>
-          <p className="text-sm font-medium text-white/40 mt-2 text-center max-w-xs">Visualisez l'état sécuritaire de chaque bâtiment en temps réel.</p>
-          <button
-            onClick={() => alert('Bientôt disponible')}
-            className="mt-8 px-8 py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-600/20 hover:bg-emerald-500 transition-all"
+        <div className="bg-slate-900 rounded-xl p-8 text-white flex flex-col justify-center items-center relative overflow-hidden shadow-xl">
+          <Map className="w-24 h-24 mb-6 text-white/20" />
+          <h3 className="text-2xl font-semibold text-center">Plan d'Évacuation & Points Chauds</h3>
+          <p className="text-sm text-white/40 mt-2 text-center max-w-xs">Visualisez l'état sécuritaire de chaque bâtiment en temps réel.</p>
+          <Button
+            className="mt-6 bg-emerald-600 hover:bg-emerald-500"
+            onClick={() => toast({ title: 'Information', description: 'Carte interactive — fonctionnalité à venir.' })}
           >
             Ouvrir la Carte Interactive
-          </button>
-          <div className="absolute top-6 right-6 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full border border-white/10 text-[8px] font-black uppercase tracking-widest">
+          </Button>
+          <div className="absolute top-6 right-6 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full border border-white/10 text-xs">
             3 Zones Sensibles
           </div>
         </div>

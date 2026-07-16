@@ -1,17 +1,23 @@
 /**
  * ============================================================================
- * QHSE RISKS & PREVENTION
+ * QHSE RISKS & PREVENTION (Standardisé)
  * ============================================================================
  */
 
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { ShieldAlert, Activity, ArrowUpRight, Zap, Droplets, Flame, Users, Lock, MoreVertical, Loader2, Plus, X } from 'lucide-react';
+import { ShieldAlert, Droplets, Zap, Flame, Lock, MoreVertical, Loader2, Plus, X } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 interface RiskItem {
   id: string | number;
@@ -38,6 +44,7 @@ const EMPTY_FORM = { title: '', category: 'SECURITE', probability: 3, impact: 3 
 
 export default function QHSERisks() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const { data: risks, loading, error, refetch } = useModulesList<RiskItem>('qhse', 'risks', academicYear?.id);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -46,7 +53,7 @@ export default function QHSERisks() {
 
   const handleCreate = async () => {
     if (!formData.title) {
-      alert('Le titre est requis');
+      toast({ title: 'Champ requis', description: 'Le titre est requis', variant: 'destructive' });
       return;
     }
     try {
@@ -55,8 +62,9 @@ export default function QHSERisks() {
       setModalOpen(false);
       setFormData(EMPTY_FORM);
       await refetch();
+      toast({ title: 'Risque créé', description: 'Le risque a été ajouté au registre.' });
     } catch (e: any) {
-      alert(e?.message || 'Erreur lors de la création du risque');
+      toast({ title: 'Erreur', description: e?.message || 'Erreur lors de la création du risque', variant: 'destructive' });
     } finally {
       setSubmitting(false);
     }
@@ -72,7 +80,7 @@ export default function QHSERisks() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les données. {error}
@@ -80,20 +88,17 @@ export default function QHSERisks() {
       )}
 
       <div className="flex justify-end">
-        <button
-          onClick={() => setModalOpen(true)}
-          className="px-6 py-3 bg-rose-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-rose-600/20 hover:bg-rose-700 transition-all flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
+        <Button variant="destructive" onClick={() => setModalOpen(true)}>
+          <Plus className="w-4 h-4 mr-2" />
           Nouveau Risque
-        </button>
+        </Button>
       </div>
 
       {/* Risk Matrix Preview */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        <div className="lg:col-span-1 space-y-6">
-          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
-            <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Matrice de Criticité</h4>
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="lg:col-span-1 space-y-4">
+          <Card className="p-6 shadow-sm space-y-4">
+            <h4 className="text-sm font-semibold text-slate-900">Matrice de Criticité</h4>
             <div className="aspect-square grid grid-cols-5 grid-rows-5 gap-1">
               {Array.from({ length: 25 }).map((_, i) => {
                 const x = i % 5;
@@ -108,25 +113,25 @@ export default function QHSERisks() {
               })}
             </div>
             <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-slate-400">
+              <div className="flex items-center gap-2 text-xs text-slate-400">
                 <div className="w-2 h-2 rounded-full bg-rose-500" /> Critique
               </div>
-              <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-slate-400">
+              <div className="flex items-center gap-2 text-xs text-slate-400">
                 <div className="w-2 h-2 rounded-full bg-amber-400" /> Élevé
               </div>
-              <div className="flex items-center gap-2 text-[8px] font-black uppercase tracking-widest text-slate-400">
+              <div className="flex items-center gap-2 text-xs text-slate-400">
                 <div className="w-2 h-2 rounded-full bg-emerald-400" /> Modéré
               </div>
             </div>
-          </div>
+          </Card>
         </div>
 
         {/* Risk Cards */}
         <div className="lg:col-span-3">
           {risks.length === 0 ? (
-            <div className="text-center py-16 text-slate-500 bg-white rounded-[2.5rem] border border-slate-100">
+            <Card className="text-center py-16 text-slate-500 shadow-sm">
               Aucun risque enregistré pour cette année scolaire.
-            </div>
+            </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {risks.map((risk, i) => {
@@ -135,48 +140,41 @@ export default function QHSERisks() {
                 const bg = risk.bg || 'bg-slate-50';
                 const criticite = risk.criticite || risk.criticality || 'MOYEN';
                 return (
-                  <motion.div
-                    key={risk.id ?? i}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.1 }}
-                    className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all group"
-                  >
-                    <div className="flex items-center justify-between mb-8">
-                      <div className={`p-4 rounded-2xl ${bg} ${color}`}>
+                  <Card key={risk.id ?? i} className="p-6 shadow-sm hover:shadow-md transition-all">
+                    <div className="flex items-center justify-between mb-6">
+                      <div className={`p-4 rounded-xl ${bg} ${color}`}>
                         <Icon className="w-8 h-8" />
                       </div>
-                      <button className="p-2 hover:bg-slate-50 rounded-xl">
+                      <Button variant="ghost" size="icon" className="h-8 w-8">
                         <MoreVertical className="w-5 h-5 text-slate-300" />
-                      </button>
+                      </Button>
                     </div>
-                    
-                    <div className="space-y-4">
+
+                    <div className="space-y-3">
                       <div>
-                        <h4 className="text-xl font-black text-slate-900 tracking-tighter leading-tight">{risk.title || risk.name}</h4>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{risk.category}</p>
+                        <h4 className="text-xl font-semibold text-slate-900 leading-tight">{risk.title || risk.name}</h4>
+                        <p className="text-xs text-slate-400 mt-1">{risk.category}</p>
                       </div>
 
-                      <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                      <div className="flex items-center justify-between pt-3 border-t border-slate-100">
                         <div className="flex items-center gap-4">
                           <div className="text-center">
-                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Proba</p>
-                            <p className="text-sm font-black text-slate-900">{risk.probability ?? '—'}/5</p>
+                            <p className="text-xs text-slate-400">Proba</p>
+                            <p className="text-sm font-semibold text-slate-900">{risk.probability ?? '—'}/5</p>
                           </div>
                           <div className="text-center">
-                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Impact</p>
-                            <p className="text-sm font-black text-slate-900">{risk.impact ?? '—'}/5</p>
+                            <p className="text-xs text-slate-400">Impact</p>
+                            <p className="text-sm font-semibold text-slate-900">{risk.impact ?? '—'}/5</p>
                           </div>
                         </div>
-                        <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
-                          criticite === 'CRITIQUE' ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/20' : 
-                          criticite === 'ELEVE' || criticite === 'HIGH' ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'
-                        }`}>
+                        <Badge variant={criticite === 'CRITIQUE' ? 'destructive' : 'outline'} className={
+                          criticite === 'ELEVE' || criticite === 'HIGH' ? 'bg-amber-100 text-amber-600 border-amber-100' : ''
+                        }>
                           {criticite}
-                        </span>
+                        </Badge>
                       </div>
                     </div>
-                  </motion.div>
+                  </Card>
                 );
               })}
             </div>
@@ -185,83 +183,72 @@ export default function QHSERisks() {
       </div>
 
       {/* Modal: Nouveau risque */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900">Nouveau risque</h3>
-              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-slate-100 rounded-lg">
-                <X className="w-5 h-5 text-slate-400" />
-              </button>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nouveau risque</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="risk-title">Titre</Label>
+              <Input
+                id="risk-title"
+                type="text"
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                placeholder="Ex: Risque de chute"
+              />
             </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Titre</label>
-                <input
-                  type="text"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-rose-500/20"
-                  placeholder="Ex: Risque de chute"
+            <div className="space-y-1.5">
+              <Label htmlFor="risk-category">Catégorie</Label>
+              <select
+                id="risk-category"
+                value={formData.category}
+                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-rose-500/20"
+              >
+                <option value="SECURITE">Sécurité</option>
+                <option value="HYGIENE">Hygiène</option>
+                <option value="INFRA">Infrastructure</option>
+                <option value="ENVIRONNEMENT">Environnement</option>
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="risk-proba">Probabilité (1-5)</Label>
+                <Input
+                  id="risk-proba"
+                  type="number"
+                  min={1}
+                  max={5}
+                  value={formData.probability}
+                  onChange={(e) => setFormData({ ...formData, probability: Number(e.target.value) })}
                 />
               </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Catégorie</label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-rose-500/20"
-                >
-                  <option value="SECURITE">Sécurité</option>
-                  <option value="HYGIENE">Hygiène</option>
-                  <option value="INFRA">Infrastructure</option>
-                  <option value="ENVIRONNEMENT">Environnement</option>
-                </select>
+              <div className="space-y-1.5">
+                <Label htmlFor="risk-impact">Impact (1-5)</Label>
+                <Input
+                  id="risk-impact"
+                  type="number"
+                  min={1}
+                  max={5}
+                  value={formData.impact}
+                  onChange={(e) => setFormData({ ...formData, impact: Number(e.target.value) })}
+                />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Probabilité (1-5)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={5}
-                    value={formData.probability}
-                    onChange={(e) => setFormData({ ...formData, probability: Number(e.target.value) })}
-                    className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-rose-500/20"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Impact (1-5)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={5}
-                    value={formData.impact}
-                    onChange={(e) => setFormData({ ...formData, impact: Number(e.target.value) })}
-                    className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-rose-500/20"
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={submitting}
-                className="px-4 py-2 bg-rose-600 text-white rounded-lg text-sm font-bold hover:bg-rose-700 disabled:opacity-60 flex items-center gap-2"
-              >
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {submitting ? 'Envoi...' : 'Créer'}
-              </button>
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)}>
+              Annuler
+            </Button>
+            <Button variant="destructive" onClick={handleCreate} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Envoi...' : 'Créer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

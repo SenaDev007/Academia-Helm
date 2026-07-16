@@ -9,8 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getModalMotion } from '@/lib/motion/presets';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
-import { studentsService } from '@/services/students.service';
 import { financeService } from '@/services/finance.service';
+import { useModuleContext } from '@/hooks/useModuleContext';
 import { formatCurrency } from '@/lib/utils';
 
 export default function FeeOverrideModal({
@@ -37,30 +37,114 @@ export default function FeeOverrideModal({
   );
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Sélecteurs cascade niveau → classe → élève (pattern NewPaymentModal)
+  const [levels, setLevels] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+  const [selectedLevelId, setSelectedLevelId] = useState('');
+  const [selectedClassId, setSelectedClassId] = useState('');
+  const { academicYear } = useModuleContext();
   const { shouldReduceMotion } = useMotionBudget();
   const modalMotion = getModalMotion(shouldReduceMotion);
   const suggestionsRef = useRef<HTMLDivElement | null>(null);
 
+  // ⭐ Charge les student-accounts pour l'année académique courante.
+  // Pattern identique à NewPaymentModal : filtre par academicYearId (obligatoire),
+  // inclut student.studentEnrollments (pour le filtre par classe) + student.matricule
+  // (pour la recherche). Ne déclenche que si academicYear.id est disponible.
   useEffect(() => {
-    studentsService.getAll({ limit: '500' })
+    if (!academicYear?.id) { setStudents([]); return; }
+    financeService.getStudentAccounts({ academicYearId: academicYear.id })
       .then((d) => setStudents(Array.isArray(d) ? d : d?.data ?? []))
       .catch(() => setStudents([]));
+  }, [academicYear?.id]);
+
+  // Charge les niveaux scolaires activés
+  useEffect(() => {
+    fetch('/api/school-levels')
+      .then((r) => r.json())
+      .then((d) => setLevels(Array.isArray(d) ? d.filter((l: any) => l.id !== 'ALL') : []))
+      .catch(() => setLevels([]));
   }, []);
 
-  // Filtrage pour l'autocomplétion (10 suggestions max)
-  const filteredStudents = useMemo(() => {
-    if (!searchQuery.trim()) return [];
-    const q = searchQuery.toLowerCase().trim();
-    return students
-      .filter((s) =>
-        `${s.lastName || ''} ${s.firstName || ''} ${s.matricule || ''} ${s.studentCode || ''}`
-          .toLowerCase()
-          .includes(q),
-      )
-      .slice(0, 10);
-  }, [students, searchQuery]);
+  // Charge les classes (toutes — filtrées par niveau côté client)
+  useEffect(() => {
+    fetch('/api/all-classes', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => {
+        const list = Array.isArray(d) ? d : (d.data ?? []);
+        setClasses(list);
+      })
+      .catch(() => setClasses([]));
+  }, []);
 
-  const selectedStudent = students.find((s) => s.id === studentId);
+  // Classes filtrées par niveau sélectionné
+  const filteredClasses = useMemo(() => {
+    if (!selectedLevelId) return classes;
+    const selectedLevel = levels.find((l) => l.id === selectedLevelId);
+    const schoolLevelId = selectedLevel?.schoolLevelId || selectedLevelId;
+    return classes.filter((c: any) =>
+      c.schoolLevelId === schoolLevelId ||
+      c.schoolLevel?.code === selectedLevel?.code ||
+      c.schoolLevel?.id === schoolLevelId
+    );
+  }, [classes, selectedLevelId, levels]);
+
+  // Filtrage pour l'autocomplétion (10 suggestions max).
+  // Combine filtres : niveau + classe + recherche par nom/prénom/matricule.
+  // ⚠️ Les student-accounts ont la structure :
+  //   { id, studentId, student: { firstName, lastName, matricule, studentEnrollments: [...] } }
+  const filteredStudents = useMemo(() => {
+    let result = students;
+
+    // Filtre par niveau : on récupère les classIds rattachés au niveau sélectionné,
+    // puis on ne garde que les accounts dont l'élève a une inscription dans l'une de ces classes.
+    if (selectedLevelId) {
+      const selectedLevel = levels.find((l) => l.id === selectedLevelId);
+      const schoolLevelId = selectedLevel?.schoolLevelId || selectedLevelId;
+      const levelCode = selectedLevel?.code;
+      const levelClassIds = new Set(
+        classes
+          .filter((c: any) =>
+            c.schoolLevelId === schoolLevelId ||
+            c.schoolLevel?.code === levelCode ||
+            c.schoolLevel?.id === schoolLevelId
+          )
+          .map((c: any) => c.id)
+      );
+      result = result.filter((a: any) => {
+        const enrollments = a.student?.studentEnrollments ?? a.studentEnrollments ?? [];
+        return enrollments.some((e: any) => levelClassIds.has(e.classId));
+      });
+    }
+
+    // Filtre par classe : ne garder que les accounts dont l'élève est inscrit dans la classe.
+    if (selectedClassId) {
+      result = result.filter((a: any) => {
+        const enrollments = a.student?.studentEnrollments ?? a.studentEnrollments ?? [];
+        return enrollments.some((e: any) => e.classId === selectedClassId);
+      });
+    }
+
+    // Filtre par recherche (nom/prénom/matricule/code étudiant)
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      result = result.filter((a: any) => {
+        const s = a.student ?? a;
+        const name = `${s.lastName || ''} ${s.firstName || ''} ${s.matricule || ''} ${s.studentCode || ''}`.toLowerCase();
+        return name.includes(q);
+      });
+    }
+
+    return result.slice(0, 10);
+  }, [students, selectedLevelId, selectedClassId, searchQuery, levels, classes]);
+
+  // ⭐ `students` contient maintenant des student-accounts ; on match par `studentId`
+  // (l'ID de l'élève, pas celui de l'account) car overrideFeeStructure attend un studentId.
+  // On renvoie l'objet `student` imbriqué pour préserver l'API interne (selectedStudent.lastName, etc.).
+  const selectedStudent = useMemo(() => {
+    const acc = students.find((a: any) => a.studentId === studentId);
+    return acc?.student ?? null;
+  }, [students, studentId]);
   const selectedFee = structures.find((s) => s.id === feeStructureId);
   // En mode édition, utiliser le feeStructure de l'override comme fallback
   // (structures peut ne pas être encore chargé au montage du modal)
@@ -102,10 +186,12 @@ export default function FeeOverrideModal({
     setReductionPercent((prev) => prev === '' ? pct.toFixed(2) : prev);
   }, [isEdit, editingOverride, originalAmount]);
 
-  // Sélection d'un élève depuis les suggestions
-  const selectStudent = (s: any) => {
-    setStudentId(s.id);
-    setSearchQuery(`${s.lastName} ${s.firstName}`);
+  // Sélection d'un élève depuis les suggestions.
+  // `a` est un student-account ; on stocke `a.studentId` (l'ID de l'élève) dans `studentId`.
+  const selectStudent = (a: any) => {
+    setStudentId(a.studentId);
+    const s = a.student ?? a;
+    setSearchQuery(`${s.lastName || ''} ${s.firstName || ''}`.trim());
     setShowSuggestions(false);
   };
 
@@ -195,6 +281,39 @@ export default function FeeOverrideModal({
           </button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Sélecteurs cascade : Niveau scolaire → Classe (filtre les élèves ci-dessous) */}
+          {!isEdit && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Niveau scolaire</Label>
+                <Select value={selectedLevelId || 'ALL'} onValueChange={(v) => {
+                  setSelectedLevelId(v === 'ALL' ? '' : v);
+                  setSelectedClassId('');
+                  setStudentId('');
+                }}>
+                  <SelectTrigger><SelectValue placeholder="Tous les niveaux" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">Tous les niveaux</SelectItem>
+                    {levels.map((l) => (<SelectItem key={l.id} value={l.id}>{l.label ?? l.code ?? l.name}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Classe</Label>
+                <Select value={selectedClassId || 'ALL'} onValueChange={(v) => {
+                  setSelectedClassId(v === 'ALL' ? '' : v);
+                  setStudentId('');
+                }}>
+                  <SelectTrigger><SelectValue placeholder="Toutes les classes" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">Toutes les classes</SelectItem>
+                    {filteredClasses.map((c: any) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
           {/* Recherche d'élève avec autocomplétion — input + dropdown de suggestions */}
           <div>
             <Label>Rechercher un élève</Label>
@@ -231,27 +350,29 @@ export default function FeeOverrideModal({
                       Aucun élève trouvé pour « {searchQuery} »
                     </p>
                   ) : (
-                    filteredStudents.map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => selectStudent(s)}
-                        className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-slate-100 last:border-b-0 transition-colors flex items-center gap-2"
-                      >
-                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                          <User className="w-4 h-4 text-blue-600" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-slate-800 truncate">
-                            {s.lastName} {s.firstName}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            {s.matricule ? `Matricule: ${s.matricule}` : s.studentCode ? `Code: ${s.studentCode}` : '—'}
-                            {s.class ? ` · ${s.class.name}` : ''}
-                          </p>
-                        </div>
-                      </button>
-                    ))
+                    filteredStudents.map((a) => {
+                      const s = a.student ?? a;
+                      return (
+                        <button
+                          key={a.id ?? a.studentId}
+                          type="button"
+                          onClick={() => selectStudent(a)}
+                          className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-slate-100 last:border-b-0 transition-colors flex items-center gap-2"
+                        >
+                          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                            <User className="w-4 h-4 text-blue-600" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-slate-800 truncate">
+                              {s.lastName || ''} {s.firstName || ''}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {s.matricule ? `Matricule: ${s.matricule}` : s.studentCode ? `Code: ${s.studentCode}` : '—'}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })
                   )}
                 </div>
               )}

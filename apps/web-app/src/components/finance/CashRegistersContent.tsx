@@ -278,6 +278,8 @@ function AnimatedBalance({ amount, className = '', isMain = false }: { amount: n
 const PREDEFINED_CAISSES = [
   { name: 'Caisse principale', code: 'MAIN', location: 'Bureau de la Direction', description: 'Coffre-fort principal de l\'établissement — toutes les recettes y sont consolidées.' },
   { name: 'Caisse d\'accueil', code: 'ACCUEIL', location: 'Bureau d\'accueil', description: 'Caisse du secrétariat pour les paiements courants (inscriptions, frais divers).' },
+  { name: 'Caisse boutique', code: 'BOUTIQUE', location: 'Boutique / Économat', description: 'Caisse dédiée aux ventes de la boutique (uniformes, tenues, fournitures).' },
+  { name: 'Caisse bibliothèque', code: 'BIBLIO', location: 'Bibliothèque / CDI', description: 'Caisse dédiée aux prêts, amendes et ventes de la bibliothèque.' },
   { name: 'Caisse cantine', code: 'CANTEEN', location: 'Réfectoire / Cantine', description: 'Caisse dédiée à la collecte des frais de cantine et snack.' },
   { name: 'Caisse mobile', code: 'MOBILE', location: 'Mobile / Terrain', description: 'Caisse mobile pour les encaissements sur le terrain (événements, sorties).' },
   { name: 'Caisse comptabilité', code: 'COMPTA', location: 'Service comptabilité', description: 'Caisse du service comptable pour les virements et dépenses.' },

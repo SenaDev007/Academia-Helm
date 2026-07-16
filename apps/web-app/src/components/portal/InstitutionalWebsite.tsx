@@ -2,24 +2,48 @@
 
 /**
  * ============================================================================
- * INSTITUTIONAL WEBSITE — Site institutionnel intelligent des écoles
+ * INSTITUTIONAL WEBSITE — Site institutionnel multi-tenant conforme CDC
  * ============================================================================
  *
- * Design aligné sur la PremiumLandingPage du site principal :
- *   - Header navy avec effet limelight doré
- *   - Hero avec gradient navy + particules
- *   - Sections avec cards blanches, ombres douces, coins arrondis
- *   - Palette : Navy #0b2f73, Blue #1d4fa5, Gold #f5b335
- *   - Typographie : bold/black pour titres, medium pour corps
- *   - Animations framer-motion discrètes
+ * Refonte complète selon le Cahier des Charges « Site institutionnel
+ * multi-tenant des établissements » (Academia Helm — YEHI OR Tech, v1.0).
+ *
+ * 10 sections (de la Navbar au Footer) :
+ *   3.1  Navbar (fixe, sticky, transparente → opaque navy après 80px)
+ *   3.2  Hero (gradient navy → bleu, overlay 40%, H1, CTA or + contour blanc,
+ *        bandeau 3-4 chiffres clés)
+ *   3.3  À propos / Présentation (H2 liseré or, mission/vision, mot du directeur
+ *        avec bordure gauche or, zig-zag texte/image)
+ *   3.4  Excellence académique / Programmes (H2, grille cartes Maternelle/Primaire/
+ *        Secondaire, points de différenciation à icônes)
+ *   3.5  Corps enseignant (H2, grille 3-8 profils, ratio encadrant/élève badge or)
+ *   3.6  Vie scolaire / Actualités (H2, 3-6 cartes actualités + galerie photo)
+ *   3.7  Admissions (H2 sur fond navy texte blanc, timeline 4 étapes, documents,
+ *        CTA or "Commencer ma candidature")
+ *   3.8  Témoignages (H2, carrousel témoignages, logos partenaires niveaux de gris)
+ *   3.9  Contact (H2, coordonnées, iframe OpenStreetMap, formulaire)
+ *   3.10 Footer multi-colonnes (logo, navigation, portails, légal + ligne de bas)
+ *
+ * Palette CDC :
+ *   - Bleu Marine Institutionnel : #0B1E4D
+ *   - Bleu Académique             : #1E4FA3
+ *   - Or Prestige                 : #F5B700
+ *   - Gris Ardoise                : #2E3440
+ *   - Gris Perle                  : #F4F6FA
+ *   - Blanc                       : #FFFFFF
+ *
+ * Signature préservée :
+ *   export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props)
  * ============================================================================
  */
 
 import { useState, useEffect, useRef } from 'react';
 import {
-  Loader2, MapPin, Phone, Mail, ChevronRight, Calendar,
-  Quote, Menu, X, ExternalLink, FileText, Sparkles,
+  Loader2, MapPin, Phone, Mail, ChevronRight, ChevronLeft, Calendar,
+  Quote, ExternalLink, FileText, Sparkles,
   Building2, GraduationCap, Users, Globe, ArrowRight, Star, Images,
+  CheckCircle2, Award, BookOpen, Microscope, Palette, Trophy, Languages,
+  Baby, School, Library, Clock, Send, Image as ImageIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
@@ -32,7 +56,6 @@ import TenantAiChatbot from '@/components/portal/TenantAiChatbot';
 import TenantStructuredData from '@/components/portal/TenantStructuredData';
 import TenantRecruitmentBanner from '@/components/portal/TenantRecruitmentBanner';
 import { ContactForm } from '@/components/portal/ContactForm';
-import { NotchNav } from '@/components/ui/notch-nav';
 import TenantFooter from '@/components/ui/footer-column';
 import TenantHeader from '@/components/portal/TenantHeader';
 import { resolveTenantColors } from '@/lib/tenant/use-tenant-colors';
@@ -65,14 +88,94 @@ interface Props {
   subdomain?: string | null;
 }
 
-const PORTAL_DEFS = [
-  { type: 'SCHOOL' as PortalType, title: 'École', subtitle: 'Direction & administration', icon: Building2 },
-  { type: 'TEACHER' as PortalType, title: 'Enseignant', subtitle: 'Pédagogie & suivi', icon: GraduationCap },
-  { type: 'PARENT' as PortalType, title: 'Parent / Élève', subtitle: 'Suivi & communication', icon: Users },
+// ─── Programmes par défaut (3 cycles — Maternelle, Primaire, Secondaire) ──
+const DEFAULT_PROGRAMS = [
+  {
+    id: 'maternelle',
+    title: 'Maternelle',
+    description: "Éveil, épanouissement et premiers apprentissages dans un cadre bienveillant et stimulant.",
+    Icon: Baby,
+    levels: 'Petite, Moyenne & Grande section',
+  },
+  {
+    id: 'primaire',
+    title: 'Primaire',
+    description: "Acquisition des fondamentaux : lecture, écriture, calcul et développement de la curiosité.",
+    Icon: School,
+    levels: 'CP au CM2',
+  },
+  {
+    id: 'secondaire',
+    title: 'Secondaire',
+    description: "Approfondissement des savoirs, orientation et préparation aux examens nationaux.",
+    Icon: Library,
+    levels: '6e à Terminale',
+  },
 ];
 
-// ─── SectionHeader : en-tête de section standardisé (aligné PremiumLandingPage) ──
-function SectionHeader({ eyebrow, title, subtitle, navy, gold }: { eyebrow?: string; title: string; subtitle?: string; navy: string; gold: string }) {
+// ─── Points de différenciation (CDC 3.4) ──
+const DEFAULT_DIFFERENTIATORS = [
+  { title: 'Bilinguisme', description: "Enseignement français-anglais dès le primaire", Icon: Languages },
+  { title: 'STEM', description: "Sciences, technologie, ingénierie & mathématiques", Icon: Microscope },
+  { title: 'Arts', description: "Théâtre, musique, arts plastiques", Icon: Palette },
+  { title: 'Sport', description: "Éducation physique & compétitions scolaires", Icon: Trophy },
+];
+
+// ─── Corps enseignant par défaut (CDC 3.5) ──
+const DEFAULT_FACULTY = [
+  { name: 'M. Koffi Adjovi', role: 'Directeur pédagogique', subject: 'Mathématiques' },
+  { name: 'Mme Aïcha Bello', role: 'Directrice Maternelle', subject: 'Petite section' },
+  { name: 'M. Jean Houngbo', role: 'Responsable Primaire', subject: 'Français' },
+  { name: 'Mme Fatou Diallo', role: 'Responsable Secondaire', subject: 'Sciences physiques' },
+];
+
+// ─── Étapes d'admission (CDC 3.7) ──
+const ADMISSION_STEPS = [
+  { num: 1, title: 'Candidature', description: "Remplissez le formulaire de pré-inscription en ligne.", Icon: FileText },
+  { num: 2, title: 'Évaluation', description: "Test d'admission et étude du dossier scolaire.", Icon: BookOpen },
+  { num: 3, title: 'Entretien', description: "Rencontre avec la direction et l'équipe pédagogique.", Icon: Users },
+  { num: 4, title: 'Confirmation', description: "Inscription définitive et remise des accès portails.", Icon: CheckCircle2 },
+];
+
+// ─── Documents requis (CDC 3.7) ──
+const REQUIRED_DOCUMENTS = [
+  'Acte de naissance (original + copie)',
+  'Bulletins de notes des 2 dernières années',
+  'Certificat de transfert (en cas de changement d\'établissement)',
+  '2 photos d\'identité récentes',
+  'Carnet de vaccination à jour',
+  'Copie de la pièce d\'identité du parent/tuteur',
+];
+
+// ─── Témoignages carrousel (CDC 3.8) ──
+// Utilise DEFAULT_TESTIMONIALS mais peut être surchargé par les données du tenant.
+
+// ─── Logos partenaires (placeholder — gris par défaut, couleur au survol) ──
+const PARTNER_LOGOS = [
+  { name: 'Ministère de l\'Éducation', abbr: 'MEN' },
+  { name: 'UNESCO', abbr: 'UNESCO' },
+  { name: 'Confemen', abbr: 'CONFEMEN' },
+  { name: 'Agence Universitaire Francophone', abbr: 'AUF' },
+];
+
+// ─── SectionHeader : H2 avec liseré or (CDC 3.3+) ──────────────────────────
+function SectionHeader({
+  eyebrow,
+  title,
+  subtitle,
+  navy,
+  gold,
+  inverted = false,
+}: {
+  eyebrow?: string;
+  title: string;
+  subtitle?: string;
+  navy: string;
+  gold: string;
+  inverted?: boolean;
+}) {
+  const textColor = inverted ? '#FFFFFF' : '#0f172a';
+  const subColor = inverted ? 'rgba(255,255,255,0.7)' : '#64748b';
   return (
     <div className="text-center mb-10 md:mb-14">
       {eyebrow && (
@@ -81,7 +184,11 @@ function SectionHeader({ eyebrow, title, subtitle, navy, gold }: { eyebrow?: str
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wider mb-4"
-          style={{ background: `${navy}14`, border: `1px solid ${navy}26`, color: navy }}
+          style={{
+            background: inverted ? `${gold}22` : `${navy}14`,
+            border: `1px solid ${inverted ? `${gold}55` : `${navy}26`}`,
+            color: inverted ? gold : navy,
+          }}
         >
           <Sparkles className="w-3.5 h-3.5" style={{ color: gold }} />
           {eyebrow}
@@ -92,7 +199,7 @@ function SectionHeader({ eyebrow, title, subtitle, navy, gold }: { eyebrow?: str
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true }}
         className="text-3xl md:text-4xl font-extrabold tracking-tight mb-3"
-        style={{ color: '#0f172a' }}
+        style={{ color: textColor }}
       >
         {title}
       </motion.h2>
@@ -102,12 +209,13 @@ function SectionHeader({ eyebrow, title, subtitle, navy, gold }: { eyebrow?: str
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ delay: 0.05 }}
-          className="text-sm md:text-base text-slate-500 max-w-2xl mx-auto leading-relaxed"
+          className="text-sm md:text-base max-w-2xl mx-auto leading-relaxed"
+          style={{ color: subColor }}
         >
           {subtitle}
         </motion.p>
       )}
-      {/* Ligne décorative dorée */}
+      {/* Liseré or signature */}
       <motion.div
         initial={{ opacity: 0 }}
         whileInView={{ opacity: 1 }}
@@ -124,13 +232,48 @@ function SectionHeader({ eyebrow, title, subtitle, navy, gold }: { eyebrow?: str
   );
 }
 
+// ─── Hook : compteur animé au scroll (CDC 8 — Stats/Counter) ──
+function useCountUp(target: number, duration = 1500) {
+  const [value, setValue] = useState(0);
+  const ref = useRef<HTMLDivElement>(null);
+  const started = useRef(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && !started.current) {
+            started.current = true;
+            const start = performance.now();
+            const animate = (now: number) => {
+              const progress = Math.min((now - start) / duration, 1);
+              const eased = 1 - Math.pow(1 - progress, 3);
+              setValue(Math.round(target * eased));
+              if (progress < 1) requestAnimationFrame(animate);
+            };
+            requestAnimationFrame(animate);
+          }
+        });
+      },
+      { threshold: 0.3 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [target, duration]);
+
+  return { value, ref };
+}
+
 export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   const [schoolData, setSchoolData] = useState<SchoolPortalInfo | null>(schoolInfo || null);
   const [websiteData, setWebsiteData] = useState<WebsiteData | null>(null);
-  const [tenantId, setTenantId] = useState<string | null>((schoolInfo as any)?.tenantId || (schoolInfo as any)?.id || null);
+  const [tenantId, setTenantId] = useState<string | null>(
+    (schoolInfo as any)?.tenantId || (schoolInfo as any)?.id || null,
+  );
   const [isLoading, setIsLoading] = useState(!schoolInfo);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
+  const [activeTestimonial, setActiveTestimonial] = useState(0);
 
   const slug = subdomain || extractTenantSlug(typeof window !== 'undefined' ? window.location.hostname : '') || schoolInfo?.slug || '';
 
@@ -138,12 +281,6 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
     if (!schoolInfo && slug) loadSchoolData();
     if (slug) loadWebsiteData();
   }, [slug]);
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20);
-    window.addEventListener('scroll', onScroll);
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
 
   const loadSchoolData = async () => {
     try {
@@ -165,56 +302,56 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   };
 
   const handlePortalClick = (type: PortalType) => {
-    if (type === 'PUBLIC') window.location.href = `/public/pre-enrollment?school=${slug}`;
-    else window.location.href = `/login?portal=${type}&tenant=${slug}&school_name=${encodeURIComponent(schoolData?.name || '')}`;
+    if (type === 'PUBLIC') {
+      window.location.href = `/public/pre-enrollment?school=${slug}`;
+    } else {
+      const params = new URLSearchParams({
+        portal: type.toLowerCase(),
+        tenant: slug,
+        school_name: schoolData?.name || '',
+      });
+      window.location.href = `/login?${params.toString()}`;
+    }
   };
 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
-        <Loader2 className="h-8 w-8 animate-spin" style={{ color: NAVY }} />
+        <Loader2 className="h-8 w-8 animate-spin" style={{ color: '#0B1E4D' }} />
       </div>
     );
   }
 
   // ─── Merge des données réelles + valeurs par défaut ──
-  // Si le tenant n'a pas configuré son CMS, on utilise DEFAULT_WEBSITE_CONFIG
-  // pour que toutes les sections soient visibles avec du contenu de démo.
-  // Les vraies valeurs (si elles existent) remplacent les défauts.
   const rawWebsite = websiteData?.website;
   const website = rawWebsite || DEFAULT_WEBSITE_CONFIG;
   const schoolName = schoolData?.name || 'Établissement Scolaire';
   const schoolAcronym = schoolData?.schoolAcronym || null;
-  const schoolDisplayName = schoolAcronym || schoolName;
   const schoolLogo = schoolData?.logoUrl;
   const schoolSlogan = schoolData?.slogan || withDefault(rawWebsite?.heroSubtitle, DEFAULT_WEBSITE_CONFIG.heroSubtitle);
 
-  // ─── Résolution dynamique de la palette de couleurs ──
-  // Si l'école a configuré customColors → utilise ses couleurs
-  // Sinon → fallback sur la palette Helm par défaut
+  // ─── Palette de couleurs (CDC 2 — par défaut #0B1E4D / #1E4FA3 / #F5B700) ──
   const colors = resolveTenantColors(rawWebsite?.customColors);
   const NAVY = colors.primary;
   const BLUE = colors.secondary;
   const GOLD = colors.accent;
   const DARK = colors.dark;
+  const SLATE = '#2E3440';
+  const PEARL = '#F4F6FA';
 
   // ─── Hero avec defaults ──
   const heroTitle = withDefault(rawWebsite?.heroTitle, DEFAULT_WEBSITE_CONFIG.heroTitle);
   const heroSubtitle = withDefault(rawWebsite?.heroSubtitle, DEFAULT_WEBSITE_CONFIG.heroSubtitle);
   const heroImage = rawWebsite?.heroImageUrl || null;
-  const heroCtaText = withDefault(rawWebsite?.heroCtaText, DEFAULT_WEBSITE_CONFIG.heroCtaText);
-  const heroCtaUrl = withDefault(rawWebsite?.heroCtaUrl, DEFAULT_WEBSITE_CONFIG.heroCtaUrl);
+  const heroCtaText = withDefault(rawWebsite?.heroCtaText, 'Demander une admission');
 
-  // ─── Chiffres clés avec defaults ──
-  const keyFigures = withDefault(rawWebsite?.keyFigures, DEFAULT_WEBSITE_CONFIG.keyFigures);
+  // ─── Chiffres clés (CDC 3.2 — bandeau 3-4 indicateurs) ──
+  const keyFigures = withDefault(rawWebsite?.keyFigures, DEFAULT_WEBSITE_CONFIG.keyFigures).slice(0, 4);
 
   // ─── Collections avec defaults ──
   const newsArticles = (websiteData?.newsArticles && websiteData.newsArticles.length > 0)
     ? websiteData.newsArticles
     : DEFAULT_NEWS_ARTICLES;
-  const events = (websiteData?.events && websiteData.events.length > 0)
-    ? websiteData.events
-    : DEFAULT_EVENTS;
   const galleryItems = (websiteData?.galleryItems && websiteData.galleryItems.length > 0)
     ? websiteData.galleryItems
     : DEFAULT_GALLERY_ITEMS;
@@ -225,59 +362,44 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
     ? websiteData.faqItems
     : DEFAULT_FAQ_ITEMS;
 
-  // ─── Sections par niveau scolaire (multi-niveaux) ──
-  // Si le tenant a configuré des sections spécifiques par niveau, on les utilise
-  // pour surcharger les sections globales (présentation, admissions, vie scolaire, mot du directeur).
-  // Le visiteur peut basculer entre les niveaux via un sous-sélecteur.
-  const levelSections = websiteData?.levelSections || [];
-  const [activeLevelCode, setActiveLevelCode] = useState<string | null>(null);
+  // ─── Coordonnées contact ──
+  const contactEmail = withDefault(rawWebsite?.contactEmail, DEFAULT_WEBSITE_CONFIG.contactEmail) || schoolData?.phone || '';
+  const contactPhone = withDefault(rawWebsite?.contactPhone, DEFAULT_WEBSITE_CONFIG.contactPhone) || schoolData?.phone || '';
+  const contactAddress = withDefault(rawWebsite?.contactAddress, DEFAULT_WEBSITE_CONFIG.contactAddress) || schoolData?.address || '';
+  const contactCity = schoolData?.city || '';
 
-  // Si des sections par niveau existent, initialiser sur le premier niveau
-  useEffect(() => {
-    if (levelSections.length > 0 && !activeLevelCode) {
-      setActiveLevelCode(levelSections[0]?.schoolLevel?.code || null);
-    }
-  }, [levelSections, activeLevelCode]);
-
-  // Récupérer la section du niveau actif (ou null = fallback sur global)
-  const activeLevelSection = levelSections.find(
-    (s: any) => s.schoolLevel?.code === activeLevelCode,
-  );
-
-  // Resolver : si une section niveau-spécifique existe et a une valeur, l'utiliser ; sinon fallback sur global
-  const resolveLevelField = (field: string, globalDefault: any) => {
-    if (activeLevelSection && activeLevelSection[field] !== null && activeLevelSection[field] !== undefined) {
-      return activeLevelSection[field];
-    }
-    return globalDefault;
-  };
-
+  // ─── Navigation CDC ──
   const navLinks = [
-    { label: 'Accueil', href: '#hero' },
-    { label: 'Présentation', href: '#presentation' },
-    { label: 'Admissions', href: '#admissions' },
-    { label: 'Vie scolaire', href: '#vie-scolaire' },
-    { label: 'Actualités', href: '#actualites' },
-    { label: 'FAQ', href: '#faq' },
-    { label: 'Recrutement', href: '/jobs' },
-    { label: 'Contact', href: '#contact' },
+    { label: 'Accueil', href: '/#hero' },
+    { label: 'À propos', href: '/#a-propos' },
+    { label: 'Programmes', href: '/#programmes' },
+    { label: 'Admissions', href: '/#admissions' },
+    { label: 'Vie scolaire', href: '/#vie-scolaire' },
+    { label: 'Actualités', href: '/#actualites' },
+    { label: 'Contact', href: '/#contact' },
   ];
+
+  // ─── Iframe OpenStreetMap (CDC 3.9) ──
+  // Utilise l'adresse de l'école pour géolocaliser via OpenStreetMap
+  const mapQuery = encodeURIComponent(`${contactAddress} ${contactCity} Bénin`.trim());
+  const osmIframeSrc = `https://www.openstreetmap.org/export/embed.html?bbox=2.0,6.3,2.7,6.6&layer=mapnik&marker=6.4968,2.6036`;
+  // Note: l'iframe reste générique — l'école peut configurer contactMapUrl si elle veut un lien précis
 
   return (
     <div className="min-h-screen bg-white">
       <TenantStructuredData
         schoolName={schoolName}
         schoolLogo={schoolLogo || undefined}
-        schoolAddress={withDefault(rawWebsite?.contactAddress, DEFAULT_WEBSITE_CONFIG.contactAddress) || schoolData?.address || undefined}
-        schoolPhone={withDefault(rawWebsite?.contactPhone, DEFAULT_WEBSITE_CONFIG.contactPhone) || schoolData?.phone || undefined}
-        schoolEmail={withDefault(rawWebsite?.contactEmail, DEFAULT_WEBSITE_CONFIG.contactEmail) || undefined}
+        schoolAddress={contactAddress || undefined}
+        schoolPhone={contactPhone || undefined}
+        schoolEmail={contactEmail || undefined}
         schoolWebsite={typeof window !== 'undefined' ? window.location.origin : ''}
         schoolSlogan={schoolSlogan || undefined}
-        schoolCity={schoolData?.city || undefined}
+        schoolCity={contactCity || undefined}
         socialLinks={website?.socialLinks || undefined}
       />
 
-      {/* ═══ HEADER ═══ */}
+      {/* ═══ 3.1 NAVBAR (fixe, sticky, transparente → opaque navy après 80px) ═══ */}
       <TenantHeader
         schoolName={schoolName}
         schoolAcronym={schoolAcronym}
@@ -285,46 +407,44 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         schoolSlogan={schoolSlogan || undefined}
         colors={colors}
         activeNav="Accueil"
+        transparentAtTop
+        navLinks={navLinks}
+        portalHref="/portal"
       />
 
-
-      {/* ═══ BANDE RECRUTEMENT ═══ */}
-      <div className="pt-14 md:pt-16">
+      {/* Bandeau recrutement (optionnel — non sticky, sous la navbar) */}
+      <div className="pt-16 md:pt-20">
         <TenantRecruitmentBanner tenantId={tenantId || undefined} tenantSlug={slug} />
       </div>
 
-      {/* ═══ HERO ═══ */}
-      <section id="hero" className="relative min-h-[600px] md:min-h-[680px] flex items-center justify-center overflow-hidden">
+      {/* ═══ 3.2 HERO ═══ */}
+      <section id="hero" className="relative min-h-[640px] md:min-h-[720px] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0">
           {heroImage ? (
             <Image src={heroImage} alt={schoolName} fill priority className="object-cover" sizes="100vw" />
           ) : (
+            // CDC 3.2 — Fond : dégradé navy → bleu académique par défaut
             <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 50%, ${DARK} 100%)` }} />
           )}
-          {/* Overlay navy pour lisibilité — aligné sur PremiumLandingPage */}
-          <div className="absolute inset-0" style={{ background: `${NAVY}A6` }} />
+          {/* Overlay sombre 40% (CDC 3.2) */}
+          <div className="absolute inset-0 bg-black/40" />
           {/* Halo doré en haut à droite — signature Academia Helm */}
-          <div className="absolute inset-0 opacity-[0.12] bg-[radial-gradient(circle_at_top_right,#f5b335_0%,transparent_45%)]" />
+          <div className="absolute inset-0 opacity-[0.12] bg-[radial-gradient(circle_at_top_right,#F5B700_0%,transparent_45%)]" />
         </div>
 
-        {/* Particules dorées flottantes — ambiance premium */}
+        {/* Particules dorées flottantes */}
         <FloatingEduParticles count={18} opacityMultiplier={1.2} variant="light" />
-
-        {/* Orbes flottants animés */}
-        <motion.div
-          animate={{ y: [0, -12, 0], opacity: [0.35, 0.75, 0.35] }}
-          transition={{ duration: 7.5, repeat: Infinity, ease: 'easeInOut' }}
-          className="absolute -top-10 -left-8 w-56 h-56 rounded-full bg-amber-300/20 blur-3xl pointer-events-none"
-        />
 
         <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 text-center py-20">
           <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }}>
-            {/* Eyebrow badge — aligné sur PremiumLandingPage */}
             <div className="inline-flex items-center gap-2 mb-5 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20">
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span className="text-xs font-bold text-amber-300 uppercase tracking-wider">Bienvenue</span>
+              <Sparkles className="w-3.5 h-3.5" style={{ color: GOLD }} />
+              <span className="text-xs font-bold uppercase tracking-wider" style={{ color: GOLD }}>
+                {schoolName}
+              </span>
             </div>
 
+            {/* H1 — baseline institutionnelle (CDC 3.2) */}
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-white leading-[1.15] tracking-tight mb-5 drop-shadow-lg">
               {heroTitle}
             </h1>
@@ -332,419 +452,757 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
               {heroSubtitle}
             </p>
 
-            {/* Ligne décorative dorée — signature Academia Helm */}
             <div className="flex items-center justify-center gap-3 mb-8" aria-hidden>
               <span className="h-px w-12 bg-gradient-to-r from-transparent to-amber-400" />
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
               <span className="h-px w-12 bg-gradient-to-l from-transparent to-amber-400" />
             </div>
 
+            {/* CTA primaire (or) + CTA secondaire (contour blanc → /portal) */}
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <button onClick={() => handlePortalClick('PUBLIC')}
-                className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl text-sm font-bold text-[#0b2f73] shadow-lg transition-all hover:scale-105 hover:bg-[#f7c359]"
-                style={{ background: `linear-gradient(135deg, ${GOLD}, #e09e1f)` }}>
+              {/* CTA primaire — "Demander une admission" (or plein) */}
+              <button
+                onClick={() => handlePortalClick('PUBLIC')}
+                className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl text-sm font-bold shadow-lg transition-all hover:scale-105 hover:shadow-xl"
+                style={{ background: `linear-gradient(135deg, ${GOLD}, #e09e1f)`, color: NAVY }}
+              >
                 {heroCtaText} <ChevronRight size={16} />
               </button>
-              <a href="#contact"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white border-2 border-white/30 hover:bg-white/10 transition-all backdrop-blur-sm">
-                Nous contacter
+              {/* CTA secondaire — "Portail" (contour blanc) → /portal */}
+              <a
+                href="/portal"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl text-sm font-bold text-white border-2 border-white/40 hover:bg-white/10 hover:border-white/70 transition-all backdrop-blur-sm"
+              >
+                Portail <ArrowRight size={16} />
               </a>
             </div>
           </motion.div>
         </div>
-      </section>
 
-      {/* ═══ SÉLECTEUR DE NIVEAU (multi-niveaux) ═══ */}
-      {levelSections.length > 0 && (
-        <div className="relative z-30 bg-white border-b border-slate-100">
-          <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3">
-            <div className="flex items-center gap-2 overflow-x-auto">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide shrink-0 mr-2">
-                Niveau :
-              </span>
-              {levelSections.map((s: any) => {
-                const isActive = activeLevelCode === s.schoolLevel?.code;
-                return (
-                  <button
-                    key={s.schoolLevel?.id}
-                    onClick={() => setActiveLevelCode(s.schoolLevel?.code)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition whitespace-nowrap ${
-                      isActive
-                        ? 'bg-blue-600 text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {s.schoolLevel?.label || s.schoolLevel?.name}
-                  </button>
-                );
-              })}
+        {/* Bandeau chiffres clés (CDC 3.2 — 3-4 indicateurs) */}
+        {keyFigures.length > 0 && (
+          <div className="absolute bottom-0 left-0 right-0 z-10 pb-6 md:pb-8">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+                {keyFigures.map((fig: any, i: number) => (
+                  <KeyFigureCard key={i} fig={fig} gold={GOLD} navy={NAVY} delay={i * 0.1} />
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+        )}
+      </section>
+
+      {/* ═══ 3.3 À PROPOS / PRÉSENTATION ═══ */}
+      {shouldShowSection(rawWebsite?.presentationIsActive) && (
+        <section id="a-propos" className="py-16 md:py-24" style={{ background: PEARL }}>
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <SectionHeader
+              eyebrow="Notre établissement"
+              title={withDefault(website.presentationTitle, 'À propos de notre école')}
+              subtitle="Mission, vision et ancrage local au service de la réussite de chaque élève."
+              navy={NAVY}
+              gold={GOLD}
+            />
+
+            {/* Bloc texte/image en alternance (zig-zag) */}
+            <div className="grid lg:grid-cols-2 gap-10 items-center mb-16">
+              <motion.div
+                initial={{ opacity: 0, x: -30 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6 }}
+              >
+                <h3 className="text-xl md:text-2xl font-bold mb-4" style={{ color: NAVY }}>
+                  Notre mission
+                </h3>
+                <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap mb-6">
+                  {withDefault(website.presentationContent, DEFAULT_WEBSITE_CONFIG.presentationContent)}
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: `${NAVY}10`, color: NAVY }}>
+                    <Award className="w-3.5 h-3.5" /> Excellence académique
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: `${GOLD}15`, color: '#a07d00' }}>
+                    <Users className="w-3.5 h-3.5" /> Accompagnement personnalisé
+                  </span>
+                </div>
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, x: 30 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6, delay: 0.15 }}
+                className="relative"
+              >
+                {website.presentationImageUrl ? (
+                  <div className="relative aspect-[4/3] rounded-2xl overflow-hidden shadow-xl">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={website.presentationImageUrl} alt="Présentation" className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="relative aspect-[4/3] rounded-2xl overflow-hidden shadow-xl flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}>
+                    <Building2 className="w-20 h-20 text-white/30" />
+                    <div className="absolute top-4 right-4 w-12 h-1 rounded-full" style={{ background: GOLD }} />
+                  </div>
+                )}
+              </motion.div>
+            </div>
+
+            {/* Mot du directeur/fondateur — citation + portrait, bordure gauche or (CDC 3.3) */}
+            {(shouldShowSection(rawWebsite?.directorIsActive) || shouldShowSection(rawWebsite?.promoterIsActive)) && (
+              <div className="grid md:grid-cols-2 gap-6">
+                {shouldShowSection(rawWebsite?.promoterIsActive) && (
+                  <DirectorWord
+                    title="Mot du Promoteur"
+                    text={withDefault(website.promoterWord, DEFAULT_WEBSITE_CONFIG.promoterWord)}
+                    name={withDefault(website.promoterName, DEFAULT_WEBSITE_CONFIG.promoterName)}
+                    photoUrl={website.promoterPhotoUrl}
+                    role="Promoteur"
+                    navy={NAVY}
+                    gold={GOLD}
+                    side="left"
+                  />
+                )}
+                {shouldShowSection(rawWebsite?.directorIsActive) && (
+                  <DirectorWord
+                    title="Mot du Directeur"
+                    text={withDefault(website.directorWord, DEFAULT_WEBSITE_CONFIG.directorWord)}
+                    name={withDefault(website.directorName, DEFAULT_WEBSITE_CONFIG.directorName)}
+                    photoUrl={website.directorPhotoUrl}
+                    role="Directeur"
+                    navy={NAVY}
+                    gold={GOLD}
+                    side="right"
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        </section>
       )}
 
-      {/* ═══ CHIFFRES CLÉS ═══ */}
-      {keyFigures.length > 0 && (
-        <section className="relative -mt-16 z-20 px-4 sm:px-6 lg:px-8">
-          <div className="max-w-6xl mx-auto">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-5">
-              {keyFigures.map((fig: any, i: number) => (
+      {/* ═══ 3.4 EXCELLENCE ACADÉMIQUE / PROGRAMMES ═══ */}
+      <section id="programmes" className="py-16 md:py-24 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <SectionHeader
+            eyebrow="Excellence académique"
+            title="Nos programmes"
+            subtitle="De la maternelle au secondaire, un parcours pédagogique structuré et exigeant."
+            navy={NAVY}
+            gold={GOLD}
+          />
+
+          {/* Grille de programmes — cartes avec icône (CDC 3.4) */}
+          <div className="grid md:grid-cols-3 gap-6 mb-16">
+            {DEFAULT_PROGRAMS.map((program, i) => (
+              <motion.div
+                key={program.id}
+                initial={{ opacity: 0, y: 24 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1, duration: 0.5 }}
+                whileHover={{ y: -8 }}
+                className="group relative bg-white rounded-2xl p-6 md:p-8 shadow-[0_4px_30px_-10px_rgba(11,30,77,0.12)] border border-slate-100 hover:shadow-[0_24px_60px_-20px_rgba(11,30,77,0.30)] hover:border-[#0B1E4D]/20 transition-all duration-300 overflow-hidden"
+              >
+                {/* Halo or au hover */}
+                <div className="absolute -top-16 -right-16 w-40 h-40 rounded-full opacity-0 group-hover:opacity-[0.08] blur-3xl transition-opacity duration-500" style={{ background: GOLD }} />
+                <div className="relative">
+                  <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-5 shadow-md" style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}>
+                    <program.Icon className="w-7 h-7 text-white" />
+                  </div>
+                  <h3 className="text-xl font-bold mb-2" style={{ color: NAVY }}>{program.title}</h3>
+                  <p className="text-xs font-semibold mb-3" style={{ color: GOLD }}>{program.levels}</p>
+                  <p className="text-sm text-slate-600 leading-relaxed mb-5">{program.description}</p>
+                  <button
+                    onClick={() => { if (typeof window !== 'undefined') window.location.href = '/#admissions'; }}
+                    className="inline-flex items-center gap-1.5 text-sm font-semibold transition-colors group-hover:gap-2.5"
+                    style={{ color: NAVY }}
+                  >
+                    En savoir plus <ArrowRight size={14} />
+                  </button>
+                </div>
+                {/* Liseré or en bas au hover */}
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 rounded-b-2xl opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)` }} />
+              </motion.div>
+            ))}
+          </div>
+
+          {/* Points de différenciation — liste à icônes (CDC 3.4) */}
+          <div className="rounded-2xl p-8 md:p-10" style={{ background: `linear-gradient(135deg, ${PEARL}, #e8edf5)` }}>
+            <h3 className="text-lg md:text-xl font-bold text-center mb-8" style={{ color: NAVY }}>
+              Nos points de différenciation
+            </h3>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              {DEFAULT_DIFFERENTIATORS.map((item, i) => (
                 <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 24 }}
+                  key={item.title}
+                  initial={{ opacity: 0, y: 16 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
-                  transition={{ delay: i * 0.1, type: 'spring', stiffness: 200, damping: 18 }}
-                  whileHover={{ y: -6 }}
-                  className="group relative bg-white rounded-2xl p-5 md:p-6 shadow-[0_4px_30px_-10px_rgba(11,47,115,0.15)] border border-slate-100 hover:shadow-[0_24px_60px_-20px_rgba(11,47,115,0.30)] hover:border-[#0b2f73]/20 transition-all duration-300 text-center overflow-hidden"
+                  transition={{ delay: i * 0.08 }}
+                  className="flex items-start gap-3"
                 >
-                  {/* Halo doré au hover */}
-                  <div className="absolute -top-16 -right-16 w-40 h-40 rounded-full bg-[#f5b335] opacity-0 group-hover:opacity-[0.08] blur-3xl transition-opacity duration-500" />
-
-                  {/* Valeur */}
-                  <div className="relative text-3xl md:text-4xl font-extrabold mb-1 tracking-tight" style={{ color: NAVY }}>
-                    {fig.value}
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${GOLD}20` }}>
+                    <item.Icon className="w-5 h-5" style={{ color: '#a07d00' }} />
                   </div>
-                  {/* Libellé */}
-                  <div className="relative text-xs md:text-sm text-slate-500 font-medium">{fig.label}</div>
-                  {/* Ligne dorée décorative */}
-                  <div className="relative mx-auto mt-3 h-0.5 w-8 rounded-full bg-gradient-to-r from-transparent via-amber-400 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div>
+                    <h4 className="text-sm font-bold" style={{ color: NAVY }}>{item.title}</h4>
+                    <p className="text-xs text-slate-600 mt-0.5">{item.description}</p>
+                  </div>
                 </motion.div>
               ))}
             </div>
           </div>
-        </section>
-      )}
+        </div>
+      </section>
 
-      {/* ═══ MOTS DU PROMOTEUR / DIRECTEUR ═══ */}
-      {(shouldShowSection(rawWebsite?.promoterIsActive) || shouldShowSection(rawWebsite?.directorIsActive)) ? (
-        <section className="py-16 md:py-20 bg-slate-50">
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid md:grid-cols-2 gap-6">
-              {shouldShowSection(rawWebsite?.promoterIsActive) && (
-                <motion.div initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
-                  className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-slate-100">
-                  <Quote className="h-7 w-7 mb-3" style={{ color: GOLD }} />
-                  <h3 className="text-base font-bold text-slate-900 mb-3">Mot du Promoteur</h3>
-                  <p className="text-sm text-slate-600 leading-relaxed mb-4 line-clamp-5">{withDefault(website.promoterWord, DEFAULT_WEBSITE_CONFIG.promoterWord)}</p>
-                  <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
-                    {website.promoterPhotoUrl && <img src={website.promoterPhotoUrl} alt={website.promoterName || ''} className="w-10 h-10 rounded-full object-cover" />}
-                    <div><p className="text-sm font-bold text-slate-900">{withDefault(website.promoterName, DEFAULT_WEBSITE_CONFIG.promoterName)}</p><p className="text-xs text-slate-400">Promoteur</p></div>
-                  </div>
-                </motion.div>
-              )}
-              {shouldShowSection(rawWebsite?.directorIsActive) && (
-                <motion.div initial={{ opacity: 0, x: 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
-                  className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-slate-100">
-                  <Quote className="h-7 w-7 mb-3" style={{ color: BLUE }} />
-                  <h3 className="text-base font-bold text-slate-900 mb-3">Mot du Directeur</h3>
-                  <p className="text-sm text-slate-600 leading-relaxed mb-4 line-clamp-5">{withDefault(website.directorWord, DEFAULT_WEBSITE_CONFIG.directorWord)}</p>
-                  <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
-                    {website.directorPhotoUrl && <img src={website.directorPhotoUrl} alt={website.directorName || ''} className="w-10 h-10 rounded-full object-cover" />}
-                    <div><p className="text-sm font-bold text-slate-900">{withDefault(website.directorName, DEFAULT_WEBSITE_CONFIG.directorName)}</p><p className="text-xs text-slate-400">Directeur</p></div>
-                  </div>
-                </motion.div>
-              )}
+      {/* ═══ 3.5 CORPS ENSEIGNANT / ENCADREMENT ═══ */}
+      <section id="corps-enseignant" className="py-16 md:py-24" style={{ background: PEARL }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <SectionHeader
+            eyebrow="Notre équipe"
+            title="Corps enseignant"
+            subtitle="Une équipe pédagogique engagée et qualifiée au service de la réussite de chaque élève."
+            navy={NAVY}
+            gold={GOLD}
+          />
+
+          {/* Ratio encadrant/élève — badge or (CDC 3.5) */}
+          <div className="flex justify-center mb-10">
+            <div
+              className="inline-flex items-center gap-3 px-5 py-3 rounded-full shadow-md"
+              style={{ background: `linear-gradient(135deg, ${GOLD}, #e09e1f)` }}
+            >
+              <Users className="w-5 h-5" style={{ color: NAVY }} />
+              <span className="text-sm font-bold" style={{ color: NAVY }}>
+                Ratio 1 encadrant pour 15 élèves
+              </span>
             </div>
           </div>
-        </section>
-      ) : null}
 
-      {/* ═══ PRÉSENTATION ═══ */}
-      {shouldShowSection(rawWebsite?.presentationIsActive) && (
-        <section id="presentation" className="py-16 md:py-20 bg-white">
-          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-            <SectionHeader eyebrow="Notre école" title={withDefault(website.presentationTitle, DEFAULT_WEBSITE_CONFIG.presentationTitle)} navy={NAVY} gold={GOLD} />
-            {website.presentationImageUrl && (
-              <div className="mb-8 rounded-2xl overflow-hidden shadow-lg">
-                <img src={website.presentationImageUrl} alt="Présentation" className="w-full h-56 md:h-72 object-cover" />
-              </div>
-            )}
-            <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{resolveLevelField('presentationContent', withDefault(website.presentationContent, DEFAULT_WEBSITE_CONFIG.presentationContent))}</p>
-          </div>
-        </section>
-      )}
-
-      {/* ═══ ADMISSIONS ═══ */}
-      {shouldShowSection(rawWebsite?.admissionsIsActive) && (
-        <section id="admissions" className="py-16 md:py-20 bg-white">
-          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-            <SectionHeader eyebrow="Rejoignez-nous" title={withDefault(website.admissionsTitle, DEFAULT_WEBSITE_CONFIG.admissionsTitle)} navy={NAVY} gold={GOLD} />
-            <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{resolveLevelField('admissionsContent', withDefault(website.admissionsContent, DEFAULT_WEBSITE_CONFIG.admissionsContent))}</p>
-            <div className="mt-8 text-center">
-              <a
-                href={heroCtaUrl}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-white font-semibold shadow-lg hover:shadow-xl transition-all"
-                style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+          {/* Grille d'enseignants clés (CDC 3.5 — 3-8 profils, responsive 2-4 colonnes) */}
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {DEFAULT_FACULTY.map((member, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 24 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.08 }}
+                whileHover={{ y: -6 }}
+                className="group bg-white rounded-2xl p-6 text-center shadow-sm border border-slate-100 hover:shadow-lg transition-all"
               >
-                {heroCtaText}
-              </a>
-            </div>
+                {/* Portrait placeholder — bordure or au hover */}
+                <div className="relative w-20 h-20 mx-auto mb-4">
+                  <div
+                    className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold transition-all group-hover:ring-4 group-hover:ring-amber-400/40 group-hover:ring-offset-2"
+                    style={{
+                      background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                      color: '#FFFFFF',
+                    }}
+                  >
+                    {member.name.split(' ').map(n => n[0]).slice(0, 2).join('')}
+                  </div>
+                </div>
+                <h4 className="text-sm font-bold" style={{ color: NAVY }}>{member.name}</h4>
+                <p className="text-xs font-medium mt-1" style={{ color: GOLD }}>{member.role}</p>
+                <p className="text-[11px] text-slate-500 mt-1">{member.subject}</p>
+              </motion.div>
+            ))}
           </div>
-        </section>
-      )}
+        </div>
+      </section>
 
-      {/* ═══ VIE SCOLAIRE ═══ */}
-      {shouldShowSection(rawWebsite?.schoolLifeIsActive) && (
-        <section id="vie-scolaire" className="py-16 md:py-20 bg-slate-50">
-          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-            <SectionHeader eyebrow="Vie quotidienne" title={withDefault(website.schoolLifeTitle, DEFAULT_WEBSITE_CONFIG.schoolLifeTitle)} navy={NAVY} gold={GOLD} />
-            <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">{resolveLevelField('schoolLifeContent', withDefault(website.schoolLifeContent, DEFAULT_WEBSITE_CONFIG.schoolLifeContent))}</p>
-          </div>
-        </section>
-      )}
+      {/* ═══ 3.6 VIE SCOLAIRE / ACTUALITÉS ═══ */}
+      <section id="vie-scolaire" className="py-16 md:py-24 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <SectionHeader
+            eyebrow="Vie scolaire"
+            title="Actualités de l'établissement"
+            subtitle="Suivez la vie de notre établissement : événements, résultats et moments forts."
+            navy={NAVY}
+            gold={GOLD}
+          />
 
-      {/* ═══ ACTUALITÉS ═══ */}
-      {newsArticles.length > 0 && (
-        <section id="actualites" className="py-16 md:py-20 bg-slate-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <SectionHeader eyebrow="Dernières nouvelles" title="Actualités" navy={NAVY} gold={GOLD} />
-            <div className="grid md:grid-cols-3 gap-6">
-              {newsArticles.slice(0, 3).map((article: any) => (
-                <motion.article key={article.id} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-                  className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 hover:shadow-lg transition-all cursor-pointer"
-                  onClick={() => { if (article.slug) window.location.href = `/actualites/${article.slug}`; }}>
+          {/* Flux d'actualités — 3-6 cartes (image, date, extrait) (CDC 3.6) */}
+          {newsArticles.length > 0 ? (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
+              {newsArticles.slice(0, 6).map((article: any, i: number) => (
+                <motion.article
+                  key={article.id || i}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.08 }}
+                  className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 hover:shadow-lg transition-all cursor-pointer group"
+                  onClick={() => { if (article.slug) window.location.href = `/actualites/${article.slug}`; }}
+                >
                   {article.coverImageUrl ? (
                     <div className="h-44 overflow-hidden">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={article.coverImageUrl} alt={article.title} className="w-full h-full object-cover" />
+                      <img src={article.coverImageUrl} alt={article.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                     </div>
                   ) : (
                     <div className="h-44 overflow-hidden flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${NAVY}30, ${GOLD}20)` }}>
-                      <FileText className="w-10 h-10 text-white/30" />
+                      <FileText className="w-12 h-12 text-white/30" />
                     </div>
                   )}
                   <div className="p-5">
-                    {article.category && <span className="inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full mb-2" style={{ background: `${NAVY}15`, color: NAVY }}>{article.category}</span>}
-                    <h3 className="text-base font-bold text-slate-900 mb-2 line-clamp-2">{article.title}</h3>
+                    <div className="flex items-center gap-2 mb-2">
+                      {article.category && (
+                        <span className="inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: `${NAVY}15`, color: NAVY }}>
+                          {article.category}
+                        </span>
+                      )}
+                      {article.publishedAt && (
+                        <span className="flex items-center gap-1 text-xs text-slate-400">
+                          <Calendar size={11} />
+                          {new Date(article.publishedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-base font-bold text-slate-900 mb-2 line-clamp-2 group-hover:text-[#0B1E4D] transition-colors">{article.title}</h3>
                     <p className="text-sm text-slate-600 line-clamp-2 mb-3">{article.excerpt || article.content}</p>
-                    {article.publishedAt && <p className="text-xs text-slate-400">{new Date(article.publishedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</p>}
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: NAVY }}>
+                      Lire la suite <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                    </span>
                   </div>
                 </motion.article>
               ))}
             </div>
-          </div>
-        </section>
-      )}
+          ) : (
+            <div className="text-center py-12 text-slate-500 mb-16">Aucune actualité pour le moment.</div>
+          )}
 
-      {/* ═══ AGENDA ═══ */}
-      {events.length > 0 && (
-        <section id="agenda" className="py-16 md:py-20 bg-white">
-          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-            <SectionHeader eyebrow="À venir" title="Agenda" navy={NAVY} gold={GOLD} />
-            <div className="space-y-3">
-              {events.slice(0, 5).map((event: any) => (
-                <div key={event.id} className="flex items-start gap-4 p-4 rounded-xl border border-slate-100 hover:shadow-sm transition-all bg-white">
-                  <div className="flex-shrink-0 w-12 h-12 rounded-xl flex flex-col items-center justify-center text-white" style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}>
-                    <span className="text-base font-black leading-none">{new Date(event.startDate).getDate()}</span>
-                    <span className="text-[9px] uppercase leading-none mt-0.5">{new Date(event.startDate).toLocaleDateString('fr-FR', { month: 'short' })}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-bold text-slate-900">{event.title}</h3>
-                    {event.description && <p className="text-xs text-slate-600 mt-1 line-clamp-2">{event.description}</p>}
-                    <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-400">
-                      {event.location && <span className="flex items-center gap-1"><MapPin size={11} /> {event.location}</span>}
-                      <span className="flex items-center gap-1"><Calendar size={11} /> {new Date(event.startDate).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ═══ GALERIE ═══ */}
-      {galleryItems.length > 0 && (
-        <section className="py-16 md:py-20 bg-slate-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <SectionHeader eyebrow="En images" title="Galerie" navy={NAVY} gold={GOLD} />
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {galleryItems.slice(0, 8).map((item: any) => (
-                <div key={item.id} className="relative aspect-square rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition-all group">
-                  {item.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={item.imageUrl} alt={item.caption || ''} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${NAVY}40, ${GOLD}30)` }}>
-                      <Images className="w-8 h-8 text-white/40" />
-                    </div>
-                  )}
-                  {item.caption && <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity">{item.caption}</div>}
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ═══ TÉMOIGNAGES ═══ */}
-      {testimonials.length > 0 && (
-        <section className="py-16 md:py-20 bg-white">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <SectionHeader eyebrow="Ils nous font confiance" title="Témoignages" navy={NAVY} gold={GOLD} />
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {testimonials.slice(0, 6).map((t: any) => (
-                <div key={t.id} className="bg-slate-50 rounded-2xl p-6 border border-slate-100">
-                  <div className="flex gap-1 mb-3">{Array.from({ length: t.rating || 5 }).map((_, i) => <Star key={i} size={14} className="fill-amber-400 text-amber-400" />)}</div>
-                  <p className="text-sm text-slate-700 leading-relaxed mb-4 italic">"{t.content}"</p>
-                  <div className="flex items-center gap-3">
-                    {t.authorPhotoUrl && <img src={t.authorPhotoUrl} alt={t.authorName} className="w-9 h-9 rounded-full object-cover" />}
-                    <div><p className="text-sm font-bold text-slate-900">{t.authorName}</p>{t.authorRole && <p className="text-xs text-slate-500">{t.authorRole}</p>}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ═══ FAQ ═══ */}
-      {faqItems.length > 0 && (
-        <section id="faq" className="py-16 md:py-20 bg-white">
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-            <SectionHeader eyebrow="Besoin d'aide ?" title="Questions fréquentes" subtitle="Les réponses aux questions les plus posées par les parents" navy={NAVY} gold={GOLD} />
-            <div className="space-y-4">
-              {faqItems.map((item: any, idx: number) => (
-                <details
-                  key={item.id || idx}
-                  className="group bg-slate-50 rounded-xl border border-slate-100 overflow-hidden hover:border-slate-200 transition"
-                >
-                  <summary className="flex items-center justify-between cursor-pointer p-4 sm:p-5 select-none">
-                    <h3 className="text-base font-semibold text-slate-900 pr-4">{item.question}</h3>
-                    <span className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-slate-400 group-open:rotate-45 transition-transform" style={{ background: GOLD + '20', color: NAVY }}>
-                      +
-                    </span>
-                  </summary>
-                  <div className="px-4 sm:px-5 pb-4 sm:pb-5 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-                    {item.answer}
-                  </div>
-                </details>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ═══ CONTACT ═══ */}
-      <section id="contact" className="py-16 md:py-20 bg-slate-50">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Coordonnées */}
-            <div>
-              <h2 className="text-2xl md:text-3xl font-black text-slate-900 mb-3">Contactez-nous</h2>
-              <div className="w-16 h-1 mb-6 rounded-full" style={{ background: `linear-gradient(90deg, ${NAVY}, ${GOLD})` }} />
-              <p className="text-sm text-slate-600 mb-6 leading-relaxed">
-                Une question sur l'inscription, les programmes ou la vie scolaire ? N'hésitez pas à nous écrire — nous vous répondrons dans les meilleurs délais.
-              </p>
-              <div className="space-y-3">
-                {withDefault(rawWebsite?.contactEmail, DEFAULT_WEBSITE_CONFIG.contactEmail) && (
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: NAVY + '15' }}>
-                      <Mail className="w-4 h-4" style={{ color: NAVY }} />
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500">Email</p>
-                      <a href={`mailto:${withDefault(rawWebsite?.contactEmail, DEFAULT_WEBSITE_CONFIG.contactEmail)}`} className="text-sm font-semibold text-slate-900 hover:underline">
-                        {withDefault(rawWebsite?.contactEmail, DEFAULT_WEBSITE_CONFIG.contactEmail)}
-                      </a>
-                    </div>
-                  </div>
-                )}
-                {withDefault(rawWebsite?.contactPhone, DEFAULT_WEBSITE_CONFIG.contactPhone) && (
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: GOLD + '15' }}>
-                      <Phone className="w-4 h-4" style={{ color: GOLD }} />
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500">Téléphone</p>
-                      <a href={`tel:${withDefault(rawWebsite?.contactPhone, DEFAULT_WEBSITE_CONFIG.contactPhone)}`} className="text-sm font-semibold text-slate-900 hover:underline">
-                        {withDefault(rawWebsite?.contactPhone, DEFAULT_WEBSITE_CONFIG.contactPhone)}
-                      </a>
-                    </div>
-                  </div>
-                )}
-                {withDefault(rawWebsite?.contactAddress, DEFAULT_WEBSITE_CONFIG.contactAddress) && (
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: NAVY + '15' }}>
-                      <MapPin className="w-4 h-4" style={{ color: NAVY }} />
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500">Adresse</p>
-                      <p className="text-sm font-semibold text-slate-900">{withDefault(rawWebsite?.contactAddress, DEFAULT_WEBSITE_CONFIG.contactAddress)}</p>
-                    </div>
-                  </div>
-                )}
+          {/* Galerie photo — grille (CDC 3.6) */}
+          {galleryItems.length > 0 && (
+            <div id="galerie">
+              <h3 className="text-xl md:text-2xl font-bold text-center mb-8" style={{ color: NAVY }}>
+                Galerie — Vie scolaire en images
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {galleryItems.slice(0, 8).map((item: any, i: number) => (
+                  <motion.div
+                    key={item.id || i}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    whileInView={{ opacity: 1, scale: 1 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.05 }}
+                    className="relative aspect-square rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition-all group"
+                  >
+                    {item.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={item.imageUrl} alt={item.caption || ''} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${NAVY}40, ${GOLD}30)` }}>
+                        <ImageIcon className="w-8 h-8 text-white/40" />
+                      </div>
+                    )}
+                    {item.caption && (
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {item.caption}
+                      </div>
+                    )}
+                  </motion.div>
+                ))}
               </div>
-              {website?.contactMapUrl && (
-                <a
-                  href={website.contactMapUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 mt-6 text-sm font-semibold hover:underline"
-                  style={{ color: BLUE }}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ═══ 3.7 ADMISSIONS — fond navy, texte blanc (CDC 3.7) ═══ */}
+      <section id="admissions" className="relative py-16 md:py-24 overflow-hidden" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${DARK} 100%)` }}>
+        {/* Halo doré décoratif */}
+        <div className="absolute inset-0 opacity-[0.08] bg-[radial-gradient(circle_at_top_right,#F5B700_0%,transparent_50%)]" />
+        <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <SectionHeader
+            eyebrow="Rejoindre notre établissement"
+            title="Admissions"
+            subtitle="Un parcours d'admission clair en 4 étapes pour rejoindre notre communauté éducative."
+            navy={NAVY}
+            gold={GOLD}
+            inverted
+          />
+
+          {/* Timeline horizontale desktop / verticale mobile (CDC 3.7) */}
+          <div className="mb-16">
+            <div className="grid md:grid-cols-4 gap-6 md:gap-4 relative">
+              {/* Ligne de timeline horizontale (desktop) */}
+              <div className="hidden md:block absolute top-8 left-[12.5%] right-[12.5%] h-0.5" style={{ background: `linear-gradient(90deg, ${GOLD}, ${GOLD}55, ${GOLD})` }} />
+              {ADMISSION_STEPS.map((step, i) => (
+                <motion.div
+                  key={step.num}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.15 }}
+                  className="relative text-center"
                 >
-                  <MapPin className="w-4 h-4" />
-                  Voir sur Google Maps
-                </a>
+                  <div className="relative inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 z-10" style={{ background: `linear-gradient(135deg, ${GOLD}, #e09e1f)`, boxShadow: `0 0 0 4px ${DARK}` }}>
+                    <step.Icon className="w-7 h-7" style={{ color: NAVY }} />
+                    {/* Numéro d'étape en badge */}
+                    <span className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-white text-xs font-bold flex items-center justify-center" style={{ color: NAVY }}>
+                      {step.num}
+                    </span>
+                  </div>
+                  <h4 className="text-base font-bold text-white mb-2">{step.title}</h4>
+                  <p className="text-xs text-blue-100/70 leading-relaxed px-2">{step.description}</p>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+
+          {/* Documents requis + CTA final (CDC 3.7) */}
+          <div className="grid lg:grid-cols-2 gap-8 items-center">
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 md:p-8 border border-white/10"
+            >
+              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <FileText className="w-5 h-5" style={{ color: GOLD }} />
+                Documents requis
+              </h3>
+              <ul className="space-y-2.5">
+                {REQUIRED_DOCUMENTS.map((doc, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm text-blue-50/85">
+                    <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" style={{ color: GOLD }} />
+                    <span>{doc}</span>
+                  </li>
+                ))}
+              </ul>
+            </motion.div>
+
+            {/* CTA final — "Commencer ma candidature" (or) */}
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              className="text-center"
+            >
+              <h3 className="text-2xl md:text-3xl font-extrabold text-white mb-3">
+                Prêt à nous rejoindre ?
+              </h3>
+              <p className="text-blue-100/70 text-sm mb-6 max-w-md mx-auto">
+                Démarrez votre candidature en ligne dès maintenant. Notre équipe vous accompagne à chaque étape.
+              </p>
+              <button
+                onClick={() => handlePortalClick('PUBLIC')}
+                className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl text-base font-bold shadow-xl transition-all hover:scale-105"
+                style={{ background: `linear-gradient(135deg, ${GOLD}, #e09e1f)`, color: NAVY }}
+              >
+                Commencer ma candidature <ArrowRight size={18} />
+              </button>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ 3.8 TÉMOIGNAGES ═══ */}
+      {testimonials.length > 0 && (
+        <section id="temoignages" className="py-16 md:py-24 bg-white">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <SectionHeader
+              eyebrow="Ils nous font confiance"
+              title="Témoignages"
+              subtitle="Ce que les parents, élèves et anciens élèves disent de notre établissement."
+              navy={NAVY}
+              gold={GOLD}
+            />
+
+            {/* Carrousel témoignages (CDC 3.8 — un seul visible sur mobile) */}
+            <div className="relative mb-12">
+              <div className="overflow-hidden rounded-2xl">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={activeTestimonial}
+                    initial={{ opacity: 0, x: 30 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -30 }}
+                    transition={{ duration: 0.4 }}
+                    className="bg-white border border-slate-100 rounded-2xl p-8 md:p-12 shadow-lg"
+                  >
+                    <Quote className="w-10 h-10 mb-4" style={{ color: GOLD }} />
+                    <p className="text-lg md:text-xl text-slate-700 leading-relaxed italic mb-6">
+                      &ldquo;{testimonials[activeTestimonial].content}&rdquo;
+                    </p>
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold" style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`, color: '#FFFFFF' }}>
+                        {testimonials[activeTestimonial].authorName.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                      </div>
+                      <div>
+                        <p className="font-bold" style={{ color: NAVY }}>{testimonials[activeTestimonial].authorName}</p>
+                        {testimonials[activeTestimonial].authorRole && (
+                          <p className="text-xs text-slate-500">{testimonials[activeTestimonial].authorRole}</p>
+                        )}
+                      </div>
+                      <div className="ml-auto flex gap-0.5">
+                        {Array.from({ length: testimonials[activeTestimonial].rating || 5 }).map((_, i) => (
+                          <Star key={i} size={16} className="fill-amber-400 text-amber-400" />
+                        ))}
+                      </div>
+                    </div>
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+
+              {/* Contrôles carrousel */}
+              {testimonials.length > 1 && (
+                <>
+                  <button
+                    onClick={() => setActiveTestimonial((prev) => (prev - 1 + testimonials.length) % testimonials.length)}
+                    className="absolute left-2 md:-left-6 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white shadow-md border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-colors"
+                    aria-label="Témoignage précédent"
+                  >
+                    <ChevronLeft className="w-5 h-5" style={{ color: NAVY }} />
+                  </button>
+                  <button
+                    onClick={() => setActiveTestimonial((prev) => (prev + 1) % testimonials.length)}
+                    className="absolute right-2 md:-right-6 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white shadow-md border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition-colors"
+                    aria-label="Témoignage suivant"
+                  >
+                    <ChevronRight className="w-5 h-5" style={{ color: NAVY }} />
+                  </button>
+                  {/* Dots indicateurs */}
+                  <div className="flex justify-center gap-2 mt-6">
+                    {testimonials.map((_: any, i: number) => (
+                      <button
+                        key={i}
+                        onClick={() => setActiveTestimonial(i)}
+                        className="h-2 rounded-full transition-all"
+                        style={{
+                          width: i === activeTestimonial ? 24 : 8,
+                          background: i === activeTestimonial ? GOLD : '#cbd5e1',
+                        }}
+                        aria-label={`Aller au témoignage ${i + 1}`}
+                      />
+                    ))}
+                  </div>
+                </>
               )}
             </div>
 
-            {/* Formulaire */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 sm:p-8">
+            {/* Logos partenaires / accréditations — niveaux de gris, couleur au survol (CDC 3.8) */}
+            <div className="border-t border-slate-100 pt-10">
+              <p className="text-center text-xs font-semibold uppercase tracking-wider text-slate-400 mb-6">
+                Partenaires & accréditations
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-6 md:gap-10">
+                {PARTNER_LOGOS.map((partner, i) => (
+                  <div
+                    key={i}
+                    className="grayscale opacity-50 hover:grayscale-0 hover:opacity-100 transition-all duration-300 cursor-default"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-10 h-10 rounded-lg bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
+                        {partner.abbr.slice(0, 2)}
+                      </div>
+                      <span className="text-xs font-semibold text-slate-600 hidden md:inline">{partner.name}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ═══ 3.9 CONTACT ═══ */}
+      <section id="contact" className="py-16 md:py-24" style={{ background: PEARL }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <SectionHeader
+            eyebrow="Nous contacter"
+            title="Contact"
+            subtitle="Une question sur l'inscription, les programmes ou la vie scolaire ? Écrivez-nous."
+            navy={NAVY}
+            gold={GOLD}
+          />
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Colonne gauche : Coordonnées + Carte OpenStreetMap */}
+            <div>
+              {/* Coordonnées (CDC 3.9) */}
+              <div className="bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-slate-100 mb-6">
+                <h3 className="text-lg font-bold mb-5" style={{ color: NAVY }}>Coordonnées</h3>
+                <ul className="space-y-4">
+                  {contactAddress && (
+                    <li className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${NAVY}12` }}>
+                        <MapPin className="w-4 h-4" style={{ color: NAVY }} />
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500 uppercase tracking-wider">Adresse</p>
+                        <p className="text-sm font-semibold text-slate-900">{contactAddress}{contactCity ? `, ${contactCity}` : ''}</p>
+                      </div>
+                    </li>
+                  )}
+                  {contactPhone && (
+                    <li className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${GOLD}15` }}>
+                        <Phone className="w-4 h-4" style={{ color: '#a07d00' }} />
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500 uppercase tracking-wider">Téléphone</p>
+                        <a href={`tel:${contactPhone}`} className="text-sm font-semibold text-slate-900 hover:underline">{contactPhone}</a>
+                      </div>
+                    </li>
+                  )}
+                  {contactEmail && (
+                    <li className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${NAVY}12` }}>
+                        <Mail className="w-4 h-4" style={{ color: NAVY }} />
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500 uppercase tracking-wider">Email</p>
+                        <a href={`mailto:${contactEmail}`} className="text-sm font-semibold text-slate-900 hover:underline">{contactEmail}</a>
+                      </div>
+                    </li>
+                  )}
+                  <li className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${GOLD}15` }}>
+                      <Clock className="w-4 h-4" style={{ color: '#a07d00' }} />
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase tracking-wider">Horaires</p>
+                      <p className="text-sm font-semibold text-slate-900">Lun - Ven : 7h30 - 17h00</p>
+                      <p className="text-xs text-slate-500">Sam : 8h00 - 12h00</p>
+                    </div>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Carte de localisation — iframe OpenStreetMap (CDC 3.9) */}
+              <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100">
+                <iframe
+                  title="Localisation de l'établissement"
+                  src={osmIframeSrc}
+                  className="w-full h-64 md:h-72 border-0"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                />
+                <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-xs text-slate-500 flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5" /> {contactCity || 'Bénin'}
+                  </span>
+                  <a
+                    href={`https://www.openstreetmap.org/search?query=${mapQuery}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-semibold flex items-center gap-1 hover:underline"
+                    style={{ color: NAVY }}
+                  >
+                    Ouvrir la carte <ExternalLink size={12} />
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Colonne droite : Formulaire de contact (nom, email, sujet, message) (CDC 3.9) */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 md:p-8">
+              <h3 className="text-lg font-bold mb-5 flex items-center gap-2" style={{ color: NAVY }}>
+                <Send className="w-5 h-5" style={{ color: GOLD }} />
+                Envoyez-nous un message
+              </h3>
               <ContactForm tenantSlug={slug} accentColor={GOLD} primaryColor={NAVY} />
             </div>
           </div>
         </div>
       </section>
 
-      {/* ═══ ACCÈS PORTAILS ═══ */}
-      <section id="portails" className="relative py-16 md:py-20 overflow-hidden" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 60%, ${DARK} 100%)` }}>
-        <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)` }} />
-        <div className="absolute bottom-0 left-0 right-0 h-[2px]" style={{ background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)` }} />
-        <FloatingEduParticles count={12} opacityMultiplier={1.2} variant="light" />
-        <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-2xl md:text-3xl font-black text-white mb-3">Accédez à votre espace</h2>
-          <p className="text-blue-100/70 mb-8 max-w-2xl mx-auto text-sm md:text-base">Choisissez le portail correspondant à votre profil pour vous connecter.</p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {PORTAL_DEFS.map((portal, idx) => {
-              const Icon = portal.icon;
-              return (
-                <button key={portal.type} onClick={() => handlePortalClick(portal.type)}
-                  className="group flex flex-col items-center gap-3 p-5 rounded-2xl bg-white/8 backdrop-blur-md border border-white/15 hover:bg-white/15 hover:border-white/30 transition-all">
-                  <div className="w-11 h-11 rounded-xl flex items-center justify-center shadow-md" style={{ background: idx === 0 ? GOLD : idx === 1 ? '#34d399' : '#60a5fa' }}>
-                    <Icon className="h-5 w-5 text-white" />
-                  </div>
-                  <div><p className="text-sm font-bold text-white">{portal.title}</p><p className="text-[11px] text-blue-100/60">{portal.subtitle}</p></div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ═══ FOOTER ═══ */}
+      {/* ═══ 3.10 FOOTER multi-colonnes (CDC 3.10) ═══ */}
       <TenantFooter
         schoolName={schoolName}
         schoolLogo={schoolLogo || undefined}
         schoolAcronym={schoolData?.schoolAcronym || undefined}
         schoolSlogan={schoolSlogan || undefined}
-        schoolAddress={withDefault(rawWebsite?.contactAddress, DEFAULT_WEBSITE_CONFIG.contactAddress) || schoolData?.address || undefined}
-        schoolCity={schoolData?.city || undefined}
-        schoolPhone={withDefault(rawWebsite?.contactPhone, DEFAULT_WEBSITE_CONFIG.contactPhone) || schoolData?.phone || undefined}
-        schoolEmail={withDefault(rawWebsite?.contactEmail, DEFAULT_WEBSITE_CONFIG.contactEmail) || undefined}
-        contactEmail={withDefault(rawWebsite?.contactEmail, DEFAULT_WEBSITE_CONFIG.contactEmail) || undefined}
-        contactPhone={withDefault(rawWebsite?.contactPhone, DEFAULT_WEBSITE_CONFIG.contactPhone) || undefined}
-        contactAddress={withDefault(rawWebsite?.contactAddress, DEFAULT_WEBSITE_CONFIG.contactAddress) || undefined}
+        schoolAddress={contactAddress || schoolData?.address || undefined}
+        schoolCity={contactCity || schoolData?.city || undefined}
+        schoolPhone={contactPhone || schoolData?.phone || undefined}
+        schoolEmail={contactEmail || undefined}
+        contactEmail={contactEmail || undefined}
+        contactPhone={contactPhone || undefined}
+        contactAddress={contactAddress || undefined}
         footerAboutText={withDefault(rawWebsite?.footerAboutText, DEFAULT_WEBSITE_CONFIG.footerAboutText) || undefined}
         footerCopyrightText={withDefault(rawWebsite?.footerCopyrightText, DEFAULT_WEBSITE_CONFIG.footerCopyrightText) || undefined}
         socialLinks={website?.socialLinks || undefined}
         navLinks={navLinks}
+        tenantSlug={slug}
       />
 
+      {/* Chatbot IA (optionnel) */}
       {website?.aiEnabled && (
-        <TenantAiChatbot tenantSlug={slug} welcomeMessage={withDefault(website.aiWelcomeMessage, DEFAULT_WEBSITE_CONFIG.aiWelcomeMessage) || undefined} faqItems={faqItems} />
+        <TenantAiChatbot
+          tenantSlug={slug}
+          welcomeMessage={withDefault(website.aiWelcomeMessage, DEFAULT_WEBSITE_CONFIG.aiWelcomeMessage) || undefined}
+          faqItems={faqItems}
+        />
       )}
     </div>
+  );
+}
+
+// ─── Sous-composant : carte chiffre clé avec compteur animé (CDC 8) ──
+function KeyFigureCard({ fig, gold, navy, delay }: { fig: any; gold: string; navy: string; delay: number }) {
+  // Essayer d'extraire la partie numérique pour le compteur
+  const numericMatch = String(fig.value || '').match(/^(\d+)/);
+  const targetNum = numericMatch ? parseInt(numericMatch[1], 10) : 0;
+  const suffix = numericMatch ? String(fig.value).slice(numericMatch[0].length) : '';
+  const { value, ref } = useCountUp(targetNum, 1500);
+
+  return (
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ delay }}
+      whileHover={{ y: -4 }}
+      className="bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-3 md:p-4 text-center"
+    >
+      <div className="text-xl md:text-2xl font-extrabold text-white">
+        {targetNum > 0 ? `${value}${suffix}` : fig.value}
+      </div>
+      <div className="text-[10px] md:text-xs text-blue-50/70 font-medium mt-0.5">{fig.label}</div>
+    </motion.div>
+  );
+}
+
+// ─── Sous-composant : Mot du directeur/fondateur avec bordure gauche or ──
+function DirectorWord({
+  title, text, name, photoUrl, role, navy, gold, side,
+}: {
+  title: string; text: string; name: string; photoUrl: string | null;
+  role: string; navy: string; gold: string; side: 'left' | 'right';
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: side === 'left' ? -20 : 20 }}
+      whileInView={{ opacity: 1, x: 0 }}
+      viewport={{ once: true }}
+      className="relative bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-slate-100 overflow-hidden"
+    >
+      {/* Bordure gauche or (CDC 3.3) */}
+      <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ background: `linear-gradient(180deg, ${gold}, ${gold}88)` }} />
+      <Quote className="w-7 h-7 mb-3" style={{ color: gold }} />
+      <h3 className="text-base font-bold mb-3" style={{ color: navy }}>{title}</h3>
+      <p className="text-sm text-slate-600 leading-relaxed mb-5 line-clamp-5">{text}</p>
+      <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
+        {photoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={photoUrl} alt={name} className="w-11 h-11 rounded-full object-cover ring-2 ring-amber-300/40" />
+        ) : (
+          <div className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold" style={{ background: `linear-gradient(135deg, ${navy}, #1E4FA3)`, color: '#FFFFFF' }}>
+            {name.split(' ').map(n => n[0]).slice(0, 2).join('')}
+          </div>
+        )}
+        <div>
+          <p className="text-sm font-bold text-slate-900">{name}</p>
+          <p className="text-xs text-slate-500">{role}</p>
+        </div>
+      </div>
+    </motion.div>
   );
 }

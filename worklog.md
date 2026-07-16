@@ -7589,3 +7589,94 @@ Migrations appliquées sur Neon (cumul) :
 - Migration 018 : blockReason + blockDate + unblockDate sur student_accounts
 
 Commit 10e37129 poussé sur origin/main
+
+---
+Task ID: 15-a
+Agent: full-stack-developer (Refonte site institutionnel)
+Task: Refonte du site institutionnel selon CDC + page portail tenant
+
+Work Log:
+
+Lecture préalable :
+- CDC « Academia_Helm_CDC_Site_Institutionnel.docx » — 10 sections (Navbar → Footer), palette Helm (#0B1E4D navy, #1E4FA3 blue, #F5B700 or, #2E3440 slate, #F4F6FA pearl, #FFFFFF)
+- Composant existant InstitutionalWebsite.tsx (750 lignes) — ancienne structure non conforme au CDC
+- TenantHeader.tsx — navbar opaque en permanence, NotchNav, sans menu CDC
+- footer-column.tsx — 3 colonnes (Logo, Navigation, Contact) sans colonne Portails
+- /portal (academiahelm.com/portal) — page portail principale avec BeninMap
+- /school-portal/page.tsx — serveur, résout branding depuis sous-domaine, rend InstitutionalWebsite
+
+Fichiers modifiés (4) :
+
+1. `apps/web-app/src/components/portal/TenantHeader.tsx` (133 → 237 lignes) :
+   - Navbar fixe sticky, transparente sur le Hero (rgba navy 0), devient opaque (fond navy) après 80px de scroll (CDC 3.1)
+   - Logo établissement + nom + acronym + slogan (CDC 3.1)
+   - Menu principal : Accueil, À propos, Programmes, Admissions, Vie scolaire, Actualités, Contact (CDC 3.1 — 7 items)
+   - Sous-ligne or au survol des liens de navigation
+   - Bouton CTA principal « Portail » (or) qui renvoie vers /portal du tenant (CDC 3.1)
+   - Menu burger mobile animé (framer-motion AnimatePresence)
+   - Nouveaux props optionnels : `transparentAtTop` (default true), `navLinks` (default CDC menu), `portalHref` (default '/portal')
+   - Suppression de la dépendance à NotchNav (remplacé par une nav native plus légère et conforme au CDC)
+
+2. `apps/web-app/src/components/ui/footer-column.tsx` (214 → 307 lignes) :
+   - Refonte en 4 colonnes conformes au CDC 3.10 :
+     * Colonne 1 : Logo, nom, baseline, coordonnées condensées (email/tel/adresse), réseaux sociaux
+     * Colonne 2 : Navigation (miroir de la navbar)
+     * Colonne 3 : **Portails** — 3 boutons « Portail École », « Portail Enseignant », « Portail Parent » qui renvoient vers /login?portal=SCHOOL|TEACHER|PARENT&tenant=<slug>&school_name=<name>
+     * Colonne 4 : Légal (Mentions légales, Politique de confidentialité, CGU) avec icônes FileText/Shield/Scale
+   - Ligne de bas : © Année, nom établissement — Propulsé par Academia Helm — YEHI OR Tech
+   - Nouveau prop optionnel : `tenantSlug` (utilisé pour construire les URLs des boutons portails)
+
+3. `apps/web-app/src/components/portal/InstitutionalWebsite.tsx` (750 → 1208 lignes) :
+   Refonte complète selon CDC. 10 sections implémentées :
+   - 3.1 Navbar : utilise TenantHeader (transparent → opaque après 80px), menu CDC 7 items, CTA "Portail" (or)
+   - 3.2 Hero : dégradé navy → bleu académique, overlay bg-black/40 (40%), H1 baseline, sous-titre, CTA primaire "Demander une admission" (or plein), CTA secondaire "Portail" (contour blanc → /portal), bandeau chiffres clés (4 cartes avec compteur animé au scroll via IntersectionObserver)
+   - 3.3 À propos / Présentation : H2 + liseré or, mission/vision, zig-zag texte/image (motion x:-30/+30), mot du directeur + mot du promoteur avec bordure gauche or (linear-gradient 180deg), citation + portrait
+   - 3.4 Excellence académique / Programmes : H2, grille 3 cartes (Maternelle/Primaire/Secondaire) avec icônes Baby/School/Library, hover élévation + halo or, points de différenciation (Bilinguisme, STEM, Arts, Sport) en liste à icônes
+   - 3.5 Corps enseignant : H2, ratio encadrant/élève en badge or (1:15), grille 4 profils (photo initiales gradient navy, role, subject), bordure or au hover
+   - 3.6 Vie scolaire / Actualités : H2, 3-6 cartes actualités (image, catégorie, date, extrait), galerie photo grille (2/3/4 colonnes responsive)
+   - 3.7 Admissions : H2 sur fond navy (gradient NAVY → DARK), texte blanc, timeline 4 étapes horizontale desktop / verticale mobile (Candidature, Évaluation, Entretien, Confirmation), liste documents requis (6 items avec CheckCircle2 or), CTA final "Commencer ma candidature" (or)
+   - 3.8 Témoignages : H2, carrousel témoignages (AnimatePresence mode="wait", 1 visible mobile), contrôles prev/next + dots indicateurs, logos partenaires en niveaux de gris (grayscale) → couleur au survol
+   - 3.9 Contact : H2, coordonnées (adresse, tel, email, horaires) avec icônes navy/or, iframe OpenStreetMap (layer=mapnik), formulaire via composant ContactForm existant
+   - 3.10 Footer : utilise TenantFooter avec tenantSlug pour les boutons portails
+   - Sous-composants extraits : SectionHeader (H2 + liseré or), KeyFigureCard (compteur animé), DirectorWord (citation + bordure gauche or), useCountUp (hook IntersectionObserver)
+   - Signature préservée : `export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props)`
+   - Imports conservés : LogoCircle, TenantHeader, TenantFooter, ContactForm, resolveTenantColors, DEFAULT_WEBSITE_CONFIG, DEFAULT_NEWS_ARTICLES, DEFAULT_GALLERY_ITEMS, DEFAULT_TESTIMONIALS, DEFAULT_FAQ_ITEMS, withDefault, shouldShowSection, TenantStructuredData, TenantAiChatbot, TenantRecruitmentBanner, FloatingEduParticles, motion/AnimatePresence
+
+4. `apps/web-app/src/app/school-portal/jobs/page.tsx` (compatibilité) :
+   - Ajout des props `transparentAtTop={false}` et `navLinks={navLinks}` au TenantHeader pour préserver le comportement opaque de la navbar sur /jobs (pas de hero image en arrière-plan) et conserver le menu spécifique /jobs (Accueil, Présentation, Actualités, Agenda, Recrutement, Contact)
+
+Fichiers créés (2) :
+
+5. `apps/web-app/src/components/portal/TenantPortalSelection.tsx` (403 lignes, nouveau) :
+   - Composant client — page portail du tenant adaptée de /portal (academiahelm.com/portal)
+   - Reprend le design (carte du Bénin + grille de portails)
+   - Pas de recherche d'école (tenant déjà connu via sous-domaine)
+   - 4 boutons : École (Direction & administration), Enseignant (Pédagogie & suivi), Parent/Élève (Suivi & communication), Public (Pré-inscription en ligne)
+   - Chaque bouton renvoie vers /login?portal=school|teacher|parent&tenant=<slug>&school_name=<name> (ou /public/pre-enrollment?school=<slug> pour Public)
+   - Layout 2 colonnes : BeninMap (64%) à gauche + panneau portails (36%) à droite
+   - Carte identité tenant en haut (logo + nom + slogan)
+   - Lien "Retour au site institutionnel" → /
+   - Header (TenantHeader opaque) + Footer (TenantFooter avec tenantSlug)
+   - Fallback client : si schoolInfo null, charge via /api/public/schools/by-subdomain/<slug>
+
+6. `apps/web-app/src/app/school-portal/portal/page.tsx` (140 lignes, nouveau) :
+   - Server component Next.js — résout branding tenant depuis sous-domaine (même logique que /school-portal/page.tsx)
+   - Strategie de résolution : BFF via 127.0.0.1 en local, appel direct NestJS en production
+   - generateMetadata dynamique : `Portail — <nom école>`
+   - dynamic = 'force-dynamic' (utilise headers())
+   - Passe schoolInfo + subdomain à <TenantPortalSelection>
+
+Vérifications TypeScript :
+- `bunx tsc --noEmit` sur apps/web-app : 10 erreurs pré-existantes dans `src/components/cms/useAutoSave.ts` (mentionnées dans Task 13-a, non liées à ce commit). 0 erreur sur les 6 fichiers modifiés/créés.
+
+Stage Summary:
+- 4 fichiers modifiés + 2 fichiers créés (1868 lignes ajoutées)
+- 10 sections CDC implémentées de la Navbar au Footer
+- Page portail tenant créée (/school-portal/portal) avec 4 portails (École, Enseignant, Parent/Élève, Public) et carte du Bénin
+- Palette CDC respectée : Navy #0B1E4D, Blue #1E4FA3, Gold #F5B700, Slate #2E3440, Pearl #F4F6FA
+- Navbar transparente sur Hero, opaque après 80px scroll (CDC 3.1)
+- CTA "Portail" présent dans le Hero (contour blanc → /portal) ET dans la Navbar (or → /portal)
+- 3 boutons portails dans le footer (École, Enseignant, Parent) → /login?portal=...&tenant=...
+- Signature `InstitutionalWebsite({ schoolInfo, subdomain })` préservée
+- Imports existants conservés, framer-motion utilisé, mobile-first respectif
+- Compatibilité /jobs préservée (props transparentAtTop=false + navLinks personnalisés)

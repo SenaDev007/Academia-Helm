@@ -126,6 +126,8 @@ export default function TenantCareersPage() {
         schoolSlogan={school?.slogan || undefined}
         colors={colors}
         activeNav="Recrutement"
+        transparentAtTop={false}
+        navLinks={navLinks}
       />
 
       {/* Bande recrutement */}

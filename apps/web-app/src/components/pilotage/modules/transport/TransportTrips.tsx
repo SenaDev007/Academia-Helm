@@ -1,10 +1,24 @@
 'use client';
 
 import { useState } from 'react';
-import { MapPin, Bus, Clock, Activity, Play, CheckCircle2, AlertTriangle, Loader2, X } from 'lucide-react';
+import { Bus, Clock, Activity, Play, CheckCircle2, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { useToast } from '@/components/ui/use-toast';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
 interface AssignmentItem {
   id: string;
@@ -35,6 +49,8 @@ const EMPTY_FORM = { vehicleId: '', routeId: '', driverId: '' };
 export default function TransportTrips() {
   const { academicYear } = useModuleContext();
   const { data, loading, error, refetch } = useModulesList<AssignmentItem>('transport', 'assignments', academicYear?.id);
+  const { toast } = useToast();
+  const confirmDialog = useConfirmDialog();
 
   const trips = data ?? [];
 
@@ -53,24 +69,38 @@ export default function TransportTrips() {
     try {
       setSubmitting(true);
       await modulesApi.post('transport/trips/start', formData, buildModulesApiOptions(academicYear?.id));
+      toast({ title: 'Trajet démarré', description: 'Le trajet est maintenant en cours.' });
       setStartModalOpen(false);
       setFormData(EMPTY_FORM);
       await refetch();
     } catch (e: any) {
-      alert(e?.response?.data?.message || e?.message || 'Erreur lors du démarrage du trajet');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message || e?.message || 'Erreur lors du démarrage du trajet',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleCompleteTrip = async (tripId: string) => {
-    if (!confirm('Terminer ce trajet ?')) return;
+    const ok = await confirmDialog.danger(
+      'Terminer ce trajet ? Son statut passera à COMPLETED et il sera archivé.',
+      'Terminer le trajet',
+    );
+    if (!ok) return;
     try {
       setActionLoading(tripId);
       await modulesApi.post(`transport/trips/${tripId}/complete`, {}, buildModulesApiOptions(academicYear?.id));
+      toast({ title: 'Trajet terminé', description: 'Le trajet a été clôturé avec succès.' });
       await refetch();
     } catch (e: any) {
-      alert(e?.response?.data?.message || e?.message || 'Erreur lors de la finalisation du trajet');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message || e?.message || 'Erreur lors de la finalisation du trajet',
+        variant: 'destructive',
+      });
     } finally {
       setActionLoading(null);
     }
@@ -81,12 +111,17 @@ export default function TransportTrips() {
     try {
       setEventSubmitting(true);
       await modulesApi.post(`transport/trips/${eventTripId}/events`, eventForm, buildModulesApiOptions(academicYear?.id));
+      toast({ title: 'Événement enregistré', description: 'L\'événement a été ajouté au journal du trajet.' });
       setEventModalOpen(false);
       setEventForm({ type: 'BOARDING', description: '' });
       setEventTripId(null);
       await refetch();
     } catch (e: any) {
-      alert(e?.response?.data?.message || e?.message || 'Erreur lors de l\'enregistrement de l\'événement');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message || e?.message || 'Erreur lors de l\'enregistrement de l\'événement',
+        variant: 'destructive',
+      });
     } finally {
       setEventSubmitting(false);
     }
@@ -96,7 +131,7 @@ export default function TransportTrips() {
     return (
       <div className="flex items-center justify-center py-16">
         <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-        <span className="ml-2 text-slate-600">Chargement...</span>
+        <span className="ml-2 text-gray-600">Chargement...</span>
       </div>
     );
   }
@@ -109,28 +144,24 @@ export default function TransportTrips() {
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-8">
-        <h3 className="text-xl font-black text-slate-900 tracking-tighter uppercase">Suivi des trajets (Temps réel)</h3>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-lg font-semibold text-gray-900">Suivi des trajets (Temps réel)</h3>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest">
-            <Activity className="w-3 h-3" /> System Live
-          </div>
-          <button
-            onClick={() => { setFormData(EMPTY_FORM); setStartModalOpen(true); }}
-            className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all"
-          >
-            <Play className="w-4 h-4" />
-            Démarrer un Trajet
-          </button>
+          <Badge variant="outline" className="border-emerald-200 text-emerald-700 bg-emerald-50">
+            <Activity className="w-3 h-3 mr-1" /> System Live
+          </Badge>
+          <Button onClick={() => { setFormData(EMPTY_FORM); setStartModalOpen(true); }}>
+            <Play className="w-4 h-4" /> Démarrer un Trajet
+          </Button>
         </div>
       </div>
 
       {trips.length === 0 ? (
-        <div className="text-center py-16 text-slate-500">
+        <div className="text-center py-16 text-gray-500">
           Aucune donnée disponible pour cette année scolaire.
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {trips.map((trip) => {
             const route = trip.route || trip.routeName || `Trajet ${trip.id}`;
             const vehicle = trip.vehicle || trip.vehicleName || '—';
@@ -143,195 +174,184 @@ export default function TransportTrips() {
             const delay = trip.delay ?? trip.delayMinutes ?? 0;
             const isActive = status === 'IN_PROGRESS' || status === 'ACTIVE';
             return (
-              <div key={trip.id} className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
+              <Card key={trip.id} className="p-6 shadow-sm hover:shadow-md transition-all">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                  <div className="flex items-center gap-6">
-                    <div className={`p-5 rounded-2xl ${
+                  <div className="flex items-center gap-4">
+                    <div className={`p-4 rounded-xl ${
                       isActive ? 'bg-emerald-50 text-emerald-600' :
-                      status === 'COMPLETED' ? 'bg-navy-50 text-navy-900' : 'bg-slate-50 text-slate-400'
+                      status === 'COMPLETED' ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-50 text-gray-400'
                     }`}>
                       {isActive ? <Play className="w-6 h-6 animate-pulse" /> :
                        status === 'COMPLETED' ? <CheckCircle2 className="w-6 h-6" /> : <Clock className="w-6 h-6" />}
                     </div>
                     <div>
-                      <h4 className="text-xl font-black text-slate-900 tracking-tighter uppercase leading-tight mb-1">{route}</h4>
+                      <h4 className="text-lg font-semibold text-gray-900 mb-1">{route}</h4>
                       <div className="flex items-center gap-3">
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{vehicle}</span>
-                        <span className="text-[10px] text-slate-300 font-black uppercase">•</span>
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{driver}</span>
+                        <span className="text-xs font-medium text-gray-500">{vehicle}</span>
+                        <span className="text-xs text-gray-300">•</span>
+                        <span className="text-xs font-medium text-gray-500">{driver}</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-8">
+                  <div className="flex flex-wrap items-center gap-6">
                     <div className="text-center">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-2">Départ</p>
-                      <p className="text-lg font-black text-slate-900 tracking-tighter">{start || expectedStart || '—'}</p>
+                      <p className="text-xs font-medium text-gray-500 mb-1">Départ</p>
+                      <p className="text-base font-semibold text-gray-900">{start || expectedStart || '—'}</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-2">
+                      <p className="text-xs font-medium text-gray-500 mb-1">
                         {status === 'COMPLETED' ? 'Arrivée' : 'Estimation'}
                       </p>
-                      <p className="text-lg font-black text-slate-900 tracking-tighter">{end || expected || '—'}</p>
+                      <p className="text-base font-semibold text-gray-900">{end || expected || '—'}</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-2">Retard</p>
-                      <p className={`text-lg font-black tracking-tighter ${delay > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                      <p className="text-xs font-medium text-gray-500 mb-1">Retard</p>
+                      <p className={`text-base font-semibold ${delay > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                         {delay ? `+${delay} min` : '0 min'}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${
-                        isActive ? 'bg-emerald-50 text-emerald-600' :
-                        status === 'COMPLETED' ? 'bg-slate-50 text-slate-600' : 'bg-slate-50 text-slate-400'
-                      }`}>
-                        {status}
-                      </span>
-                    </div>
+                    <Badge
+                      variant="outline"
+                      className={
+                        isActive ? 'border-emerald-200 text-emerald-700 bg-emerald-50' :
+                        status === 'COMPLETED' ? 'border-gray-200 text-gray-700 bg-gray-50' :
+                        'border-gray-200 text-gray-500 bg-gray-50'
+                      }
+                    >
+                      {status}
+                    </Badge>
                   </div>
                 </div>
 
                 {isActive && (
-                  <div className="mt-8 pt-8 border-t border-slate-50">
-                    <div className="flex items-center justify-between mb-4">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Progression de l'itinéraire</p>
-                      <p className="text-[10px] font-black text-navy-900 uppercase tracking-widest">65% complété</p>
+                  <div className="mt-6 pt-6 border-t border-gray-50">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-xs font-medium text-gray-500">Progression de l'itinéraire</p>
+                      <p className="text-xs font-semibold text-indigo-700">65% complété</p>
                     </div>
-                    <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
                       <div className="h-full bg-emerald-500 rounded-full" style={{ width: '65%' }}></div>
                     </div>
                     <div className="mt-4 flex items-center gap-3">
-                      <button
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => { setEventTripId(trip.id); setEventForm({ type: 'BOARDING', description: '' }); setEventModalOpen(true); }}
                         disabled={actionLoading === trip.id}
-                        className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100 transition-all disabled:opacity-50"
                       >
                         Événement
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="bg-emerald-600 hover:bg-emerald-700"
                         onClick={() => handleCompleteTrip(trip.id)}
                         disabled={actionLoading === trip.id}
-                        className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all disabled:opacity-50"
                       >
-                        {actionLoading === trip.id ? 'Envoi...' : 'Terminer'}
-                      </button>
+                        {actionLoading === trip.id && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        Terminer
+                      </Button>
                     </div>
                   </div>
                 )}
-              </div>
+              </Card>
             );
           })}
         </div>
       )}
 
-      {startModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold">Démarrer un trajet</h3>
-              <button onClick={() => setStartModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
-                <X className="w-5 h-5" />
-              </button>
+      <Dialog open={startModalOpen} onOpenChange={setStartModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Démarrer un trajet</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="tr-vehicle">Vehicle ID</Label>
+              <Input
+                id="tr-vehicle"
+                type="text"
+                value={formData.vehicleId}
+                onChange={(e) => setFormData({ ...formData, vehicleId: e.target.value })}
+                placeholder="vehicle-001"
+              />
             </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Vehicle ID</label>
-                <input
-                  type="text"
-                  value={formData.vehicleId}
-                  onChange={(e) => setFormData({ ...formData, vehicleId: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  placeholder="vehicle-001"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Route ID</label>
-                <input
-                  type="text"
-                  value={formData.routeId}
-                  onChange={(e) => setFormData({ ...formData, routeId: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  placeholder="route-001"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Driver ID</label>
-                <input
-                  type="text"
-                  value={formData.driverId}
-                  onChange={(e) => setFormData({ ...formData, driverId: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  placeholder="driver-001"
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="tr-route">Route ID</Label>
+              <Input
+                id="tr-route"
+                type="text"
+                value={formData.routeId}
+                onChange={(e) => setFormData({ ...formData, routeId: e.target.value })}
+                placeholder="route-001"
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setStartModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
-                Annuler
-              </button>
-              <button
-                onClick={handleStartTrip}
-                disabled={submitting}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-              >
-                {submitting ? 'Envoi...' : 'Démarrer'}
-              </button>
+            <div className="space-y-2">
+              <Label htmlFor="tr-driver">Driver ID</Label>
+              <Input
+                id="tr-driver"
+                type="text"
+                value={formData.driverId}
+                onChange={(e) => setFormData({ ...formData, driverId: e.target.value })}
+                placeholder="driver-001"
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStartModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleStartTrip} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Démarrer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      {eventModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold">Événement de trajet</h3>
-              <button onClick={() => setEventModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Type d'événement</label>
-                <select
-                  value={eventForm.type}
-                  onChange={(e) => setEventForm({ ...eventForm, type: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                >
-                  <option value="BOARDING">Embarquement</option>
-                  <option value="DISEMBARKING">Débarquement</option>
-                  <option value="DELAY">Retard</option>
-                  <option value="INCIDENT">Incident</option>
-                  <option value="ARRIVAL">Arrivée</option>
-                  <option value="DEPARTURE">Départ</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Description</label>
-                <textarea
-                  value={eventForm.description}
-                  onChange={(e) => setEventForm({ ...eventForm, description: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  rows={3}
-                  placeholder="Détails de l'événement"
-                />
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setEventModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
-                Annuler
-              </button>
-              <button
-                onClick={handleAddEvent}
-                disabled={eventSubmitting}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+      <Dialog open={eventModalOpen} onOpenChange={setEventModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Événement de trajet</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="ev-type">Type d'événement</Label>
+              <select
+                id="ev-type"
+                value={eventForm.type}
+                onChange={(e) => setEventForm({ ...eventForm, type: e.target.value })}
+                className="w-full h-9 px-3 border border-gray-200 rounded-md text-sm bg-transparent"
               >
-                {eventSubmitting ? 'Envoi...' : 'Enregistrer'}
-              </button>
+                <option value="BOARDING">Embarquement</option>
+                <option value="DISEMBARKING">Débarquement</option>
+                <option value="DELAY">Retard</option>
+                <option value="INCIDENT">Incident</option>
+                <option value="ARRIVAL">Arrivée</option>
+                <option value="DEPARTURE">Départ</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ev-desc">Description</Label>
+              <textarea
+                id="ev-desc"
+                value={eventForm.description}
+                onChange={(e) => setEventForm({ ...eventForm, description: e.target.value })}
+                className="w-full min-h-[80px] px-3 py-2 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                rows={3}
+                placeholder="Détails de l'événement"
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEventModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleAddEvent} disabled={eventSubmitting}>
+              {eventSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Enregistrer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {confirmDialog.dialog}
     </div>
   );
 }

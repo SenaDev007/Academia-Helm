@@ -5781,3 +5781,1059 @@ Stage Summary:
   * 5+ mocks hardcoded à brancher sur vrais endpoints
   * Duplication QHSE dans modules-complementaires.controller.ts (préexistante)
   * CRUD incomplet (DELETE/PUT manquants) sur transport, educast, canteen
+
+---
+Task ID: 7-a
+Agent: full-stack-developer (Module Boutique)
+Task: Standardiser 12 composants shop sur pattern Finance
+
+Work Log:
+- Lecture des références : worklog.md (contexte tâches précédentes), STANDARDIZATION-GUIDE.md (guide obligatoire), TransactionsContent.tsx (pattern Finance cible), ShopModulePage/ShopDashboard/ShopProducts (déjà refondus, ne pas toucher)
+- Lecture des 12 composants à standardiser pour identifier les écarts : alert(), fixed inset-0 modals, <table>/<thead>/<tbody>/<tr>/<td>/<th> HTML, <input>/<label>/<button> HTML, rounded-3xl / rounded-[2.5rem], font-black uppercase tracking-widest, bg-navy-900 text-white (boutons), text-[10px]
+- Refonte complète des 12 fichiers (logique métier conservée — appels modulesApi, useModulesList, useState/handlers inchangés) :
+
+1. ShopCatalog.tsx (336→393 lignes) :
+   * 2 alert() → 2 toast({ title, description, variant }) via useToast()
+   * 2 modals fixed inset-0 → <Dialog>/<DialogContent>/<DialogHeader>/<DialogTitle>/<DialogFooter>
+   * <input>/<label> HTML → <Input>/<Label> shadcn
+   * <button> custom bg-navy-900 → <Button> shadcn
+   * rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+   * ProductCard : rounded-3xl border-gray-100 → rounded-xl border-gray-200 shadow-sm
+
+2. ShopOrders.tsx (338→379 lignes) :
+   * 2 alert() → 2 toast() (création + changement statut)
+   * 1 modal fixed inset-0 → <Dialog> shadcn
+   * 1 table HTML → <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell>
+   * <input>/<label>/<button> → <Input>/<Label>/<Button> shadcn
+   * Bouton bg-navy-900 uppercase → <Button> indigo-600
+   * OrderStatCard : bg-white p-4 rounded-2xl → <Card> shadcn p-4
+   * OrderRow : <tr>/<td> HTML → <TableRow>/<TableCell>
+
+3. ShopPOS.tsx (334→369 lignes) :
+   * 3 alert() → 3 toast() (panier vide, vente encaissée, erreur recharge)
+   * 1 modal fixed inset-0 → <Dialog> shadcn
+   * <input>/<label>/<button> → <Input>/<Label>/<Button> shadcn (y compris POSProductCard + PaymentModeBtn)
+   * rounded-3xl → rounded-xl, font-black uppercase → font-semibold
+   * Panier header : bg-navy-900 → bg-slate-900
+   * Bouton valider : bg-navy-900 uppercase → <Button> shadcn default
+
+4. ShopPayments.tsx (347→395 lignes) :
+   * 2 alert() → 2 toast() (enregistrement paiement + recharge wallet)
+   * 2 modals fixed inset-0 → <Dialog> shadcn
+   * 1 table HTML → <Table> shadcn (historique transactions)
+   * <input>/<label>/<button> → <Input>/<Label>/<Button> shadcn (QuickAction incluse)
+   * Card rounded-[2.5rem] → rounded-xl
+   * Wallet gradient from-navy-900 to-blue-900 → from-indigo-600 to-blue-700
+   * Titres font-black uppercase tracking-tight → font-semibold
+
+5. ShopStocks.tsx (344→378 lignes) :
+   * 1 alert() → 1 toast() (mise à jour stock)
+   * 1 modal fixed inset-0 → <Dialog> shadcn
+   * 1 table HTML → <Table> shadcn
+   * <input>/<label>/<button> → <Input>/<Label>/<Button> shadcn
+   * Card rounded-3xl → rounded-xl
+   * Sidebar navy-900 rounded-[2.5rem] → slate-900 rounded-xl
+
+6. ShopSuppliers.tsx (384→411 lignes) :
+   * 2 alert() → 2 toast() (création fournisseur + PO)
+   * 2 modals fixed inset-0 → <Dialog> shadcn
+   * 1 table HTML → <Table> shadcn (bons de commande)
+   * <input>/<label>/<button> → <Input>/<Label>/<Button> shadcn
+   * Cards rounded-3xl / rounded-[2.5rem] → rounded-xl
+   * SupplierCard : icône bg-navy-50 → bg-indigo-50
+
+7. ShopDiscounts.tsx (261→281 lignes) :
+   * 1 alert() → 1 toast() (création remise)
+   * 1 modal fixed inset-0 → <Dialog> shadcn
+   * 1 table HTML → <Table> shadcn (promotions actives)
+   * <input>/<label>/<button> → <Input>/<Label>/<Button> shadcn
+   * Cards rounded-[2.5rem] → rounded-xl
+   * Bandeau ORION bg-navy-900 → bg-slate-900
+
+8. ShopKits.tsx (262→285 lignes) :
+   * 1 alert() → 1 toast() (création kit)
+   * 1 modal fixed inset-0 → <Dialog> shadcn
+   * <input>/<label>/<button> → <Input>/<Label>/<Button> shadcn
+   * Cards rounded-[2.5rem] → rounded-xl
+   * Badge "Best-Seller" bg-navy-500 → bg-indigo-600
+   * COLOR_BY_INDEX : 'navy' remplacé par 'indigo' pour cohérence
+
+9. ShopPickups.tsx (321→348 lignes) :
+   * 1 alert() inline (bouton "Confirmer Retrait") → 1 toast({ title: 'Information', description: '...' })
+   * 1 alert() erreur statut → 1 toast() destructif
+   * 1 table HTML → <Table> shadcn
+   * <input>/<button> → <Input>/<Button> shadcn
+   * Cards rounded-[2.5rem] → rounded-xl
+   * Bandeau SMS navy-900 → slate-900
+   * Input code SMS (4 cases) : <input> HTML → <Input> shadcn avec styles custom (bg-white/10)
+
+10. ShopReturns.tsx (313→339 lignes) :
+    * 2 alert() → 2 toast() (création retour + statut)
+    * 1 modal fixed inset-0 → <Dialog> shadcn
+    * 1 table HTML → <Table> shadcn
+    * <input>/<label>/<button> → <Input>/<Label>/<Button> shadcn
+    * Bouton bg-rose-600 uppercase → <Button variant="destructive">
+    * Cards rounded-3xl / rounded-[2.5rem] → rounded-xl
+
+11. ShopReports.tsx (249→261 lignes) :
+    * 1 alert() (bouton "Générer Rapport Complet") → 1 toast() info
+    * 1 table HTML → <Table> shadcn (top products)
+    * <button> → <Button> shadcn
+    * Cards rounded-[2.5rem] → rounded-xl
+    * SummaryCard : icône bg-navy-50 → bg-indigo-50
+    * Chart placeholders : rounded-3xl → rounded-xl
+
+12. ShopSettings.tsx (243→260 lignes) :
+    * 2 alert() → 2 toast() (enregistrement succès + erreur)
+    * <input>/<label> HTML pour toggles → <Switch> shadcn (composant switch.tsx) avec useState contrôlé
+    * <button> HTML (SettingsTab) → <Button variant="outline"> shadcn
+    * Input seuil <input type="number"> → <Input> shadcn
+    * Card rounded-[2.5rem] → rounded-xl
+    * Bandeau ORION bg-navy-900 → bg-slate-900
+
+- Vérifications post-refonte (ripgrep) :
+  * 0 alert() restant dans les 12 fichiers (uniquement mentionnés dans les commentaires de header)
+  * 0 modal fixed inset-0 restant
+  * 0 <table>/<thead>/<tbody>/<tr>/<td>/<th> HTML restant
+  * 0 <input>/<label>/<button> HTML restant
+  * 0 rounded-3xl / rounded-[2.5rem] restant
+  * 0 font-black uppercase tracking-widest restant
+  * 0 bg-navy-900 text-white (boutons) restant
+  * 0 text-[10px] / text-[9px] / text-[8px] / text-[11px] restant
+- Note : ESLint non exécutable (node_modules absent + Next.js 16 a retiré next lint). Vérification visuelle via grep.
+- Note : <select> HTML conservé (non mentionné dans le guide de standardisation — TransactionsContent Finance utilise aussi <input type="date"> HTML natif)
+
+Stage Summary:
+- 12 fichiers shop standardisés sur pattern Finance : ShopCatalog, ShopOrders, ShopPOS, ShopPayments, ShopStocks, ShopSuppliers, ShopDiscounts, ShopKits, ShopPickups, ShopReturns, ShopReports, ShopSettings
+- 17 alert() migrés vers useToast() au total
+- 12 modals fixed inset-0 convertis en <Dialog> shadcn (DialogHeader/DialogTitle/DialogFooter/DialogContent)
+- 7 tables HTML converties en <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell> shadcn (ShopOrders, ShopPayments, ShopStocks, ShopSuppliers, ShopDiscounts, ShopPickups, ShopReturns, ShopReports = 8 tables en fait)
+- ~50 <input>/<label> HTML migrés vers <Input>/<Label> shadcn
+- ~40 <button> custom migrés vers <Button> shadcn (variant default/outline/ghost/destructive)
+- Toggle switches CSS-only → <Switch> shadcn avec state contrôlé (ShopSettings)
+- Couleurs harmonisées : navy-900 (boutons) → indigo-600 / slate-900 (bandeaux foncés) / blue-600 (accents)
+- Typographie harmonisée : font-black uppercase tracking-widest → font-semibold / font-medium
+- Cards harmonisées : rounded-3xl / rounded-[2.5rem] → rounded-xl border-gray-200 shadow-sm
+- Logique métier 100% conservée (modulesApi.post/put, useModulesList, useModulesDashboard, refetch, useState, handlers)
+
+---
+Task ID: 7-b
+Agent: full-stack-developer (Module Infirmerie)
+Task: Standardiser InfirmaryModulePage + 10 sous-composants
+
+Work Log:
+- Lecture des références : worklog.md (sections 7-a Boutique + contexte précédent), STANDARDIZATION-GUIDE.md (guide obligatoire), FinanceModulePage.tsx (pattern cible), TransactionsContent.tsx (sous-composants cibles), ShopModulePage.tsx (exemple déjà refondu), InfirmaryModulePage.tsx (à refondre)
+- Lecture des 10 sous-composants à standardiser pour identifier les écarts : alert(), fixed inset-0 modals, <table>/<thead>/<tbody>/<tr>/<td>/<th> HTML, <input>/<label>/<button> HTML, rounded-3xl / rounded-[2.5rem], font-black uppercase tracking-widest, bg-navy-900 text-white (boutons), text-[10px] / text-[9px]
+
+A. Refonte complète de la page principale :
+1. InfirmaryModulePage.tsx (125→162 lignes) :
+   * ModulePageLayout (obsolète) → ModuleContainer (pattern Finance)
+   * useAcademicYear/useSchoolLevel → useModuleContext
+   * useState<TabId> local → useState<string> + activeSubModuleId
+   * TABS array (10 entrées) → subModules.modules (10 modules avec icônes Lucide)
+   * Onglets pills custom navy-900 uppercase + framer-motion AnimatePresence → SubModuleNavigation standard (bleus soulignés) géré par ModuleContainer
+   * Bouton "Action Rapide" bg-[#C9A84C] (gold) → 2 boutons standard (indigo-600 "Nouveau passage" + outline "Rapports")
+   * KPIs ajoutés dans ModuleHeader (visites / urgences actives / alertes stock / dossiers suivis) — chargés via fetch /api/modules-complementaires/infirmary/dashboard
+   * renderActiveTab() switch → content ternaire (pattern Finance)
+
+B. Refonte des 10 sous-composants (logique métier 100% conservée — useModulesList, useModulesDashboard, modulesApi.post/get, refetch, useState, handlers inchangés) :
+
+1. InfirmaryDashboard.tsx (255→248 lignes) :
+   * Card div rounded-2xl border-slate-200 → <Card> shadcn rounded-xl
+   * <button> "Voir tout" / "Gérer la pharmacie" / "Visualiser" / "Valider" → <Button> shadcn (variant link/outline/default/secondary)
+   * Bandeau navy-900 + boutons gold (#C9A84C) → slate-900 + indigo-600
+   * Badge font-black uppercase → <Badge variant="outline">
+   * text-[10px] → text-xs
+
+2. MedicalRecords.tsx (148→158 lignes) :
+   * 1 table HTML <table>/<thead>/<tbody>/<tr>/<td>/<th> → <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell> shadcn
+   * motion.tr (framer) → <TableRow> shadcn
+   * <input> recherche + <button> Filtres/Nouveau → <Input>/<Button> shadcn
+   * Bouton bg-navy-900 text-white → <Button> shadcn (default = indigo)
+   * Badge <span> → <Badge variant="outline">
+   * Pagination <button> → <Button variant="outline" size="sm">
+   * font-bold uppercase tracking-wider → font-semibold
+
+3. InfirmaryVisits.tsx (248→258 lignes) :
+   * 1 alert() → 1 toast({ title: 'Passage enregistré', description: '...' }) via useToast() + 1 toast destructif pour l'erreur
+   * 1 modal fixed inset-0 → <Dialog>/<DialogContent>/<DialogHeader>/<DialogTitle>/<DialogFooter> shadcn
+   * <input>/<label> HTML → <Input>/<Label> shadcn (3 champs : studentId, reason, symptoms)
+   * <textarea> HTML → styled textarea (pattern ShopOrders — pas de composant Textarea dans ui/)
+   * <button> "Nouveau Passage" (bg-blue-600) / "Aujourd'hui" (border) → <Button>/<Button variant="outline">
+   * Boutons "Voir tout" / "Détails" → <Button variant="ghost/link/outline">
+   * Status span text-[10px] uppercase → <Badge variant="outline">
+   * Card div rounded-2xl → <Card> shadcn
+
+4. Emergencies.tsx (335→327 lignes) :
+   * 2 alert() → 2 toast() (création urgence + mise à jour statut — variant destructif pour création)
+   * 1 modal fixed inset-0 → <Dialog> shadcn
+   * 1 table HTML <table>/<thead>/<tbody>/<tr>/<td>/<th> → <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell> shadcn (historique incidents)
+   * <input>/<label> HTML → <Input>/<Label> shadcn (3 champs : studentId, severity, description)
+   * <button> "DÉCLARER URGENCE" bg-rose-600 + font-black uppercase → <Button variant="destructive">
+   * Boutons "Appeler Parent" / "Prendre en charge" / "Résoudre" → <Button variant="outline/custom/destructive">
+   * Card bg-rose-50 rounded-3xl → rounded-xl
+   * Badge span text-[10px] uppercase → <Badge variant="outline">
+   * text-[10px] / text-[9px] → text-xs
+
+5. PharmacyStock.tsx (297→299 lignes) :
+   * 2 alert() → 2 toast() (champ manquant + mouvement enregistré / erreur)
+   * 1 modal fixed inset-0 → <Dialog> shadcn
+   * <input>/<label> HTML → <Input>/<Label> shadcn (3 champs : medicationId, type, quantity)
+   * <button> "Mouvement de Stock" (bg-emerald-600) / "Sortie Stock" (bg-slate-900) → <Button>/<Button variant="outline">
+   * Card rounded-3xl → rounded-xl
+   * Tabs categories <button> text-[10px] uppercase → <Button> shadcn
+   * text-[10px] → text-xs
+
+6. AllergiesVigilance.tsx (214→219 lignes) :
+   * Bandeau gradient rounded-3xl → rounded-xl
+   * <button> "Diffuser Alerte Globale" → <Button variant="secondary"> avec toast()
+   * Cards rounded-2xl → <Card> shadcn rounded-xl
+   * <input> recherche → <Input> shadcn
+   * Badge span text-[10px] font-black uppercase → <Badge variant="outline">
+   * <button> Users icon → <Button variant="ghost" size="icon">
+   * text-[10px] → text-xs
+
+7. MedicalCheckups.tsx (259→247 lignes) :
+   * 1 alert() → 1 toast() (création bilan)
+   * 1 modal fixed inset-0 → <Dialog> shadcn
+   * <input>/<label> HTML → <Input>/<Label> shadcn (3 champs : studentId, type, results)
+   * <button> "Nouveau Bilan" (bg-blue-600) → <Button> shadcn
+   * Card rounded-3xl → <Card> shadcn rounded-xl
+   * Badge span text-[10px] font-black uppercase → <Badge variant="outline">
+   * text-[10px] → text-xs
+
+8. Authorizations.tsx (295→288 lignes) :
+   * 2 alert() → 2 toast() (création autorisation + validation)
+   * 1 modal fixed inset-0 → <Dialog> shadcn
+   * <input>/<label> HTML → <Input>/<Label> shadcn (3 champs : studentId, type, medication)
+   * <button> "Nouvelle Autorisation" (bg-emerald-500) / "Relancer Parents" (bg-white) → <Button>/<Button variant="secondary">
+   * Card bg-slate-900 rounded-3xl → <Card> shadcn rounded-xl
+   * Boutons "Valider" (bg-emerald-600) / FileText / Download → <Button> shadcn
+   * Filtres <button> text-[10px] uppercase → <Button> shadcn
+   * Badge span text-[10px] font-black uppercase → <Badge variant="outline">
+   * text-[10px] → text-xs
+
+9. ReportsStats.tsx (206→203 lignes) :
+   * 0 alert() dans l'original → ajout de 2 toast() informatifs sur les boutons PDF/JSON (au lieu de silently rien faire)
+   * Card div rounded-3xl → <Card> shadcn rounded-xl
+   * <button> "Analyser par classe" / "PDF" / "JSON" → <Button variant="outline">
+   * text-[10px] → text-xs
+   * font-black uppercase tracking-widest → font-semibold
+
+10. InfirmarySettings.tsx (261→221 lignes) :
+    * 1 alert() (erreur enregistrement) → 1 toast() destructif + 1 toast() succès
+    * <input type="number"> stock threshold → <Input> shadcn avec state contrôlé (updateSetting)
+    * Toggles CSS-only (requireAuth / smsNotif / emailAlerts / restrictedAccess / auditLog) → <Switch> shadcn avec onCheckedChange
+    * <button> "Enregistrer" (bg-blue-600) / "Voir Logs" (bg-slate-900) → <Button> shadcn (default + custom)
+    * Card rounded-3xl → <Card> shadcn rounded-xl
+    * text-[10px] → text-xs
+    * font-black uppercase tracking-widest → font-semibold
+
+- Vérifications post-refonte (ripgrep sur les 11 fichiers) :
+  * 0 alert() restant dans le code (uniquement dans les commentaires de header)
+  * 0 modal fixed inset-0 restant
+  * 0 <table>/<thead>/<tbody>/<tr>/<td>/<th> HTML restant
+  * 0 <input>/<label> HTML restant
+  * 0 <button> custom restant (tous migrés vers <Button>)
+  * 0 rounded-3xl / rounded-[2.5rem] restant
+  * 0 font-black uppercase tracking-widest restant
+  * 0 bg-navy-900 text-white (boutons) restant
+  * 0 text-[10px] / text-[9px] / text-[8px] / text-[11px] restant
+  * 0 motion.tr (framer) restant (MedicalRecords converti en <TableRow>)
+- Note : ESLint non exécutable (node_modules absent + Next.js 16 a retiré next lint). Vérification via grep.
+- Note : <select> HTML conservé (non mentionné dans le guide de standardisation — pattern Finance référence TransactionsContent.tsx utilise aussi des <input type="date"> HTML natifs).
+- Note : <textarea> HTML conservé mais stylé avec les classes shadcn (pas de composant Textarea dans components/ui/) — pattern identique à ShopOrders/ShopCatalog du module Boutique.
+
+Stage Summary:
+- 11 fichiers infirmerie standardisés sur pattern Finance : InfirmaryModulePage + 10 sous-composants (InfirmaryDashboard, MedicalRecords, InfirmaryVisits, Emergencies, PharmacyStock, AllergiesVigilance, MedicalCheckups, Authorizations, ReportsStats, InfirmarySettings)
+- 9 alert() migrés vers useToast() au total (InfirmaryVisits:1, Emergencies:2, PharmacyStock:2, MedicalCheckups:1, Authorizations:2, InfirmarySettings:1)
+- 5 modals fixed inset-0 convertis en <Dialog>/<DialogContent>/<DialogHeader>/<DialogTitle>/<DialogFooter> shadcn (InfirmaryVisits, Emergencies, PharmacyStock, MedicalCheckups, Authorizations)
+- 2 tables HTML converties en <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell> shadcn (MedicalRecords, Emergencies)
+- ~25 <input>/<label> HTML migrés vers <Input>/<Label> shadcn
+- ~30 <button> custom migrés vers <Button> shadcn (variant default/outline/ghost/link/destructive/secondary)
+- Toggle switches CSS-only → <Switch> shadcn avec state contrôlé (InfirmarySettings : 5 toggles)
+- Page principale : ModulePageLayout → ModuleContainer + SubModuleNavigation standard (bleus soulignés) ; 4 KPIs ajoutés dans ModuleHeader (visites / urgences / alertes stock / dossiers) ; 2 boutons d'action standard (indigo-600 + outline)
+- Couleurs harmonisées : navy-900 (boutons) → indigo-600 / slate-900 (bandeaux foncés) / emerald-600 (actions positives) / rose-600 (urgences)
+- Typographie harmonisée : font-black uppercase tracking-widest → font-semibold / font-medium
+- Cards harmonisées : rounded-3xl / rounded-2xl → rounded-xl border-gray-200 shadow-sm
+- Tailles texte harmonisées : text-[10px] / text-[9px] / text-[11px] → text-xs / text-sm
+- Logique métier 100% conservée (modulesApi.post/get, useModulesList, useModulesDashboard, refetch, useState, handlers)
+
+---
+Task ID: 7-c
+Agent: full-stack-developer (Module Labo)
+Task: Standardiser LaboratoryModulePage + 11 sous-composants
+
+Work Log:
+- Lecture des références : worklog.md (sections 7-a Boutique + 7-b Infirmerie pour pattern appliqué), STANDARDIZATION-GUIDE.md (guide obligatoire), FinanceModulePage.tsx (pattern cible page principale), TransactionsContent.tsx (pattern cible sous-composants), InfirmaryModulePage.tsx (autre exemple déjà refondu), LaboratoryModulePage.tsx (à refondre)
+- Lecture des 11 sous-composants à standardiser pour identifier les écarts : alert(), confirm() natif, fixed inset-0 modals, <table>/<thead>/<tbody>/<tr>/<td>/<th> HTML, <input>/<label>/<button> HTML, rounded-3xl, font-black uppercase tracking-widest, bg-navy-900 text-white (boutons), text-[10px] / text-[9px], mocks hardcoded (SafetyIncidents.tsx + LaboratorySettings.tsx)
+- Vérification du backend : GET /labs/incidents, GET /labs/settings, PUT /labs/settings ont bien été ajoutés au controller modules-complementaires (lignes 722, 754, 764) — confirms backend routes are available for wiring mocks → real data
+
+A. Refonte complète de la page principale :
+1. LaboratoryModulePage.tsx (130→181 lignes) :
+   * ModulePageLayout (obsolète) → ModuleContainer (pattern Finance)
+   * useAcademicYear/useSchoolLevel → useModuleContext
+   * useState<TabId> local + TABS array (10 entrées) + renderActiveTab() switch → useState<string> + activeSubModuleId + subModules.modules (11 modules avec icônes Lucide) + ternaire content
+   * Onglets pills custom bg-navy-900 text-white uppercase + framer-motion AnimatePresence → SubModuleNavigation standard (bleus soulignés) géré par ModuleContainer
+   * Bouton "Nouvelle Séance" bg-[#C9A84C] (gold) → 2 boutons standard (indigo-600 "Nouvelle séance" + outline "Rapports")
+   * 4 KPIs ajoutés dans ModuleHeader (laboratoires / équipements / incidents ouverts / maintenances à venir) — fetch /api/modules-complementaires/labs/dashboard
+
+B. Refonte des 11 sous-composants (logique métier 100% conservée — useModulesList, useModulesDashboard, modulesApi.post/get/put/delete, refetch, useState, handlers inchangés) :
+
+1. LaboratoryDashboard.tsx (156→180 lignes) :
+   * Card div rounded-3xl border-slate-200 → <Card> shadcn rounded-xl
+   * <button> "Voir tout" → <Button variant="outline">
+   * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+   * font-black → font-semibold
+   * Bandeau rose rounded-3xl → rounded-xl (conservé)
+   * framer-motion retiré pour les KPI cards (remplacé par transitions CSS simples) — animations subtiles conservées via Tailwind hover:shadow-md
+   * Ajout d'un Card "Consommables en alerte" avec <Badge> pour exposer lowStockConsumables du dashboard
+
+2. LabsList.tsx (211→250 lignes) :
+   * 1 alert() → 1 toast() (création labo) + 1 toast destructif pour erreur + 1 toast destructif pour champ manquant
+   * 1 modal fixed inset-0 → <Dialog>/<DialogContent>/<DialogHeader>/<DialogTitle>/<DialogFooter> shadcn
+   * <input>/<label> HTML → <Input>/<Label> shadcn (4 champs : name, location, capacity, type)
+   * <button> "Nouveau Laboratoire" bg-navy-900 → <Button> shadcn
+   * <button> "Détails & Équipements" custom → <Button variant="link">
+   * Badge span text-[10px] font-black uppercase → <Badge variant>
+   * Card div rounded-3xl → <Card> shadcn rounded-xl
+   * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+   * font-black → font-semibold
+
+3. EquipmentsInventory.tsx (350→417 lignes) :
+   * 3 alert() → 3 toast() (création/modif équipement + suppression + maintenance) + 1 toast destructif pour champ manquant
+   * 1 confirm() natif → confirmDialog.danger() (suppression équipement)
+   * 2 modals fixed inset-0 → <Dialog> shadcn (création/edit équipement + création maintenance)
+   * 1 table HTML <table>/<thead>/<tbody>/<tr>/<td>/<th> → <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell> shadcn
+   * motion.tr (framer) → <TableRow> shadcn
+   * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn (5 champs + 3 boutons d'action)
+   * <button> "Ajouter" bg-navy-900 → <Button> shadcn
+   * Boutons Edit/Maintenance/Delete custom → <Button variant="ghost" size="icon">
+   * Badge span text-[10px] font-black uppercase tracking-widest → <Badge variant="outline"> avec classes colorées (NEW/GOOD/AVERAGE/OUT_OF_ORDER)
+   * Card div rounded-3xl → <Card> shadcn rounded-xl
+   * text-[10px] → text-xs, font-black → font-semibold
+   * Ajout du {confirmDialog.dialog} à la fin pour rendre le modal de confirmation
+
+4. ConsumablesStock.tsx (287→348 lignes) :
+   * 2 alert() → 2 toast() (création consommable + mouvement stock) + 2 toasts destructifs (champ manquant + erreur)
+   * 2 modals fixed inset-0 → <Dialog> shadcn (création consommable + mouvement stock)
+   * <input>/<label>/<button> → <Input>/<Label>/<Button> shadcn (4 champs + 3 boutons d'action)
+   * Boutons "Ajouter" (bg-blue-600) / "Réapprovisionner" (bg-emerald-600) / "Sortie Stock" (bg-slate-900) → <Button>/<Button variant="outline">
+   * Card div rounded-3xl → <Card> shadcn rounded-xl
+   * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+   * font-black → font-semibold
+   * Bandeau rupture proche text-[10px] font-black animate-pulse → <Badge variant="outline"> bg-rose-50
+
+5. LabReservations.tsx (229→278 lignes) :
+   * 1 alert() → 1 toast() (création réservation) + 1 toast destructif pour erreur + 1 toast destructif pour champ manquant
+   * 1 modal fixed inset-0 → <Dialog> shadcn (5 champs : labId, date, startTime, endTime, purpose)
+   * <textarea> HTML → styled textarea (pattern Infirmerie — pas de composant Textarea dans ui/)
+   * <input>/<label>/<button> → <Input>/<Label>/<Button> shadcn
+   * Bouton "Nouvelle Réservation" bg-navy-900 → <Button> shadcn
+   * Boutons "Valider" / "Rejeter" custom → <Button variant="ghost" size="icon">
+   * Status div text-[10px] font-black uppercase → <Badge variant="outline">
+   * Card div rounded-3xl → <Card> shadcn rounded-xl
+   * text-[10px] → text-xs, font-black → font-semibold
+
+6. PracticalSessions.tsx (207→251 lignes) :
+   * 1 alert() → 1 toast() (création séance) + 1 toast destructif pour erreur + 1 toast destructif pour champ manquant
+   * 1 modal fixed inset-0 → <Dialog> shadcn (5 champs : labId, subject, date, duration, studentCount)
+   * 1 table HTML <table>/<thead>/<tbody>/<tr>/<td>/<th> → <Table> shadcn
+   * motion.tr (framer) → <TableRow> shadcn
+   * <input>/<label>/<button> → <Input>/<Label>/<Button> shadcn
+   * Bouton "Enregistrer Séance" bg-[#C9A84C] (gold) → <Button> shadcn
+   * Bouton "Voir Rapport" bg-blue-50 → <Button variant="outline" size="sm">
+   * Card div rounded-3xl → <Card> shadcn rounded-xl
+   * text-[10px] → text-xs, font-black → font-semibold
+
+7. LabMaintenance.tsx (196→247 lignes) :
+   * 1 alert() → 1 toast() (création maintenance) + 1 toast destructif pour erreur + 1 toast destructif pour champ manquant
+   * 1 modal fixed inset-0 → <Dialog> shadcn (4 champs : equipmentId, type, cost, date)
+   * <input>/<label>/<button> → <Input>/<Label>/<Button> shadcn
+   * Bouton "Planifier Intervention" bg-navy-900 → <Button> shadcn
+   * Boutons "Modifier" / "Rapport Technique" custom → <Button variant="ghost/link">
+   * Status span text-[10px] font-black uppercase → <Badge variant="outline">
+   * Card div rounded-3xl border-l-4 → <Card> shadcn rounded-xl border-l-4 (borderLeftColor conservé dynamiquement)
+   * text-[10px] → text-xs, font-black → font-semibold
+
+8. SafetyIncidents.tsx (207→309 lignes) — REFONTE MAJEURE :
+   * ⭐ MOCKS HARDCODED SUPPRIMÉS : tableau `incidents` de 4 entrées fictives (INC-402/403/404/405) remplacé par `useModulesList('labs', 'incidents', academicYear?.id)` qui appelle GET /labs/incidents
+   * ⭐ Bannière "Données de démonstration" supprimée (le backend est maintenant branché)
+   * ⭐ Calcul dynamique `criticalOpen` (incidents severity=CRITICAL + status!=RESOLVED) affiché dans le header de vigilance sécurité
+   * Loading state ajouté (Loader2 spinner) — n'existait pas avant (mocks immédiats)
+   * 2 alert() → 2 toast() (signalement succès + erreur) + 1 toast destructif pour champ manquant
+   * 1 modal fixed inset-0 → <Dialog> shadcn (3 champs : description, severity, labId)
+   * <textarea> HTML → styled textarea (pattern Infirmerie)
+   * 1 table HTML → <Table> shadcn (registre des incidents)
+   * <input>/<label>/<button> → <Input>/<Label>/<Button> shadcn
+   * Bouton "Déclarer un Incident" bg-rose-600 font-black uppercase → <Button variant="destructive">
+   * Bouton "Toutes les Règles" bg-white/10 → <Button variant="secondary">
+   * Bandeau rose rounded-3xl border-2 → <Card> shadcn rounded-xl bg-rose-50 border-rose-100
+   * Bandeau navy-900 consignes sécurité → <Card> shadcn bg-slate-900 (slate-900)
+   * Badge span text-[9px] font-black uppercase → <Badge variant="outline"> avec classes colorées par gravité
+   * text-[10px] → text-xs, font-black → font-semibold
+
+9. StocksApprovisionnement.tsx (286→315 lignes) :
+   * 2 alert() → 2 toast() (création demande + changement statut) + 2 toasts destructifs (champ manquant + erreur)
+   * 1 modal fixed inset-0 → <Dialog> shadcn (3 champs : consumableId, quantity, supplierId)
+   * 1 table HTML → <Table> shadcn (demandes d'approvisionnement)
+   * motion.tr (framer) → <TableRow> shadcn
+   * <input>/<label>/<button> → <Input>/<Label>/<Button> shadcn
+   * Bouton "Créer une Demande" bg-navy-900 → <Button> shadcn
+   * Bouton "Détails" custom → <Button variant="link">
+   * Cards rounded-3xl → <Card> shadcn rounded-xl
+   * Badge div text-[10px] font-black uppercase → <Badge variant="outline"> avec classes colorées par statut
+   * text-[10px] → text-xs, font-black → font-semibold
+
+10. LabReportsStats.tsx (223→235 lignes) :
+    * 2 alert() → 2 toast() (génération rapport succès + erreur)
+    * Card div rounded-3xl → <Card> shadcn rounded-xl
+    * <button> "Nouveau Rapport" (bg-navy-900) / "Filtre" (bg-slate-50) / "Download" → <Button> shadcn (default + outline + ghost)
+    * Status span → <Badge variant="outline">
+    * text-[10px] → text-xs, font-black uppercase tracking-widest → font-medium
+    * framer-motion retiré pour usage par ChartPlaceholder (remplacé par simple width: % inline style)
+
+11. LaboratorySettings.tsx (125→265 lignes) — REFONTE MAJEURE :
+    * ⭐ MOCKS HARDCODED SUPPRIMÉS : `sections` array statique (8 items dans 4 sections) avec toggles CSS-only non fonctionnels → chargement réel via `modulesApi.get('labs/settings')` au mount + sauvegarde via `modulesApi.put('labs/settings', { key, value })`
+    * ⭐ Bannière "Données de démonstration" supprimée
+    * ⭐ Définition déclarative SETTING_SECTIONS avec 4 sections × 2 paramètres = 8 clés connues (labs.types, labs.openingHours, labs.safetyRules, labs.severityLevels, labs.stockThreshold, labs.equipmentCategories, labs.autoValidation, labs.reservationLeadTime)
+    * ⭐ State `settings: Record<string, string>` contrôlé par les valeurs du backend
+    * ⭐ Save individuel par paramètre (bouton "OK" à côté de chaque champ) + Save global ("Enregistrer" en header) qui boucle sur tous les paramètres modifiés
+    * ⭐ Détection BOOLEAN_KEYS (labs.autoValidation) → rendu en <Switch> shadcn + <Badge> Activé/Désactivé ; les autres clés sont rendues en <Input> shadcn
+    * ⭐ Loading state (Loader2) — n'existait pas avant
+    * ⭐ Toast feedback (sauvegarde succès + erreur de chargement/sauvegarde)
+    * 1 alert() (Bientôt disponible) → toast()
+    * Card div rounded-3xl → <Card> shadcn rounded-xl
+    * Bandeau "Paramètres Avancés" rounded-3xl border-dashed → <Card> shadcn rounded-xl border-2 border-dashed
+    * Toggles CSS-only non fonctionnels → <Switch> shadcn avec onCheckedChange
+    * text-[10px] → text-xs, font-black uppercase tracking-widest → font-medium
+    * Bandeau navy-900 → slate-900 (conservé en Card)
+
+- Vérifications post-refonte (ripgrep sur les 12 fichiers) :
+  * 0 alert() dans le code (uniquement mentionnés dans les commentaires de header)
+  * 0 confirm() natif dans le code
+  * 0 modal fixed inset-0 restant
+  * 0 <table>/<thead>/<tbody>/<tr>/<td>/<th> HTML restant
+  * 0 <input>/<label>/<button> HTML restant
+  * 0 rounded-3xl / rounded-[2.5rem] restant
+  * 0 font-black uppercase tracking-widest restant
+  * 0 bg-navy-900 text-white (boutons) restant
+  * 0 text-[10px] / text-[9px] / text-[8px] / text-[11px] restant
+  * 0 motion.tr (framer) restant (EquipmentsInventory/PracticalSessions/StocksApprovisionnement convertis en <TableRow>)
+  * 0 MOCK hardcoded restant (SafetyIncidents et LaboratorySettings branchés sur backend)
+- Type-check (`bun run type-check`) : aucune nouvelle erreur introduite par les 12 fichiers lab (erreurs préexistantes dans src/components/cms/useAutoSave.ts uniquement — fichier hors-scope).
+- Note : ESLint non exécutable (`next lint` renvoie "Invalid project directory provided, no such directory" car Next.js 16 a retiré next lint). Vérification via grep + tsc.
+- Note : <select> HTML conservé (non mentionné dans le guide de standardisation — pattern Finance référence TransactionsContent.tsx utilise aussi des <input type="date"> HTML natifs).
+- Note : <textarea> HTML conservé mais stylé avec les classes shadcn (pas de composant Textarea dans components/ui/) — pattern identique à InfirmaryVisits/ShopOrders du module Infirmerie/Boutique.
+
+Stage Summary:
+- 12 fichiers labo standardisés sur pattern Finance : LaboratoryModulePage + 11 sous-composants (LaboratoryDashboard, LabsList, EquipmentsInventory, ConsumablesStock, LabReservations, PracticalSessions, LabMaintenance, SafetyIncidents, StocksApprovisionnement, LabReportsStats, LaboratorySettings)
+- 15 alert() migrés vers useToast() au total (LabsList:1, EquipmentsInventory:3, ConsumablesStock:2, LabReservations:1, PracticalSessions:1, LabMaintenance:1, SafetyIncidents:2, StocksApprovisionnement:2, LabReportsStats:2, LaboratorySettings:1)
+- 1 confirm() natif migré vers useConfirmDialog().danger() (EquipmentsInventory: suppression équipement)
+- 11 modals fixed inset-0 convertis en <Dialog>/<DialogContent>/<DialogHeader>/<DialogTitle>/<DialogFooter> shadcn (LabsList, EquipmentsInventory×2, ConsumablesStock×2, LabReservations, PracticalSessions, LabMaintenance, SafetyIncidents, StocksApprovisionnement, LaboratorySettings n'en avait pas)
+- 4 tables HTML converties en <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell> shadcn (EquipmentsInventory, PracticalSessions, SafetyIncidents, StocksApprovisionnement)
+- ~35 <input>/<label> HTML migrés vers <Input>/<Label> shadcn
+- ~30 <button> custom migrés vers <Button> shadcn (variant default/outline/ghost/link/destructive/secondary)
+- 2 jeux de mocks hardcoded supprimés (SafetyIncidents: 4 incidents INC-402/403/404/405 → useModulesList('labs','incidents') ; LaboratorySettings: 4 sections × 2 items avec toggles CSS-only → modulesApi.get/put('labs/settings'))
+- Page principale : ModulePageLayout → ModuleContainer + SubModuleNavigation standard (bleus soulignés) ; 4 KPIs ajoutés dans ModuleHeader (labs / équipements / incidents / maintenance) ; 2 boutons d'action standard (indigo-600 + outline)
+- Couleurs harmonisées : navy-900 (boutons) → indigo-600 / slate-900 (bandeaux foncés) / rose-600 (incidents) / amber-500 (maintenance)
+- Typographie harmonisée : font-black uppercase tracking-widest → font-semibold / font-medium
+- Cards harmonisées : rounded-3xl → rounded-xl border-gray-200 shadow-sm
+- Tailles texte harmonisées : text-[10px] / text-[9px] → text-xs
+- Logique métier 100% conservée (modulesApi.post/get/put/delete, useModulesList, useModulesDashboard, refetch, useState, handlers)
+
+---
+Task ID: 7-d
+Agent: full-stack-developer (Module Cantine)
+Task: Standardiser CanteenModulePage + 12 sous-composants
+
+Work Log:
+- Lecture des références : worklog.md (sections 7-a Boutique + 7-b Infirmerie + 7-c Labo pour pattern appliqué), STANDARDIZATION-GUIDE.md (guide obligatoire), FinanceModulePage.tsx (pattern cible page principale), TransactionsContent.tsx (pattern cible sous-composants), InfirmaryModulePage.tsx (autre exemple déjà refondu), CanteenModulePage.tsx (à refondre)
+- Lecture des 12 sous-composants canteen/ pour identifier les écarts : alert(), confirm() natif, fixed inset-0 modals, <table>/<thead>/<tbody>/<tr>/<td>/<th> HTML, <input>/<label>/<button> HTML, rounded-3xl, font-black uppercase tracking-widest, bg-navy-900 text-white (boutons), text-[10px]/text-[9px], mocks hardcoded (ORDERS_MOCK dans CanteenSuppliers + RECENT_REPORTS_MOCK et fallback 12450/4.8/2.1 dans CanteenReports), bug payload validate vide dans CanteenEnrollments
+
+A. Refonte complète de la page principale :
+1. CanteenModulePage.tsx (120→191 lignes) :
+   * ModulePageLayout (obsolète) → ModuleContainer (pattern Finance)
+   * useAcademicYear/useSchoolLevel → useModuleContext
+   * useState<TabId> local + tabs array (12 entrées) + onglets pills custom bg-navy-900 text-white uppercase + framer-motion AnimatePresence → useState<string> + activeSubModuleId + subModules.modules (12 modules avec icônes Lucide) + ternaire content
+   * Bouton "Nouveau" bg-navy-900 text-white → 2 boutons standard (indigo-600 "Nouveau menu" + outline "Rapports")
+   * 4 KPIs ajoutés dans ModuleHeader (élèves inscrits / repas aujourd'hui / alertes stock / score hygiène) — fetch /api/modules-complementaires/canteen/dashboard
+
+B. Refonte des 12 sous-composants (logique métier 100% conservée — useModulesList, useModulesDashboard, modulesApi.post/get/put/delete, refetch, useState, handlers inchangés) :
+
+1. CanteenDashboard.tsx (320→269 lignes) :
+   * Card div rounded-3xl border-gray-100 → <Card> shadcn rounded-xl
+   * Bandeau navy-900 (ORION Insights) → bg-slate-900
+   * Bouton "Rapport Stratégique" bg-white text-navy-900 rounded-2xl font-black uppercase → <Button variant="secondary">
+   * StatCard/InsightItem/LiveRow/AlertItem : rounded-3xl → rounded-xl, text-[10px] font-black uppercase tracking-widest → text-xs font-medium, <Badge variant="outline"> pour statuts
+   * font-black → font-semibold
+
+2. CanteenMenus.tsx (455→425 lignes) :
+   * 3 alert() → 3 toast() (création + mise à jour + suppression succès) + 3 toast() destructifs pour erreurs
+   * 1 confirm() natif → confirmDialog.danger() (suppression menu)
+   * 2 modals fixed inset-0 → <Dialog>/<DialogContent>/<DialogHeader>/<DialogTitle>/<DialogFooter> shadcn (création + édition)
+   * 1 table HTML <table>/<thead>/<tbody>/<tr>/<td>/<th> → <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell> shadcn
+   * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn (3 champs × 2 modals + boutons actions)
+   * Bouton "Planifier" bg-navy-900 text-white → <Button> shadcn
+   * Tabs Vue Liste / Calendrier custom → <Button variant="default/ghost"> shadcn
+   * Cards rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+   * {confirmDialog.dialog} ajouté à la fin du composant
+
+3. CanteenEnrollments.tsx (365→333 lignes) — REFONTE MAJEURE :
+   * ⭐ FIX PAYLOAD VALIDATE (Task 7-d) : le PUT canteen/enrollments/:id/validate envoyait {} vide → corrigé pour envoyer { status: 'VALIDATED' } (et { status: 'REJECTED' } pour le rejet, nouvelle méthode handleReject — le bouton rejet existait déjà visuellement mais n'était pas câblé)
+   * 2 alert() → 2 toast() (création + validation succès) + 2 toast() destructifs pour erreurs
+   * 1 modal fixed inset-0 → <Dialog> shadcn (2 champs : studentId, regime)
+   * 1 table HTML → <Table> shadcn
+   * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+   * Bouton "Inscrire un élève" bg-navy-900 text-white → <Button> shadcn
+   * Bouton "Valider" bg-emerald-500 text-white → <Button> avec className="bg-emerald-600 hover:bg-emerald-700"
+   * Cards rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+
+4. CanteenStudents.tsx (205→191 lignes) :
+   * 1 table HTML → <Table> shadcn
+   * <input>/<button> HTML → <Input>/<Button> shadcn
+   * Bouton "Exporter" bg-navy-900 text-white → <Button> shadcn
+   * Cards rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+   * Status spans/badges → <Badge variant="outline"> shadcn
+
+5. CanteenAttendance.tsx (284→245 lignes) :
+   * 1 alert() → 1 toast() succès (toggle présence) + 1 toast() destructif pour erreur
+   * 1 table HTML → <Table> shadcn
+   * <input>/<button> HTML → <Input>/<Button> shadcn
+   * Bandeau navy-900 "Planning" → bg-slate-900
+   * Card rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+   * Bouton "Présent/Absent" custom text-[10px] font-black uppercase → <Button variant="outline" size="sm"> avec classes colorées (emerald-50 / red-50)
+
+6. CanteenDiets.tsx (245→219 lignes) :
+   * <input>/<button> HTML → <Input>/<Button> shadcn
+   * Bandeau navy-900 "Alerte Menu" → bg-slate-900
+   * Card rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+   * Severity/status spans → <Badge variant="outline"> shadcn avec classes colorées
+   * Boutons "Fiche Médicale" / "Contacter Parent" custom → <Button variant="link" size="sm">
+
+7. CanteenPayments.tsx (375→322 lignes) :
+   * 1 alert() → 1 toast() succès (création paiement) + 1 toast() destructif pour erreur
+   * 1 modal fixed inset-0 → <Dialog> shadcn (3 champs : studentId, amount, method)
+   * 1 table HTML → <Table> shadcn
+   * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+   * Bouton "Nouveau Paiement" bg-navy-900 text-white → <Button> shadcn
+   * Cards rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+   * Status spans → <Badge variant="outline"> shadcn
+
+8. CanteenStocks.tsx (353→305 lignes) :
+   * 1 alert() → 1 toast() succès (mouvement stock) + 1 toast() destructif pour erreur
+   * 1 modal fixed inset-0 → <Dialog> shadcn (3 champs : itemId, quantity, type)
+   * 1 table HTML → <Table> shadcn
+   * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+   * Boutons "Entrée" / "Sortie" custom bg-emerald-50 / bg-red-50 → <Button variant="outline"> avec classes colorées
+   * Cards rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+
+9. CanteenSuppliers.tsx (307→248 lignes) — REFONTE MAJEURE :
+   * ⭐ MOCKS HARDCODED SUPPRIMÉS : tableau ORDERS_MOCK (3 lignes fictives BC-2026-105/106/107) supprimé. La sidebar "Dernières Commandes" affiche désormais un message "Aucune commande" à la place des mocks (aucun endpoint liste des commandes disponible)
+   * 1 alert() → 1 toast() succès (création fournisseur) + 1 toast() destructif pour erreur
+   * 1 modal fixed inset-0 → <Dialog> shadcn (3 champs : name, contact, phone)
+   * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+   * Bouton "Nouveau" bg-navy-900 text-white → <Button> shadcn
+   * Cards rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+
+10. CanteenIncidents.tsx (356→297 lignes) :
+    * 1 alert() → 1 toast() succès (signalement) + 1 toast() destructif pour erreur
+    * 1 modal fixed inset-0 → <Dialog> shadcn (3 champs : type, severity, description)
+    * <textarea> HTML → styled textarea (pattern Infirmerie — pas de composant Textarea dans ui/)
+    * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+    * Bouton "Signaler un Incident" bg-red-600 text-white font-black uppercase → <Button variant="destructive">
+    * Cards rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+    * Status/severity spans → <Badge variant="outline"> shadcn
+
+11. CanteenReports.tsx (227→201 lignes) — REFONTE MAJEURE :
+    * ⭐ MOCKS HARDCODED SUPPRIMÉS : RECENT_REPORTS_MOCK (3 lignes fictives Bilan S19 / Inventaire Avril / Rapport QHSE Q1) supprimé. La section "Rapports Générés Récemment" affiche désormais "Aucun rapport généré"
+    * ⭐ FALLBACK HARDCODED SUPPRIMÉ : valeurs fictives 12450 repas / 4.8 satisfaction / 2.1 waste supprimées. KPIs désormais branchés sur useModulesDashboard('canteen') qui retourne déjà les vraies stats. Si aucune donnée n'est disponible, on affiche 0 / — / — au lieu de valeurs fictives
+    * 2 toast() informatifs ajoutés sur les boutons "Générer" des ReportTemplateCard (au lieu de silently rien faire)
+    * <input>/<button> HTML → <Input>/<Button> shadcn
+    * Bandeau navy-900 "Sarah AI Report Builder" → bg-slate-900
+    * Cards rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+
+12. CanteenSettings.tsx (268→245 lignes) :
+    * 1 alert() implicite (avant via setError uniquement) → 1 toast() succès + 1 toast() destructif pour erreur (l'erreur est aussi conservée dans l'état pour le bandeau d'avertissement)
+    * <input type="time"> HTML → <Input type="time"> shadcn (4 champs horaires)
+    * Toggles CSS-only (<button> + <span> simulacre de switch) → <Switch> shadcn avec onCheckedChange (2 ToggleOption + 3 NotificationToggle = 5 switches)
+    * <button> "Enregistrer" bg-navy-900 text-white → <Button> shadcn (default = indigo-600)
+    * <button> "Gérer l'archivage" custom → <Button variant="outline">
+    * Cards rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+    * Bandeau "Maintenance des Données" bg-navy-50 → bg-slate-50
+
+- Vérifications post-refonte (ripgrep sur les 13 fichiers) :
+  * 0 alert() dans le code réel (uniquement mentionnés dans les commentaires de header)
+  * 0 confirm() natif dans le code réel
+  * 0 modal fixed inset-0 restant
+  * 0 <table>/<thead>/<tbody>/<tr>/<td>/<th> HTML restant
+  * 0 <input>/<label>/<button> HTML restant
+  * 0 rounded-3xl / rounded-[2.5rem] restant
+  * 0 font-black uppercase tracking-widest restant
+  * 0 bg-navy-900 text-white (boutons) restant
+  * 0 text-[10px] / text-[9px] / text-[8px] / text-[11px] restant
+  * 0 ORDERS_MOCK restant (supprimé)
+  * 0 RECENT_REPORTS_MOCK restant (supprimé)
+  * 0 fallback hardcoded 12450/4.8/2.1 restant (supprimé)
+  * 0 ModulePageLayout dans CanteenModulePage (remplacé par ModuleContainer)
+- Type-check (bun run type-check) : aucune nouvelle erreur introduite par les 13 fichiers cantine. Seules les erreurs préexistantes dans src/components/cms/useAutoSave.ts (hors-scope) subsistent.
+- Note : ESLint non exécutable (next lint renvoie une erreur car Next.js 16 a retiré next lint). Vérification via grep + tsc.
+- Note : <select> HTML conservé (non mentionné dans le guide de standardisation — pattern Finance référence TransactionsContent.tsx utilise aussi des <input type="date"> HTML natifs).
+- Note : <textarea> HTML conservé mais stylé avec les classes shadcn (pas de composant Textarea dans components/ui/) — pattern identique à InfirmaryVisits/ShopOrders du module Infirmerie/Boutique.
+
+Stage Summary:
+- 13 fichiers cantine standardisés sur pattern Finance : CanteenModulePage + 12 sous-composants (CanteenDashboard, CanteenMenus, CanteenEnrollments, CanteenStudents, CanteenAttendance, CanteenDiets, CanteenPayments, CanteenStocks, CanteenSuppliers, CanteenIncidents, CanteenReports, CanteenSettings)
+- 9 alert() migrés vers useToast() au total (Menus:3, Enrollments:2, Attendance:1, Payments:1, Stocks:1, Suppliers:1, Incidents:1 — Settings utilisait setError, converti en toast)
+- 1 confirm() natif migré vers useConfirmDialog().danger() (CanteenMenus: suppression menu)
+- 7 modals fixed inset-0 convertis en <Dialog>/<DialogContent>/<DialogHeader>/<DialogTitle>/<DialogFooter> shadcn (Menus×2, Enrollments, Payments, Stocks, Suppliers, Incidents)
+- 6 tables HTML converties en <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell> shadcn (Menus, Enrollments, Students, Attendance, Payments, Stocks)
+- ~50 <input>/<label>/<button> HTML migrés vers <Input>/<Label>/<Button> shadcn
+- 5 toggles CSS-only migrés vers <Switch> shadcn avec onCheckedChange (CanteenSettings : 2 ToggleOption + 3 NotificationToggle)
+- 3 mocks hardcoded supprimés (CanteenSuppliers: ORDERS_MOCK 3 lignes → "Aucune commande" ; CanteenReports: RECENT_REPORTS_MOCK 3 lignes → "Aucun rapport généré" ; CanteenReports: fallback 12450/4.8/2.1 → useModulesDashboard réel avec 0/—/— si vide)
+- FIX PAYLOAD VALIDATE : CanteenEnrollments envoyait {} au PUT canteen/enrollments/:id/validate → corrigé pour envoyer { status: 'VALIDATED' } (et { status: 'REJECTED' } pour le rejet — nouvelle méthode handleReject)
+- Page principale : ModulePageLayout → ModuleContainer + SubModuleNavigation standard (bleus soulignés) ; 4 KPIs ajoutés dans ModuleHeader (élèves inscrits / repas aujourd'hui / alertes stock / score hygiène) ; 2 boutons d'action standard (indigo-600 "Nouveau menu" + outline "Rapports")
+- Couleurs harmonisées : navy-900 (boutons) → indigo-600 / slate-900 (bandeaux foncés) / emerald-600 (actions positives) / red-600 (incidents)
+- Typographie harmonisée : font-black uppercase tracking-widest → font-semibold / font-medium
+- Cards harmonisées : rounded-3xl → rounded-xl border-gray-200 shadow-sm
+- Tailles texte harmonisées : text-[10px] / text-[9px] → text-xs
+- Logique métier 100% conservée (modulesApi.post/get/put/delete, useModulesList, useModulesDashboard, refetch, useState, handlers)
+
+---
+Task ID: 7-e
+Agent: full-stack-developer (Module Transport)
+Task: Standardiser TransportModulePage + 14 sous-composants
+
+Work Log:
+- Lecture des références : worklog.md (sections 7-a Boutique + 7-b Infirmerie + 7-c Labo + 7-d Cantine pour pattern appliqué), STANDARDIZATION-GUIDE.md (guide obligatoire), FinanceModulePage.tsx (pattern cible page principale), TransactionsContent.tsx (pattern cible sous-composants), CanteenModulePage.tsx (autre exemple déjà refondu), TransportModulePage.tsx (à refondre — layout 100% custom, KPIs "94.2%" et "12/15 Bus" hardcodés)
+- Lecture des 14 sous-composants transport/ pour identifier les écarts : alert(), confirm() natif, fixed inset-0 modals, <table>/<thead>/<tbody>/<tr>/<td>/<th> HTML, <input>/<label>/<button> HTML, rounded-3xl, font-black uppercase tracking-widest, bg-navy-900 text-white (boutons), text-[10px], mocks hardcoded (TransportPayments + TransportSettings DEFAULT_SETTINGS + TransportReports fallback [45,65,35,85,75,95,60])
+- Vérification backend : GET /transport/settings (ligne 477), POST /transport/incidents/:id/resolve (ligne 439 — body attendu { resolution: string }) existent bien dans le controller modules-complementaires
+
+A. Refonte complète de la page principale :
+1. TransportModulePage.tsx (141→200 lignes) :
+   * Layout 100% custom (min-h-screen p-8 + header navy-900 + pills custom + framer-motion AnimatePresence) → ModuleContainer (pattern Finance)
+   * useModuleContext branché (au lieu de ne pas l'utiliser)
+   * useState<TabId> local + TABS array (14 entrées) + renderActiveTab() switch → useState<string> + activeSubModuleId + subModules.modules (14 modules avec icônes Lucide) + ternaire content
+   * Onglets pills custom bg-navy-900 text-white uppercase tracking-widest + framer-motion AnimatePresence → SubModuleNavigation standard (bleus soulignés) géré par ModuleContainer
+   * ⭐ KPIs hardcodés SUPPRIMÉS : "94.2%" ponctualité et "12/15 Bus" activité dans le header → supprimés. KPIs dynamiques ajoutés dans ModuleHeader (véhicules actifs / routes actives / chauffeurs / incidents ouverts) chargés via fetch /api/modules-complementaires/transport/stats
+   * Bouton "Info" custom → 2 boutons standard (indigo-600 "Nouveau Véhicule" + outline "Exporter")
+
+B. Refonte des 14 sous-composants (logique métier 100% conservée — useModulesList, useModulesDashboard, modulesApi.post/get/put, refetch, useState, handlers inchangés) :
+
+1. TransportDashboard.tsx (135→133 lignes) :
+   * Card div rounded-3xl border-slate-100 → <Card> shadcn rounded-xl
+   * Bouton "Voir tout" custom text-navy-900 uppercase → <Button variant="link" size="sm">
+   * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+   * font-black tracking-tighter → font-semibold
+   * Listes "Trajets en cours" et "Maintenance" : max-h-96 overflow-y-auto + pr-1 (scrollbar styling)
+   * <span> status badges → <Badge variant="outline"> shadcn avec classes colorées
+
+2. TransportVehicles.tsx (296→283 lignes) :
+   * 2 alert() → 2 toast() (1 succès création/maj + 1 destructif pour erreur)
+   * 1 modal fixed inset-0 → <Dialog>/<DialogContent>/<DialogHeader>/<DialogTitle>/<DialogFooter> shadcn (5 champs : name, plate, model, capacity, type)
+   * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+   * Bouton "Nouveau Véhicule" bg-navy-900 text-white uppercase → <Button> shadcn (default = indigo-600)
+   * Card rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+   * Status spans → <Badge variant="outline"> shadcn
+
+3. TransportDrivers.tsx (218→196 lignes) :
+   * 1 alert() → 1 toast() destructif (erreur création)
+   * 1 modal fixed inset-0 → <Dialog> shadcn (3 champs : name, phone, license)
+   * 1 table HTML <table>/<thead>/<tbody>/<tr>/<td>/<th> → <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell> shadcn
+   * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+   * Bouton "Nouveau Personnel" bg-navy-900 → <Button> shadcn
+   * Card rounded-3xl → rounded-xl, font-black uppercase → font-semibold
+   * Status span → <Badge variant="outline"> shadcn
+
+4. TransportRoutes.tsx (331→278 lignes) :
+   * 2 alert() → 2 toast() (1 succès création route + 1 succès ajout arrêt) + 2 toast() destructifs pour erreurs
+   * 2 modals fixed inset-0 → 2 <Dialog> shadcn (création route 3 champs + ajout arrêt 4 champs)
+   * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+   * Bouton "Nouvel Itinéraire" bg-navy-900 → <Button> shadcn
+   * Card rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+   * Bouton "Gérer les arrêts" custom → <Button variant="outline" className="w-full">
+
+5. TransportStops.tsx (148→144 lignes) :
+   * 1 table HTML → <Table> shadcn
+   * <input>/<button> HTML → <Input>/<Button> shadcn
+   * Bouton "Nouvel Arrêt" bg-navy-900 → <Button> shadcn (câblé sur toast informatif car l'ajout d'arrêt se fait via l'onglet Itinéraires)
+   * Card rounded-3xl → rounded-xl, font-black uppercase → font-semibold
+   * Status/type/élèves spans → <Badge variant="outline"> shadcn
+
+6. TransportStudents.tsx (226→200 lignes) :
+   * 1 alert() → 1 toast() destructif (erreur affectation) + 1 toast() succès ajouté
+   * 1 modal fixed inset-0 → <Dialog> shadcn (3 champs : studentId, routeId, stopId)
+   * 1 table HTML → <Table> shadcn
+   * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+   * Bouton "Affecter un Élève" bg-navy-900 → <Button> shadcn
+   * Card rounded-3xl → rounded-xl, font-black uppercase → font-semibold
+   * Status/paiement spans → <Badge variant="outline"> shadcn avec classes colorées
+
+7. TransportSchedules.tsx (191→180 lignes) :
+   * 1 alert() → 1 toast() destructif (erreur création) + 1 toast() succès
+   * 1 modal fixed inset-0 → <Dialog> shadcn (3 champs : routeId, dayOfWeek, departureTime)
+   * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+   * Bouton "Nouveau Planning" bg-navy-900 → <Button> shadcn
+   * Cards rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+
+8. TransportTrips.tsx (337→285 lignes) :
+   * 3 alert() → 3 toast() (1 succès démarrage + 1 succès terminer + 1 succès événement) + 3 toast() destructifs pour erreurs
+   * 1 confirm() natif → confirmDialog.danger() (finalisation trajet) + {confirmDialog.dialog} à la fin du composant
+   * 2 modals fixed inset-0 → 2 <Dialog> shadcn (démarrage trajet 3 champs + événement 2 champs)
+   * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+   * Bouton "Démarrer un Trajet" bg-navy-900 → <Button> shadcn
+   * Bouton "Terminer" bg-emerald-600 custom → <Button className="bg-emerald-600 hover:bg-emerald-700">
+   * Badge "System Live" custom → <Badge variant="outline"> shadcn
+   * Cards rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+   * Status spans → <Badge variant="outline"> shadcn avec classes colorées
+
+9. TransportAttendance.tsx (184→172 lignes) :
+   * 1 alert() → 1 toast() destructif (erreur enregistrement) + 1 toast() succès
+   * 1 modal fixed inset-0 → <Dialog> shadcn (3 champs : studentId, tripId, status)
+   * 1 table HTML → <Table> shadcn
+   * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+   * Bouton "Marquer Présence" bg-navy-900 → <Button> shadcn
+   * Card rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+   * Statut spans → <Badge variant="outline"> shadcn avec classes colorées
+   * Date du jour dynamique (au lieu de "Vendredi 15 Mai 2026" en dur)
+
+10. TransportIncidents.tsx (226→217 lignes) — FIX RESOLVE ENDPOINT :
+    * ⭐ FIX PAYLOAD RESOLVE (Task 7-e) : la route POST transport/incidents/:id/resolve existe désormais côté backend (controller ligne 439). Elle attend un body { resolution: string } (et non { status: 'RESOLVED' }). Le bouton "Résoudre" était déjà câblé mais envoyait { status: 'RESOLVED' } → corrigé pour envoyer { resolution: 'Résolu' }
+    * 2 alert() → 2 toast() (1 succès signalement + 1 succès résolution) + 2 toast() destructifs pour erreurs
+    * 1 modal fixed inset-0 → <Dialog> shadcn (4 champs : type, severity, vehicleId, description)
+    * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+    * Bouton "Signaler un incident" bg-rose-600 font-black uppercase → <Button variant="destructive">
+    * Bouton "Détails & Résolution" bg-navy-900 text-white → <Button> shadcn (default = indigo-600)
+    * Cards rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+    * Severity/status spans → <Badge variant="outline"> shadcn avec classes colorées
+
+11. TransportMaintenance.tsx (271→247 lignes) :
+    * 2 alert() → 2 toast() (1 destructif validation vehicleId manquant + 1 succès création + 1 destructif erreur)
+    * 1 modal fixed inset-0 → <Dialog> shadcn (4 champs : vehicleId, type, cost, date)
+    * 1 table HTML → <Table> shadcn
+    * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+    * Bouton "Nouvelle Maintenance" bg-navy-900 → <Button> shadcn
+    * Cards rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+    * Status spans → <Badge variant="outline"> shadcn avec classes colorées
+
+12. TransportPayments.tsx (83→38 lignes) — MOCKS SUPPRIMÉS :
+    * ⭐ MOCKS HARDCODED SUPPRIMÉS : tableau payments (2 lignes fictives Fatou Sow / Abdoulaye Diallo) supprimé. KPIs hardcodés "1 250 000 F CFA" / "175 000 F CFA" / "87.5%" supprimés. Table HTML supprimée. Le composant affiche désormais une Card placeholder "Module de paiement à configurer" avec bouton "Notifier l'administrateur" qui déclenche un toast informatif. (Aucun endpoint GET /transport/payments disponible — placeholder propre au lieu de mocks)
+    * Card rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+
+13. TransportReports.tsx (97→115 lignes) — FALLBACK SUPPRIMÉ :
+    * ⭐ FALLBACK HARDCODED SUPPRIMÉ : tableau de performance fictif [45, 65, 35, 85, 75, 95, 60] supprimé. Si useModulesDashboard('transport') ne renvoie pas fleetPerformance/monthlyPerformance, on affiche "Aucune donnée de performance disponible" au lieu de valeurs fictives
+    * 2 toast() informatifs ajoutés sur les boutons "Générer un nouveau rapport" et "Télécharger" des ReportTemplateCard (au lieu de silently rien faire)
+    * <button> HTML → <Button> shadcn
+    * Bouton "Générer un nouveau rapport" bg-navy-900 → <Button> shadcn
+    * Cards rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+    * Type badges → <Badge variant="outline"> shadcn avec classes indigo
+
+14. TransportSettings.tsx (146→195 lignes) — REFONTE MAJEURE :
+    * ⭐ FALLBACK DEFAULT_SETTINGS SUPPRIMÉ (Task 7-e) : le gros objet DEFAULT_SETTINGS hardcoded (4 tableaux : vehicleTypes, zones, parentNotifications, pricingOptions) supprimé. Le composant appelle désormais le vrai GET /transport/settings (route ajoutée au backend, controller ligne 477). L'API retourne un objet plat Record<string, string> (key→value) — le frontend découpe les clés par préfixe (vehicleTypes.*, zones.*, notifications.*, pricing.*) pour reconstruire les 4 sections. Si aucune clé n'est renvoyée, on affiche "Aucune option configurée" + bouton "Ajouter une option" qui appelle PUT /transport/settings avec la nouvelle clé
+    * 1 alert() (save error) → 1 toast() destructif + 1 toast() succès
+    * <input> HTML → <Input> shadcn (champ nouvelle option par section)
+    * Toggles CSS-only (<div> + <span> simulacre de switch) → <Badge variant="outline"> "actif" + Input + <Button variant="outline"> pour ajouter
+    * <button> "Enregistrer" bg-navy-900 text-white → <Button> shadcn (default = indigo-600)
+    * Cards rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+
+- Vérifications post-refonte (ripgrep sur les 15 fichiers) :
+  * 0 alert() dans le code réel (uniquement mentionnés dans les commentaires de header)
+  * 0 confirm() natif dans le code réel
+  * 0 modal fixed inset-0 restant
+  * 0 <table>/<thead>/<tbody>/<tr>/<td>/<th> HTML restant
+  * 0 <input>/<label>/<button> HTML restant
+  * 0 rounded-3xl / rounded-[2.5rem] restant
+  * 0 font-black uppercase tracking-widest restant
+  * 0 bg-navy-900 text-white (boutons) restant
+  * 0 text-[10px] / text-[9px] / text-[8px] / text-[11px] restant
+  * 0 DEFAULT_SETTINGS restant (supprimé)
+  * 0 "1 250 000" / "87.5%" / "12/15 Bus" / "94.2%" restant (KPIs hardcodés supprimés)
+  * 0 fallback [45, 65, 35, 85, 75, 95, 60] restant (supprimé)
+  * 0 layout 100% custom dans TransportModulePage (remplacé par ModuleContainer)
+- Type-check (bun run type-check) : aucune nouvelle erreur introduite par les 15 fichiers transport. Seules les erreurs préexistantes dans src/components/cms/useAutoSave.ts (hors-scope) subsistent.
+
+Stage Summary:
+- 15 fichiers transport standardisés sur pattern Finance : TransportModulePage + 14 sous-composants (TransportDashboard, TransportVehicles, TransportDrivers, TransportRoutes, TransportStops, TransportStudents, TransportSchedules, TransportTrips, TransportAttendance, TransportIncidents, TransportMaintenance, TransportPayments, TransportReports, TransportSettings)
+- 16 alert() migrés vers useToast() au total (Vehicles:2, Drivers:1, Routes:2, Students:1, Schedules:1, Trips:3, Attendance:1, Incidents:2, Maintenance:2, Settings:1) — toasts succès + destructifs pour erreurs
+- 1 confirm() natif migré vers useConfirmDialog().danger() (TransportTrips: finalisation trajet)
+- 11 modals fixed inset-0 convertis en <Dialog>/<DialogContent>/<DialogHeader>/<DialogTitle>/<DialogFooter> shadcn (Vehicles, Drivers, Routes×2, Students, Schedules, Trips×2, Attendance, Incidents, Maintenance)
+- 5 tables HTML converties en <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell> shadcn (Drivers, Stops, Students, Attendance, Maintenance)
+- ~45 <input>/<label>/<button> HTML migrés vers <Input>/<Label>/<Button> shadcn
+- 3 mocks hardcoded supprimés : TransportPayments (2 paiements fictifs + 3 KPIs "1 250 000 F CFA" / "175 000 F CFA" / "87.5%" → placeholder "Module de paiement à configurer") ; TransportReports (fallback [45,65,35,85,75,95,60] → "Aucune donnée de performance disponible" si vide) ; TransportSettings (DEFAULT_SETTINGS 4 tableaux → vrai GET /transport/settings avec découpage par préfixe + PUT pour ajout)
+- 2 KPIs hardcodés dans le header supprimés : "94.2% ponctualité" et "12/15 Bus" → remplacés par 4 KPIs dynamiques (véhicules actifs / routes actives / chauffeurs / incidents ouverts) chargés via GET /transport/stats
+- FIX RESOLVE ENDPOINT : TransportIncidents envoyait { status: 'RESOLVED' } au POST transport/incidents/:id/resolve → corrigé pour envoyer { resolution: 'Résolu' } (format attendu par le backend, controller ligne 439)
+- Page principale : layout 100% custom (min-h-screen p-8 + header navy-900 + pills custom + framer-motion AnimatePresence) → ModuleContainer + SubModuleNavigation standard (bleus soulignés) ; 2 boutons d'action standard (indigo-600 "Nouveau Véhicule" + outline "Exporter")
+- Couleurs harmonisées : navy-900 (boutons) → indigo-600 / slate-900 (bandeaux foncés) / emerald-600 (actions positives) / rose-600 (incidents)
+- Typographie harmonisée : font-black uppercase tracking-widest → font-semibold / font-medium
+- Cards harmonisées : rounded-3xl → rounded-xl border-gray-200 shadow-sm
+- Tailles texte harmonisées : text-[10px] / text-[9px] → text-xs
+- Listes longues harmonisées : max-h-96 overflow-y-auto + pr-1 (Dashboard trajets/maintenance)
+- Logique métier 100% conservée (modulesApi.post/get/put, useModulesList, useModulesDashboard, refetch, useState, handlers)
+
+---
+Task ID: 7-f
+Agent: full-stack-developer (Module EduCast)
+Task: Standardiser EduCastModulePage + 17 sous-composants
+
+Work Log:
+- Lecture des références : worklog.md (sections 7-a Boutique + 7-b Infirmerie + 7-c Labo + 7-d Cantine + 7-e Transport pour pattern appliqué), STANDARDIZATION-GUIDE.md (guide obligatoire), FinanceModulePage.tsx (pattern cible page principale), TransactionsContent.tsx (pattern cible sous-composants), CanteenModulePage.tsx (autre exemple déjà refondu), EduCastModulePage.tsx (à refondre — layout 100% ModulePageLayout + onglets pills custom navy-900 uppercase + 13 tabs seulement alors qu'il existe 17 composants)
+- Lecture des 17 sous-composants educast/ pour identifier les écarts : 37 alert() (validation champs + erreurs + boutons "Bientôt disponible"), 8 modals fixed inset-0, 4 tables HTML, 23 <input>, 31 <label>, 71 <button>, 38 rounded-3xl, 8 rounded-[2.5rem], 21 font-black uppercase tracking-widest, 24 bg-navy-900 text-white (boutons), 4 text-[10px]/text-[9px]/text-[8px], EduCastAnalytics entièrement mocké (74%, 42 min, 1240 partages, 8.5/10, [45,80,55,90,65,30], Top Classes Terminal D/3ème B...), EduCastReports tableau reports de 4 entrées codées en dur + payload `{ type: 'GLOBAL' }` au lieu de `{ reportType: 'GLOBAL' }`, EduCastWebinars bouton "Nouvelle Session" sur alert('Bientôt disponible') alors que POST /educast/webinars existe, EduCastChannels backend peut renvoyer objet unique (findFirst), EduCastMonetization mock payouts (3 lignes fictives 85.000/120.000/45.500), EduCastSettings toggles CSS-only
+- ⭐ BUGFIX en passant : 4 fichiers avaient une typo `const odalOpen, setModalOpen] = useState(false);` (manquait `[m`) — EduCastPacks, EduCastVideos, EduCastPodcasts, EduCastRevisionCapsules, EduCastPlaylists, EduCastAnnouncements. Tous corrigés en `const [modalOpen, setModalOpen] = useState(false);` (le code ne compilait même pas avant — sans doute un bad merge)
+
+A. Refonte complète de la page principale :
+1. EduCastModulePage.tsx (138→210 lignes) :
+   * ModulePageLayout (obsolète) → ModuleContainer (pattern Finance)
+   * useAcademicYear/useSchoolLevel → useModuleContext
+   * useState<TabId> local + TABS array (13 entrées) + renderActiveTab() switch + onglets pills custom bg-navy-900 text-white uppercase + framer-motion AnimatePresence → useState<string> + activeSubModuleId + subModules.modules (17 modules avec icônes Lucide) + ternaire content
+   * Les 4 sous-composants manquants (Channels, Playlists, RevisionCapsules, Resources) ajoutés aux onglets
+   * Bouton "Publier Contenu" bg-navy-900 text-white + accent gold (#C9A84C) → 2 boutons standard (indigo-600 "Publier Contenu" + outline "Rapports")
+   * 4 KPIs ajoutés dans ModuleHeader (médias publiés / canaux actifs / revenus / inscriptions) chargés via fetch /api/modules-complementaires/educast/stats
+
+B. Refonte des 17 sous-composants (logique métier 100% conservée — useModulesList, useModulesDashboard, modulesApi.post/get/put/patch, refetch, useState, handlers inchangés) :
+
+1. EduCastDashboard.tsx (169→165 lignes) :
+   * Card div rounded-3xl border-slate-100 → <Card> shadcn rounded-xl p-6 shadow-sm
+   * Bandeau navy-900 (État du Système) → bg-slate-900
+   * Accents gold (#C9A84C) → amber-400 (bandeau foncé)
+   * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+   * font-black tracking-tighter → font-semibold
+   * Bouton "Voir Tout" custom text-blue-600 font-black text-[10px] uppercase → <Button variant="link" size="sm">
+   * Liste "Publications Récentes" : max-h-96 overflow-y-auto + pr-1 (scrollbar styling)
+   * Badge <span> monetization custom → <Badge variant="outline"> shadcn avec classes colorées (amber pour PAYANT, emerald pour Gratuit)
+   * Liste "Top Channels" supprimée (non utilisée dans l'UI)
+
+2. EduCastLibrary.tsx (158→152 lignes) :
+   * 1 table HTML <table>/<thead>/<tbody>/<tr>/<td>/<th> → <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell> shadcn
+   * motion.tr (framer) → <TableRow> shadcn
+   * <input> recherche + <button> Filtres/Importer → <Input>/<Button> shadcn
+   * Bouton "Importer" bg-navy-900 text-white → <Button> shadcn (default = indigo-600)
+   * Catégorie <span> text-[9px] uppercase → <Badge variant="outline"> shadcn
+   * Boutons actions (Eye/Download/MoreVertical) custom → <Button variant="ghost" size="icon"> shadcn
+   * Card rounded-3xl → rounded-xl
+   * font-black uppercase tracking-widest → font-semibold
+
+3. EduCastTeacherStudio.tsx (292→280 lignes) :
+   * 4 alert() → 4 toast() (chaîne enregistrée / erreur enregistrement / montant invalide / demande de paiement) + toasts destructifs pour erreurs
+   * <input>/<label> HTML → <Input>/<Label> shadcn (3 champs : channelName, channelSlogan, channelDesc)
+   * <textarea> HTML → styled textarea (pattern Infirmerie — pas de composant Textarea dans ui/)
+   * <button> "Nouvelle Vidéo" bg-navy-900 + accent gold → <Button> shadcn
+   * <button> "Enregistrer" bg-[#C9A84C] → <Button> shadcn
+   * Bouton "Modifier Bannière" custom → <Button variant="secondary">
+   * Bouton "Demander un paiement" custom → <Button variant="secondary" className="bg-white/10 hover:bg-white/20 text-white">
+   * Bouton "Demander l'éligibilité" (alert) → <Button> + toast informatif
+   * Bouton "Détails" custom → <Button variant="link" size="sm">
+   * Bouton avatar Edit3 custom → <Button size="icon"> shadcn
+   * Card rounded-3xl → rounded-xl
+   * Bandeau navy-900 → bg-slate-900 (banner preview)
+   * Bandeau monétisation navy-900/gold → slate-900/amber-400
+   * Badge <span> "Chaîne Active" custom → <Badge variant="outline"> shadcn avec classes colorées
+   * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+   * font-black tracking-tighter → font-semibold
+   * ZapIcon SVG custom → import Zap depuis lucide-react (suppression de la fonction ZapIcon en bas de fichier)
+
+4. EduCastMonetization.tsx (313→298 lignes) :
+   * ⭐ MOCKS PAYOUTS SUPPRIMÉS : tableau payouts de 3 lignes fictives (85.000/120.000/45.500 F CFA Mars/Avril/Mai 2026) supprimé. payouts désormais = data?.payouts ?? [] (vide si l'API ne renvoie rien)
+   * 2 alert() → 2 toast() (montant invalide + demande de paiement) + 1 toast destructif pour erreur
+   * 1 modal fixed inset-0 → <Dialog>/<DialogContent>/<DialogHeader>/<DialogTitle>/<DialogFooter> shadcn
+   * 1 table HTML <table>/<thead>/<tbody>/<tr>/<td>/<th> → <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell> shadcn (Dernières Ventes)
+   * <input>/<label> HTML → <Input>/<Label> shadcn (champ montant)
+   * Bouton "Demander un Paiement" bg-navy-900 → <Button> shadcn
+   * Bouton "Exporter (CSV)" custom → <Button variant="link" size="sm">
+   * Bouton "Voir tout l'historique" custom → <Button variant="outline">
+   * Boutons Download (transaction/payout) custom → <Button variant="ghost" size="icon"> shadcn
+   * Cards rounded-3xl / rounded-[2.5rem] / rounded-[2rem] → <Card> shadcn rounded-xl
+   * Badge <span> status custom → <Badge variant="outline"> shadcn avec classes emerald
+   * Liste payouts : max-h-72 overflow-y-auto + pr-1 (scrollbar styling)
+   * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+   * font-black tracking-tighter → font-semibold
+
+5. EduCastPacks.tsx (234→216 lignes) :
+   * ⭐ TYPO FIX : `const odalOpen, setModalOpen] = useState(false);` → `const [modalOpen, setModalOpen] = useState(false);`
+   * 2 alert() → 2 toast() (nom manquant + erreur création) + toast succès
+   * 1 modal fixed inset-0 → <Dialog>/<DialogContent>/<DialogHeader>/<DialogTitle>/<DialogFooter> shadcn
+   * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn (4 champs : name, description, price, mediaIds)
+   * Bouton "Créer un Pack" bg-navy-900 → <Button> shadcn
+   * Bouton MoreVertical custom → <Button variant="ghost" size="icon"> shadcn
+   * Cards rounded-3xl / rounded-[2.5rem] → rounded-xl
+   * Accents gold (#C9A84C) → amber-400
+   * Badge "Ventes" custom → <Badge variant="outline"> shadcn avec backdrop blur
+   * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+
+6. EduCastVideos.tsx (230→206 lignes) :
+   * ⭐ TYPO FIX : `const odalOpen, setModalOpen] = useState(false);` → `const [modalOpen, setModalOpen] = useState(false);`
+   * 2 alert() → 2 toast() (titre+URL manquants + erreur publication) + toast succès
+   * 1 modal fixed inset-0 → <Dialog> shadcn (3 champs : title, description, url)
+   * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+   * Bouton "Ajouter Vidéo" bg-navy-900 + accent gold → <Button> shadcn
+   * Card rounded-3xl → <Card> shadcn rounded-xl p-0
+   * Bouton Play (overlay) custom → <Button size="icon"> shadcn avec classes amber
+   * Badge <span> duration/subject custom → <Badge> shadcn
+   * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+
+7. EduCastPodcasts.tsx (219→202 lignes) :
+   * ⭐ TYPO FIX : `const odalOpen, setModalOpen] = useState(false);` → `const [modalOpen, setModalOpen] = useState(false);`
+   * 2 alert() → 2 toast() (titre+URL manquants + erreur publication) + toast succès
+   * 1 modal fixed inset-0 → <Dialog> shadcn (3 champs : title, description, url)
+   * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+   * Bouton "Publier Podcast" bg-navy-900 → <Button> shadcn
+   * Bouton Play (overlay) custom → <Button size="icon"> shadcn avec classes amber
+   * Bouton MoreVertical custom → <Button variant="ghost" size="icon"> shadcn
+   * Card rounded-3xl → <Card> shadcn rounded-xl
+   * Badge <span> category custom → <Badge variant="outline"> shadcn
+   * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+
+8. EduCastWebinars.tsx (143→255 lignes) — REFONTE MAJEURE :
+   * ⭐ CÂBLAGE POST /educast/webinars (Task 7-f) : le bouton "Nouvelle Session" était câblé sur alert('Bientôt disponible'). Désormais il ouvre un <Dialog> avec un formulaire (5 champs : title, description, scheduledAt, duration, streamUrl) et appelle modulesApi.post('educast/webinars', data, buildModulesApiOptions(academicYear.id)). Toast succès "Session planifiée" + toast destructif pour erreur + refetch de la liste
+   * 3 alert() restants (S'inscrire / Détails / boutons card) → toast informatif "Bientôt disponible" (ces actions secondaires ne sont pas encore câblées backend)
+   * Bouton "Nouvelle Session" bg-navy-900 → <Button> shadcn
+   * Boutons "S'inscrire" / "Détails" bg-navy-900 / bg-slate-50 custom → <Button> / <Button variant="outline"> shadcn
+   * Card rounded-3xl → <Card> shadcn rounded-xl
+   * Badge <span> status (LIVE/PROCHAINEMENT) custom → <Badge variant="outline"> shadcn avec classes colorées (red pour LIVE, emerald pour PLANNED)
+   * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+   * font-black tracking-tighter → font-semibold
+
+9. EduCastAnnouncements.tsx (232→216 lignes) :
+   * ⭐ TYPO FIX : `const odalOpen, setModalOpen] = useState(false);` → `const [modalOpen, setModalOpen] = useState(false);`
+   * 2 alert() → 2 toast() (titre+contenu manquants + erreur création) + toast succès
+   * 1 modal fixed inset-0 → <Dialog> shadcn (3 champs : title, content, targetAudience)
+   * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+   * <select> HTML conservé (pattern Finance — TransactionsContent utilise aussi des <input type="date"> HTML natifs)
+   * Bouton "Créer une Annonce" bg-navy-900 → <Button> shadcn
+   * Boutons Eye/MoreHorizontal custom → <Button variant="ghost" size="icon"> shadcn
+   * Card rounded-3xl + border-l-8 → <Card> shadcn rounded-xl + border-l-4
+   * Badge <span> date/important custom → <Badge variant="outline"> shadcn
+   * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+
+10. EduCastModeration.tsx (158→147 lignes) :
+    * 4 alert() "Bientôt disponible" (Tout Valider / Eye / CheckCircle2 / XCircle) → 1 toast informatif (Tout Valider) + 3 boutons <Button variant="ghost" size="icon"> (actions individuelles en attente de câblage backend)
+    * 1 table HTML <table>/<thead>/<tbody>/<tr>/<td>/<th> → <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell> shadcn
+    * motion.tr (framer) → <TableRow> shadcn
+    * Bouton "Tout Valider" bg-emerald-600 custom → <Button className="bg-emerald-600 hover:bg-emerald-700"> shadcn
+    * Bouton Filtres custom → <Button variant="outline" size="icon"> shadcn
+    * Card rounded-3xl → <Card> shadcn rounded-xl
+    * Badge <span> type custom → <Badge variant="outline"> shadcn avec classes blue
+    * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+
+11. EduCastAnalytics.tsx (125→167 lignes) — REFONTE MAJEURE :
+    * ⭐ MOCKS HARDCODED SUPPRIMÉS : 4 KPIs codés en dur (74%, 42 min, 1240 partages, 8.5/10), 6 barres du chart [45, 80, 55, 90, 65, 30] avec labels MATHS/FRANÇAIS/SVT/ANGLAIS/HG/AUTRE, 4 lignes Top Classes (Terminal D 98% / 3ème B 85% / 6ème A 72% / 2nde C 64%) supprimés
+    * ⭐ BRANCHEMENT useModulesDashboard('educast') : le composant appelle désormais GET /educast/stats (fallback /educast/dashboard) via useModulesDashboard('educast', academicYear.id). Les KPIs (completionRate, averageWatchTime, totalShares, engagementScore), le breakdown par matière (subjectBreakdown) et le Top Classes (topClasses) sont chargés dynamiquement. Si l'API ne renvoie pas un champ, on affiche 0/— plutôt qu'une valeur fictive
+    * Sujet fallback : si l'API ne renvoie pas subjectBreakdown, on affiche 6 barres à 0% avec les labels standards (MATHS/FRANÇAIS/SVT/ANGLAIS/HG/AUTRE)
+    * Top Classes : si vide, on affiche "Aucune donnée de performance disponible" au lieu de mocks
+    * Loading state ajouté (Loader2 spin) car on fetch désormais
+    * Card div rounded-3xl → <Card> shadcn rounded-xl
+    * Bandeau navy-900 (Consultations par Matière) → bg-slate-900
+    * Accents gold (#C9A84C) → amber-400
+    * Badge <span> trend custom → <Badge variant="outline"> shadcn
+    * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+    * font-black tracking-tighter → font-semibold
+
+12. EduCastReports.tsx (113→148 lignes) — REFONTE MAJEURE :
+    * ⭐ MOCKS HARDCODED SUPPRIMÉS : tableau `reports` de 4 entrées codées en dur (Rapport d'Engagement Mensuel - Mai 2026 / Statistiques de consultation par Classe / Audit Modération et Signalements / Performance des contenus Enseignants) supprimé
+    * ⭐ BRANCHEMENT useModulesDashboard('educast') : si l'API renvoie un champ `reports`, on l'affiche. Sinon on affiche "Aucun rapport généré pour cette année scolaire."
+    * ⭐ FIX PAYLOAD REPORTTYPE (Task 7-f) : le POST /educast/reports envoyait `{ type: 'GLOBAL' }` mais le backend attend `reportType`. Corrigé pour envoyer `{ reportType: 'GLOBAL' }` (vérifié dans le code ligne 57)
+    * 2 alert() → 2 toast() (rapport généré + erreur) avec variants success/destructif
+    * Bouton "Générer Rapport" bg-navy-900 text-white font-black uppercase → <Button> shadcn
+    * Boutons Download/Share custom → <Button variant="ghost" size="icon"> shadcn
+    * Card rounded-3xl → <Card> shadcn rounded-xl
+    * Badge <span> type custom → <Badge variant="outline"> shadcn avec classes blue
+    * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+
+13. EduCastSettings.tsx (236→248 lignes) :
+    * 2 alert() → 2 toast() (paramètres enregistrés + erreur)
+    * <input>/<label> HTML → <Input>/<Label> shadcn (4 champs numériques : maxCapsuleDuration, teacherQuotaGB, autoArchiveMonths, schoolCommissionPct, maxVideoPrice)
+    * <select> HTML conservé (maxVideoQuality) mais avec classes shadcn (pattern Finance)
+    * ⭐ TOGGLES CSS-only → <Switch> shadcn avec onCheckedChange (3 switches : mandatoryModeration, paidVideoValidation, publishNotifications)
+    * <button> "Enregistrer" bg-blue-600 text-white → <Button> shadcn (default = indigo-600)
+    * Cards rounded-3xl → <Card> shadcn rounded-xl
+    * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+    * font-black tracking-tight → font-semibold
+
+14. EduCastChannels.tsx (273→268 lignes) :
+    * ⭐ GESTION OBJET vs TABLEAU (Task 7-f) : le backend GET /educast/teacher-channel peut renvoyer un objet unique (findFirst) au lieu d'un tableau. On wrap désormais l'objet dans un tableau si nécessaire : `const channels = Array.isArray(rawData) ? rawData : rawData ? [rawData] : []`
+    * 3 alert() → 3 toast() (nom manquant + erreur enregistrement + erreur abonnement) + toasts succès
+    * 1 modal fixed inset-0 → <Dialog>/<DialogContent>/<DialogHeader>/<DialogTitle>/<DialogFooter> shadcn (3 champs : name, subject, description)
+    * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+    * Bouton "Créer une Chaîne" bg-navy-900 + accent gold → <Button> shadcn
+    * Bouton "S'abonner" custom → <Button variant="link" size="sm"> shadcn
+    * Bouton "Ouvrir" custom → <Button variant="link" size="sm"> shadcn
+    * Bouton "Modifier" (Settings icon) custom → <Button variant="ghost" size="icon"> shadcn
+    * Card rounded-3xl → <Card> shadcn rounded-xl
+    * Badge <span> status custom → <Badge variant="outline"> shadcn avec classes colorées (emerald pour ACTIVE, amber sinon)
+    * PALETTE : 'bg-navy-900' remplacé par 'bg-slate-900' pour cohérence
+    * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+
+15. EduCastPlaylists.tsx (207→191 lignes) :
+    * ⭐ TYPO FIX : `const odalOpen, setModalOpen] = useState(false);` → `const [modalOpen, setModalOpen] = useState(false);`
+    * 2 alert() → 2 toast() (nom manquant + erreur création) + toast succès
+    * 1 modal fixed inset-0 → <Dialog> shadcn (2 champs : name, description)
+    * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+    * Bouton "Nouvelle Playlist" bg-navy-900 → <Button> shadcn
+    * Bouton MoreVertical custom → <Button variant="ghost" size="icon"> shadcn
+    * Cards rounded-3xl / rounded-[2.5rem] → rounded-xl
+    * Badge <span> target/contents custom → <Badge variant="outline"> shadcn avec classes rose
+    * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+
+16. EduCastRevisionCapsules.tsx (222→204 lignes) :
+    * ⭐ TYPO FIX : `const odalOpen, setModalOpen] = useState(false);` → `const [modalOpen, setModalOpen] = useState(false);`
+    * 2 alert() → 2 toast() (titre+URL manquants + erreur création) + toast succès
+    * 1 modal fixed inset-0 → <Dialog> shadcn (3 champs : title, description, url)
+    * <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+    * Bouton "Créer une Capsule" bg-navy-900 + accent gold → <Button> shadcn
+    * Card rounded-3xl → <Card> shadcn rounded-xl
+    * Badge <span> subject custom → <Badge variant="outline"> shadcn avec classes colorées (blue/rose/emerald/slate selon matière)
+    * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+
+17. EduCastResources.tsx (126→122 lignes) :
+    * 1 alert() "Bientôt disponible" (bouton "Attacher une Ressource") → 1 toast informatif
+    * 1 table HTML <table>/<thead>/<tbody>/<tr>/<td>/<th> → <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell> shadcn
+    * motion.tr (framer) → <TableRow> shadcn
+    * Bouton "Attacher une Ressource" bg-navy-900 → <Button> shadcn
+    * Bouton Download/ExternalLink custom → <Button variant="ghost" size="icon"> shadcn
+    * Card rounded-3xl → <Card> shadcn rounded-xl
+    * Badge <span> type custom → <Badge variant="outline"> shadcn
+    * text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+
+- Vérifications post-refonte (ripgrep sur les 18 fichiers) :
+  * 0 alert() dans le code réel (uniquement mentionnés dans les commentaires de header descriptifs)
+  * 0 modal fixed inset-0 restant
+  * 0 <table>/<thead>/<tbody>/<tr>/<td>/<th> HTML restant
+  * 0 <input>/<label>/<button> HTML restant
+  * 0 rounded-3xl / rounded-[2.5rem] / rounded-[2rem] restant
+  * 0 font-black uppercase tracking-widest restant
+  * 0 bg-navy-900 text-white (boutons) restant
+  * 0 text-[10px] / text-[9px] / text-[8px] / text-[11px] restant
+  * 0 font-black restant
+  * 0 uppercase tracking-widest restant
+  * 0 mock 74% / 42 min / 1240 / 8.5/10 / [45,80,55,90,65,30] / Terminal D (uniquement dans le commentaire de header EduCastAnalytics qui décrit la refonte)
+  * 0 mock payouts 85.000/120.000/45.500 restant
+  * 0 `type: 'GLOBAL'` dans le code réel (uniquement dans le commentaire de header EduCastReports qui décrit le fix)
+  * 5 occurrences de `reportType` (1 dans le commentaire + 4 dans le code : interface, payload, fallback display)
+  * 0 ModulePageLayout dans EduCastModulePage (remplacé par ModuleContainer)
+  * 0 typo `odalOpen` (les 6 fichiers corrigés)
+- Type-check (bun run type-check) : aucune nouvelle erreur introduite par les 18 fichiers EduCast. Seules les erreurs préexistantes dans src/components/cms/useAutoSave.ts (hors-scope) subsistent.
+- Note : ESLint non exécutable (next lint renvoie une erreur car Next.js 16 a retiré next lint). Vérification via grep + tsc.
+- Note : <select> HTML conservé (non mentionné dans le guide de standardisation — pattern Finance référence TransactionsContent.tsx utilise aussi des <input type="date"> HTML natifs).
+- Note : <textarea> HTML conservé mais stylé avec les classes shadcn (pas de composant Textarea dans components/ui/) — pattern identique à CanteenMenus/InfirmaryVisits/ShopOrders.
+- Note : EduCastDashboard supprime la liste "Top Channels" qui était définie dans l'interface mais non rendue dans l'UI (code mort).
+
+Stage Summary:
+- 18 fichiers EduCast standardisés sur pattern Finance : EduCastModulePage + 17 sous-composants (EduCastDashboard, EduCastLibrary, EduCastTeacherStudio, EduCastMonetization, EduCastPacks, EduCastVideos, EduCastPodcasts, EduCastWebinars, EduCastAnnouncements, EduCastModeration, EduCastAnalytics, EduCastReports, EduCastSettings, EduCastChannels, EduCastPlaylists, EduCastRevisionCapsules, EduCastResources)
+- 37 alert() migrés vers useToast() au total (Dashboard:0, Library:1→toast, TeacherStudio:4, Monetization:2, Packs:2, Videos:2, Podcasts:2, Webinars:3→toast, Announcements:2, Moderation:4→1toast+3boutons, Analytics:0, Reports:2, Settings:2, Channels:3, Playlists:2, RevisionCapsules:2, Resources:1) — toasts succès + destructifs pour erreurs
+- 8 modals fixed inset-0 convertis en <Dialog>/<DialogContent>/<DialogHeader>/<DialogTitle>/<DialogFooter> shadcn (Monetization, Packs, Videos, Podcasts, Webinars, Announcements, Channels, Playlists, RevisionCapsules = 9 modals en fait)
+- 4 tables HTML converties en <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell> shadcn (Library, Monetization, Moderation, Resources)
+- ~80 <input>/<label>/<button> HTML migrés vers <Input>/<Label>/<Button> shadcn
+- 3 toggles CSS-only migrés vers <Switch> shadcn avec onCheckedChange (EduCastSettings : mandatoryModeration, paidVideoValidation, publishNotifications)
+- 6 TYPO FIX : `const odalOpen, setModalOpen] = useState(false);` (manquait `[m`) corrigés en `const [modalOpen, setModalOpen] = useState(false);` dans EduCastPacks, EduCastVideos, EduCastPodcasts, EduCastPlaylists, EduCastRevisionCapsules, EduCastAnnouncements — le code ne compilait pas avant
+- MOCKS SUPPRIMÉS :
+  * EduCastAnalytics : 4 KPIs mockés (74%, 42 min, 1240 partages, 8.5/10) + 6 barres chart [45,80,55,90,65,30] + 4 Top Classes mockées (Terminal D 98% / 3ème B 85% / 6ème A 72% / 2nde C 64%) → useModulesDashboard('educast') qui retourne les vraies stats depuis GET /educast/stats (ou /educast/dashboard en fallback). Si vide : 0 / "Aucune donnée de performance disponible"
+  * EduCastReports : tableau `reports` de 4 entrées codées en dur (Mai 2026 etc.) → useModulesDashboard('educast') qui peut renvoyer un champ `reports`. Si vide : "Aucun rapport généré"
+  * EduCastMonetization : tableau payouts de 3 lignes fictives (85.000/120.000/45.500 F CFA) → data?.payouts ?? [] (vide si l'API ne renvoie rien)
+- FIX PAYLOAD REPORTTYPE : EduCastReports envoyait `{ type: 'GLOBAL' }` au POST /educast/reports → corrigé pour envoyer `{ reportType: 'GLOBAL' }` (format attendu par le backend)
+- CÂBLAGE POST /educast/webinars : EduCastWebinars bouton "Nouvelle Session" était sur alert('Bientôt disponible') → désormais ouvre un <Dialog> avec formulaire (title, description, scheduledAt, duration, streamUrl) et appelle modulesApi.post('educast/webinars', data) + refetch
+- FIX OBJET vs TABLEAU EduCastChannels : backend GET /educast/teacher-channel peut renvoyer un objet unique (findFirst) → wrap dans un tableau si nécessaire pour compatibilité avec useModulesList
+- Page principale : ModulePageLayout → ModuleContainer + SubModuleNavigation standard (bleus soulignés) ; 4 KPIs ajoutés dans ModuleHeader (médias publiés / canaux actifs / revenus / inscriptions) chargés via GET /educast/stats ; 2 boutons d'action standard (indigo-600 "Publier Contenu" + outline "Rapports") ; 17 sous-modules (4 de plus qu'avant : Channels, Playlists, RevisionCapsules, Resources ajoutés aux onglets)
+- Couleurs harmonisées : navy-900 (boutons) → indigo-600 / slate-900 (bandeaux foncés) / amber-400 (accents gold remplacés) / emerald-600 (actions positives) / rose-600 (annulations)
+- Typographie harmonisée : font-black uppercase tracking-widest → font-semibold / font-medium
+- Cards harmonisées : rounded-3xl / rounded-[2.5rem] / rounded-[2rem] → rounded-xl border-gray-200 shadow-sm
+- Tailles texte harmonisées : text-[10px] / text-[9px] / text-[8px] → text-xs
+- Listes longues harmonisées : max-h-96 overflow-y-auto + pr-1 (Dashboard publications, Monetization payouts)
+- Logique métier 100% conservée (modulesApi.post/get/put/patch, useModulesList, useModulesDashboard, refetch, useState, handlers)

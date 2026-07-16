@@ -2,16 +2,34 @@
  * ============================================================================
  * SHOP KITS (SCHOOL PACKS) - ACADEMIA HELM
  * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern Finance/Students.
+ *  - Boutons : <Button> shadcn
+ *  - Modals : <Dialog> shadcn
+ *  - Notifications : useToast() (au lieu de alert())
+ *  - Inputs/Labels : <Input>/<Label> shadcn
+ *  - Cards : rounded-xl (au lieu de rounded-[2.5rem])
+ *  - Typo : font-semibold (au lieu de font-black uppercase tracking-widest)
+ * ============================================================================
  */
 
 'use client';
 
 import React, { useState } from 'react';
-import { Loader2, Package, Layers, Plus, Edit, Trash2, X } from 'lucide-react';
+import { Loader2, Package, Layers, Plus, Edit, Trash2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
 
 interface KitItem {
   id?: string;
@@ -29,10 +47,11 @@ interface KitItem {
   isPromoted?: boolean;
 }
 
-const COLOR_BY_INDEX = ['emerald', 'navy', 'blue', 'amber', 'emerald', 'navy'];
+const COLOR_BY_INDEX = ['emerald', 'indigo', 'blue', 'amber', 'emerald', 'indigo'];
 
 export default function ShopKits() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const { data: kits, loading, error, refetch } = useModulesList<KitItem>(
     'shop',
     'kits',
@@ -51,8 +70,13 @@ export default function ShopKits() {
       setModalOpen(false);
       setKitForm({ name: '', description: '', price: 0, productIds: '' });
       await refetch();
+      toast({ title: 'Kit créé', description: 'Le nouveau kit scolaire a été enregistré.' });
     } catch (e: any) {
-      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création du kit');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création du kit',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -70,7 +94,7 @@ export default function ShopKits() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
+    <div className="space-y-6 animate-in fade-in duration-700">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les kits. {error}
@@ -78,18 +102,15 @@ export default function ShopKits() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h3 className="text-xl font-black text-navy-900 uppercase tracking-tight">Kits Scolaires Par Niveau</h3>
-          <p className="text-sm text-gray-400 font-medium">Composez des packs d'articles obligatoires par classe</p>
+          <h3 className="text-lg font-semibold text-navy-900">Kits Scolaires Par Niveau</h3>
+          <p className="text-sm text-gray-500">Composez des packs d'articles obligatoires par classe</p>
         </div>
-        <button
-          onClick={() => setModalOpen(true)}
-          className="flex items-center space-x-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20 active:scale-95"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Nouveau Kit</span>
-        </button>
+        <Button onClick={() => setModalOpen(true)}>
+          <Plus className="w-4 h-4 mr-2" />
+          Nouveau Kit
+        </Button>
       </div>
 
       {/* Kits Grid */}
@@ -98,7 +119,7 @@ export default function ShopKits() {
           Aucun kit scolaire configuré pour cette année scolaire.
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {safeKits.map((kit: any, i: number) => (
             <KitCard
               key={kit?.id ?? `kit-${i}`}
@@ -115,19 +136,19 @@ export default function ShopKits() {
       )}
 
       {/* Composition Preview (Bottom Section) */}
-      <div className="bg-white rounded-[2.5rem] border border-gray-100 p-8 shadow-sm">
-        <div className="flex items-center justify-between mb-8">
-           <div>
-              <h3 className="text-xl font-black text-navy-900 uppercase tracking-tight">Détails de Composition</h3>
-              <p className="text-sm text-gray-400 font-medium">Sélectionnez un kit pour voir et éditer ses articles</p>
-           </div>
-           <div className="flex bg-gray-50 p-1 rounded-xl border border-gray-100">
-              <button className="px-4 py-2 bg-white text-navy-900 rounded-lg text-[10px] font-black uppercase shadow-sm">Articles</button>
-              <button className="px-4 py-2 text-gray-400 rounded-lg text-[10px] font-black uppercase hover:text-navy-900 transition-all">Stocks Liés</button>
-           </div>
+      <Card className="p-6 shadow-sm">
+        <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-navy-900">Détails de Composition</h3>
+            <p className="text-sm text-gray-500">Sélectionnez un kit pour voir et éditer ses articles</p>
+          </div>
+          <div className="flex bg-slate-50 p-1 rounded-lg border border-slate-100">
+            <Button variant="ghost" size="sm" className="bg-white shadow-sm text-navy-900">Articles</Button>
+            <Button variant="ghost" size="sm" className="text-gray-400">Stocks Liés</Button>
+          </div>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           {safeKits.length === 0 ? (
             <p className="text-center text-gray-400 text-sm py-8">
               Aucun article à afficher. Créez un kit pour commencer.
@@ -136,43 +157,45 @@ export default function ShopKits() {
             <KitItemRow name={`Articles du kit : ${safeKits[0]?.name ?? 'Kit sélectionné'}`} qty={safeKits[0]?.itemsCount ?? safeKits[0]?.items ?? 0} price={safeKits[0]?.price ?? safeKits[0]?.total ?? 0} />
           )}
         </div>
-      </div>
+      </Card>
 
       {/* Kit Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-navy-900">Nouveau Kit</h3>
-              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nouveau Kit</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-xs">Nom</Label>
+              <Input type="text" value={kitForm.name} onChange={(e) => setKitForm({ ...kitForm, name: e.target.value })} />
             </div>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Nom</label>
-                <input type="text" value={kitForm.name} onChange={(e) => setKitForm({ ...kitForm, name: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Description</label>
-                <textarea value={kitForm.description} onChange={(e) => setKitForm({ ...kitForm, description: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 h-20" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Prix</label>
-                <input type="number" value={kitForm.price} onChange={(e) => setKitForm({ ...kitForm, price: Number(e.target.value) })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">IDs Produits (séparés par virgule)</label>
-                <input type="text" value={kitForm.productIds} onChange={(e) => setKitForm({ ...kitForm, productIds: e.target.value })} placeholder="ex: prod-1, prod-2" className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
-              </div>
+            <div>
+              <Label className="text-xs">Description</Label>
+              <textarea
+                value={kitForm.description}
+                onChange={(e) => setKitForm({ ...kitForm, description: e.target.value })}
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[80px]"
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
-              <button onClick={handleCreateKit} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
-                {submitting ? 'Envoi...' : 'Créer'}
-              </button>
+            <div>
+              <Label className="text-xs">Prix (FCFA)</Label>
+              <Input type="number" value={kitForm.price} onChange={(e) => setKitForm({ ...kitForm, price: Number(e.target.value) })} />
+            </div>
+            <div>
+              <Label className="text-xs">IDs Produits (séparés par virgule)</Label>
+              <Input type="text" value={kitForm.productIds} onChange={(e) => setKitForm({ ...kitForm, productIds: e.target.value })} placeholder="ex: prod-1, prod-2" />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleCreateKit} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Création...' : 'Créer le kit'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -180,83 +203,83 @@ export default function ShopKits() {
 function KitCard({ level, name, items, price, popularity, color, isPromoted }: any) {
   const colors: any = {
     emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-    navy: 'bg-navy-50 text-navy-600 border-navy-100',
+    indigo: 'bg-indigo-50 text-indigo-600 border-indigo-100',
     blue: 'bg-blue-50 text-blue-600 border-blue-100',
     amber: 'bg-amber-50 text-amber-600 border-amber-100',
   };
 
   return (
-    <div className={`bg-white rounded-[2.5rem] border p-8 shadow-sm hover:shadow-2xl transition-all duration-500 group relative overflow-hidden ${isPromoted ? 'border-navy-500' : 'border-gray-100'}`}>
+    <Card className={`p-6 shadow-sm hover:shadow-md transition-all relative overflow-hidden ${isPromoted ? 'border-indigo-300' : ''}`}>
       {isPromoted && (
-        <div className="absolute top-0 right-0 px-6 py-2 bg-navy-500 text-white text-[9px] font-black uppercase tracking-widest rounded-bl-3xl shadow-lg">
+        <div className="absolute top-0 right-0 px-3 py-1 bg-indigo-600 text-white text-xs font-semibold rounded-bl-lg shadow-sm">
           Best-Seller
         </div>
       )}
 
-      <div className={`p-4 rounded-2xl w-fit mb-6 border ${colors[color]} group-hover:scale-110 transition-transform`}>
-        <Package className="w-8 h-8" />
+      <div className={`p-3 rounded-lg w-fit mb-4 border ${colors[color]}`}>
+        <Package className="w-6 h-6" />
       </div>
 
-      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{level}</p>
-      <h4 className="text-xl font-black text-navy-900 mb-6 group-hover:text-navy-600 transition-colors">{name}</h4>
+      <p className="text-xs text-gray-400 mb-1">{level}</p>
+      <h4 className="text-lg font-semibold text-navy-900 mb-4">{name}</h4>
 
-      <div className="space-y-4 mb-8">
-         <div className="flex items-center justify-between text-xs font-bold text-gray-600">
-            <span className="flex items-center space-x-2">
-              <Layers className="w-4 h-4 text-gray-300" />
-              <span>{items} Articles inclus</span>
-            </span>
-            <span className="text-[10px] bg-gray-50 px-2 py-1 rounded-lg uppercase">{popularity}</span>
-         </div>
-         <div className="h-1.5 w-full bg-gray-50 rounded-full overflow-hidden border border-gray-100">
-            <div className={`h-full ${isPromoted ? 'bg-navy-500' : 'bg-gray-200'} transition-all duration-1000`} style={{ width: '75%' }}></div>
-         </div>
+      <div className="space-y-3 mb-4">
+        <div className="flex items-center justify-between text-xs text-gray-600">
+          <span className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-gray-400" />
+            <span>{items} Articles inclus</span>
+          </span>
+          <Badge variant="outline" className="text-xs">{popularity}</Badge>
+        </div>
+        <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+          <div className={`h-full ${isPromoted ? 'bg-indigo-600' : 'bg-slate-200'} transition-all duration-1000`} style={{ width: '75%' }}></div>
+        </div>
       </div>
 
-      <div className="flex items-center justify-between pt-6 border-t border-gray-50">
-         <div>
-            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Prix Pack</p>
-            <p className="text-2xl font-black text-navy-900">{formatCurrency(price)}</p>
-         </div>
-         <button className="p-4 bg-navy-50 text-navy-900 rounded-2xl hover:bg-navy-900 hover:text-white transition-all shadow-sm">
-            <Plus className="w-6 h-6" />
-         </button>
+      <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+        <div>
+          <p className="text-xs text-gray-400 mb-0.5">Prix Pack</p>
+          <p className="text-xl font-semibold text-navy-900">{formatCurrency(price)}</p>
+        </div>
+        <Button size="icon" variant="outline" className="h-10 w-10">
+          <Plus className="w-5 h-5" />
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }
 
 function KitItemRow({ name, qty, price, isOptional }: any) {
   return (
-    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100 group hover:bg-white hover:border-navy-200 transition-all">
-       <div className="flex items-center space-x-4">
-          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border border-gray-50 shadow-sm group-hover:scale-110 transition-transform">
-             <Package className="w-5 h-5 text-navy-200 group-hover:text-navy-600" />
+    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-100 hover:bg-white hover:border-indigo-200 transition-all">
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 bg-white rounded-md flex items-center justify-center border border-slate-100 shadow-sm">
+          <Package className="w-4 h-4 text-indigo-400" />
+        </div>
+        <div>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium text-navy-900">{name}</p>
+            {isOptional && (
+              <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">Optionnel</Badge>
+            )}
           </div>
-          <div>
-             <div className="flex items-center space-x-2">
-                <p className="text-sm font-black text-navy-900">{name}</p>
-                {isOptional && (
-                  <span className="px-2 py-0.5 bg-amber-50 text-amber-600 text-[8px] font-black uppercase rounded-md border border-amber-100">Optionnel</span>
-                )}
-             </div>
-             <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">Quantité: {qty}</p>
-          </div>
-       </div>
-       <div className="flex items-center space-x-8">
-          <div className="text-right">
-             <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Prix Unitaire</p>
-             <p className="text-sm font-black text-navy-900">{formatCurrency(price)}</p>
-          </div>
-          <div className="flex items-center space-x-2">
-             <button className="p-2 text-gray-400 hover:text-navy-600 transition-colors">
-                <Edit className="w-4 h-4" />
-             </button>
-             <button className="p-2 text-gray-400 hover:text-red-600 transition-colors">
-                <Trash2 className="w-4 h-4" />
-             </button>
-          </div>
-       </div>
+          <p className="text-xs text-gray-400">Quantité: {qty}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-4">
+        <div className="text-right">
+          <p className="text-xs text-gray-400 mb-0.5">Prix Unitaire</p>
+          <p className="text-sm font-semibold text-navy-900">{formatCurrency(price)}</p>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" className="h-8 w-8">
+            <Edit className="w-4 h-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-red-600">
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

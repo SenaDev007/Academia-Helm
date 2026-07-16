@@ -5,19 +5,36 @@
  *
  * Endpoint (lecture)   : GET  /modules-complementaires/canteen/stocks
  * Endpoint (mouvement) : POST /modules-complementaires/canteen/stocks
+ *
+ * Refonte juillet 2026 (Task 7-d) :
+ *  - alert() → toast() via useToast()
+ *  - fixed inset-0 modal → <Dialog> shadcn
+ *  - <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+ *  - <table> HTML → <Table> shadcn
+ *  - rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
  * ============================================================================
  */
+
+'use client';
 
 import React, { useState } from 'react';
 import {
   Package, Search,
   ArrowDownCircle, ArrowUpCircle, History,
   AlertTriangle, CheckCircle2, MoreHorizontal,
-  BarChart3, RefreshCcw, Loader2
+  BarChart3, RefreshCcw, Loader2,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useToast } from '@/components/ui/use-toast';
 
 interface StockItem {
   id: string;
@@ -47,6 +64,7 @@ const emptyMovementForm: StockMovementFormData = { itemId: '', quantity: 1, type
 
 export default function CanteenStocks() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const [modalOpen, setModalOpen] = useState(false);
   const [formData, setFormData] = useState<StockMovementFormData>(emptyMovementForm);
   const [submitting, setSubmitting] = useState(false);
@@ -72,9 +90,14 @@ export default function CanteenStocks() {
       setModalOpen(false);
       setFormData(emptyMovementForm);
       await refetch();
+      toast({ title: 'Mouvement enregistré', description: 'Le stock a été mis à jour.' });
     } catch (e: any) {
       console.error('Erreur mouvement de stock :', e?.message || e);
-      alert(e?.message || 'Erreur lors de l\'enregistrement du mouvement');
+      toast({
+        title: 'Erreur enregistrement',
+        description: e?.message || 'Erreur lors de l’enregistrement du mouvement',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -119,7 +142,7 @@ export default function CanteenStocks() {
         <StockCard
           title="Articles Critiques"
           value={String(criticalCount).padStart(2, '0')}
-          desc="Seuil d'alerte atteint"
+          desc="Seuil d’alerte atteint"
           icon={AlertTriangle}
           color="red"
         />
@@ -139,36 +162,40 @@ export default function CanteenStocks() {
         />
       </div>
 
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-xl shadow-gray-200/50 overflow-hidden">
-        <div className="p-8 border-b border-gray-50 flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-gradient-to-r from-gray-50/50 to-white">
+      <Card className="p-0 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-gray-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-gradient-to-r from-gray-50 to-white">
           <div>
-            <h3 className="font-black text-navy-900 text-xl tracking-tight">Inventaire & Stocks</h3>
-            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">Gestion des denrées et consommables</p>
+            <h3 className="font-semibold text-navy-900 text-lg">Inventaire & Stocks</h3>
+            <p className="text-gray-500 text-sm mt-1">Gestion des denrées et consommables</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative group">
-              <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-navy-600 transition-colors" />
-              <input
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Input
                 type="text"
                 placeholder="Rechercher un produit..."
-                className="pl-11 pr-4 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-navy-500/20 w-64 transition-all"
+                className="pl-10 w-64"
               />
             </div>
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => openMovement('IN')}
-              className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-50 text-emerald-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-100 transition-all border border-emerald-100"
+              className="border-emerald-200 text-emerald-600 hover:bg-emerald-50"
             >
-              <ArrowDownCircle className="w-4 h-4" />
-              <span>Entrée</span>
-            </button>
-            <button
+              <ArrowDownCircle className="w-4 h-4 mr-2" />
+              Entrée
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => openMovement('OUT')}
-              className="flex items-center space-x-2 px-4 py-2.5 bg-red-50 text-red-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-100 transition-all border border-red-100"
+              className="border-red-200 text-red-600 hover:bg-red-50"
             >
-              <ArrowUpCircle className="w-4 h-4" />
-              <span>Sortie</span>
-            </button>
+              <ArrowUpCircle className="w-4 h-4 mr-2" />
+              Sortie
+            </Button>
           </div>
         </div>
 
@@ -177,127 +204,119 @@ export default function CanteenStocks() {
             Aucun article en stock pour cette année scolaire.
           </div>
         ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-gray-50/50">
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Produit & Catégorie</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Quantité Actuelle</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Unité</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Seuil Alerte</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Statut</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Dernière Entrée</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50">
+                <TableHead>Produit & Catégorie</TableHead>
+                <TableHead>Quantité Actuelle</TableHead>
+                <TableHead>Unité</TableHead>
+                <TableHead className="text-center">Seuil Alerte</TableHead>
+                <TableHead>Statut</TableHead>
+                <TableHead className="text-right">Dernière Entrée</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {stocks.map((stock) => {
                 const qty = stock.qty ?? stock.quantity ?? 0;
                 const threshold = stock.threshold ?? stock.alertThreshold ?? stock.minThreshold ?? '—';
                 const name = stock.name ?? stock.productName ?? '—';
                 const lastEntry = stock.lastEntry ?? stock.lastRestockDate ?? stock.updatedAt ?? '—';
                 return (
-                <StockRow
-                  key={stock.id}
-                  name={name}
-                  category={stock.category ?? '—'}
-                  qty={String(qty)}
-                  unit={stock.unit ?? 'U'}
-                  threshold={String(threshold)}
-                  status={stock.status ?? 'OK'}
-                  lastEntry={lastEntry}
-                />
+                  <StockRow
+                    key={stock.id}
+                    name={name}
+                    category={stock.category ?? '—'}
+                    qty={String(qty)}
+                    unit={stock.unit ?? 'U'}
+                    threshold={String(threshold)}
+                    status={stock.status ?? 'OK'}
+                    lastEntry={lastEntry}
+                  />
                 );
               })}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
         )}
-      </div>
+      </Card>
 
       {/* Modal Mouvement de stock */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <h3 className="text-lg font-black text-navy-900">
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
               {formData.type === 'IN' ? 'Entrée de stock' : 'Sortie de stock'}
-            </h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Article (ID)</label>
-                <input
-                  type="text"
-                  placeholder="ex : stock-123"
-                  value={formData.itemId}
-                  onChange={(e) => setFormData({ ...formData, itemId: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Quantité</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={formData.quantity}
-                  onChange={(e) => setFormData({ ...formData, quantity: Number(e.target.value) })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Type de mouvement</label>
-                <select
-                  value={formData.type}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value as 'IN' | 'OUT' })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                >
-                  <option value="IN">Entrée (+)</option>
-                  <option value="OUT">Sortie (−)</option>
-                </select>
-              </div>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="stock-item">Article (ID)</Label>
+              <Input
+                id="stock-item"
+                type="text"
+                placeholder="ex : stock-123"
+                value={formData.itemId}
+                onChange={(e) => setFormData({ ...formData, itemId: e.target.value })}
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                onClick={() => setModalOpen(false)}
-                disabled={submitting}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+            <div className="space-y-1.5">
+              <Label htmlFor="stock-qty">Quantité</Label>
+              <Input
+                id="stock-qty"
+                type="number"
+                min={1}
+                value={formData.quantity}
+                onChange={(e) => setFormData({ ...formData, quantity: Number(e.target.value) })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="stock-type">Type de mouvement</Label>
+              <select
+                id="stock-type"
+                value={formData.type}
+                onChange={(e) => setFormData({ ...formData, type: e.target.value as 'IN' | 'OUT' })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
               >
-                Annuler
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={submitting}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-              >
-                {submitting ? 'Envoi…' : 'Enregistrer'}
-              </button>
+                <option value="IN">Entrée (+)</option>
+                <option value="OUT">Sortie (−)</option>
+              </select>
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)} disabled={submitting}>
+              Annuler
+            </Button>
+            <Button onClick={handleCreate} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Envoi…' : 'Enregistrer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 function StockCard({ title, value, desc, icon: Icon, color }: any) {
   const colors: any = {
-    navy: 'text-navy-600 bg-navy-50',
+    navy: 'text-blue-600 bg-blue-50',
     red: 'text-red-600 bg-red-50',
     blue: 'text-blue-600 bg-blue-50',
     emerald: 'text-emerald-600 bg-emerald-50',
   };
   return (
-    <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300">
-      <div className="flex justify-between items-start mb-6">
-        <div className={`p-4 rounded-2xl ${colors[color]}`}>
+    <Card className="p-6 shadow-sm hover:shadow-md transition-all">
+      <div className="flex justify-between items-start mb-4">
+        <div className={`p-3 rounded-xl ${colors[color]}`}>
           <Icon className="w-6 h-6" />
         </div>
-        <button className="p-2 text-gray-300 hover:text-navy-600 transition-colors">
+        <Button variant="ghost" size="icon">
           <MoreHorizontal className="w-4 h-4" />
-        </button>
+        </Button>
       </div>
-      <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">{title}</p>
-      <p className="text-2xl font-black text-navy-900 mt-1">{value}</p>
-      <p className="text-[10px] text-gray-400 font-medium mt-1 uppercase tracking-tighter">{desc}</p>
-    </div>
+      <p className="text-gray-500 text-xs font-medium">{title}</p>
+      <p className="text-2xl font-semibold text-navy-900 mt-1">{value}</p>
+      <p className="text-xs text-gray-400 mt-1">{desc}</p>
+    </Card>
   );
 }
 
@@ -311,42 +330,42 @@ function StockRow({ name, category, qty, unit, threshold, status, lastEntry }: a
   const statusStyle = statusStyles[status] ?? statusStyles['OK'];
 
   return (
-    <tr className="group hover:bg-navy-50/30 transition-all duration-300">
-      <td className="px-8 py-6">
+    <TableRow className="hover:bg-slate-50">
+      <TableCell>
         <div className="flex items-center space-x-3">
-          <div className="p-2.5 bg-gray-50 rounded-xl group-hover:bg-white transition-colors border border-gray-100">
-            <Package className="w-4 h-4 text-navy-400" />
+          <div className="p-2 bg-slate-50 rounded-lg border border-gray-100">
+            <Package className="w-4 h-4 text-gray-500" />
           </div>
           <div>
-            <p className="text-sm font-black text-navy-900 tracking-tight">{name}</p>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{category}</p>
+            <p className="text-sm font-semibold text-navy-900">{name}</p>
+            <p className="text-xs text-gray-500">{category}</p>
           </div>
         </div>
-      </td>
-      <td className="px-8 py-6">
-        <p className="text-lg font-black text-navy-900 tracking-tighter">{qty}</p>
-      </td>
-      <td className="px-8 py-6">
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{unit}</p>
-      </td>
-      <td className="px-8 py-6 text-center">
-        <p className="text-xs font-bold text-navy-400 italic">{threshold} {unit}</p>
-      </td>
-      <td className="px-8 py-6">
-        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border w-fit flex items-center space-x-1.5 ${statusStyle}`}>
-          {status === 'OK' ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
-          <span>{status}</span>
-        </div>
-      </td>
-      <td className="px-8 py-6 text-right">
+      </TableCell>
+      <TableCell>
+        <p className="text-lg font-semibold text-navy-900">{qty}</p>
+      </TableCell>
+      <TableCell>
+        <p className="text-xs text-gray-500">{unit}</p>
+      </TableCell>
+      <TableCell className="text-center">
+        <p className="text-xs text-gray-500 italic">{threshold} {unit}</p>
+      </TableCell>
+      <TableCell>
+        <Badge variant="outline" className={statusStyle}>
+          {status === 'OK' ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <AlertTriangle className="w-3 h-3 mr-1" />}
+          {status}
+        </Badge>
+      </TableCell>
+      <TableCell className="text-right">
         <div className="flex flex-col items-end">
-          <p className="text-xs font-bold text-navy-900">{lastEntry}</p>
-          <button className="text-[9px] font-black text-navy-500 uppercase tracking-widest hover:underline mt-1 flex items-center space-x-1">
-            <History className="w-3 h-3" />
-            <span>Historique</span>
-          </button>
+          <p className="text-xs font-medium text-navy-900">{lastEntry}</p>
+          <Button variant="link" size="sm" className="p-0 h-auto mt-1">
+            <History className="w-3 h-3 mr-1" />
+            Historique
+          </Button>
         </div>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }

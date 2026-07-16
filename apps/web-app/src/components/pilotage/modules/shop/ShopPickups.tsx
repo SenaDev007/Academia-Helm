@@ -2,6 +2,16 @@
  * ============================================================================
  * SHOP PICKUPS & DELIVERIES - ACADEMIA HELM
  * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern Finance/Students.
+ *  - Boutons : <Button> shadcn
+ *  - Table : <Table> shadcn
+ *  - Modals : <Dialog> shadcn
+ *  - Notifications : useToast() (au lieu de alert())
+ *  - Inputs/Labels : <Input>/<Label> shadcn
+ *  - Cards : rounded-xl (au lieu de rounded-[2.5rem])
+ *  - Typo : font-semibold (au lieu de font-black uppercase tracking-widest)
+ * ============================================================================
  */
 
 'use client';
@@ -11,6 +21,14 @@ import { Loader2, Truck, CheckCircle2, Package, MapPin, User, Search, Filter, Mo
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
+import { useToast } from '@/components/ui/use-toast';
 
 interface DeliveryItem {
   id?: string;
@@ -31,6 +49,7 @@ interface DeliveryItem {
 
 export default function ShopPickups() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const { data: deliveries, loading, error, refetch } = useModulesList<DeliveryItem>(
     'shop',
     'deliveries',
@@ -44,8 +63,13 @@ export default function ShopPickups() {
       setActionLoading(id);
       await modulesApi.post(`shop/deliveries/${id}/status`, { status: newStatus }, buildModulesApiOptions(academicYear?.id));
       await refetch();
+      toast({ title: 'Statut mis à jour', description: `Livraison passée en "${newStatus}".` });
     } catch (e: any) {
-      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors du changement de statut');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors du changement de statut',
+        variant: 'destructive',
+      });
     } finally {
       setActionLoading(null);
     }
@@ -77,7 +101,7 @@ export default function ShopPickups() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
+    <div className="space-y-6 animate-in fade-in duration-700">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les livraisons. {error}
@@ -85,134 +109,137 @@ export default function ShopPickups() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h3 className="text-xl font-black text-navy-900 uppercase tracking-tight">Livraisons & Retraits</h3>
-          <p className="text-sm text-gray-400 font-medium">Gérez la remise des commandes aux parents et les livraisons à domicile</p>
+          <h3 className="text-lg font-semibold text-navy-900">Livraisons & Retraits</h3>
+          <p className="text-sm text-gray-500">Gérez la remise des commandes aux parents et les livraisons à domicile</p>
         </div>
-        <div className="flex items-center space-x-3">
-          <button className="flex items-center space-x-2 px-6 py-3 bg-gray-50 text-navy-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-100 transition-all border border-gray-100">
-            <Truck className="w-4 h-4" />
-            <span>Planifier Tournée</span>
-          </button>
-          <button
-            onClick={() => alert('Sélectionnez une livraison dans le tableau pour confirmer le retrait.')}
-            className="flex items-center space-x-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20 active:scale-95"
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline">
+            <Truck className="w-4 h-4 mr-2" />
+            Planifier Tournée
+          </Button>
+          <Button
+            onClick={() => toast({ title: 'Information', description: 'Sélectionnez une livraison dans le tableau pour confirmer le retrait.' })}
           >
-            <CheckCircle2 className="w-4 h-4" />
-            <span>Confirmer Retrait</span>
-          </button>
+            <CheckCircle2 className="w-4 h-4 mr-2" />
+            Confirmer Retrait
+          </Button>
         </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatusCard label="À Retirer (Sur place)" count={toPickupCount} icon={Package} color="amber" />
         <StatusCard label="Livraisons en cours" count={inProgressCount} icon={Truck} color="blue" />
         <StatusCard label="Livrés Aujourd'hui" count={deliveredCount} icon={CheckCircle2} color="emerald" />
       </div>
 
       {/* Main Content Split */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white rounded-3xl border border-gray-100 p-4 shadow-sm flex items-center gap-4">
-             <div className="relative flex-1">
-                <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
+          <Card className="p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Input
                   type="text"
                   placeholder="Rechercher par N° commande, Parent ou Code de retrait..."
-                  className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-2xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 transition-all font-medium"
+                  className="pl-9"
                 />
-             </div>
-             <button className="p-3 bg-gray-100 text-gray-400 rounded-xl hover:text-navy-900">
+              </div>
+              <Button variant="outline" size="icon" className="h-10 w-10">
                 <Filter className="w-4 h-4" />
-             </button>
-          </div>
+              </Button>
+            </div>
+          </Card>
 
-          <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
-             <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                   <thead>
-                      <tr className="bg-gray-50/50">
-                         <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">N° Code</th>
-                         <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Client / Parent</th>
-                         <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Type</th>
-                         <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Statut</th>
-                         <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Rendez-vous</th>
-                         <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Actions</th>
-                      </tr>
-                   </thead>
-                   <tbody className="divide-y divide-gray-50">
-                      {safeDeliveries.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="px-8 py-16 text-center text-gray-500">
-                            Aucune livraison ou retrait enregistré pour cette année scolaire.
-                          </td>
-                        </tr>
-                      ) : (
-                        safeDeliveries.map((d: any, i: number) => (
-                          <PickupRow
-                            key={d?.id ?? `dlv-${i}`}
-                            id={d?.refNo ?? d?.reference ?? d?.code ?? d?.id ?? `PKP-${i}`}
-                            deliveryId={d?.id ?? ''}
-                            name={d?.customerName ?? d?.parentName ?? d?.clientName ?? 'Client'}
-                            type={d?.type ?? d?.deliveryType ?? 'Sur place'}
-                            status={d?.status ?? 'pending'}
-                            date={d?.date ?? d?.appointment ?? d?.rendezVous ?? (d?.scheduledAt ? new Date(d.scheduledAt).toLocaleDateString('fr-FR') : '—')}
-                            actionLoading={actionLoading}
-                            onStatusChange={handleStatusChange}
-                          />
-                        ))
-                      )}
-                   </tbody>
-                </table>
-             </div>
-          </div>
+          <Card className="shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50">
+                    <TableHead>N° Code</TableHead>
+                    <TableHead>Client / Parent</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Statut</TableHead>
+                    <TableHead>Rendez-vous</TableHead>
+                    <TableHead className="text-center">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {safeDeliveries.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-sm text-gray-400 py-12">
+                        Aucune livraison ou retrait enregistré pour cette année scolaire.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    safeDeliveries.map((d: any, i: number) => (
+                      <PickupRow
+                        key={d?.id ?? `dlv-${i}`}
+                        id={d?.refNo ?? d?.reference ?? d?.code ?? d?.id ?? `PKP-${i}`}
+                        deliveryId={d?.id ?? ''}
+                        name={d?.customerName ?? d?.parentName ?? d?.clientName ?? 'Client'}
+                        type={d?.type ?? d?.deliveryType ?? 'Sur place'}
+                        status={d?.status ?? 'pending'}
+                        date={d?.date ?? d?.appointment ?? d?.rendezVous ?? (d?.scheduledAt ? new Date(d.scheduledAt).toLocaleDateString('fr-FR') : '—')}
+                        actionLoading={actionLoading}
+                        onStatusChange={handleStatusChange}
+                      />
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </Card>
         </div>
 
         <div className="space-y-6">
-           <div className="bg-navy-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-2xl group-hover:scale-150 transition-transform duration-700"></div>
-              <div className="relative z-10">
-                 <div className="flex items-center space-x-3 mb-8">
-                    <div className="p-3 bg-white/10 rounded-2xl">
-                       <Smartphone className="w-6 h-6 text-white" />
-                    </div>
-                    <h3 className="text-lg font-black uppercase tracking-tight">Vérification SMS</h3>
-                 </div>
-                 <p className="text-xs text-navy-200 font-medium leading-relaxed mb-8">
-                    Saisissez le code de vérification reçu par le parent pour valider le retrait sécurisé de la commande.
-                 </p>
-                 <div className="flex gap-2 mb-8">
-                    {[1, 2, 3, 4].map((i) => (
-                      <input key={i} type="text" maxLength={1} className="w-full h-14 bg-white/10 border border-white/20 rounded-xl text-center text-xl font-black focus:bg-white/20 focus:border-white outline-none transition-all" />
-                    ))}
-                 </div>
-                 <button className="w-full py-4 bg-white text-navy-900 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-50 transition-all active:scale-95">
-                    Valider le Code
-                 </button>
+          <Card className="p-6 bg-slate-900 text-white shadow-md border-0">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="p-2 bg-white/10 rounded-md">
+                <Smartphone className="w-5 h-5" />
               </div>
-           </div>
+              <h3 className="text-sm font-semibold">Vérification SMS</h3>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed mb-4">
+              Saisissez le code de vérification reçu par le parent pour valider le retrait sécurisé de la commande.
+            </p>
+            <div className="flex gap-2 mb-4">
+              {[1, 2, 3, 4].map((i) => (
+                <Input
+                  key={i}
+                  type="text"
+                  maxLength={1}
+                  className="w-full h-12 bg-white/10 border-white/20 text-center text-lg font-semibold text-white focus:bg-white/20 focus:border-white"
+                />
+              ))}
+            </div>
+            <Button variant="outline" className="w-full bg-white text-slate-900 border-white hover:bg-slate-100">
+              Valider le Code
+            </Button>
+          </Card>
 
-           <div className="bg-white rounded-[2.5rem] border border-gray-100 p-8 shadow-sm">
-              <div className="flex items-center justify-between mb-8">
-                 <h3 className="text-lg font-black text-navy-900 uppercase tracking-tight">Notifications</h3>
-                 <Bell className="w-5 h-5 text-gray-300" />
-              </div>
-              <div className="space-y-4">
-                 {safeDeliveries.length === 0 ? (
-                   <p className="text-xs text-gray-400 text-center py-4">Aucune notification récente.</p>
-                 ) : (
-                   safeDeliveries.slice(0, 3).map((d: any, i: number) => (
-                     <NotificationItem
-                       key={`notif-${i}`}
-                       text={`Mise à jour : ${d?.refNo ?? d?.reference ?? d?.code ?? 'Commande'} — ${d?.status ?? 'En attente'}`}
-                       time="récemment"
-                     />
-                   ))
-                 )}
-              </div>
-           </div>
+          <Card className="p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-navy-900">Notifications</h3>
+              <Bell className="w-5 h-5 text-gray-300" />
+            </div>
+            <div className="space-y-3">
+              {safeDeliveries.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-4">Aucune notification récente.</p>
+              ) : (
+                safeDeliveries.slice(0, 3).map((d: any, i: number) => (
+                  <NotificationItem
+                    key={`notif-${i}`}
+                    text={`Mise à jour : ${d?.refNo ?? d?.reference ?? d?.code ?? 'Commande'} — ${d?.status ?? 'En attente'}`}
+                    time="récemment"
+                  />
+                ))
+              )}
+            </div>
+          </Card>
         </div>
       </div>
     </div>
@@ -227,26 +254,26 @@ function StatusCard({ label, count, icon: Icon, color }: any) {
   };
 
   return (
-    <div className="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-sm group hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
-       <div className={`p-4 rounded-2xl w-fit border ${colors[color]} mb-6 group-hover:scale-110 transition-transform`}>
-          <Icon className="w-6 h-6" />
-       </div>
-       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{label}</p>
-       <h4 className="text-3xl font-black text-navy-900">{count}</h4>
-    </div>
+    <Card className="p-5 shadow-sm">
+      <div className={`p-2.5 rounded-lg w-fit border ${colors[color]} mb-3`}>
+        <Icon className="w-5 h-5" />
+      </div>
+      <p className="text-xs text-gray-500 mb-1">{label}</p>
+      <h4 className="text-2xl font-semibold text-navy-900">{count}</h4>
+    </Card>
   );
 }
 
 function PickupRow({ id, deliveryId, name, type, status, date, actionLoading, onStatusChange }: any) {
   const statusStyles: any = {
-    'Prêt': 'bg-emerald-50 text-emerald-600 border-emerald-100',
-    'En Route': 'bg-blue-50 text-blue-600 border-blue-100',
-    'En attente': 'bg-amber-50 text-amber-600 border-amber-100',
-    'Planifié': 'bg-gray-50 text-gray-400 border-gray-100',
-    pending: 'bg-amber-50 text-amber-600 border-amber-100',
-    ready: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-    picked_up: 'bg-blue-50 text-blue-600 border-blue-100',
-    delivered: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    'Prêt': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    'En Route': 'bg-blue-50 text-blue-700 border-blue-200',
+    'En attente': 'bg-amber-50 text-amber-700 border-amber-200',
+    'Planifié': 'bg-gray-50 text-gray-500 border-gray-100',
+    pending: 'bg-amber-50 text-amber-700 border-amber-200',
+    ready: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    picked_up: 'bg-blue-50 text-blue-700 border-blue-200',
+    delivered: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   };
   const statusLabel: any = {
     pending: 'En attente',
@@ -258,64 +285,64 @@ function PickupRow({ id, deliveryId, name, type, status, date, actionLoading, on
   const statusValue = ['pending', 'ready', 'picked_up', 'delivered'].includes(status) ? status : 'pending';
 
   return (
-    <tr className="hover:bg-gray-50 transition-all group">
-       <td className="px-8 py-6 text-xs font-black text-navy-900 group-hover:text-navy-600">{id}</td>
-       <td className="px-8 py-6">
-          <div className="flex items-center space-x-3">
-             <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                <User className="w-4 h-4 text-gray-400" />
-             </div>
-             <span className="text-xs font-bold text-gray-600">{name}</span>
+    <TableRow className="hover:bg-slate-50">
+      <TableCell className="text-xs font-medium text-navy-900">{id}</TableCell>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
+            <User className="w-3.5 h-3.5 text-gray-400" />
           </div>
-       </td>
-       <td className="px-8 py-6">
-          <div className="flex items-center space-x-2 text-gray-400">
-             {type === 'Sur place' ? <MapPin className="w-3.5 h-3.5" /> : <Truck className="w-3.5 h-3.5" />}
-             <span className="text-[10px] font-black uppercase tracking-tight">{type}</span>
-          </div>
-       </td>
-       <td className="px-8 py-6">
-          {deliveryId ? (
-            <select
-              value={statusValue}
-              onChange={(e) => onStatusChange(deliveryId, e.target.value)}
-              disabled={actionLoading === deliveryId}
-              className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-tight border ${statusStyles[statusValue] ?? 'bg-gray-50 text-gray-400 border-gray-100'} outline-none disabled:opacity-50`}
-            >
-              <option value="pending">En attente</option>
-              <option value="ready">Prêt</option>
-              <option value="picked_up">Récupéré</option>
-              <option value="delivered">Livré</option>
-            </select>
-          ) : (
-            <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tight border ${statusStyles[status] ?? 'bg-gray-50 text-gray-400 border-gray-100'}`}>
-              {displayStatus}
-            </span>
-          )}
-       </td>
-       <td className="px-8 py-6 text-[10px] font-bold text-gray-400 uppercase tracking-tight">{date}</td>
-       <td className="px-8 py-6">
-          <div className="flex items-center space-x-2">
-             <button className="p-2.5 bg-gray-50 text-gray-400 rounded-xl hover:bg-navy-50 hover:text-navy-600 transition-all">
-                <Eye className="w-4 h-4" />
-             </button>
-             <button className="p-2.5 bg-gray-50 text-gray-400 rounded-xl hover:bg-gray-100 transition-all">
-                <MoreVertical className="w-4 h-4" />
-             </button>
-          </div>
-       </td>
-    </tr>
+          <span className="text-xs text-gray-600">{name}</span>
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1.5 text-gray-500">
+          {type === 'Sur place' ? <MapPin className="w-3.5 h-3.5" /> : <Truck className="w-3.5 h-3.5" />}
+          <span className="text-xs">{type}</span>
+        </div>
+      </TableCell>
+      <TableCell>
+        {deliveryId ? (
+          <select
+            value={statusValue}
+            onChange={(e) => onStatusChange(deliveryId, e.target.value)}
+            disabled={actionLoading === deliveryId}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium border ${statusStyles[statusValue] ?? 'bg-gray-50 text-gray-500 border-gray-100'} outline-none disabled:opacity-50`}
+          >
+            <option value="pending">En attente</option>
+            <option value="ready">Prêt</option>
+            <option value="picked_up">Récupéré</option>
+            <option value="delivered">Livré</option>
+          </select>
+        ) : (
+          <Badge variant="outline" className={`text-xs ${statusStyles[status] ?? 'bg-gray-50 text-gray-500 border-gray-100'}`}>
+            {displayStatus}
+          </Badge>
+        )}
+      </TableCell>
+      <TableCell className="text-xs text-gray-500">{date}</TableCell>
+      <TableCell>
+        <div className="flex items-center justify-center gap-1">
+          <Button variant="ghost" size="icon" className="h-7 w-7" title="Visualiser">
+            <Eye className="w-3.5 h-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7" title="Plus d'actions">
+            <MoreVertical className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }
 
 function NotificationItem({ text, time }: any) {
-   return (
-      <div className="flex items-start space-x-3 p-3 rounded-2xl hover:bg-gray-50 transition-all group">
-         <div className="w-1.5 h-1.5 rounded-full bg-navy-500 mt-1.5 flex-shrink-0 group-hover:scale-125 transition-transform"></div>
-         <div className="flex-1">
-            <p className="text-[11px] font-medium text-gray-600 leading-tight">{text}</p>
-            <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter mt-1">{time}</p>
-         </div>
+  return (
+    <div className="flex items-start gap-2 p-3 rounded-lg hover:bg-slate-50 transition-all">
+      <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0"></div>
+      <div className="flex-1">
+        <p className="text-xs text-gray-600 leading-tight">{text}</p>
+        <p className="text-xs text-gray-400 mt-1">{time}</p>
       </div>
-   );
+    </div>
+  );
 }

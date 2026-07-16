@@ -6,8 +6,12 @@
 
 'use client';
 
-import { motion } from 'framer-motion';
-import { Paperclip, FileText, Download, Link as LinkIcon, Plus, ExternalLink, Search, Filter, Loader2 } from 'lucide-react';
+import { Paperclip, FileText, Download, Link as LinkIcon, ExternalLink, Loader2 } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useToast } from '@/components/ui/use-toast';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 
@@ -29,6 +33,7 @@ interface ResourceItem {
 
 export default function EduCastResources() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const { data: resources, loading, error } = useModulesList<ResourceItem>('educast', 'contents', academicYear?.id);
 
   if (loading) {
@@ -41,7 +46,7 @@ export default function EduCastResources() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les données. {error}
@@ -50,74 +55,65 @@ export default function EduCastResources() {
 
       <div className="flex justify-between items-center">
         <div className="space-y-1">
-          <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter flex items-center">
-            <Paperclip className="w-6 h-6 mr-3 text-blue-600" />
+          <h3 className="text-lg font-semibold text-navy-900 flex items-center">
+            <Paperclip className="w-5 h-5 mr-2 text-blue-600" />
             Documents & Ressources
           </h3>
-          <p className="text-slate-500 text-sm font-medium">Gérez les fichiers attachés à vos contenus multimédias.</p>
+          <p className="text-slate-500 text-sm">Gérez les fichiers attachés à vos contenus multimédias.</p>
         </div>
-        <button
-          onClick={() => alert('Bientôt disponible')}
-          className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10"
-        >
+        <Button onClick={() => toast({ title: 'Bientôt disponible', description: 'Cette fonctionnalité sera bientôt activée.' })}>
           Attacher une Ressource
-        </button>
+        </Button>
       </div>
 
       {resources.length === 0 ? (
-        <div className="text-center py-16 text-slate-500 bg-white rounded-3xl border border-slate-200">
+        <Card className="p-12 text-center text-slate-500 shadow-sm">
           Aucune ressource attachée pour cette année scolaire.
-        </div>
+        </Card>
       ) : (
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                <th className="px-8 py-5">Ressource & Type</th>
-                <th className="px-8 py-5">Contenu Associé</th>
-                <th className="px-8 py-5">Taille / Lien</th>
-                <th className="px-8 py-5 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {resources.map((res, i) => {
-                const title = res.title || res.name || 'Ressource';
-                const type = (res.type || res.fileType || (res.mimeType && res.mimeType.split('/')[1]?.toUpperCase()) || 'FILE').toUpperCase();
-                const isLink = type === 'LINK' || type === 'URL' || !!res.url || !!res.link;
-                const associatedWith = res.associatedWith || res.parentTitle || res.linkedContent || '—';
-                const size = res.size || res.fileSize || (isLink ? '-' : '—');
-                return (
-                  <motion.tr
-                    key={res.id ?? i}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="hover:bg-slate-50/50 transition-colors group"
-                  >
-                    <td className="px-8 py-5">
-                      <div className="flex items-center gap-4">
-                        <div className="p-2.5 bg-slate-100 rounded-xl group-hover:bg-blue-50 transition-colors">
-                          {isLink ? <LinkIcon className="w-5 h-5 text-blue-600" /> : <FileText className="w-5 h-5 text-rose-600" />}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-gray-50">
+                  <TableHead className="px-6">Ressource & Type</TableHead>
+                  <TableHead className="px-6">Contenu Associé</TableHead>
+                  <TableHead className="px-6">Taille / Lien</TableHead>
+                  <TableHead className="px-6 text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {resources.map((res, i) => {
+                  const title = res.title || res.name || 'Ressource';
+                  const type = (res.type || res.fileType || (res.mimeType && res.mimeType.split('/')[1]?.toUpperCase()) || 'FILE').toUpperCase();
+                  const isLink = type === 'LINK' || type === 'URL' || !!res.url || !!res.link;
+                  const associatedWith = res.associatedWith || res.parentTitle || res.linkedContent || '—';
+                  const size = res.size || res.fileSize || (isLink ? '-' : '—');
+                  return (
+                    <TableRow key={res.id ?? i} className="hover:bg-slate-50 group">
+                      <TableCell className="px-6">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-slate-100 rounded-lg group-hover:bg-blue-50 transition-colors">
+                            {isLink ? <LinkIcon className="w-5 h-5 text-blue-600" /> : <FileText className="w-5 h-5 text-rose-600" />}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-slate-900 leading-tight">{title}</p>
+                            <Badge variant="outline" className="mt-0.5">{type}</Badge>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-black text-slate-900 leading-tight">{title}</p>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{type}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-8 py-5 text-xs font-bold text-slate-500 italic">"{associatedWith}"</td>
-                    <td className="px-8 py-5 text-xs font-black text-slate-900">{size}</td>
-                    <td className="px-8 py-5 text-right">
-                      <button className="p-3 bg-slate-50 hover:bg-navy-900 hover:text-white rounded-xl text-slate-400 transition-all shadow-sm">
-                        {isLink ? <ExternalLink className="w-4 h-4" /> : <Download className="w-4 h-4" />}
-                      </button>
-                    </td>
-                  </motion.tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      </TableCell>
+                      <TableCell className="px-6 text-xs text-slate-500 italic">&ldquo;{associatedWith}&rdquo;</TableCell>
+                      <TableCell className="px-6 text-sm font-semibold text-slate-900">{size}</TableCell>
+                      <TableCell className="px-6 text-right">
+                        <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-slate-100">
+                          {isLink ? <ExternalLink className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </div>
         </div>
       )}

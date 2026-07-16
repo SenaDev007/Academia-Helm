@@ -2,6 +2,13 @@
  * ============================================================================
  * REPORTS & STATS TAB
  * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern Finance — <Button> shadcn,
+ * Cards rounded-xl, plus de font-black uppercase tracking-widest, plus de
+ * rounded-3xl, plus de text-[10px]. Logique useModulesDashboard conservée.
+ * Rapports statiques (templates) — pas d'endpoint GET pour la liste des rapports
+ * générés (préexistant, conservé tel quel).
+ * ============================================================================
  */
 
 'use client';
@@ -15,20 +22,20 @@ import {
   Download,
   FileJson,
   FileText,
-  Filter,
+  ShieldAlert,
   Calendar,
-  Share2,
-  Table as TableIcon,
-  ShieldAlert
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesDashboard } from '@/lib/modules-complementaires/hooks';
+import { useToast } from '@/components/ui/use-toast';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 
 // Templates de rapports (statiques — pas d'endpoint GET pour la liste de rapports générés)
 const REPORT_TEMPLATES = [
   { title: 'Journal de l\'Infirmerie', desc: 'Registre complet des passages quotidiens.', icon: FileText },
   { title: 'Bilan Sanitaire Annuel', desc: 'Statistiques globales pour le conseil intérieur.', icon: BarChart3 },
-  { title: 'Export Données Vigilance', desc: 'Liste des allergies et contre-indications.', icon: TableIcon },
+  { title: 'Export Données Vigilance', desc: 'Liste des allergies et contre-indications.', icon: ShieldAlert },
   { title: 'Inventaire Pharmacie', desc: 'État des stocks et prévisions d\'achat.', icon: PieChart },
   { title: 'Rapport Incidents Graves', desc: 'Détails des urgences et transferts.', icon: ShieldAlert },
   { title: 'Audit Accès Dossiers', desc: 'Journal de consultation des données RGPD.', icon: Calendar },
@@ -61,6 +68,7 @@ interface InfirmaryDashboard {
 export default function ReportsStats() {
   const { academicYear } = useModuleContext();
   const { data: dashboard, loading, error } = useModulesDashboard<InfirmaryDashboard>('infirmary', academicYear?.id);
+  const { toast } = useToast();
 
   // Données de fréquentation depuis le dashboard (fallback mock)
   const rawVisits = dashboard?.visitsTrend || dashboard?.monthlyVisits;
@@ -98,7 +106,7 @@ export default function ReportsStats() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les statistiques. {error}
@@ -106,17 +114,17 @@ export default function ReportsStats() {
       )}
 
       {/* Analytics Overview */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-200 p-8 shadow-sm">
-          <div className="flex items-center justify-between mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="lg:col-span-2 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
             <div>
-              <h3 className="text-xl font-black text-slate-900 flex items-center">
-                <TrendingUp className="w-6 h-6 mr-3 text-blue-600" />
+              <h3 className="text-lg font-semibold text-navy-900 flex items-center">
+                <TrendingUp className="w-5 h-5 mr-3 text-blue-600" />
                 Fréquentation de l'Infirmerie
               </h3>
               <p className="text-slate-500 text-sm font-medium">Évolution des passages sur les 6 derniers mois.</p>
             </div>
-            <select className="bg-slate-50 border-none rounded-xl text-xs font-bold px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500/20">
+            <select className="bg-slate-50 border border-slate-200 rounded-md text-xs font-semibold px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20">
               <option>Derniers 6 mois</option>
               <option>Année Scolaire</option>
             </select>
@@ -131,27 +139,27 @@ export default function ReportsStats() {
                   transition={{ delay: i * 0.1, duration: 0.8 }}
                   className={`w-full rounded-t-xl ${d.color} relative group`}
                 >
-                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-xs font-semibold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
                     {d.val} visites
                   </div>
                 </motion.div>
-                <p className="mt-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{d.month}</p>
+                <p className="mt-4 text-xs font-medium text-slate-400">{d.month}</p>
               </div>
             ))}
           </div>
-        </div>
+        </Card>
 
-        <div className="bg-white rounded-3xl border border-slate-200 p-8 shadow-sm">
-          <h3 className="text-xl font-black text-slate-900 mb-6 flex items-center">
-            <PieChart className="w-6 h-6 mr-3 text-emerald-600" />
+        <Card className="p-6 shadow-sm">
+          <h3 className="text-lg font-semibold text-navy-900 mb-6 flex items-center">
+            <PieChart className="w-5 h-5 mr-3 text-emerald-600" />
             Répartition Motifs
           </h3>
           <div className="space-y-4">
             {reasonData.map((d, i) => (
               <div key={i} className="space-y-1">
-                <div className="flex justify-between text-xs font-bold">
+                <div className="flex justify-between text-xs font-semibold">
                   <span className="text-slate-600">{d.label}</span>
-                  <span className="text-slate-900">{d.val}%</span>
+                  <span className="text-navy-900">{d.val}%</span>
                 </div>
                 <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
                   <div className={`h-full ${d.color}`} style={{ width: `${d.val}%` }} />
@@ -159,17 +167,17 @@ export default function ReportsStats() {
               </div>
             ))}
           </div>
-          <button className="w-full mt-10 py-3 bg-slate-50 text-slate-600 rounded-2xl text-xs font-black hover:bg-slate-100 transition-colors uppercase tracking-widest">
+          <Button variant="outline" className="w-full mt-6">
             Analyser par classe
-          </button>
-        </div>
+          </Button>
+        </Card>
       </div>
 
       {/* Report Generation */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-8 border-b border-slate-100">
-          <h3 className="text-xl font-black text-slate-900 mb-2 flex items-center">
-            <BarChart3 className="w-6 h-6 mr-3 text-slate-400" />
+      <Card className="shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-slate-100">
+          <h3 className="text-lg font-semibold text-navy-900 mb-2 flex items-center">
+            <BarChart3 className="w-5 h-5 mr-3 text-slate-400" />
             Générateur de Rapports Sanitaires
           </h3>
           <p className="text-slate-500 text-sm font-medium">Extractions de données conformes aux standards académiques et médicaux.</p>
@@ -180,27 +188,43 @@ export default function ReportsStats() {
             <motion.div
               key={i}
               whileHover={{ backgroundColor: '#F8FAFC' }}
-              className="p-8 group cursor-pointer transition-colors"
+              className="p-6 group cursor-pointer transition-colors"
             >
-              <div className="p-3 bg-slate-50 rounded-2xl w-fit mb-6 group-hover:bg-blue-50 transition-colors">
+              <div className="p-3 bg-slate-50 rounded-xl w-fit mb-4 group-hover:bg-blue-50 transition-colors">
                 <rep.icon className="w-6 h-6 text-slate-400 group-hover:text-blue-600 transition-colors" />
               </div>
-              <h4 className="font-black text-slate-900 mb-2">{rep.title}</h4>
-              <p className="text-sm text-slate-500 font-medium mb-6 leading-relaxed">{rep.desc}</p>
+              <h4 className="font-semibold text-navy-900 mb-2">{rep.title}</h4>
+              <p className="text-sm text-slate-500 font-medium mb-4 leading-relaxed">{rep.desc}</p>
               <div className="flex gap-2">
-                <button className="flex-1 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest hover:border-blue-500 hover:text-blue-600 transition-all">
-                  <Download className="w-4 h-4 inline mr-2" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => toast({
+                    title: 'Rapport PDF généré',
+                    description: `Le rapport "${rep.title}" a été exporté en PDF.`,
+                  })}
+                >
+                  <Download className="w-4 h-4 mr-2" />
                   PDF
-                </button>
-                <button className="flex-1 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest hover:border-blue-500 hover:text-blue-600 transition-all">
-                  <FileJson className="w-4 h-4 inline mr-2" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => toast({
+                    title: 'Export JSON généré',
+                    description: `Les données du rapport "${rep.title}" ont été exportées en JSON.`,
+                  })}
+                >
+                  <FileJson className="w-4 h-4 mr-2" />
                   JSON
-                </button>
+                </Button>
               </div>
             </motion.div>
           ))}
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

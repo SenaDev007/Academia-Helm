@@ -1,31 +1,53 @@
 /**
  * ============================================================================
- * MODULE INFIRMERIE - ACADEMIA HELM
+ * MODULE INFIRMERIE & SANTÉ - ACADEMIA HELM
+ * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern ModuleContainer (comme
+ * FinanceModulePage / StudentsModulePage / ShopModulePage) pour uniformiser
+ * le design à travers tous les modules. Avant, ce module utilisait
+ * ModulePageLayout (obsolète) avec des onglets pills custom navy-900/uppercase
+ * framer-motion — désormais il utilise ModuleContainer + SubModuleNavigation
+ * standard (bleus soulignés).
+ *
+ * Sous-modules :
+ *   1. Tableau de Bord (dashboard)
+ *   2. Dossiers Médicaux (records)
+ *   3. Passages Infirmerie (visits)
+ *   4. Urgences & Incidents (emergencies)
+ *   5. Pharmacie & Stocks (pharmacy)
+ *   6. Allergies & Vigilance (allergies)
+ *   7. Visites Médicales (checkups)
+ *   8. Autorisations (authorizations)
+ *   9. Rapports & Stats (reports)
+ *  10. Configuration (settings)
+ *
+ * Note : La navigation par sous-modules est gérée par ModuleContainer.subModules.
+ * Les sous-composants NE doivent PAS inclure leur propre SubModuleNavigation.
  * ============================================================================
  */
 
 'use client';
 
-import { useState } from 'react';
-import { 
-  LayoutDashboard, 
-  FileText, 
-  HeartPulse, 
-  AlertCircle, 
-  Pill, 
-  ShieldAlert, 
-  Calendar, 
-  ClipboardCheck, 
-  BarChart3, 
+import { useState, useEffect } from 'react';
+import {
+  LayoutDashboard,
+  FileText,
+  HeartPulse,
+  AlertCircle,
+  Pill,
+  ShieldAlert,
+  Calendar,
+  ClipboardCheck,
+  BarChart3,
   Settings,
-  Plus
+  Plus,
+  Download,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useAcademicYear } from '@/hooks/useAcademicYear';
-import { useSchoolLevel } from '@/hooks/useSchoolLevel';
-import ModulePageLayout from './ModulePageLayout';
+import { ModuleContainer } from '@/components/modules/blueprint';
+import { useModuleContext } from '@/hooks/useModuleContext';
 
-// Sub-components
+// Sous-composants (aucun ne contient SubModuleNavigation — pattern FinanceModulePage)
 import InfirmaryDashboard from './infirmary/InfirmaryDashboard';
 import MedicalRecords from './infirmary/MedicalRecords';
 import InfirmaryVisits from './infirmary/InfirmaryVisits';
@@ -37,90 +59,118 @@ import Authorizations from './infirmary/Authorizations';
 import ReportsStats from './infirmary/ReportsStats';
 import InfirmarySettings from './infirmary/InfirmarySettings';
 
-const TABS = [
-  { id: 'dashboard', label: 'Tableau de Bord', icon: LayoutDashboard },
-  { id: 'records', label: 'Dossiers Médicaux', icon: FileText },
-  { id: 'visits', label: 'Passages Infirmerie', icon: HeartPulse },
-  { id: 'emergencies', label: 'Urgences & Incidents', icon: AlertCircle },
-  { id: 'pharmacy', label: 'Pharmacie & Stocks', icon: Pill },
-  { id: 'allergies', label: 'Allergies & Vigilance', icon: ShieldAlert },
-  { id: 'checkups', label: 'Visites Médicales', icon: Calendar },
-  { id: 'authorizations', label: 'Autorisations', icon: ClipboardCheck },
-  { id: 'reports', label: 'Rapports & Stats', icon: BarChart3 },
-  { id: 'settings', label: 'Configuration', icon: Settings },
-];
-
 export default function InfirmaryModulePage() {
-  const { currentYear } = useAcademicYear();
-  const { currentLevel } = useSchoolLevel();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const { academicYear, isLoading: contextLoading } = useModuleContext();
+  const [activeSubModuleId, setActiveSubModuleId] = useState<string>('dashboard');
+  const [stats, setStats] = useState<any>(null);
 
-  const renderActiveTab = () => {
-    switch (activeTab) {
-      case 'dashboard': return <InfirmaryDashboard />;
-      case 'records': return <MedicalRecords />;
-      case 'visits': return <InfirmaryVisits />;
-      case 'emergencies': return <Emergencies />;
-      case 'pharmacy': return <PharmacyStock />;
-      case 'allergies': return <AllergiesVigilance />;
-      case 'checkups': return <MedicalCheckups />;
-      case 'authorizations': return <Authorizations />;
-      case 'reports': return <ReportsStats />;
-      case 'settings': return <InfirmarySettings />;
-      default: return <InfirmaryDashboard />;
+  // Charger les stats infirmerie pour les KPIs du header
+  useEffect(() => {
+    if (academicYear?.id) {
+      loadInfirmaryStats();
+    }
+  }, [academicYear?.id]);
+
+  const loadInfirmaryStats = async () => {
+    try {
+      const res = await fetch(
+        `/api/modules-complementaires/infirmary/dashboard?academicYearId=${academicYear?.id}`,
+        { credentials: 'include' },
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setStats(data);
+      }
+    } catch (e) {
+      console.error('Erreur chargement stats infirmerie:', e);
     }
   };
 
-  return (
-    <ModulePageLayout
-      title="Infirmerie"
-      subtitle={`${currentLevel?.label || ''} | ${currentYear?.name || ''}`}
-      actions={
-        <div className="flex items-center space-x-2">
-          <button className="flex items-center space-x-2 px-4 py-2 bg-[#C9A84C] text-white rounded-xl hover:bg-[#B8973B] transition-all font-bold text-sm shadow-sm">
-            <Plus className="w-4 h-4" />
-            <span>Action Rapide</span>
-          </button>
-        </div>
-      }
-    >
-      <div className="space-y-8">
-        {/* Tab Navigation */}
-        <div className="bg-white p-1 rounded-2xl border border-slate-200 flex flex-wrap gap-1 shadow-sm sticky top-0 z-10">
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-tighter transition-all ${
-                  isActive 
-                    ? 'bg-navy-900 text-white shadow-md' 
-                    : 'text-slate-500 hover:bg-slate-50 hover:text-navy-900'
-                }`}
-              >
-                <Icon className={`w-4 h-4 ${isActive ? 'text-[#C9A84C]' : ''}`} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
+  if (contextLoading) return <div className="p-8 text-center">Chargement...</div>;
 
-        {/* Tab Content with Animation */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
-          >
-            {renderActiveTab()}
-          </motion.div>
-        </AnimatePresence>
-      </div>
-    </ModulePageLayout>
+  return (
+    <ModuleContainer
+      header={{
+        title: 'Infirmerie & Santé',
+        description:
+          'Gestion sanitaire de l’établissement : dossiers médicaux, passages infirmerie, urgences, pharmacie, vigilance, autorisations parentales et rapports',
+        icon: 'heart',
+        kpis: stats
+          ? [
+              {
+                label: 'Passages (mois)',
+                value: String(stats.totalVisits ?? 0),
+                icon: 'heart',
+                trend: 'up',
+              },
+              {
+                label: 'Urgences actives',
+                value: String(stats.criticalCases ?? 0),
+                icon: 'alertCircle',
+                trend: stats.criticalCases > 0 ? 'up' : 'neutral',
+              },
+              {
+                label: 'Alertes stock',
+                value: String(stats.lowStockAlerts ?? stats.medicationsDispensed ?? 0),
+                icon: 'package',
+                trend: 'neutral',
+              },
+              {
+                label: 'Dossiers suivis',
+                value: String(stats.allergiesTracked ?? 0),
+                icon: 'fileText',
+                trend: 'neutral',
+              },
+            ]
+          : [],
+        actions: (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveSubModuleId('visits')}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-900/20 hover:bg-indigo-700 transition-all"
+              title="Ouvrir le formulaire de nouveau passage"
+            >
+              <Plus className="w-4 h-4" /> Nouveau passage
+            </button>
+            <button
+              onClick={() => setActiveSubModuleId('reports')}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold hover:bg-slate-50 transition-all"
+              title="Rapports & statistiques sanitaires"
+            >
+              <Download className="w-4 h-4" /> Rapports
+            </button>
+          </div>
+        ),
+      }}
+      subModules={{
+        activeModuleId: activeSubModuleId,
+        onModuleChange: setActiveSubModuleId,
+        modules: [
+          { id: 'dashboard', label: 'Tableau de Bord', icon: <LayoutDashboard className="w-4 h-4" /> },
+          { id: 'records', label: 'Dossiers Médicaux', icon: <FileText className="w-4 h-4" /> },
+          { id: 'visits', label: 'Passages Infirmerie', icon: <HeartPulse className="w-4 h-4" /> },
+          { id: 'emergencies', label: 'Urgences & Incidents', icon: <AlertCircle className="w-4 h-4" /> },
+          { id: 'pharmacy', label: 'Pharmacie & Stocks', icon: <Pill className="w-4 h-4" /> },
+          { id: 'allergies', label: 'Allergies & Vigilance', icon: <ShieldAlert className="w-4 h-4" /> },
+          { id: 'checkups', label: 'Visites Médicales', icon: <Calendar className="w-4 h-4" /> },
+          { id: 'authorizations', label: 'Autorisations', icon: <ClipboardCheck className="w-4 h-4" /> },
+          { id: 'reports', label: 'Rapports & Stats', icon: <BarChart3 className="w-4 h-4" /> },
+          { id: 'settings', label: 'Configuration', icon: <Settings className="w-4 h-4" /> },
+        ],
+      }}
+      content={
+        activeSubModuleId === 'dashboard' ? { layout: 'default', children: <InfirmaryDashboard /> } :
+        activeSubModuleId === 'records' ? { layout: 'default', children: <MedicalRecords /> } :
+        activeSubModuleId === 'visits' ? { layout: 'default', children: <InfirmaryVisits /> } :
+        activeSubModuleId === 'emergencies' ? { layout: 'default', children: <Emergencies /> } :
+        activeSubModuleId === 'pharmacy' ? { layout: 'default', children: <PharmacyStock /> } :
+        activeSubModuleId === 'allergies' ? { layout: 'default', children: <AllergiesVigilance /> } :
+        activeSubModuleId === 'checkups' ? { layout: 'default', children: <MedicalCheckups /> } :
+        activeSubModuleId === 'authorizations' ? { layout: 'default', children: <Authorizations /> } :
+        activeSubModuleId === 'reports' ? { layout: 'default', children: <ReportsStats /> } :
+        activeSubModuleId === 'settings' ? { layout: 'default', children: <InfirmarySettings /> } :
+        { layout: 'default', children: <InfirmaryDashboard /> }
+      }
+    />
   );
 }
-

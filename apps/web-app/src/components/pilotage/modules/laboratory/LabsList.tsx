@@ -2,16 +2,36 @@
  * ============================================================================
  * LABORATORIES LIST
  * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern Finance/Infirmerie.
+ * - alert() → useToast()
+ * - modal fixed inset-0 → <Dialog> shadcn
+ * - <input>/<label> HTML → <Input>/<Label> shadcn
+ * - <button> bg-navy-900 → <Button> shadcn
+ * - rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+ * ============================================================================
  */
 
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Loader2, Beaker, MapPin, Users, User, ShieldCheck, ChevronRight, MoreVertical, Plus, X } from 'lucide-react';
+import { Loader2, Beaker, MapPin, Users, User, ShieldCheck, ChevronRight, Plus } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 
 interface LabItem {
   id?: string;
@@ -29,6 +49,7 @@ interface LabItem {
 
 export default function LabsList() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const { data: labs, loading, error, refetch } = useModulesList<LabItem>(
     'labs',
     '',
@@ -40,14 +61,30 @@ export default function LabsList() {
   const [labForm, setLabForm] = useState({ name: '', location: '', capacity: 0, type: '' });
 
   const handleCreateLab = async () => {
+    if (!labForm.name?.trim()) {
+      toast({
+        title: 'Champ requis',
+        description: 'Veuillez saisir un nom de laboratoire.',
+        variant: 'destructive',
+      });
+      return;
+    }
     try {
       setSubmitting(true);
       await modulesApi.post('labs', labForm, buildModulesApiOptions(academicYear?.id));
       setModalOpen(false);
       setLabForm({ name: '', location: '', capacity: 0, type: '' });
       await refetch();
+      toast({
+        title: 'Laboratoire créé',
+        description: `${labForm.name} a été ajouté avec succès.`,
+      });
     } catch (e: any) {
-      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création du laboratoire');
+      toast({
+        title: 'Erreur de création',
+        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création du laboratoire',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -73,14 +110,11 @@ export default function LabsList() {
       )}
 
       <div className="flex justify-between items-center">
-        <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Nos Espaces Laboratoires</h3>
-        <button
-          onClick={() => setModalOpen(true)}
-          className="flex items-center space-x-2 px-4 py-2 bg-navy-900 text-white rounded-xl hover:bg-navy-800 transition-all font-bold text-sm"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Nouveau Laboratoire</span>
-        </button>
+        <h3 className="text-lg font-semibold text-slate-900">Nos Espaces Laboratoires</h3>
+        <Button onClick={() => setModalOpen(true)}>
+          <Plus className="w-4 h-4 mr-2" />
+          Nouveau Laboratoire
+        </Button>
       </div>
 
       {safeLabs.length === 0 ? (
@@ -99,34 +133,20 @@ export default function LabsList() {
             const manager = lab?.manager ?? lab?.responsible ?? '—';
             const status = (lab?.status ?? 'ACTIVE').toString().toUpperCase();
             return (
-              <motion.div
-                key={id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.1 }}
-                className="bg-white rounded-3xl border border-slate-200 p-8 shadow-sm hover:shadow-xl hover:border-blue-200 transition-all group relative overflow-hidden"
-              >
-                <div className="absolute top-0 right-0 p-4">
-                  <button className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
-                    <MoreVertical className="w-5 h-5 text-slate-400" />
-                  </button>
-                </div>
-
+              <Card key={id} className="p-6 shadow-sm hover:shadow-md hover:border-blue-200 transition-all">
                 <div className="flex items-start gap-6">
-                  <div className="p-5 bg-slate-50 rounded-2xl text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
-                    <Beaker className="w-10 h-10" />
+                  <div className="p-4 bg-slate-50 rounded-xl text-slate-400">
+                    <Beaker className="w-8 h-8" />
                   </div>
                   <div className="space-y-4 flex-1">
                     <div>
                       <div className="flex items-center gap-3 mb-1">
-                        <h4 className="text-xl font-black text-slate-900">{name}</h4>
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase ${
-                          status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
-                        }`}>
+                        <h4 className="text-lg font-semibold text-slate-900">{name}</h4>
+                        <Badge variant={status === 'ACTIVE' ? 'default' : 'secondary'}>
                           {status}
-                        </span>
+                        </Badge>
                       </div>
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{id} • {type}</p>
+                      <p className="text-xs font-medium text-slate-400">{id} • {type}</p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -136,11 +156,11 @@ export default function LabsList() {
                       </div>
                       <div className="flex items-center text-slate-500 text-sm">
                         <Users className="w-4 h-4 mr-2 text-slate-400" />
-                        <span>Capacité: {capacity}</span>
+                        <span>Capacité : {capacity}</span>
                       </div>
                       <div className="flex items-center text-slate-500 text-sm">
                         <User className="w-4 h-4 mr-2 text-slate-400" />
-                        <span>Resp: {manager}</span>
+                        <span>Resp : {manager}</span>
                       </div>
                       <div className="flex items-center text-slate-500 text-sm">
                         <ShieldCheck className="w-4 h-4 mr-2 text-emerald-500" />
@@ -153,58 +173,78 @@ export default function LabsList() {
                         {[1, 2, 3].map((_, j) => (
                           <div key={j} className="w-8 h-8 rounded-full bg-slate-200 border-2 border-white" />
                         ))}
-                        <div className="w-8 h-8 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-500">+12</div>
+                        <div className="w-8 h-8 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-xs font-medium text-slate-500">
+                          +12
+                        </div>
                       </div>
-                      <button className="flex items-center text-blue-600 font-black text-xs uppercase tracking-widest hover:translate-x-2 transition-transform">
+                      <Button variant="link" className="text-blue-600">
                         Détails & Équipements
                         <ChevronRight className="w-4 h-4 ml-1" />
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </div>
-              </motion.div>
+              </Card>
             );
           })}
         </div>
       )}
 
       {/* Lab Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900">Nouveau Laboratoire</h3>
-              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nouveau Laboratoire</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="lab-name">Nom</Label>
+              <Input
+                id="lab-name"
+                value={labForm.name}
+                onChange={(e) => setLabForm({ ...labForm, name: e.target.value })}
+                placeholder="ex : Laboratoire de Physique"
+              />
             </div>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nom</label>
-                <input type="text" value={labForm.name} onChange={(e) => setLabForm({ ...labForm, name: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Emplacement</label>
-                <input type="text" value={labForm.location} onChange={(e) => setLabForm({ ...labForm, location: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Capacité</label>
-                  <input type="number" value={labForm.capacity} onChange={(e) => setLabForm({ ...labForm, capacity: Number(e.target.value) })} className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Type</label>
-                  <input type="text" value={labForm.type} onChange={(e) => setLabForm({ ...labForm, type: e.target.value })} placeholder="ex: Physique" className="w-full px-4 py-2 bg-gray-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20" />
-                </div>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="lab-location">Emplacement</Label>
+              <Input
+                id="lab-location"
+                value={labForm.location}
+                onChange={(e) => setLabForm({ ...labForm, location: e.target.value })}
+                placeholder="ex : Bâtiment A, 1er étage"
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-bold">Annuler</button>
-              <button onClick={handleCreateLab} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
-                {submitting ? 'Envoi...' : 'Créer'}
-              </button>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="lab-capacity">Capacité</Label>
+                <Input
+                  id="lab-capacity"
+                  type="number"
+                  value={labForm.capacity}
+                  onChange={(e) => setLabForm({ ...labForm, capacity: Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lab-type">Type</Label>
+                <Input
+                  id="lab-type"
+                  value={labForm.type}
+                  onChange={(e) => setLabForm({ ...labForm, type: e.target.value })}
+                  placeholder="ex : Physique"
+                />
+              </div>
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleCreateLab} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Envoi...' : 'Créer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

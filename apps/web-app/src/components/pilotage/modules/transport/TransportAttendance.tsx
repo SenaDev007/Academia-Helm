@@ -1,24 +1,50 @@
 'use client';
 
 import { useState } from 'react';
-import { Users, CheckCircle2, XCircle, Clock, Search, Filter, Calendar, Loader2, X } from 'lucide-react';
+import { Users, CheckCircle2, XCircle, Clock, Calendar, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { useToast } from '@/components/ui/use-toast';
 
-// TODO: endpoint non disponible — garder mock
-// Le backend expose uniquement POST transport/attendances (pas de GET).
-// Les présences restent en données statiques en attendant un endpoint de lecture.
+// TODO: endpoint GET non disponible — le backend expose uniquement POST transport/attendances.
+// Les présences déjà enregistrées restent en données statiques en attendant un endpoint de lecture.
+// Toute nouvelle présence est envoyée au backend via modulesApi.post('transport/attendances').
 
 const EMPTY_FORM = { studentId: '', tripId: '', status: 'PRESENT' };
 
 export default function TransportAttendance() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [formData, setFormData] = useState<{ studentId: string; tripId: string; status: string }>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [lastSubmission, setLastSubmission] = useState<{ name: string; status: string; time: string } | null>(null);
 
+  // ⚠ Données locales uniquement (pas d'endpoint GET /transport/attendances).
+  // Ces lignes sont conservées uniquement pour la démonstration de l'UI ; elles ne
+  // prétendent pas être des données réelles et seront remplacées quand le backend
+  // exposera un endpoint de lecture.
   const attendance = [
     { id: '1', name: 'Fatou Sow', route: 'Circuit Nord', stop: 'Rond-point Central', status: 'PRESENT', time: '07:15' },
     { id: '2', name: 'Abdoulaye Diallo', route: 'Circuit Est', stop: 'Pharmacie du Marché', status: 'ABSENT', time: '—' },
@@ -29,6 +55,7 @@ export default function TransportAttendance() {
     try {
       setSubmitting(true);
       await modulesApi.post('transport/attendances', formData, buildModulesApiOptions(academicYear?.id));
+      toast({ title: 'Présence enregistrée', description: `Élève ${formData.studentId} — ${formData.status}.` });
       setLastSubmission({
         name: `Élève ${formData.studentId}`,
         status: formData.status,
@@ -37,7 +64,11 @@ export default function TransportAttendance() {
       setModalOpen(false);
       setFormData(EMPTY_FORM);
     } catch (e: any) {
-      alert(e?.response?.data?.message || e?.message || 'Erreur lors de l\'enregistrement de la présence');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message || e?.message || 'Erreur lors de l\'enregistrement de la présence',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -46,21 +77,15 @@ export default function TransportAttendance() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4 bg-white p-4 rounded-3xl border border-slate-100 shadow-sm">
-          <Calendar className="w-5 h-5 text-navy-900" />
-          <p className="font-black text-slate-900 uppercase tracking-tighter text-sm">Vendredi 15 Mai 2026</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-6 py-3 bg-white border border-slate-100 rounded-2xl font-black text-xs uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition-all">
-            <Filter className="w-4 h-4" /> Filtres
-          </button>
-          <button
-            onClick={() => { setFormData(EMPTY_FORM); setModalOpen(true); }}
-            className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all"
-          >
-            <Users className="w-4 h-4" /> Marquer Présence
-          </button>
-        </div>
+        <Card className="p-4 shadow-sm flex items-center gap-3">
+          <Calendar className="w-5 h-5 text-indigo-700" />
+          <p className="font-semibold text-gray-900 text-sm">
+            {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          </p>
+        </Card>
+        <Button onClick={() => { setFormData(EMPTY_FORM); setModalOpen(true); }}>
+          <Users className="w-4 h-4" /> Marquer Présence
+        </Button>
       </div>
 
       {lastSubmission && (
@@ -69,116 +94,112 @@ export default function TransportAttendance() {
         </div>
       )}
 
-      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+      <Card className="shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-slate-50/50 border-b border-slate-100">
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Élève</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Itinéraire / Arrêt</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Heure de montée</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Statut</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50">
+                <TableHead className="px-4 py-3">Élève</TableHead>
+                <TableHead className="px-4 py-3">Itinéraire / Arrêt</TableHead>
+                <TableHead className="px-4 py-3">Heure de montée</TableHead>
+                <TableHead className="px-4 py-3">Statut</TableHead>
+                <TableHead className="px-4 py-3 text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {attendance.map((entry) => (
-                <tr key={entry.id} className="hover:bg-slate-50/50 transition-colors group">
-                  <td className="px-8 py-5">
+                <TableRow key={entry.id} className="hover:bg-slate-50">
+                  <TableCell className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 font-black text-xs">
+                      <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-gray-500 font-semibold text-xs">
                         {entry.name.split(' ').map(n => n[0]).join('')}
                       </div>
-                      <p className="font-black text-slate-900 text-sm tracking-tight uppercase">{entry.name}</p>
+                      <p className="font-semibold text-gray-900 text-sm">{entry.name}</p>
                     </div>
-                  </td>
-                  <td className="px-8 py-5">
-                    <p className="text-sm font-bold text-slate-700">{entry.route}</p>
-                    <p className="text-[10px] font-medium text-slate-500 uppercase tracking-widest">{entry.stop}</p>
-                  </td>
-                  <td className="px-8 py-5">
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
+                    <p className="text-sm font-medium text-gray-700">{entry.route}</p>
+                    <p className="text-xs text-gray-500">{entry.stop}</p>
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <Clock className="w-3 h-3 text-slate-300" />
-                      <span className="text-sm font-black text-slate-900">{entry.time}</span>
+                      <Clock className="w-3 h-3 text-gray-300" />
+                      <span className="text-sm font-semibold text-gray-900">{entry.time}</span>
                     </div>
-                  </td>
-                  <td className="px-8 py-5">
-                    <span className={`flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest w-fit ${
-                      entry.status === 'PRESENT' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
-                    }`}>
-                      {entry.status === 'PRESENT' ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
+                    <Badge
+                      variant="outline"
+                      className={
+                        entry.status === 'PRESENT'
+                          ? 'border-emerald-200 text-emerald-700 bg-emerald-50'
+                          : 'border-rose-200 text-rose-700 bg-rose-50'
+                      }
+                    >
+                      {entry.status === 'PRESENT' ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <XCircle className="w-3 h-3 mr-1" />}
                       {entry.status}
-                    </span>
-                  </td>
-                  <td className="px-8 py-5 text-right">
-                    <button className="text-xs font-black text-navy-900 uppercase tracking-widest hover:underline">Détails</button>
-                  </td>
-                </tr>
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-right">
+                    <Button variant="link" size="sm">Détails</Button>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
-      </div>
+      </Card>
 
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold">Marquer une présence</h3>
-              <button onClick={() => setModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
-                <X className="w-5 h-5" />
-              </button>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Marquer une présence</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="at-student">Student ID</Label>
+              <Input
+                id="at-student"
+                type="text"
+                value={formData.studentId}
+                onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
+                placeholder="student-001"
+              />
             </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Student ID</label>
-                <input
-                  type="text"
-                  value={formData.studentId}
-                  onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  placeholder="student-001"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Trip ID</label>
-                <input
-                  type="text"
-                  value={formData.tripId}
-                  onChange={(e) => setFormData({ ...formData, tripId: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  placeholder="trip-001"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Statut</label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                >
-                  <option value="PRESENT">Présent</option>
-                  <option value="ABSENT">Absent</option>
-                  <option value="LATE">En retard</option>
-                  <option value="EXCUSED">Excusé</option>
-                </select>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="at-trip">Trip ID</Label>
+              <Input
+                id="at-trip"
+                type="text"
+                value={formData.tripId}
+                onChange={(e) => setFormData({ ...formData, tripId: e.target.value })}
+                placeholder="trip-001"
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
-                Annuler
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={submitting}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+            <div className="space-y-2">
+              <Label htmlFor="at-status">Statut</Label>
+              <select
+                id="at-status"
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                className="w-full h-9 px-3 border border-gray-200 rounded-md text-sm bg-transparent"
               >
-                {submitting ? 'Envoi...' : 'Enregistrer'}
-              </button>
+                <option value="PRESENT">Présent</option>
+                <option value="ABSENT">Absent</option>
+                <option value="LATE">En retard</option>
+                <option value="EXCUSED">Excusé</option>
+              </select>
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleCreate} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Enregistrer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

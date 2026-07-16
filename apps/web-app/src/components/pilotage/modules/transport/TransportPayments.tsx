@@ -1,83 +1,47 @@
 'use client';
 
-import { CreditCard, Plus, Search, Filter, Download, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { CreditCard, Settings } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/use-toast';
 
-// TODO: endpoint non disponible — garder mock
-// Le backend ne expose pas de GET transport/payments.
-// Les paiements restent en données statiques en attendant un endpoint de lecture.
+/**
+ * TransportPayments — Module de paiement Transport
+ *
+ * ⭐ Task 7-e : Les mocks hardcoded (2 paiements fictifs + KPIs "1 250 000 F CFA" /
+ * "175 000 F CFA" / "87.5%") ont été supprimés. Le backend ne expose pas de
+ * GET /transport/payments — l'interface affiche donc un placeholder propre
+ * "Module de paiement à configurer" en attendant l'endpoint.
+ *
+ * Si l'API expose un jour `transport/payments`, remplacer le placeholder par un
+ * `useModulesList('transport', 'payments', academicYear?.id)` standard.
+ */
 export default function TransportPayments() {
-  const payments = [
-    { id: '1', student: 'Fatou Sow', amount: '25 000 F CFA', date: '2026-05-10', method: 'Orange Money', status: 'PAID' },
-    { id: '2', student: 'Abdoulaye Diallo', amount: '25 000 F CFA', date: '—', method: '—', status: 'UNPAID' },
-  ];
+  const { toast } = useToast();
+
+  const handleNotify = () => {
+    toast({
+      title: 'Module à configurer',
+      description: 'L\'endpoint GET /transport/payments n\'est pas encore exposé par le backend. Contactez l\'administrateur pour activer la collecte des paiements transport.',
+    });
+  };
 
   return (
-    <div className="space-y-8">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Recettes du mois</p>
-          <div className="flex items-center justify-between">
-            <p className="text-2xl font-black text-slate-900 tracking-tighter">1 250 000 F CFA</p>
-            <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600">
-              <ArrowUpRight className="w-4 h-4" />
-            </div>
-          </div>
+    <div className="space-y-6">
+      <Card className="p-12 shadow-sm flex flex-col items-center text-center">
+        <div className="p-4 rounded-xl bg-indigo-50 text-indigo-700 mb-6">
+          <CreditCard className="w-10 h-10" />
         </div>
-        <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Impayés</p>
-          <div className="flex items-center justify-between">
-            <p className="text-2xl font-black text-rose-600 tracking-tighter">175 000 F CFA</p>
-            <div className="p-2 bg-rose-50 rounded-lg text-rose-600">
-              <ArrowDownRight className="w-4 h-4" />
-            </div>
-          </div>
-        </div>
-        <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Taux de recouvrement</p>
-          <p className="text-2xl font-black text-navy-900 tracking-tighter">87.5%</p>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/30">
-          <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Suivi des paiements</h4>
-          <button className="text-xs font-black text-navy-900 uppercase tracking-widest hover:underline flex items-center gap-2">
-            <Download className="w-4 h-4" /> Exporter PDF
-          </button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-slate-50/50 border-b border-slate-100">
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Élève</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Montant</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Date</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Mode</th>
-                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Statut</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {payments.map((p) => (
-                <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
-                  <td className="px-8 py-5">
-                    <p className="font-black text-slate-900 text-sm uppercase tracking-tight">{p.student}</p>
-                  </td>
-                  <td className="px-8 py-5 font-black text-slate-900 text-sm tracking-tighter">{p.amount}</td>
-                  <td className="px-8 py-5 text-sm font-medium text-slate-600">{p.date}</td>
-                  <td className="px-8 py-5 text-sm font-medium text-slate-600 uppercase italic">{p.method}</td>
-                  <td className="px-8 py-5">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                      p.status === 'PAID' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
-                    }`}>
-                      {p.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">Module de paiement à configurer</h3>
+        <p className="text-sm text-gray-500 max-w-md mb-6">
+          Le suivi des paiements de transport scolaire n'est pas encore activé.
+          L'endpoint <code className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono">GET /transport/payments</code>
+          {' '}doit être implémenté côté backend pour permettre la collecte et le suivi des recettes.
+        </p>
+        <Button variant="outline" onClick={handleNotify}>
+          <Settings className="w-4 h-4" /> Notifier l'administrateur
+        </Button>
+      </Card>
     </div>
   );
 }

@@ -5,19 +5,35 @@
  *
  * Endpoint (lecture)   : GET  /modules-complementaires/canteen/incidents
  * Endpoint (création)  : POST /modules-complementaires/canteen/incidents
+ *
+ * Refonte juillet 2026 (Task 7-d) :
+ *  - alert() → toast() via useToast()
+ *  - fixed inset-0 modal → <Dialog> shadcn
+ *  - <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+ *  - rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+ *  - bouton "Signaler un Incident" bg-red-600 → <Button variant="destructive">
  * ============================================================================
  */
+
+'use client';
 
 import React, { useState } from 'react';
 import {
   Search, Plus,
   AlertCircle, Activity, CheckCircle2,
   User, MoreHorizontal,
-  FileText, Camera, Loader2, ShieldAlert
+  FileText, Camera, Loader2, ShieldAlert,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useToast } from '@/components/ui/use-toast';
 
 interface IncidentItem {
   id: string;
@@ -48,6 +64,7 @@ const emptyIncidentForm: NewIncidentFormData = { type: 'HYGIENE', description: '
 
 export default function CanteenIncidents() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const [modalOpen, setModalOpen] = useState(false);
   const [formData, setFormData] = useState<NewIncidentFormData>(emptyIncidentForm);
   const [submitting, setSubmitting] = useState(false);
@@ -68,9 +85,14 @@ export default function CanteenIncidents() {
       setModalOpen(false);
       setFormData(emptyIncidentForm);
       await refetch();
+      toast({ title: 'Incident signalé', description: 'L’incident a été enregistré.' });
     } catch (e: any) {
       console.error('Erreur création incident :', e?.message || e);
-      alert(e?.message || 'Erreur lors de la création de l\'incident');
+      toast({
+        title: 'Erreur signalement',
+        description: e?.message || 'Erreur lors de la création de l’incident',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -112,21 +134,21 @@ export default function CanteenIncidents() {
           icon={AlertCircle}
           color="red"
         />
-        <StockCard
+        <StatusCard
           title="Hygiène & Salubrité"
           value="100%"
           desc="Dernière inspection : Hier"
           icon={ShieldAlert}
           color="emerald"
         />
-        <StockCard
+        <StatusCard
           title="Incidents (Mois)"
           value={String(monthCount).padStart(2, '0')}
           desc="Tendance en baisse"
           icon={Activity}
           color="blue"
         />
-        <StockCard
+        <StatusCard
           title="Résolus (Total)"
           value={String(resolvedCount).padStart(2, '0')}
           desc="Délai moyen : 4h"
@@ -135,29 +157,26 @@ export default function CanteenIncidents() {
         />
       </div>
 
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-xl shadow-gray-200/50 overflow-hidden">
-        <div className="p-8 border-b border-gray-50 flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-gradient-to-r from-gray-50/50 to-white">
+      <Card className="p-0 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-gray-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-gradient-to-r from-gray-50 to-white">
           <div>
-            <h3 className="font-black text-navy-900 text-xl tracking-tight">Journal d'Hygiène & Sécurité</h3>
-            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">Traçabilité des incidents et mesures correctives</p>
+            <h3 className="font-semibold text-navy-900 text-lg">Journal d’Hygiène & Sécurité</h3>
+            <p className="text-gray-500 text-sm mt-1">Traçabilité des incidents et mesures correctives</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative group">
-              <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-navy-600 transition-colors" />
-              <input
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Input
                 type="text"
                 placeholder="Rechercher un incident..."
-                className="pl-11 pr-4 py-2.5 bg-white border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-navy-500/20 w-64 transition-all"
+                className="pl-10 w-64"
               />
             </div>
-            <button
-              onClick={() => setModalOpen(true)}
-              className="flex items-center space-x-2 px-6 py-2.5 bg-red-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 transition-all shadow-xl shadow-red-600/20"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Signaler un Incident</span>
-            </button>
+            <Button variant="destructive" onClick={() => setModalOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Signaler un Incident
+            </Button>
           </div>
         </div>
 
@@ -166,86 +185,82 @@ export default function CanteenIncidents() {
             Aucun incident enregistré pour cette année scolaire.
           </div>
         ) : (
-        <div className="divide-y divide-gray-50">
-          {incidents.map((inc) => (
-            <IncidentRow
-              key={inc.id}
-              type={inc.type ?? inc.category ?? 'Incident'}
-              severity={inc.severity ?? 'MEDIUM'}
-              title={inc.title ?? inc.subject ?? 'Incident'}
-              student={inc.student ?? inc.studentName}
-              date={inc.date ?? inc.incidentDate ?? inc.createdAt ?? '—'}
-              desc={inc.desc ?? inc.description ?? inc.comment ?? ''}
-              status={inc.status ?? 'En cours'}
-            />
-          ))}
-        </div>
+          <div className="divide-y divide-gray-100">
+            {incidents.map((inc) => (
+              <IncidentRow
+                key={inc.id}
+                type={inc.type ?? inc.category ?? 'Incident'}
+                severity={inc.severity ?? 'MEDIUM'}
+                title={inc.title ?? inc.subject ?? 'Incident'}
+                student={inc.student ?? inc.studentName}
+                date={inc.date ?? inc.incidentDate ?? inc.createdAt ?? '—'}
+                desc={inc.desc ?? inc.description ?? inc.comment ?? ''}
+                status={inc.status ?? 'En cours'}
+              />
+            ))}
+          </div>
         )}
-      </div>
+      </Card>
 
       {/* Modal Signaler un Incident */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <h3 className="text-lg font-black text-navy-900">Signaler un Incident</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Type</label>
-                <select
-                  value={formData.type}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                >
-                  <option value="HYGIENE">Hygiène</option>
-                  <option value="SECURITE">Sécurité</option>
-                  <option value="QUALITE">Qualité</option>
-                  <option value="ALLERGIE">Allergie</option>
-                  <option value="AUTRE">Autre</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Sévérité</label>
-                <select
-                  value={formData.severity}
-                  onChange={(e) => setFormData({ ...formData, severity: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                >
-                  <option value="LOW">Faible</option>
-                  <option value="MEDIUM">Moyenne</option>
-                  <option value="HIGH">Élevée</option>
-                  <option value="CRITICAL">Critique</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Description</label>
-                <textarea
-                  rows={4}
-                  placeholder="Décrivez l&rsquo;incident..."
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
-                />
-              </div>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Signaler un Incident</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="inc-type">Type</Label>
+              <select
+                id="inc-type"
+                value={formData.type}
+                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                <option value="HYGIENE">Hygiène</option>
+                <option value="SECURITE">Sécurité</option>
+                <option value="QUALITE">Qualité</option>
+                <option value="ALLERGIE">Allergie</option>
+                <option value="AUTRE">Autre</option>
+              </select>
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                onClick={() => setModalOpen(false)}
-                disabled={submitting}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+            <div className="space-y-1.5">
+              <Label htmlFor="inc-severity">Sévérité</Label>
+              <select
+                id="inc-severity"
+                value={formData.severity}
+                onChange={(e) => setFormData({ ...formData, severity: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
               >
-                Annuler
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={submitting}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-              >
-                {submitting ? 'Envoi…' : 'Signaler'}
-              </button>
+                <option value="LOW">Faible</option>
+                <option value="MEDIUM">Moyenne</option>
+                <option value="HIGH">Élevée</option>
+                <option value="CRITICAL">Critique</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="inc-desc">Description</Label>
+              <textarea
+                id="inc-desc"
+                rows={4}
+                placeholder="Décrivez l’incident..."
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)} disabled={submitting}>
+              Annuler
+            </Button>
+            <Button variant="destructive" onClick={handleCreate} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Envoi…' : 'Signaler'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -258,43 +273,19 @@ function StatusCard({ title, value, desc, icon: Icon, color }: any) {
     indigo: 'text-blue-600 bg-blue-50',
   };
   return (
-    <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300">
-      <div className="flex justify-between items-start mb-6">
-        <div className={`p-4 rounded-2xl ${colors[color]}`}>
+    <Card className="p-6 shadow-sm hover:shadow-md transition-all">
+      <div className="flex justify-between items-start mb-4">
+        <div className={`p-3 rounded-xl ${colors[color]}`}>
           <Icon className="w-6 h-6" />
         </div>
-        <button className="p-2 text-gray-300 hover:text-navy-600 transition-colors">
+        <Button variant="ghost" size="icon">
           <MoreHorizontal className="w-4 h-4" />
-        </button>
+        </Button>
       </div>
-      <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">{title}</p>
-      <p className="text-2xl font-black text-navy-900 mt-1">{value}</p>
-      <p className="text-[10px] text-gray-400 font-medium mt-1 uppercase tracking-tighter">{desc}</p>
-    </div>
-  );
-}
-
-function StockCard({ title, value, desc, icon: Icon, color }: any) {
-  const colors: any = {
-    red: 'text-red-600 bg-red-50',
-    emerald: 'text-emerald-600 bg-emerald-50',
-    blue: 'text-blue-600 bg-blue-50',
-    indigo: 'text-blue-600 bg-blue-50',
-  };
-  return (
-    <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300">
-      <div className="flex justify-between items-start mb-6">
-        <div className={`p-4 rounded-2xl ${colors[color]}`}>
-          <Icon className="w-6 h-6" />
-        </div>
-        <button className="p-2 text-gray-300 hover:text-navy-600 transition-colors">
-          <MoreHorizontal className="w-4 h-4" />
-        </button>
-      </div>
-      <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">{title}</p>
-      <p className="text-2xl font-black text-navy-900 mt-1">{value}</p>
-      <p className="text-[10px] text-gray-400 font-medium mt-1 uppercase tracking-tighter">{desc}</p>
-    </div>
+      <p className="text-gray-500 text-xs font-medium">{title}</p>
+      <p className="text-2xl font-semibold text-navy-900 mt-1">{value}</p>
+      <p className="text-xs text-gray-400 mt-1">{desc}</p>
+    </Card>
   );
 }
 
@@ -316,37 +307,43 @@ function IncidentRow({ type, severity, title, student, date, desc, status }: any
   const statusStyle = statusStyles[status] ?? statusStyles['En cours'];
 
   return (
-    <div className="p-8 group hover:bg-red-50/10 transition-all duration-300">
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-8">
-        <div className="flex items-start space-x-6 flex-1">
-          <div className={`p-4 rounded-2xl shadow-lg shadow-gray-200/50 ${severityStyle} group-hover:scale-110 transition-transform duration-500`}>
+    <div className="p-6 hover:bg-red-50/20 transition-all">
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
+        <div className="flex items-start space-x-4 flex-1">
+          <div className={`p-3 rounded-xl ${severityStyle}`}>
             <AlertCircle className="w-6 h-6" />
           </div>
           <div className="space-y-2">
             <div className="flex items-center space-x-3">
-              <span className="text-[10px] font-black uppercase tracking-widest text-navy-400">{type}</span>
+              <span className="text-xs font-medium text-gray-500">{type}</span>
               <span className="text-gray-200">|</span>
-              <span className="text-[10px] font-bold text-gray-400 uppercase">{date}</span>
+              <span className="text-xs text-gray-400">{date}</span>
             </div>
-            <h4 className="text-lg font-black text-navy-900 tracking-tight">{title}</h4>
+            <h4 className="text-base font-semibold text-navy-900">{title}</h4>
             {student && (
-              <div className="flex items-center space-x-2 py-1 px-2.5 bg-navy-50 rounded-lg w-fit border border-navy-100">
-                <User className="w-3 h-3 text-navy-600" />
-                <span className="text-[10px] font-black text-navy-900 uppercase tracking-tighter">{student}</span>
-              </div>
+              <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-100">
+                <User className="w-3 h-3 mr-1" />
+                {student}
+              </Badge>
             )}
-            {desc && <p className="text-sm text-gray-500 leading-relaxed italic mt-4 max-w-2xl">"{desc}"</p>}
+            {desc && <p className="text-sm text-gray-500 italic mt-2 max-w-2xl">« {desc} »</p>}
           </div>
         </div>
 
-        <div className="flex flex-col items-end gap-4">
-          <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase border ${statusStyle}`}>
+        <div className="flex flex-col items-end gap-3">
+          <Badge variant="outline" className={statusStyle}>
             {status}
-          </div>
-          <div className="flex items-center space-x-2">
-            <button className="p-2.5 text-gray-400 hover:text-navy-900 hover:bg-white rounded-xl transition-all border border-transparent hover:border-gray-100"><FileText className="w-4 h-4" /></button>
-            <button className="p-2.5 text-gray-400 hover:text-navy-900 hover:bg-white rounded-xl transition-all border border-transparent hover:border-gray-100"><Camera className="w-4 h-4" /></button>
-            <button className="p-2.5 text-gray-400 hover:text-navy-900 hover:bg-white rounded-xl transition-all border border-transparent hover:border-gray-100 shadow-sm"><MoreHorizontal className="w-4 h-4" /></button>
+          </Badge>
+          <div className="flex items-center space-x-1">
+            <Button variant="ghost" size="icon">
+              <FileText className="w-4 h-4" />
+            </Button>
+            <Button variant="ghost" size="icon">
+              <Camera className="w-4 h-4" />
+            </Button>
+            <Button variant="ghost" size="icon">
+              <MoreHorizontal className="w-4 h-4" />
+            </Button>
           </div>
         </div>
       </div>

@@ -7,8 +7,14 @@
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Megaphone, Calendar, Users, Eye, MoreHorizontal, Plus, Bell, MessageSquare, Loader2, X } from 'lucide-react';
+import { Megaphone, Eye, MoreHorizontal, Bell, MessageSquare, Loader2 } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { useToast } from '@/components/ui/use-toast';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
@@ -37,6 +43,7 @@ const EMPTY_FORM = { title: '', content: '', targetAudience: 'TOUS' };
 
 export default function EduCastAnnouncements() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const { data: announcements, loading, error, refetch } = useModulesList<AnnouncementItem>('educast', 'announcements', academicYear?.id);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -45,17 +52,18 @@ export default function EduCastAnnouncements() {
 
   const handleCreate = async () => {
     if (!formData.title || !formData.content) {
-      alert('Le titre et le contenu sont requis');
+      toast({ title: 'Champ manquant', description: 'Le titre et le contenu sont requis.', variant: 'destructive' });
       return;
     }
     try {
       setSubmitting(true);
       await modulesApi.post('educast/announcements', formData, buildModulesApiOptions(academicYear?.id));
+      toast({ title: 'Annonce publiée', description: 'L\'annonce a été créée avec succès.' });
       setModalOpen(false);
       setFormData(EMPTY_FORM);
       await refetch();
     } catch (e: any) {
-      alert(e?.message || 'Erreur lors de la création de l\'annonce');
+      toast({ title: 'Erreur', description: e?.message || 'Erreur lors de la création de l\'annonce', variant: 'destructive' });
     } finally {
       setSubmitting(false);
     }
@@ -71,7 +79,7 @@ export default function EduCastAnnouncements() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les données. {error}
@@ -80,26 +88,23 @@ export default function EduCastAnnouncements() {
 
       <div className="flex justify-between items-center">
         <div className="space-y-1">
-          <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter flex items-center">
-            <Megaphone className="w-6 h-6 mr-3 text-amber-600" />
+          <h3 className="text-lg font-semibold text-navy-900 flex items-center">
+            <Megaphone className="w-5 h-5 mr-2 text-amber-600" />
             Publications & Annonces
           </h3>
-          <p className="text-slate-500 text-sm font-medium">Communiquez officiellement via des formats audio/vidéo.</p>
+          <p className="text-slate-500 text-sm">Communiquez officiellement via des formats audio/vidéo.</p>
         </div>
-        <button
-          onClick={() => setModalOpen(true)}
-          className="px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10"
-        >
+        <Button onClick={() => setModalOpen(true)}>
           Créer une Annonce
-        </button>
+        </Button>
       </div>
 
       {announcements.length === 0 ? (
-        <div className="text-center py-16 text-slate-500 bg-white rounded-3xl border border-slate-200">
+        <Card className="p-12 text-center text-slate-500 shadow-sm">
           Aucune annonce pour cette année scolaire.
-        </div>
+        </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-6">
+        <div className="grid grid-cols-1 gap-4">
           {announcements.map((ann, i) => {
             const title = ann.title || ann.name || 'Annonce';
             const author = ann.author || ann.createdBy || ann.authorName || '—';
@@ -108,125 +113,104 @@ export default function EduCastAnnouncements() {
             const views = ann.views ?? ann.viewCount ?? 0;
             const important = ann.important || ann.isImportant || ann.priority === 'HIGH' || ann.priority === 'URGENT';
             return (
-              <motion.div
+              <Card
                 key={ann.id ?? i}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05 }}
-                className={`bg-white rounded-3xl border p-8 shadow-sm hover:shadow-xl transition-all relative overflow-hidden group ${
-                  important ? 'border-amber-200 border-l-8 border-l-amber-500' : 'border-slate-200 border-l-8 border-l-blue-500'
-                }`}
+                className={`p-6 shadow-sm hover:shadow-md transition-all group ${important ? 'border-l-4 border-l-amber-500' : 'border-l-4 border-l-blue-500'}`}
               >
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8">
-                  <div className="flex items-center gap-8 flex-1">
-                    <div className={`p-5 rounded-2xl ${important ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
-                      <Bell className="w-8 h-8" />
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4 flex-1">
+                    <div className={`p-4 rounded-xl ${important ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'}`}>
+                      <Bell className="w-7 h-7" />
                     </div>
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3">
-                        <span className="px-2 py-0.5 bg-slate-50 text-slate-400 text-[8px] font-black uppercase tracking-widest rounded-md">{date}</span>
-                        {important && <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest animate-pulse">IMPORTANT</span>}
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">{date}</Badge>
+                        {important && <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">IMPORTANT</Badge>}
                       </div>
-                      <h4 className="text-xl font-black text-slate-900 group-hover:text-blue-600 transition-colors">{title}</h4>
-                      <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-2 text-slate-400">
-                          <Users className="w-4 h-4" />
-                          <span className="text-[10px] font-bold uppercase tracking-widest">Cible: {target}</span>
+                      <h4 className="text-lg font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">{title}</h4>
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-1.5 text-slate-500">
+                          <span className="text-xs">Cible: {target}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-slate-400">
-                          <MessageSquare className="w-4 h-4" />
-                          <span className="text-[10px] font-bold uppercase tracking-widest">Par {author}</span>
+                        <div className="flex items-center gap-1.5 text-slate-500">
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          <span className="text-xs">Par {author}</span>
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-8">
+                  <div className="flex items-center gap-4">
                     <div className="text-right">
-                      <p className="text-lg font-black text-slate-900">{views}</p>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vues</p>
+                      <p className="text-base font-semibold text-slate-900">{views}</p>
+                      <p className="text-xs text-slate-400">Vues</p>
                     </div>
-                    <div className="flex gap-2">
-                      <button className="p-3 bg-slate-50 hover:bg-navy-900 hover:text-white rounded-xl transition-all">
-                        <Eye className="w-5 h-5" />
-                      </button>
-                      <button className="p-3 bg-slate-50 hover:bg-navy-900 hover:text-white rounded-xl transition-all">
-                        <MoreHorizontal className="w-5 h-5" />
-                      </button>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" className="h-9 w-9">
+                        <Eye className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-9 w-9">
+                        <MoreHorizontal className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
                 </div>
-              </motion.div>
+              </Card>
             );
           })}
         </div>
       )}
 
       {/* Modal: Créer une annonce */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900">Créer une annonce</h3>
-              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-slate-100 rounded-lg">
-                <X className="w-5 h-5 text-slate-400" />
-              </button>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Créer une annonce</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Titre</Label>
+              <Input
+                type="text"
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                placeholder="Ex: Rentrée scolaire 2026"
+              />
             </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Titre</label>
-                <input
-                  type="text"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/20"
-                  placeholder="Ex: Rentrée scolaire 2026"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Contenu</label>
-                <textarea
-                  rows={4}
-                  value={formData.content}
-                  onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/20 resize-none"
-                  placeholder="Contenu de l'annonce..."
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Audience cible</label>
-                <select
-                  value={formData.targetAudience}
-                  onChange={(e) => setFormData({ ...formData, targetAudience: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/20"
-                >
-                  <option value="TOUS">Tous</option>
-                  <option value="ELEVES">Élèves</option>
-                  <option value="PARENTS">Parents</option>
-                  <option value="ENSEIGNANTS">Enseignants</option>
-                  <option value="PERSONNEL">Personnel</option>
-                </select>
-              </div>
+            <div className="space-y-2">
+              <Label>Contenu</Label>
+              <textarea
+                rows={4}
+                value={formData.content}
+                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 resize-none"
+                placeholder="Contenu de l'annonce..."
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50"
+            <div className="space-y-2">
+              <Label>Audience cible</Label>
+              <select
+                value={formData.targetAudience}
+                onChange={(e) => setFormData({ ...formData, targetAudience: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400"
               >
-                Annuler
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={submitting}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold hover:bg-navy-800 disabled:opacity-60 flex items-center gap-2"
-              >
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {submitting ? 'Envoi...' : 'Publier'}
-              </button>
+                <option value="TOUS">Tous</option>
+                <option value="ELEVES">Élèves</option>
+                <option value="PARENTS">Parents</option>
+                <option value="ENSEIGNANTS">Enseignants</option>
+                <option value="PERSONNEL">Personnel</option>
+              </select>
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleCreate} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Publier
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

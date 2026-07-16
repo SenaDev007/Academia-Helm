@@ -857,88 +857,9 @@ export class ModulesComplementairesController {
     return this.educastService.findAllPayoutRequests(tenantId);
   }
 
-  // ==========================================================================
-  // QHSE
-  // ==========================================================================
-
-  @Get('qhse/dashboard')
-  async getQHSEDashboard(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId: string,
-  ) {
-    return this.qhseService.getDashboard(tenantId, academicYearId);
-  }
-
-  @Get('qhse/incidents')
-  async getQHSEIncidents(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId: string,
-  ) {
-    return this.qhseService.findAllIncidents(tenantId, academicYearId);
-  }
-
-  @Post('qhse/incidents')
-  async createQHSEIncident(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId: string,
-    @Body() data: any,
-  ) {
-    return this.qhseService.createIncident(tenantId, academicYearId, data);
-  }
-
-  @Get('qhse/risks')
-  async getQHSERisks(@TenantId() tenantId: string) {
-    return this.qhseService.findAllRisks(tenantId);
-  }
-
-  @Get('qhse/hygiene')
-  async getQHSEHygiene(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId: string,
-  ) {
-    return this.qhseService.findAllHygiene(tenantId, academicYearId);
-  }
-
-  @Get('qhse/security')
-  async getQHSESecurity(@TenantId() tenantId: string) {
-    return this.qhseService.findAllSecurity(tenantId);
-  }
-
-  @Get('qhse/health')
-  async getQHSEHealth(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId: string,
-  ) {
-    return this.qhseService.findAllHealthVisits(tenantId, academicYearId);
-  }
-
-  @Get('qhse/audits')
-  async getQHSEAudits(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId: string,
-  ) {
-    return this.qhseService.findAllAudits(tenantId, academicYearId);
-  }
-
-  @Get('qhse/action-plans')
-  async getQHSEActionPlans(@TenantId() tenantId: string) {
-    return this.qhseService.findAllActionPlans(tenantId);
-  }
-
-  @Get('qhse/documents')
-  async getQHSEDocuments(@TenantId() tenantId: string) {
-    return this.qhseService.findAllDocuments(tenantId);
-  }
-
-  @Get('qhse/compliance')
-  async getQHSECompliance(@TenantId() tenantId: string) {
-    return this.qhseService.findAllCompliance(tenantId);
-  }
-
-  @Get('qhse/settings')
-  async getQHSESettings(@TenantId() tenantId: string) {
-    return this.qhseService.getSettings(tenantId);
-  }
+  // ⚠️ Bloc QHSE supprimé ici (était dupliqué — le bloc complet se trouve plus bas
+  // vers la ligne 1728+ avec des routes POST supplémentaires pour attachments,
+  // risks, hygiene items, audit findings, action-plan items, alerts).
 
   @Post('labs/purchase-requests')
   async createLabPurchaseRequest(

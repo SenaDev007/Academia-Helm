@@ -2,24 +2,35 @@
  * ============================================================================
  * LABORATORY DASHBOARD
  * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern Finance/Infirmerie.
+ * - Cards rounded-3xl → rounded-xl border-gray-200 shadow-sm
+ * - <button> custom → <Button> shadcn (variant outline/ghost)
+ * - text-[10px] font-black uppercase tracking-widest → text-xs font-medium
+ * - font-black → font-semibold
+ * - Bandeau navy-900 → slate-900
+ * - framer-motion conservé pour les animations subtiles
+ * ============================================================================
  */
 
 'use client';
 
-import { motion } from 'framer-motion';
-import { 
-  Beaker, 
-  Microscope, 
-  Calendar, 
-  AlertTriangle, 
-  Wrench, 
+import {
+  Beaker,
+  Microscope,
+  Calendar,
+  AlertTriangle,
+  Wrench,
   TrendingUp,
   Activity,
   Package,
-  Loader2
+  Loader2,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesDashboard } from '@/lib/modules-complementaires/hooks';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 
 interface LaboratoryStats {
   totalLabs?: number;
@@ -64,7 +75,7 @@ export default function LaboratoryDashboard() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les statistiques. Affichage des valeurs par défaut.
@@ -74,60 +85,53 @@ export default function LaboratoryDashboard() {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {kpiCards.map((stat, i) => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: i * 0.05 }}
-            className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all group"
-          >
-            <div className={`p-3 rounded-2xl w-fit mb-4 ${stat.bg} ${stat.color} group-hover:scale-110 transition-transform`}>
+          <Card key={i} className="p-6 shadow-sm hover:shadow-md transition-all">
+            <div className={`p-3 rounded-xl w-fit mb-4 ${stat.bg} ${stat.color}`}>
               <stat.icon className="w-6 h-6" />
             </div>
-            <p className="text-3xl font-black text-slate-900 mb-1">{stat.value}</p>
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{stat.label}</p>
-          </motion.div>
+            <p className="text-3xl font-semibold text-slate-900 mb-1">{stat.value}</p>
+            <p className="text-xs font-medium text-slate-500">{stat.label}</p>
+          </Card>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Chart Placeholder */}
-        <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-200 p-8 shadow-sm">
-          <div className="flex items-center justify-between mb-8">
-            <h3 className="text-xl font-black text-slate-900 flex items-center">
-              <Activity className="w-6 h-6 mr-3 text-blue-600" />
-              Taux d'Occupation
+        <Card className="lg:col-span-2 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-semibold text-slate-900 flex items-center">
+              <Activity className="w-5 h-5 mr-2 text-blue-600" />
+              Taux d&apos;Occupation
             </h3>
-            <select className="bg-slate-50 border-none rounded-xl text-xs font-bold px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500/20">
+            <select className="bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20">
               <option>Cette Semaine</option>
               <option>Ce Mois</option>
             </select>
           </div>
-          <div className="h-64 flex items-end justify-between space-x-2">
+          <div className="h-56 flex items-end justify-between space-x-2">
             {[65, 45, 80, 55, 90, 40, 20].map((val, i) => (
               <div key={i} className="flex-1 flex flex-col items-center group">
-                <motion.div 
-                  initial={{ height: 0 }}
-                  animate={{ height: `${val}%` }}
+                <div
                   className="w-full bg-slate-100 rounded-t-xl relative overflow-hidden group-hover:bg-blue-100 transition-colors"
+                  style={{ height: `${val}%` }}
                 >
-                  <div className="absolute bottom-0 left-0 right-0 bg-blue-600 opacity-20 h-full transform origin-bottom scale-y-50" />
-                </motion.div>
-                <p className="mt-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  <div className="absolute bottom-0 left-0 right-0 bg-blue-600 opacity-30 h-full" />
+                </div>
+                <p className="mt-3 text-xs font-medium text-slate-400">
                   {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'][i]}
                 </p>
               </div>
             ))}
           </div>
-        </div>
+        </Card>
 
         {/* Status Breakdown */}
-        <div className="bg-white rounded-3xl border border-slate-200 p-8 shadow-sm">
-          <h3 className="text-xl font-black text-slate-900 mb-8 flex items-center">
-            <TrendingUp className="w-6 h-6 mr-3 text-emerald-600" />
+        <Card className="p-6 shadow-sm">
+          <h3 className="text-lg font-semibold text-slate-900 mb-6 flex items-center">
+            <TrendingUp className="w-5 h-5 mr-2 text-emerald-600" />
             Répartition par Lab
           </h3>
-          <div className="space-y-6">
+          <div className="space-y-5">
             {[
               { label: 'Lab Physique', value: 85, color: 'bg-blue-500' },
               { label: 'Lab Chimie', value: 70, color: 'bg-emerald-500' },
@@ -135,22 +139,42 @@ export default function LaboratoryDashboard() {
               { label: 'Lab Informatique', value: 95, color: 'bg-blue-500' },
             ].map((item, i) => (
               <div key={i} className="space-y-2">
-                <div className="flex justify-between text-xs font-bold uppercase tracking-tighter">
+                <div className="flex justify-between text-xs font-medium">
                   <span className="text-slate-600">{item.label}</span>
                   <span className="text-slate-900">{item.value}%</span>
                 </div>
                 <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${item.value}%` }}
+                  <div
                     className={`h-full ${item.color}`}
+                    style={{ width: `${item.value}%` }}
                   />
                 </div>
               </div>
             ))}
           </div>
-        </div>
+        </Card>
       </div>
+
+      {/* Recent reservations / low stock quick view */}
+      <Card className="p-6 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-slate-900">Consommables en alerte</h3>
+          <Button variant="outline" size="sm" onClick={() => { /* navigation gérée par ModuleContainer */ }}>
+            Voir tout
+          </Button>
+        </div>
+        {(stats.lowStockConsumables ?? []).length === 0 ? (
+          <p className="text-sm text-slate-500 text-center py-6">Aucune alerte de stock.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {(stats.lowStockConsumables ?? []).map((c, i) => (
+              <Badge key={c?.id ?? i} variant="outline" className="text-amber-700 border-amber-200 bg-amber-50">
+                {c?.name ?? 'Consommable'} — {c?.quantity ?? 0}
+              </Badge>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

@@ -1,10 +1,22 @@
 'use client';
 
 import { useState } from 'react';
-import { Route, Plus, Search, MapPin, Clock, Users, ArrowRight, Loader2, X } from 'lucide-react';
+import { Route, Plus, Search, MapPin, Clock, Users, ArrowRight, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { useToast } from '@/components/ui/use-toast';
 
 interface RouteItem {
   id: string;
@@ -26,10 +38,12 @@ interface RouteItem {
 }
 
 const EMPTY_FORM = { name: '', zoneId: '', stops: '' };
+const EMPTY_STOP_FORM = { name: '', time: '', lat: '', lng: '' };
 
 export default function TransportRoutes() {
   const { academicYear } = useModuleContext();
   const { data, loading, error, refetch } = useModulesList<RouteItem>('transport', 'routes', academicYear?.id);
+  const { toast } = useToast();
 
   const routes = data ?? [];
 
@@ -40,7 +54,7 @@ export default function TransportRoutes() {
   // Stop add modal
   const [stopModalOpen, setStopModalOpen] = useState(false);
   const [stopRouteId, setStopRouteId] = useState<string | null>(null);
-  const [stopForm, setStopForm] = useState({ name: '', time: '', lat: '', lng: '' });
+  const [stopForm, setStopForm] = useState(EMPTY_STOP_FORM);
   const [stopSubmitting, setStopSubmitting] = useState(false);
 
   const handleCreateRoute = async () => {
@@ -50,7 +64,6 @@ export default function TransportRoutes() {
         name: formData.name,
         zoneId: formData.zoneId || undefined,
       };
-      // Optionnel : si l'utilisateur a saisi des arrêts (séparés par virgule), on les envoie comme stops initiaux
       if (formData.stops.trim()) {
         payload.stops = formData.stops.split(',').map((s) => s.trim()).filter(Boolean).map((name, idx) => ({
           name,
@@ -58,11 +71,16 @@ export default function TransportRoutes() {
         }));
       }
       await modulesApi.post('transport/routes', payload, buildModulesApiOptions(academicYear?.id));
+      toast({ title: 'Itinéraire créé', description: `${formData.name || 'Itinéraire'} ajouté.` });
       setModalOpen(false);
       setFormData(EMPTY_FORM);
       await refetch();
     } catch (e: any) {
-      alert(e?.response?.data?.message || e?.message || 'Erreur lors de la création de la route');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message || e?.message || 'Erreur lors de la création de la route',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -79,12 +97,17 @@ export default function TransportRoutes() {
       if (stopForm.lat) payload.lat = Number(stopForm.lat);
       if (stopForm.lng) payload.lng = Number(stopForm.lng);
       await modulesApi.post(`transport/routes/${stopRouteId}/stops`, payload, buildModulesApiOptions(academicYear?.id));
+      toast({ title: 'Arrêt ajouté', description: `${stopForm.name || 'Arrêt'} ajouté à l'itinéraire.` });
       setStopModalOpen(false);
-      setStopForm({ name: '', time: '', lat: '', lng: '' });
+      setStopForm(EMPTY_STOP_FORM);
       setStopRouteId(null);
       await refetch();
     } catch (e: any) {
-      alert(e?.response?.data?.message || e?.message || 'Erreur lors de l\'ajout de l\'arrêt');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message || e?.message || 'Erreur lors de l\'ajout de l\'arrêt',
+        variant: 'destructive',
+      });
     } finally {
       setStopSubmitting(false);
     }
@@ -94,7 +117,7 @@ export default function TransportRoutes() {
     return (
       <div className="flex items-center justify-center py-16">
         <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-        <span className="ml-2 text-slate-600">Chargement...</span>
+        <span className="ml-2 text-gray-600">Chargement...</span>
       </div>
     );
   }
@@ -109,24 +132,20 @@ export default function TransportRoutes() {
 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Rechercher un itinéraire..." 
-            className="w-full pl-12 pr-4 py-3 rounded-2xl border border-slate-100 focus:outline-none focus:ring-2 focus:ring-navy-900/5 transition-all text-sm font-medium"
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Input
+            type="text"
+            placeholder="Rechercher un itinéraire..."
+            className="pl-10"
           />
         </div>
-        <button
-          onClick={() => { setFormData(EMPTY_FORM); setModalOpen(true); }}
-          className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          Nouvel Itinéraire
-        </button>
+        <Button onClick={() => { setFormData(EMPTY_FORM); setModalOpen(true); }}>
+          <Plus className="w-4 h-4" /> Nouvel Itinéraire
+        </Button>
       </div>
 
       {routes.length === 0 ? (
-        <div className="text-center py-16 text-slate-500">
+        <div className="text-center py-16 text-gray-500">
           Aucune donnée disponible pour cette année scolaire.
         </div>
       ) : (
@@ -140,192 +159,173 @@ export default function TransportRoutes() {
             const evening = route.evening || route.eveningTime || '—';
             const vehicle = route.vehicle || route.vehicleName || '—';
             return (
-              <div key={route.id} className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-md transition-all group">
-                <div className="flex items-start justify-between mb-8">
+              <Card key={route.id} className="p-6 shadow-sm hover:shadow-md transition-all">
+                <div className="flex items-start justify-between mb-6">
                   <div className="flex items-center gap-4">
-                    <div className="p-4 bg-navy-50 rounded-2xl text-navy-900 group-hover:bg-navy-900 group-hover:text-white transition-all">
+                    <div className="p-4 bg-indigo-50 rounded-xl text-indigo-700">
                       <Route className="w-6 h-6" />
                     </div>
                     <div>
-                      <h4 className="text-xl font-black text-slate-900 tracking-tighter uppercase">{name}</h4>
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{code}</p>
+                      <h4 className="text-lg font-semibold text-gray-900">{name}</h4>
+                      <p className="text-xs font-medium text-gray-500">{code}</p>
                     </div>
                   </div>
-                  <div className="bg-slate-50 px-4 py-2 rounded-xl border border-slate-100">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Véhicule</p>
-                    <p className="text-xs font-black text-slate-900">{vehicle}</p>
+                  <div className="bg-gray-50 px-4 py-2 rounded-xl border border-gray-100">
+                    <p className="text-xs font-medium text-gray-500 mb-0.5">Véhicule</p>
+                    <p className="text-xs font-semibold text-gray-900">{vehicle}</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-6 mb-8">
+                <div className="grid grid-cols-3 gap-4 mb-6">
                   <div>
-                    <div className="flex items-center gap-2 mb-2 text-slate-400">
+                    <div className="flex items-center gap-2 mb-2 text-gray-400">
                       <MapPin className="w-3 h-3" />
-                      <span className="text-[10px] font-black uppercase tracking-tight">Arrêts</span>
+                      <span className="text-xs font-medium">Arrêts</span>
                     </div>
-                    <p className="text-lg font-black text-slate-900 tracking-tighter">{stops}</p>
+                    <p className="text-lg font-semibold text-gray-900">{stops}</p>
                   </div>
                   <div>
-                    <div className="flex items-center gap-2 mb-2 text-slate-400">
+                    <div className="flex items-center gap-2 mb-2 text-gray-400">
                       <Users className="w-3 h-3" />
-                      <span className="text-[10px] font-black uppercase tracking-tight">Élèves</span>
+                      <span className="text-xs font-medium">Élèves</span>
                     </div>
-                    <p className="text-lg font-black text-slate-900 tracking-tighter">{students}</p>
+                    <p className="text-lg font-semibold text-gray-900">{students}</p>
                   </div>
                   <div>
-                    <div className="flex items-center gap-2 mb-2 text-slate-400">
+                    <div className="flex items-center gap-2 mb-2 text-gray-400">
                       <Clock className="w-3 h-3" />
-                      <span className="text-[10px] font-black uppercase tracking-tight">Horaires</span>
+                      <span className="text-xs font-medium">Horaires</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-900">{morning}</span>
-                      <ArrowRight className="w-3 h-3 text-slate-300" />
-                      <span className="text-xs font-bold text-slate-900">{evening}</span>
+                      <span className="text-xs font-semibold text-gray-900">{morning}</span>
+                      <ArrowRight className="w-3 h-3 text-gray-300" />
+                      <span className="text-xs font-semibold text-gray-900">{evening}</span>
                     </div>
                   </div>
                 </div>
 
-                <button
+                <Button
+                  variant="outline"
+                  className="w-full"
                   onClick={() => {
                     setStopRouteId(route.id);
-                    setStopForm({ name: '', time: '', lat: '', lng: '' });
+                    setStopForm(EMPTY_STOP_FORM);
                     setStopModalOpen(true);
                   }}
-                  className="w-full py-4 bg-slate-50 border border-slate-100 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-navy-900 hover:text-white hover:border-navy-900 transition-all"
                 >
                   Gérer les arrêts et l'itinéraire
-                </button>
-              </div>
+                </Button>
+              </Card>
             );
           })}
         </div>
       )}
 
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold">Nouvel itinéraire</h3>
-              <button onClick={() => setModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
-                <X className="w-5 h-5" />
-              </button>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nouvel itinéraire</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="rt-name">Nom de l'itinéraire</Label>
+              <Input
+                id="rt-name"
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="Circuit Nord"
+              />
             </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Nom de l'itinéraire</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  placeholder="Circuit Nord"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Zone (ID)</label>
-                <input
-                  type="text"
-                  value={formData.zoneId}
-                  onChange={(e) => setFormData({ ...formData, zoneId: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  placeholder="zone-001"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Arrêts (séparés par une virgule)</label>
-                <input
-                  type="text"
-                  value={formData.stops}
-                  onChange={(e) => setFormData({ ...formData, stops: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  placeholder="Rond-point Central, Marché, École"
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="rt-zone">Zone (ID)</Label>
+              <Input
+                id="rt-zone"
+                type="text"
+                value={formData.zoneId}
+                onChange={(e) => setFormData({ ...formData, zoneId: e.target.value })}
+                placeholder="zone-001"
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
-                Annuler
-              </button>
-              <button
-                onClick={handleCreateRoute}
-                disabled={submitting}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-              >
-                {submitting ? 'Envoi...' : 'Créer'}
-              </button>
+            <div className="space-y-2">
+              <Label htmlFor="rt-stops">Arrêts (séparés par une virgule)</Label>
+              <Input
+                id="rt-stops"
+                type="text"
+                value={formData.stops}
+                onChange={(e) => setFormData({ ...formData, stops: e.target.value })}
+                placeholder="Rond-point Central, Marché, École"
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleCreateRoute} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Créer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      {stopModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold">Ajouter un arrêt</h3>
-              <button onClick={() => setStopModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
-                <X className="w-5 h-5" />
-              </button>
+      <Dialog open={stopModalOpen} onOpenChange={setStopModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ajouter un arrêt</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="st-name">Nom de l'arrêt</Label>
+              <Input
+                id="st-name"
+                type="text"
+                value={stopForm.name}
+                onChange={(e) => setStopForm({ ...stopForm, name: e.target.value })}
+                placeholder="Rond-point Central"
+              />
             </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Nom de l'arrêt</label>
-                <input
+            <div className="space-y-2">
+              <Label htmlFor="st-time">Heure (optionnel)</Label>
+              <Input
+                id="st-time"
+                type="text"
+                value={stopForm.time}
+                onChange={(e) => setStopForm({ ...stopForm, time: e.target.value })}
+                placeholder="07:15"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="st-lat">Latitude (optionnel)</Label>
+                <Input
+                  id="st-lat"
                   type="text"
-                  value={stopForm.name}
-                  onChange={(e) => setStopForm({ ...stopForm, name: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  placeholder="Rond-point Central"
+                  value={stopForm.lat}
+                  onChange={(e) => setStopForm({ ...stopForm, lat: e.target.value })}
+                  placeholder="6.365"
                 />
               </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Heure (optionnel)</label>
-                <input
+              <div className="space-y-2">
+                <Label htmlFor="st-lng">Longitude (optionnel)</Label>
+                <Input
+                  id="st-lng"
                   type="text"
-                  value={stopForm.time}
-                  onChange={(e) => setStopForm({ ...stopForm, time: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  placeholder="07:15"
+                  value={stopForm.lng}
+                  onChange={(e) => setStopForm({ ...stopForm, lng: e.target.value })}
+                  placeholder="2.418"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase">Latitude (optionnel)</label>
-                  <input
-                    type="text"
-                    value={stopForm.lat}
-                    onChange={(e) => setStopForm({ ...stopForm, lat: e.target.value })}
-                    className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                    placeholder="6.365"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase">Longitude (optionnel)</label>
-                  <input
-                    type="text"
-                    value={stopForm.lng}
-                    onChange={(e) => setStopForm({ ...stopForm, lng: e.target.value })}
-                    className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                    placeholder="2.418"
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setStopModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
-                Annuler
-              </button>
-              <button
-                onClick={handleAddStop}
-                disabled={stopSubmitting}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-              >
-                {stopSubmitting ? 'Envoi...' : 'Ajouter'}
-              </button>
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStopModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleAddStop} disabled={stopSubmitting}>
+              {stopSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Ajouter
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

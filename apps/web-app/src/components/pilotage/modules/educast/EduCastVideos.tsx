@@ -7,8 +7,14 @@
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Play, Search, Filter, Plus, Clock, Eye, GraduationCap, ChevronRight, Loader2, X } from 'lucide-react';
+import { Play, Search, Plus, Eye, GraduationCap, Loader2 } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { useToast } from '@/components/ui/use-toast';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
@@ -36,6 +42,7 @@ const EMPTY_FORM = { title: '', description: '', type: 'video', url: '' };
 
 export default function EduCastVideos() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const { data: videos, loading, error, refetch } = useModulesList<MediaItem>('educast', 'media', academicYear?.id, { type: 'video' });
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -44,17 +51,18 @@ export default function EduCastVideos() {
 
   const handleCreate = async () => {
     if (!formData.title || !formData.url) {
-      alert('Le titre et l\'URL sont requis');
+      toast({ title: 'Champ manquant', description: 'Le titre et l\'URL sont requis.', variant: 'destructive' });
       return;
     }
     try {
       setSubmitting(true);
       await modulesApi.post('educast/media', { ...formData, type: 'video' }, buildModulesApiOptions(academicYear?.id));
+      toast({ title: 'Vidéo publiée', description: 'La vidéo a été ajoutée avec succès.' });
       setModalOpen(false);
       setFormData(EMPTY_FORM);
       await refetch();
     } catch (e: any) {
-      alert(e?.message || 'Erreur lors de la publication');
+      toast({ title: 'Erreur', description: e?.message || 'Erreur lors de la publication', variant: 'destructive' });
     } finally {
       setSubmitting(false);
     }
@@ -70,42 +78,39 @@ export default function EduCastVideos() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les données. {error}
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
-          <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter flex items-center">
-            <GraduationCap className="w-6 h-6 mr-3 text-blue-600" />
+          <h3 className="text-lg font-semibold text-navy-900 flex items-center">
+            <GraduationCap className="w-5 h-5 mr-2 text-blue-600" />
             Vidéos Pédagogiques
           </h3>
-          <p className="text-slate-500 text-sm font-medium">Contenus éducatifs structurés par niveau et matière.</p>
+          <p className="text-slate-500 text-sm">Contenus éducatifs structurés par niveau et matière.</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input type="text" placeholder="Rechercher un cours..." className="pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs outline-none shadow-sm" />
+            <Input type="text" placeholder="Rechercher un cours..." className="pl-10 w-64" />
           </div>
-          <button
-            onClick={() => setModalOpen(true)}
-            className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-lg shadow-navy-900/10"
-          >
-            <Plus className="w-4 h-4 text-[#C9A84C]" />
-            <span>Ajouter Vidéo</span>
-          </button>
+          <Button onClick={() => setModalOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Ajouter Vidéo
+          </Button>
         </div>
       </div>
 
       {videos.length === 0 ? (
-        <div className="text-center py-16 text-slate-500 bg-white rounded-3xl border border-slate-200">
+        <Card className="p-12 text-center text-slate-500 shadow-sm">
           Aucune vidéo pédagogique pour cette année scolaire.
-        </div>
+        </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {videos.map((video, i) => {
             const title = video.title || video.name || 'Vidéo';
             const subject = video.subject || video.category || '—';
@@ -115,25 +120,15 @@ export default function EduCastVideos() {
             const views = video.views ?? video.viewCount ?? 0;
             const thumbnail = video.thumbnail || video.thumbnailUrl;
             return (
-              <motion.div
-                key={video.id ?? i}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05 }}
-                className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-xl transition-all group"
-              >
+              <Card key={video.id ?? i} className="overflow-hidden shadow-sm hover:shadow-md transition-all group p-0">
                 <div className="relative aspect-video bg-slate-100 flex items-center justify-center overflow-hidden">
-                  <div className="absolute inset-0 bg-navy-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10">
-                    <div className="p-4 bg-[#C9A84C] rounded-full scale-90 group-hover:scale-100 transition-transform">
-                      <Play className="w-8 h-8 text-navy-900 fill-current" />
+                  <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10">
+                    <div className="p-3 bg-amber-500 rounded-full scale-90 group-hover:scale-100 transition-transform">
+                      <Play className="w-6 h-6 text-white fill-current" />
                     </div>
                   </div>
-                  <div className="absolute bottom-3 right-3 px-2 py-1 bg-black/60 backdrop-blur-md rounded-lg text-[10px] font-black text-white z-10">
-                    {duration}
-                  </div>
-                  <div className="absolute top-3 left-3 px-2 py-1 bg-blue-600 rounded-lg text-[9px] font-black text-white uppercase tracking-widest z-10">
-                    {subject}
-                  </div>
+                  <Badge className="absolute bottom-2 right-2 bg-black/60 text-white backdrop-blur z-10">{duration}</Badge>
+                  <Badge className="absolute top-2 left-2 bg-blue-600 text-white z-10">{subject}</Badge>
                   {thumbnail ? (
                     <img src={thumbnail} alt={title} className="w-full h-full object-cover" />
                   ) : (
@@ -141,90 +136,71 @@ export default function EduCastVideos() {
                   )}
                 </div>
 
-                <div className="p-6 space-y-4">
+                <div className="p-4 space-y-3">
                   <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{level}</p>
-                    <h4 className="text-sm font-black text-slate-900 leading-tight group-hover:text-blue-600 transition-colors line-clamp-2 min-h-[40px]">{title}</h4>
+                    <p className="text-xs text-slate-500 mb-1">{level}</p>
+                    <h4 className="text-sm font-semibold text-slate-900 leading-tight group-hover:text-blue-600 transition-colors line-clamp-2 min-h-[40px]">{title}</h4>
                   </div>
 
-                  <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-slate-100" />
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">{author}</p>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-slate-400">
+                  <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                    <p className="text-xs text-slate-500">{author}</p>
+                    <div className="flex items-center gap-1 text-slate-400">
                       <Eye className="w-3.5 h-3.5" />
-                      <span className="text-[10px] font-black">{views}</span>
+                      <span className="text-xs font-medium">{views}</span>
                     </div>
                   </div>
                 </div>
-              </motion.div>
+              </Card>
             );
           })}
         </div>
       )}
 
       {/* Modal: Ajouter une vidéo */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900">Ajouter une vidéo</h3>
-              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-slate-100 rounded-lg">
-                <X className="w-5 h-5 text-slate-400" />
-              </button>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ajouter une vidéo</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Titre</Label>
+              <Input
+                type="text"
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                placeholder="Ex: Les fonctions dérivées - Chapitre 3"
+              />
             </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Titre</label>
-                <input
-                  type="text"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20"
-                  placeholder="Ex: Les fonctions dérivées - Chapitre 3"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Description</label>
-                <textarea
-                  rows={3}
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
-                  placeholder="Décrivez le contenu..."
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">URL de la vidéo</label>
-                <input
-                  type="text"
-                  value={formData.url}
-                  onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20"
-                  placeholder="https://..."
-                />
-              </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <textarea
+                rows={3}
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 resize-none"
+                placeholder="Décrivez le contenu..."
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={submitting}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold hover:bg-navy-800 disabled:opacity-60 flex items-center gap-2"
-              >
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {submitting ? 'Envoi...' : 'Publier'}
-              </button>
+            <div className="space-y-2">
+              <Label>URL de la vidéo</Label>
+              <Input
+                type="text"
+                value={formData.url}
+                onChange={(e) => setFormData({ ...formData, url: e.target.value })}
+                placeholder="https://..."
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleCreate} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Publier
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

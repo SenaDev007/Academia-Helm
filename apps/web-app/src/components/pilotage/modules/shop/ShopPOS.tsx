@@ -2,6 +2,15 @@
  * ============================================================================
  * SHOP POS (POINT OF SALE) - ACADEMIA HELM
  * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern Finance/Students.
+ *  - Boutons : <Button> shadcn
+ *  - Inputs/Labels : <Input>/<Label> shadcn
+ *  - Modals : <Dialog> shadcn
+ *  - Notifications : useToast() (au lieu de alert())
+ *  - Cards : rounded-xl border-gray-200
+ *  - Typo : font-semibold (au lieu de font-black uppercase tracking-widest)
+ * ============================================================================
  */
 
 'use client';
@@ -13,9 +22,17 @@ import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
 import {
   Loader2, Search, Plus, Minus, CreditCard,
-  Wallet, Banknote, QrCode, User, Package,
-  ShoppingCart, X
+  Wallet, Banknote, QrCode, User, ShoppingCart,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
 
 interface ProductItem {
   id?: string;
@@ -33,6 +50,7 @@ interface ProductItem {
 
 export default function ShopPOS() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const { data: products, loading, error, refetch } = useModulesList<ProductItem>(
     'shop',
     'products',
@@ -70,7 +88,7 @@ export default function ShopPOS() {
 
   const handleCheckout = async () => {
     if (cart.length === 0) {
-      alert('Le panier est vide');
+      toast({ title: 'Panier vide', description: 'Ajoutez au moins un article avant d\'encaisser.', variant: 'destructive' });
       return;
     }
     try {
@@ -86,9 +104,13 @@ export default function ShopPOS() {
       );
       setCart([]);
       await refetch();
-      alert('Vente encaissée avec succès');
+      toast({ title: 'Vente encaissée', description: 'La transaction a été enregistrée avec succès.' });
     } catch (e: any) {
-      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de l\'encaissement');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de l\'encaissement',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -105,8 +127,13 @@ export default function ShopPOS() {
       setWalletModalOpen(false);
       setWalletAmount(0);
       await refetch();
+      toast({ title: 'Recharge effectuée', description: 'Le portefeuille a été rechargé.' });
     } catch (e: any) {
-      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la recharge');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la recharge',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -122,7 +149,7 @@ export default function ShopPOS() {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 h-[calc(100vh-250px)] min-h-[600px] animate-in fade-in duration-700">
+    <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-250px)] min-h-[600px] animate-in fade-in duration-700">
       {/* Products Selection Area */}
       <div className="flex-1 flex flex-col space-y-6">
         {error && (
@@ -131,27 +158,29 @@ export default function ShopPOS() {
           </div>
         )}
 
-        <div className="bg-white rounded-3xl border border-gray-100 p-4 shadow-sm flex items-center space-x-4">
-          <div className="relative flex-1">
-            <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Scanner un code-barres ou rechercher un article..."
-              className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-none rounded-2xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 transition-all font-medium"
-            />
+        <Card className="p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Input
+                type="text"
+                placeholder="Scanner un code-barres ou rechercher un article..."
+                className="pl-9"
+              />
+            </div>
+            <Button variant="outline" size="icon" className="h-10 w-10">
+              <QrCode className="w-5 h-5" />
+            </Button>
           </div>
-          <button className="p-3.5 bg-navy-900 text-white rounded-2xl hover:bg-navy-800 transition-all shadow-lg shadow-navy-900/20">
-            <QrCode className="w-6 h-6" />
-          </button>
-        </div>
+        </Card>
 
-        <div className="flex-1 bg-gray-50/50 rounded-3xl border border-dashed border-gray-200 p-8 overflow-y-auto no-scrollbar">
+        <div className="flex-1 bg-slate-50/50 rounded-xl border border-dashed border-slate-200 p-6 overflow-y-auto">
           {(products ?? []).length === 0 ? (
             <div className="h-full flex items-center justify-center text-gray-500 text-sm">
               Aucun article disponible pour le point de vente.
             </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
               {(products ?? []).map((product, i) => (
                 <POSProductCard
                   key={product?.id ?? `pos-${i}`}
@@ -166,21 +195,21 @@ export default function ShopPOS() {
       </div>
 
       {/* Cart & Checkout Area */}
-      <div className="w-full lg:w-[400px] flex flex-col space-y-6">
-        <div className="flex-1 bg-white rounded-3xl border border-gray-100 shadow-xl overflow-hidden flex flex-col">
-          <div className="p-6 border-b border-gray-50 bg-navy-900 text-white flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-white/10 rounded-xl">
-                <ShoppingCart className="w-5 h-5 text-white" />
+      <div className="w-full lg:w-[380px] flex flex-col space-y-4">
+        <Card className="shadow-sm overflow-hidden flex-1 flex flex-col">
+          <div className="p-4 border-b border-slate-100 bg-slate-900 text-white flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-white/10 rounded-md">
+                <ShoppingCart className="w-4 h-4" />
               </div>
-              <h3 className="font-black uppercase tracking-tight">Panier Actuel</h3>
+              <h3 className="font-semibold text-sm">Panier Actuel</h3>
             </div>
-            <span className="text-[10px] font-black bg-white/20 px-2 py-1 rounded-lg uppercase tracking-widest">{cart.length} Articles</span>
+            <Badge variant="outline" className="text-xs bg-white/10 text-white border-white/20">{cart.length} Articles</Badge>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {cart.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-gray-400 text-xs font-medium text-center">
+              <div className="h-full flex items-center justify-center text-gray-400 text-xs text-center">
                 Panier vide. Cliquez sur un article pour l'ajouter.
               </div>
             ) : (
@@ -190,75 +219,80 @@ export default function ShopPOS() {
             )}
           </div>
 
-          <div className="p-6 bg-gray-50/80 border-t border-gray-100 space-y-3">
-            <div className="flex justify-between text-xs font-bold text-gray-500 uppercase tracking-widest">
+          <div className="p-4 bg-slate-50 border-t border-slate-100 space-y-2">
+            <div className="flex justify-between text-xs text-gray-500">
               <span>Sous-total</span>
               <span>{formatCurrency(subtotal)}</span>
             </div>
-            <div className="flex justify-between text-xs font-bold text-gray-500 uppercase tracking-widest">
+            <div className="flex justify-between text-xs text-gray-500">
               <span>TVA (18%)</span>
               <span>{formatCurrency(tax)}</span>
             </div>
-            <div className="flex justify-between items-center pt-3 border-t border-gray-200">
-              <span className="text-sm font-black text-navy-900 uppercase tracking-tight">Total à payer</span>
-              <span className="text-2xl font-black text-navy-900">{formatCurrency(total)}</span>
+            <div className="flex justify-between items-center pt-2 border-t border-slate-200">
+              <span className="text-sm font-semibold text-navy-900">Total à payer</span>
+              <span className="text-xl font-semibold text-navy-900">{formatCurrency(total)}</span>
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* Customer & Payment Mode */}
-        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6 space-y-6">
-          <div className="space-y-3">
-            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Client / Élève</p>
-            <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-2xl border border-gray-100 group cursor-pointer hover:border-navy-500 transition-all">
-              <div className="w-10 h-10 rounded-xl bg-navy-100 flex items-center justify-center">
-                <User className="w-5 h-5 text-navy-600" />
+        <Card className="shadow-sm p-4 space-y-4">
+          <div className="space-y-2">
+            <p className="text-xs text-gray-500">Client / Élève</p>
+            <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100 hover:border-indigo-300 transition-all cursor-pointer">
+              <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center">
+                <User className="w-4 h-4 text-indigo-600" />
               </div>
               <div className="flex-1">
-                <p className="text-xs font-black text-navy-900">Associer un élève</p>
-                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">Optionnel</p>
+                <p className="text-sm font-medium text-navy-900">Associer un élève</p>
+                <p className="text-xs text-gray-400">Optionnel</p>
               </div>
-              <Plus className="w-4 h-4 text-gray-300" />
+              <Plus className="w-4 h-4 text-gray-400" />
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-2">
             <PaymentModeBtn icon={Banknote} label="Cash" active={paymentMode === 'cash'} onClick={() => setPaymentMode('cash')} />
             <PaymentModeBtn icon={Wallet} label="Wallet" active={paymentMode === 'wallet'} onClick={() => setPaymentMode('wallet')} />
             <PaymentModeBtn icon={CreditCard} label="Carte" active={paymentMode === 'card'} onClick={() => setPaymentMode('card')} />
           </div>
 
-          <button
+          <Button
             onClick={handleCheckout}
             disabled={submitting || cart.length === 0}
-            className="w-full py-4 bg-navy-900 text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/40 active:scale-[0.98] disabled:opacity-50"
+            className="w-full"
           >
+            {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             {submitting ? 'En cours...' : 'Valider l\'Encaissement'}
-          </button>
-        </div>
+          </Button>
+        </Card>
       </div>
 
       {/* Wallet Recharge Modal */}
-      {walletModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-navy-900">Recharger le Portefeuille</h3>
-              <button onClick={() => setWalletModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
-            </div>
+      <Dialog open={walletModalOpen} onOpenChange={setWalletModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Recharger le Portefeuille</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
             <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Montant</label>
-              <input type="number" value={walletAmount} onChange={(e) => setWalletAmount(Number(e.target.value))} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
-            </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setWalletModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
-              <button onClick={handleWalletRecharge} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
-                {submitting ? 'Envoi...' : 'Recharger'}
-              </button>
+              <Label className="text-xs">Montant</Label>
+              <Input
+                type="number"
+                value={walletAmount}
+                onChange={(e) => setWalletAmount(Number(e.target.value))}
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWalletModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleWalletRecharge} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Envoi...' : 'Recharger'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -271,47 +305,47 @@ function POSProductCard({ product, index, onAdd }: any) {
   const emoji = product?.emoji ?? '📦';
 
   return (
-    <button
-      type="button"
+    <Button
+      variant="outline"
       onClick={onAdd}
-      className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-xl hover:border-navy-200 transition-all duration-300 group cursor-pointer active:scale-95 text-left"
+      className="bg-white rounded-xl border-slate-200 p-3 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all duration-200 h-auto flex-col items-stretch"
     >
-      <div className="h-24 bg-gray-50 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden">
-        <span className="text-3xl">{emoji}</span>
-        <div className="absolute top-2 right-2">
-          <div className="w-6 h-6 bg-white/90 backdrop-blur-sm rounded-lg flex items-center justify-center text-navy-600 border border-gray-100 shadow-sm">
-            <Plus className="w-4 h-4" />
+      <div className="h-20 bg-slate-50 rounded-lg mb-3 flex items-center justify-center relative overflow-hidden">
+        <span className="text-2xl">{emoji}</span>
+        <div className="absolute top-1.5 right-1.5">
+          <div className="w-5 h-5 bg-white/90 rounded-md flex items-center justify-center text-indigo-600 border border-slate-100 shadow-sm">
+            <Plus className="w-3 h-3" />
           </div>
         </div>
       </div>
-      <h4 className="text-xs font-black text-navy-900 line-clamp-1 mb-1">{name}</h4>
-      <p className="text-[10px] font-black text-navy-500 mb-2">{formatCurrency(price)}</p>
+      <h4 className="text-xs font-medium text-navy-900 line-clamp-1 mb-1 text-left">{name}</h4>
+      <p className="text-xs font-semibold text-indigo-600 mb-2 text-left">{formatCurrency(price)}</p>
       <div className="flex items-center justify-between">
-        <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">Stock: {stock}</span>
-        <div className="px-2 py-0.5 bg-gray-50 rounded-md text-[9px] font-black text-gray-400 border border-gray-100">{sku}</div>
+        <span className="text-xs text-gray-400">Stock: {stock}</span>
+        <div className="px-1.5 py-0.5 bg-slate-50 rounded text-xs text-gray-400 border border-slate-100 font-mono">{sku}</div>
       </div>
-    </button>
+    </Button>
   );
 }
 
 function CartItem({ item }: any) {
   return (
-    <div className="flex items-center space-x-4 p-3 bg-gray-50/50 rounded-2xl border border-gray-100 group">
-      <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-xl shadow-sm">
+    <div className="flex items-center gap-3 p-3 bg-slate-50/50 rounded-lg border border-slate-100">
+      <div className="w-10 h-10 bg-white rounded-md flex items-center justify-center text-lg shadow-sm">
         {item.image}
       </div>
       <div className="flex-1">
-        <p className="text-xs font-black text-navy-900 line-clamp-1">{item.name}</p>
-        <p className="text-[10px] font-bold text-navy-500">{formatCurrency(item.price)}</p>
+        <p className="text-xs font-medium text-navy-900 line-clamp-1">{item.name}</p>
+        <p className="text-xs text-indigo-600">{formatCurrency(item.price)}</p>
       </div>
-      <div className="flex items-center space-x-2">
-        <button className="w-6 h-6 rounded-lg bg-white border border-gray-100 flex items-center justify-center text-gray-400 hover:text-navy-900 transition-colors">
-          <Minus className="w-3.5 h-3.5" />
-        </button>
-        <span className="text-xs font-black text-navy-900">{item.qty}</span>
-        <button className="w-6 h-6 rounded-lg bg-navy-900 flex items-center justify-center text-white hover:bg-navy-800 transition-colors">
-          <Plus className="w-3.5 h-3.5" />
-        </button>
+      <div className="flex items-center gap-1.5">
+        <Button variant="outline" size="icon" className="h-6 w-6">
+          <Minus className="w-3 h-3" />
+        </Button>
+        <span className="text-xs font-medium text-navy-900 w-5 text-center">{item.qty}</span>
+        <Button size="icon" className="h-6 w-6">
+          <Plus className="w-3 h-3" />
+        </Button>
       </div>
     </div>
   );
@@ -319,16 +353,17 @@ function CartItem({ item }: any) {
 
 function PaymentModeBtn({ icon: Icon, label, active, onClick }: any) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="outline"
       onClick={onClick}
-      className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition-all space-y-1 ${
+      className={`flex flex-col items-center justify-center p-3 rounded-lg h-auto gap-1 ${
         active
-          ? 'bg-navy-900 text-white border-navy-900 shadow-lg shadow-navy-900/20'
-          : 'bg-white text-gray-400 border-gray-100 hover:border-navy-500 hover:text-navy-900'
-      }`}>
-      <Icon className="w-5 h-5" />
-      <span className="text-[9px] font-black uppercase tracking-widest">{label}</span>
-    </button>
+          ? 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-600 hover:text-white shadow-sm'
+          : 'bg-white text-gray-500 border-slate-200 hover:border-indigo-300 hover:text-navy-900'
+      }`}
+    >
+      <Icon className="w-4 h-4" />
+      <span className="text-xs font-medium">{label}</span>
+    </Button>
   );
 }

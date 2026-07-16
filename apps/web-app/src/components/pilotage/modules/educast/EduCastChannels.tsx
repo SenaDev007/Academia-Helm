@@ -2,13 +2,25 @@
  * ============================================================================
  * EDUCAST CHANNELS
  * ============================================================================
+ *
+ * Refonte juillet 2026 : le backend GET /educast/teacher-channel peut renvoyer
+ * soit un tableau, soit un objet unique (findFirst). On gère les deux cas en
+ * wrappant l'objet dans un tableau si nécessaire (pour compatibilité avec
+ * useModulesList qui attend un tableau).
+ * ============================================================================
  */
 
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { MonitorPlay, Users, Settings, Plus, ChevronRight, Star, Loader2, X, CheckCircle2, UserPlus } from 'lucide-react';
+import { MonitorPlay, Settings as SettingsIcon, Plus, ChevronRight, Star, Loader2, CheckCircle2, UserPlus } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { useToast } from '@/components/ui/use-toast';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
@@ -30,13 +42,22 @@ interface ChannelItem {
   subject?: string;
 }
 
-const PALETTE = ['bg-navy-900', 'bg-emerald-600', 'bg-blue-600', 'bg-rose-600', 'bg-amber-600'];
+const PALETTE = ['bg-slate-900', 'bg-emerald-600', 'bg-blue-600', 'bg-rose-600', 'bg-amber-600'];
 
 const EMPTY_FORM = { name: '', description: '', subject: '' };
 
 export default function EduCastChannels() {
   const { academicYear } = useModuleContext();
-  const { data: channels, loading, error, refetch } = useModulesList<ChannelItem>('educast', 'teacher-channel', academicYear?.id);
+  const { toast } = useToast();
+  const { data: rawData, loading, error, refetch } = useModulesList<ChannelItem>('educast', 'teacher-channel', academicYear?.id);
+
+  // ⭐ Gestion du cas où le backend renvoie un objet unique (findFirst) au lieu d'un tableau.
+  // On le wrap dans un tableau pour que la suite du composant puisse itérer normalement.
+  const channels: ChannelItem[] = Array.isArray(rawData)
+    ? rawData
+    : rawData
+      ? [rawData]
+      : [];
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<ChannelItem | null>(null);
@@ -62,22 +83,24 @@ export default function EduCastChannels() {
 
   const handleSubmit = async () => {
     if (!formData.name) {
-      alert('Le nom est requis');
+      toast({ title: 'Champ manquant', description: 'Le nom est requis.', variant: 'destructive' });
       return;
     }
     try {
       setSubmitting(true);
       if (editTarget) {
         await modulesApi.patch(`educast/teacher-channel/${editTarget.id}`, formData, buildModulesApiOptions(academicYear?.id));
+        toast({ title: 'Chaîne modifiée', description: 'Les informations ont été mises à jour.' });
       } else {
         await modulesApi.post('educast/teacher-channel', formData, buildModulesApiOptions(academicYear?.id));
+        toast({ title: 'Chaîne créée', description: 'La chaîne a été ajoutée avec succès.' });
       }
       setModalOpen(false);
       setFormData(EMPTY_FORM);
       setEditTarget(null);
       await refetch();
     } catch (e: any) {
-      alert(e?.message || 'Erreur lors de l\'enregistrement');
+      toast({ title: 'Erreur', description: e?.message || 'Erreur lors de l\'enregistrement', variant: 'destructive' });
     } finally {
       setSubmitting(false);
     }
@@ -87,9 +110,10 @@ export default function EduCastChannels() {
     try {
       setActionLoading(channelId);
       await modulesApi.post(`educast/channels/${channelId}/subscribe`, {}, buildModulesApiOptions(academicYear?.id));
+      toast({ title: 'Abonnement réussi', description: 'Vous êtes maintenant abonné à cette chaîne.' });
       await refetch();
     } catch (e: any) {
-      alert(e?.message || 'Erreur lors de l\'abonnement');
+      toast({ title: 'Erreur', description: e?.message || 'Erreur lors de l\'abonnement', variant: 'destructive' });
     } finally {
       setActionLoading(null);
     }
@@ -105,7 +129,7 @@ export default function EduCastChannels() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les données. {error}
@@ -114,24 +138,21 @@ export default function EduCastChannels() {
 
       <div className="flex justify-between items-center">
         <div className="space-y-1">
-          <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Chaînes EduCast</h3>
-          <p className="text-slate-500 text-sm font-medium">Organisez vos contenus par thématiques ou services.</p>
+          <h3 className="text-lg font-semibold text-navy-900">Chaînes EduCast</h3>
+          <p className="text-slate-500 text-sm">Organisez vos contenus par thématiques ou services.</p>
         </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-navy-900/10 hover:bg-navy-800 transition-all"
-        >
-          <Plus className="w-4 h-4 text-[#C9A84C]" />
-          <span>Créer une Chaîne</span>
-        </button>
+        <Button onClick={openCreate}>
+          <Plus className="w-4 h-4 mr-2" />
+          Créer une Chaîne
+        </Button>
       </div>
 
       {channels.length === 0 ? (
-        <div className="text-center py-16 text-slate-500 bg-white rounded-3xl border border-slate-200">
+        <Card className="p-12 text-center text-slate-500 shadow-sm">
           Aucune chaîne EduCast pour cette année scolaire.
-        </div>
+        </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {channels.map((channel, i) => {
             const name = channel.name || channel.title || 'Chaîne';
             const owner = channel.owner || channel.ownerName || '—';
@@ -140,134 +161,108 @@ export default function EduCastChannels() {
             const status = channel.status || 'ACTIVE';
             const color = channel.color || PALETTE[i % PALETTE.length];
             return (
-              <motion.div
-                key={channel.id ?? i}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: i * 0.05 }}
-                className="bg-white rounded-3xl border border-slate-200 p-8 shadow-sm hover:shadow-xl transition-all relative overflow-hidden group"
-              >
-                <div className={`absolute top-0 left-0 w-2 h-full ${color}`} />
-                
-                <div className="space-y-6">
+              <Card key={channel.id ?? i} className="p-6 shadow-sm hover:shadow-md transition-all relative overflow-hidden group">
+                <div className={`absolute top-0 left-0 w-1.5 h-full ${color}`} />
+
+                <div className="space-y-4 pl-2">
                   <div className="flex items-start justify-between">
-                    <div className="p-4 bg-slate-50 rounded-2xl group-hover:bg-blue-50 transition-colors">
-                      <MonitorPlay className={`w-8 h-8 ${color.replace('bg-', 'text-')}`} />
+                    <div className="p-3 bg-slate-50 rounded-xl group-hover:bg-blue-50 transition-colors">
+                      <MonitorPlay className={`w-7 h-7 ${color.replace('bg-', 'text-')}`} />
                     </div>
-                    <button
-                      onClick={() => openEdit(channel)}
-                      className="p-2 hover:bg-slate-50 rounded-xl transition-colors"
-                      title="Modifier"
-                    >
-                      <Settings className="w-5 h-5 text-slate-300" />
-                    </button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(channel)} title="Modifier">
+                      <SettingsIcon className="w-4 h-4 text-slate-400" />
+                    </Button>
                   </div>
 
                   <div>
-                    <h4 className="text-xl font-black text-slate-900 leading-tight group-hover:text-blue-600 transition-colors">{name}</h4>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Responsable: {owner}</p>
+                    <h4 className="text-lg font-semibold text-slate-900 leading-tight group-hover:text-blue-600 transition-colors">{name}</h4>
+                    <p className="text-xs text-slate-500 mt-1">Responsable: {owner}</p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 py-4 border-y border-slate-50">
+                  <div className="grid grid-cols-2 gap-4 py-4 border-y border-slate-100">
                     <div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Contenus</p>
-                      <p className="text-lg font-black text-slate-900">{contents}</p>
+                      <p className="text-xs text-slate-500 mb-1">Contenus</p>
+                      <p className="text-base font-semibold text-slate-900">{contents}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Abonnés</p>
-                      <p className="text-lg font-black text-slate-900">{subs}</p>
+                      <p className="text-xs text-slate-500 mb-1">Abonnés</p>
+                      <p className="text-base font-semibold text-slate-900">{subs}</p>
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between pt-2">
-                    <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${
-                      status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
-                    }`}>
+                  <div className="flex items-center justify-between pt-1">
+                    <Badge variant="outline" className={status === 'ACTIVE' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}>
                       {status}
-                    </span>
+                    </Badge>
                     <div className="flex items-center gap-2">
-                      <button
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="text-emerald-600 h-8"
                         onClick={() => handleSubscribe(channel.id)}
                         disabled={actionLoading === channel.id}
-                        className="flex items-center gap-1 text-emerald-600 font-black text-[10px] uppercase tracking-widest hover:underline disabled:opacity-60"
                       >
-                        {actionLoading === channel.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
-                        S'abonner
-                      </button>
-                      <button className="flex items-center text-blue-600 font-black text-[10px] uppercase tracking-widest hover:translate-x-1 transition-transform">
+                        {actionLoading === channel.id ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <UserPlus className="w-3.5 h-3.5 mr-1" />}
+                        S&apos;abonner
+                      </Button>
+                      <Button variant="link" size="sm" className="text-blue-600 h-8">
                         Ouvrir
-                        <ChevronRight className="w-4 h-4 ml-1" />
-                      </button>
+                        <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
+                      </Button>
                     </div>
                   </div>
                 </div>
-              </motion.div>
+              </Card>
             );
           })}
         </div>
       )}
 
       {/* Modal: Créer / Modifier une chaîne */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900">{editTarget ? 'Modifier la chaîne' : 'Créer une chaîne'}</h3>
-              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-slate-100 rounded-lg">
-                <X className="w-5 h-5 text-slate-400" />
-              </button>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editTarget ? 'Modifier la chaîne' : 'Créer une chaîne'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Nom</Label>
+              <Input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="Ex: Chaîne Maths M. Dupont"
+              />
             </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nom</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20"
-                  placeholder="Ex: Chaîne Maths M. Dupont"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sujet / Matière</label>
-                <input
-                  type="text"
-                  value={formData.subject}
-                  onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20"
-                  placeholder="Ex: Mathématiques"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Description</label>
-                <textarea
-                  rows={3}
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
-                  placeholder="Décrivez votre chaîne..."
-                />
-              </div>
+            <div className="space-y-2">
+              <Label>Sujet / Matière</Label>
+              <Input
+                type="text"
+                value={formData.subject}
+                onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                placeholder="Ex: Mathématiques"
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={submitting}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold hover:bg-navy-800 disabled:opacity-60 flex items-center gap-2"
-              >
-                {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {submitting ? 'Envoi...' : editTarget ? 'Modifier' : 'Créer'}
-              </button>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <textarea
+                rows={3}
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 resize-none"
+                placeholder="Décrivez votre chaîne..."
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleSubmit} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {editTarget ? 'Modifier' : 'Créer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

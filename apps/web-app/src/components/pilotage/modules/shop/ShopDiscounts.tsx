@@ -2,15 +2,37 @@
  * ============================================================================
  * SHOP DISCOUNTS & PROMOTIONS - ACADEMIA HELM
  * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern Finance/Students.
+ *  - Boutons : <Button> shadcn
+ *  - Table : <Table> shadcn
+ *  - Modals : <Dialog> shadcn
+ *  - Notifications : useToast() (au lieu de alert())
+ *  - Inputs/Labels : <Input>/<Label> shadcn
+ *  - Cards : rounded-xl (au lieu de rounded-[2.5rem])
+ *  - Typo : font-semibold (au lieu de font-black uppercase tracking-widest)
+ * ============================================================================
  */
 
 'use client';
 
 import React, { useState } from 'react';
-import { Loader2, Percent, Plus, Search, Trash2, Edit, CheckCircle2, Ticket, X } from 'lucide-react';
+import { Loader2, Percent, Plus, Search, Trash2, Edit, CheckCircle2, Ticket } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
+import { useToast } from '@/components/ui/use-toast';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
 
 interface DiscountItem {
   id?: string;
@@ -33,6 +55,7 @@ interface DiscountItem {
 
 export default function ShopDiscounts() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const { data: discounts, loading, error, refetch } = useModulesList<DiscountItem>(
     'shop',
     'discounts',
@@ -50,8 +73,13 @@ export default function ShopDiscounts() {
       setModalOpen(false);
       setDiscountForm({ code: '', percentage: 0, validUntil: '' });
       await refetch();
+      toast({ title: 'Promotion créée', description: 'La nouvelle remise a été enregistrée.' });
     } catch (e: any) {
-      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création de la remise');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création de la remise',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -69,7 +97,7 @@ export default function ShopDiscounts() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
+    <div className="space-y-6 animate-in fade-in duration-700">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les promotions. {error}
@@ -77,185 +105,177 @@ export default function ShopDiscounts() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h3 className="text-xl font-black text-navy-900 uppercase tracking-tight">Remises & Promotions</h3>
-          <p className="text-sm text-gray-400 font-medium">Gérez les codes promos, soldes et remises automatiques</p>
+          <h3 className="text-lg font-semibold text-navy-900">Remises & Promotions</h3>
+          <p className="text-sm text-gray-500">Gérez les codes promos, soldes et remises automatiques</p>
         </div>
-        <button
-          onClick={() => setModalOpen(true)}
-          className="flex items-center space-x-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20 active:scale-95"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Nouvelle Promotion</span>
-        </button>
+        <Button onClick={() => setModalOpen(true)}>
+          <Plus className="w-4 h-4 mr-2" />
+          Nouvelle Promotion
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
-             <div className="p-8 border-b border-gray-50 flex items-center justify-between">
-                <h3 className="text-lg font-black text-navy-900 uppercase tracking-tight">Promotions Actives</h3>
-                <div className="flex items-center space-x-2">
-                   <div className="relative">
-                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                      <input type="text" placeholder="Rechercher..." className="pl-9 pr-4 py-2 bg-gray-50 border-none rounded-xl text-[10px] font-bold outline-none w-32" />
-                   </div>
-                </div>
-             </div>
-             <div className="p-0">
-                <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-                <table className="w-full text-left">
-                   <thead className="bg-gray-50/50">
-                      <tr>
-                         <th className="px-8 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Nom / Code</th>
-                         <th className="px-8 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Valeur</th>
-                         <th className="px-8 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Type</th>
-                         <th className="px-8 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Usage</th>
-                         <th className="px-8 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Validité</th>
-                         <th className="px-8 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Actions</th>
-                      </tr>
-                   </thead>
-                   <tbody className="divide-y divide-gray-50">
-                      {safeDiscounts.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="px-8 py-16 text-center text-gray-500">
-                            Aucune promotion active pour cette année scolaire.
-                          </td>
-                        </tr>
-                      ) : (
-                        safeDiscounts.map((d: any, i: number) => {
-                          const value = d?.value ?? d?.amount ?? 0;
-                          const maxUsage = d?.maxUsage ?? d?.usageLimit;
-                          const usage = d?.usageCount ?? 0;
-                          const usageDisplay = maxUsage ? `${usage}/${maxUsage}` : `${usage}/∞`;
-                          const valid = d?.validUntil ?? d?.endDate ?? 'Permanent';
-                          return (
-                            <DiscountRow
-                              key={d?.id ?? `disc-${i}`}
-                              name={d?.name ?? `Promotion #${i + 1}`}
-                              code={d?.code ?? d?.couponCode ?? '—'}
-                              value={`-${value}%`}
-                              type={(d?.type ?? d?.discountType ?? 'CODE PROMO').toString().toUpperCase()}
-                              usage={usageDisplay}
-                              valid={valid}
-                              status={d?.active === false ? 'Inactif' : 'Actif'}
-                            />
-                          );
-                        })
-                      )}
-                   </tbody>
-                </table>
-                </div>
-             </div>
-          </div>
+          <Card className="shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
+              <h3 className="text-base font-semibold text-navy-900">Promotions Actives</h3>
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Input type="text" placeholder="Rechercher..." className="pl-9 h-9 w-48" />
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gray-50">
+                    <TableHead>Nom / Code</TableHead>
+                    <TableHead className="text-right">Valeur</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Usage</TableHead>
+                    <TableHead>Validité</TableHead>
+                    <TableHead className="text-center">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {safeDiscounts.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-sm text-gray-400 py-12">
+                        Aucune promotion active pour cette année scolaire.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    safeDiscounts.map((d: any, i: number) => {
+                      const value = d?.value ?? d?.amount ?? 0;
+                      const maxUsage = d?.maxUsage ?? d?.usageLimit;
+                      const usage = d?.usageCount ?? 0;
+                      const usageDisplay = maxUsage ? `${usage}/${maxUsage}` : `${usage}/∞`;
+                      const valid = d?.validUntil ?? d?.endDate ?? 'Permanent';
+                      return (
+                        <DiscountRow
+                          key={d?.id ?? `disc-${i}`}
+                          name={d?.name ?? `Promotion #${i + 1}`}
+                          code={d?.code ?? d?.couponCode ?? '—'}
+                          value={`-${value}%`}
+                          type={(d?.type ?? d?.discountType ?? 'CODE PROMO').toString().toUpperCase()}
+                          usage={usageDisplay}
+                          valid={valid}
+                          status={d?.active === false ? 'Inactif' : 'Actif'}
+                        />
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </Card>
         </div>
 
         <div className="space-y-6">
-           <div className="bg-navy-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-2xl"></div>
-              <div className="relative z-10">
-                 <div className="flex items-center space-x-3 mb-6">
-                    <div className="p-3 bg-white/10 rounded-2xl">
-                       <Percent className="w-6 h-6 text-white" />
-                    </div>
-                    <h3 className="text-lg font-black uppercase tracking-tight">Analyse ORION</h3>
-                 </div>
-                 <p className="text-xs text-navy-200 font-medium leading-relaxed mb-8">
-                   "Les analyses prédictives de performance des promotions seront disponibles après quelques semaines d'utilisation."
-                 </p>
-                 <div className="flex flex-col space-y-3">
-                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
-                       <span>Conversion</span>
-                       <span className="text-emerald-400">—</span>
-                    </div>
-                    <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-                       <div className="h-full bg-emerald-500 w-0"></div>
-                    </div>
-                 </div>
+          <Card className="p-6 bg-slate-900 text-white shadow-md border-0 relative overflow-hidden">
+            <div className="relative z-10">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="p-2 bg-white/10 rounded-md">
+                  <Percent className="w-5 h-5" />
+                </div>
+                <h3 className="text-sm font-semibold">Analyse ORION</h3>
               </div>
-           </div>
+              <p className="text-xs text-slate-300 leading-relaxed mb-6">
+                Les analyses prédictives de performance des promotions seront disponibles après quelques semaines d'utilisation.
+              </p>
+              <div className="flex flex-col space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span>Conversion</span>
+                  <span className="text-emerald-300">—</span>
+                </div>
+                <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                  <div className="h-full bg-emerald-500 w-0"></div>
+                </div>
+              </div>
+            </div>
+          </Card>
 
-           <div className="bg-white rounded-[2.5rem] border border-gray-100 p-8 shadow-sm">
-              <h3 className="text-lg font-black text-navy-900 uppercase tracking-tight mb-6">Coupons à usage unique</h3>
-              <div className="space-y-4">
-                 <CouponItem code="—" used={false} />
-              </div>
-              <button className="w-full mt-8 py-3 bg-gray-50 text-navy-900 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-gray-100 transition-all">
-                 Générer des coupons
-              </button>
-           </div>
+          <Card className="p-6 shadow-sm">
+            <h3 className="text-sm font-semibold text-navy-900 mb-4">Coupons à usage unique</h3>
+            <div className="space-y-3">
+              <CouponItem code="—" used={false} />
+            </div>
+            <Button variant="outline" className="w-full mt-4">
+              Générer des coupons
+            </Button>
+          </Card>
         </div>
       </div>
 
       {/* Discount Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-navy-900">Nouvelle Remise</h3>
-              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nouvelle Remise</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-xs">Code</Label>
+              <Input type="text" value={discountForm.code} onChange={(e) => setDiscountForm({ ...discountForm, code: e.target.value })} />
             </div>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Code</label>
-                <input type="text" value={discountForm.code} onChange={(e) => setDiscountForm({ ...discountForm, code: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Pourcentage</label>
-                <input type="number" value={discountForm.percentage} onChange={(e) => setDiscountForm({ ...discountForm, percentage: Number(e.target.value) })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Valide jusqu'à</label>
-                <input type="date" value={discountForm.validUntil} onChange={(e) => setDiscountForm({ ...discountForm, validUntil: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
-              </div>
+            <div>
+              <Label className="text-xs">Pourcentage (%)</Label>
+              <Input type="number" value={discountForm.percentage} onChange={(e) => setDiscountForm({ ...discountForm, percentage: Number(e.target.value) })} />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
-              <button onClick={handleCreateDiscount} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
-                {submitting ? 'Envoi...' : 'Créer'}
-              </button>
+            <div>
+              <Label className="text-xs">Valide jusqu'à</Label>
+              <Input type="date" value={discountForm.validUntil} onChange={(e) => setDiscountForm({ ...discountForm, validUntil: e.target.value })} />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleCreateDiscount} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Création...' : 'Créer la remise'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 function DiscountRow({ name, code, value, type, usage, valid, status }: any) {
   return (
-    <tr className="hover:bg-gray-50 transition-all group">
-       <td className="px-8 py-6">
-          <p className="text-xs font-black text-navy-900 group-hover:text-navy-600 transition-colors">{name}</p>
-          <div className="flex items-center space-x-1 mt-1">
-             <Ticket className="w-3 h-3 text-gray-300" />
-             <span className="text-[10px] font-bold text-gray-400">{code}</span>
-          </div>
-       </td>
-       <td className="px-8 py-6 text-sm font-black text-emerald-600">{value}</td>
-       <td className="px-8 py-6 text-[9px] font-black text-gray-400 uppercase tracking-widest">{type}</td>
-       <td className="px-8 py-6 text-xs font-bold text-gray-600">{usage}</td>
-       <td className="px-8 py-6 text-[10px] font-bold text-gray-400 uppercase tracking-tight">{valid}</td>
-       <td className="px-8 py-6">
-          <div className="flex items-center space-x-2">
-             <button className="p-2.5 bg-white text-gray-400 rounded-xl hover:bg-navy-50 hover:text-navy-600 shadow-sm border border-gray-100 transition-all">
-                <Edit className="w-4 h-4" />
-             </button>
-             <button className="p-2.5 bg-white text-gray-400 rounded-xl hover:bg-rose-50 hover:text-rose-600 shadow-sm border border-gray-100 transition-all">
-                <Trash2 className="w-4 h-4" />
-             </button>
-          </div>
-       </td>
-    </tr>
+    <TableRow className="hover:bg-slate-50">
+      <TableCell>
+        <p className="text-sm font-medium text-navy-900">{name}</p>
+        <div className="flex items-center gap-1 mt-0.5">
+          <Ticket className="w-3 h-3 text-gray-300" />
+          <span className="text-xs text-gray-400">{code}</span>
+        </div>
+      </TableCell>
+      <TableCell className="text-right text-sm font-semibold text-emerald-600">{value}</TableCell>
+      <TableCell>
+        <Badge variant="outline" className="text-xs">{type}</Badge>
+      </TableCell>
+      <TableCell className="text-xs text-gray-600">{usage}</TableCell>
+      <TableCell className="text-xs text-gray-500">{valid}</TableCell>
+      <TableCell>
+        <div className="flex items-center justify-center gap-1">
+          <Button variant="ghost" size="icon" className="h-7 w-7" title="Modifier">
+            <Edit className="w-3.5 h-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 hover:text-red-600" title="Supprimer">
+            <Trash2 className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }
 
 function CouponItem({ code, used }: any) {
-   return (
-      <div className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${used ? 'bg-gray-50 border-gray-100 opacity-60' : 'bg-white border-gray-100 hover:border-navy-200'}`}>
-         <span className={`text-[11px] font-black tracking-widest ${used ? 'line-through text-gray-400' : 'text-navy-900'}`}>{code}</span>
-         {used ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <div className="w-2 h-2 rounded-full bg-amber-500"></div>}
-      </div>
-   );
+  return (
+    <div className={`flex items-center justify-between p-3 rounded-lg border transition-all ${used ? 'bg-slate-50 border-slate-100 opacity-60' : 'bg-white border-slate-100 hover:border-indigo-200'}`}>
+      <span className={`text-xs font-mono ${used ? 'line-through text-gray-400' : 'text-navy-900'}`}>{code}</span>
+      {used ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <div className="w-2 h-2 rounded-full bg-amber-500"></div>}
+    </div>
+  );
 }

@@ -6,19 +6,39 @@
  * Endpoint (lecture)   : GET  /modules-complementaires/canteen/enrollments
  * Endpoint (création)  : POST /modules-complementaires/canteen/enrollments
  * Endpoint (validation): PUT  /modules-complementaires/canteen/enrollments/:id/validate
+ *
+ * Refonte juillet 2026 (Task 7-d) :
+ *  - alert() → toast() via useToast()
+ *  - fixed inset-0 modal → <Dialog> shadcn
+ *  - <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+ *  - <table> HTML → <Table> shadcn
+ *  - rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+ *  - FIX : le payload de validation envoyait `{}` au PUT
+ *    canteen/enrollments/:id/validate — corrigé pour envoyer
+ *    `{ status: 'VALIDATED' }` (ou `REJECTED`).
  * ============================================================================
  */
+
+'use client';
 
 import React, { useState } from 'react';
 import {
   Search, Filter,
   CheckCircle2, XCircle, Clock,
   Calendar, CreditCard, ChevronRight,
-  Plus, AlertTriangle, Loader2
+  Plus, AlertTriangle, Loader2,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useToast } from '@/components/ui/use-toast';
 
 interface EnrollmentItem {
   id: string;
@@ -50,6 +70,7 @@ const emptyEnrollmentForm: NewEnrollmentFormData = { studentId: '', regime: 'STA
 
 export default function CanteenEnrollments() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [formData, setFormData] = useState<NewEnrollmentFormData>(emptyEnrollmentForm);
@@ -73,9 +94,14 @@ export default function CanteenEnrollments() {
       setModalOpen(false);
       setFormData(emptyEnrollmentForm);
       await refetch();
+      toast({ title: 'Inscription créée', description: 'L’élève a été inscrit à la cantine.' });
     } catch (e: any) {
       console.error('Erreur création inscription :', e?.message || e);
-      alert(e?.message || 'Erreur lors de la création de l\'inscription');
+      toast({
+        title: 'Erreur création',
+        description: e?.message || 'Erreur lors de la création de l’inscription',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -84,15 +110,44 @@ export default function CanteenEnrollments() {
   const handleValidate = async (enrollmentId: string) => {
     try {
       setActionLoading(enrollmentId);
+      // FIX (Task 7-d) : envoyer { status: 'VALIDATED' } au lieu de {} vide
       await modulesApi.put(
         `canteen/enrollments/${enrollmentId}/validate`,
-        {},
+        { status: 'VALIDATED' },
         buildModulesApiOptions(academicYear?.id),
       );
       await refetch();
+      toast({ title: 'Inscription validée', description: 'L’élève est désormais inscrit à la cantine.' });
     } catch (e: any) {
       console.error('Erreur validation inscription :', e?.message || e);
-      alert(e?.message || 'Erreur lors de la validation de l\'inscription');
+      toast({
+        title: 'Erreur validation',
+        description: e?.message || 'Erreur lors de la validation de l’inscription',
+        variant: 'destructive',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleReject = async (enrollmentId: string) => {
+    try {
+      setActionLoading(enrollmentId);
+      // FIX (Task 7-d) : envoyer { status: 'REJECTED' } au lieu de {} vide
+      await modulesApi.put(
+        `canteen/enrollments/${enrollmentId}/validate`,
+        { status: 'REJECTED' },
+        buildModulesApiOptions(academicYear?.id),
+      );
+      await refetch();
+      toast({ title: 'Inscription rejetée', description: 'La demande a été rejetée.' });
+    } catch (e: any) {
+      console.error('Erreur rejet inscription :', e?.message || e);
+      toast({
+        title: 'Erreur',
+        description: e?.message || 'Erreur lors du rejet de l’inscription',
+        variant: 'destructive',
+      });
     } finally {
       setActionLoading(null);
     }
@@ -134,42 +189,39 @@ export default function CanteenEnrollments() {
           color="blue"
         />
         <SummaryCard
-          title="Taux d'Acceptation"
+          title="Taux d’Acceptation"
           value={`${acceptanceRate}%`}
           icon={CheckCircle2}
           color="green"
         />
       </div>
 
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-xl shadow-gray-200/50 overflow-hidden">
-        <div className="p-8 border-b border-gray-50 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+      <Card className="p-0 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-gray-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <h3 className="font-black text-navy-900 text-xl tracking-tight">Gestion des Inscriptions</h3>
-            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">Validez les demandes d'accès à la restauration</p>
+            <h3 className="font-semibold text-navy-900 text-lg">Gestion des Inscriptions</h3>
+            <p className="text-gray-500 text-sm mt-1">Validez les demandes d’accès à la restauration</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative group">
-              <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-navy-600 transition-colors" />
-              <input
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Élève, parent, classe..."
-                className="pl-11 pr-4 py-2.5 bg-gray-50/50 border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-navy-500/20 w-64 transition-all"
+                className="pl-10 w-64"
               />
             </div>
-            <button className="flex items-center space-x-2 px-4 py-2.5 bg-white border border-gray-100 text-gray-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:border-navy-200 hover:text-navy-600 transition-all shadow-sm">
-              <Filter className="w-4 h-4" />
-              <span>Filtres</span>
-            </button>
-            <button
-              onClick={() => setModalOpen(true)}
-              className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Inscrire un élève</span>
-            </button>
+            <Button variant="outline" size="sm">
+              <Filter className="w-4 h-4 mr-2" />
+              Filtres
+            </Button>
+            <Button onClick={() => setModalOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Inscrire un élève
+            </Button>
           </div>
         </div>
 
@@ -178,19 +230,18 @@ export default function CanteenEnrollments() {
             Aucune inscription pour cette année scolaire.
           </div>
         ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-gray-50/50">
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Date Demande</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Élève & Parent</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Abonnement</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Régime / Allergies</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Statut</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50">
+                <TableHead>Date Demande</TableHead>
+                <TableHead>Élève & Parent</TableHead>
+                <TableHead>Abonnement</TableHead>
+                <TableHead>Régime / Allergies</TableHead>
+                <TableHead>Statut</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {enrollments.map((enr) => (
                 <EnrollmentRow
                   key={enr.id}
@@ -204,64 +255,58 @@ export default function CanteenEnrollments() {
                   allergy={enr.allergy ?? enr.allergies}
                   status={enr.status ?? 'En attente'}
                   onValidate={() => handleValidate(enr.id)}
+                  onReject={() => handleReject(enr.id)}
                   actionLoading={actionLoading}
                 />
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
         )}
-      </div>
+      </Card>
 
       {/* Modal Inscrire un élève */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <h3 className="text-lg font-black text-navy-900">Inscrire un élève</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Élève (ID)</label>
-                <input
-                  type="text"
-                  placeholder="ex : student-123"
-                  value={formData.studentId}
-                  onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Régime alimentaire</label>
-                <select
-                  value={formData.regime}
-                  onChange={(e) => setFormData({ ...formData, regime: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                >
-                  <option value="STANDARD">Standard</option>
-                  <option value="VEGETARIEN">Végétarien</option>
-                  <option value="SANS_PORC">Sans porc</option>
-                  <option value="SANS_GLUTEN">Sans gluten</option>
-                </select>
-              </div>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Inscrire un élève</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="enr-student">Élève (ID)</Label>
+              <Input
+                id="enr-student"
+                type="text"
+                placeholder="ex : student-123"
+                value={formData.studentId}
+                onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                onClick={() => setModalOpen(false)}
-                disabled={submitting}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+            <div className="space-y-1.5">
+              <Label htmlFor="enr-regime">Régime alimentaire</Label>
+              <select
+                id="enr-regime"
+                value={formData.regime}
+                onChange={(e) => setFormData({ ...formData, regime: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
               >
-                Annuler
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={submitting}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-              >
-                {submitting ? 'Envoi…' : 'Inscrire'}
-              </button>
+                <option value="STANDARD">Standard</option>
+                <option value="VEGETARIEN">Végétarien</option>
+                <option value="SANS_PORC">Sans porc</option>
+                <option value="SANS_GLUTEN">Sans gluten</option>
+              </select>
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)} disabled={submitting}>
+              Annuler
+            </Button>
+            <Button onClick={handleCreate} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Envoi…' : 'Inscrire'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -273,19 +318,19 @@ function SummaryCard({ title, value, icon: Icon, color }: any) {
     green: 'bg-emerald-50 text-emerald-600 border-emerald-100',
   };
   return (
-    <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center space-x-6">
-      <div className={`p-4 rounded-2xl ${colors[color]}`}>
+    <Card className="p-6 shadow-sm flex items-center space-x-4">
+      <div className={`p-3 rounded-xl ${colors[color]}`}>
         <Icon className="w-6 h-6" />
       </div>
       <div>
-        <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest">{title}</p>
-        <p className="text-2xl font-black text-navy-900 mt-1">{value}</p>
+        <p className="text-gray-500 text-xs font-medium">{title}</p>
+        <p className="text-2xl font-semibold text-navy-900 mt-1">{value}</p>
       </div>
-    </div>
+    </Card>
   );
 }
 
-function EnrollmentRow({ enrollmentId, date, student, class: className, parent, plan, diet, allergy, status, onValidate, actionLoading }: any) {
+function EnrollmentRow({ enrollmentId, date, student, class: className, parent, plan, diet, allergy, status, onValidate, onReject, actionLoading }: any) {
   const statusStyles: any = {
     'En attente': 'bg-amber-50 text-amber-600 border-amber-100',
     'Validé': 'bg-emerald-50 text-emerald-600 border-emerald-100',
@@ -295,70 +340,80 @@ function EnrollmentRow({ enrollmentId, date, student, class: className, parent, 
   const isLoading = actionLoading === enrollmentId;
 
   return (
-    <tr className="group hover:bg-navy-50/30 transition-all duration-300">
-      <td className="px-8 py-6">
+    <TableRow className="hover:bg-slate-50">
+      <TableCell>
         <div className="flex items-center space-x-2">
           <Calendar className="w-3.5 h-3.5 text-gray-400" />
-          <p className="text-xs font-bold text-navy-900">{date}</p>
+          <p className="text-xs font-medium text-navy-900">{date}</p>
         </div>
-      </td>
-      <td className="px-8 py-6">
+      </TableCell>
+      <TableCell>
         <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center text-gray-500 font-black text-xs group-hover:bg-white transition-colors">
+          <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 font-semibold text-xs">
             {typeof student === 'string' ? student.split(' ').map((n: string) => n[0]).join('') : '—'}
           </div>
           <div>
-            <p className="text-sm font-black text-navy-900">{student}</p>
+            <p className="text-sm font-semibold text-navy-900">{student}</p>
             <div className="flex items-center space-x-2 mt-0.5">
-              <span className="text-[10px] font-bold text-navy-500 uppercase tracking-tighter">{className}</span>
-              <span className="text-[10px] font-medium text-gray-400">| {parent}</span>
+              <span className="text-xs text-blue-500">{className}</span>
+              <span className="text-xs text-gray-400">| {parent}</span>
             </div>
           </div>
         </div>
-      </td>
-      <td className="px-8 py-6">
+      </TableCell>
+      <TableCell>
         <div className="flex items-center space-x-2">
-          <CreditCard className="w-3.5 h-3.5 text-navy-400" />
-          <p className="text-xs font-black text-navy-900 uppercase tracking-wider">{plan}</p>
+          <CreditCard className="w-3.5 h-3.5 text-gray-400" />
+          <p className="text-xs font-semibold text-navy-900">{plan}</p>
         </div>
-      </td>
-      <td className="px-8 py-6">
+      </TableCell>
+      <TableCell>
         <div className="space-y-1">
-          <p className="text-xs font-bold text-gray-600">{diet}</p>
+          <p className="text-xs font-medium text-gray-600">{diet}</p>
           {allergy && (
-            <div className="flex items-center space-x-1 text-[9px] font-black text-red-500 uppercase bg-red-50 px-2 py-0.5 rounded border border-red-100 w-fit">
-              <AlertTriangle className="w-2.5 h-2.5" />
-              <span>{allergy}</span>
-            </div>
+            <Badge variant="outline" className="text-red-600 bg-red-50 border-red-100">
+              <AlertTriangle className="w-3 h-3 mr-1" />
+              {allergy}
+            </Badge>
           )}
         </div>
-      </td>
-      <td className="px-8 py-6">
-        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border w-fit ${statusStyle}`}>
+      </TableCell>
+      <TableCell>
+        <Badge variant="outline" className={statusStyle}>
           {status}
-        </div>
-      </td>
-      <td className="px-8 py-6 text-right">
+        </Badge>
+      </TableCell>
+      <TableCell className="text-right">
         <div className="flex items-center justify-end space-x-2">
           {status === 'En attente' ? (
             <>
-              <button
+              <Button
+                variant="default"
+                size="sm"
                 onClick={onValidate}
                 disabled={isLoading}
-                className="px-4 py-1.5 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                className="bg-emerald-600 hover:bg-emerald-700"
               >
-                {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5 mr-1" />}
                 {isLoading ? '…' : 'Valider'}
-              </button>
-              <button className="p-2 text-gray-400 hover:text-red-500 hover:bg-white rounded-xl transition-all border border-transparent hover:border-gray-100"><XCircle className="w-4 h-4" /></button>
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={onReject}
+                disabled={isLoading}
+                title="Rejeter"
+              >
+                <XCircle className="w-4 h-4 text-red-500" />
+              </Button>
             </>
           ) : (
-            <button className="p-2 text-gray-400 hover:text-navy-600 hover:bg-white rounded-xl transition-all border border-transparent hover:border-gray-100">
+            <Button variant="ghost" size="icon">
               <ChevronRight className="w-4 h-4" />
-            </button>
+            </Button>
           )}
         </div>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }

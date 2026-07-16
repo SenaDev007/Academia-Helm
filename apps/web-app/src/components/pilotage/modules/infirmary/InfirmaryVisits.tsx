@@ -2,19 +2,24 @@
  * ============================================================================
  * INFIRMARY VISITS TAB
  * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern Finance — <Input>/<Button>
+ * shadcn, <Dialog> shadcn (au lieu de fixed inset-0), Cards rounded-xl,
+ * alert() → toast(), plus de font-black uppercase tracking-widest.
+ * Logique useModulesList + modulesApi conservée.
+ * ============================================================================
  */
 
 'use client';
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, X } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import {
   Plus,
   Search,
   Calendar as CalendarIcon,
   Filter,
-  CheckCircle2,
   Clock,
   ExternalLink,
   UserCheck,
@@ -24,6 +29,19 @@ import {
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 
 interface VisitItem {
   id: string;
@@ -52,6 +70,7 @@ const STATUS_META: Record<string, { icon: any; color: string; statusLabel: strin
 export default function InfirmaryVisits() {
   const { academicYear } = useModuleContext();
   const { data, loading, error, refetch } = useModulesList<VisitItem>('infirmary', 'visits', academicYear?.id);
+  const { toast } = useToast();
 
   const visits = data ?? [];
 
@@ -66,8 +85,16 @@ export default function InfirmaryVisits() {
       setModalOpen(false);
       setFormData({ studentId: '', reason: '', symptoms: '' });
       await refetch();
+      toast({
+        title: 'Passage enregistré',
+        description: 'La visite a été ajoutée au registre infirmerie.',
+      });
     } catch (e: any) {
-      alert(e?.response?.data?.message || e?.message || 'Erreur lors de la création de la visite');
+      toast({
+        title: 'Erreur lors de la création',
+        description: e?.response?.data?.message || e?.message || 'Erreur lors de la création de la visite',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -93,39 +120,38 @@ export default function InfirmaryVisits() {
       {/* Action Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center space-x-2">
-          <button
+          <Button
             onClick={() => { setFormData({ studentId: '', reason: '', symptoms: '' }); setModalOpen(true); }}
-            className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold flex items-center hover:bg-blue-700 transition-colors shadow-sm"
           >
             <Plus className="w-4 h-4 mr-2" />
             Nouveau Passage
-          </button>
-          <button className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
-            <CalendarIcon className="w-4 h-4 mr-2 inline" />
+          </Button>
+          <Button variant="outline">
+            <CalendarIcon className="w-4 h-4 mr-2" />
             Aujourd'hui
-          </button>
+          </Button>
         </div>
 
         <div className="flex items-center space-x-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
+            <Input
               type="text"
               placeholder="Rechercher une visite..."
-              className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="pl-10 w-64"
             />
           </div>
-          <button className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
+          <Button variant="outline" size="icon">
             <Filter className="w-4 h-4 text-slate-600" />
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Visits Log */}
       {visits.length === 0 ? (
-        <div className="text-center py-16 text-slate-500">
+        <Card className="p-12 text-center text-slate-500 shadow-sm">
           Aucune donnée disponible pour cette année scolaire.
-        </div>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 gap-4">
           {visits.map((visit, i) => {
@@ -143,7 +169,7 @@ export default function InfirmaryVisits() {
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.05 }}
-                className={`p-5 rounded-2xl border bg-white shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 border-l-4 ${meta.color.split(' ')[2]}`}
+                className={`p-5 rounded-xl border bg-white shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 border-l-4 ${meta.color.split(' ')[2]}`}
               >
                 <div className="flex items-start space-x-4">
                   <div className={`mt-1 p-2 rounded-xl ${meta.color.split(' ')[0]} ${meta.color.split(' ')[1]}`}>
@@ -151,30 +177,30 @@ export default function InfirmaryVisits() {
                   </div>
                   <div>
                     <div className="flex items-center space-x-2">
-                      <h4 className="font-bold text-slate-900">{student}</h4>
+                      <h4 className="font-semibold text-navy-900">{student}</h4>
                       <span className="text-xs font-medium text-slate-400">• {time}</span>
                     </div>
                     <p className="text-xs text-slate-500 font-medium mb-2">{className}</p>
                     <div className="flex flex-col space-y-1">
-                      <p className="text-sm text-slate-700"><span className="font-bold">Motif:</span> {reason}</p>
-                      <p className="text-sm text-slate-600 italic"><span className="font-bold not-italic">Action:</span> {action}</p>
+                      <p className="text-sm text-slate-700"><span className="font-semibold">Motif:</span> {reason}</p>
+                      <p className="text-sm text-slate-600 italic"><span className="font-semibold not-italic">Action:</span> {action}</p>
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-center justify-between md:justify-end gap-3 pt-4 md:pt-0 border-t md:border-t-0 border-slate-100">
                   <div className="text-right">
-                    <span className={`text-[10px] uppercase tracking-widest font-black px-3 py-1 rounded-full ${meta.color.split(' ')[0]} ${meta.color.split(' ')[1]}`}>
+                    <Badge variant="outline" className={meta.color}>
                       {meta.statusLabel}
-                    </span>
+                    </Badge>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <button className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-blue-600 transition-colors">
+                    <Button variant="ghost" size="icon" className="hover:bg-slate-100 hover:text-blue-600">
                       <ExternalLink className="w-4 h-4" />
-                    </button>
-                    <button className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl text-xs font-bold transition-colors">
+                    </Button>
+                    <Button variant="outline" size="sm">
                       Détails
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </motion.div>
@@ -183,66 +209,57 @@ export default function InfirmaryVisits() {
         </div>
       )}
 
-      <button className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 text-sm font-bold hover:border-slate-300 hover:text-slate-500 transition-all">
+      <Button variant="outline" className="w-full py-4 border-dashed border-2">
         Afficher les visites des jours précédents
-      </button>
+      </Button>
 
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold">Nouvelle visite</h3>
-              <button onClick={() => setModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
-                <X className="w-5 h-5" />
-              </button>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nouvelle visite</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="studentId">Student ID</Label>
+              <Input
+                id="studentId"
+                type="text"
+                value={formData.studentId}
+                onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
+                placeholder="student-001"
+              />
             </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Student ID</label>
-                <input
-                  type="text"
-                  value={formData.studentId}
-                  onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  placeholder="student-001"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Motif de visite</label>
-                <input
-                  type="text"
-                  value={formData.reason}
-                  onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  placeholder="Maux de tête"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Symptômes</label>
-                <textarea
-                  value={formData.symptoms}
-                  onChange={(e) => setFormData({ ...formData, symptoms: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  rows={3}
-                  placeholder="Description des symptômes"
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="reason">Motif de visite</Label>
+              <Input
+                id="reason"
+                type="text"
+                value={formData.reason}
+                onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                placeholder="Maux de tête"
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
-                Annuler
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={submitting}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-              >
-                {submitting ? 'Envoi...' : 'Créer'}
-              </button>
+            <div className="space-y-2">
+              <Label htmlFor="symptoms">Symptômes</Label>
+              <textarea
+                id="symptoms"
+                value={formData.symptoms}
+                onChange={(e) => setFormData({ ...formData, symptoms: e.target.value })}
+                rows={3}
+                placeholder="Description des symptômes"
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[80px]"
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleCreate} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Envoi...' : 'Créer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

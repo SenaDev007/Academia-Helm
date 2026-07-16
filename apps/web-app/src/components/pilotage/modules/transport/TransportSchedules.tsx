@@ -1,10 +1,22 @@
 'use client';
 
 import { useState } from 'react';
-import { Calendar, Plus, Clock, Bus, Route, ChevronRight, Loader2, X } from 'lucide-react';
+import { Calendar, Plus, Clock, ChevronRight, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { useToast } from '@/components/ui/use-toast';
 
 interface ScheduleItem {
   id: string;
@@ -28,6 +40,7 @@ const EMPTY_FORM = { routeId: '', dayOfWeek: 'Lundi', departureTime: '07:00' };
 export default function TransportSchedules() {
   const { academicYear } = useModuleContext();
   const { data, loading, error, refetch } = useModulesList<ScheduleItem>('transport', 'assignments', academicYear?.id);
+  const { toast } = useToast();
 
   const assignments = data ?? [];
 
@@ -48,11 +61,16 @@ export default function TransportSchedules() {
     try {
       setSubmitting(true);
       await modulesApi.post('transport/schedules', formData, buildModulesApiOptions(academicYear?.id));
+      toast({ title: 'Planning créé', description: `Planning ${formData.dayOfWeek} ajouté.` });
       setModalOpen(false);
       setFormData(EMPTY_FORM);
       await refetch();
     } catch (e: any) {
-      alert(e?.response?.data?.message || e?.message || 'Erreur lors de la création du planning');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message || e?.message || 'Erreur lors de la création du planning',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -62,7 +80,7 @@ export default function TransportSchedules() {
     return (
       <div className="flex items-center justify-center py-16">
         <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-        <span className="ml-2 text-slate-600">Chargement...</span>
+        <span className="ml-2 text-gray-600">Chargement...</span>
       </div>
     );
   }
@@ -76,25 +94,21 @@ export default function TransportSchedules() {
       )}
 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <h3 className="text-xl font-black text-slate-900 tracking-tighter uppercase">Planning hebdomadaire</h3>
-        <button
-          onClick={() => { setFormData(EMPTY_FORM); setModalOpen(true); }}
-          className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          Nouveau Planning
-        </button>
+        <h3 className="text-lg font-semibold text-gray-900">Planning hebdomadaire</h3>
+        <Button onClick={() => { setFormData(EMPTY_FORM); setModalOpen(true); }}>
+          <Plus className="w-4 h-4" /> Nouveau Planning
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         {DAYS.map((day) => (
           <div key={day} className="space-y-4">
-            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-center">
-              <p className="text-xs font-black text-slate-400 uppercase tracking-widest">{day}</p>
-            </div>
+            <Card className="p-4 shadow-sm text-center">
+              <p className="text-xs font-medium text-gray-500">{day}</p>
+            </Card>
             <div className="space-y-3">
               {byDay[day].length === 0 ? (
-                <div className="bg-white p-4 rounded-2xl border border-dashed border-slate-100 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                <div className="bg-white p-4 rounded-xl border border-dashed border-gray-200 text-center text-xs font-medium text-gray-400">
                   Aucun trajet
                 </div>
               ) : (
@@ -104,17 +118,17 @@ export default function TransportSchedules() {
                   const end = s.endTime || s.end || '08:30';
                   const vehicle = s.vehicle || s.vehicleName || '—';
                   return (
-                    <div key={s.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:border-navy-900 transition-all cursor-pointer group">
+                    <Card key={s.id} className="p-4 shadow-sm hover:border-indigo-300 transition-all cursor-pointer">
                       <div className="flex items-center gap-2 mb-2">
-                        <Clock className="w-3 h-3 text-navy-600" />
-                        <span className="text-[10px] font-black text-slate-900 uppercase tracking-tighter">{start} - {end}</span>
+                        <Clock className="w-3 h-3 text-indigo-600" />
+                        <span className="text-xs font-semibold text-gray-900">{start} - {end}</span>
                       </div>
-                      <p className="text-xs font-black text-slate-900 uppercase mb-1">{routeName}</p>
+                      <p className="text-xs font-semibold text-gray-900 mb-1">{routeName}</p>
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{vehicle}</span>
-                        <ChevronRight className="w-3 h-3 text-slate-300 group-hover:text-navy-900 transition-colors" />
+                        <span className="text-xs text-gray-500">{vehicle}</span>
+                        <ChevronRight className="w-3 h-3 text-gray-300" />
                       </div>
-                    </div>
+                    </Card>
                   );
                 })
               )}
@@ -124,68 +138,59 @@ export default function TransportSchedules() {
       </div>
 
       {assignments.length === 0 && !error && (
-        <div className="text-center py-10 text-slate-500">
+        <div className="text-center py-10 text-gray-500">
           Aucune donnée disponible pour cette année scolaire.
         </div>
       )}
 
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold">Nouveau planning</h3>
-              <button onClick={() => setModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
-                <X className="w-5 h-5" />
-              </button>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nouveau planning</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="sc-route">Route ID</Label>
+              <Input
+                id="sc-route"
+                type="text"
+                value={formData.routeId}
+                onChange={(e) => setFormData({ ...formData, routeId: e.target.value })}
+                placeholder="route-001"
+              />
             </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Route ID</label>
-                <input
-                  type="text"
-                  value={formData.routeId}
-                  onChange={(e) => setFormData({ ...formData, routeId: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  placeholder="route-001"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Jour de la semaine</label>
-                <select
-                  value={formData.dayOfWeek}
-                  onChange={(e) => setFormData({ ...formData, dayOfWeek: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                >
-                  {DAYS.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Heure de départ</label>
-                <input
-                  type="time"
-                  value={formData.departureTime}
-                  onChange={(e) => setFormData({ ...formData, departureTime: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                />
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
-                Annuler
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={submitting}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+            <div className="space-y-2">
+              <Label htmlFor="sc-day">Jour de la semaine</Label>
+              <select
+                id="sc-day"
+                value={formData.dayOfWeek}
+                onChange={(e) => setFormData({ ...formData, dayOfWeek: e.target.value })}
+                className="w-full h-9 px-3 border border-gray-200 rounded-md text-sm bg-transparent"
               >
-                {submitting ? 'Envoi...' : 'Créer'}
-              </button>
+                {DAYS.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sc-time">Heure de départ</Label>
+              <Input
+                id="sc-time"
+                type="time"
+                value={formData.departureTime}
+                onChange={(e) => setFormData({ ...formData, departureTime: e.target.value })}
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleCreate} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Créer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -5,19 +5,38 @@
  *
  * Endpoint : GET /modules-complementaires/canteen/menus?academicYearId=...
  * Endpoint : POST /modules-complementaires/canteen/menus
+ *
+ * Refonte juillet 2026 (Task 7-d) :
+ *  - alert() → toast() via useToast()
+ *  - window.confirm() → useConfirmDialog().danger()
+ *  - fixed inset-0 modals → <Dialog> shadcn
+ *  - <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+ *  - <table> HTML → <Table> shadcn
+ *  - rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
  * ============================================================================
  */
+
+'use client';
 
 import React, { useState } from 'react';
 import {
   Plus, Calendar, Search, Filter, Download,
   ChevronLeft, ChevronRight,
   Clock, ChefHat, Eye, Edit, Trash2,
-  Sparkles, CheckCircle2, Loader2
+  Sparkles, CheckCircle2, Loader2,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useToast } from '@/components/ui/use-toast';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 
 interface MenuItem {
   id: string;
@@ -47,6 +66,8 @@ const emptyMenuForm: MenuFormData = { date: '', mealType: 'DEJEUNER', dishes: ''
 
 export default function CanteenMenus() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
+  const confirmDialog = useConfirmDialog();
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('list');
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -87,9 +108,14 @@ export default function CanteenMenus() {
       setCreateOpen(false);
       setFormData(emptyMenuForm);
       await refetch();
+      toast({ title: 'Menu planifié', description: 'Le menu a été créé avec succès.' });
     } catch (e: any) {
       console.error('Erreur création menu :', e?.message || e);
-      alert(e?.message || 'Erreur lors de la création du menu');
+      toast({
+        title: 'Erreur création menu',
+        description: e?.message || 'Erreur lors de la création du menu',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -108,16 +134,25 @@ export default function CanteenMenus() {
       setEditingId(null);
       setFormData(emptyMenuForm);
       await refetch();
+      toast({ title: 'Menu mis à jour', description: 'Les modifications ont été enregistrées.' });
     } catch (e: any) {
       console.error('Erreur mise à jour menu :', e?.message || e);
-      alert(e?.message || 'Erreur lors de la mise à jour du menu');
+      toast({
+        title: 'Erreur mise à jour',
+        description: e?.message || 'Erreur lors de la mise à jour du menu',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleDelete = async (menuId: string) => {
-    if (!window.confirm('Supprimer ce menu ?')) return;
+    const ok = await confirmDialog.danger(
+      'Voulez-vous vraiment supprimer ce menu ? Cette action est irréversible.',
+      'Supprimer le menu',
+    );
+    if (!ok) return;
     try {
       setActionLoading(menuId);
       await modulesApi.delete(
@@ -125,9 +160,14 @@ export default function CanteenMenus() {
         buildModulesApiOptions(academicYear?.id),
       );
       await refetch();
+      toast({ title: 'Menu supprimé' });
     } catch (e: any) {
       console.error('Erreur suppression menu :', e?.message || e);
-      alert(e?.message || 'Erreur lors de la suppression du menu');
+      toast({
+        title: 'Erreur suppression',
+        description: e?.message || 'Erreur lors de la suppression du menu',
+        variant: 'destructive',
+      });
     } finally {
       setActionLoading(null);
     }
@@ -152,54 +192,53 @@ export default function CanteenMenus() {
 
       {/* Header Actions */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center space-x-2 bg-gray-100 p-1 rounded-2xl w-fit">
-          <button
+        <div className="flex items-center space-x-1 bg-gray-100 p-1 rounded-xl w-fit">
+          <Button
+            variant={viewMode === 'list' ? 'default' : 'ghost'}
+            size="sm"
             onClick={() => setViewMode('list')}
-            className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${viewMode === 'list' ? 'bg-white text-navy-900 shadow-sm' : 'text-gray-400 hover:text-navy-600'}`}
           >
             Vue Liste
-          </button>
-          <button
+          </Button>
+          <Button
+            variant={viewMode === 'calendar' ? 'default' : 'ghost'}
+            size="sm"
             onClick={() => setViewMode('calendar')}
-            className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${viewMode === 'calendar' ? 'bg-white text-navy-900 shadow-sm' : 'text-gray-400 hover:text-navy-600'}`}
           >
             Calendrier
-          </button>
+          </Button>
         </div>
 
-        <div className="flex items-center space-x-3">
-          <button className="flex items-center space-x-2 px-4 py-2.5 bg-blue-50 text-blue-600 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-blue-100 transition-all border border-blue-100">
-            <Sparkles className="w-4 h-4" />
-            <span>Générer via Sarah AI</span>
-          </button>
-          <button
-            onClick={openCreate}
-            className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Planifier</span>
-          </button>
+        <div className="flex items-center space-x-2">
+          <Button variant="outline" size="sm">
+            <Sparkles className="w-4 h-4 mr-2" />
+            Sarah AI
+          </Button>
+          <Button onClick={openCreate}>
+            <Plus className="w-4 h-4 mr-2" />
+            Planifier
+          </Button>
         </div>
       </div>
 
       {viewMode === 'list' ? (
-        <div className="bg-white rounded-3xl border border-gray-100 shadow-xl shadow-gray-200/50 overflow-hidden">
-          <div className="p-8 border-b border-gray-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="relative group flex-1 max-w-md">
-              <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-navy-600 transition-colors" />
-              <input
+        <Card className="p-0 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Input
                 type="text"
                 placeholder="Rechercher un plat, une date..."
-                className="w-full pl-11 pr-4 py-3 bg-gray-50/50 border border-gray-100 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 focus:border-navy-500/50 transition-all"
+                className="pl-10"
               />
             </div>
             <div className="flex items-center space-x-2">
-              <button className="p-3 text-gray-400 hover:text-navy-600 hover:bg-gray-50 rounded-xl transition-all border border-transparent hover:border-gray-100">
+              <Button variant="outline" size="icon">
                 <Filter className="w-4 h-4" />
-              </button>
-              <button className="p-3 text-gray-400 hover:text-navy-600 hover:bg-gray-50 rounded-xl transition-all border border-transparent hover:border-gray-100">
+              </Button>
+              <Button variant="outline" size="icon">
                 <Download className="w-4 h-4" />
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -208,19 +247,18 @@ export default function CanteenMenus() {
               Aucun menu planifié pour cette année scolaire.
             </div>
           ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-gray-50/50">
-                  <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Date & Période</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Menu Principal</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Niveau Scolaire</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Coût Est.</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Statut</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-gray-50">
+                  <TableHead>Date & Période</TableHead>
+                  <TableHead>Menu Principal</TableHead>
+                  <TableHead>Niveau Scolaire</TableHead>
+                  <TableHead className="text-center">Coût Est.</TableHead>
+                  <TableHead>Statut</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {menus.map((menu) => (
                   <MenuRow
                     key={menu.id}
@@ -236,154 +274,143 @@ export default function CanteenMenus() {
                     actionLoading={actionLoading}
                   />
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
           )}
 
-          <div className="p-8 border-t border-gray-50 flex items-center justify-between">
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+          <div className="p-4 border-t border-gray-100 flex items-center justify-between">
+            <p className="text-xs text-gray-500">
               Affichage de {menus.length} menu{menus.length > 1 ? 's' : ''}
             </p>
             <div className="flex items-center space-x-2">
-              <button className="p-2 border border-gray-100 rounded-xl hover:bg-gray-50 transition-all">
-                <ChevronLeft className="w-4 h-4 text-gray-400" />
-              </button>
-              <button className="px-4 py-2 border border-navy-500 bg-navy-50 text-navy-600 rounded-xl text-xs font-black shadow-sm shadow-navy-500/10">1</button>
-              <button className="p-2 border border-gray-100 rounded-xl hover:bg-gray-50 transition-all">
-                <ChevronRight className="w-4 h-4 text-gray-400" />
-              </button>
+              <Button variant="outline" size="icon">
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" size="sm">1</Button>
+              <Button variant="outline" size="icon">
+                <ChevronRight className="w-4 h-4" />
+              </Button>
             </div>
           </div>
-        </div>
+        </Card>
       ) : (
-        <div className="bg-white rounded-3xl border border-gray-100 shadow-xl shadow-gray-200/50 p-8 flex flex-col items-center justify-center min-h-[400px] text-center">
-          <div className="p-6 bg-navy-50 rounded-full mb-6">
-            <Calendar className="w-12 h-12 text-navy-600" />
+        <Card className="p-8 shadow-sm flex flex-col items-center justify-center min-h-[400px] text-center">
+          <div className="p-6 bg-blue-50 rounded-full mb-6">
+            <Calendar className="w-12 h-12 text-blue-600" />
           </div>
-          <h3 className="text-2xl font-black text-navy-900 mb-2 tracking-tight">Vue Calendrier Interactive</h3>
-          <p className="text-gray-400 max-w-sm text-sm font-medium leading-relaxed">Organisez visuellement vos menus par semaine ou par mois avec la fluidité Academia Helm.</p>
-          <button className="mt-8 px-8 py-3 bg-navy-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-navy-900/20" onClick={openCreate}>Activer la vue</button>
-        </div>
+          <h3 className="text-xl font-semibold text-navy-900 mb-2">Vue Calendrier Interactive</h3>
+          <p className="text-gray-500 max-w-sm text-sm">Organisez visuellement vos menus par semaine ou par mois.</p>
+          <Button className="mt-6" onClick={openCreate}>Activer la vue</Button>
+        </Card>
       )}
 
       {/* Modal Planifier (création) */}
-      {createOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <h3 className="text-lg font-black text-navy-900">Planifier un menu</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Date</label>
-                <input
-                  type="date"
-                  value={formData.date}
-                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Type de repas</label>
-                <select
-                  value={formData.mealType}
-                  onChange={(e) => setFormData({ ...formData, mealType: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                >
-                  <option value="DEJEUNER">Déjeuner</option>
-                  <option value="PETIT_DEJEUNER">Petit Déjeuner</option>
-                  <option value="GOUTER">Goûter</option>
-                  <option value="DINER">Dîner</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Plat principal</label>
-                <input
-                  type="text"
-                  placeholder="ex : Riz au poisson"
-                  value={formData.dishes}
-                  onChange={(e) => setFormData({ ...formData, dishes: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Planifier un menu</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="menu-date">Date</Label>
+              <Input
+                id="menu-date"
+                type="date"
+                value={formData.date}
+                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                onClick={() => setCreateOpen(false)}
-                disabled={submitting}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+            <div className="space-y-1.5">
+              <Label htmlFor="menu-mealtype">Type de repas</Label>
+              <select
+                id="menu-mealtype"
+                value={formData.mealType}
+                onChange={(e) => setFormData({ ...formData, mealType: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
               >
-                Annuler
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={submitting}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-              >
-                {submitting ? 'Envoi…' : 'Créer'}
-              </button>
+                <option value="DEJEUNER">Déjeuner</option>
+                <option value="PETIT_DEJEUNER">Petit Déjeuner</option>
+                <option value="GOUTER">Goûter</option>
+                <option value="DINER">Dîner</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="menu-dishes">Plat principal</Label>
+              <Input
+                id="menu-dishes"
+                type="text"
+                placeholder="ex : Riz au poisson"
+                value={formData.dishes}
+                onChange={(e) => setFormData({ ...formData, dishes: e.target.value })}
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={submitting}>
+              Annuler
+            </Button>
+            <Button onClick={handleCreate} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Envoi…' : 'Créer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal Modification */}
-      {editOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <h3 className="text-lg font-black text-navy-900">Modifier le menu</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Date</label>
-                <input
-                  type="date"
-                  value={formData.date}
-                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Type de repas</label>
-                <select
-                  value={formData.mealType}
-                  onChange={(e) => setFormData({ ...formData, mealType: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                >
-                  <option value="DEJEUNER">Déjeuner</option>
-                  <option value="PETIT_DEJEUNER">Petit Déjeuner</option>
-                  <option value="GOUTER">Goûter</option>
-                  <option value="DINER">Dîner</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Plat principal</label>
-                <input
-                  type="text"
-                  placeholder="ex : Riz au poisson"
-                  value={formData.dishes}
-                  onChange={(e) => setFormData({ ...formData, dishes: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Modifier le menu</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-menu-date">Date</Label>
+              <Input
+                id="edit-menu-date"
+                type="date"
+                value={formData.date}
+                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                onClick={() => setEditOpen(false)}
-                disabled={submitting}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-menu-mealtype">Type de repas</Label>
+              <select
+                id="edit-menu-mealtype"
+                value={formData.mealType}
+                onChange={(e) => setFormData({ ...formData, mealType: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
               >
-                Annuler
-              </button>
-              <button
-                onClick={handleUpdate}
-                disabled={submitting}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-              >
-                {submitting ? 'Envoi…' : 'Enregistrer'}
-              </button>
+                <option value="DEJEUNER">Déjeuner</option>
+                <option value="PETIT_DEJEUNER">Petit Déjeuner</option>
+                <option value="GOUTER">Goûter</option>
+                <option value="DINER">Dîner</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-menu-dishes">Plat principal</Label>
+              <Input
+                id="edit-menu-dishes"
+                type="text"
+                placeholder="ex : Riz au poisson"
+                value={formData.dishes}
+                onChange={(e) => setFormData({ ...formData, dishes: e.target.value })}
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={submitting}>
+              Annuler
+            </Button>
+            <Button onClick={handleUpdate} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Envoi…' : 'Enregistrer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {confirmDialog.dialog}
     </div>
   );
 }
@@ -398,58 +425,52 @@ function MenuRow({ menuId, date, period, main, level, cost, status, onEdit, onDe
   const isLoading = actionLoading === menuId;
 
   return (
-    <tr className="group hover:bg-navy-50/30 transition-all duration-300">
-      <td className="px-8 py-6">
+    <TableRow className="hover:bg-slate-50">
+      <TableCell>
         <div className="flex items-center space-x-3">
-          <div className="p-2 bg-navy-50 rounded-xl group-hover:bg-white transition-colors">
-            <Calendar className="w-4 h-4 text-navy-600" />
+          <div className="p-2 bg-blue-50 rounded-lg">
+            <Calendar className="w-4 h-4 text-blue-600" />
           </div>
           <div>
-            <p className="text-sm font-black text-navy-900 tracking-tight">{date}</p>
+            <p className="text-sm font-semibold text-navy-900">{date}</p>
             <div className="flex items-center space-x-1 mt-0.5">
               <Clock className="w-3 h-3 text-gray-400" />
-              <p className="text-[10px] font-bold text-gray-400 uppercase">{period}</p>
+              <p className="text-xs text-gray-500">{period}</p>
             </div>
           </div>
         </div>
-      </td>
-      <td className="px-8 py-6">
+      </TableCell>
+      <TableCell>
         <div className="flex items-center space-x-2">
-          <ChefHat className="w-4 h-4 text-navy-300" />
-          <p className="text-sm font-bold text-navy-800">{main}</p>
+          <ChefHat className="w-4 h-4 text-slate-400" />
+          <p className="text-sm font-medium text-navy-800">{main}</p>
         </div>
-      </td>
-      <td className="px-8 py-6">
-        <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest bg-gray-100 px-2.5 py-1 rounded-lg w-fit">{level}</p>
-      </td>
-      <td className="px-8 py-6 text-center">
-        <p className="text-sm font-black text-navy-900">{formattedCost}</p>
-      </td>
-      <td className="px-8 py-6">
-        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border w-fit flex items-center space-x-1.5 ${statusColors[status] ?? statusColors['Brouillon']}`}>
-          {status === 'Publié' && <CheckCircle2 className="w-3 h-3" />}
-          <span>{status}</span>
-        </div>
-      </td>
-      <td className="px-8 py-6 text-right">
+      </TableCell>
+      <TableCell>
+        <Badge variant="outline" className="bg-gray-100">{level}</Badge>
+      </TableCell>
+      <TableCell className="text-center">
+        <p className="text-sm font-semibold text-navy-900">{formattedCost}</p>
+      </TableCell>
+      <TableCell>
+        <Badge variant="outline" className={statusColors[status] ?? statusColors['Brouillon']}>
+          {status === 'Publié' && <CheckCircle2 className="w-3 h-3 mr-1" />}
+          {status}
+        </Badge>
+      </TableCell>
+      <TableCell className="text-right">
         <div className="flex items-center justify-end space-x-1">
-          <button className="p-2 text-gray-400 hover:text-navy-600 hover:bg-white rounded-lg transition-all"><Eye className="w-4 h-4" /></button>
-          <button
-            onClick={onEdit}
-            disabled={isLoading}
-            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all disabled:opacity-50"
-          >
+          <Button variant="ghost" size="icon">
+            <Eye className="w-4 h-4" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onEdit} disabled={isLoading}>
             <Edit className="w-4 h-4" />
-          </button>
-          <button
-            onClick={onDelete}
-            disabled={isLoading}
-            className="p-2 text-gray-400 hover:text-red-600 hover:bg-white rounded-lg transition-all disabled:opacity-50"
-          >
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onDelete} disabled={isLoading}>
             {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-          </button>
+          </Button>
         </div>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }

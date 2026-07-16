@@ -2,15 +2,26 @@
  * ============================================================================
  * LABORATORY REPORTS & STATS
  * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern Finance/Infirmerie.
+ * - 2 alert() → 2 toast() (génération rapport + erreur)
+ * - rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-medium
+ * - <button> custom → <Button> shadcn
+ * - Bandeau navy-900 (boutons) → <Button> shadcn
+ * - framer-motion conservé pour les animations subtiles
+ * ============================================================================
  */
 
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Loader2, FileText, Download, TrendingUp, PieChart, Calendar, Filter, CheckCircle2 } from 'lucide-react';
+import { Loader2, FileText, Download, TrendingUp, PieChart, Filter, CheckCircle2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
 
 interface LabsStats {
   usageBySubject?: Array<{ label?: string; val?: number; value?: number; hours?: number }>;
@@ -31,6 +42,7 @@ const DEFAULT_STATS: LabsStats = {
 
 export default function LabReportsStats() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const [stats, setStats] = useState<LabsStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,9 +52,16 @@ export default function LabReportsStats() {
     try {
       setSubmitting(true);
       await modulesApi.post('labs/reports', {}, buildModulesApiOptions(academicYear?.id));
-      alert('Rapport généré avec succès');
+      toast({
+        title: 'Rapport généré',
+        description: 'Le rapport a été généré avec succès.',
+      });
     } catch (e: any) {
-      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la génération du rapport');
+      toast({
+        title: 'Erreur de génération',
+        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la génération du rapport',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -90,14 +109,14 @@ export default function LabReportsStats() {
   const usageBySubject = (safeStats.usageBySubject ?? []).map((item: any, i: number) => ({
     label: item?.label ?? 'Matière',
     val: item?.val ?? item?.value ?? item?.hours ?? 0,
-    color: ['bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-blue-500', 'bg-slate-900'][i % 5],
+    color: ['bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-blue-500', 'bg-slate-700'][i % 5],
   }));
 
   const eq = safeStats.equipmentStatus ?? { total: 0, operational: 0, maintenance: 0, outOfService: 0 };
   const reports = safeStats.reports ?? [];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les statistiques. Affichage des valeurs par défaut. {error}
@@ -105,82 +124,77 @@ export default function LabReportsStats() {
       )}
 
       {/* Analytics Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between mb-8">
-            <h3 className="text-xl font-black text-slate-900 flex items-center">
-              <TrendingUp className="w-6 h-6 mr-3 text-blue-600" />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-semibold text-slate-900 flex items-center">
+              <TrendingUp className="w-5 h-5 mr-2 text-blue-600" />
               Utilisation par Matière
             </h3>
-            <button className="p-2.5 bg-slate-50 rounded-2xl text-slate-400 hover:text-blue-600 transition-all">
+            <Button variant="outline" size="icon">
               <Filter className="w-5 h-5" />
-            </button>
+            </Button>
           </div>
-          <div className="space-y-6">
+          <div className="space-y-5">
             {usageBySubject.length === 0 ? (
-              <p className="text-center text-sm text-slate-400 py-8">Aucune donnée d'utilisation disponible.</p>
+              <p className="text-center text-sm text-slate-400 py-8">Aucune donnée d&apos;utilisation disponible.</p>
             ) : (
               usageBySubject.map((item, i) => (
                 <div key={i} className="space-y-2">
-                  <div className="flex justify-between text-xs font-bold uppercase tracking-tighter">
+                  <div className="flex justify-between text-xs font-medium">
                     <span className="text-slate-600">{item.label}</span>
                     <span className="text-slate-900">{item.val}h / mois</span>
                   </div>
                   <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${Math.min(item.val, 100)}%` }}
+                    <div
                       className={`h-full ${item.color}`}
+                      style={{ width: `${Math.min(item.val, 100)}%` }}
                     />
                   </div>
                 </div>
               ))
             )}
           </div>
-        </div>
+        </Card>
 
-        <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm flex flex-col">
-          <div className="flex items-center justify-between mb-8">
-            <h3 className="text-xl font-black text-slate-900 flex items-center">
-              <PieChart className="w-6 h-6 mr-3 text-emerald-600" />
+        <Card className="p-6 shadow-sm flex flex-col">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-semibold text-slate-900 flex items-center">
+              <PieChart className="w-5 h-5 mr-2 text-emerald-600" />
               État Global du Parc
             </h3>
           </div>
           <div className="flex-1 flex items-center justify-center relative">
-            <div className="w-48 h-48 rounded-full border-[16px] border-emerald-500 border-l-amber-500 border-b-rose-500 relative flex items-center justify-center">
+            <div className="w-44 h-44 rounded-full border-[14px] border-emerald-500 border-l-amber-500 border-b-rose-500 relative flex items-center justify-center">
               <div className="text-center">
-                <p className="text-3xl font-black text-slate-900">{eq.total}</p>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total</p>
+                <p className="text-3xl font-semibold text-slate-900">{eq.total}</p>
+                <p className="text-xs text-slate-400">Total</p>
               </div>
             </div>
-            <div className="absolute right-0 space-y-4">
+            <div className="absolute right-0 space-y-3">
               {[
                 { label: 'Opérationnel', color: 'bg-emerald-500', value: eq.operational },
                 { label: 'Maintenance', color: 'bg-amber-500', value: eq.maintenance },
                 { label: 'Hors Service', color: 'bg-rose-500', value: eq.outOfService },
               ].map((dot, i) => (
-                <div key={i} className="flex items-center gap-3">
+                <div key={i} className="flex items-center gap-2">
                   <div className={`w-3 h-3 rounded-full ${dot.color}`} />
-                  <span className="text-xs font-bold text-slate-600 uppercase tracking-tighter">{dot.label}</span>
+                  <span className="text-xs text-slate-600">{dot.label}</span>
                 </div>
               ))}
             </div>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Reports List */}
       <div className="space-y-4">
         <div className="flex justify-between items-center">
-          <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Documents & Exports</h3>
-          <button
-            onClick={handleGenerateReport}
-            disabled={submitting}
-            className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all disabled:opacity-50"
-          >
-            <FileText className="w-4 h-4 text-[#C9A84C]" />
-            <span>{submitting ? 'Génération...' : 'Nouveau Rapport'}</span>
-          </button>
+          <h3 className="text-lg font-semibold text-slate-900">Documents & Exports</h3>
+          <Button onClick={handleGenerateReport} disabled={submitting}>
+            {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
+            {submitting ? 'Génération...' : 'Nouveau Rapport'}
+          </Button>
         </div>
 
         {reports.length === 0 ? (
@@ -190,29 +204,28 @@ export default function LabReportsStats() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {reports.map((rep: any, i: number) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05 }}
-                className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all group flex items-start justify-between"
-              >
-                <div className="space-y-4">
-                  <div className="p-3 bg-slate-50 text-slate-400 rounded-2xl group-hover:bg-blue-50 group-hover:text-blue-600 transition-all w-fit">
+              <Card key={i} className="p-6 shadow-sm hover:shadow-md transition-all flex items-start justify-between">
+                <div className="space-y-3">
+                  <div className="p-3 bg-slate-50 text-slate-400 rounded-xl w-fit">
                     <FileText className="w-6 h-6" />
                   </div>
                   <div>
-                    <h4 className="font-black text-slate-900 mb-1">{rep?.title ?? rep?.name ?? `Rapport #${i + 1}`}</h4>
-                    <div className="flex items-center text-[10px] font-bold text-slate-400 uppercase tracking-widest gap-3">
-                      <span className="flex items-center"><Calendar className="w-3 h-3 mr-1" /> {rep?.date ?? '—'}</span>
-                      <span className="flex items-center"><CheckCircle2 className="w-3 h-3 mr-1 text-emerald-500" /> {rep?.status ?? '—'}</span>
+                    <h4 className="font-semibold text-slate-900 mb-1">{rep?.title ?? rep?.name ?? `Rapport #${i + 1}`}</h4>
+                    <div className="flex items-center text-xs text-slate-400 gap-3">
+                      <span className="flex items-center">
+                        <FileText className="w-3 h-3 mr-1" /> {rep?.date ?? '—'}
+                      </span>
+                      <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+                        <CheckCircle2 className="w-3 h-3 mr-1" />
+                        {rep?.status ?? '—'}
+                      </Badge>
                     </div>
                   </div>
                 </div>
-                <button className="p-2 hover:bg-slate-50 rounded-xl transition-colors text-slate-300 hover:text-blue-600">
+                <Button variant="ghost" size="icon" className="hover:bg-slate-50 text-slate-400 hover:text-blue-600">
                   <Download className="w-5 h-5" />
-                </button>
-              </motion.div>
+                </Button>
+              </Card>
             ))}
           </div>
         )}

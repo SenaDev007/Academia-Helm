@@ -1,22 +1,57 @@
 /**
  * ============================================================================
- * MODULE CANTINE - ACADEMIA HELM
+ * MODULE CANTINE & RESTAURATION - ACADEMIA HELM
+ * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern ModuleContainer (comme
+ * FinanceModulePage / InfirmaryModulePage / LaboratoryModulePage) pour
+ * uniformiser le design à travers tous les modules. Avant, ce module utilisait
+ * ModulePageLayout (obsolète) avec des onglets pills custom navy-900/uppercase
+ * framer-motion — désormais il utilise ModuleContainer + SubModuleNavigation
+ * standard (bleus soulignés).
+ *
+ * Sous-modules :
+ *   1. Tableau de Bord (dashboard)
+ *   2. Menus (menus)
+ *   3. Inscriptions (enrollments)
+ *   4. Élèves inscrits (students)
+ *   5. Présences (attendance)
+ *   6. Régimes & Allergies (diets)
+ *   7. Paiements (payments)
+ *   8. Stocks (stocks)
+ *   9. Fournisseurs (suppliers)
+ *  10. Incidents & Hygiène (incidents)
+ *  11. Rapports (reports)
+ *  12. Paramètres (settings)
+ *
+ * Note : La navigation par sous-modules est gérée par ModuleContainer.subModules.
+ * Les sous-composants NE doivent PAS inclure leur propre SubModuleNavigation.
  * ============================================================================
  */
 
 'use client';
 
-import { useState } from 'react';
-import { 
-  Plus, UtensilsCrossed, Users, DollarSign, ChefHat, 
-  ClipboardCheck, AlertTriangle, Package, Truck, Activity, 
-  Settings, BarChart3, Search, AlertCircle, 
+import { useState, useEffect } from 'react';
+import {
+  LayoutDashboard,
+  ChefHat,
+  ClipboardCheck,
+  Users,
+  UtensilsCrossed,
+  AlertTriangle,
+  CreditCard,
+  Package,
+  Truck,
+  AlertCircle,
+  BarChart3,
+  Settings,
+  Plus,
+  Download,
 } from 'lucide-react';
-import { useAcademicYear } from '@/hooks/useAcademicYear';
-import { useSchoolLevel } from '@/hooks/useSchoolLevel';
-import ModulePageLayout from './ModulePageLayout';
+import { ModuleContainer } from '@/components/modules/blueprint';
+import { useModuleContext } from '@/hooks/useModuleContext';
 
-// Sub-components
+// Sous-composants (aucun ne contient SubModuleNavigation — pattern FinanceModulePage)
 import CanteenDashboard from './canteen/CanteenDashboard';
 import CanteenMenus from './canteen/CanteenMenus';
 import CanteenEnrollments from './canteen/CanteenEnrollments';
@@ -30,92 +65,122 @@ import CanteenIncidents from './canteen/CanteenIncidents';
 import CanteenReports from './canteen/CanteenReports';
 import CanteenSettings from './canteen/CanteenSettings';
 
-type TabId = 'dashboard' | 'menus' | 'enrollments' | 'students' | 'attendance' | 'diets' | 'payments' | 'stocks' | 'suppliers' | 'incidents' | 'reports' | 'settings';
-
 export default function CanteenModulePage() {
-  const { currentYear } = useAcademicYear();
-  const { currentLevel } = useSchoolLevel();
-  const [activeTab, setActiveTab] = useState<TabId>('dashboard');
-  const [searchTerm, setSearchTerm] = useState('');
+  const { academicYear, isLoading: contextLoading } = useModuleContext();
+  const [activeSubModuleId, setActiveSubModuleId] = useState<string>('dashboard');
+  const [stats, setStats] = useState<any>(null);
 
-  const tabs = [
-    { id: 'dashboard', label: 'Tableau de bord', icon: Activity },
-    { id: 'menus', label: 'Menus', icon: ChefHat },
-    { id: 'enrollments', label: 'Inscriptions', icon: ClipboardCheck },
-    { id: 'students', label: 'Élèves inscrits', icon: Users },
-    { id: 'attendance', label: 'Présences', icon: UtensilsCrossed },
-    { id: 'diets', label: 'Régimes & Allergies', icon: AlertTriangle },
-    { id: 'payments', label: 'Paiements', icon: DollarSign },
-    { id: 'stocks', label: 'Stocks', icon: Package },
-    { id: 'suppliers', label: 'Fournisseurs', icon: Truck },
-    { id: 'incidents', label: 'Incidents & Hygiène', icon: AlertCircle },
-    { id: 'reports', label: 'Rapports', icon: BarChart3 },
-    { id: 'settings', label: 'Paramètres', icon: Settings },
-  ];
+  // Charger les stats cantine pour les KPIs du header
+  useEffect(() => {
+    if (academicYear?.id) {
+      loadCanteenStats();
+    }
+  }, [academicYear?.id]);
+
+  const loadCanteenStats = async () => {
+    try {
+      const res = await fetch(
+        `/api/modules-complementaires/canteen/dashboard?academicYearId=${academicYear?.id}`,
+        { credentials: 'include' },
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setStats(data);
+      }
+    } catch (e) {
+      console.error('Erreur chargement stats cantine:', e);
+    }
+  };
+
+  if (contextLoading) return <div className="p-8 text-center">Chargement...</div>;
 
   return (
-    <ModulePageLayout
-      title="Cantine & Restauration"
-      subtitle={`${currentLevel?.label || 'Niveau scolaire'} | ${currentYear?.name || ''}`}
-      actions={
-        <div className="flex items-center space-x-3">
-          <div className="relative group">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-navy-500 transition-colors" />
-            <input 
-              type="text" 
-              placeholder="Recherche globale..." 
-              className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 w-64 transition-all"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+    <ModuleContainer
+      header={{
+        title: 'Cantine & Restauration',
+        description:
+          'Gestion complète de la restauration scolaire : menus, inscriptions, présences, régimes & allergies, paiements, stocks, fournisseurs, incidents hygiène et rapports',
+        icon: 'utensils',
+        kpis: stats
+          ? [
+              {
+                label: 'Élèves inscrits',
+                value: String(stats.enrolledStudents ?? 0),
+                icon: 'users',
+                trend: 'up',
+              },
+              {
+                label: 'Repas aujourd’hui',
+                value: String(stats.mealsToday ?? 0),
+                icon: 'utensils',
+                trend: 'neutral',
+              },
+              {
+                label: 'Alertes stock',
+                value: String(stats.stockAlerts ?? 0),
+                icon: 'package',
+                trend: stats.stockAlerts > 0 ? 'up' : 'neutral',
+              },
+              {
+                label: 'Score hygiène',
+                value: stats.hygieneScore ?? '—',
+                icon: 'badgeCheck',
+                trend: 'up',
+              },
+            ]
+          : [],
+        actions: (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveSubModuleId('menus')}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-900/20 hover:bg-indigo-700 transition-all"
+              title="Planifier un nouveau menu"
+            >
+              <Plus className="w-4 h-4" /> Nouveau menu
+            </button>
+            <button
+              onClick={() => setActiveSubModuleId('reports')}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold hover:bg-slate-50 transition-all"
+              title="Rapports & statistiques cantine"
+            >
+              <Download className="w-4 h-4" /> Rapports
+            </button>
           </div>
-          <button className="flex items-center space-x-2 px-6 py-2 bg-navy-900 text-white rounded-xl hover:bg-navy-800 shadow-xl shadow-navy-900/20 transition-all active:scale-95 font-black text-[10px] uppercase tracking-widest">
-            <Plus className="w-4 h-4" />
-            <span>Nouveau</span>
-          </button>
-        </div>
+        ),
+      }}
+      subModules={{
+        activeModuleId: activeSubModuleId,
+        onModuleChange: setActiveSubModuleId,
+        modules: [
+          { id: 'dashboard', label: 'Tableau de Bord', icon: <LayoutDashboard className="w-4 h-4" /> },
+          { id: 'menus', label: 'Menus', icon: <ChefHat className="w-4 h-4" /> },
+          { id: 'enrollments', label: 'Inscriptions', icon: <ClipboardCheck className="w-4 h-4" /> },
+          { id: 'students', label: 'Élèves inscrits', icon: <Users className="w-4 h-4" /> },
+          { id: 'attendance', label: 'Présences', icon: <UtensilsCrossed className="w-4 h-4" /> },
+          { id: 'diets', label: 'Régimes & Allergies', icon: <AlertTriangle className="w-4 h-4" /> },
+          { id: 'payments', label: 'Paiements', icon: <CreditCard className="w-4 h-4" /> },
+          { id: 'stocks', label: 'Stocks', icon: <Package className="w-4 h-4" /> },
+          { id: 'suppliers', label: 'Fournisseurs', icon: <Truck className="w-4 h-4" /> },
+          { id: 'incidents', label: 'Incidents & Hygiène', icon: <AlertCircle className="w-4 h-4" /> },
+          { id: 'reports', label: 'Rapports', icon: <BarChart3 className="w-4 h-4" /> },
+          { id: 'settings', label: 'Paramètres', icon: <Settings className="w-4 h-4" /> },
+        ],
+      }}
+      content={
+        activeSubModuleId === 'dashboard' ? { layout: 'default', children: <CanteenDashboard /> } :
+        activeSubModuleId === 'menus' ? { layout: 'default', children: <CanteenMenus /> } :
+        activeSubModuleId === 'enrollments' ? { layout: 'default', children: <CanteenEnrollments /> } :
+        activeSubModuleId === 'students' ? { layout: 'default', children: <CanteenStudents /> } :
+        activeSubModuleId === 'attendance' ? { layout: 'default', children: <CanteenAttendance /> } :
+        activeSubModuleId === 'diets' ? { layout: 'default', children: <CanteenDiets /> } :
+        activeSubModuleId === 'payments' ? { layout: 'default', children: <CanteenPayments /> } :
+        activeSubModuleId === 'stocks' ? { layout: 'default', children: <CanteenStocks /> } :
+        activeSubModuleId === 'suppliers' ? { layout: 'default', children: <CanteenSuppliers /> } :
+        activeSubModuleId === 'incidents' ? { layout: 'default', children: <CanteenIncidents /> } :
+        activeSubModuleId === 'reports' ? { layout: 'default', children: <CanteenReports /> } :
+        activeSubModuleId === 'settings' ? { layout: 'default', children: <CanteenSettings /> } :
+        { layout: 'default', children: <CanteenDashboard /> }
       }
-    >
-      <div className="space-y-8">
-        {/* Navigation Premium */}
-        <div className="flex items-center space-x-1 bg-gray-100/50 p-1.5 rounded-2xl border border-gray-100 overflow-x-auto no-scrollbar">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as TabId)}
-                className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 whitespace-nowrap ${
-                  isActive 
-                    ? 'bg-white text-navy-900 shadow-sm border border-gray-200' 
-                    : 'text-gray-400 hover:text-navy-600 hover:bg-white/50'
-                }`}
-              >
-                <Icon className={`w-4 h-4 ${isActive ? 'text-navy-600' : 'text-gray-400'}`} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Content Area */}
-        <div className="min-h-[600px]">
-          {activeTab === 'dashboard' && <CanteenDashboard />}
-          {activeTab === 'menus' && <CanteenMenus />}
-          {activeTab === 'enrollments' && <CanteenEnrollments />}
-          {activeTab === 'students' && <CanteenStudents />}
-          {activeTab === 'attendance' && <CanteenAttendance />}
-          {activeTab === 'diets' && <CanteenDiets />}
-          {activeTab === 'payments' && <CanteenPayments />}
-          {activeTab === 'stocks' && <CanteenStocks />}
-          {activeTab === 'suppliers' && <CanteenSuppliers />}
-          {activeTab === 'incidents' && <CanteenIncidents />}
-          {activeTab === 'reports' && <CanteenReports />}
-          {activeTab === 'settings' && <CanteenSettings />}
-        </div>
-      </div>
-    </ModulePageLayout>
+    />
   );
 }
-

@@ -2,26 +2,34 @@
  * ============================================================================
  * INFIRMARY DASHBOARD TAB
  * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern Finance — Cards rounded-xl,
+ * Button shadcn (indigo-600), pas de font-black uppercase tracking-widest,
+ * plus de navy-900 (sauf titre neutre), garde la logique useModulesDashboard.
+ * ============================================================================
  */
 
 'use client';
 
 import { motion } from 'framer-motion';
-import { 
-  HeartPulse, 
-  AlertCircle, 
-  FileText, 
-  Pill, 
+import {
+  HeartPulse,
+  AlertCircle,
+  FileText,
+  Pill,
   Calendar,
   ArrowUpRight,
   ArrowDownRight,
   Activity,
   TrendingUp,
   Clock,
-  Loader2
+  Loader2,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesDashboard } from '@/lib/modules-complementaires/hooks';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 
 interface InfirmaryStats {
   totalVisits?: number;
@@ -59,23 +67,24 @@ function StatCard({ title, value, trend, trendType, icon: Icon, iconColor, delay
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay }}
-      className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-shadow"
     >
-      <div className="flex justify-between items-start mb-4">
-        <div className={`p-3 rounded-xl ${iconColor} bg-opacity-10`}>
-          <Icon className={`w-6 h-6 ${iconColor.replace('bg-', 'text-')}`} />
-        </div>
-        {trend && (
-          <div className={`flex items-center text-xs font-medium ${
-            trendType === 'up' ? 'text-emerald-600' : trendType === 'down' ? 'text-rose-600' : 'text-slate-500'
-          }`}>
-            {trendType === 'up' ? <ArrowUpRight className="w-3 h-3 mr-1" /> : <ArrowDownRight className="w-3 h-3 mr-1" />}
-            {trend}
+      <Card className="p-6 shadow-sm hover:shadow-md transition-shadow h-full">
+        <div className="flex justify-between items-start mb-4">
+          <div className={`p-3 rounded-xl ${iconColor} bg-opacity-10`}>
+            <Icon className={`w-6 h-6 ${iconColor.replace('bg-', 'text-')}`} />
           </div>
-        )}
-      </div>
-      <h3 className="text-slate-500 text-sm font-medium">{title}</h3>
-      <p className="text-2xl font-bold text-slate-900 mt-1">{value}</p>
+          {trend && (
+            <div className={`flex items-center text-xs font-medium ${
+              trendType === 'up' ? 'text-emerald-600' : trendType === 'down' ? 'text-rose-600' : 'text-slate-500'
+            }`}>
+              {trendType === 'up' ? <ArrowUpRight className="w-3 h-3 mr-1" /> : <ArrowDownRight className="w-3 h-3 mr-1" />}
+              {trend}
+            </div>
+          )}
+        </div>
+        <h3 className="text-slate-500 text-sm font-medium">{title}</h3>
+        <p className="text-2xl font-bold text-navy-900 mt-1">{value}</p>
+      </Card>
     </motion.div>
   );
 }
@@ -96,7 +105,7 @@ export default function InfirmaryDashboard() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les statistiques. Affichage des valeurs par défaut.
@@ -105,54 +114,54 @@ export default function InfirmaryDashboard() {
 
       {/* Overview Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard 
-          title="Visites ce mois" 
-          value={String(stats.totalVisits ?? 0)} 
-          trend="+12%" 
+        <StatCard
+          title="Visites ce mois"
+          value={String(stats.totalVisits ?? 0)}
+          trend="+12%"
           trendType="up"
-          icon={Activity} 
+          icon={Activity}
           iconColor="bg-blue-600"
           delay={0.1}
         />
-        <StatCard 
-          title="Urgences actives" 
-          value={String(stats.criticalCases ?? 0)} 
-          trend="-50%" 
+        <StatCard
+          title="Urgences actives"
+          value={String(stats.criticalCases ?? 0)}
+          trend="-50%"
           trendType="down"
-          icon={AlertCircle} 
+          icon={AlertCircle}
           iconColor="bg-rose-600"
           delay={0.2}
         />
-        <StatCard 
-          title="Médicaments délivrés" 
-          value={String(stats.medicationsDispensed ?? 0)} 
-          trend="Stock" 
+        <StatCard
+          title="Médicaments délivrés"
+          value={String(stats.medicationsDispensed ?? 0)}
+          trend="Stock"
           trendType="neutral"
-          icon={Pill} 
+          icon={Pill}
           iconColor="bg-amber-600"
           delay={0.3}
         />
-        <StatCard 
-          title="Visites prévues" 
-          value={String(stats.pendingVisits ?? 0)} 
-          trend="Semaine" 
+        <StatCard
+          title="Visites prévues"
+          value={String(stats.pendingVisits ?? 0)}
+          trend="Semaine"
           trendType="up"
-          icon={Calendar} 
+          icon={Calendar}
           iconColor="bg-emerald-600"
           delay={0.4}
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Recent Visits */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <Card className="shadow-sm overflow-hidden">
             <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-              <h3 className="font-bold text-slate-900 flex items-center">
+              <h3 className="font-semibold text-navy-900 flex items-center">
                 <Clock className="w-5 h-5 mr-2 text-blue-600" />
                 Passages récents
               </h3>
-              <button className="text-blue-600 text-sm font-semibold hover:underline">Voir tout</button>
+              <Button variant="link" size="sm" className="text-blue-600">Voir tout</Button>
             </div>
             <div className="divide-y divide-slate-100">
               {(stats.recentVisits?.length ? stats.recentVisits : []).map((visit, i) => (
@@ -162,15 +171,15 @@ export default function InfirmaryDashboard() {
                       {visit.name?.charAt(0) ?? '?'}
                     </div>
                     <div>
-                      <p className="font-bold text-slate-900">{visit.name}</p>
+                      <p className="font-semibold text-navy-900">{visit.name}</p>
                       <p className="text-xs text-slate-500">{visit.class ?? '—'} • {visit.reason ?? '—'}</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-4">
                     <span className="text-xs text-slate-400">{visit.time ?? '—'}</span>
-                    <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded-full ${visit.color ?? 'text-slate-600 bg-slate-100'}`}>
+                    <Badge variant="outline" className="text-xs">
                       {visit.status ?? '—'}
-                    </span>
+                    </Badge>
                   </div>
                 </div>
               ))}
@@ -180,11 +189,11 @@ export default function InfirmaryDashboard() {
                 </div>
               )}
             </div>
-          </div>
+          </Card>
 
           {/* Health Alerts */}
-          <div className="bg-rose-50 rounded-2xl border border-rose-100 p-6">
-            <h3 className="font-bold text-rose-900 flex items-center mb-4">
+          <div className="bg-rose-50 rounded-xl border border-rose-100 p-6">
+            <h3 className="font-semibold text-rose-900 flex items-center mb-4">
               <AlertCircle className="w-5 h-5 mr-2" />
               Alertes de Vigilance
             </h3>
@@ -193,7 +202,7 @@ export default function InfirmaryDashboard() {
                 <div key={alert.id ?? i} className="bg-white border border-rose-200 rounded-xl p-4 flex items-start space-x-3">
                   <div className="mt-1 w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
                   <div>
-                    <p className="text-sm font-bold text-slate-900 underline">{alert.title}</p>
+                    <p className="text-sm font-semibold text-navy-900 underline">{alert.title}</p>
                     <p className="text-xs text-slate-600 mt-1">{alert.desc}</p>
                   </div>
                 </div>
@@ -209,8 +218,8 @@ export default function InfirmaryDashboard() {
 
         {/* Inventory & Reports summary */}
         <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-            <h3 className="font-bold text-slate-900 flex items-center mb-6">
+          <Card className="shadow-sm p-6">
+            <h3 className="font-semibold text-navy-900 flex items-center mb-6">
               <TrendingUp className="w-5 h-5 mr-2 text-emerald-600" />
               État des Stocks
             </h3>
@@ -232,20 +241,20 @@ export default function InfirmaryDashboard() {
                 </div>
               ))}
             </div>
-            <button className="w-full mt-6 py-2 rounded-xl bg-slate-50 text-slate-600 text-sm font-bold hover:bg-slate-100 transition-colors">
+            <Button variant="outline" className="w-full mt-6">
               Gérer la pharmacie
-            </button>
-          </div>
+            </Button>
+          </Card>
 
-          <div className="bg-navy-900 rounded-2xl p-6 text-white shadow-lg">
-            <h3 className="font-bold flex items-center mb-4">
-              <FileText className="w-5 h-5 mr-2 text-gold-500" />
+          <div className="bg-slate-900 rounded-xl p-6 text-white shadow-lg">
+            <h3 className="font-semibold flex items-center mb-4">
+              <FileText className="w-5 h-5 mr-2 text-amber-400" />
               Rapport Mensuel
             </h3>
-            <p className="text-navy-200 text-sm mb-6">Le rapport sanitaire de Mai est prêt pour validation directionnelle.</p>
+            <p className="text-slate-300 text-sm mb-6">Le rapport sanitaire de Mai est prêt pour validation directionnelle.</p>
             <div className="flex space-x-2">
-              <button className="flex-1 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold transition-colors">Visualiser</button>
-              <button className="flex-1 py-2 bg-[#C9A84C] hover:bg-[#B8973B] rounded-xl text-xs font-bold transition-colors">Valider</button>
+              <Button variant="secondary" className="flex-1 bg-white/10 hover:bg-white/20">Visualiser</Button>
+              <Button className="flex-1 bg-indigo-600 hover:bg-indigo-700">Valider</Button>
             </div>
           </div>
         </div>

@@ -6,8 +6,12 @@
 
 'use client';
 
-import { motion } from 'framer-motion';
 import { Search, Filter, MoreVertical, Play, Headphones, Zap, Download, Eye, FileText, Plus, Loader2 } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 
@@ -64,92 +68,82 @@ export default function EduCastLibrary() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input type="text" placeholder="Rechercher dans la médiathèque..." className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-sm outline-none shadow-sm" />
+          <Input type="text" placeholder="Rechercher dans la médiathèque..." className="pl-10" />
         </div>
-        <div className="flex items-center space-x-2">
-          <button className="p-2.5 bg-white border border-slate-200 rounded-2xl text-slate-400 hover:text-blue-600 transition-all">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="icon">
             <Filter className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => alert('Bientôt disponible')}
-            className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all shadow-lg shadow-navy-900/10"
-          >
-            <Plus className="w-4 h-4 text-[#C9A84C]" />
-            <span>Importer</span>
-          </button>
+          </Button>
+          <Button>
+            <Plus className="w-4 h-4 mr-2" />
+            Importer
+          </Button>
         </div>
       </div>
 
       {media.length === 0 ? (
-        <div className="text-center py-16 text-slate-500 bg-white rounded-3xl border border-slate-200">
+        <Card className="p-12 text-center text-slate-500 shadow-sm">
           Aucun média dans votre bibliothèque pour cette année scolaire.
-        </div>
+        </Card>
       ) : (
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                <th className="px-8 py-5">Titre & Type</th>
-                <th className="px-8 py-5">Auteur</th>
-                <th className="px-8 py-5">Catégorie</th>
-                <th className="px-8 py-5">Date</th>
-                <th className="px-8 py-5">Durée</th>
-                <th className="px-8 py-5 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {media.map((item, i) => {
-                const title = item.title || item.name || 'Média';
-                const type = (item.type || item.mediaType || 'FILE').toUpperCase();
-                const category = item.category || item.subject || '—';
-                const author = item.author || item.teacherName || item.uploadedBy || '—';
-                const date = item.date || (item.createdAt ? new Date(item.createdAt).toLocaleDateString('fr-FR') : '—');
-                const duration = item.duration || item.length || '—';
-                const views = item.views ?? item.viewCount ?? 0;
-                return (
-                  <motion.tr
-                    key={item.id ?? i}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="hover:bg-slate-50/50 transition-colors group"
-                  >
-                    <td className="px-8 py-5">
-                      <div className="flex items-center gap-4">
-                        <div className="p-2.5 bg-slate-100 rounded-xl group-hover:bg-blue-50 transition-colors">
-                          {getTypeIcon(type)}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-gray-50">
+                  <TableHead className="px-6">Titre & Type</TableHead>
+                  <TableHead className="px-6">Auteur</TableHead>
+                  <TableHead className="px-6">Catégorie</TableHead>
+                  <TableHead className="px-6">Date</TableHead>
+                  <TableHead className="px-6">Durée</TableHead>
+                  <TableHead className="px-6 text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {media.map((item, i) => {
+                  const title = item.title || item.name || 'Média';
+                  const type = (item.type || item.mediaType || 'FILE').toUpperCase();
+                  const category = item.category || item.subject || '—';
+                  const author = item.author || item.teacherName || item.uploadedBy || '—';
+                  const date = item.date || (item.createdAt ? new Date(item.createdAt).toLocaleDateString('fr-FR') : '—');
+                  const duration = item.duration || item.length || '—';
+                  return (
+                    <TableRow key={item.id ?? i} className="hover:bg-slate-50 group">
+                      <TableCell className="px-6">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-slate-100 rounded-lg group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
+                            {getTypeIcon(type)}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-slate-900 leading-tight">{title}</p>
+                            <p className="text-xs text-slate-500">{type}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-black text-slate-900 leading-tight">{title}</p>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{type}</p>
+                      </TableCell>
+                      <TableCell className="px-6 text-sm text-slate-600">{author}</TableCell>
+                      <TableCell className="px-6">
+                        <Badge variant="outline">{category}</Badge>
+                      </TableCell>
+                      <TableCell className="px-6 text-xs text-slate-500">{date}</TableCell>
+                      <TableCell className="px-6 text-sm font-semibold text-slate-900">{duration}</TableCell>
+                      <TableCell className="px-6 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-blue-50 hover:text-blue-600">
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-emerald-50 hover:text-emerald-600">
+                            <Download className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-8 py-5 text-sm font-bold text-slate-600">{author}</td>
-                    <td className="px-8 py-5">
-                      <span className="px-2 py-1 bg-slate-50 text-slate-500 text-[9px] font-black uppercase tracking-widest rounded-lg">{category}</span>
-                    </td>
-                    <td className="px-8 py-5 text-xs font-bold text-slate-500">{date}</td>
-                    <td className="px-8 py-5 text-xs font-black text-slate-900">{duration}</td>
-                    <td className="px-8 py-5 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button className="p-2 bg-slate-50 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-all">
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button className="p-2 bg-slate-50 hover:bg-emerald-50 hover:text-emerald-600 rounded-xl transition-all">
-                          <Download className="w-4 h-4" />
-                        </button>
-                        <button className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
-                          <MoreVertical className="w-5 h-5 text-slate-300" />
-                        </button>
-                      </div>
-                    </td>
-                  </motion.tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </div>
         </div>
       )}

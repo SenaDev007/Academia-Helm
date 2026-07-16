@@ -1,22 +1,44 @@
 /**
  * ============================================================================
- * TRANSPORT MODULE PAGE (MODULE 9.2)
+ * TRANSPORT MODULE PAGE (MODULE 9.2) — Pattern Finance
  * ============================================================================
  * Gère le parc automobile, les chauffeurs, les itinéraires et le suivi.
+ *
+ * Refonte 7-e : layout custom → ModuleContainer (pattern Finance)
+ * - Onglets SubModuleNavigation standard (bleus soulignés)
+ * - KPIs dynamiques chargés via GET /transport/stats (véhicules / routes /
+ *   chauffeurs / incidents ouverts) — les anciennes valeurs hardcodées
+ *   "94.2% ponctualité" et "12/15 Bus" sont supprimées.
+ * - Navigation par sous-modules déléguée à ModuleContainer.subModules.
+ * ============================================================================
  */
 
 'use client';
 
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Bus, Users, MapPin, Route, Calendar, Clock, 
-  AlertTriangle, PenTool, CreditCard, FileBarChart, 
-  Settings, Activity, Navigation, ShieldAlert, Plus, 
-  LayoutDashboard, Search, Filter, Download, Info
+import { useState, useEffect } from 'react';
+import {
+  Bus,
+  Users,
+  MapPin,
+  Route,
+  Calendar,
+  Clock,
+  ShieldAlert,
+  PenTool,
+  CreditCard,
+  FileBarChart,
+  Settings,
+  Navigation,
+  LayoutDashboard,
+  Plus,
+  Download,
 } from 'lucide-react';
+import { ModuleContainer } from '@/components/modules/blueprint';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/use-toast';
 
-// Sub-components
+// Sous-composants (aucun ne contient SubModuleNavigation — pattern StudentsModulePage)
 import TransportDashboard from './transport/TransportDashboard';
 import TransportVehicles from './transport/TransportVehicles';
 import TransportDrivers from './transport/TransportDrivers';
@@ -32,110 +54,137 @@ import TransportPayments from './transport/TransportPayments';
 import TransportReports from './transport/TransportReports';
 import TransportSettings from './transport/TransportSettings';
 
-const TABS = [
-  { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard },
-  { id: 'vehicles', label: 'Véhicules', icon: Bus },
-  { id: 'drivers', label: 'Personnel', icon: Users },
-  { id: 'routes', label: 'Itinéraires', icon: Route },
-  { id: 'stops', label: 'Arrêts & Zones', icon: MapPin },
-  { id: 'students', label: 'Élèves', icon: Users },
-  { id: 'schedules', label: 'Planning', icon: Calendar },
-  { id: 'trips', label: 'Suivi Trajets', icon: Navigation },
-  { id: 'attendance', label: 'Présences', icon: Clock },
-  { id: 'incidents', label: 'Incidents', icon: ShieldAlert },
-  { id: 'maintenance', label: 'Maintenance', icon: PenTool },
-  { id: 'payments', label: 'Paiements', icon: CreditCard },
-  { id: 'reports', label: 'Rapports', icon: FileBarChart },
-  { id: 'settings', label: 'Paramètres', icon: Settings },
-];
+interface TransportStats {
+  activeVehicles?: number;
+  totalVehicles?: number;
+  activeRoutes?: number;
+  totalRoutes?: number;
+  driversCount?: number;
+  activeDrivers?: number;
+  openIncidents?: number;
+  recentIncidents?: number;
+}
 
 export default function TransportModulePage() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const { academicYear, isLoading: contextLoading } = useModuleContext();
+  const [activeSubModuleId, setActiveSubModuleId] = useState<string>('dashboard');
+  const [stats, setStats] = useState<TransportStats | null>(null);
+  const { toast } = useToast();
 
-  const renderActiveTab = () => {
-    switch (activeTab) {
-      case 'dashboard': return <TransportDashboard />;
-      case 'vehicles': return <TransportVehicles />;
-      case 'drivers': return <TransportDrivers />;
-      case 'routes': return <TransportRoutes />;
-      case 'stops': return <TransportStops />;
-      case 'students': return <TransportStudents />;
-      case 'schedules': return <TransportSchedules />;
-      case 'trips': return <TransportTrips />;
-      case 'attendance': return <TransportAttendance />;
-      case 'incidents': return <TransportIncidents />;
-      case 'maintenance': return <TransportMaintenance />;
-      case 'payments': return <TransportPayments />;
-      case 'reports': return <TransportReports />;
-      case 'settings': return <TransportSettings />;
-      default: return <TransportDashboard />;
+  useEffect(() => {
+    if (academicYear?.id) {
+      loadTransportStats();
+    }
+  }, [academicYear?.id]);
+
+  const loadTransportStats = async () => {
+    try {
+      const res = await fetch(
+        `/api/modules-complementaires/transport/stats?academicYearId=${academicYear?.id}`,
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setStats(data ?? null);
+      }
+    } catch (e) {
+      console.error('Transport stats load error', e);
     }
   };
 
+  const handleNotImplemented = (label: string) => {
+    toast({
+      title: 'Action non disponible',
+      description: `${label} — utilisez les onglets ci-dessous pour gérer le transport.`,
+    });
+  };
+
+  if (contextLoading) {
+    return <div className="p-8 text-center text-gray-600">Chargement...</div>;
+  }
+
   return (
-    <div className="min-h-screen bg-[#F8FAFC] p-8">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-navy-900 rounded-xl">
-              <Bus className="w-6 h-6 text-white" />
-            </div>
-            <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase">
-              Transport <span className="text-navy-600 font-medium">| Academia Helm</span>
-            </h1>
+    <ModuleContainer
+      header={{
+        title: 'Transport Scolaire',
+        description:
+          'Gestion intelligente du transport scolaire : parc automobile, chauffeurs, itinéraires, suivi en temps réel et sécurité des élèves.',
+        icon: 'transport',
+        kpis: stats
+          ? [
+              {
+                label: 'Véhicules actifs',
+                value: String(stats.activeVehicles ?? stats.totalVehicles ?? 0),
+                icon: 'dashboard',
+                trend: 'neutral',
+              },
+              {
+                label: 'Routes actives',
+                value: String(stats.activeRoutes ?? stats.totalRoutes ?? 0),
+                icon: 'clock',
+                trend: 'neutral',
+              },
+              {
+                label: 'Chauffeurs',
+                value: String(stats.driversCount ?? stats.activeDrivers ?? 0),
+                icon: 'students',
+                trend: 'neutral',
+              },
+              {
+                label: 'Incidents ouverts',
+                value: String(stats.openIncidents ?? stats.recentIncidents ?? 0),
+                icon: 'warning',
+                trend: stats.openIncidents ? 'up' : 'neutral',
+              },
+            ]
+          : [],
+        actions: (
+          <div className="flex items-center gap-2">
+            <Button onClick={() => setActiveSubModuleId('vehicles')}>
+              <Plus className="w-4 h-4" /> Nouveau Véhicule
+            </Button>
+            <Button variant="outline" onClick={() => handleNotImplemented('Export rapport')}>
+              <Download className="w-4 h-4" /> Exporter
+            </Button>
           </div>
-          <p className="text-slate-500 font-medium max-w-2xl">
-            Gestion intelligente du transport scolaire, suivi en temps réel et sécurité des élèves.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="bg-white px-6 py-3 rounded-2xl border border-slate-100 shadow-sm">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Ponctualité</p>
-            <p className="text-xl font-black text-emerald-600 tracking-tighter">94.2%</p>
-          </div>
-          <div className="bg-white px-6 py-3 rounded-2xl border border-slate-100 shadow-sm">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Activité</p>
-            <p className="text-xl font-black text-navy-900 tracking-tighter">12/15 <span className="text-slate-300 font-medium text-xs">Bus</span></p>
-          </div>
-          <button className="p-4 bg-white text-slate-400 rounded-2xl border border-slate-100 hover:text-navy-900 hover:border-navy-900 transition-all">
-            <Info className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-8 no-scrollbar scroll-smooth">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`
-              flex items-center gap-2 px-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shrink-0
-              ${activeTab === tab.id 
-                ? 'bg-navy-900 text-white shadow-lg shadow-navy-900/20 translate-y-[-2px]' 
-                : 'bg-white text-slate-400 hover:bg-slate-50 hover:text-slate-600 border border-slate-100'}
-            `}
-          >
-            <tab.icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-white' : 'text-slate-400'}`} />
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Main Content */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={activeTab}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          transition={{ duration: 0.2 }}
-        >
-          {renderActiveTab()}
-        </motion.div>
-      </AnimatePresence>
-    </div>
+        ),
+      }}
+      subModules={{
+        activeModuleId: activeSubModuleId,
+        onModuleChange: setActiveSubModuleId,
+        modules: [
+          { id: 'dashboard', label: 'Tableau de bord', icon: <LayoutDashboard className="w-4 h-4" /> },
+          { id: 'vehicles', label: 'Véhicules', icon: <Bus className="w-4 h-4" /> },
+          { id: 'drivers', label: 'Personnel', icon: <Users className="w-4 h-4" /> },
+          { id: 'routes', label: 'Itinéraires', icon: <Route className="w-4 h-4" /> },
+          { id: 'stops', label: 'Arrêts & Zones', icon: <MapPin className="w-4 h-4" /> },
+          { id: 'students', label: 'Élèves', icon: <Users className="w-4 h-4" /> },
+          { id: 'schedules', label: 'Planning', icon: <Calendar className="w-4 h-4" /> },
+          { id: 'trips', label: 'Suivi Trajets', icon: <Navigation className="w-4 h-4" /> },
+          { id: 'attendance', label: 'Présences', icon: <Clock className="w-4 h-4" /> },
+          { id: 'incidents', label: 'Incidents', icon: <ShieldAlert className="w-4 h-4" /> },
+          { id: 'maintenance', label: 'Maintenance', icon: <PenTool className="w-4 h-4" /> },
+          { id: 'payments', label: 'Paiements', icon: <CreditCard className="w-4 h-4" /> },
+          { id: 'reports', label: 'Rapports', icon: <FileBarChart className="w-4 h-4" /> },
+          { id: 'settings', label: 'Paramètres', icon: <Settings className="w-4 h-4" /> },
+        ],
+      }}
+      content={
+        activeSubModuleId === 'dashboard' ? { layout: 'default', children: <TransportDashboard /> } :
+        activeSubModuleId === 'vehicles' ? { layout: 'default', children: <TransportVehicles /> } :
+        activeSubModuleId === 'drivers' ? { layout: 'default', children: <TransportDrivers /> } :
+        activeSubModuleId === 'routes' ? { layout: 'default', children: <TransportRoutes /> } :
+        activeSubModuleId === 'stops' ? { layout: 'default', children: <TransportStops /> } :
+        activeSubModuleId === 'students' ? { layout: 'default', children: <TransportStudents /> } :
+        activeSubModuleId === 'schedules' ? { layout: 'default', children: <TransportSchedules /> } :
+        activeSubModuleId === 'trips' ? { layout: 'default', children: <TransportTrips /> } :
+        activeSubModuleId === 'attendance' ? { layout: 'default', children: <TransportAttendance /> } :
+        activeSubModuleId === 'incidents' ? { layout: 'default', children: <TransportIncidents /> } :
+        activeSubModuleId === 'maintenance' ? { layout: 'default', children: <TransportMaintenance /> } :
+        activeSubModuleId === 'payments' ? { layout: 'default', children: <TransportPayments /> } :
+        activeSubModuleId === 'reports' ? { layout: 'default', children: <TransportReports /> } :
+        activeSubModuleId === 'settings' ? { layout: 'default', children: <TransportSettings /> } :
+        { layout: 'default', children: <TransportDashboard /> }
+      }
+    />
   );
 }

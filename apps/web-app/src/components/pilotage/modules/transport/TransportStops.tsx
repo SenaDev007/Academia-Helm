@@ -1,8 +1,21 @@
 'use client';
 
-import { MapPin, Plus, Search, Filter, MoreVertical, Navigation, Loader2 } from 'lucide-react';
+import { MapPin, Plus, Search, Navigation, Loader2 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { useToast } from '@/components/ui/use-toast';
 
 interface RouteStop {
   id?: string;
@@ -30,6 +43,7 @@ interface RouteItem {
 export default function TransportStops() {
   const { academicYear } = useModuleContext();
   const { data, loading, error } = useModulesList<RouteItem>('transport', 'routes', academicYear?.id);
+  const { toast } = useToast();
 
   // Les arrêts sont imbriqués dans les routes — on les aplatit
   const routes = data ?? [];
@@ -47,10 +61,17 @@ export default function TransportStops() {
     return (
       <div className="flex items-center justify-center py-16">
         <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-        <span className="ml-2 text-slate-600">Chargement...</span>
+        <span className="ml-2 text-gray-600">Chargement...</span>
       </div>
     );
   }
+
+  const handleNotImplemented = () => {
+    toast({
+      title: 'Action non disponible',
+      description: "L'ajout d'arrêt se fait via l'onglet Itinéraires (bouton « Gérer les arrêts »).",
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -62,39 +83,36 @@ export default function TransportStops() {
 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Rechercher un arrêt..." 
-            className="w-full pl-12 pr-4 py-3 rounded-2xl border border-slate-100 focus:outline-none focus:ring-2 focus:ring-navy-900/5 transition-all text-sm font-medium"
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Input
+            type="text"
+            placeholder="Rechercher un arrêt..."
+            className="pl-10"
           />
         </div>
-        <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-navy-800 transition-all">
-            <Plus className="w-4 h-4" />
-            Nouvel Arrêt
-          </button>
-        </div>
+        <Button onClick={handleNotImplemented}>
+          <Plus className="w-4 h-4" /> Nouvel Arrêt
+        </Button>
       </div>
 
       {stops.length === 0 ? (
-        <div className="text-center py-16 text-slate-500">
+        <div className="text-center py-16 text-gray-500">
           Aucune donnée disponible pour cette année scolaire.
         </div>
       ) : (
-        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+        <Card className="shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-slate-50/50 border-b border-slate-100">
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Point d'arrêt</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Zone</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Type</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Élèves</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-gray-50">
+                  <TableHead className="px-4 py-3">Point d'arrêt</TableHead>
+                  <TableHead className="px-4 py-3">Zone</TableHead>
+                  <TableHead className="px-4 py-3">Type</TableHead>
+                  <TableHead className="px-4 py-3 text-center">Élèves</TableHead>
+                  <TableHead className="px-4 py-3 text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {stops.map((stop) => {
                   const name = stop.name || stop.label || `Arrêt ${stop.id}`;
                   const zone = stop.zone || stop.zoneName || stop.routeName || '—';
@@ -102,46 +120,41 @@ export default function TransportStops() {
                   const arrivalTime = stop.arrivalTime || stop.estimatedTime || '—';
                   const type = stop.type || stop.stopType || 'QUARTIER';
                   return (
-                    <tr key={stop.id} className="hover:bg-slate-50/50 transition-colors group">
-                      <td className="px-8 py-5">
+                    <TableRow key={stop.id} className="hover:bg-slate-50">
+                      <TableCell className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="p-3 rounded-xl bg-navy-50 text-navy-900">
+                          <div className="p-3 rounded-xl bg-indigo-50 text-indigo-700">
                             <MapPin className="w-4 h-4" />
                           </div>
                           <div>
-                            <p className="font-black text-slate-900 text-sm tracking-tight uppercase">{name}</p>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Heure estimée: {arrivalTime}</p>
+                            <p className="font-semibold text-gray-900 text-sm">{name}</p>
+                            <p className="text-xs text-gray-500">Heure estimée: {arrivalTime}</p>
                           </div>
                         </div>
-                      </td>
-                      <td className="px-8 py-5">
-                        <span className="text-sm font-bold text-slate-700">{zone}</span>
-                      </td>
-                      <td className="px-8 py-5">
-                        <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-[10px] font-black uppercase tracking-widest">
-                          {type}
-                        </span>
-                      </td>
-                      <td className="px-8 py-5 text-center">
-                        <span className="text-sm font-black text-navy-900 bg-navy-50 px-3 py-1 rounded-lg border border-navy-100">{students}</span>
-                      </td>
-                      <td className="px-8 py-5 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button className="p-2 text-slate-400 hover:text-navy-900 transition-colors">
-                            <Navigation className="w-4 h-4" />
-                          </button>
-                          <button className="p-2 text-slate-400 hover:text-slate-900 transition-colors">
-                            <MoreVertical className="w-5 h-5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
+                        <span className="text-sm font-medium text-gray-700">{zone}</span>
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
+                        <Badge variant="outline">{type}</Badge>
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-center">
+                        <Badge variant="outline" className="border-indigo-200 text-indigo-700 bg-indigo-50">
+                          {students}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-right">
+                        <Button variant="ghost" size="sm">
+                          <Navigation className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
-        </div>
+        </Card>
       )}
     </div>
   );

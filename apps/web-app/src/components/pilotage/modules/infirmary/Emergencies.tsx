@@ -2,13 +2,19 @@
  * ============================================================================
  * EMERGENCIES & INCIDENTS TAB
  * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern Finance — <Input>/<Button>
+ * shadcn, <Table> shadcn, <Dialog> shadcn, Cards rounded-xl, alert() → toast(),
+ * plus de font-black uppercase tracking-widest, plus de text-[10px] / text-[9px].
+ * Logique useModulesList + modulesApi conservée.
+ * ============================================================================
  */
 
 'use client';
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, X } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import {
   AlertCircle,
   PhoneCall,
@@ -22,6 +28,27 @@ import {
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 
 interface EmergencyItem {
   id: string;
@@ -44,22 +71,17 @@ interface EmergencyItem {
   [key: string]: any;
 }
 
-const SEVERITY_COLORS: Record<string, string> = {
-  CRITIQUE: 'bg-rose-600 text-white',
-  HAUTE: 'bg-rose-100 text-rose-700',
-  MOYENNE: 'bg-amber-100 text-amber-700',
-  FAIBLE: 'text-blue-600 bg-blue-50',
-};
-
 const SEVERITY_BADGE: Record<string, string> = {
-  HAUTE: 'text-orange-600 bg-orange-50',
-  MOYENNE: 'text-amber-600 bg-amber-50',
-  FAIBLE: 'text-blue-600 bg-blue-50',
+  CRITIQUE: 'bg-rose-100 text-rose-700 border-rose-200',
+  HAUTE: 'text-orange-600 bg-orange-50 border-orange-100',
+  MOYENNE: 'text-amber-600 bg-amber-50 border-amber-100',
+  FAIBLE: 'text-blue-600 bg-blue-50 border-blue-100',
 };
 
 export default function Emergencies() {
   const { academicYear } = useModuleContext();
   const { data, loading, error, refetch } = useModulesList<EmergencyItem>('infirmary', 'emergencies', academicYear?.id);
+  const { toast } = useToast();
 
   const emergencies = data ?? [];
 
@@ -75,8 +97,17 @@ export default function Emergencies() {
       setModalOpen(false);
       setFormData({ studentId: '', severity: 'HAUTE', description: '' });
       await refetch();
+      toast({
+        title: 'Urgence déclarée',
+        description: 'L\'incident a été enregistré et les intervenants notifiés.',
+        variant: 'destructive',
+      });
     } catch (e: any) {
-      alert(e?.response?.data?.message || e?.message || 'Erreur lors de la création de l\'urgence');
+      toast({
+        title: 'Erreur lors de la création',
+        description: e?.response?.data?.message || e?.message || 'Erreur lors de la création de l\'urgence',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -87,8 +118,16 @@ export default function Emergencies() {
       setActionLoading(id);
       await modulesApi.post(`infirmary/emergencies/${id}`, { status }, buildModulesApiOptions(academicYear?.id));
       await refetch();
+      toast({
+        title: 'Statut mis à jour',
+        description: `L'urgence est désormais : ${status}.`,
+      });
     } catch (e: any) {
-      alert(e?.response?.data?.message || e?.message || 'Erreur lors de la mise à jour');
+      toast({
+        title: 'Erreur de mise à jour',
+        description: e?.response?.data?.message || e?.message || 'Erreur lors de la mise à jour',
+        variant: 'destructive',
+      });
     } finally {
       setActionLoading(null);
     }
@@ -112,7 +151,7 @@ export default function Emergencies() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les données. {error}
@@ -120,28 +159,28 @@ export default function Emergencies() {
       )}
 
       {/* Active Emergencies Section */}
-      <div className="bg-rose-50 border border-rose-100 rounded-3xl p-8">
-        <div className="flex items-center justify-between mb-8">
+      <Card className="bg-rose-50 border-rose-100 p-6 shadow-sm">
+        <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
           <div>
-            <h2 className="text-2xl font-black text-rose-900 flex items-center">
-              <AlertCircle className="w-8 h-8 mr-3 animate-pulse" />
+            <h2 className="text-xl font-semibold text-rose-900 flex items-center">
+              <AlertCircle className="w-6 h-6 mr-3 animate-pulse" />
               Urgences Actives
             </h2>
-            <p className="text-rose-700 font-medium">Interventions critiques nécessitant un suivi immédiat.</p>
+            <p className="text-rose-700 font-medium text-sm">Interventions critiques nécessitant un suivi immédiat.</p>
           </div>
-          <button
+          <Button
+            variant="destructive"
             onClick={() => { setFormData({ studentId: '', severity: 'HAUTE', description: '' }); setModalOpen(true); }}
-            className="bg-rose-600 hover:bg-rose-700 text-white px-6 py-3 rounded-2xl font-black text-sm flex items-center transition-all shadow-lg shadow-rose-200"
           >
-            <Plus className="w-5 h-5 mr-2" />
-            DÉCLARER URGENCE
-          </button>
+            <Plus className="w-4 h-4 mr-2" />
+            Déclarer urgence
+          </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {active.length === 0 ? (
-            <div className="md:col-span-2 bg-white/50 border-2 border-dashed border-rose-200 rounded-2xl flex items-center justify-center p-12">
-              <p className="text-rose-300 font-bold text-center">Aucune urgence active.<br />La situation est sous contrôle.</p>
+            <div className="md:col-span-2 bg-white/50 border-2 border-dashed border-rose-200 rounded-xl flex items-center justify-center p-12">
+              <p className="text-rose-400 font-semibold text-center">Aucune urgence active.<br />La situation est sous contrôle.</p>
             </div>
           ) : (
             active.map((e) => {
@@ -155,21 +194,21 @@ export default function Emergencies() {
                 <motion.div
                   key={e.id}
                   whileHover={{ y: -5 }}
-                  className="bg-white rounded-2xl border-2 border-rose-200 p-6 shadow-xl shadow-rose-100/50"
+                  className="bg-white rounded-xl border-2 border-rose-200 p-6 shadow-md"
                 >
                   <div className="flex justify-between items-start mb-4">
-                    <span className="bg-rose-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
-                      CRITIQUE
-                    </span>
+                    <Badge variant="destructive" className="bg-rose-600">
+                      Critique
+                    </Badge>
                     {duration && (
-                      <span className="text-slate-400 text-xs font-bold flex items-center">
+                      <span className="text-slate-400 text-xs font-semibold flex items-center">
                         <History className="w-3 h-3 mr-1" />
                         Depuis {duration}
                       </span>
                     )}
                   </div>
-                  <h3 className="text-xl font-black text-slate-900 mb-1">{student}</h3>
-                  <p className="text-sm font-bold text-slate-500 mb-4">{className} • {type}</p>
+                  <h3 className="text-lg font-semibold text-navy-900 mb-1">{student}</h3>
+                  <p className="text-sm font-semibold text-slate-500 mb-4">{className} • {type}</p>
 
                   <div className="space-y-3 mb-6">
                     <div className="flex items-center text-sm text-slate-600">
@@ -179,157 +218,148 @@ export default function Emergencies() {
                     {services && (
                       <div className="flex items-center text-sm text-slate-600">
                         <LifeBuoy className="w-4 h-4 mr-2 text-rose-500" />
-                        {services.toUpperCase()}
+                        {services}
                       </div>
                     )}
                   </div>
 
-                  <div className="flex gap-2">
-                    <button className="flex-1 py-3 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-black transition-colors flex items-center justify-center">
+                  <div className="flex gap-2 flex-wrap">
+                    <Button variant="outline" className="flex-1 border-rose-200 text-rose-700 hover:bg-rose-100">
                       <PhoneCall className="w-4 h-4 mr-2" />
                       Appeler Parent
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      variant="outline"
                       onClick={() => handleUpdateStatus(e.id, 'IN_PROGRESS')}
                       disabled={actionLoading === e.id}
-                      className="flex-1 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black transition-colors flex items-center justify-center disabled:opacity-50"
+                      className="flex-1 border-amber-200 bg-amber-500 text-white hover:bg-amber-600"
                     >
                       {actionLoading === e.id ? 'Envoi...' : 'Prendre en charge'}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={() => handleUpdateStatus(e.id, 'RESOLVED')}
                       disabled={actionLoading === e.id}
-                      className="flex-1 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black transition-colors flex items-center justify-center disabled:opacity-50"
+                      className="flex-1 bg-slate-900 hover:bg-slate-800"
                     >
                       Résoudre
                       <ArrowRight className="w-4 h-4 ml-2" />
-                    </button>
+                    </Button>
                   </div>
                 </motion.div>
               );
             })
           )}
         </div>
-      </div>
+      </Card>
 
       {/* Incident History / Recent Logs */}
       <div>
-        <h3 className="text-lg font-black text-slate-900 mb-4 flex items-center">
+        <h3 className="text-lg font-semibold text-navy-900 mb-4 flex items-center">
           <ShieldAlert className="w-5 h-5 mr-2 text-slate-400" />
           Historique des Incidents (7 derniers jours)
         </h3>
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Date / Heure</th>
-                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Élève</th>
-                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Incident</th>
-                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Lieu</th>
-                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Gravité</th>
-                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Rapport</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {history.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-10 text-center text-slate-500 text-sm">
-                      Aucun incident dans l'historique.
-                    </td>
-                  </tr>
-                ) : history.map((incident) => {
-                  const sev = (incident.severity || 'FAIBLE').toUpperCase();
-                  const color = SEVERITY_BADGE[sev] ?? SEVERITY_BADGE.FAIBLE;
-                  const date = incident.date || '';
-                  const time = incident.time || '';
-                  const student = incident.student || incident.studentName || `Élève ${incident.id}`;
-                  const type = incident.type || incident.emergencyType || incident.incidentType || 'Incident';
-                  const location = incident.location || incident.incidentLocation || '—';
-                  return (
-                    <tr key={incident.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4 text-sm font-bold text-slate-900">
-                        {date || '—'} {time && <span className="text-slate-400 text-xs font-medium ml-1">{time}</span>}
-                      </td>
-                      <td className="px-6 py-4 text-sm font-bold text-slate-700">{student}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{type}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{location}</td>
-                      <td className="px-6 py-4">
-                        <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter ${color}`}>
-                          {sev}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <button className="text-blue-600 text-xs font-bold hover:underline">Consulter</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <Card className="shadow-sm overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50">
+                <TableHead>Date / Heure</TableHead>
+                <TableHead>Élève</TableHead>
+                <TableHead>Incident</TableHead>
+                <TableHead>Lieu</TableHead>
+                <TableHead>Gravité</TableHead>
+                <TableHead className="text-right">Rapport</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {history.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-slate-500 py-10">
+                    Aucun incident dans l'historique.
+                  </TableCell>
+                </TableRow>
+              ) : history.map((incident) => {
+                const sev = (incident.severity || 'FAIBLE').toUpperCase();
+                const color = SEVERITY_BADGE[sev] ?? SEVERITY_BADGE.FAIBLE;
+                const date = incident.date || '';
+                const time = incident.time || '';
+                const student = incident.student || incident.studentName || `Élève ${incident.id}`;
+                const type = incident.type || incident.emergencyType || incident.incidentType || 'Incident';
+                const location = incident.location || incident.incidentLocation || '—';
+                return (
+                  <TableRow key={incident.id} className="hover:bg-slate-50">
+                    <TableCell className="text-sm font-semibold text-navy-900">
+                      {date || '—'} {time && <span className="text-slate-400 text-xs font-medium ml-1">{time}</span>}
+                    </TableCell>
+                    <TableCell className="text-sm font-semibold text-slate-700">{student}</TableCell>
+                    <TableCell className="text-sm text-slate-600">{type}</TableCell>
+                    <TableCell className="text-sm text-slate-600">{location}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={color}>
+                        {sev}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="link" size="sm" className="text-blue-600">Consulter</Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </Card>
       </div>
 
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold">Nouvelle urgence</h3>
-              <button onClick={() => setModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-900">
-                <X className="w-5 h-5" />
-              </button>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nouvelle urgence</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="studentId">Student ID</Label>
+              <Input
+                id="studentId"
+                type="text"
+                value={formData.studentId}
+                onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
+                placeholder="student-001"
+              />
             </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Student ID</label>
-                <input
-                  type="text"
-                  value={formData.studentId}
-                  onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  placeholder="student-001"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Gravité</label>
-                <select
-                  value={formData.severity}
-                  onChange={(e) => setFormData({ ...formData, severity: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                >
-                  <option value="CRITIQUE">Critique</option>
-                  <option value="HAUTE">Haute</option>
-                  <option value="MOYENNE">Moyenne</option>
-                  <option value="FAIBLE">Faible</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase">Description</label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                  rows={3}
-                  placeholder="Description de l'urgence"
-                />
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold">
-                Annuler
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={submitting}
-                className="px-4 py-2 bg-rose-600 text-white rounded-lg text-sm font-bold disabled:opacity-50"
+            <div className="space-y-2">
+              <Label htmlFor="severity">Gravité</Label>
+              <select
+                id="severity"
+                value={formData.severity}
+                onChange={(e) => setFormData({ ...formData, severity: e.target.value })}
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
-                {submitting ? 'Envoi...' : 'Déclarer'}
-              </button>
+                <option value="CRITIQUE">Critique</option>
+                <option value="HAUTE">Haute</option>
+                <option value="MOYENNE">Moyenne</option>
+                <option value="FAIBLE">Faible</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <textarea
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                rows={3}
+                placeholder="Description de l'urgence"
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[80px]"
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)}>Annuler</Button>
+            <Button variant="destructive" onClick={handleCreate} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Envoi...' : 'Déclarer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

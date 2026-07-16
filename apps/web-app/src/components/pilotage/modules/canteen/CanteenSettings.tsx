@@ -5,18 +5,37 @@
  *
  * Endpoint (lecture)  : GET /modules-complementaires/canteen/settings
  * Endpoint (écriture) : PUT /modules-complementaires/canteen/settings
+ *
+ * Refonte juillet 2026 (Task 7-d) :
+ *  - <input>/<button> HTML → <Input>/<Button> shadcn
+ *  - Toggles CSS-only (button + span) → <Switch> shadcn
+ *  - rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
+ *  - bouton "Enregistrer" bg-navy-900 → <Button> shadcn (default = indigo-600)
+ *  - bandeau "Maintenance des Données" bg-navy-50 → bg-slate-50
+ *  - alert()/setError → toast() pour le feedback utilisateur (erreur conservée
+ *    dans l'état pour le bandeau d'avertissement, mais le toast notifie
+ *    explicitement succès/erreur).
  * ============================================================================
  */
+
+'use client';
 
 import React, { useState, useEffect } from 'react';
 import {
   Bell, CreditCard,
   Clock, Database,
   Save,
-  AlertTriangle, Loader2
+  AlertTriangle, Loader2,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { useToast } from '@/components/ui/use-toast';
 
 interface CanteenSettingsData {
   breakfastTime?: string;
@@ -24,7 +43,7 @@ interface CanteenSettingsData {
   snackTime?: string;
   dinnerTime?: string;
   requirePrepayment?: boolean;
-  allowOccasionalMeals?: boolean;
+  allowOccasualMeals?: boolean;
   notifyMenuPublished?: boolean;
   notifyAllergyAlert?: boolean;
   notifyLowStock?: boolean;
@@ -33,6 +52,7 @@ interface CanteenSettingsData {
 
 export default function CanteenSettings() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const [settings, setSettings] = useState<CanteenSettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -75,8 +95,14 @@ export default function CanteenSettings() {
         buildModulesApiOptions(academicYear.id),
       );
       setError(null);
+      toast({ title: 'Paramètres enregistrés', description: 'La configuration a été sauvegardée.' });
     } catch (e: any) {
-      setError(e?.message || 'Erreur lors de l\'enregistrement');
+      setError(e?.message || 'Erreur lors de l’enregistrement');
+      toast({
+        title: 'Erreur enregistrement',
+        description: e?.message || 'Erreur lors de l’enregistrement',
+        variant: 'destructive',
+      });
     } finally {
       setSaving(false);
     }
@@ -96,37 +122,33 @@ export default function CanteenSettings() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 max-w-5xl mx-auto pb-12">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700 max-w-5xl mx-auto pb-12">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ {error}
         </div>
       )}
 
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-xl shadow-gray-200/50 overflow-hidden">
-        <div className="p-8 border-b border-gray-50 bg-gradient-to-r from-gray-50/50 to-white flex items-center justify-between">
+      <Card className="p-0 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex items-center justify-between">
           <div>
-            <h3 className="font-black text-navy-900 text-2xl tracking-tight">Configuration Cantine</h3>
-            <p className="text-gray-400 text-sm font-bold uppercase tracking-widest mt-1">Personnalisez les règles et le fonctionnement du module</p>
+            <h3 className="font-semibold text-navy-900 text-xl">Configuration Cantine</h3>
+            <p className="text-gray-500 text-sm mt-1">Personnalisez les règles et le fonctionnement du module</p>
           </div>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center space-x-2 px-8 py-3 bg-navy-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20 active:scale-95 disabled:opacity-50"
-          >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            <span>{saving ? 'Enregistrement…' : 'Enregistrer'}</span>
-          </button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+            {saving ? 'Enregistrement…' : 'Enregistrer'}
+          </Button>
         </div>
 
-        <div className="p-8 space-y-12">
+        <div className="p-6 space-y-10">
           {/* Section: Service Times */}
-          <section className="space-y-6">
+          <section className="space-y-4">
             <div className="flex items-center space-x-3 text-navy-900">
-              <Clock className="w-6 h-6 text-navy-400" />
-              <h4 className="font-black text-lg tracking-tight uppercase tracking-widest text-xs">Horaires de Service</h4>
+              <Clock className="w-5 h-5 text-gray-500" />
+              <h4 className="font-semibold text-base">Horaires de Service</h4>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <TimeInput label="Petit Déjeuner" value={settings?.breakfastTime ?? '07:30'} onChange={(v) => update('breakfastTime', v)} />
               <TimeInput label="Déjeuner" value={settings?.lunchTime ?? '12:00'} onChange={(v) => update('lunchTime', v)} />
               <TimeInput label="Goûter" value={settings?.snackTime ?? '15:30'} onChange={(v) => update('snackTime', v)} />
@@ -135,34 +157,34 @@ export default function CanteenSettings() {
           </section>
 
           {/* Section: Subscription Plans */}
-          <section className="space-y-6">
+          <section className="space-y-4">
             <div className="flex items-center space-x-3 text-navy-900">
-              <CreditCard className="w-6 h-6 text-navy-400" />
-              <h4 className="font-black text-lg tracking-tight uppercase tracking-widest text-xs">Abonnements & Tarifs</h4>
+              <CreditCard className="w-5 h-5 text-gray-500" />
+              <h4 className="font-semibold text-base">Abonnements & Tarifs</h4>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <ToggleOption
-                title="Paiement à l'avance obligatoire"
-                desc="L'élève ne peut badger que si son solde ou abonnement est à jour."
+                title="Paiement à l’avance obligatoire"
+                desc="L’élève ne peut badger que si son solde ou abonnement est à jour."
                 checked={!!settings?.requirePrepayment}
                 onToggle={() => update('requirePrepayment', !settings?.requirePrepayment)}
               />
               <ToggleOption
                 title="Autoriser les repas occasionnels"
                 desc="Permet aux élèves non-inscrits de déjeuner via paiement unique."
-                checked={!!settings?.allowOccasionalMeals}
-                onToggle={() => update('allowOccasionalMeals', !settings?.allowOccasionalMeals)}
+                checked={!!settings?.allowOccasualMeals}
+                onToggle={() => update('allowOccasualMeals', !settings?.allowOccasualMeals)}
               />
             </div>
           </section>
 
           {/* Section: Notifications */}
-          <section className="space-y-6">
+          <section className="space-y-4">
             <div className="flex items-center space-x-3 text-navy-900">
-              <Bell className="w-6 h-6 text-navy-400" />
-              <h4 className="font-black text-lg tracking-tight uppercase tracking-widest text-xs">Notifications & Alertes</h4>
+              <Bell className="w-5 h-5 text-gray-500" />
+              <h4 className="font-semibold text-base">Notifications & Alertes</h4>
             </div>
-            <div className="space-y-4 max-w-2xl">
+            <div className="space-y-3 max-w-2xl">
               <NotificationToggle
                 label="Menu publié"
                 desc="Envoyer une notification in-app et email aux parents lors de la publication du menu hebdomadaire."
@@ -180,7 +202,7 @@ export default function CanteenSettings() {
               />
               <NotificationToggle
                 label="Stock faible"
-                desc="Alerter l'économe lorsque le stock d'un produit descend sous le seuil critique."
+                desc="Alerter l’économe lorsque le stock d’un produit descend sous le seuil critique."
                 channels={['App']}
                 checked={!!settings?.notifyLowStock}
                 onToggle={() => update('notifyLowStock', !settings?.notifyLowStock)}
@@ -189,35 +211,34 @@ export default function CanteenSettings() {
           </section>
 
           {/* Section: Advanced */}
-          <section className="p-6 bg-navy-50 rounded-3xl border border-navy-100 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <section className="p-6 bg-slate-50 rounded-xl border border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-start space-x-4">
-              <div className="p-3 bg-white rounded-2xl shadow-sm text-navy-600">
+              <div className="p-3 bg-white rounded-xl shadow-sm text-blue-600">
                 <Database className="w-6 h-6" />
               </div>
               <div>
-                <h4 className="font-black text-navy-900 text-sm uppercase tracking-widest">Maintenance des Données</h4>
-                <p className="text-xs text-navy-500 font-medium mt-1">Archivage des historiques de présence et de paiements des années précédentes.</p>
+                <h4 className="font-semibold text-navy-900 text-sm">Maintenance des Données</h4>
+                <p className="text-xs text-gray-500 mt-1">Archivage des historiques de présence et de paiements des années précédentes.</p>
               </div>
             </div>
-            <button className="px-6 py-2.5 bg-white text-navy-900 rounded-xl text-[10px] font-black uppercase tracking-widest border border-navy-200 hover:bg-navy-100 transition-all">
-              Gérer l'archivage
-            </button>
+            <Button variant="outline">
+              Gérer l’archivage
+            </Button>
           </section>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
 
 function TimeInput({ label, value, onChange }: any) {
   return (
-    <div className="space-y-2">
-      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{label}</label>
-      <input
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      <Input
         type="time"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3 px-4 text-sm font-black text-navy-900 outline-none focus:ring-2 focus:ring-navy-500/20 focus:border-navy-500/50 transition-all"
       />
     </div>
   );
@@ -225,42 +246,36 @@ function TimeInput({ label, value, onChange }: any) {
 
 function ToggleOption({ title, desc, checked, onToggle }: any) {
   return (
-    <div className="p-6 rounded-3xl border border-gray-100 bg-gray-50/30 flex items-start justify-between hover:border-navy-200 transition-all group">
+    <Card className="p-4 shadow-sm flex items-start justify-between">
       <div className="pr-4">
-        <h5 className="font-black text-navy-900 text-sm mb-1">{title}</h5>
-        <p className="text-xs text-gray-400 font-medium leading-relaxed">{desc}</p>
+        <h5 className="font-semibold text-navy-900 text-sm mb-1">{title}</h5>
+        <p className="text-xs text-gray-500 leading-relaxed">{desc}</p>
       </div>
-      <button
-        onClick={onToggle}
-        className={`relative inline-flex items-center cursor-pointer w-11 h-6 rounded-full transition-all ${checked ? 'bg-navy-900' : 'bg-gray-200'}`}
-      >
-        <span className={`absolute top-[2px] left-[2px] bg-white border border-gray-300 rounded-full h-5 w-5 transition-all ${checked ? 'translate-x-5' : ''}`} />
-      </button>
-    </div>
+      <Switch checked={checked} onCheckedChange={onToggle} />
+    </Card>
   );
 }
 
 function NotificationToggle({ label, desc, channels, isCritical, checked, onToggle }: any) {
   return (
-    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 hover:bg-gray-50 rounded-2xl transition-all group">
+    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 hover:bg-slate-50 rounded-xl transition-all">
       <div className="flex-1">
         <div className="flex items-center space-x-2">
-          <p className="text-sm font-black text-navy-900">{label}</p>
-          {isCritical && <span className="p-1 bg-red-100 text-red-600 rounded-lg"><AlertTriangle className="w-3 h-3" /></span>}
+          <p className="text-sm font-semibold text-navy-900">{label}</p>
+          {isCritical && (
+            <span className="p-1 bg-red-100 text-red-600 rounded-lg">
+              <AlertTriangle className="w-3 h-3" />
+            </span>
+          )}
         </div>
         <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
       </div>
       <div className="flex items-center space-x-2">
         {channels.map((c: string) => (
-          <span key={c} className="px-2 py-1 bg-white border border-gray-100 rounded-lg text-[9px] font-black text-navy-400 uppercase tracking-tighter group-hover:border-navy-200 transition-all">{c}</span>
+          <Badge key={c} variant="outline" className="text-gray-500">{c}</Badge>
         ))}
         <div className="ml-4">
-          <button
-            onClick={onToggle}
-            className={`relative inline-flex items-center cursor-pointer scale-90 w-10 h-5 rounded-full transition-all ${checked ? 'bg-navy-900' : 'bg-gray-200'}`}
-          >
-            <span className={`absolute top-[2px] left-[2px] bg-white border border-gray-300 rounded-full h-4 w-4 transition-all ${checked ? 'translate-x-5' : ''}`} />
-          </button>
+          <Switch checked={checked} onCheckedChange={onToggle} />
         </div>
       </div>
     </div>

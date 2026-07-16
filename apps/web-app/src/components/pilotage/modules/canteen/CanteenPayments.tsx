@@ -5,8 +5,17 @@
  *
  * Endpoint (lecture)   : GET  /modules-complementaires/canteen/payments
  * Endpoint (création)  : POST /modules-complementaires/canteen/payments
+ *
+ * Refonte juillet 2026 (Task 7-d) :
+ *  - alert() → toast() via useToast()
+ *  - fixed inset-0 modal → <Dialog> shadcn
+ *  - <input>/<label>/<button> HTML → <Input>/<Label>/<Button> shadcn
+ *  - <table> HTML → <Table> shadcn
+ *  - rounded-3xl → rounded-xl, font-black uppercase tracking-widest → font-semibold
  * ============================================================================
  */
+
+'use client';
 
 import React, { useState } from 'react';
 import {
@@ -14,11 +23,19 @@ import {
   CreditCard, Wallet, Smartphone,
   CheckCircle2, AlertCircle, Clock,
   ArrowUpRight, Plus,
-  DollarSign, TrendingUp, Loader2
+  DollarSign, TrendingUp, Loader2,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useToast } from '@/components/ui/use-toast';
 
 interface PaymentItem {
   id: string;
@@ -49,6 +66,7 @@ const emptyPaymentForm: NewPaymentFormData = { studentId: '', amount: 0, method:
 
 export default function CanteenPayments() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const [modalOpen, setModalOpen] = useState(false);
   const [formData, setFormData] = useState<NewPaymentFormData>(emptyPaymentForm);
   const [submitting, setSubmitting] = useState(false);
@@ -69,9 +87,14 @@ export default function CanteenPayments() {
       setModalOpen(false);
       setFormData(emptyPaymentForm);
       await refetch();
+      toast({ title: 'Paiement enregistré', description: 'Le paiement a été enregistré avec succès.' });
     } catch (e: any) {
       console.error('Erreur enregistrement paiement :', e?.message || e);
-      alert(e?.message || 'Erreur lors de l\'enregistrement du paiement');
+      toast({
+        title: 'Erreur enregistrement',
+        description: e?.message || 'Erreur lors de l’enregistrement du paiement',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -152,32 +175,29 @@ export default function CanteenPayments() {
         />
       </div>
 
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-xl shadow-gray-200/50 overflow-hidden">
-        <div className="p-8 border-b border-gray-50 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+      <Card className="p-0 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-gray-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <h3 className="font-black text-navy-900 text-xl tracking-tight">Suivi des Paiements</h3>
-            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">Gestion financière de la restauration scolaire</p>
+            <h3 className="font-semibold text-navy-900 text-lg">Suivi des Paiements</h3>
+            <p className="text-gray-500 text-sm mt-1">Gestion financière de la restauration scolaire</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative group">
-              <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-navy-600 transition-colors" />
-              <input
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Input
                 type="text"
                 placeholder="Élève, parent, reçu..."
-                className="pl-11 pr-4 py-2.5 bg-gray-50/50 border border-gray-100 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-navy-500/20 w-64 transition-all"
+                className="pl-10 w-64"
               />
             </div>
-            <button className="p-2.5 bg-white border border-gray-100 text-gray-400 hover:text-navy-600 rounded-2xl transition-all shadow-sm">
+            <Button variant="outline" size="icon">
               <Filter className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setModalOpen(true)}
-              className="flex items-center space-x-2 px-6 py-2.5 bg-navy-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Nouveau Paiement</span>
-            </button>
+            </Button>
+            <Button onClick={() => setModalOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Nouveau Paiement
+            </Button>
           </div>
         </div>
 
@@ -186,101 +206,93 @@ export default function CanteenPayments() {
             Aucun paiement enregistré pour cette année scolaire.
           </div>
         ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-gray-50/50">
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Élève & Période</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Abonnement</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Montant</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Mode</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Statut</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50">
+                <TableHead>Élève & Période</TableHead>
+                <TableHead>Abonnement</TableHead>
+                <TableHead>Montant</TableHead>
+                <TableHead>Mode</TableHead>
+                <TableHead>Statut</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {payments.map((payment) => {
                 const amount = payment.amount ?? 0;
                 const paid = payment.paid ?? payment.amountPaid;
                 return (
-                <PaymentRow
-                  key={payment.id}
-                  student={payment.student ?? payment.studentName ?? '—'}
-                  class={payment.class ?? payment.className ?? '—'}
-                  period={payment.period ?? payment.periodLabel ?? '—'}
-                  plan={payment.plan ?? payment.subscriptionPlan ?? '—'}
-                  amount={amount > 0 ? `${amount.toLocaleString('fr-FR')} F` : '—'}
-                  mode={payment.mode ?? payment.paymentMethod ?? 'Espèces'}
-                  status={payment.status ?? 'En attente'}
-                  paid={paid != null && paid > 0 ? `${paid.toLocaleString('fr-FR')} F` : undefined}
-                />
+                  <PaymentRow
+                    key={payment.id}
+                    student={payment.student ?? payment.studentName ?? '—'}
+                    class={payment.class ?? payment.className ?? '—'}
+                    period={payment.period ?? payment.periodLabel ?? '—'}
+                    plan={payment.plan ?? payment.subscriptionPlan ?? '—'}
+                    amount={amount > 0 ? `${amount.toLocaleString('fr-FR')} F` : '—'}
+                    mode={payment.mode ?? payment.paymentMethod ?? 'Espèces'}
+                    status={payment.status ?? 'En attente'}
+                    paid={paid != null && paid > 0 ? `${paid.toLocaleString('fr-FR')} F` : undefined}
+                  />
                 );
               })}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
         )}
-      </div>
+      </Card>
 
       {/* Modal Nouveau Paiement */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <h3 className="text-lg font-black text-navy-900">Enregistrer un Paiement</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Élève (ID)</label>
-                <input
-                  type="text"
-                  placeholder="ex : student-123"
-                  value={formData.studentId}
-                  onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Montant (F CFA)</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: Number(e.target.value) })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Mode de paiement</label>
-                <select
-                  value={formData.method}
-                  onChange={(e) => setFormData({ ...formData, method: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
-                >
-                  <option value="ESPECES">Espèces</option>
-                  <option value="MOBILE_MONEY">Mobile Money</option>
-                  <option value="CARTE_BANCAIRE">Carte bancaire</option>
-                  <option value="VIREMENT">Virement</option>
-                </select>
-              </div>
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Enregistrer un Paiement</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="pay-student">Élève (ID)</Label>
+              <Input
+                id="pay-student"
+                type="text"
+                placeholder="ex : student-123"
+                value={formData.studentId}
+                onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                onClick={() => setModalOpen(false)}
-                disabled={submitting}
-                className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50"
+            <div className="space-y-1.5">
+              <Label htmlFor="pay-amount">Montant (F CFA)</Label>
+              <Input
+                id="pay-amount"
+                type="number"
+                min={0}
+                value={formData.amount}
+                onChange={(e) => setFormData({ ...formData, amount: Number(e.target.value) })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pay-method">Mode de paiement</Label>
+              <select
+                id="pay-method"
+                value={formData.method}
+                onChange={(e) => setFormData({ ...formData, method: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
               >
-                Annuler
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={submitting}
-                className="px-4 py-2 bg-navy-900 text-white rounded-lg text-sm font-bold disabled:opacity-50"
-              >
-                {submitting ? 'Envoi…' : 'Enregistrer'}
-              </button>
+                <option value="ESPECES">Espèces</option>
+                <option value="MOBILE_MONEY">Mobile Money</option>
+                <option value="CARTE_BANCAIRE">Carte bancaire</option>
+                <option value="VIREMENT">Virement</option>
+              </select>
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)} disabled={submitting}>
+              Annuler
+            </Button>
+            <Button onClick={handleCreate} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Envoi…' : 'Enregistrer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -293,22 +305,22 @@ function FinanceCard({ title, value, change, trend, icon: Icon, color }: any) {
     red: 'text-red-600 bg-red-50',
   };
   return (
-    <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all duration-300">
-      <div className="flex justify-between items-start mb-6">
-        <div className={`p-4 rounded-2xl ${colors[color]}`}>
+    <Card className="p-6 shadow-sm hover:shadow-md transition-all">
+      <div className="flex justify-between items-start mb-4">
+        <div className={`p-3 rounded-xl ${colors[color]}`}>
           <Icon className="w-6 h-6" />
         </div>
-        <div className={`flex items-center space-x-1 text-[10px] font-black uppercase px-2 py-1 rounded-lg ${
+        <Badge variant="outline" className={
           trend === 'up' ? 'bg-emerald-50 text-emerald-600' :
           trend === 'down' ? 'bg-red-50 text-red-600' :
-          'bg-gray-50 text-gray-400'
-        }`}>
-          <span>{change}</span>
-        </div>
+          'bg-gray-50 text-gray-500'
+        }>
+          {change}
+        </Badge>
       </div>
-      <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">{title}</p>
-      <p className="text-2xl font-black text-navy-900 mt-1">{value}</p>
-    </div>
+      <p className="text-gray-500 text-xs font-medium">{title}</p>
+      <p className="text-2xl font-semibold text-navy-900 mt-1">{value}</p>
+    </Card>
   );
 }
 
@@ -330,46 +342,50 @@ function PaymentRow({ student, class: className, period, plan, amount, mode, sta
   };
 
   return (
-    <tr className="group hover:bg-navy-50/30 transition-all duration-300">
-      <td className="px-8 py-6">
+    <TableRow className="hover:bg-slate-50">
+      <TableCell>
         <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center text-gray-500 font-black text-xs group-hover:bg-white transition-colors">
+          <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 font-semibold text-xs">
             {typeof student === 'string' ? student.split(' ').map((n: string) => n[0]).join('') : '—'}
           </div>
           <div>
-            <p className="text-sm font-black text-navy-900">{student}</p>
+            <p className="text-sm font-semibold text-navy-900">{student}</p>
             <div className="flex items-center space-x-2 mt-0.5">
-              <span className="text-[10px] font-bold text-navy-500 uppercase tracking-tighter">{className}</span>
+              <span className="text-xs text-blue-500">{className}</span>
               <span className="text-gray-300">|</span>
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">{period}</span>
+              <span className="text-xs text-gray-400">{period}</span>
             </div>
           </div>
         </div>
-      </td>
-      <td className="px-8 py-6">
-        <p className="text-xs font-black text-navy-900 uppercase tracking-wider bg-navy-50 px-3 py-1 rounded-lg w-fit border border-navy-100">{plan}</p>
-      </td>
-      <td className="px-8 py-6">
-        <p className="text-sm font-black text-navy-900">{amount}</p>
-        {paid && <p className="text-[10px] text-blue-600 font-bold mt-0.5 italic">Payé: {paid}</p>}
-      </td>
-      <td className="px-8 py-6">
+      </TableCell>
+      <TableCell>
+        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-100">{plan}</Badge>
+      </TableCell>
+      <TableCell>
+        <p className="text-sm font-semibold text-navy-900">{amount}</p>
+        {paid && <p className="text-xs text-blue-600 italic mt-0.5">Payé: {paid}</p>}
+      </TableCell>
+      <TableCell>
         <div className="flex items-center space-x-2 text-gray-500">
           {modeIcon(mode)}
           <p className="text-xs font-medium">{mode}</p>
         </div>
-      </td>
-      <td className="px-8 py-6">
-        <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border w-fit ${statusStyle}`}>
+      </TableCell>
+      <TableCell>
+        <Badge variant="outline" className={statusStyle}>
           {status}
+        </Badge>
+      </TableCell>
+      <TableCell className="text-right">
+        <div className="flex items-center justify-end space-x-1">
+          <Button variant="ghost" size="icon">
+            <ArrowUpRight className="w-4 h-4" />
+          </Button>
+          <Button variant="ghost" size="icon">
+            <Download className="w-4 h-4" />
+          </Button>
         </div>
-      </td>
-      <td className="px-8 py-6 text-right">
-        <div className="flex items-center justify-end space-x-2">
-          <button className="p-2 text-gray-400 hover:text-navy-600 hover:bg-white rounded-xl transition-all border border-transparent hover:border-gray-100"><ArrowUpRight className="w-4 h-4" /></button>
-          <button className="p-2 text-gray-400 hover:text-navy-900 hover:bg-white rounded-xl transition-all border border-transparent hover:border-gray-100"><Download className="w-4 h-4" /></button>
-        </div>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }

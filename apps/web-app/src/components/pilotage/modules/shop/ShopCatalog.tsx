@@ -2,6 +2,15 @@
  * ============================================================================
  * SHOP CATALOG - ACADEMIA HELM
  * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern Finance/Students.
+ *  - Boutons : <Button> shadcn (au lieu de buttons custom bg-navy-900 uppercase)
+ *  - Inputs/Labels : <Input>/<Label> shadcn
+ *  - Modals : <Dialog> shadcn (au lieu de fixed inset-0 fait main)
+ *  - Notifications : useToast() (au lieu de alert())
+ *  - Cards : rounded-xl border-gray-200 (au lieu de rounded-3xl)
+ *  - Typo : font-semibold text-lg (au lieu de font-black uppercase tracking-tight)
+ * ============================================================================
  */
 
 'use client';
@@ -11,7 +20,16 @@ import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
-import { Loader2, Search, Filter, Plus, Package, Grid, List, Tag, ChevronRight, Bookmark, X } from 'lucide-react';
+import { Loader2, Search, Plus, Package, Grid, List, Tag, ChevronRight, Bookmark, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/use-toast';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
 
 interface ProductItem {
   id?: string;
@@ -40,6 +58,7 @@ interface CategoryItem {
 export default function ShopCatalog() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
 
   const { data: categories, loading: catLoading, refetch: refetchCategories } = useModulesList<CategoryItem>(
     'shop',
@@ -65,8 +84,13 @@ export default function ShopCatalog() {
       setProductModalOpen(false);
       setProductForm({ name: '', price: 0, categoryId: '', stock: 0, description: '' });
       await refetch();
+      toast({ title: 'Produit créé', description: 'Le nouvel article a été ajouté au catalogue.' });
     } catch (e: any) {
-      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création du produit');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création du produit',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -79,8 +103,13 @@ export default function ShopCatalog() {
       setCategoryModalOpen(false);
       setCategoryForm({ name: '' });
       await refetchCategories();
+      toast({ title: 'Catégorie créée', description: 'La nouvelle catégorie a été ajoutée.' });
     } catch (e: any) {
-      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création de la catégorie');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création de la catégorie',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -103,7 +132,7 @@ export default function ShopCatalog() {
   }));
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
+    <div className="space-y-6 animate-in fade-in duration-700">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les produits. {error}
@@ -111,90 +140,95 @@ export default function ShopCatalog() {
       )}
 
       {/* Category Sidebar & Header */}
-      <div className="flex flex-col lg:flex-row gap-8">
+      <div className="flex flex-col lg:flex-row gap-6">
         <div className="lg:w-64 space-y-6">
-          <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-black text-navy-900 uppercase tracking-tight flex items-center space-x-2">
-                <Tag className="w-4 h-4 text-navy-600" />
+          <Card className="p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-navy-900 flex items-center gap-2">
+                <Tag className="w-4 h-4 text-indigo-600" />
                 <span>Catégories</span>
               </h3>
-              <button
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
                 onClick={() => setCategoryModalOpen(true)}
-                className="p-1.5 bg-navy-50 text-navy-600 rounded-lg hover:bg-navy-100 transition-all"
                 title="Ajouter une catégorie"
               >
                 <Plus className="w-4 h-4" />
-              </button>
+              </Button>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1">
               {safeCategories.length === 0 ? (
                 <p className="text-xs text-gray-400 text-center py-4">Aucune catégorie</p>
               ) : (
                 safeCategories.map((cat) => (
-                  <button
+                  <div
                     key={cat.key}
-                    className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-navy-50 group transition-all"
+                    className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-slate-50 group transition-all"
                   >
-                    <div className="flex items-center space-x-3">
-                      <span className="text-lg">{cat.icon}</span>
-                      <span className="text-xs font-bold text-gray-500 group-hover:text-navy-900 transition-colors">{cat.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{cat.icon}</span>
+                      <span className="text-xs font-medium text-gray-600 group-hover:text-navy-900 transition-colors">{cat.name}</span>
                     </div>
-                    <span className="text-[10px] font-black text-gray-300 group-hover:text-navy-400">{cat.count}</span>
-                  </button>
+                    <span className="text-xs font-medium text-gray-400 group-hover:text-indigo-500">{cat.count}</span>
+                  </div>
                 ))
               )}
             </div>
-          </div>
+          </Card>
 
-          <div className="bg-gradient-to-br from-navy-900 to-navy-800 rounded-3xl p-6 text-white shadow-xl">
-            <Bookmark className="w-8 h-8 text-navy-400 mb-4" />
-            <h4 className="font-black text-sm uppercase tracking-tight mb-2">Kits Scolaires</h4>
-            <p className="text-[10px] text-navy-200 font-medium leading-relaxed mb-4">
+          <Card className="p-6 bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-md border-0">
+            <Bookmark className="w-7 h-7 text-indigo-300 mb-3" />
+            <h4 className="text-sm font-semibold mb-2">Kits Scolaires</h4>
+            <p className="text-xs text-slate-300 leading-relaxed mb-4">
               Gérez les packs d'articles obligatoires par niveau pour faciliter les achats parents.
             </p>
-            <button className="w-full py-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
+            <Button variant="outline" size="sm" className="w-full bg-white/10 border-white/20 text-white hover:bg-white/20">
               Configurer les kits
-            </button>
-          </div>
+            </Button>
+          </Card>
         </div>
 
         <div className="flex-1 space-y-6">
           {/* Toolbar */}
-          <div className="bg-white rounded-3xl border border-gray-100 p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="relative flex-1 w-full">
-              <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Rechercher un article (Nom, SKU, Code-barres)..."
-                className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-2xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 transition-all font-medium"
-              />
-            </div>
-
-            <div className="flex items-center space-x-3 w-full md:w-auto">
-              <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
-                <button
-                  onClick={() => setViewMode('grid')}
-                  className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-navy-900' : 'text-gray-400 hover:text-navy-600'}`}
-                >
-                  <Grid className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setViewMode('list')}
-                  className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-navy-900' : 'text-gray-400 hover:text-navy-600'}`}
-                >
-                  <List className="w-4 h-4" />
-                </button>
+          <Card className="p-4 shadow-sm">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+              <div className="relative flex-1 w-full">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Input
+                  type="text"
+                  placeholder="Rechercher un article (Nom, SKU, Code-barres)..."
+                  className="pl-9"
+                />
               </div>
-              <button
-                onClick={() => setProductModalOpen(true)}
-                className="flex items-center space-x-2 px-6 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-lg shadow-navy-900/20"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Ajouter un Article</span>
-              </button>
+
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={`h-8 w-8 ${viewMode === 'grid' ? 'bg-white shadow-sm text-navy-900' : 'text-gray-400'}`}
+                    onClick={() => setViewMode('grid')}
+                  >
+                    <Grid className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={`h-8 w-8 ${viewMode === 'list' ? 'bg-white shadow-sm text-navy-900' : 'text-gray-400'}`}
+                    onClick={() => setViewMode('list')}
+                  >
+                    <List className="w-4 h-4" />
+                  </Button>
+                </div>
+                <Button onClick={() => setProductModalOpen(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Ajouter un Article
+                </Button>
+              </div>
             </div>
-          </div>
+          </Card>
 
           {/* Catalog Grid */}
           {(products ?? []).length === 0 ? (
@@ -211,68 +245,95 @@ export default function ShopCatalog() {
         </div>
       </div>
 
-      {/* Modals */}
-      {productModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-navy-900">Nouvel Article</h3>
-              <button onClick={() => setProductModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+      {/* Modal Nouvel Article */}
+      <Dialog open={productModalOpen} onOpenChange={setProductModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nouvel Article</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-xs">Nom</Label>
+              <Input
+                type="text"
+                value={productForm.name}
+                onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
+                placeholder="Ex: Uniforme CP1"
+              />
             </div>
-            <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Nom</label>
-                <input type="text" value={productForm.name} onChange={(e) => setProductForm({ ...productForm, name: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Prix</label>
-                  <input type="number" value={productForm.price} onChange={(e) => setProductForm({ ...productForm, price: Number(e.target.value) })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Stock</label>
-                  <input type="number" value={productForm.stock} onChange={(e) => setProductForm({ ...productForm, stock: Number(e.target.value) })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">ID Catégorie</label>
-                <input type="text" value={productForm.categoryId} onChange={(e) => setProductForm({ ...productForm, categoryId: e.target.value })} placeholder="Optionnel" className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+                <Label className="text-xs">Prix (FCFA)</Label>
+                <Input
+                  type="number"
+                  value={productForm.price}
+                  onChange={(e) => setProductForm({ ...productForm, price: Number(e.target.value) })}
+                />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Description</label>
-                <textarea value={productForm.description} onChange={(e) => setProductForm({ ...productForm, description: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 h-20" />
+                <Label className="text-xs">Stock initial</Label>
+                <Input
+                  type="number"
+                  value={productForm.stock}
+                  onChange={(e) => setProductForm({ ...productForm, stock: Number(e.target.value) })}
+                />
               </div>
-            </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setProductModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
-              <button onClick={handleCreateProduct} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
-                {submitting ? 'Envoi...' : 'Créer'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {categoryModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-navy-900">Nouvelle Catégorie</h3>
-              <button onClick={() => setCategoryModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
             </div>
             <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Nom de la catégorie</label>
-              <input type="text" value={categoryForm.name} onChange={(e) => setCategoryForm({ name: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
+              <Label className="text-xs">ID Catégorie</Label>
+              <Input
+                type="text"
+                value={productForm.categoryId}
+                onChange={(e) => setProductForm({ ...productForm, categoryId: e.target.value })}
+                placeholder="Optionnel"
+              />
             </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setCategoryModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
-              <button onClick={handleCreateCategory} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
-                {submitting ? 'Envoi...' : 'Créer'}
-              </button>
+            <div>
+              <Label className="text-xs">Description</Label>
+              <textarea
+                value={productForm.description}
+                onChange={(e) => setProductForm({ ...productForm, description: e.target.value })}
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[80px]"
+                placeholder="Description optionnelle"
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProductModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleCreateProduct} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Création...' : 'Créer l\'article'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Nouvelle Catégorie */}
+      <Dialog open={categoryModalOpen} onOpenChange={setCategoryModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nouvelle Catégorie</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-xs">Nom de la catégorie</Label>
+              <Input
+                type="text"
+                value={categoryForm.name}
+                onChange={(e) => setCategoryForm({ name: e.target.value })}
+                placeholder="Ex: Uniformes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCategoryModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleCreateCategory} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Création...' : 'Créer la catégorie'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -287,50 +348,46 @@ function ProductCard({ product, index }: any) {
   const isOutOfStock = product?.status === 'Rupture' || stock <= 0;
 
   return (
-    <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all duration-500 group">
-      <div className="h-48 bg-gray-50 relative overflow-hidden flex items-center justify-center">
-        <Package className="w-16 h-16 text-gray-200 group-hover:scale-110 transition-transform duration-700" />
-        <div className="absolute inset-0 bg-navy-900/0 group-hover:bg-navy-900/40 transition-all duration-500 flex items-center justify-center space-x-3 opacity-0 group-hover:opacity-100">
-          <button className="p-3 bg-white text-navy-900 rounded-xl hover:bg-navy-50 transition-colors">
-            <ChevronRight className="w-4 h-4" />
-          </button>
-          <button className="p-3 bg-white text-navy-900 rounded-xl hover:bg-navy-50 transition-colors">
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="absolute top-4 left-4">
-          <span className="px-3 py-1 bg-white/90 backdrop-blur-sm text-[10px] font-black uppercase rounded-lg shadow-sm border border-gray-100">
+    <Card className="overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300">
+      <div className="h-40 bg-slate-50 relative overflow-hidden flex items-center justify-center">
+        <Package className="w-14 h-14 text-slate-200" />
+        <div className="absolute top-3 left-3">
+          <Badge variant="outline" className="bg-white/90 text-xs">
             {category}
-          </span>
+          </Badge>
         </div>
-        <div className="absolute bottom-4 right-4">
-          <span className={`px-3 py-1 text-[10px] font-black uppercase rounded-lg shadow-sm border ${
-            isOutOfStock ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'
-          }`}>
-            {isOutOfStock ? 'Rupture' : `En Stock: ${stock}`}
-          </span>
+        <div className="absolute bottom-3 right-3">
+          {isOutOfStock ? (
+            <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-xs">
+              Rupture
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">
+              En Stock: {stock}
+            </Badge>
+          )}
         </div>
       </div>
 
-      <div className="p-6">
+      <div className="p-5">
         <div className="flex justify-between items-start mb-2">
-          <h4 className="font-black text-navy-900 text-sm group-hover:text-navy-600 transition-colors line-clamp-1">{name}</h4>
-          <span className="text-[10px] font-bold text-gray-400 ml-2 flex-shrink-0">{sku}</span>
+          <h4 className="text-sm font-semibold text-navy-900 line-clamp-1">{name}</h4>
+          <span className="text-xs text-gray-400 ml-2 flex-shrink-0 font-mono">{sku}</span>
         </div>
-        <p className="text-[10px] text-gray-400 font-medium mb-6 line-clamp-2 leading-relaxed">
+        <p className="text-xs text-gray-500 mb-4 line-clamp-2 leading-relaxed">
           {description || 'Aucune description disponible.'}
         </p>
 
         <div className="flex items-center justify-between mt-auto">
           <div>
-            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-0.5">Prix Unitaire</p>
-            <p className="text-xl font-black text-navy-900">{formatCurrency(price)}</p>
+            <p className="text-xs text-gray-400 mb-0.5">Prix Unitaire</p>
+            <p className="text-lg font-semibold text-navy-900">{formatCurrency(price)}</p>
           </div>
-          <button className="p-3 bg-navy-50 text-navy-900 rounded-xl hover:bg-navy-900 hover:text-white transition-all shadow-sm">
-            <Plus className="w-5 h-5" />
-          </button>
+          <Button size="icon" variant="outline" className="h-9 w-9">
+            <Plus className="w-4 h-4" />
+          </Button>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }

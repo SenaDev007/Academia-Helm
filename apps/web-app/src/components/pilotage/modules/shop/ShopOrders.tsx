@@ -2,16 +2,38 @@
  * ============================================================================
  * SHOP ORDERS - ACADEMIA HELM
  * ============================================================================
+ *
+ * Refonte juillet 2026 : alignement sur le pattern Finance/Students.
+ *  - Boutons : <Button> shadcn
+ *  - Table : <Table>/<TableHeader>/... shadcn
+ *  - Modals : <Dialog> shadcn
+ *  - Notifications : useToast() (au lieu de alert())
+ *  - Inputs/Labels : <Input>/<Label> shadcn
+ *  - Cards : rounded-xl border-gray-200 (au lieu de rounded-3xl)
+ *  - Typo : font-semibold (au lieu de font-black uppercase tracking-widest)
+ * ============================================================================
  */
 
 'use client';
 
 import React, { useState } from 'react';
-import { Loader2, Archive, Search, Filter, Plus, Clock, CheckCircle2, Truck, MoreVertical, Eye, Download, Calendar, ShoppingBag, User, X } from 'lucide-react';
+import { Loader2, Search, Plus, Clock, CheckCircle2, Truck, Archive, MoreVertical, Eye, Download, Calendar, Filter, ShoppingBag, User } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
+import { useToast } from '@/components/ui/use-toast';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
 
 interface OrderItem {
   id?: string;
@@ -34,6 +56,7 @@ interface OrderItem {
 
 export default function ShopOrders() {
   const { academicYear } = useModuleContext();
+  const { toast } = useToast();
   const { data: orders, loading, error, refetch } = useModulesList<OrderItem>(
     'shop',
     'orders',
@@ -53,8 +76,13 @@ export default function ShopOrders() {
       setModalOpen(false);
       setFormData({ customer: '', items: '' });
       await refetch();
+      toast({ title: 'Commande créée', description: 'La nouvelle commande a été enregistrée.' });
     } catch (e: any) {
-      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création de la commande');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création de la commande',
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -69,8 +97,13 @@ export default function ShopOrders() {
         buildModulesApiOptions(academicYear?.id),
       );
       await refetch();
+      toast({ title: 'Statut mis à jour', description: `Commande passée en "${newStatus}".` });
     } catch (e: any) {
-      alert(e?.response?.data?.message ?? e?.message ?? 'Erreur lors du changement de statut');
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors du changement de statut',
+        variant: 'destructive',
+      });
     } finally {
       setActionLoading(null);
     }
@@ -106,7 +139,7 @@ export default function ShopOrders() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
+    <div className="space-y-6 animate-in fade-in duration-700">
       {error && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           ⚠ Impossible de charger les commandes. {error}
@@ -114,18 +147,15 @@ export default function ShopOrders() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h3 className="text-xl font-black text-navy-900 uppercase tracking-tight">Gestion des Commandes</h3>
-          <p className="text-sm text-gray-400 font-medium">Suivez les pré-commandes parents et le processus de préparation</p>
+          <h3 className="text-lg font-semibold text-navy-900">Gestion des Commandes</h3>
+          <p className="text-sm text-gray-500">Suivez les pré-commandes parents et le processus de préparation</p>
         </div>
-        <button
-          onClick={() => setModalOpen(true)}
-          className="flex items-center space-x-2 px-8 py-3 bg-navy-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-navy-800 transition-all shadow-xl shadow-navy-900/20 active:scale-95"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Créer une Commande</span>
-        </button>
+        <Button onClick={() => setModalOpen(true)}>
+          <Plus className="w-4 h-4 mr-2" />
+          Créer une Commande
+        </Button>
       </div>
 
       {/* Stats Mini Bar */}
@@ -137,49 +167,51 @@ export default function ShopOrders() {
       </div>
 
       {/* Filter Bar */}
-      <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm flex flex-col md:flex-row items-center gap-4">
-        <div className="relative flex-1 w-full">
-          <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Rechercher par N° commande, Parent ou Élève..."
-            className="w-full pl-11 pr-4 py-3 bg-gray-50 border-none rounded-2xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 transition-all font-medium"
-          />
+      <Card className="p-4 shadow-sm">
+        <div className="flex flex-col md:flex-row items-center gap-3">
+          <div className="relative flex-1 w-full">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Input
+              type="text"
+              placeholder="Rechercher par N° commande, Parent ou Élève..."
+              className="pl-9"
+            />
+          </div>
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <Button variant="outline" size="sm">
+              <Filter className="w-4 h-4 mr-1.5" />
+              Filtres
+            </Button>
+            <Button variant="outline" size="sm">
+              <Calendar className="w-4 h-4 mr-1.5" />
+              Période
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center space-x-3 w-full md:w-auto">
-          <button className="flex items-center space-x-2 px-5 py-3 bg-white border border-gray-100 text-gray-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition-all">
-            <Filter className="w-4 h-4" />
-            <span>Filtres</span>
-          </button>
-          <button className="flex items-center space-x-2 px-5 py-3 bg-white border border-gray-100 text-gray-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition-all">
-            <Calendar className="w-4 h-4" />
-            <span>Période</span>
-          </button>
-        </div>
-      </div>
+      </Card>
 
-      {/* Orders Table */}
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+      {/* Orders Table — pattern Finance */}
+      <Card className="shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-gray-50/50">
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">N° Commande</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Client / Élève</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Date</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Articles</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Total</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Statut</th>
-                <th className="px-8 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50">
+                <TableHead>N° Commande</TableHead>
+                <TableHead>Client / Élève</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Articles</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+                <TableHead>Statut</TableHead>
+                <TableHead className="text-center">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {safeOrders.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-8 py-16 text-center text-gray-500">
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-12">
                     Aucune commande disponible pour cette année scolaire.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : (
                 safeOrders.map((order: any, i: number) => (
                   <OrderRow
@@ -197,38 +229,45 @@ export default function ShopOrders() {
                   />
                 ))
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
-      </div>
+      </Card>
 
-      {/* Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-navy-900">Nouvelle Commande</h3>
-              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+      {/* Modal Nouvelle Commande */}
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nouvelle Commande</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-xs">Client</Label>
+              <Input
+                type="text"
+                value={formData.customer}
+                onChange={(e) => setFormData({ ...formData, customer: e.target.value })}
+              />
             </div>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Client</label>
-                <input type="text" value={formData.customer} onChange={(e) => setFormData({ ...formData, customer: e.target.value })} className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Articles (IDs séparés par virgule)</label>
-                <textarea value={formData.items} onChange={(e) => setFormData({ ...formData, items: e.target.value })} placeholder="ex: prod-1, prod-2" className="w-full px-4 py-2 bg-gray-50 border-none rounded-xl text-sm outline-none focus:ring-2 focus:ring-navy-500/20 h-20" />
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end pt-2">
-              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-gray-200 rounded-xl text-sm font-bold">Annuler</button>
-              <button onClick={handleCreate} disabled={submitting} className="px-4 py-2 bg-navy-900 text-white rounded-xl text-sm font-bold disabled:opacity-50">
-                {submitting ? 'Envoi...' : 'Créer'}
-              </button>
+            <div>
+              <Label className="text-xs">Articles (IDs séparés par virgule)</Label>
+              <textarea
+                value={formData.items}
+                onChange={(e) => setFormData({ ...formData, items: e.target.value })}
+                placeholder="ex: prod-1, prod-2"
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[80px]"
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalOpen(false)}>Annuler</Button>
+            <Button onClick={handleCreate} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Création...' : 'Créer la commande'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -242,15 +281,17 @@ function OrderStatCard({ label, count, color, icon: Icon }: any) {
   };
 
   return (
-    <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center space-x-4">
-      <div className={`p-3 rounded-xl ${colorMap[color]} border`}>
-        <Icon className="w-5 h-5" />
+    <Card className="p-4 shadow-sm">
+      <div className="flex items-center gap-3">
+        <div className={`p-2.5 rounded-lg border ${colorMap[color]}`}>
+          <Icon className="w-5 h-5" />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-0.5">{label}</p>
+          <p className="text-xl font-semibold text-navy-900">{count}</p>
+        </div>
       </div>
-      <div>
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">{label}</p>
-        <p className="text-xl font-black text-navy-900">{count}</p>
-      </div>
-    </div>
+    </Card>
   );
 }
 
@@ -277,36 +318,36 @@ function OrderRow({ id, orderId, name, student, date, itemCount, total, status, 
   const statusValue = ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'].includes(status) ? status : 'pending';
 
   return (
-    <tr className="hover:bg-gray-50/50 transition-all group">
-      <td className="px-8 py-5">
-        <span className="text-xs font-black text-navy-900 group-hover:text-navy-600 transition-colors">{id}</span>
-      </td>
-      <td className="px-8 py-5">
+    <TableRow className="hover:bg-slate-50">
+      <TableCell>
+        <span className="text-xs font-medium text-navy-900">{id}</span>
+      </TableCell>
+      <TableCell>
         <div>
-          <p className="text-xs font-bold text-navy-900">{name}</p>
+          <p className="text-sm font-medium text-navy-900">{name}</p>
           {student && (
-            <div className="flex items-center space-x-1 mt-0.5 text-gray-400">
+            <div className="flex items-center gap-1 mt-0.5 text-gray-400">
               <User className="w-3 h-3" />
-              <span className="text-[10px] font-medium">{student}</span>
+              <span className="text-xs">{student}</span>
             </div>
           )}
         </div>
-      </td>
-      <td className="px-8 py-5 text-xs text-gray-400 font-bold">{date}</td>
-      <td className="px-8 py-5">
-        <div className="flex items-center space-x-2">
-          <ShoppingBag className="w-4 h-4 text-gray-300" />
-          <span className="text-xs font-bold text-gray-600">{itemCount} article{itemCount > 1 ? 's' : ''}</span>
+      </TableCell>
+      <TableCell className="text-xs text-gray-500">{date}</TableCell>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <ShoppingBag className="w-4 h-4 text-gray-400" />
+          <span className="text-xs text-gray-600">{itemCount} article{itemCount > 1 ? 's' : ''}</span>
         </div>
-      </td>
-      <td className="px-8 py-5 font-black text-navy-900 text-sm">{formatCurrency(total)}</td>
-      <td className="px-8 py-5">
+      </TableCell>
+      <TableCell className="text-right font-semibold text-navy-900 text-sm">{formatCurrency(total)}</TableCell>
+      <TableCell>
         {orderId ? (
           <select
             value={statusValue}
             onChange={(e) => onStatusChange(orderId, e.target.value)}
             disabled={actionLoading === orderId}
-            className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-tight border ${statusColors[statusValue] ?? 'bg-gray-50 text-gray-500 border-gray-100'} outline-none disabled:opacity-50`}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium border ${statusColors[statusValue] ?? 'bg-gray-50 text-gray-500 border-gray-100'} outline-none disabled:opacity-50`}
           >
             <option value="pending">En attente</option>
             <option value="confirmed">Confirmée</option>
@@ -315,24 +356,24 @@ function OrderRow({ id, orderId, name, student, date, itemCount, total, status, 
             <option value="cancelled">Annulée</option>
           </select>
         ) : (
-          <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tight border ${statusColors[status] ?? 'bg-gray-50 text-gray-500 border-gray-100'}`}>
+          <Badge variant="outline" className={`text-xs ${statusColors[status] ?? 'bg-gray-50 text-gray-500 border-gray-100'}`}>
             {displayStatus}
-          </span>
+          </Badge>
         )}
-      </td>
-      <td className="px-8 py-5">
-        <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button className="p-2.5 bg-white text-navy-600 rounded-xl hover:bg-navy-50 shadow-sm transition-all">
-            <Eye className="w-4 h-4" />
-          </button>
-          <button className="p-2.5 bg-white text-navy-600 rounded-xl hover:bg-navy-50 shadow-sm transition-all">
-            <Download className="w-4 h-4" />
-          </button>
-          <button className="p-2.5 bg-white text-navy-600 rounded-xl hover:bg-navy-50 shadow-sm transition-all">
-            <MoreVertical className="w-4 h-4" />
-          </button>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center justify-center gap-1">
+          <Button variant="ghost" size="icon" className="h-7 w-7" title="Visualiser">
+            <Eye className="w-3.5 h-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7" title="Télécharger">
+            <Download className="w-3.5 h-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7" title="Plus d'actions">
+            <MoreVertical className="w-3.5 h-3.5" />
+          </Button>
         </div>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }

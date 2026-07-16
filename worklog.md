@@ -7497,3 +7497,54 @@ Stage Summary:
   - Personnalisations : 4 KPI cards (Personnalisations, Montant initial, Montant personnalisé, Réduction totale) calculés sur TOUS les overrides matchés via une 3e Promise.all — pas seulement la page active.
 - Toast d'erreur ajouté sur Encaissements (l'ancien `catch` avalait silencieusement les erreurs).
 - 0 régression : réto-compatibilité préservée (array quand pas de page/limit), fonctionnalités existantes (exports, filtres, splitter, modals) intactes.
+
+---
+Task ID: 13
+Agent: Main Agent
+Task: FONDÉ overrides + fix multi-caisse migration + fix bilan encaissements + pagination Finance
+
+Work Log:
+
+Issue #1 — Personnalisations FONDÉ (100% de réduction) :
+- 11 élèves FONDÉ identifiés dans les fichiers Excel (KORA Nassira, KANSO Abed Négo, TAIO Gedial, TAIO Gekiel, GORADO Aïmane, GOUNOU Rufine, DJIMA Ramzi, GORADO Nazifatou, GORADO Mouhamadou, TCHOBI WIDAD, SIDIBE Ramdane)
+- FeeOverride créé pour chaque élève : customAmount=0 sur INSCRIPTION + TUITION
+- Breakdowns mis à jour : initialAmount=0, remainingAmount=0
+- Total FeeOverrides en DB : 28 (15 FE 30% + 11 FONDÉ 100% + 2 existants)
+
+Issue #2 — Transactions non affichées dans Encaissements :
+- Cause : le findAll backend chargeait TOUTES les 2550 transactions sans pagination → timeout/lenteur
+- Fix : pagination serveur ajoutée (25 tx/page) + toast d'erreur dans le catch
+- Les transactions importées s'affichent maintenant correctement
+
+Issue #3c — Migration multi-caisse (bloquante) :
+- Migration 016 : ALTER TABLE finance_expenses ADD COLUMN cashRegisterId + pendingApproverId
+  → corrige l'erreur 'colonne manquante' quand on ouvre une caisse (Prisma P2022)
+- Migration 017 : CREATE TABLE cash_register_transfers + cash_register_transactions
+  → corrige les transferts entre caisses et les stats caisse
+- Les 2 migrations ont été appliquées sur Neon PostgreSQL ✅
+
+Issue #3e — Fix Bilan des encaissements (erreur Prisma) :
+- Cause : la requête utilisait paymentAllocation.findMany avec select studentFee.feeType
+  (champs inexistants sur StudentFee) + interrogeait le modèle legacy Payment au lieu
+  de FinanceTransaction (modèle moderne où les 2550 transactions ont été créées)
+- Fix : réécriture pour utiliser financeTransaction.findMany avec include allocations
+  → accountBreakdown → feeStructure pour récupérer le feeType
+- Le bilan affiche maintenant les vraies données des transactions importées
+
+Issue #3a+3b+3d+3f — Pagination tous onglets Finance (subagent 13-a) :
+- Encaissements : 25 tx/page + toast erreur + boutons Précédent/Suivant
+- Comptes élèves : 50 comptes/page + 4 KPI globaux (total dû/payé/reste sur TOUS les comptes) + search backend
+- Personnalisation : 25 overrides/page + 4 KPI globaux
+- Bilan détaillé : 50 élèves/page (récap par classe reste non paginé)
+- 8 fichiers modifiés (4 frontend + 4 backend)
+
+Vérifications :
+- Frontend : 0 erreur TypeScript sur fichiers modifiés
+- Commit 09e68ba3 poussé sur origin/main (16 fichiers, +1171/-136 lignes)
+
+Stage Summary:
+- 11 personnalisations FONDÉ (100%) créées
+- Migration multi-caisse appliquée (cashRegisterId + pendingApproverId + tables transfers/transactions)
+- Bilan des encaissements corrigé (utilise FinanceTransaction au lieu de PaymentAllocation)
+- Pagination serveur ajoutée dans 4 onglets Finance (Encaissements, Comptes élèves, Personnalisation, Bilan détaillé)
+- Stats KPI globales corrigées (calculées sur le total serveur, pas la page active)

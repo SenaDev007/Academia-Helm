@@ -6837,3 +6837,33 @@ Stage Summary:
 - Tailles texte harmonisées : text-[10px] / text-[9px] / text-[8px] → text-xs
 - Listes longues harmonisées : max-h-96 overflow-y-auto + pr-1 (Dashboard publications, Monetization payouts)
 - Logique métier 100% conservée (modulesApi.post/get/put/patch, useModulesList, useModulesDashboard, refetch, useState, handlers)
+
+---
+Task ID: 8 (Synthèse)
+Agent: Main Agent
+Task: Standardisation design 6 modules complémentaires + fixes CRUD
+
+Work Log:
+- Correction duplication QHSE dans modules-complementaires.controller.ts (bloc dupliqué lignes 860-941 supprimé — le bloc complet avec POST routes se trouve plus bas)
+- Création du guide de standardisation STANDARDIZATION-GUIDE.md (référence pour aligner tous les modules sur le pattern Finance)
+- Lancement de 6 subagents full-stack-developer en séquence (un par module) :
+  * Task 7-a : Module Boutique (12 fichiers) — ShopModulePage déjà refondu, 12 sous-composants standardisés
+  * Task 7-b : Module Infirmerie (11 fichiers) — InfirmaryModulePage refondu + 10 sous-composants
+  * Task 7-c : Module Labo (12 fichiers) — LaboratoryModulePage refondu + 11 sous-composants + 2 mocks supprimés (SafetyIncidents, LaboratorySettings branchés sur vrais endpoints)
+  * Task 7-d : Module Cantine (13 fichiers) — CanteenModulePage refondu + 12 sous-composants + 3 mocks supprimés + fix payload validate {status:'VALIDATED'}
+  * Task 7-e : Module Transport (15 fichiers) — TransportModulePage refondu + 14 sous-composants + 3 mocks supprimés + fix payload resolve {resolution:'Résolu'} + GET /transport/settings enfin utilisé
+  * Task 7-f : Module EduCast (18 fichiers) — EduCastModulePage refondu + 17 sous-composants + 3 mocks supprimés + fix payload reportType + câblage POST /educast/webinars + 6 typo fixes ([m manquant)
+- Vérification TypeScript frontend : 0 erreur sur les 81 fichiers standardisés (seules les erreurs préexistantes dans cms/useAutoSave.ts subsistent, hors-scope)
+- Commit 7595f66c poussé sur origin/main (84 fichiers, +11540/-8562 lignes)
+
+Stage Summary:
+- 81 fichiers standardisés au total
+- 103 alert() migrés vers useToast()
+- 55 modals fixed inset-0 convertis en <Dialog> shadcn
+- 29 tables HTML converties en <Table> shadcn
+- 14 mocks hardcoded supprimés/branchés sur vrais endpoints
+- 6 pages principales refondues sur ModuleContainer (SubModuleNavigation standard bleus soulignés)
+- 6 fixes backend (payload validate, payload resolve, payload reportType, câblage webinars, EduCastChannels objet unique, 6 typo fixes)
+- Duplication QHSE controller corrigée
+- Guide de standardisation créé pour futurs développements
+- TOUS les modules complémentaires (Boutique, Infirmerie, Labo, Cantine, Transport, EduCast) suivent maintenant exactement le même pattern design que le module Finance

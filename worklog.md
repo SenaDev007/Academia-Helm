@@ -5497,3 +5497,67 @@ PROCHAINES ACTIONS RECOMMANDÉES (POUR UN AGENT D'IMPLÉMENTATION)
    À discuter avec le product owner.
 
 AUCUN fichier modifié — recherche uniquement.
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Implémenter le bouton multi-actions dans le module Finance (frais + uniforme + tenue + fournitures en un seul encaissement), lier Boutique ↔ Finance (ventes boutique dans onglet encaissement), reçu multi-opération reflétant frais scolaires + articles boutique
+
+Work Log:
+- Investigué le module Boutique backend : shop.service.ts (786 lignes, déjà complet avec createCategory, CRUD products/sales/orders/stocks/suppliers/kits/returns/deliveries/discounts), modules-complementaires.controller.ts expose 40+ routes shop/*, le module est enregistré dans modules-complementaires.module.ts
+- Investigué le module Finance : finance-transaction.service.ts (create() avec imputation FIFO + allocations + génération reçu PDF fire-and-forget), receipt-finance.service.ts (génération PDF via Puppeteer avec HTML inline), finance-transaction.controller.ts (POST /finance/transactions, GET /:id/receipt.pdf, etc.)
+- Backend — Créé `apps/api-server/src/finance/multi-action-payment.service.ts` :
+  * Méthode `createMultiAction(tenantId, input)` qui crée en une opération : FinanceTransaction (frais) + ShopSale (articles boutique) + ShopSaleItem + mise à jour stock + ShopStockMovement
+  * Lien entre les deux via `ShopSale.notes = "MULTI_ACTION_TX:{transactionId}"`
+  * Validation : stock suffisant, compte élève existant, fallback vers create() standard si pas d'articles boutique
+  * Méthode `findShopSaleByTransactionId()` pour récupérer la ShopSale liée à une FinanceTransaction
+  * Méthode `findAllShopSalesForFinance()` pour lister les ventes boutique dans l'onglet encaissement
+- Backend — Créé `apps/api-server/src/finance/multi-action-payment.controller.ts` :
+  * POST /finance/transactions/multi-action — encaissement combiné frais + boutique
+  * GET /finance/transactions/shop-sales — liste ventes boutique pour Finance
+  * GET /finance/transactions/:id/linked-shop-sale — récupère ShopSale liée
+- Backend — Enregistré MultiActionPaymentService + MultiActionPaymentController dans finance.module.ts (controllers + providers + exports)
+- Backend — Modifié `receipt-finance.service.ts` :
+  * Ajouté recherche de la ShopSale liée (notes contains "MULTI_ACTION_TX:{tx.id}") dans generateForTransaction()
+  * Étendu buildReceiptHTML() avec paramètre linkedShopSale
+  * Ajouté section "🛍️ Articles Boutique" dans le PDF avec tableau des articles (nom, qté, prix unitaire, total)
+  * Ajouté "🧾 Récapitulatif Global — Multi-opération" avec Total Frais + Total Boutique = TOTAL ENCAISSÉ
+  * Renommé "TOTAL" en "TOTAL Frais scolaires" pour clarté
+- Frontend — Créé `apps/web-app/src/components/finance/ShopCartSection.tsx` :
+  * Composant panier boutique réutilisable avec sélecteur de produits (modal), quantité, prix unitaire personnalisable, suppression
+  * Affiche stock disponible, empêche dépassement de stock, calcul automatique du total
+- Frontend — Modifié `apps/web-app/src/components/finance/NewPaymentModal.tsx` :
+  * Ajouté état `shopCartItems` + import ShopCartSection
+  * Ajouté calcul `shopCartTotal` + `totalAmount` (frais + boutique) + `hasShopItems`
+  * Modifié handleSubmit() : si hasShopItems → appelle createMultiActionTransaction(), sinon createTransaction() standard
+  * Ajouté ShopCartSection dans le formulaire (md:col-span-2)
+  * Ajouté récapitulatif total (frais + boutique) avec bouton dynamique "Encaisser X FCFA (frais + boutique)"
+  * Validation assouplie : montant frais peut être 0 si articles boutique présents
+  * handleNewPayment() vide aussi le panier boutique
+- Frontend — Modifié `apps/web-app/src/services/finance.service.ts` :
+  * Ajouté createMultiActionTransaction(data) → POST /api/finance/transactions/multi-action
+  * Ajouté getShopSales(params) → GET /api/finance/shop-sales
+- Frontend — Créé routes BFF :
+  * `apps/web-app/src/app/api/finance/transactions/multi-action/route.ts` (POST)
+  * `apps/web-app/src/app/api/finance/shop-sales/route.ts` (GET)
+- Frontend — Créé `apps/web-app/src/components/finance/ShopSalesSection.tsx` :
+  * Affiche la liste des ventes boutique dans l'onglet Encaissements du module Finance
+  * Badge "Reçu combiné" pour les ventes liées à une FinanceTransaction (multi-action)
+  * Bouton "Aller au module Boutique" pour navigation directe
+- Frontend — Modifié `apps/web-app/src/components/finance/TransactionsContent.tsx` :
+  * Import ShopSalesSection + intégration sous la table des transactions
+  * Bouton navigation vers /app/shop
+- Frontend — Modifié `apps/web-app/src/components/pilotage/modules/ShopModulePage.tsx` :
+  * Ajouté bouton "Encaissements" (icône CreditCard) dans la toolbar → lien /app/finance/payments
+  * Ajouté bandeau info "Multi-action" expliquant le flux combiné frais + boutique
+- Vérifié la compilation TypeScript frontend : aucune erreur liée aux nouveaux fichiers
+
+Stage Summary:
+- 2 nouveaux fichiers backend : multi-action-payment.service.ts, multi-action-payment.controller.ts
+- 1 fichier backend modifié : receipt-finance.service.ts (section Articles Boutique + Récapitulatif Global dans le PDF)
+- 1 fichier backend modifié : finance.module.ts (enregistrement service + controller)
+- 4 nouveaux fichiers frontend : ShopCartSection.tsx, ShopSalesSection.tsx, 2 routes BFF
+- 3 fichiers frontend modifiés : NewPaymentModal.tsx (panier boutique + logique multi-action), TransactionsContent.tsx (section ventes boutique), ShopModulePage.tsx (bouton Encaissements + bandeau info)
+- 1 fichier service frontend modifié : finance.service.ts (createMultiActionTransaction + getShopSales)
+- Flux multi-action complet : utilisateur ouvre "Nouveau paiement" → sélectionne élève + montant frais → ajoute articles boutique (uniforme, tenue, fournitures) → un seul clic valide → backend crée FinanceTransaction + ShopSale liées → reçu PDF affiche les deux sections + récapitulatif global
+- Lien Boutique ↔ Finance bidirectionnel : ventes boutique visibles dans Finance → Encaissements, et bouton "Encaissements" dans Boutique redirige vers Finance

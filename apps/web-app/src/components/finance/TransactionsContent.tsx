@@ -18,6 +18,7 @@ import { formatCurrency } from '@/lib/utils';
 import { exportTransactionsToExcel } from '@/lib/exports/excel-exports';
 import { transactionsFilename } from '@/lib/exports/filename-helpers';
 import { PaymentMethodBadge } from './FedapayLogo';
+import ShopSalesSection from './ShopSalesSection';
 
 const METHOD_LABELS: Record<string, string> = {
   CASH: 'Espèces',
@@ -377,6 +378,20 @@ export default function TransactionsContent() {
             </TableBody>
           </Table>
         </div>
+
+        {/* Section Ventes Boutique — lien Boutique ↔ Finance */}
+        {academicYear?.id && (
+          <div className="mt-4">
+            <ShopSalesSection
+              academicYearId={academicYear.id}
+              onGoToShop={() => {
+                if (typeof window !== 'undefined') {
+                  window.location.href = '/app/shop';
+                }
+              }}
+            />
+          </div>
+        )}
       </ModuleContentArea>
       {modalOpen && (
         <NewPaymentModal

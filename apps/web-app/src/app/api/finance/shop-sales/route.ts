@@ -1,0 +1,27 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
+
+const API_URL = getApiBaseUrlForRoutes();
+
+/**
+ * GET /api/finance/shop-sales?academicYearId=...&studentId=...
+ * Liste les ventes boutique pour l'année académique (utilisé par l'onglet
+ * Encaissement du module Finance pour afficher les ventes boutique à côté
+ * des FinanceTransactions).
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const qs = request.nextUrl.searchParams.toString();
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(
+      normalizeApiUrl(`${API_URL}/finance/transactions/shop-sales${qs ? `?${qs}` : ''}`),
+      { headers },
+    );
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
+  } catch (e: any) {
+    console.error('shop-sales GET error:', e);
+    return NextResponse.json({ error: e?.message || 'Internal server error' }, { status: 500 });
+  }
+}

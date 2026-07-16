@@ -7,10 +7,10 @@
 'use client';
 
 import { useState } from 'react';
-import { 
-  Plus, Search, Activity, List, Package, Archive, QrCode, 
-  Wallet, Box, Truck, Tag, Bookmark, Navigation, RotateCcw, 
-  BarChart3, Settings
+import {
+  Plus, Search, Activity, List, Package, Archive, QrCode,
+  Wallet, Box, Truck, Tag, Bookmark, Navigation, RotateCcw,
+  BarChart3, Settings, CreditCard, ExternalLink
 } from 'lucide-react';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
@@ -30,20 +30,20 @@ import ShopReturns from './shop/ShopReturns';
 import ShopReports from './shop/ShopReports';
 import ShopSettings from './shop/ShopSettings';
 
-type TabId = 
-  | 'dashboard' 
-  | 'catalog' 
+type TabId =
+  | 'dashboard'
+  | 'catalog'
   | 'products'
-  | 'orders' 
+  | 'orders'
   | 'pos'
   | 'payments'
-  | 'inventory' 
-  | 'suppliers' 
+  | 'inventory'
+  | 'suppliers'
   | 'discounts'
   | 'kits'
   | 'pickups'
   | 'returns'
-  | 'analysis' 
+  | 'analysis'
   | 'settings';
 
 export default function ShopModulePage() {
@@ -95,11 +95,21 @@ export default function ShopModulePage() {
       subtitle={`${currentLevel?.label || ''} | ${currentYear?.name || ''}`}
       actions={
         <div className="flex items-center space-x-3">
+          {/* Lien direct vers le module Finance (encaissements) */}
+          <a
+            href="/app/finance/payments"
+            className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all font-bold text-xs uppercase tracking-widest active:scale-95 shadow-lg shadow-emerald-600/20"
+            title="Aller aux encaissements du module Finance"
+          >
+            <CreditCard className="w-4 h-4" />
+            <span>Encaissements</span>
+            <ExternalLink className="w-3 h-3 opacity-70" />
+          </a>
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input 
-              type="text" 
-              placeholder="Scanner ou rechercher..." 
+            <input
+              type="text"
+              placeholder="Scanner ou rechercher..."
               className="pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-navy-500 w-64 outline-none transition-all bg-white"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -113,6 +123,22 @@ export default function ShopModulePage() {
       }
     >
       <div className="space-y-8">
+        {/* Info : Lien multi-action avec Finance */}
+        <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3 flex items-start gap-3">
+          <CreditCard className="w-4 h-4 text-violet-700 mt-0.5 flex-shrink-0" />
+          <div className="text-xs text-violet-900">
+            <strong>Multi-action :</strong> Pour encaisser simultanément des
+            frais scolaires et des articles boutique (uniforme, tenue, fournitures)
+            en une seule opération avec un reçu unifié, ouvrez le modal
+            « Nouveau paiement » dans le module{' '}
+            <a href="/app/finance/payments" className="underline font-medium text-violet-700 hover:text-violet-900">
+              Finance → Encaissements
+            </a>
+            . Les ventes boutique effectuées ici ou via le module Finance
+            apparaissent dans les deux modules.
+          </div>
+        </div>
+
         {/* Navigation Tabs - Style Ultra Premium */}
         <div className="flex items-center space-x-1 bg-gray-100/80 p-1.5 rounded-[1.25rem] border border-gray-200/50 overflow-x-auto no-scrollbar shadow-inner backdrop-blur-sm sticky top-0 z-30">
           {tabs.map((tab) => {
@@ -122,8 +148,8 @@ export default function ShopModulePage() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as TabId)}
                 className={`flex items-center space-x-2 px-5 py-3 rounded-[1rem] text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
-                  activeTab === tab.id 
-                    ? 'bg-white text-navy-900 shadow-md border border-gray-100' 
+                  activeTab === tab.id
+                    ? 'bg-white text-navy-900 shadow-md border border-gray-100'
                     : 'text-gray-400 hover:text-navy-600 hover:bg-white/50'
                 }`}
               >

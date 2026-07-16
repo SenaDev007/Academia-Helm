@@ -90,6 +90,35 @@ class FinanceService {
   }
 
   /**
+   * Encaissement multi-action : frais scolaires + articles boutique en une seule opération.
+   * Retourne { transaction, shopSale, totalAmount, feeAmount, shopAmount }.
+   */
+  async createMultiActionTransaction(data: {
+    academicYearId: string;
+    studentAccountId: string;
+    feeAmount: number;
+    shopItems: { productId: string; quantity: number; unitPrice?: number }[];
+    paymentMethod: string;
+    reference?: string;
+    cashRegisterId?: string;
+    customerName?: string;
+    notes?: string;
+  }): Promise<any> {
+    return financeFetch('/api/finance/transactions/multi-action', { method: 'POST', body: data });
+  }
+
+  /**
+   * Récupère les ventes boutique pour une année académique (utilisé par l'onglet
+   * Encaissement du module Finance pour afficher les ventes boutique à côté
+   * des FinanceTransactions).
+   */
+  async getShopSales(params: { academicYearId: string; studentId?: string }): Promise<any> {
+    const qs = new URLSearchParams({ academicYearId: params.academicYearId });
+    if (params.studentId) qs.set('studentId', params.studentId);
+    return financeFetch(`/api/finance/shop-sales?${qs.toString()}`);
+  }
+
+  /**
    * URL de téléchargement du reçu PDF d'une transaction.
    * À utiliser avec window.open() ou <a href download>.
    */

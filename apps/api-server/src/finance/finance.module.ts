@@ -84,6 +84,8 @@ import { ComptaAutoExportService } from './compta-auto-export.service';
 import { ArrearsImportService } from './arrears-import.service';
 import { ArrearsImportController } from './arrears-import.controller';
 import { CollectionSummaryController } from './collection-summary.controller';
+import { MultiActionPaymentService } from './multi-action-payment.service';
+import { MultiActionPaymentController } from './multi-action-payment.controller';
 import { CommunicationModule } from '../communication/communication.module';
 
 @Module({
@@ -127,6 +129,8 @@ import { CommunicationModule } from '../communication/communication.module';
     ArrearsImportController,
     // Bilan des encaissements + Récapitulatif
     CollectionSummaryController,
+    // Multi-action : frais + articles boutique en un seul encaissement
+    MultiActionPaymentController,
   ],
   providers: [
     FeesPrismaService,
@@ -172,6 +176,8 @@ import { CommunicationModule } from '../communication/communication.module';
     ComptaAutoExportService,
     // Import d'arriérés via Excel
     ArrearsImportService,
+    // Multi-action : frais + articles boutique en un seul encaissement
+    MultiActionPaymentService,
   ],
   exports: [
     FeesPrismaService,
@@ -194,6 +200,8 @@ import { CommunicationModule } from '../communication/communication.module';
     FinancialSettingsService,
     CashRegisterService,
     FinanceReportsService,
+    // Multi-action : frais + articles boutique en un seul encaissement
+    MultiActionPaymentService,
   ],
 })
 export class FinanceModule {}

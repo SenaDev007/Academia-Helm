@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
   Sparkles, Download, CheckCircle2, Search, Phone, ArrowRight, Loader2,
-  AlertCircle, CheckCircle, Shield, Lock, Smartphone, CreditCard,
+  AlertCircle, CheckCircle, Shield, Lock, Smartphone, CreditCard, ShoppingCart,
 } from 'lucide-react';
 import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import { networkDetectionService } from '@/lib/offline/network-detection.service
 import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { FedapayLogo } from './FedapayLogo';
+import ShopCartSection, { type ShopCartItem } from './ShopCartSection';
 import {
   detectFedaPayOperator,
   isValidBeninPhone,
@@ -78,6 +79,9 @@ export default function NewPaymentModal({
   const [sendingChannel, setSendingChannel] = useState<string | null>(null);
   const { toast } = useToast();
   const { schoolLevel } = useModuleContext();
+
+  // Panier boutique (multi-action : frais + articles boutique en un seul encaissement)
+  const [shopCartItems, setShopCartItems] = useState<ShopCartItem[]>([]);
 
   // Sélecteurs niveau + classe + recherche élève
   const [levels, setLevels] = useState<any[]>([]);
@@ -185,6 +189,15 @@ export default function NewPaymentModal({
   const selectedAccount = accounts.find((a) => a.id === studentAccountId);
   const amountNum = parseFloat(amount);
 
+  // Calcul du total boutique (somme des articles du panier)
+  const shopCartTotal = useMemo(() => {
+    return shopCartItems.reduce((sum, it) => sum + it.unitPrice * it.quantity, 0);
+  }, [shopCartItems]);
+
+  // Total combiné : frais + articles boutique
+  const totalAmount = (amountNum || 0) + shopCartTotal;
+  const hasShopItems = shopCartItems.length > 0;
+
   // Aperçu d'imputation — détecte les personnalisations (initialAmount != feeStructure.totalAmount)
   useEffect(() => {
     if (!selectedAccount || !amountNum || amountNum <= 0) {
@@ -220,7 +233,16 @@ export default function NewPaymentModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!studentAccountId || !amountNum || amountNum <= 0) return;
+    // Validation : soit montant frais > 0, soit articles boutique présents
+    if ((!amountNum || amountNum <= 0) && !hasShopItems) {
+      toast({
+        title: 'Montant requis',
+        description: 'Saisissez un montant de frais ou ajoutez au moins un article boutique.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!studentAccountId) return;
 
     if (!networkDetectionService.isConnected()) {
       toast({ title: 'Hors Ligne', description: 'Les transactions financières nécessitent une connexion internet.', variant: 'destructive' });
@@ -371,27 +393,75 @@ export default function NewPaymentModal({
 
     setLoading(true);
     try {
-      const result = await financeService.createTransaction({
-        academicYearId,
-        studentAccountId,
-        amount: amountNum,
-        paymentMethod,
-        reference: reference.trim() || undefined,
-        cashRegisterId: cashRegisterId || undefined,
-      });
-      // Le backend renvoie la transaction avec receiptNumber + createdAt
-      // + déclenche la génération PDF en fire-and-forget
-      if (result?.id) {
-        setReceipt({
-          id: result.id,
-          receiptNumber: result.receiptNumber || '—',
-          createdAt: result.createdAt || new Date().toISOString(),
+      // ─── Multi-action : frais + articles boutique en une seule opération ───
+      // Si l'utilisateur a ajouté des articles boutique au panier, on appelle
+      // l'endpoint multi-action qui crée à la fois la FinanceTransaction (frais)
+      // et la ShopSale (articles boutique) liées entre elles. Le reçu PDF affichera
+      // les deux sections (frais scolaires + articles boutique + récapitulatif global).
+      if (hasShopItems) {
+        const result = await financeService.createMultiActionTransaction({
+          academicYearId,
+          studentAccountId,
+          feeAmount: amountNum || 0,
+          shopItems: shopCartItems.map((it) => ({
+            productId: it.productId,
+            quantity: it.quantity,
+            unitPrice: it.unitPrice,
+          })),
+          paymentMethod,
+          reference: reference.trim() || undefined,
+          cashRegisterId: cashRegisterId || undefined,
         });
-        toast({ title: 'Paiement enregistré', description: `Reçu ${result.receiptNumber} généré.` });
-        onSuccess();
+
+        // Le résultat contient { transaction, shopSale, totalAmount, feeAmount, shopAmount }
+        const tx = result?.transaction;
+        if (tx?.id) {
+          setReceipt({
+            id: tx.id,
+            receiptNumber: tx.receiptNumber || '—',
+            createdAt: tx.createdAt || new Date().toISOString(),
+          });
+          toast({
+            title: '✅ Encaissement multi-action confirmé',
+            description: `Reçu ${tx.receiptNumber} généré. Total encaissé : ${formatCurrency(result.totalAmount)} (Frais : ${formatCurrency(result.feeAmount)} + Boutique : ${formatCurrency(result.shopAmount)}).`,
+          });
+          onSuccess();
+        } else if (result?.shopSale && !tx) {
+          // Cas où feeAmount = 0 (uniquement boutique) — pas de FinanceTransaction créée
+          // On affiche un toast mais on n'a pas de reçu PDF (la ShopSale n'en génère pas)
+          toast({
+            title: 'Vente boutique enregistrée',
+            description: `Vente ${result.shopSale.saleNumber} créée pour ${formatCurrency(result.shopAmount)}.`,
+          });
+          onSuccess();
+        } else {
+          toast({ title: 'Paiement enregistré', description: 'Le reçu est en cours de génération.' });
+          onSuccess();
+        }
       } else {
-        toast({ title: 'Paiement enregistré', description: 'Le reçu est en cours de génération.' });
-        onSuccess();
+        // ─── Paiement standard (frais uniquement) ───
+        const result = await financeService.createTransaction({
+          academicYearId,
+          studentAccountId,
+          amount: amountNum,
+          paymentMethod,
+          reference: reference.trim() || undefined,
+          cashRegisterId: cashRegisterId || undefined,
+        });
+        // Le backend renvoie la transaction avec receiptNumber + createdAt
+        // + déclenche la génération PDF en fire-and-forget
+        if (result?.id) {
+          setReceipt({
+            id: result.id,
+            receiptNumber: result.receiptNumber || '—',
+            createdAt: result.createdAt || new Date().toISOString(),
+          });
+          toast({ title: 'Paiement enregistré', description: `Reçu ${result.receiptNumber} généré.` });
+          onSuccess();
+        } else {
+          toast({ title: 'Paiement enregistré', description: 'Le reçu est en cours de génération.' });
+          onSuccess();
+        }
       }
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Impossible d\'enregistrer le paiement', variant: 'destructive' });
@@ -433,6 +503,7 @@ export default function NewPaymentModal({
     setReference('');
     setCashRegisterId('');
     setPreview(null);
+    setShopCartItems([]);
     setFeexpayModalOpen(false);
     setFeexpayPhone('');
     setFeexpayError(null);
@@ -686,10 +757,56 @@ export default function NewPaymentModal({
               </div>
             </div>
           )}
+
+          {/* Section Articles Boutique (multi-action : frais + boutique en un seul encaissement) */}
+          <div className="md:col-span-2">
+            <ShopCartSection
+              academicYearId={academicYearId}
+              items={shopCartItems}
+              onItemsChange={setShopCartItems}
+            />
+          </div>
+
+          {/* Récapitulatif total (frais + boutique) — affiché si panier boutique non vide */}
+          {hasShopItems && (
+            <div className="md:col-span-2 rounded-lg border-2 border-violet-300 bg-violet-50 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <ShoppingCart className="w-4 h-4 text-violet-700" />
+                <span className="text-sm font-bold text-violet-900">Récapitulatif de l'encaissement</span>
+              </div>
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Frais scolaires</span>
+                  <span className="font-medium">{formatCurrency(amountNum || 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Articles boutique ({shopCartItems.length} article{shopCartItems.length > 1 ? 's' : ''})</span>
+                  <span className="font-medium">{formatCurrency(shopCartTotal)}</span>
+                </div>
+                <div className="flex justify-between pt-2 mt-2 border-t-2 border-violet-300">
+                  <span className="text-base font-bold text-violet-900">TOTAL ENCAISSÉ</span>
+                  <span className="text-lg font-bold text-violet-900">{formatCurrency(totalAmount)}</span>
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 mt-3 italic">
+                💡 Le reçu PDF généré inclura une section « Articles Boutique »
+                avec le détail des articles et un récapitulatif global combinant
+                frais scolaires et articles boutique.
+              </p>
+            </div>
+          )}
+
           <div className="flex gap-2 justify-end pt-4 md:col-span-2">
             <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
-            <Button type="submit" disabled={loading || (paymentMethod === 'CASH' && !cashRegisterId)}>
-              {loading ? 'Enregistrement...' : 'Valider paiement'}
+            <Button
+              type="submit"
+              disabled={loading || (paymentMethod === 'CASH' && !cashRegisterId) || ((!amountNum || amountNum <= 0) && !hasShopItems)}
+            >
+              {loading
+                ? 'Enregistrement...'
+                : hasShopItems
+                  ? `Encaisser ${formatCurrency(totalAmount)} (frais + boutique)`
+                  : 'Valider paiement'}
             </Button>
           </div>
         </form>

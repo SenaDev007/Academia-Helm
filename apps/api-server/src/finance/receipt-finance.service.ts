@@ -122,6 +122,37 @@ export class ReceiptFinanceService {
     );
     const amountAppliedToArrears = Math.max(0, Number(tx.amount) - totalAllocatedToBreakdowns);
 
+    // ─── 1.quater Récupérer la ShopSale liée (multi-action : frais + boutique) ───
+    // On cherche une ShopSale dont notes contient "MULTI_ACTION_TX:{transactionId}"
+    // Si trouvée, on affichera une section "Articles Boutique" dans le reçu PDF.
+    let linkedShopSale: any = null;
+    try {
+      linkedShopSale = await this.prisma.shopSale.findFirst({
+        where: {
+          tenantId,
+          notes: { contains: `MULTI_ACTION_TX:${tx.id}` },
+        },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true, code: true, imageUrl: true },
+              },
+            },
+          },
+        },
+      });
+      if (linkedShopSale) {
+        this.logger.log(
+          `Reçu multi-action: ShopSale ${linkedShopSale.saleNumber} liée à ${tx.receiptNumber} ` +
+          `(${linkedShopSale.items?.length || 0} articles, ${Number(linkedShopSale.totalAmount)} FCFA)`,
+        );
+      }
+    } catch (err: any) {
+      // Non bloquant — si la table n'existe pas ou erreur, on continue sans boutique
+      this.logger.warn(`Recherche ShopSale liée échouée (non bloquant): ${err.message}`);
+    }
+
     // 2. Récupérer le branding de l'école + logo pour filigrane
     const branding = await this.getTenantBranding(tenantId);
 
@@ -171,6 +202,7 @@ export class ReceiptFinanceService {
       openArrears,
       amountAppliedToArrears,
       totalArrearsRemaining,
+      linkedShopSale,
     });
 
     // 6. Convertir en PDF via Puppeteer
@@ -226,8 +258,9 @@ export class ReceiptFinanceService {
     openArrears?: any[];
     amountAppliedToArrears?: number;
     totalArrearsRemaining?: number;
+    linkedShopSale?: any;
   }): string {
-    const { tx, branding, qrCodeDataUrl, verificationToken, totalDue, totalPaidAfter, balanceAfter, breakdownsByType, className, openArrears = [], amountAppliedToArrears = 0, totalArrearsRemaining = 0 } = params;
+    const { tx, branding, qrCodeDataUrl, verificationToken, totalDue, totalPaidAfter, balanceAfter, breakdownsByType, className, openArrears = [], amountAppliedToArrears = 0, totalArrearsRemaining = 0, linkedShopSale = null } = params;
     const student = tx.studentAccount?.student;
     const studentName = student ? `${student.lastName} ${student.firstName}` : '—';
     const matricule = student?.matricule || '—';
@@ -403,7 +436,7 @@ export class ReceiptFinanceService {
         ${allocationsRows || `<tr><td colspan="2" style="padding: 8px; text-align: center; color: #94a3b8;">Paiement global (non imputé par frais)</td></tr>`}
         ${fifoRow}
         <tr class="total-row">
-          <td>TOTAL</td>
+          <td>TOTAL Frais scolaires</td>
           <td class="amount">${Number(tx.amount).toLocaleString('fr-FR')} FCFA</td>
         </tr>
       </tbody>
@@ -413,6 +446,62 @@ export class ReceiptFinanceService {
       <strong>ℹ️ Règlement FIFO :</strong> Conformément à la politique de l'établissement, <strong>${amountAppliedToArrears.toLocaleString('fr-FR')} FCFA</strong> ont été affectés en priorité au règlement des arriérés des années antérieures. Le reste (${(Number(tx.amount) - amountAppliedToArrears).toLocaleString('fr-FR')} FCFA) a été imputé aux frais de l'année en cours.
     </p>` : ''}
   </div>
+
+  ${linkedShopSale ? `
+  <!-- Section Articles Boutique (multi-action) -->
+  <div class="section">
+    <div class="section-title" style="color: #7c3aed;">🛍️ Articles Boutique — Vente ${linkedShopSale.saleNumber}</div>
+    <table>
+      <thead>
+        <tr style="background: #f5f3ff;">
+          <th style="color: #6d28d9;">Article</th>
+          <th style="text-align: center; color: #6d28d9;">Qté</th>
+          <th style="text-align: right; color: #6d28d9;">Prix unitaire</th>
+          <th style="text-align: right; color: #6d28d9;">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(linkedShopSale.items || []).map((item: any) => `
+        <tr>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #ede9fe;">
+            ${item.product?.name || 'Article supprimé'}
+            ${item.product?.code ? `<span style="font-size: 9px; color: #94a3b8; margin-left: 6px;">(${item.product.code})</span>` : ''}
+          </td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #ede9fe; text-align: center;">${item.quantity}</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #ede9fe; text-align: right;">${Number(item.unitPrice).toLocaleString('fr-FR')} FCFA</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #ede9fe; text-align: right; font-weight: 600;">${Number(item.totalPrice).toLocaleString('fr-FR')} FCFA</td>
+        </tr>`).join('')}
+        <tr class="total-row" style="background: #f5f3ff;">
+          <td colspan="3" style="color: #6d28d9;">TOTAL Articles boutique</td>
+          <td class="amount" style="color: #7c3aed;">${Number(linkedShopSale.totalAmount).toLocaleString('fr-FR')} FCFA</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Récapitulatif Global : Frais + Boutique -->
+  <div class="section" style="background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%); border: 2px solid #7c3aed; border-radius: 8px; padding: 16px; margin-top: 12px;">
+    <div style="font-size: 12px; font-weight: 700; color: #5b21b6; text-transform: uppercase; margin-bottom: 10px; letter-spacing: 0.5px;">
+      🧾 Récapitulatif Global — Multi-opération
+    </div>
+    <table style="font-size: 13px;">
+      <tbody>
+        <tr>
+          <td style="padding: 6px 0; color: #4c1d95;">Frais scolaires</td>
+          <td style="padding: 6px 0; text-align: right; font-weight: 600; color: #4c1d95;">${Number(tx.amount).toLocaleString('fr-FR')} FCFA</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #4c1d95;">Articles boutique</td>
+          <td style="padding: 6px 0; text-align: right; font-weight: 600; color: #4c1d95;">${Number(linkedShopSale.totalAmount).toLocaleString('fr-FR')} FCFA</td>
+        </tr>
+        <tr style="border-top: 2px solid #7c3aed;">
+          <td style="padding: 10px 0; font-weight: 700; font-size: 15px; color: #5b21b6;">TOTAL ENCAISSÉ</td>
+          <td style="padding: 10px 0; text-align: right; font-weight: 800; font-size: 16px; color: #5b21b6;">${(Number(tx.amount) + Number(linkedShopSale.totalAmount)).toLocaleString('fr-FR')} FCFA</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  ` : ''}
 
   <div class="section">
     <div class="info-grid">

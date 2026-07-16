@@ -5561,3 +5561,63 @@ Stage Summary:
 - 1 fichier service frontend modifié : finance.service.ts (createMultiActionTransaction + getShopSales)
 - Flux multi-action complet : utilisateur ouvre "Nouveau paiement" → sélectionne élève + montant frais → ajoute articles boutique (uniforme, tenue, fournitures) → un seul clic valide → backend crée FinanceTransaction + ShopSale liées → reçu PDF affiche les deux sections + récapitulatif global
 - Lien Boutique ↔ Finance bidirectionnel : ventes boutique visibles dans Finance → Encaissements, et bouton "Encaissements" dans Boutique redirige vers Finance
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Commit/push + corrections Module Paramètres → Structure (bug suppression section, modal pro, suppression classe officielle) + standardisation design Boutique
+
+Work Log:
+- Commit f8fec41a poussé sur origin/main (multi-action Boutique ↔ Finance, 13 fichiers, +1516 lignes)
+- Exploration via subagent : module Paramètres → Structure dans apps/web-app/src/app/app/settings/page.tsx (5948 lignes)
+  - Classroom = "classe officielle par année" (table classrooms)
+  - AcademicClass = abstraction pédagogique (table pedagogy_academic_classes)
+  - Class = "section physique" A/B/C (table classes)
+- Bug #1 (modal générique) : remplacé `confirm()` natif par `confirmDialog.danger()` (hook useConfirmDialog déjà importé dans la page) dans handleDeleteClassSection — ligne 1522 de settings/page.tsx
+- Bug #2 (règle "au moins 1 section") : supprimé le bloc de garde dans academic-structure-prisma.service.ts deleteClassSection() — lignes 895-913. Ajouté une sécurité alternative : refuse la suppression si des élèves (StudentEnrollment) sont affectés à la section, avec message clair invitant à les réaffecter.
+- Feature #3 (suppression classe officielle) :
+  - Backend : ajouté EducationStructureService.deleteClassroom() dans education-structure.service.ts (Logger ajouté au passage)
+    * Cherche l'AcademicClass correspondante (par nom + tenant + année)
+    * Refuse si élèves inscrits (StudentEnrollment) ou sections physiques (physicalClasses) liées
+    * Supprime le Classroom + désactive l'AcademicClass (préserve l'historique pédagogique)
+  - Backend : ajouté @Delete('education/classrooms/:id') dans settings.controller.ts (après archive)
+  - Frontend BFF : ajouté handler DELETE dans apps/web-app/src/app/api/settings/education/classrooms/[id]/route.ts
+  - Frontend service : ajouté deleteEducationClassroom() dans settings.service.ts
+  - Frontend handler : ajouté handleDeleteEducationClassroom(id, name) dans settings/page.tsx avec confirmDialog.danger() (3e paramètre details pour expliquer les conséquences)
+  - Frontend UI : ajouté bouton Trash2 (icône lucide-react) dans la colonne Actions du tableau Classes officielles, à côté de Modifier + Archiver. Import Trash2 ajouté.
+- Standardisation design Boutique (pattern Finance/Students) :
+  - Refonte ShopModulePage.tsx sur ModuleContainer (au lieu de ModulePageLayout obsolète)
+    * Onglets SubModuleNavigation standard (bleus soulignés bg-blue-50) au lieu de pills navy-900 uppercase tracking-widest
+    * KPIs dans ModuleHeader.kpis (4 cartes : produits, recette 30j, ventes 30j, alertes stock) chargés depuis /api/modules-complementaires/shop/stats
+    * Boutons d'action standard : Encaissements (emerald-600, lien Finance), Nouvelle vente (indigo-600), Rapports (outline)
+    * 14 sous-modules mappés sur les 14 composants shop existants
+  - Refonte ShopDashboard.tsx :
+    * Cards rounded-xl border-gray-200 shadow-sm (au lieu de rounded-3xl border-gray-100)
+    * Table shadcn <Table>/<TableHeader>/<TableBody>/<TableRow>/<TableHead>/<TableCell> (au lieu de <table> HTML brute avec px-8 py-5 text-[10px] font-black uppercase tracking-widest)
+    * Titres text-lg font-semibold text-navy-900 (au lieu de text-xl font-black uppercase tracking-tight)
+    * Supprimé le bandeau "Sarah AI Insights" bg-navy-900 rounded-3xl (hors charte)
+    * SummaryCard sobre avec Badge trend (au lieu de pills custom font-black uppercase)
+    * Import Card, Badge, Button, Table shadcn
+  - Refonte ShopProducts.tsx :
+    * <Button> shadcn (variant default + outline) au lieu de buttons bg-navy-900 text-[10px] uppercase tracking-widest
+    * <Table> shadcn avec <TableRow>/<TableCell> au lieu de <table> HTML
+    * <Input>/<Label> shadcn au lieu de <input>/<label> HTML brute
+    * useToast() (hook shadcn) au lieu de alert() JS natif
+    * Modals standardisés : header/footer avec border-b/border-t border-gray-100, Button ghost pour fermer (au lieu de fixed inset-0 bg-black/50 fait main sans structure)
+    * Card rounded-xl (au lieu de rounded-3xl)
+    * Badge variant="outline" pour statut (au lieu de pills custom px-3 py-1 rounded-full text-[10px] font-black uppercase)
+    * Ajouté filtrage local par recherche (searchTerm) qui n'existait pas
+- Vérifications TypeScript frontend : 0 erreur sur les fichiers modifiés (ShopModulePage, ShopDashboard, ShopProducts, settings/page)
+- Commit 6deaf3af poussé sur origin/main (9 fichiers, +853/-533 lignes)
+
+Stage Summary:
+- 3 bugs corrigés dans Module Paramètres → Structure :
+  * Modal de confirmation professionnel (confirmDialog.danger) pour suppression section
+  * Suppression section autorisée même si c'est la dernière (sécurité élèves conservée)
+  * Bouton suppression définitive classe officielle (backend + frontend complet)
+- 3 composants Boutique refondus sur le pattern Finance/Students :
+  * ShopModulePage.tsx → ModuleContainer + SubModuleNavigation + KPIs
+  * ShopDashboard.tsx → Table shadcn + Cards rounded-xl + SummaryCard standard
+  * ShopProducts.tsx → Button/Table/Input/Label shadcn + useToast + modals standardisés
+- 7 autres modules non-conformes identifiés (Canteen, Transport, QHSE, Library, Laboratory, Infirmary, EduCast) — refonte reportée (travail massif)
+- 2 commits poussés sur origin/main : f8fec41a (multi-action) + 6deaf3af (corrections Structure + standardisation Boutique)

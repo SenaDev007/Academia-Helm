@@ -5696,3 +5696,88 @@ Stage Summary:
   * Toast amélioré : 3 cas distincts + lastError affiché
 - 1 commit poussé : 3e3d342d (12 fichiers, +256/-22 lignes)
 - ⚠️ En production : après npm install (postinstall = prisma generate) + npx prisma migrate deploy, les champs tenderedAmount/changeGiven seront disponibles
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Appliquer migration 014 sur Neon + audit CRUD complet des 6 modules complémentaires (Boutique, Infirmerie, Labo, Cantine, Transport, EduCast)
+
+Work Log:
+
+Migration 014 appliquée sur Neon PostgreSQL :
+- Script Node.js (scripts/apply-migration-014.js) avec client pg
+- ALTER TABLE finance_transactions ADD COLUMN tendered_amount + change_given
+- Vérification post-migration : 2 colonnes numeric nullable présentes ✅
+
+Audit CRUD via 2 subagents Explore en parallèle :
+- Subagent 1 : Boutique, Infirmerie, Labo
+- Subagent 2 : Cantine, Transport, EduCast
+- Rapports complets : 86 méthodes service, 83 routes controller, 35 composants frontend
+- 9 bugs critiques identifiés + 6 bugs majeurs + 65 alert() à migrer
+
+Corrections backend (7 services + 1 controller + 1 hook frontend) :
+
+Hook frontend (impact transversal) :
+- useModulesDashboard dans hooks.ts : ajout fallback /stats si /dashboard retourne 404
+  → Débloque instantanément les dashboards Infirmary, Labs, Transport, EduCast
+
+Module Transport :
+- transport.service.ts : implémenté findAllIncidents() (la route GET /transport/incidents
+  appelait getIncidents inexistant → runtime 500)
+- transport.service.ts : implémenté getSettings() (GET /transport/settings manquant)
+- transport.service.ts : implémenté resolveIncident(id, tenantId, resolution, resolvedBy)
+- controller : corrigé getTransportIncidents → findAllIncidents
+- controller : ajouté GET /transport/settings + POST /transport/incidents/:id/resolve
+
+Module EduCast :
+- educast.service.ts : implémenté findAllContents() (GET /educast/contents cassé → 500)
+- educast.service.ts : implémenté findAllPayoutRequests() (GET /educast/payout-requests cassé → 500)
+- controller : ajouté POST /educast/webinars (createWebinar existait mais route absente)
+
+Module Infirmary :
+- infirmary.service.ts : implémenté updateEmergencyStatus(id, tenantId, status, resolution)
+- infirmary.service.ts : corrigé createEmergency() — mappait champs inexistants du schéma
+  (actionTaken→firstAidGiven, recordedBy→reportedBy, emergencyType→incidentType,
+  isHospitalized→transferPerformed, parentsNotified→parentContacted) + ajouté
+  incidentDate/incidentTime obligatoires
+- controller : ajouté PUT /infirmary/emergencies/:id/status
+
+Module Lab :
+- lab.service.ts : implémenté findAllEquipmentGlobal(tenantId, labId?)
+- lab.service.ts : implémenté findAllIncidents(tenantId, filters?)
+- lab.service.ts : implémenté getSettings() + updateSetting() via $queryRaw
+  (table lab_settings créée par migration 015)
+- controller : ajouté GET /labs/incidents, GET /labs/equipment, GET /labs/settings,
+  PUT /labs/settings
+- Migration 015 : CREATE TABLE lab_settings (tenantId, key, value) + appliquée sur Neon ✅
+
+Module Cantine :
+- canteen.service.ts : getDashboardStats() refondu pour aligner avec interface frontend
+  CanteenStats { enrolledStudents, mealsToday, stockAlerts, hygieneScore, todayMenu,
+  alerts, recentActivity } à plat (avant: stats imbriquées → KPI cards à 0)
+- Ajouté todayMenu depuis DB, alerts (incidents non résolus), recentActivity
+- Conservé ancien format (stats, recentIncidents, orion) pour compatibilité
+
+Module Boutique :
+- shop.service.ts createPurchaseOrder() : validation structure items (rejette string[]
+  avec message clair au lieu de crash Prisma 500)
+- shop.service.ts rechargeWallet() : validation cardId + amount + vérif existence carte
+
+Vérifications TypeScript :
+- Frontend : 0 erreur sur fichiers modifiés (hooks.ts)
+- Backend : erreurs Duplicate function préexistantes (bloc QHSE dupliqué lignes 860+ et 1727+)
+  — NON introduites par mes changements (confirmé via git stash)
+
+Stage Summary:
+- Migration 014 (tendered_amount + change_given) appliquée sur Neon ✅
+- Migration 015 (lab_settings) créée + appliquée sur Neon ✅
+- 7 bugs critiques backend corrigés (routes 500, méthodes manquantes, mismatch payload)
+- 1 bug transversal corrigé (hook useModulesDashboard fallback /stats)
+- 8 fichiers backend modifiés (6 services + 1 controller + 1 hook frontend)
+- 1 commit poussé : a7a73134 (11 fichiers, +657/-22 lignes)
+- ⚠️ Bugs restants non traités (travail massif, à planifier) :
+  * 65 alert() à migrer vers useToast() dans 35 composants
+  * 23 modals fixed inset-0 à remplacer par <Dialog> shadcn
+  * 5+ mocks hardcoded à brancher sur vrais endpoints
+  * Duplication QHSE dans modules-complementaires.controller.ts (préexistante)
+  * CRUD incomplet (DELETE/PUT manquants) sur transport, educast, canteen

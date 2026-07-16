@@ -7263,3 +7263,39 @@ Stage Summary:
 - Pattern unifié : loadData() avec params paginés + search debounce + reset page + suppression des filtres client redondants.
 - Aucune modification backend (les endpoints /api/students et /api/students/statistics supportaient déjà tous les params requis).
 - 0 régression TypeScript (erreurs restantes pré-existantes dans cms/useAutoSave.ts).
+
+---
+Task ID: 10
+Agent: Main Agent
+Task: Fix React #310 + module Élève pagination/filtres + finance modal classes par niveau
+
+Work Log:
+
+Issue #1 — React error #310 (module Boutique cassé) :
+- Diagnostic via subagent : ShopSettings.tsx ligne 105 avait un useState(orionChecked) APRÈS un if(loading)return conditionnel
+- React error #310 = "Rendered more hooks than during the previous render" — au 1er render (loading=true), 7 hooks exécutés + early return → useState ligne 105 jamais appelé. Au 2e render (loading=false), 8 hooks exécutés → +1 hook vs render précédent → crash
+- Fix : déplacer useState(orionChecked) AVANT le early return (ligne 52), l'initialiser à true, le synchroniser dans le useEffect quand settings arrivent (setOrionChecked(loaded?.orionPredictiveInventory ?? true))
+- Vérification : 91 fichiers (8 pages + 83 sous-composants) audités, seul ShopSettings.tsx avait ce bug
+
+Issue #3 — Module Élève : 5 bugs pagination/filtres/recherche (subagent 9-a) :
+- Bug 1 (Affectation) : AffectationVersClassePhysique.tsx — Promise.all cassée (3 noms pour 2 promesses) + déduction cls.officialClass jamais incluse par backend. Fix : ajout fetch /api/academic-classes?isActive=true
+- Bug 2 (Sortie/Abandon) : StudentMovementsContent.tsx — stats sur 200 élèves max. Fix : studentsService.getStatistics() (vrais count() SQL)
+- Bug 3 (Recherche) : 4 composants — recherche client-side sur page active uniquement. Fix : envoyer search au backend + debounce 250ms
+- Bug 4 (Filtres) : classId/schoolLevelId non envoyés au backend. Fix : ajouter params + étendre useEffect + reset currentPage=1
+- Bug 5 (Dossier+Famille) : limit 200/50 sans vraie pagination. Fix : pagination serveur (page+limit), composant Pagination, data.total
+- 4 fichiers modifiés : AffectationVersClassePhysique, StudentMovementsContent, StudentIdentityContent, StudentFamiliesContent
+
+Issue #4 — Finance config frais modal : classes par niveau ne s'affichaient plus :
+- Cause : eduToSchoolLevelMap corrige pour mapper vers SchoolLevel.id (pour fee_structures), mais le filtrage des AcademicClass utilisait c.levelId (AcademicLevel.id — table pedagogy_academic_levels différente de school_levels)
+- Fix : filtrer par NOM de niveau (Maternelle/Primaire/Secondaire) au lieu d'ID, avec match insensible à la casse + fallback schoolLevelId
+- Appliqué dans FeeStructuresContent.tsx (filteredSortedClasses) ET FeeStructureModal.tsx (modalFilteredClasses)
+
+Vérifications :
+- Frontend : 0 erreur TypeScript sur les 8 fichiers modifiés
+- Commit 31c953ba poussé sur origin/main (8 fichiers, +436/-104 lignes)
+
+Stage Summary:
+- React #310 : module Boutique restauré (ShopSettings.tsx)
+- Module Élève : 5 bugs corrigés (affectation, sortie/abandon, recherche, filtres, pagination dossier+famille)
+- Finance : modal config frais — classes par niveau restauré (filtrage par nom au lieu d'ID)
+- ⏳ Import Excel Mon Avenir Plus / Ndali : en attente des 2 fichiers (primaire + secondaire)

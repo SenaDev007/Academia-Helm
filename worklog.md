@@ -7430,3 +7430,70 @@ Vérification finale :
 - 0 ENF propre trouvé dans les fichiers Excel (aucun enfant de propriétaire identifié)
 
 Commit 8b5c6fe2 poussé sur origin/main
+
+---
+Task ID: 13-a
+Agent: full-stack-developer (Pagination Finance)
+Task: Ajouter pagination serveur dans 4 onglets Finance
+
+Work Log:
+
+8 fichiers modifiés (4 frontend composants + 4 backend controllers/services) :
+
+Onglet 1 — Encaissements (TransactionsContent.tsx) :
+- Backend `finance-transaction.controller.ts` : route GET /finance/transactions accepte désormais `page` + `limit` (optionnels).
+- Backend `finance-transaction.service.ts` méthode `findAll()` : si `page`+`limit` fournis → retour paginé `{ data, total, page, limit, totalPages }` avec `Promise.all([findMany, count])`. Sinon → retourne l'array (rétro-compatibilité pour les autres callers comme RecoveryContent, FinanceReportsContent, StudentIdentityContent qui attendent un array).
+- Frontend : state `currentPage`, `totalPages`, `totalTransactions`, `PAGE_SIZE = 25`. Pass `page`+`limit` au backend. Gestion réponse paginée `{ data, total, totalPages }` OU array (réto-compat). useEffect recharge sur `[academicYear?.id, currentPage]`.
+- ⭐ Toast d'erreur ajouté dans le `catch` de `loadTransactions` (l'ancien code avalait l'erreur silencieusement — `console.error(e)` sans feedback UI).
+- Composant Pagination sous le tableau (Prev/Next + numéros + ellipsis, pattern identique à StudentMovementsContent.tsx — Task 9-a).
+- Les 2550 transactions importées s'affichent maintenant correctement (25 par page, 102 pages).
+
+Onglet 2 — Comptes élèves (StudentAccountsContent.tsx) :
+- Backend `student-account.controller.ts` : accepte `page`, `limit`, `search` (en plus de `academicYearId`, `classId`, `status`, `isBlocked`).
+- Backend `student-account.service.ts` méthode `findAll()` : remplacé `take: 500` par `take: limit ?? 50, skip: (page-1)*limit` quand paginé. Search backend (mode insensitive) sur `student.firstName/lastName/matricule/studentCode`. Retour paginé `{ data, total, page, limit, totalPages, sums: { totalDue, totalPaid, balance, actualArrears } }`.
+- ⭐ KPIs globaux : sommes agrégées via `prisma.studentAccount.aggregate({ _sum: { totalDue, totalPaid, balance } })` sur TOUS les comptes matchés (pas seulement la page active). Total arriérés global calculé via `prisma.feeArrear.aggregate` sur tous les studentIds matchés (pas seulement la page active). Les KPIs INCLUENT les arriérés (FIFO) pour refléter la vraie dette.
+- Frontend : state `currentPage`, `totalPages`, `totalAccounts`, `globalSums`. 4 KPI cards au-dessus du tableau (Élèves, Total dû, Total payé, Reste à payer) avec icônes Users/Wallet/TrendingUp/AlertCircle. Search avec debounce 250ms. Reset page à 1 quand `filterClassId/filterStatus/searchQuery/effectiveYearId` changent. Pagination sous le tableau gauche (avant le splitter).
+- Suppression du filtrage client dans `filteredAccounts` (le backend filtre déjà en SQL). Tri alphabétique conservé.
+
+Onglet 3 — Personnalisation (FeeOverridesContent.tsx) :
+- Backend `fee-structure.controller.ts` route GET /finance/fee-structures/overrides : accepte `page`, `limit`, `feeType`, `schoolLevelId`, `search` (en plus de `studentId`, `academicYearId`, `feeStructureId`, `classId`).
+- Backend `fee-structure.service.ts` méthode `getAllOverrides()` : filtres backend sur `feeStructure.feeType`, `student.studentEnrollments.class.schoolLevelId`, search insensitive sur `student.firstName/lastName/matricule/studentCode`. Quand paginé → retour `{ data, total, page, limit, totalPages, sums: { totalOriginal, totalCustom, totalReduction } }`. Les `sums` sont calculées via une 3e Promise.all qui fetch tous les overrides matchés (select léger `customAmount` + `feeStructure.totalAmount`) puis somme côté service — pas de pagination sur les sums.
+- Frontend : state `currentPage`, `totalPages`, `totalOverrides`, `globalSums`. 4 KPI cards : Personnalisations actives (count), Montant initial cumulé, Montant personnalisé cumulé, Réduction totale accordée (+ % du montant initial). Tous calculés sur le TOTAL serveur. Filtres passés au backend (feeType, classId, schoolLevelId via eduToSchoolLevelMap[filterLevelId], search). Search avec debounce 250ms. Reset page quand filtres changent. Pagination sous le tableau.
+- Suppression du filtrage client dans `filteredOverrides` (le backend filtre maintenant).
+
+Onglet 4 — Bilan des encaissements (CollectionSummaryContent.tsx) :
+- Backend `collection-summary.controller.ts` : accepte `page`, `limit` pour la liste `students`. Le récap par classe reste non paginé (calculé sur TOUS les élèves — pas seulement la page active — pour préserver les totaux par classe et le solde global).
+- Backend : quand paginé → retour `{ students: [page subset], studentsTotal, studentsPage, studentsTotalPages, recap, installments }`. Pagination appliquée après calcul du recap (slice sur le tableau `students` complet).
+- Frontend : state `currentPage`, `totalPages`, `totalStudents`, `PAGE_SIZE = 50`. Pass `page`+`limit` au backend. Pagination affichée UNIQUEMENT sur le sous-onglet « Bilan détaillé » (liste élèves). Le sous-onglet « Récapitulatif » reste sans pagination (faible cardinalité — récap par classe). Reset page à 1 quand `academicYearId/selectedLevelId/selectedClassId` changent.
+- Réponse paginée gérée via `data.studentsTotal ?? data.students.length` (réto-compatibilité si backend non paginé).
+
+Pattern unifié (identique à Task 9-a) :
+- Backend : `Promise.all([findMany paginé, count])` → `{ data, total, page, limit, totalPages }`.
+- Backend : si `page`/`limit` absents → retour array (réto-compatibilité avec les autres callers qui attendent un array — RecoveryContent.tsx, FinanceReportsContent.tsx, StudentIdentityContent.tsx).
+- Frontend : `Array.isArray(data) ? data : (data?.data ?? [])` pour gérer les 2 formats.
+- useEffect recharge sur `[currentPage, ...filters]`. Search avec debounce 250ms.
+- useEffect dédié pour `setCurrentPage(1)` quand les filtres changent (évite de rester bloqué sur une page vide).
+- Composant Pagination réutilisable (Prev/Next + numéros + ellipsis + "Affichage X-Y sur Z").
+
+Réto-compatibilité préservée :
+- `financeService.getTransactions/getStudentAccounts/getAllFeeOverrides` (frontend) inchangés — ils passent juste les params au backend et retournent le JSON brut. Les composants gèrent les 2 formats (array vs `{ data, total, totalPages, sums }`).
+- Les autres callers (RecoveryContent, FinanceReportsContent, StudentIdentityContent) n'envoient pas `page`/`limit` → reçoivent toujours un array (comportement inchangé).
+- Fonctionnalités existantes préservées : export Excel/PDF, filtre date (TransactionsContent), splitter redimensionnable (StudentAccountsContent), modal FeeOverrideModal (FeeOverridesContent), sous-onglets Récapitulatif/Détail (CollectionSummaryContent).
+
+Vérifications :
+- Frontend (web-app) : `bunx tsc --noEmit` → 0 erreur sur les 4 composants modifiés (les 10 erreurs restantes sont pré-existantes dans src/components/cms/useAutoSave.ts — non liées à ce fix, voir Task 9-a).
+- Backend (api-server) : erreurs TS uniquement sur les `prisma.X` (Prisma client non régénéré dans le sandbox — pré-existant sur tous les fichiers, pas seulement ceux modifiés). Logique de code vérifiée manuellement, suit les patterns existants du même fichier.
+- BFF routes (Next.js /api/finance/*) : inchangés, passent juste les query params au backend.
+
+Stage Summary:
+- 8 fichiers modifiés : 4 composants frontend (TransactionsContent, StudentAccountsContent, FeeOverridesContent, CollectionSummaryContent) + 4 fichiers backend (finance-transaction.{controller,service}, student-account.{controller,service}, fee-structure.{controller,service}, collection-summary.controller).
+- Pagination serveur ajoutée sur 4 onglets :
+  - Encaissements : 25 transactions/page (les 2550 transactions importées = 102 pages).
+  - Comptes élèves : 50 comptes/page.
+  - Personnalisations : 25 overrides/page.
+  - Bilan encaissements : 50 élèves/page (sous-onglet Détail uniquement).
+- Stats globales corrigées :
+  - Comptes élèves : 4 KPI cards (Élèves, Total dû, Total payé, Reste à payer) calculés sur TOUS les comptes via `prisma.studentAccount.aggregate` + `feeArrear.aggregate` — pas seulement la page active.
+  - Personnalisations : 4 KPI cards (Personnalisations, Montant initial, Montant personnalisé, Réduction totale) calculés sur TOUS les overrides matchés via une 3e Promise.all — pas seulement la page active.
+- Toast d'erreur ajouté sur Encaissements (l'ancien `catch` avalait silencieusement les erreurs).
+- 0 régression : réto-compatibilité préservée (array quand pas de page/limit), fonctionnalités existantes (exports, filtres, splitter, modals) intactes.

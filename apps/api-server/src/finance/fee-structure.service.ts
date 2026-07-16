@@ -455,6 +455,11 @@ export class FeeStructureService {
   /**
    * Récupère tous les overrides d'un tenant, avec filtres optionnels.
    * Utilisé par l'onglet "Personnalisations" du module Finance.
+   *
+   * ⭐ Pagination optionnelle : si page/limit fournis → retour paginé
+   * { data, total, page, totalPages, sums: { totalOriginal, totalCustom, totalReduction } }
+   * Les `sums` sont calculées sur TOUS les overrides matchés (pas seulement la page active)
+   * pour que les KPIs affichés soient les vrais totaux serveur.
    */
   async getAllOverrides(
     tenantId: string,
@@ -463,6 +468,11 @@ export class FeeStructureService {
       studentId?: string;
       feeStructureId?: string;
       classId?: string;
+      feeType?: string;
+      schoolLevelId?: string;
+      search?: string;
+      page?: number;
+      limit?: number;
     } = {},
   ) {
     const where: any = { feeStructure: { tenantId } };
@@ -470,21 +480,97 @@ export class FeeStructureService {
     if (filters.feeStructureId) where.feeStructureId = filters.feeStructureId;
     if (filters.studentId) where.studentId = filters.studentId;
     if (filters.classId) where.feeStructure.classId = filters.classId;
-
-    return this.prisma.feeOverride.findMany({
-      where,
-      include: {
-        feeStructure: { include: { class: true, level: true } },
-        student: {
-          select: {
-            id: true, firstName: true, lastName: true, matricule: true, studentCode: true,
-            studentEnrollments: { where: { academicYearId: filters.academicYearId }, include: { class: true }, take: 1 },
-          },
+    if (filters.feeType) where.feeStructure.feeType = filters.feeType;
+    // ⭐ Filtre par niveau scolaire : via student.studentEnrollments.class.schoolLevelId
+    if (filters.schoolLevelId) {
+      where.student = {
+        studentEnrollments: {
+          some: { class: { schoolLevelId: filters.schoolLevelId } },
         },
-        creator: { select: { id: true, firstName: true, lastName: true } },
+      };
+    }
+    // ⭐ Recherche côté backend (mode insensible à la casse) sur nom/prénom/matricule
+    if (filters.search && filters.search.trim()) {
+      const q = filters.search.trim();
+      where.student = {
+        ...(where.student ?? {}),
+        OR: [
+          { firstName: { contains: q, mode: 'insensitive' } },
+          { lastName: { contains: q, mode: 'insensitive' } },
+          { matricule: { contains: q, mode: 'insensitive' } },
+          { studentCode: { contains: q, mode: 'insensitive' } },
+        ],
+      };
+    }
+
+    const include = {
+      feeStructure: { include: { class: true, level: true } },
+      student: {
+        select: {
+          id: true, firstName: true, lastName: true, matricule: true, studentCode: true,
+          studentEnrollments: { where: { academicYearId: filters.academicYearId }, include: { class: true }, take: 1 },
+        },
       },
-      orderBy: { createdAt: 'desc' },
-    });
+      creator: { select: { id: true, firstName: true, lastName: true } },
+    };
+
+    // ⭐ Si non paginé → retourne l'array (rétro-compatibilité)
+    const isPaginated = !!(filters.page && filters.limit);
+    if (!isPaginated) {
+      return this.prisma.feeOverride.findMany({
+        where,
+        include,
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
+    // ⭐ Si paginé → retour paginé + sums agrégées (KPIs globaux)
+    const page = Math.max(1, filters.page ?? 1);
+    const limit = Math.min(500, Math.max(1, filters.limit ?? 25));
+
+    const [data, total, allMatching] = await Promise.all([
+      this.prisma.feeOverride.findMany({
+        where,
+        include,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.feeOverride.count({ where }),
+      // ⭐ Récupère tous les overrides matchés (sans pagination) pour calculer
+      // les sommes agrégées (KPIs). Comme les overrides sont typiquement peu
+      // nombreux (quelques dizaines), ce select léger est rapide.
+      this.prisma.feeOverride.findMany({
+        where,
+        select: {
+          customAmount: true,
+          feeStructure: { select: { totalAmount: true } },
+        },
+      }),
+    ]);
+
+    const totalOriginal = allMatching.reduce(
+      (sum, o) => sum + Number(o.feeStructure?.totalAmount ?? 0),
+      0,
+    );
+    const totalCustom = allMatching.reduce(
+      (sum, o) => sum + Number(o.customAmount ?? 0),
+      0,
+    );
+    const totalReduction = Math.max(0, totalOriginal - totalCustom);
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+      sums: {
+        totalOriginal,
+        totalCustom,
+        totalReduction,
+      },
+    };
   }
 
   /**

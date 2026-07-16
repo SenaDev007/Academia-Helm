@@ -34,12 +34,21 @@ export class CollectionSummaryController {
     @Query('academicYearId') academicYearId: string,
     @Query('levelId') levelId?: string,
     @Query('classId') classId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     if (!academicYearId) {
       return { students: [], recap: [], installments: [] };
     }
 
-    this.logger.log(`Collection summary: tenant=${tenantId}, year=${academicYearId}, level=${levelId || 'all'}, class=${classId || 'all'}`);
+    this.logger.log(`Collection summary: tenant=${tenantId}, year=${academicYearId}, level=${levelId || 'all'}, class=${classId || 'all'}, page=${page || 'all'}, limit=${limit || 'all'}`);
+
+    // ⭐ Pagination optionnelle pour la liste `students` (pas pour `recap` qui reste non paginé).
+    const pageNum = page ? parseInt(page, 10) : undefined;
+    const limitNum = limit ? parseInt(limit, 10) : undefined;
+    const isPaginated = !!(pageNum && !isNaN(pageNum) && limitNum && !isNaN(limitNum));
+    const pageEff = Math.max(1, pageNum ?? 1);
+    const limitEff = Math.min(500, Math.max(1, limitNum ?? 50));
 
     // ─── 1. Récupérer les FeeStructures de type TUITION avec leurs tranches ───
     const feeStructures = await this.prisma.feeStructure.findMany({
@@ -108,44 +117,62 @@ export class CollectionSummaryController {
     }
 
     // ─── 3. Récupérer tous les paiements pour ces élèves ──────────────────────
-    // ⭐ PaymentAllocation n'a pas de champ tenantId ni academicYearId.
-    // On filtre par targetType='STUDENT' + targetId (qui contient studentId)
-    // et on joint Payment pour filtrer par tenantId + academicYearId.
+    // ⭐ Juillet 2026 : on utilise FinanceTransaction (modèle moderne) au lieu de
+    // PaymentAllocation (modèle legacy). Les 2550 transactions importées sont dans
+    // finance_transactions avec leurs allocations dans finance_transaction_allocations.
+    // On joint les allocations → accountBreakdowns → feeStructures pour récupérer le feeType.
     const studentIds = filteredEnrollments.map((e) => e.studentId);
-    const payments = await this.prisma.paymentAllocation.findMany({
+    const transactions = await this.prisma.financeTransaction.findMany({
       where: {
-        targetType: 'STUDENT',
-        targetId: { in: studentIds },
-        payment: {
-          tenantId,
-          academicYearId,
-        },
+        tenantId,
+        academicYearId,
+        studentAccount: { studentId: { in: studentIds } },
       },
-      select: {
-        targetId: true,
-        allocatedAmount: true,
-        studentFee: { select: { feeType: true, feeStructureId: true, feeStructureInstallmentId: true } },
-        payment: { select: { id: true, amount: true } },
+      include: {
+        studentAccount: { select: { studentId: true } },
+        allocations: {
+          include: {
+            accountBreakdown: {
+              include: {
+                feeStructure: { select: { feeType: true, id: true } },
+              },
+            },
+          },
+        },
       },
     });
 
     // Grouper les paiements par élève
-    // ⭐ PaymentAllocation.targetId contient le studentId quand targetType='STUDENT'
     const paymentsByStudent = new Map<string, any[]>();
-    for (const p of payments) {
-      const sid = p.targetId; // targetId = studentId
+    for (const tx of transactions) {
+      const sid = tx.studentAccount?.studentId || (tx as any).studentAccountId;
+      if (!sid) continue;
       if (!paymentsByStudent.has(sid)) {
         paymentsByStudent.set(sid, []);
       }
-      // Normaliser le format pour le code en aval
-      paymentsByStudent.get(sid)!.push({
-        studentId: sid,
-        feeType: p.studentFee?.feeType || null,
-        feeStructureId: p.studentFee?.feeStructureId || null,
-        feeStructureInstallmentId: p.studentFee?.feeStructureInstallmentId || null,
-        amount: Number(p.allocatedAmount) || 0,
-        classId: null,
-      });
+      // Pour chaque allocation de la transaction, créer une entrée
+      for (const alloc of tx.allocations || []) {
+        const fs = alloc.accountBreakdown?.feeStructure;
+        paymentsByStudent.get(sid)!.push({
+          studentId: sid,
+          feeType: fs?.feeType || null,
+          feeStructureId: fs?.id || null,
+          feeStructureInstallmentId: null,
+          amount: Number(alloc.amount) || 0,
+          classId: null,
+        });
+      }
+      // Si la transaction n'a pas d'allocations (ex: paiement global), créer une entrée générique
+      if (!tx.allocations || tx.allocations.length === 0) {
+        paymentsByStudent.get(sid)!.push({
+          studentId: sid,
+          feeType: null,
+          feeStructureId: null,
+          feeStructureInstallmentId: null,
+          amount: Number(tx.amount) || 0,
+          classId: null,
+        });
+      }
     }
 
     // ─── 4. Construire les lignes élèves (détail) ────────────────────────────
@@ -262,6 +289,27 @@ export class CollectionSummaryController {
       row.soldeParClasse = row.totalPaid - row.totalTuition;
       return row;
     });
+
+    // ⭐ Pagination optionnelle de la liste `students`.
+    // Le `recap` reste calculé sur TOUS les élèves (non paginé) pour que les totaux
+    // par classe et le solde global restent exacts — pattern identique aux autres
+    // onglets (KPIs globaux vs page active).
+    if (isPaginated) {
+      const studentsTotal = students.length;
+      const studentsTotalPages = Math.ceil(studentsTotal / limitEff) || 1;
+      const pagedStudents = students.slice(
+        (pageEff - 1) * limitEff,
+        pageEff * limitEff,
+      );
+      return {
+        students: pagedStudents,
+        studentsTotal,
+        studentsPage: pageEff,
+        studentsTotalPages,
+        recap,
+        installments,
+      };
+    }
 
     return { students, recap, installments };
   }

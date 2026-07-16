@@ -7,11 +7,12 @@ import {
 import { Button } from '@/components/ui/button';
 import {
   Download, FileText, Loader2, Filter,
+  ChevronLeft, ChevronRight, MoreHorizontal,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { getAcademicYears } from '@/services/settings.service';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, cn } from '@/lib/utils';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -69,6 +70,13 @@ export default function CollectionSummaryContent() {
   const [studentRows, setStudentRows] = useState<StudentPaymentRow[]>([]);
   const [recapRows, setRecapRows] = useState<RecapRow[]>([]);
 
+  // ⭐ Pagination serveur — uniquement sur le sous-onglet « Bilan détaillé » (liste élèves).
+  // Le sous-onglet « Récapitulatif » reste non paginé (faible cardinalité).
+  const PAGE_SIZE = 50;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalStudents, setTotalStudents] = useState(0);
+
   // ─── Load school levels + classes + academic year ──────────────────────────
   useEffect(() => {
     const authHeaders = getClientAuthorizationHeader();
@@ -111,6 +119,9 @@ export default function CollectionSummaryContent() {
       const params = new URLSearchParams({ academicYearId });
       if (selectedLevelId) params.set('levelId', selectedLevelId);
       if (selectedClassId) params.set('classId', selectedClassId);
+      // ⭐ Pagination uniquement sur la liste `students` (pas sur `recap` qui reste global)
+      params.set('page', String(currentPage));
+      params.set('limit', String(PAGE_SIZE));
 
       const response = await fetch(`/api/finance/collection-summary?${params.toString()}`, {
         headers: { ...authHeaders },
@@ -127,17 +138,25 @@ export default function CollectionSummaryContent() {
       setInstallments(data.installments || []);
       setStudentRows(data.students || []);
       setRecapRows(data.recap || []);
+      // ⭐ Gérer la réponse paginée (studentsTotal présent) ou non paginée (rétro-compat)
+      setTotalStudents(data.studentsTotal ?? (data.students?.length ?? 0));
+      setTotalPages(data.studentsTotalPages ?? 1);
     } catch (err: any) {
       console.error('[CollectionSummary] Error:', err);
       setError(err.message || 'Erreur lors du chargement');
     } finally {
       setLoading(false);
     }
-  }, [academicYearId, selectedLevelId, selectedClassId]);
+  }, [academicYearId, selectedLevelId, selectedClassId, currentPage]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // ⭐ Reset page à 1 quand les filtres changent
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [academicYearId, selectedLevelId, selectedClassId]);
 
   // ─── Filtered classes based on selected level ──────────────────────────────
   const filteredClasses = useMemo(() => {
@@ -254,10 +273,76 @@ export default function CollectionSummaryContent() {
           <p className="text-sm text-red-700">{error}</p>
         </div>
       ) : activeSubTab === 'detail' ? (
-        <DetailTable
-          studentRows={studentRows}
-          installments={installments}
-        />
+        <div className="space-y-3">
+          <DetailTable
+            studentRows={studentRows}
+            installments={installments}
+          />
+          {/* ⭐ Pagination serveur — uniquement sur le sous-onglet « Bilan détaillé ».
+              Pattern identique à StudentMovementsContent.tsx. */}
+          {totalPages > 1 && (
+            <div className="bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+              <div className="text-xs text-slate-500">
+                Affichage <strong className="text-slate-700">
+                  {totalStudents > 0 ? `${(currentPage - 1) * PAGE_SIZE + 1}-${Math.min(currentPage * PAGE_SIZE, totalStudents)}` : '0'}
+                </strong> sur <strong className="text-slate-700">{totalStudents}</strong> élève(s)
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage <= 1 || loading}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  Précédent
+                </button>
+                <div className="flex items-center gap-0.5">
+                  {(() => {
+                    const pages: (number | 'ellipsis')[] = [];
+                    const add = (p: number) => { if (!pages.includes(p)) pages.push(p); };
+                    add(1);
+                    if (currentPage - 1 > 2) pages.push('ellipsis');
+                    for (let p = Math.max(2, currentPage - 1); p <= Math.min(totalPages - 1, currentPage + 1); p++) add(p);
+                    if (currentPage + 1 < totalPages - 1) pages.push('ellipsis');
+                    if (totalPages > 1) add(totalPages);
+                    return pages.map((p, i) => {
+                      if (p === 'ellipsis') {
+                        return (
+                          <span key={`e-${i}`} className="px-2 text-slate-400">
+                            <MoreHorizontal className="w-3.5 h-3.5" />
+                          </span>
+                        );
+                      }
+                      return (
+                        <button
+                          key={p}
+                          onClick={() => setCurrentPage(p)}
+                          disabled={loading}
+                          className={cn(
+                            'min-w-[28px] h-7 px-2 text-xs font-bold rounded-lg transition disabled:opacity-50',
+                            p === currentPage
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'text-slate-600 bg-slate-50 hover:bg-blue-50 hover:text-blue-700 border border-slate-200'
+                          )}
+                        >
+                          {p}
+                        </button>
+                      );
+                    });
+                  })()}
+                </div>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages || loading}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                  Suivant
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       ) : (
         <RecapTable
           recapRows={recapRows}

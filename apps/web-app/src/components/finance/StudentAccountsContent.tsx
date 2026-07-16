@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
+import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock, FileSpreadsheet, FileText, Loader2, ChevronLeft, ChevronRight, MoreHorizontal, Users, Wallet, TrendingUp, AlertCircle } from 'lucide-react';
 import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
 import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import { ModuleContentArea } from '@/components/modules/blueprint';
@@ -20,6 +20,7 @@ import { classesService } from '@/services/classes.service';
 import { getAcademicYears } from '@/services/settings.service';
 import { formatCurrency } from '@/lib/utils';
 import { filterAndSortClasses } from '@/lib/finance/class-sort';
+import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 import {
   exportStudentAccountsToExcel,
@@ -66,6 +67,19 @@ export default function StudentAccountsContent() {
   const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [whatsappMenuId, setWhatsappMenuId] = useState<string | null>(null);
+
+  // ⭐ Pagination serveur (pattern identique à StudentMovementsContent.tsx — Task 9-a)
+  const PAGE_SIZE = 50;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalAccounts, setTotalAccounts] = useState(0);
+  // ⭐ KPIs globaux (sommes agrégées sur TOUS les comptes, pas seulement la page active)
+  const [globalSums, setGlobalSums] = useState<{
+    totalDue: number;
+    totalPaid: number;
+    balance: number;
+    actualArrears: number;
+  }>({ totalDue: 0, totalPaid: 0, balance: 0, actualArrears: 0 });
 
   // ─── Splitter redimensionnable entre Comptes élèves (gauche) et Historique (droite) ───
   // leftPercent = pourcentage de largeur du panneau gauche (20% à 80%)
@@ -128,21 +142,64 @@ export default function StudentAccountsContent() {
     if (!effectiveYearId) return;
     setLoading(true);
     try {
-      const params = new URLSearchParams({ academicYearId: effectiveYearId });
+      const params = new URLSearchParams({
+        academicYearId: effectiveYearId,
+        page: String(currentPage),
+        limit: String(PAGE_SIZE),
+      });
       if (filterClassId) params.set('classId', filterClassId);
       if (filterStatus) params.set('status', filterStatus);
+      if (searchQuery.trim()) params.set('search', searchQuery.trim());
       const data = await financeService.getStudentAccounts(Object.fromEntries(params.entries()));
-      setAccounts(Array.isArray(data) ? data : []);
-    } catch (e) {
+      // ⭐ Gérer la réponse paginée { data, total, page, totalPages, sums } ou l'ancien format array
+      const allItems = Array.isArray(data) ? data : (data?.data ?? []);
+      setAccounts(allItems);
+      setTotalAccounts(Array.isArray(data) ? data.length : (data?.total ?? 0));
+      setTotalPages(Array.isArray(data) ? 1 : (data?.totalPages ?? 1));
+      if (!Array.isArray(data) && data?.sums) {
+        setGlobalSums({
+          totalDue: Number(data.sums.totalDue ?? 0),
+          totalPaid: Number(data.sums.totalPaid ?? 0),
+          balance: Number(data.sums.balance ?? 0),
+          actualArrears: Number(data.sums.actualArrears ?? 0),
+        });
+      } else {
+        // Fallback : calculer sur la page active si pas de sums (rértro-compat)
+        setGlobalSums({
+          totalDue: allItems.reduce((s, a) => s + Number(a.totalDue ?? 0), 0),
+          totalPaid: allItems.reduce((s, a) => s + Number(a.totalPaid ?? 0), 0),
+          balance: allItems.reduce((s, a) => s + Number(a.balance ?? 0), 0),
+          actualArrears: allItems.reduce((s, a) => s + Number(a.actualArrears ?? 0), 0),
+        });
+      }
+    } catch (e: any) {
       console.error(e);
+      toast({
+        title: 'Erreur de chargement',
+        description: e?.message || 'Impossible de charger les comptes élèves.',
+        variant: 'destructive',
+      });
+      setAccounts([]);
+      setTotalAccounts(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
   };
 
+  // ⭐ Recharger quand la page ou les filtres changent (search avec debounce 250ms)
   useEffect(() => {
-    loadAccounts();
-  }, [effectiveYearId, filterClassId, filterStatus]);
+    const timeout = setTimeout(() => {
+      loadAccounts();
+    }, searchQuery ? 250 : 0);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveYearId, filterClassId, filterStatus, searchQuery, currentPage]);
+
+  // ⭐ Reset page à 1 quand les filtres changent (sinon on reste bloqué sur une page vide)
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterClassId, filterStatus, searchQuery, effectiveYearId]);
 
   useEffect(() => {
     classesService.getAll({})
@@ -210,22 +267,16 @@ export default function StudentAccountsContent() {
     }
   };
 
-  // Filtrage frontend par recherche (nom, prénom, matricule)
+  // Filtrage frontend par recherche (nom, prénom, matricule) — SUPPRIMÉ
+  // (le backend filtre déjà en SQL — pattern identique au module Élève Task 9-a).
+  // On conserve juste le tri alphabétique pour l'affichage.
   const filteredAccounts = useMemo(() => {
-    // D'abord filtrer par recherche
-    const base = !searchQuery.trim()
-      ? accounts
-      : accounts.filter((a) => {
-          const name = `${a.student?.lastName || ''} ${a.student?.firstName || ''} ${a.student?.studentCode || ''}`.toLowerCase();
-          return name.includes(searchQuery.toLowerCase().trim());
-        });
-    // Puis trier par ordre alphabétique (lastName, puis firstName)
-    return [...base].sort((a, b) => {
+    return [...accounts].sort((a, b) => {
       const nameA = `${a.student?.lastName || ''} ${a.student?.firstName || ''}`.toLowerCase();
       const nameB = `${b.student?.lastName || ''} ${b.student?.firstName || ''}`.toLowerCase();
       return nameA.localeCompare(nameB, 'fr');
     });
-  }, [accounts, searchQuery]);
+  }, [accounts]);
 
   // Export CSV de la liste filtrée
   const handleExportCSV = () => {
@@ -399,6 +450,47 @@ export default function StudentAccountsContent() {
           </div>
         }
       >
+        {/* ⭐ KPIs globaux — sommes agrégées sur TOUS les comptes (pas seulement la page active).
+            Pattern identique au module Élève (stats globales calculées sur le vrai total serveur). */}
+        <div className="mb-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-white border border-slate-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-500 uppercase tracking-wide">Élèves</p>
+              <Users className="w-4 h-4 text-slate-400" />
+            </div>
+            <p className="text-2xl font-bold text-slate-800 mt-1">{totalAccounts}</p>
+            <p className="text-[10px] text-slate-400">compte(s) au total</p>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-500 uppercase tracking-wide">Total dû</p>
+              <Wallet className="w-4 h-4 text-rose-400" />
+            </div>
+            <p className="text-xl font-bold text-rose-700 mt-1">{formatCurrency(globalSums.totalDue)}</p>
+            {globalSums.actualArrears > 0 && (
+              <p className="text-[10px] text-amber-600">dont arriérés : {formatCurrency(globalSums.actualArrears)}</p>
+            )}
+          </div>
+          <div className="bg-white border border-slate-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-500 uppercase tracking-wide">Total payé</p>
+              <TrendingUp className="w-4 h-4 text-emerald-400" />
+            </div>
+            <p className="text-xl font-bold text-emerald-700 mt-1">{formatCurrency(globalSums.totalPaid)}</p>
+            <p className="text-[10px] text-slate-400">encaissements cumulés</p>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-500 uppercase tracking-wide">Reste à payer</p>
+              <AlertCircle className="w-4 h-4 text-amber-400" />
+            </div>
+            <p className={`text-xl font-bold mt-1 ${globalSums.balance > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
+              {formatCurrency(globalSums.balance)}
+            </p>
+            <p className="text-[10px] text-slate-400">solde global restant</p>
+          </div>
+        </div>
+
         <div className="mb-4 flex flex-wrap gap-4 items-end">
           {/* Filtre Année scolaire */}
           <div className="flex flex-col gap-1.5">
@@ -696,6 +788,70 @@ export default function StudentAccountsContent() {
                 </TableBody>
               </Table>
             </div>
+
+            {/* ⭐ Pagination serveur — pattern identique à StudentMovementsContent.tsx */}
+            {totalPages > 1 && (
+              <div className="bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3 mt-2">
+                <div className="text-xs text-slate-500">
+                  Affichage <strong className="text-slate-700">
+                    {totalAccounts > 0 ? `${(currentPage - 1) * PAGE_SIZE + 1}-${Math.min(currentPage * PAGE_SIZE, totalAccounts)}` : '0'}
+                  </strong> sur <strong className="text-slate-700">{totalAccounts}</strong> élève(s)
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage <= 1 || loading}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    Précédent
+                  </button>
+                  <div className="flex items-center gap-0.5">
+                    {(() => {
+                      const pages: (number | 'ellipsis')[] = [];
+                      const add = (p: number) => { if (!pages.includes(p)) pages.push(p); };
+                      add(1);
+                      if (currentPage - 1 > 2) pages.push('ellipsis');
+                      for (let p = Math.max(2, currentPage - 1); p <= Math.min(totalPages - 1, currentPage + 1); p++) add(p);
+                      if (currentPage + 1 < totalPages - 1) pages.push('ellipsis');
+                      if (totalPages > 1) add(totalPages);
+                      return pages.map((p, i) => {
+                        if (p === 'ellipsis') {
+                          return (
+                            <span key={`e-${i}`} className="px-2 text-slate-400">
+                              <MoreHorizontal className="w-3.5 h-3.5" />
+                            </span>
+                          );
+                        }
+                        return (
+                          <button
+                            key={p}
+                            onClick={() => setCurrentPage(p)}
+                            disabled={loading}
+                            className={cn(
+                              'min-w-[28px] h-7 px-2 text-xs font-bold rounded-lg transition disabled:opacity-50',
+                              p === currentPage
+                                ? 'bg-blue-600 text-white shadow-sm'
+                                : 'text-slate-600 bg-slate-50 hover:bg-blue-50 hover:text-blue-700 border border-slate-200'
+                            )}
+                          >
+                            {p}
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage >= totalPages || loading}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                  >
+                    Suivant
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* SPLITTER — barre de redimensionnement entre les 2 tableaux (visible desktop uniquement) */}

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Download, Eye, Smartphone, Calendar, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
+import { Plus, Download, Eye, Smartphone, Calendar, FileSpreadsheet, FileText, Loader2, ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
 import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import { ModuleContentArea } from '@/components/modules/blueprint';
@@ -43,14 +44,37 @@ export default function TransactionsContent() {
   const [dateTo, setDateTo] = useState('');
   const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null);
 
+  // ⭐ Pagination serveur (pattern identique à StudentMovementsContent.tsx — Task 9-a)
+  const PAGE_SIZE = 25;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalTransactions, setTotalTransactions] = useState(0);
+
   const loadTransactions = async () => {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
-      const data = await financeService.getTransactions({ academicYearId: academicYear.id });
-      setTransactions(Array.isArray(data) ? data : []);
-    } catch (e) {
+      const data = await financeService.getTransactions({
+        academicYearId: academicYear.id,
+        page: String(currentPage),
+        limit: String(PAGE_SIZE),
+      });
+      // ⭐ Gérer la réponse paginée { data, total, page, totalPages } ou l'ancien format array
+      const allItems = Array.isArray(data) ? data : (data?.data ?? []);
+      setTransactions(allItems);
+      setTotalTransactions(Array.isArray(data) ? data.length : (data?.total ?? 0));
+      setTotalPages(Array.isArray(data) ? 1 : (data?.totalPages ?? 1));
+    } catch (e: any) {
+      // ⭐ Toast d'erreur (l'ancien code avalait l'erreur silencieusement)
       console.error(e);
+      toast({
+        title: 'Erreur de chargement',
+        description: e?.message || 'Impossible de charger les transactions.',
+        variant: 'destructive',
+      });
+      setTransactions([]);
+      setTotalTransactions(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
@@ -58,7 +82,8 @@ export default function TransactionsContent() {
 
   useEffect(() => {
     loadTransactions();
-  }, [academicYear?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [academicYear?.id, currentPage]);
 
   useEffect(() => {
     if (!academicYear?.id) return;
@@ -378,6 +403,70 @@ export default function TransactionsContent() {
             </TableBody>
           </Table>
         </div>
+
+        {/* ⭐ Pagination serveur — pattern identique à StudentMovementsContent.tsx */}
+        {totalPages > 1 && (
+          <div className="bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+            <div className="text-xs text-slate-500">
+              Affichage <strong className="text-slate-700">
+                {totalTransactions > 0 ? `${(currentPage - 1) * PAGE_SIZE + 1}-${Math.min(currentPage * PAGE_SIZE, totalTransactions)}` : '0'}
+              </strong> sur <strong className="text-slate-700">{totalTransactions}</strong> transaction(s)
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage <= 1 || loading}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                Précédent
+              </button>
+              <div className="flex items-center gap-0.5">
+                {(() => {
+                  const pages: (number | 'ellipsis')[] = [];
+                  const add = (p: number) => { if (!pages.includes(p)) pages.push(p); };
+                  add(1);
+                  if (currentPage - 1 > 2) pages.push('ellipsis');
+                  for (let p = Math.max(2, currentPage - 1); p <= Math.min(totalPages - 1, currentPage + 1); p++) add(p);
+                  if (currentPage + 1 < totalPages - 1) pages.push('ellipsis');
+                  if (totalPages > 1) add(totalPages);
+                  return pages.map((p, i) => {
+                    if (p === 'ellipsis') {
+                      return (
+                        <span key={`e-${i}`} className="px-2 text-slate-400">
+                          <MoreHorizontal className="w-3.5 h-3.5" />
+                        </span>
+                      );
+                    }
+                    return (
+                      <button
+                        key={p}
+                        onClick={() => setCurrentPage(p)}
+                        disabled={loading}
+                        className={cn(
+                          'min-w-[28px] h-7 px-2 text-xs font-bold rounded-lg transition disabled:opacity-50',
+                          p === currentPage
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-slate-600 bg-slate-50 hover:bg-blue-50 hover:text-blue-700 border border-slate-200'
+                        )}
+                      >
+                        {p}
+                      </button>
+                    );
+                  });
+                })()}
+              </div>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages || loading}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >
+                Suivant
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Section Ventes Boutique — lien Boutique ↔ Finance */}
         {academicYear?.id && (

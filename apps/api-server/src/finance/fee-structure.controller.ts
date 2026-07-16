@@ -134,16 +134,28 @@ export class FeeStructureController {
     @Query('academicYearId') academicYearId?: string,
     @Query('feeStructureId') feeStructureId?: string,
     @Query('classId') classId?: string,
+    @Query('feeType') feeType?: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     // Si studentId est fourni → on utilise l'ancienne méthode (rétro-compat)
     if (studentId) {
       return this.service.getOverridesForStudent(tenantId, studentId, academicYearId);
     }
     // Sinon → on liste tous les overrides du tenant (onglet Personnalisations)
+    const pageNum = page ? parseInt(page, 10) : undefined;
+    const limitNum = limit ? parseInt(limit, 10) : undefined;
     return this.service.getAllOverrides(tenantId, {
       academicYearId,
       feeStructureId,
       classId,
+      feeType,
+      schoolLevelId,
+      search,
+      page: pageNum && !isNaN(pageNum) ? pageNum : undefined,
+      limit: limitNum && !isNaN(limitNum) ? limitNum : undefined,
     });
   }
 

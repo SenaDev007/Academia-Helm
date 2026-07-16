@@ -553,6 +553,9 @@ export class StudentAccountService {
       classId?: string;
       status?: string;
       isBlocked?: boolean;
+      search?: string;
+      page?: number;
+      limit?: number;
     },
   ) {
     const where: any = { tenantId, academicYearId: filters.academicYearId };
@@ -565,8 +568,27 @@ export class StudentAccountService {
         },
       };
     }
+    // ⭐ Recherche côté backend (mode insensible à la casse) sur nom/prénom/matricule/studentCode
+    // — pattern identique au module Élève (Task 9-a)
+    if (filters.search && filters.search.trim()) {
+      const q = filters.search.trim();
+      where.OR = [
+        { student: { firstName: { contains: q, mode: 'insensitive' } } },
+        { student: { lastName: { contains: q, mode: 'insensitive' } } },
+        { student: { matricule: { contains: q, mode: 'insensitive' } } },
+        { student: { studentCode: { contains: q, mode: 'insensitive' } } },
+      ];
+    }
 
-    const accounts = await this.prisma.studentAccount.findMany({
+    // ⭐ Pagination optionnelle : si page/limit fournis → retour paginé avec sommes agrégées
+    // { data, total, page, limit, totalPages, sums: { totalDue, totalPaid, balance, actualArrears } }
+    // Les sommes sont calculées sur TOUS les comptes (pas seulement la page active)
+    // pour que les KPIs affichés soient les vrais totaux serveur.
+    const isPaginated = !!(filters.page && filters.limit);
+    const page = Math.max(1, filters.page ?? 1);
+    const limit = Math.min(500, Math.max(1, filters.limit ?? 50));
+
+    const findManyArgs = {
       where,
       include: {
         student: {
@@ -591,15 +613,17 @@ export class StudentAccountService {
         },
       },
       orderBy: [{ student: { lastName: 'asc' } }, { student: { firstName: 'asc' } }],
-      take: 500,
-    });
+      ...(isPaginated ? { skip: (page - 1) * limit, take: limit } : { take: 500 }),
+    };
+
+    const baseAccounts = await this.prisma.studentAccount.findMany(findManyArgs);
 
     // ─── Multi-année : récupérer les arriérés réels (FeeArrear) pour chaque élève ───
     // Les champs StudentAccount.arrearsAmount et carriedArrears ne sont pas toujours
     // synchronisés avec les FeeArrear (ex: arriérés créés manuellement via le module
     // Recouvrement). On agrège donc les FeeArrear ouverts (OPEN ou PARTIALLY_PAID)
     // pour afficher le vrai total d'arriérés dans la colonne "Arriérés".
-    const studentIds = accounts.map((a) => a.studentId);
+    const studentIds = baseAccounts.map((a) => a.studentId);
     const openArrears: any[] = studentIds.length > 0
       ? await this.prisma.feeArrear.findMany({
           where: {
@@ -637,7 +661,7 @@ export class StudentAccountService {
     // ⚠️ IMPORTANT : Le `totalDue` et `balance` affichés doivent INCLURE les arriérés
     // (FIFO) pour refléter la vraie dette de l'élève envers l'établissement.
     // On conserve aussi `baseTotalDue` / `baseBalance` (sans arriérés) pour référence.
-    return accounts.map((account) => {
+    const accounts = baseAccounts.map((account) => {
       const arrearData = arrearsByStudent.get(account.studentId);
       const actualArrears = arrearData?.total ?? 0;
       const baseTotalDue = Number(account.totalDue ?? 0);
@@ -658,6 +682,61 @@ export class StudentAccountService {
         balance: baseBalance + actualArrears,
       };
     });
+
+    // ⭐ Si non paginé → retourne l'array (rétro-compatibilité avec RecoveryContent,
+    // FinanceReportsContent, StudentIdentityContent qui attendent un array)
+    if (!isPaginated) {
+      return accounts;
+    }
+
+    // ⭐ Si paginé → calcule le total + sommes agrégées (KPIs globaux) en parallèle
+    // Pour les KPIs "total dû / payé / reste" on a besoin de la somme sur TOUS les
+    // comptes (pas seulement la page active). Pour les arriérés (FeeArrear), on
+    // doit récupérer tous les studentIds matchés puis agréger les FeeArrear ouverts.
+    const allMatchingStudentIds = (await this.prisma.studentAccount.findMany({
+      where,
+      select: { studentId: true },
+    })).map((s) => s.studentId);
+
+    const [total, sums, globalArrearsAgg] = await Promise.all([
+      this.prisma.studentAccount.count({ where }),
+      // ⭐ Sommes agrégées sur TOUS les comptes (pas seulement la page active)
+      // pour que les KPIs affichés soient les vrais totaux serveur.
+      this.prisma.studentAccount.aggregate({
+        where,
+        _sum: { totalDue: true, totalPaid: true, balance: true },
+      }),
+      // ⭐ Total global des arriérés (FeeArrear ouverts) pour TOUS les élèves matchés
+      allMatchingStudentIds.length > 0
+        ? this.prisma.feeArrear.aggregate({
+            where: {
+              tenantId,
+              studentId: { in: allMatchingStudentIds },
+              status: { in: ['OPEN', 'PARTIALLY_PAID'] },
+              balanceDue: { gt: 0 },
+            },
+            _sum: { balanceDue: true },
+          })
+        : Promise.resolve({ _sum: { balanceDue: null } }),
+    ]);
+
+    // ⚠️ Pour les KPIs, on INCLUT les arriérés réels (FIFO) — sinon les KPIs
+    // sous-estimeraient la vraie dette (le `balance` de la table est sans arriérés).
+    const totalActualArrears = Number(globalArrearsAgg._sum.balanceDue ?? 0);
+
+    return {
+      data: accounts,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+      sums: {
+        totalDue: Number(sums._sum.totalDue ?? 0) + totalActualArrears,
+        totalPaid: Number(sums._sum.totalPaid ?? 0),
+        balance: Number(sums._sum.balance ?? 0) + totalActualArrears,
+        actualArrears: totalActualArrears,
+      },
+    };
   }
 
   async findOne(id: string, tenantId: string) {

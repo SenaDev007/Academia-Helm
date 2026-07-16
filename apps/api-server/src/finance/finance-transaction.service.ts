@@ -492,12 +492,39 @@ export class FinanceTransactionService {
       academicYearId?: string;
       studentAccountId?: string;
       type?: string;
+      page?: number;
+      limit?: number;
     },
   ) {
     const where: any = { tenantId };
     if (filters.academicYearId) where.academicYearId = filters.academicYearId;
     if (filters.studentAccountId) where.studentAccountId = filters.studentAccountId;
     if (filters.type) where.type = filters.type;
+
+    // ⭐ Pagination optionnelle : si page/limit fournis → retour paginé
+    // { data, total, page, limit, totalPages }.
+    // Sinon → retour array (rétro-compatibilité).
+    if (filters.page && filters.limit) {
+      const page = Math.max(1, filters.page);
+      const limit = Math.min(500, Math.max(1, filters.limit));
+      const [data, total] = await Promise.all([
+        this.prisma.financeTransaction.findMany({
+          where,
+          include: { studentAccount: { include: { student: true } } },
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+        this.prisma.financeTransaction.count({ where }),
+      ]);
+      return {
+        data,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+      };
+    }
 
     return this.prisma.financeTransaction.findMany({
       where,

@@ -49,11 +49,19 @@ export class FinanceTransactionController {
     @Query('academicYearId') academicYearId?: string,
     @Query('studentAccountId') studentAccountId?: string,
     @Query('type') type?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
+    // ⭐ Pagination optionnelle : si page/limit fournis → retour paginé { data, total, page, totalPages }
+    // Sinon → retour array (rétro-compatibilité avec les autres callers qui attendent un array)
+    const pageNum = page ? parseInt(page, 10) : undefined;
+    const limitNum = limit ? parseInt(limit, 10) : undefined;
     return this.service.findAll(tenantId, {
       academicYearId,
       studentAccountId,
       type,
+      page: pageNum && !isNaN(pageNum) ? pageNum : undefined,
+      limit: limitNum && !isNaN(limitNum) ? limitNum : undefined,
     });
   }
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, Search, User, Pencil } from 'lucide-react';
+import { Plus, Trash2, Search, User, Pencil, ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { financeService } from '@/services/finance.service';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, cn } from '@/lib/utils';
 import FeeOverrideModal from './FeeOverrideModal';
 
 const FEE_TYPES = [
@@ -74,6 +74,18 @@ export default function FeeOverridesContent() {
   const [modalOverride, setModalOverride] = useState(false);
   const [editingOverride, setEditingOverride] = useState<any | null>(null);
 
+  // ⭐ Pagination serveur (pattern identique à StudentMovementsContent.tsx — Task 9-a)
+  const PAGE_SIZE = 25;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalOverrides, setTotalOverrides] = useState(0);
+  // ⭐ KPIs globaux — sommes agrégées sur TOUS les overrides matchés (pas seulement la page active)
+  const [globalSums, setGlobalSums] = useState<{
+    totalOriginal: number;
+    totalCustom: number;
+    totalReduction: number;
+  }>({ totalOriginal: 0, totalCustom: 0, totalReduction: 0 });
+
   // Mapping education_levels UUID → school_levels UUID
   const eduToSchoolLevelMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -121,66 +133,82 @@ export default function FeeOverridesContent() {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
-      const params: Record<string, string> = { academicYearId: academicYear.id };
+      const params: Record<string, string> = {
+        academicYearId: academicYear.id,
+        page: String(currentPage),
+        limit: String(PAGE_SIZE),
+      };
+      // ⭐ Tous les filtres passés au backend (pattern Task 9-a)
+      if (filterFeeType) params.feeType = filterFeeType;
+      if (filterClassId) params.classId = filterClassId;
+      // ⭐ Convertir filterLevelId (school_levels.id) en schoolLevelId pour le backend
+      // (le backend filtre par student.studentEnrollments.class.schoolLevelId)
+      if (filterLevelId) {
+        const schoolLevelId = eduToSchoolLevelMap[filterLevelId];
+        if (schoolLevelId) params.schoolLevelId = schoolLevelId;
+      }
+      if (searchQuery.trim()) params.search = searchQuery.trim();
+
       const data = await financeService.getAllFeeOverrides(params);
-      setOverrides(Array.isArray(data) ? data : []);
-    } catch (e) {
+      // ⭐ Gérer la réponse paginée { data, total, page, totalPages, sums } ou l'ancien format array
+      const allItems = Array.isArray(data) ? data : (data?.data ?? []);
+      setOverrides(allItems);
+      setTotalOverrides(Array.isArray(data) ? data.length : (data?.total ?? 0));
+      setTotalPages(Array.isArray(data) ? 1 : (data?.totalPages ?? 1));
+      if (!Array.isArray(data) && data?.sums) {
+        setGlobalSums({
+          totalOriginal: Number(data.sums.totalOriginal ?? 0),
+          totalCustom: Number(data.sums.totalCustom ?? 0),
+          totalReduction: Number(data.sums.totalReduction ?? 0),
+        });
+      } else {
+        // Fallback : calculer sur la page active (rétro-compat)
+        setGlobalSums({
+          totalOriginal: allItems.reduce((s, o) => s + Number(o.feeStructure?.totalAmount ?? 0), 0),
+          totalCustom: allItems.reduce((s, o) => s + Number(o.customAmount ?? 0), 0),
+          totalReduction: allItems.reduce((s, o) => s + Math.max(0, Number(o.feeStructure?.totalAmount ?? 0) - Number(o.customAmount ?? 0)), 0),
+        });
+      }
+    } catch (e: any) {
       console.error(e);
+      toast({
+        title: 'Erreur de chargement',
+        description: e?.message || 'Impossible de charger les personnalisations.',
+        variant: 'destructive',
+      });
+      setOverrides([]);
+      setTotalOverrides(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
   };
 
+  // ⭐ Recharger quand la page ou les filtres changent (search avec debounce 250ms)
   useEffect(() => {
-    loadOverrides();
-  }, [academicYear?.id]);
+    if (!academicYear?.id) return;
+    const timeout = setTimeout(() => {
+      loadOverrides();
+    }, searchQuery ? 250 : 0);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [academicYear?.id, currentPage, filterLevelId, filterClassId, filterFeeType, searchQuery]);
 
-  // Filtrage côté frontend : par niveau + classe (de l'élève) + type de frais + recherche
+  // ⭐ Reset page à 1 quand les filtres changent
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterLevelId, filterClassId, filterFeeType, searchQuery]);
+
+  // Filtrage côté frontend — SUPPRIMÉ (backend filtre maintenant par feeType, classId,
+  // schoolLevelId, search). On conserve juste le tri alphabétique pour l'affichage.
+  // (pattern identique au module Élève Task 9-a)
   const filteredOverrides = useMemo(() => {
-    let result = overrides;
-
-    // Filtre par niveau : vérifier la classe de l'élève via studentEnrollments
-    if (filterLevelId) {
-      const schoolLevelId = eduToSchoolLevelMap[filterLevelId];
-      if (schoolLevelId) {
-        result = result.filter((o) => {
-          // La classe de l'élève est dans studentEnrollments (chargé par le backend)
-          const enrollment = o.student?.studentEnrollments?.[0];
-          const classObj = enrollment?.class;
-          return classObj?.schoolLevelId === schoolLevelId;
-        });
-      }
-    }
-
-    // Filtre par classe : vérifier la classe de l'élève
-    if (filterClassId) {
-      result = result.filter((o) => {
-        const enrollment = o.student?.studentEnrollments?.[0];
-        return enrollment?.classId === filterClassId;
-      });
-    }
-
-    // Filtre par type de frais
-    if (filterFeeType) {
-      result = result.filter((o) => o.feeStructure?.feeType === filterFeeType);
-    }
-
-    // Recherche par nom d'élève
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      result = result.filter((o) => {
-        const name = `${o.student?.lastName || ''} ${o.student?.firstName || ''} ${o.student?.matricule || ''}`.toLowerCase();
-        return name.includes(q);
-      });
-    }
-
-    // Tri par ordre alphabétique (lastName, puis firstName)
-    return [...result].sort((a, b) => {
+    return [...overrides].sort((a, b) => {
       const nameA = `${a.student?.lastName || ''} ${a.student?.firstName || ''}`.toLowerCase();
       const nameB = `${b.student?.lastName || ''} ${b.student?.firstName || ''}`.toLowerCase();
       return nameA.localeCompare(nameB, 'fr');
     });
-  }, [overrides, filterLevelId, filterClassId, filterFeeType, searchQuery, eduToSchoolLevelMap]);
+  }, [overrides]);
 
   const handleDelete = async (id: string, studentName: string) => {
     const ok = await confirmDialog.danger(
@@ -202,16 +230,15 @@ export default function FeeOverridesContent() {
     setEditingOverride(o);
   };
 
-  // Statistiques rapides
+  // Statistiques rapides — utilise les KPIs globaux serveur (pas la page active)
   const stats = useMemo(() => {
-    const total = filteredOverrides.length;
-    const totalReduction = filteredOverrides.reduce((sum, o) => {
-      const original = Number(o.feeStructure?.totalAmount ?? 0);
-      const custom = Number(o.customAmount ?? 0);
-      return sum + Math.max(0, original - custom);
-    }, 0);
-    return { total, totalReduction };
-  }, [filteredOverrides]);
+    return {
+      total: totalOverrides,
+      totalOriginal: globalSums.totalOriginal,
+      totalCustom: globalSums.totalCustom,
+      totalReduction: globalSums.totalReduction,
+    };
+  }, [totalOverrides, globalSums]);
 
   return (
     <>
@@ -226,19 +253,29 @@ export default function FeeOverridesContent() {
           </div>
         }
       >
-        {/* Bandeau de statistiques */}
-        <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+        {/* ⭐ Bandeau de statistiques — 4 KPIs calculés sur le TOTAL serveur (pas la page active) */}
+        <div className="mb-4 grid grid-cols-1 md:grid-cols-4 gap-3">
           <div className="bg-white border border-slate-200 rounded-lg p-4">
             <p className="text-xs text-slate-500 uppercase tracking-wide">Personnalisations actives</p>
             <p className="text-2xl font-bold text-slate-800">{stats.total}</p>
+            <p className="text-[10px] text-slate-400">sur {totalPages} page(s) · année {academicYear?.label ?? '—'}</p>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-lg p-4">
+            <p className="text-xs text-slate-500 uppercase tracking-wide">Montant initial cumulé</p>
+            <p className="text-xl font-bold text-slate-700">{formatCurrency(stats.totalOriginal)}</p>
+            <p className="text-[10px] text-slate-400">somme des tarifs standards</p>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-lg p-4">
+            <p className="text-xs text-slate-500 uppercase tracking-wide">Montant personnalisé cumulé</p>
+            <p className="text-xl font-bold text-emerald-700">{formatCurrency(stats.totalCustom)}</p>
+            <p className="text-[10px] text-slate-400">somme des tarifs personnalisés</p>
           </div>
           <div className="bg-white border border-slate-200 rounded-lg p-4">
             <p className="text-xs text-slate-500 uppercase tracking-wide">Réduction totale accordée</p>
-            <p className="text-2xl font-bold text-rose-600">{formatCurrency(stats.totalReduction)}</p>
-          </div>
-          <div className="bg-white border border-slate-200 rounded-lg p-4">
-            <p className="text-xs text-slate-500 uppercase tracking-wide">Année scolaire</p>
-            <p className="text-sm font-semibold text-slate-700 mt-1">{academicYear?.label ?? '—'}</p>
+            <p className="text-xl font-bold text-rose-600">{formatCurrency(stats.totalReduction)}</p>
+            <p className="text-[10px] text-slate-400">
+              {stats.totalOriginal > 0 ? `${Math.round((stats.totalReduction / stats.totalOriginal) * 100)}% du montant initial` : '—'}
+            </p>
           </div>
         </div>
 
@@ -371,6 +408,70 @@ export default function FeeOverridesContent() {
             </TableBody>
           </Table>
         </div>
+
+        {/* ⭐ Pagination serveur — pattern identique à StudentMovementsContent.tsx */}
+        {totalPages > 1 && (
+          <div className="bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3 mt-3">
+            <div className="text-xs text-slate-500">
+              Affichage <strong className="text-slate-700">
+                {totalOverrides > 0 ? `${(currentPage - 1) * PAGE_SIZE + 1}-${Math.min(currentPage * PAGE_SIZE, totalOverrides)}` : '0'}
+              </strong> sur <strong className="text-slate-700">{totalOverrides}</strong> personnalisation(s)
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage <= 1 || loading}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                Précédent
+              </button>
+              <div className="flex items-center gap-0.5">
+                {(() => {
+                  const pages: (number | 'ellipsis')[] = [];
+                  const add = (p: number) => { if (!pages.includes(p)) pages.push(p); };
+                  add(1);
+                  if (currentPage - 1 > 2) pages.push('ellipsis');
+                  for (let p = Math.max(2, currentPage - 1); p <= Math.min(totalPages - 1, currentPage + 1); p++) add(p);
+                  if (currentPage + 1 < totalPages - 1) pages.push('ellipsis');
+                  if (totalPages > 1) add(totalPages);
+                  return pages.map((p, i) => {
+                    if (p === 'ellipsis') {
+                      return (
+                        <span key={`e-${i}`} className="px-2 text-slate-400">
+                          <MoreHorizontal className="w-3.5 h-3.5" />
+                        </span>
+                      );
+                    }
+                    return (
+                      <button
+                        key={p}
+                        onClick={() => setCurrentPage(p)}
+                        disabled={loading}
+                        className={cn(
+                          'min-w-[28px] h-7 px-2 text-xs font-bold rounded-lg transition disabled:opacity-50',
+                          p === currentPage
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-slate-600 bg-slate-50 hover:bg-blue-50 hover:text-blue-700 border border-slate-200'
+                        )}
+                      >
+                        {p}
+                      </button>
+                    );
+                  });
+                })()}
+              </div>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages || loading}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >
+                Suivant
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
       </ModuleContentArea>
 
       {/* Modal de création */}

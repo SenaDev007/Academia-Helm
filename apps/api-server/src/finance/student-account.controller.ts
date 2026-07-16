@@ -19,13 +19,21 @@ export class StudentAccountController {
     @Query('classId') classId?: string,
     @Query('status') status?: string,
     @Query('isBlocked') isBlocked?: string,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     if (!academicYearId) return [];
+    const pageNum = page ? parseInt(page, 10) : undefined;
+    const limitNum = limit ? parseInt(limit, 10) : undefined;
     return this.service.findAll(tenantId, {
       academicYearId,
       classId,
       status,
+      search,
       isBlocked: isBlocked === 'true' ? true : isBlocked === 'false' ? false : undefined,
+      page: pageNum && !isNaN(pageNum) ? pageNum : undefined,
+      limit: limitNum && !isNaN(limitNum) ? limitNum : undefined,
     });
   }
 

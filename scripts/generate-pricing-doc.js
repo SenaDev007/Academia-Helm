@@ -233,9 +233,9 @@ const doc = new Document({
         tableRow([
           cell('Fly.io (backend API)'),
           cell('Pro'),
-          cell('5 $', { align: AlignmentType.CENTER }),
-          cell('3 000', { align: AlignmentType.CENTER }),
-          cell('1 VM shared-cpu 512MB. Suffisant pour ~20 écoles actives. Peut upscaler à 10 $ pour 1 GB RAM si besoin.'),
+          cell('20 $', { align: AlignmentType.CENTER }),
+          cell('12 000', { align: AlignmentType.CENTER }),
+          cell('1 VM dedicated-cpu 1GB avec auto-scaling. Suffisant pour ~30 écoles actives. Inclut health checks et déploiements zero-downtime.'),
           ], { shading: C.surface }),
         tableRow([
           cell('Vercel (frontend)'),
@@ -255,8 +255,8 @@ const doc = new Document({
         tableRow([
           cell('Total fixe', { bold: true, shading: C.accent, color: C.white }),
           cell('—', { bold: true, shading: C.accent, color: C.white, align: AlignmentType.CENTER }),
-          cell('51 $', { bold: true, shading: C.accent, color: C.white, align: AlignmentType.CENTER }),
-          cell('30 500', { bold: true, shading: C.accent, color: C.white, align: AlignmentType.CENTER }),
+          cell('66 $', { bold: true, shading: C.accent, color: C.white, align: AlignmentType.CENTER }),
+          cell('39 500', { bold: true, shading: C.accent, color: C.white, align: AlignmentType.CENTER }),
           cell('Coût fixe mensuel de base, indépendant du nombre d\'écoles (jusqu\'à ~30 écoles).', { bold: true, shading: C.accent, color: C.white }),
         ]),
       ]),
@@ -278,7 +278,7 @@ const doc = new Document({
           cell('~800', { align: AlignmentType.CENTER }),
           cell('~300 MB', { align: AlignmentType.CENTER }),
           cell('Pro (19 $)', { align: AlignmentType.CENTER }),
-          cell('30 500 FCFA', { align: AlignmentType.CENTER }),
+          cell('39 500 FCFA', { align: AlignmentType.CENTER }),
         ]),
         tableRow([
           cell('Court terme', { shading: C.surface }),
@@ -286,7 +286,7 @@ const doc = new Document({
           cell('~2 500', { align: AlignmentType.CENTER, shading: C.surface }),
           cell('~800 MB', { align: AlignmentType.CENTER, shading: C.surface }),
           cell('Pro (19 $)', { align: AlignmentType.CENTER, shading: C.surface }),
-          cell('30 500 FCFA', { align: AlignmentType.CENTER, shading: C.surface }),
+          cell('39 500 FCFA', { align: AlignmentType.CENTER, shading: C.surface }),
         ]),
         tableRow([
           cell('Moyen terme'),
@@ -294,7 +294,7 @@ const doc = new Document({
           cell('~7 500', { align: AlignmentType.CENTER }),
           cell('~3 GB', { align: AlignmentType.CENTER }),
           cell('Pro (19 $)', { align: AlignmentType.CENTER }),
-          cell('30 500 FCFA', { align: AlignmentType.CENTER }),
+          cell('39 500 FCFA', { align: AlignmentType.CENTER }),
         ]),
         tableRow([
           cell('Long terme', { shading: C.surface }),
@@ -302,7 +302,7 @@ const doc = new Document({
           cell('~15 000', { align: AlignmentType.CENTER, shading: C.surface }),
           cell('~6 GB', { align: AlignmentType.CENTER, shading: C.surface }),
           cell('Pro (19 $)', { align: AlignmentType.CENTER, shading: C.surface }),
-          cell('30 500 FCFA', { align: AlignmentType.CENTER, shading: C.surface }),
+          cell('39 500 FCFA', { align: AlignmentType.CENTER, shading: C.surface }),
         ]),
         tableRow([
           cell('Scale'),
@@ -310,7 +310,7 @@ const doc = new Document({
           cell('~25 000+', { align: AlignmentType.CENTER }),
           cell('~12 GB+', { align: AlignmentType.CENTER }),
           cell('Scale (69 $)', { align: AlignmentType.CENTER }),
-          cell('59 500 FCFA', { align: AlignmentType.CENTER }),
+          cell('68 500 FCFA', { align: AlignmentType.CENTER }),
         ]),
       ]),
 
@@ -596,24 +596,24 @@ const doc = new Document({
           cell('200 000 FCFA', { align: AlignmentType.CENTER }),
           cell('40 000 FCFA/an', { align: AlignmentType.CENTER, color: C.greenD }),
           cell('160 000 FCFA', { align: AlignmentType.CENTER }),
-          cell('~30 500 FCFA (partagé)', { align: AlignmentType.CENTER }),
+          cell('~39 500 FCFA (partagé)', { align: AlignmentType.CENTER }),
         ]),
         tableRow([
           cell('GROW', { shading: C.surface }),
           cell('350 000 FCFA', { align: AlignmentType.CENTER, shading: C.surface }),
           cell('70 000 FCFA/an', { align: AlignmentType.CENTER, color: C.greenD, shading: C.surface }),
           cell('280 000 FCFA', { align: AlignmentType.CENTER, shading: C.surface }),
-          cell('~30 500 FCFA (partagé)', { align: AlignmentType.CENTER, shading: C.surface }),
+          cell('~39 500 FCFA (partagé)', { align: AlignmentType.CENTER, shading: C.surface }),
         ]),
         tableRow([
           cell('LEAD'),
           cell('500 000 FCFA', { align: AlignmentType.CENTER }),
           cell('100 000 FCFA/an', { align: AlignmentType.CENTER, color: C.greenD }),
           cell('400 000 FCFA', { align: AlignmentType.CENTER }),
-          cell('~30 500 FCFA (partagé)', { align: AlignmentType.CENTER }),
+          cell('~39 500 FCFA (partagé)', { align: AlignmentType.CENTER }),
         ]),
       ]),
-      p('Note : Le coût d\'infrastructure (~30 500 FCFA/mois, soit ~366 000 FCFA/an) est partagé entre toutes les écoles. Plus il y a d\'écoles, plus le coût marginal par école est faible.'),
+      p('Note : Le coût d\'infrastructure (~39 500 FCFA/mois, soit ~474 000 FCFA/an) est partagé entre toutes les écoles. Plus il y a d\'écoles, plus le coût marginal par école est faible.'),
 
       // === 7. PROJECTIONS ===
       h1('7. Projections de rentabilité'),
@@ -643,21 +643,21 @@ const doc = new Document({
         ]),
         tableRow([
           cell('Coût infrastructure', { shading: C.surface }),
-          cell('366 000 FCFA', { align: AlignmentType.CENTER, color: C.redD, shading: C.surface }),
-          cell('30 500 FCFA', { align: AlignmentType.CENTER, color: C.redD, shading: C.surface }),
+          cell('474 000 FCFA', { align: AlignmentType.CENTER, color: C.redD, shading: C.surface }),
+          cell('39 500 FCFA', { align: AlignmentType.CENTER, color: C.redD, shading: C.surface }),
         ]),
         tableRow([
           cell('Marge nette YEHI OR Tech (année 1, avec installation)', { bold: true, shading: C.greenL }),
-          cell('354 000 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.greenL }),
-          cell('29 500 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.greenL }),
+          cell('246 000 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.greenL }),
+          cell('20 500 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.greenL }),
         ]),
         tableRow([
           cell('Marge nette YEHI OR Tech (année 2+, récurrent)', { bold: true, shading: C.accent, color: C.white }),
-          cell('54 000 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.accent, color: C.white }),
-          cell('4 500 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.accent, color: C.white }),
+          cell('-54 000 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.accent, color: C.white }),
+          cell('-4 500 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.accent, color: C.white }),
         ]),
       ]),
-      p('Note : Avec seulement 2 écoles, la marge récurrente est faible. L\'objectif est de passer rapidement à 5-10 écoles pour atteindre une rémunération confortable.'),
+      p('Note : Avec seulement 2 écoles, la marge récurrente est négative (-4 500 FCFA/mois) car les coûts d\'infrastructure dépassent les revenus. L\'objectif est de passer rapidement à 5+ écoles pour atteindre une rémunération confortable.'),
 
       h2('7.2 Scénario court terme (5 écoles)'),
       makeTable([
@@ -683,18 +683,18 @@ const doc = new Document({
         ]),
         tableRow([
           cell('Coût infrastructure', { shading: C.surface }),
-          cell('366 000 FCFA', { align: AlignmentType.CENTER, color: C.redD, shading: C.surface }),
-          cell('30 500 FCFA', { align: AlignmentType.CENTER, color: C.redD, shading: C.surface }),
+          cell('474 000 FCFA', { align: AlignmentType.CENTER, color: C.redD, shading: C.surface }),
+          cell('39 500 FCFA', { align: AlignmentType.CENTER, color: C.redD, shading: C.surface }),
         ]),
         tableRow([
           cell('Marge nette YEHI OR Tech (année 1, avec installation)', { bold: true, shading: C.greenL }),
-          cell('744 000 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.greenL }),
-          cell('62 000 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.greenL }),
+          cell('636 000 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.greenL }),
+          cell('53 000 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.greenL }),
         ]),
         tableRow([
           cell('Marge nette YEHI OR Tech (année 2+, récurrent)', { bold: true, shading: C.accent, color: C.white }),
-          cell('844 000 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.accent, color: C.white }),
-          cell('70 333 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.accent, color: C.white }),
+          cell('736 000 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.accent, color: C.white }),
+          cell('61 333 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.accent, color: C.white }),
         ]),
       ]),
 
@@ -717,13 +717,13 @@ const doc = new Document({
         ]),
         tableRow([
           cell('Coût infrastructure'),
-          cell('366 000 FCFA', { align: AlignmentType.CENTER, color: C.redD }),
-          cell('30 500 FCFA', { align: AlignmentType.CENTER, color: C.redD }),
+          cell('474 000 FCFA', { align: AlignmentType.CENTER, color: C.redD }),
+          cell('39 500 FCFA', { align: AlignmentType.CENTER, color: C.redD }),
         ]),
         tableRow([
           cell('Marge nette YEHI OR Tech (récurrent)', { bold: true, shading: C.accent, color: C.white }),
-          cell('3 594 000 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.accent, color: C.white }),
-          cell('299 500 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.accent, color: C.white }),
+          cell('3 486 000 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.accent, color: C.white }),
+          cell('290 500 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.accent, color: C.white }),
         ]),
       ]),
 
@@ -746,13 +746,13 @@ const doc = new Document({
         ]),
         tableRow([
           cell('Coût infrastructure (toujours Neon Pro)'),
-          cell('366 000 FCFA', { align: AlignmentType.CENTER, color: C.redD }),
-          cell('30 500 FCFA', { align: AlignmentType.CENTER, color: C.redD }),
+          cell('474 000 FCFA', { align: AlignmentType.CENTER, color: C.redD }),
+          cell('39 500 FCFA', { align: AlignmentType.CENTER, color: C.redD }),
         ]),
         tableRow([
           cell('Marge nette YEHI OR Tech (récurrent)', { bold: true, shading: C.accent, color: C.white }),
-          cell('7 434 000 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.accent, color: C.white }),
-          cell('619 500 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.accent, color: C.white }),
+          cell('7 326 000 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.accent, color: C.white }),
+          cell('610 500 FCFA', { align: AlignmentType.CENTER, bold: true, shading: C.accent, color: C.white }),
         ]),
       ]),
 
@@ -830,10 +830,10 @@ const doc = new Document({
       // === 10. RECOMMANDATIONS ===
       h1('10. Recommandations stratégiques'),
       h2('10.1 Break-even'),
-      p('Avec 2 écoles en GROW (70 000 FCFA/mois), les coûts d\'infrastructure (~30 500 FCFA/mois) sont couverts. Avec 5 écoles, la marge nette récurrente atteint ~70 000 FCFA/mois pour YEHI OR Tech (après commission partenaire et infrastructure).'),
+      p('Avec 2 écoles en GROW (70 000 FCFA/mois), les coûts d\'infrastructure (~39 500 FCFA/mois) sont couverts. Avec 5 écoles, la marge nette récurrente atteint ~61 000 FCFA/mois pour YEHI OR Tech (après commission partenaire et infrastructure).'),
 
       h2('10.2 Évolution Neon'),
-      p('Jusqu\'à ~30 écoles (~6 GB) : Neon Pro (19 $/mois) suffit. Au-delà de 30 écoles, prévoir Neon Scale (49 $/mois, 50 GB) — le coût marginal reste faible par rapport aux revenus (59 500 FCFA/mois pour 50+ écoles générant 800 000+ FCFA/mois).'),
+      p('Jusqu\'à ~30 écoles (~6 GB) : Neon Pro (19 $/mois) suffit. Au-delà de 30 écoles, prévoir Neon Scale (49 $/mois, 50 GB) — le coût marginal reste faible par rapport aux revenus (68 500 FCFA/mois pour 50+ écoles générant 800 000+ FCFA/mois).'),
 
       h2('10.3 Gestion des SMS'),
       p('Les SMS sont le seul coût vraiment variable. Surveiller le volume mensuel par école. Si une école dépasse 5 000 SMS/mois, proposer un forfait SMS illimité à 100 000 FCFA/mois (au lieu du tarif unitaire).'),

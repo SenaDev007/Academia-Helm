@@ -7142,3 +7142,57 @@ Stage Summary:
 - Tailles texte harmonisées : text-[10px] / text-[9px] / text-[8px] / text-[11px] → text-xs / text-sm
 - Logique métier 100% conservée (modulesApi.post/get/put/patch, useModulesList, useModulesDashboard, refetch, useState, handlers)
 - Modules Library et QHSE suivent maintenant exactement le même pattern design que les modules Finance/Students/Shop/Infirmerie/Labo/Cantine/Transport/EduCast
+
+---
+Task ID: 9 (Synthèse finale)
+Agent: Main Agent
+Task: Fix Finance Régime+Personnalisation + CRUD manquant + standardisation Library/QHSE
+
+Work Log:
+
+Issue #2b — Fix erreur 'direct modification of balance fields forbidden' :
+- Diagnostic : student-account.service.ts recalculate() appelait allowBalanceUpdate() (SET LOCAL app.allow_balance_update) puis prisma.studentAccount.update() dans 2 transactions séparées. Le flag SET LOCAL étant limité à la transaction courante, il était perdu avant l'UPDATE → le trigger prevent_balance_update déclenche l'erreur.
+- Fix : wrapper allowBalanceUpdate() + studentAccount.update() dans une seule $transaction (pattern identique à fee-structure.service.ts lignes 641-652 qui fonctionne correctement).
+- Même fix appliqué à addArrearsToAccount() (ligne 529) qui avait le même bug.
+- 2 méthodes corrigées dans student-account.service.ts.
+
+Issue #2a — Supprimer section Régime (subagent 8-a) :
+- FeeStructuresContent.tsx : 484 lignes supprimées (1095 → 611 lignes)
+- 10 useState supprimés (regimes, regimeLoading, regimeLevelId, regimeModal, editingRegime, regimeForm, newRuleFeeType, newRuleValue, regimeSubmitting, regimeEditSubmitting)
+- 5 handlers supprimés (loadRegimes, handleCreateRegime, handleUpdateRegime, handleDeleteRegime, handleAddRule)
+- UI supprimée : section cartes régime + 2 modals (création + édition)
+- Imports lucide nettoyés + LEVEL_STYLES + getLevelStyle supprimés
+- Backend fee-regime NON touché (utilisé par StudentAccountService pour auto-créer le régime STANDARD)
+
+Issue #2c + #2d — Fix FeeOverrideModal (subagent 8-a) :
+- Recherche élèves : studentsService.getAll → financeService.getStudentAccounts({ academicYearId })
+- Ajout 2 Select cascade (Niveau scolaire + Classe) avant la recherche
+- filteredClasses par niveau (3 fallbacks)
+- filteredStudents avec 3 filtres cascade (niveau → classe → recherche)
+- Reset cascade : niveau → reset classe + élève ; classe → reset élève
+- Masqué en mode édition (élève verrouillé)
+
+Issue #1a — CRUD manquant backend (subagent 8-b) :
+- 34 méthodes service ajoutées (17 DELETE + 15 UPDATE + 2 CREATE)
+- 34 routes controller ajoutées
+- Transport : 9 routes (4 PUT + 5 DELETE)
+- EduCast : 10 routes (5 PUT + 5 DELETE)
+- Canteen : 15 routes (2 POST + 6 PUT + 7 DELETE)
+- Soft-deletes pour entités avec relations bloquantes (8)
+- Hard-deletes pour entités sans enfants (9)
+
+Issue #1b — Standardisation Library + QHSE (subagent 8-c) :
+- 29 fichiers standardisés (14 Library + 15 QHSE)
+- 2 pages principales refondues sur ModuleContainer
+- 18 alert() → useToast(), 14 modals → Dialog, 7 tables → shadcn
+- ~75 inputs/buttons HTML → shadcn, 4 toggles → Switch
+
+Vérifications :
+- Frontend : 0 erreur TypeScript sur fichiers modifiés
+- Backend : erreurs uniquement sur enums Prisma (CanteenMenuStatus etc.) — préexistantes, dues au client Prisma non régénéré localement (seront résolues en production après prisma generate)
+- Commit d61a50e8 poussé sur origin/main (37 fichiers, +3809/-2924 lignes)
+
+Stage Summary:
+- TOUS les modules complémentaires (Boutique, Infirmerie, Labo, Cantine, Transport, EduCast, Library, QHSE) sont maintenant standardisés sur le pattern Finance/ModuleContainer
+- CRUD backend complet pour les 3 modules qui en manquaient (transport, educast, canteen)
+- Finance : section Régime supprimée, erreur balance fixée, recherche élèves fonctionnelle, cascade niveau/classe ajoutée

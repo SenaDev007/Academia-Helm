@@ -13,7 +13,7 @@
 import { useState, useEffect } from 'react';
 import {
   Users, Plus, Search, Mail, Phone, Star, Heart, Loader2, User,
-  Edit2, Trash2, X, Check, Shield,
+  Edit2, Trash2, X, Check, Shield, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { studentsService } from '@/services/students.service';
@@ -68,6 +68,8 @@ export default function StudentFamiliesContent() {
   const [guardianForm, setGuardianForm] = useState<GuardianForm | null>(null);
   const [editingGuardianId, setEditingGuardianId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 24;
 
   useEffect(() => {
     if (academicYear && schoolLevel) loadData();
@@ -208,8 +210,9 @@ export default function StudentFamiliesContent() {
           <Users className="w-12 h-12 mb-3 opacity-20" /><p className="text-sm">Aucune famille trouvée</p>
         </div>
       ) : (
+        <>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredStudents.map(student => (
+          {filteredStudents.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map(student => (
             <div key={student.id} className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col">
               <div className="p-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -265,6 +268,31 @@ export default function StudentFamiliesContent() {
             </div>
           ))}
         </div>
+
+        {/* ⭐ Pagination Famille */}
+        {filteredStudents.length > PAGE_SIZE && (
+          <div className="flex items-center justify-center gap-3 mt-6">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-blue-700 bg-white hover:bg-blue-50 rounded-lg border border-blue-200 transition disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="w-4 h-4" /> Précédent
+            </button>
+            <span className="text-sm font-mono text-slate-500">
+              Page {currentPage} / {Math.ceil(filteredStudents.length / PAGE_SIZE)}
+              <span className="text-slate-400 ml-2">({filteredStudents.length} familles)</span>
+            </span>
+            <button
+              onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredStudents.length / PAGE_SIZE), p + 1))}
+              disabled={currentPage >= Math.ceil(filteredStudents.length / PAGE_SIZE)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-blue-700 bg-white hover:bg-blue-50 rounded-lg border border-blue-200 transition disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Suivant <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+        </>
       )}
 
       {/* Modal Add/Edit Guardian */}

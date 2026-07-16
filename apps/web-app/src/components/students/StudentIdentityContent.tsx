@@ -6,7 +6,7 @@ import {
   Search, Loader2, Download, Eye, X, CreditCard, FileText,
   History, BookOpen, GraduationCap, Calendar, MapPin, Hash,
   ArrowLeft, HeartPulse, Wallet, Activity, RotateCw,
-  ClipboardList, AlertTriangle,
+  ClipboardList, AlertTriangle, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { studentsService } from '@/services/students.service';
@@ -205,7 +205,21 @@ export default function StudentIdentityContent() {
   }, [filteredStudents, studentClassMap, levels]);
 
   if (selectedStudent) {
-    return <StudentDashboard student={selectedStudent} academicYear={academicYear} onBack={() => setSelectedStudent(null)} />;
+    const currentIndex = filteredStudents.findIndex(s => s.id === selectedStudent.id);
+    return (
+      <StudentDashboard
+        student={selectedStudent}
+        academicYear={academicYear}
+        onBack={() => setSelectedStudent(null)}
+        currentIndex={currentIndex}
+        totalStudents={filteredStudents.length}
+        onNavigate={(newIndex: number) => {
+          if (newIndex >= 0 && newIndex < filteredStudents.length) {
+            setSelectedStudent(filteredStudents[newIndex]);
+          }
+        }}
+      />
+    );
   }
 
   return (
@@ -290,7 +304,10 @@ export default function StudentIdentityContent() {
 
 // ─── Dashboard élève plein écran ───
 
-function StudentDashboard({ student, academicYear, onBack }: { student: StudentIdentity; academicYear: any; onBack: () => void; }) {
+function StudentDashboard({ student, academicYear, onBack, currentIndex, totalStudents, onNavigate }: {
+  student: StudentIdentity; academicYear: any; onBack: () => void;
+  currentIndex: number; totalStudents: number; onNavigate: (newIndex: number) => void;
+}) {
   const [activeTab, setActiveTab] = useState<DetailTab>('identite');
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [documents, setDocuments] = useState<any[]>([]);
@@ -378,6 +395,30 @@ function StudentDashboard({ student, academicYear, onBack }: { student: StudentI
         <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
           <div className="flex items-center gap-3">
             <button onClick={onBack} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 transition"><ArrowLeft className="w-3.5 h-3.5" /> Retour</button>
+            {/* ⭐ Pagination élève */}
+            {totalStudents > 1 && (
+              <div className="flex items-center gap-1.5 ml-2">
+                <button
+                  onClick={() => onNavigate(currentIndex - 1)}
+                  disabled={currentIndex <= 0}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-blue-700 bg-white hover:bg-blue-50 rounded-lg border border-blue-200 transition disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Élève précédent"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-xs font-mono text-slate-500 px-1">
+                  {currentIndex + 1} / {totalStudents}
+                </span>
+                <button
+                  onClick={() => onNavigate(currentIndex + 1)}
+                  disabled={currentIndex >= totalStudents - 1}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-blue-700 bg-white hover:bg-blue-50 rounded-lg border border-blue-200 transition disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Élève suivant"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
             <div className="w-14 h-14 rounded-full overflow-hidden bg-white border-2 border-blue-200 flex items-center justify-center text-lg font-bold text-blue-600 shrink-0">{student.photoUrl ? <img src={student.photoUrl} alt="" className="w-full h-full object-cover" /> : getInitials(student)}</div>
             <div>
               <h2 className="text-lg font-bold text-slate-900">{student.lastName.toUpperCase()} {student.firstName}</h2>

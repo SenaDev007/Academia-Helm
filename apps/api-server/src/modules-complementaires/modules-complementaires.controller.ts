@@ -14,6 +14,7 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { AcademicYearId } from '../common/decorators/academic-year-id.decorator';
 import { CanteenService } from './services/canteen.service';
 import { TransportService } from './services/transport.service';
 import { LibraryService } from './services/library.service';
@@ -1313,6 +1314,95 @@ export class ModulesComplementairesController {
     @Body() data: any,
   ) {
     return this.shopService.updateDeliveryStatus(id, data.status, data.notes);
+  }
+
+  // ─── Routes CRUD complètes (GET/:id, PUT, DELETE) ───────────────────────
+
+  // Products
+  @Get('shop/products/:id')
+  async getShopProduct(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.shopService.findProduct(id, tenantId);
+  }
+  @Put('shop/products/:id')
+  async updateShopProduct(@TenantId() tenantId: string, @Param('id') id: string, @Body() data: any) {
+    return this.shopService.updateProduct(id, tenantId, data);
+  }
+  @Delete('shop/products/:id')
+  async deleteShopProduct(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.shopService.deleteProduct(id, tenantId);
+  }
+
+  // Categories
+  @Put('shop/categories/:id')
+  async updateShopCategory(@TenantId() tenantId: string, @Param('id') id: string, @Body() data: any) {
+    return this.shopService.updateCategory(id, tenantId, data);
+  }
+  @Delete('shop/categories/:id')
+  async deleteShopCategory(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.shopService.deleteCategory(id, tenantId);
+  }
+
+  // Sales
+  @Get('shop/sales/:id')
+  async getShopSale(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.shopService.findSale(id, tenantId);
+  }
+
+  // Stock movements
+  @Get('shop/stock-movements')
+  async getShopStockMovements(@TenantId() tenantId: string, @Query('productId') productId?: string) {
+    return this.shopService.findAllStockMovements(tenantId, productId);
+  }
+
+  // Suppliers
+  @Put('shop/suppliers/:id')
+  async updateShopSupplier(@TenantId() tenantId: string, @Param('id') id: string, @Body() data: any) {
+    return this.shopService.updateSupplier(id, tenantId, data);
+  }
+  @Delete('shop/suppliers/:id')
+  async deleteShopSupplier(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.shopService.deleteSupplier(id, tenantId);
+  }
+
+  // Purchase orders
+  @Put('shop/purchase-orders/:id/status')
+  async updateShopPurchaseOrderStatus(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() data: any,
+    @CurrentUser() user: any,
+  ) {
+    return this.shopService.updatePurchaseOrderStatus(id, tenantId, data.status, user?.id);
+  }
+
+  // Deliveries — create route
+  @Post('shop/deliveries')
+  async createShopDelivery(
+    @TenantId() tenantId: string,
+    @AcademicYearId() academicYearId: string,
+    @Body() data: any,
+  ) {
+    return this.shopService.createDelivery(tenantId, academicYearId, data);
+  }
+
+  // Kits
+  @Put('shop/kits/:id')
+  async updateShopKit(@TenantId() tenantId: string, @Param('id') id: string, @Body() data: any) {
+    return this.shopService.updateKit(id, tenantId, data);
+  }
+  @Delete('shop/kits/:id')
+  async deleteShopKit(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.shopService.deleteKit(id, tenantId);
+  }
+
+  // Discounts
+  @Put('shop/discounts/:id')
+  async updateShopDiscount(@TenantId() tenantId: string, @Param('id') id: string, @Body() data: any) {
+    return this.shopService.updateDiscount(id, tenantId, data);
+  }
+  @Delete('shop/discounts/:id')
+  async deleteShopDiscount(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.shopService.deleteDiscount(id, tenantId);
   }
 
 

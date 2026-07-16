@@ -81,6 +81,38 @@ export class ShopService {
     });
   }
 
+  async createCategory(tenantId: string, data: any) {
+    return this.prisma.shopCategory.create({
+      data: {
+        tenantId,
+        name: data.name,
+        description: data.description,
+        parentId: data.parentId,
+      },
+      include: { _count: { select: { products: true } } }
+    });
+  }
+
+  async updateCategory(id: string, tenantId: string, data: any) {
+    return this.prisma.shopCategory.update({
+      where: { id },
+      data: {
+        name: data.name,
+        description: data.description,
+        parentId: data.parentId,
+      }
+    });
+  }
+
+  async deleteCategory(id: string, tenantId: string) {
+    // Vérifier qu'aucun produit n'utilise cette catégorie
+    const productsCount = await this.prisma.shopProduct.count({ where: { categoryId: id, tenantId } });
+    if (productsCount > 0) {
+      throw new BadRequestException(`Impossible de supprimer : ${productsCount} produit(s) utilisent cette catégorie`);
+    }
+    return this.prisma.shopCategory.delete({ where: { id } });
+  }
+
   async findProduct(id: string, tenantId: string) {
     const product = await this.prisma.shopProduct.findFirst({
       where: { id, tenantId },
@@ -91,12 +123,22 @@ export class ShopService {
   }
 
   async updateProduct(id: string, tenantId: string, data: any) {
+    const { stock, ...productData } = data;
     return this.prisma.shopProduct.update({
       where: { id },
       data: {
-        ...data,
-        stock: data.stock ? { update: data.stock } : undefined
-      }
+        ...productData,
+        ...(stock && { stock: { update: stock } })
+      },
+      include: { stock: true, category: true }
+    });
+  }
+
+  async deleteProduct(id: string, tenantId: string) {
+    // Désactiver au lieu de supprimer (préserver l'historique des ventes)
+    return this.prisma.shopProduct.update({
+      where: { id },
+      data: { isActive: false }
     });
   }
 
@@ -320,10 +362,21 @@ export class ShopService {
 
   async createSupplier(tenantId: string, data: any) {
     return this.prisma.shopSupplier.create({
-      data: {
-        tenantId,
-        ...data
-      }
+      data: { tenantId, ...data }
+    });
+  }
+
+  async updateSupplier(id: string, tenantId: string, data: any) {
+    return this.prisma.shopSupplier.update({
+      where: { id },
+      data
+    });
+  }
+
+  async deleteSupplier(id: string, tenantId: string) {
+    return this.prisma.shopSupplier.update({
+      where: { id },
+      data: { isActive: false }
     });
   }
 
@@ -347,8 +400,64 @@ export class ShopService {
         poNumber,
         totalAmount: data.totalAmount,
         notes: data.notes,
-        status: PurchaseOrderStatus.PENDING
+        status: PurchaseOrderStatus.PENDING,
+        items: data.items ? {
+          create: data.items.map((item: any) => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            totalPrice: Number(item.unitPrice) * item.quantity
+          }))
+        } : undefined
+      },
+      include: { supplier: true, items: { include: { product: true } } }
+    });
+  }
+
+  async updatePurchaseOrderStatus(id: string, tenantId: string, status: PurchaseOrderStatus, receivedBy?: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const po = await tx.shopPurchaseOrder.update({
+        where: { id },
+        data: {
+          status,
+          receivedAt: status === PurchaseOrderStatus.RECEIVED ? new Date() : undefined,
+          receivedBy: status === PurchaseOrderStatus.RECEIVED ? receivedBy : undefined,
+        },
+        include: { items: true }
+      });
+
+      // Si reçu, réapprovisionner le stock
+      if (status === PurchaseOrderStatus.RECEIVED) {
+        for (const item of po.items) {
+          await tx.shopStock.update({
+            where: { productId: item.productId },
+            data: { quantity: { increment: item.quantity } }
+          }).catch(() => {
+            // Créer le stock s'il n'existe pas
+            return tx.shopStock.create({
+              data: {
+                tenantId,
+                productId: item.productId,
+                quantity: item.quantity,
+              }
+            });
+          });
+
+          await tx.shopStockMovement.create({
+            data: {
+              tenantId,
+              productId: item.productId,
+              type: StockMovementType.IN,
+              quantity: item.quantity,
+              reason: `PO_${po.poNumber}`,
+              referenceId: po.id,
+              performedBy: receivedBy
+            }
+          });
+        }
       }
+
+      return po;
     });
   }
 
@@ -406,14 +515,49 @@ export class ShopService {
     const totalRevenue = sales.reduce((sum, s) => sum + Number(s.totalAmount), 0);
     const lowStockCount = products.filter(p => p.stock && p.stock.quantity <= p.minStock).length;
 
+    // ⭐ topProducts : top 5 des produits les plus vendus (30 derniers jours)
+    const saleItems = await this.prisma.shopSaleItem.findMany({
+      where: {
+        sale: {
+          tenantId,
+          academicYearId,
+          saleDate: { gte: new Date(new Date().setDate(new Date().getDate() - 30)) }
+        }
+      },
+      include: { product: { select: { name: true, code: true } } },
+      take: 500,
+    });
+    const productMap = new Map<string, { name: string; code: string; quantity: number; revenue: number }>();
+    for (const item of saleItems) {
+      const key = item.productId;
+      if (!productMap.has(key)) {
+        productMap.set(key, { name: item.product?.name || 'N/A', code: item.product?.code || '', quantity: 0, revenue: 0 });
+      }
+      const entry = productMap.get(key)!;
+      entry.quantity += item.quantity;
+      entry.revenue += Number(item.totalPrice);
+    }
+    const topProducts = Array.from(productMap.values())
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+
+    // ⭐ salesByMode : répartition des ventes par mode de paiement
+    const salesByMode: Record<string, { count: number; total: number }> = {};
+    for (const s of sales) {
+      const mode = s.paymentMode || 'UNKNOWN';
+      if (!salesByMode[mode]) salesByMode[mode] = { count: 0, total: 0 };
+      salesByMode[mode].count++;
+      salesByMode[mode].total += Number(s.totalAmount);
+    }
+
     return {
       totalProducts: products.length,
       totalSalesMonth: sales.length,
       totalRevenueMonth: totalRevenue,
       lowStockAlerts: lowStockCount,
       inventoryValue: products.reduce((sum, p) => sum + (Number(p.costPrice || 0) * (p.stock?.quantity || 0)), 0),
-      topProducts: [], // To be implemented with aggregation if needed
-      salesByMode: {} // To be implemented with aggregation if needed
+      topProducts,
+      salesByMode
     };
   }
 
@@ -507,7 +651,34 @@ export class ShopService {
           }))
         }
       },
-      include: { items: true }
+      include: { items: { include: { product: true } } }
+    });
+  }
+
+  async updateKit(id: string, tenantId: string, data: any) {
+    const { items, ...kitData } = data;
+    return this.prisma.shopSchoolKit.update({
+      where: { id },
+      data: {
+        ...kitData,
+        ...(items && {
+          items: {
+            deleteMany: {},
+            create: items.map((item: any) => ({
+              productId: item.productId,
+              quantity: item.quantity || 1
+            }))
+          }
+        })
+      },
+      include: { items: { include: { product: true } }, schoolLevel: true }
+    });
+  }
+
+  async deleteKit(id: string, tenantId: string) {
+    return this.prisma.shopSchoolKit.update({
+      where: { id },
+      data: { isActive: false }
     });
   }
 
@@ -568,8 +739,31 @@ export class ShopService {
         value: data.value,
         code: data.code,
         startDate: data.startDate,
-        endDate: data.endDate
+        endDate: data.endDate,
+        isActive: true,
       }
+    });
+  }
+
+  async updateDiscount(id: string, tenantId: string, data: any) {
+    return this.prisma.shopDiscount.update({
+      where: { id },
+      data: {
+        name: data.name,
+        type: data.type,
+        value: data.value,
+        code: data.code,
+        startDate: data.startDate,
+        endDate: data.endDate,
+        isActive: data.isActive,
+      }
+    });
+  }
+
+  async deleteDiscount(id: string, tenantId: string) {
+    return this.prisma.shopDiscount.update({
+      where: { id },
+      data: { isActive: false }
     });
   }
 

@@ -85,10 +85,11 @@ export class CollectionSummaryController {
     const installments = Array.from(installmentsMap.values()).sort((a, b) => a.orderIndex - b.orderIndex);
 
     // ─── 2. Récupérer les élèves (enrollments) avec leurs classes ─────────────
+    // ⭐ Inclure ADMITTED (statut utilisé par l'import en masse et le bulk-setup)
     const enrollmentWhere: any = {
       tenantId,
       academicYearId,
-      status: { in: ['ACTIVE', 'ENROLLED', 'PENDING'] },
+      status: { in: ['ACTIVE', 'ENROLLED', 'PENDING', 'ADMITTED'] },
     };
     if (classId) {
       enrollmentWhere.classId = classId;

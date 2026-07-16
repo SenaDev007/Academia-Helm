@@ -165,7 +165,7 @@ export default function TenantPortalSelection({
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
-      {/* ═══ NAVBAR (CDC 3.1) ═══ */}
+      {/* ═══ NAVBAR (CDC 3.1) — pas de bouton Portail car on est DÉJÀ sur la page portail ═══ */}
       <TenantHeader
         schoolName={schoolName}
         schoolAcronym={schoolAcronym}
@@ -175,7 +175,7 @@ export default function TenantPortalSelection({
         activeNav=""
         transparentAtTop={false}
         navLinks={navLinks}
-        portalHref="/portal"
+        portalHref={undefined}
       />
 
       <main className="flex-1 pt-16 md:pt-20 pb-8">
@@ -191,7 +191,7 @@ export default function TenantPortalSelection({
             >
               <Shield className="w-3.5 h-3.5" style={{ color: NAVY }} />
               <span className="text-xs font-bold uppercase tracking-wider" style={{ color: NAVY }}>
-                Portail officiel — {BRAND.name}
+                Portail officiel — {displayName}
               </span>
             </motion.div>
             <h1
@@ -230,7 +230,7 @@ export default function TenantPortalSelection({
                     style={{ color: NAVY }}
                   >
                     <MapPin className="w-3.5 h-3.5" style={{ color: GOLD }} />
-                    Carte du Bénin — Réseau {BRAND.name}
+                    Carte du Bénin — Réseau {displayName}
                   </h3>
                   <div
                     className="flex overflow-hidden rounded-lg border text-xs sm:text-[10px]"
@@ -378,7 +378,7 @@ export default function TenantPortalSelection({
                 style={{ borderColor: `${NAVY}10` }}
               >
                 <Shield className="h-3 w-3" style={{ color: NAVY }} />
-                <span>Connexion sécurisée — {BRAND.name}</span>
+                <span>Connexion sécurisée — {displayName}</span>
               </div>
             </motion.div>
           </div>

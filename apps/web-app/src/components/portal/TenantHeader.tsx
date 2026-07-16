@@ -60,7 +60,7 @@ export default function TenantHeader({
   activeNav = 'Accueil',
   transparentAtTop = true,
   navLinks = CDC_NAV_LINKS,
-  portalHref = '/portal',
+  portalHref,
 }: TenantHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -169,8 +169,9 @@ export default function TenantHeader({
             })}
           </nav>
 
-          {/* CTA Portail (or) + bouton mobile */}
+          {/* CTA Portail (or) + bouton mobile — masqué si portalHref est undefined/null */}
           <div className="flex items-center gap-2">
+            {portalHref && (
             <Link
               href={portalHref}
               className="hidden md:inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-bold transition-all shadow-sm hover:shadow-md hover:scale-105"
@@ -181,6 +182,7 @@ export default function TenantHeader({
             >
               Portail <ArrowRight size={14} />
             </Link>
+            )}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="lg:hidden p-2 text-white rounded-lg hover:bg-white/10 transition-colors"
@@ -217,6 +219,7 @@ export default function TenantHeader({
                   {link.label}
                 </button>
               ))}
+              {portalHref && (
               <Link
                 href={portalHref}
                 onClick={() => setMobileMenuOpen(false)}
@@ -228,6 +231,7 @@ export default function TenantHeader({
               >
                 Portail
               </Link>
+              )}
             </div>
           </motion.nav>
         )}

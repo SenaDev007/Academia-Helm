@@ -7548,3 +7548,44 @@ Stage Summary:
 - Bilan des encaissements corrigé (utilise FinanceTransaction au lieu de PaymentAllocation)
 - Pagination serveur ajoutée dans 4 onglets Finance (Encaissements, Comptes élèves, Personnalisation, Bilan détaillé)
 - Stats KPI globales corrigées (calculées sur le total serveur, pas la page active)
+
+---
+Task ID: 14
+Agent: Main Agent
+Task: Fix colonnes manquantes DB + correction noms abréviations + vérification agent-browser
+
+Work Log:
+
+Issue #1 — Correction noms abréviations :
+- 53 élèves sur 688 avaient des initiales sans points (ex: "O F" au lieu de "O. F.")
+- Script fix-name-abbreviations.js : ajoute points après lettres majuscules seules
+- Exemples : AFFODJOU O F Esdras → AFFODJOU O. F. Esdras, ABDOU K Fridaoussath → ABDOU K. Fridaoussath
+
+Issue #2 — Erreurs "colonne manquante" dans tous les onglets Finance :
+- Diagnostic via agent-browser (connecté en tant que promoteur Julien OGBONN)
+- ROOT CAUSE identifiée : les colonnes tendered_amount et change_given (migration 014)
+  étaient en snake_case mais le schéma Prisma attend tenderedAmount et changeGiven (camelCase)
+- → Chaque requête Prisma qui inclut FinanceTransaction échouait avec P2022
+- → Toutes les pages Finance affichaient "Aucune transaction" ou "Colonne manquante"
+
+Fix appliqués sur Neon PostgreSQL :
+1. RENAME COLUMN tendered_amount → tenderedAmount (finance_transactions)
+2. RENAME COLUMN change_given → changeGiven (finance_transactions)
+3. Migration 018 : ALTER TABLE student_accounts ADD blockReason, blockDate, unblockDate
+   (colonnes du modèle Prisma StudentAccount qui manquaient en DB)
+
+Vérification via agent-browser :
+- ✅ Encaissements : 2550 transactions affichées (reçus, noms, montants, dates)
+- ✅ Multi-caisses : page se charge sans erreur, 7 caisses affichées (MAIN, ONLINE, BANQUE, ACCUEIL, ECO, EXAMEN, + 1)
+- ✅ Plus aucune erreur "Colonne manquante" dans la console du navigateur
+- ⏳ Bilan des encaissements : le fix code est dans le commit précédent (09e68ba3) mais nécessite un redéploiement du serveur Fly.io pour prendre effet
+- ⏳ Multi-caisses détails : l'affichage des détails d'une caisse nécessite aussi le redéploiement
+
+Migrations appliquées sur Neon (cumul) :
+- Migration 014 : tenderedAmount + changeGiven (renommés de snake_case → camelCase)
+- Migration 015 : table lab_settings
+- Migration 016 : cashRegisterId + pendingApproverId sur finance_expenses
+- Migration 017 : tables cash_register_transfers + cash_register_transactions
+- Migration 018 : blockReason + blockDate + unblockDate sur student_accounts
+
+Commit 10e37129 poussé sur origin/main

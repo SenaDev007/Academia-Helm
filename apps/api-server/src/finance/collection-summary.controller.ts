@@ -108,30 +108,44 @@ export class CollectionSummaryController {
     }
 
     // ─── 3. Récupérer tous les paiements pour ces élèves ──────────────────────
+    // ⭐ PaymentAllocation n'a pas de champ tenantId ni academicYearId.
+    // On filtre par targetType='STUDENT' + targetId (qui contient studentId)
+    // et on joint Payment pour filtrer par tenantId + academicYearId.
     const studentIds = filteredEnrollments.map((e) => e.studentId);
     const payments = await this.prisma.paymentAllocation.findMany({
       where: {
-        tenantId,
-        academicYearId,
-        studentId: { in: studentIds },
+        targetType: 'STUDENT',
+        targetId: { in: studentIds },
+        payment: {
+          tenantId,
+          academicYearId,
+        },
       },
       select: {
-        studentId: true,
-        feeType: true,
-        feeStructureId: true,
-        feeStructureInstallmentId: true,
-        amount: true,
-        classId: true,
+        targetId: true,
+        allocatedAmount: true,
+        studentFee: { select: { feeType: true, feeStructureId: true, feeStructureInstallmentId: true } },
+        payment: { select: { id: true, amount: true } },
       },
     });
 
     // Grouper les paiements par élève
+    // ⭐ PaymentAllocation.targetId contient le studentId quand targetType='STUDENT'
     const paymentsByStudent = new Map<string, any[]>();
     for (const p of payments) {
-      if (!paymentsByStudent.has(p.studentId)) {
-        paymentsByStudent.set(p.studentId, []);
+      const sid = p.targetId; // targetId = studentId
+      if (!paymentsByStudent.has(sid)) {
+        paymentsByStudent.set(sid, []);
       }
-      paymentsByStudent.get(p.studentId)!.push(p);
+      // Normaliser le format pour le code en aval
+      paymentsByStudent.get(sid)!.push({
+        studentId: sid,
+        feeType: p.studentFee?.feeType || null,
+        feeStructureId: p.studentFee?.feeStructureId || null,
+        feeStructureInstallmentId: p.studentFee?.feeStructureInstallmentId || null,
+        amount: Number(p.allocatedAmount) || 0,
+        classId: null,
+      });
     }
 
     // ─── 4. Construire les lignes élèves (détail) ────────────────────────────

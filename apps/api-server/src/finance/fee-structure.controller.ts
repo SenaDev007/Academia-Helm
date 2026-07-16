@@ -11,6 +11,7 @@ import {
   Param,
   Query,
   UseGuards,
+  Logger,
 } from '@nestjs/common';
 import { FeeStructureService } from './fee-structure.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -21,6 +22,7 @@ import { CreateFeeStructureDto, UpdateFeeStructureDto } from './dto';
 @Controller('finance/fee-structures')
 @UseGuards(JwtAuthGuard)
 export class FeeStructureController {
+  private readonly logger = new Logger(FeeStructureController.name);
   constructor(private readonly service: FeeStructureService) {}
 
   @Post()
@@ -29,6 +31,7 @@ export class FeeStructureController {
     @CurrentUser() user: any,
     @Body() body: CreateFeeStructureDto,
   ) {
+    this.logger.log(`Create fee structure: academicYearId=${body.academicYearId}, levelId=${body.levelId}, classId=${body.classId}, academicClassId=${body.academicClassId}, feeType=${body.feeType}, isInstallment=${body.isInstallment}`);
     const installments = body.installments?.map((i: any) => {
       const dueDateType = i.dueDateType ?? 'FIXED';
       return {

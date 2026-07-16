@@ -412,6 +412,84 @@ export class TransportService {
     });
   }
 
+  /**
+   * Récupère tous les paramètres de transport d'un tenant (pour le frontend
+   * TransportSettings qui charge l'objet settings complet au démarrage).
+   * Retourne un objet key→value pour faciliter la consommation côté frontend.
+   */
+  async getSettings(tenantId: string): Promise<Record<string, string>> {
+    const settings = await this.prisma.transportSetting.findMany({
+      where: { tenantId },
+      select: { key: true, value: true },
+    });
+    const result: Record<string, string> = {};
+    for (const s of settings) {
+      result[s.key] = s.value;
+    }
+    return result;
+  }
+
+  /**
+   * Liste tous les incidents de transport (filtres optionnels : statut, véhicule, période).
+   * ⭐ Implémentation ajoutée juillet 2026 — le controller exposait déjà la route
+   * GET /transport/incidents mais la méthode service était absente (runtime 500).
+   */
+  async findAllIncidents(
+    tenantId: string,
+    academicYearId: string,
+    filters?: { status?: string; vehicleId?: string; startDate?: Date; endDate?: Date },
+  ) {
+    const where: any = { tenantId, academicYearId };
+    if (filters?.status) where.status = filters.status;
+    if (filters?.vehicleId) where.vehicleId = filters.vehicleId;
+    if (filters?.startDate || filters?.endDate) {
+      where.incidentDate = {};
+      if (filters?.startDate) where.incidentDate.gte = filters.startDate;
+      if (filters?.endDate) where.incidentDate.lte = filters.endDate;
+    }
+
+    return this.prisma.transportIncident.findMany({
+      where,
+      include: {
+        vehicle: { select: { id: true, plateNumber: true, model: true } },
+        route: { select: { id: true, name: true } },
+        reporter: { select: { id: true, firstName: true, lastName: true } },
+      },
+      orderBy: { incidentDate: 'desc' },
+      take: 200,
+    });
+  }
+
+  /**
+   * Marque un incident comme résolu (change le statut + ajoute une résolution).
+   * ⭐ Implémentation ajoutée juillet 2026 — le frontend TransportIncidents
+   * appelle POST /transport/incidents/:id/resolve mais la méthode n'existait pas.
+   */
+  async resolveIncident(
+    id: string,
+    tenantId: string,
+    resolution: string,
+    resolvedBy: string,
+  ) {
+    const incident = await this.prisma.transportIncident.findFirst({
+      where: { id, tenantId },
+    });
+    if (!incident) {
+      throw new NotFoundException(`Incident transport introuvable (id=${id}).`);
+    }
+
+    return this.prisma.transportIncident.update({
+      where: { id },
+      data: {
+        status: 'RESOLVED',
+        actionTaken: resolution,
+        resolvedAt: new Date(),
+        // reportedBy existe mais pas resolvedBy — on conserve le resolvedBy dans actionTaken
+        // car le schéma n'a pas de champ dedicated resolvedBy.
+      },
+    });
+  }
+
   async getTransportStats(tenantId: string, academicYearId: string) {
     const [vehicles, routes, drivers, assignments, incidents] = await Promise.all([
       this.prisma.vehicle.count({ where: { tenantId, academicYearId } }),

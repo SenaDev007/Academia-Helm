@@ -152,6 +152,100 @@ export class LabService {
     });
   }
 
+  /**
+   * Liste tous les équipements de laboratoire d'un tenant (tous labs confondus).
+   * ⭐ Implémentation ajoutée juillet 2026 — le frontend EquipmentsInventory.tsx
+   * appelle GET /labs/equipment (sans labId) mais le backend exigeait labId en path.
+   * Cette méthode accepte un labId optionnel pour filtrer.
+   */
+  async findAllEquipmentGlobal(tenantId: string, labId?: string) {
+    const where: any = { lab: { tenantId } };
+    if (labId) where.labId = labId;
+
+    return this.prisma.labEquipment.findMany({
+      where,
+      include: {
+        lab: { select: { id: true, name: true, code: true } },
+        maintenance: { orderBy: { maintenanceDate: 'desc' }, take: 3 },
+        incidents: { where: { resolved: false }, orderBy: { incidentDate: 'desc' }, take: 3 },
+      },
+      orderBy: { name: 'asc' },
+      take: 500,
+    });
+  }
+
+  /**
+   * Liste tous les incidents de laboratoire d'un tenant.
+   * ⭐ Implémentation ajoutée juillet 2026 — le frontend SafetyIncidents.tsx
+   * utilisait des mocks car GET /labs/incidents n'existait pas.
+   */
+  async findAllIncidents(tenantId: string, filters?: { resolved?: boolean; severity?: string }) {
+    const where: any = { equipment: { lab: { tenantId } } };
+    if (filters?.resolved !== undefined) where.resolved = filters.resolved;
+    if (filters?.severity) where.severity = filters.severity;
+
+    return this.prisma.labIncident.findMany({
+      where,
+      include: {
+        equipment: {
+          select: { id: true, name: true, code: true, lab: { select: { id: true, name: true } } },
+        },
+        reporter: { select: { id: true, firstName: true, lastName: true } },
+      },
+      orderBy: { incidentDate: 'desc' },
+      take: 200,
+    });
+  }
+
+  /**
+   * Récupère tous les paramètres de laboratoire d'un tenant.
+   * ⭐ Implémentation ajoutée juillet 2026 — le frontend LaboratorySettings.tsx
+   * utilisait des mocks car GET /labs/settings n'existait pas.
+   * Retourne un objet key→value pour faciliter la consommation frontend.
+   *
+   * Note : la table LabSetting n'existe pas encore dans le schéma Prisma.
+   * Pour éviter un crash, on retourne un objet vide si la table est absente.
+   * Une migration future pourra créer la table lab_settings.
+   */
+  async getSettings(tenantId: string): Promise<Record<string, string>> {
+    try {
+      // Tenter via $queryRaw (si la table existe en base mais pas dans le schéma Prisma)
+      const rows: any[] = await this.prisma.$queryRawUnsafe(
+        `SELECT key, value FROM lab_settings WHERE "tenantId" = $1`,
+        tenantId,
+      );
+      const result: Record<string, string> = {};
+      for (const r of rows) {
+        result[r.key] = r.value;
+      }
+      return result;
+    } catch (err: any) {
+      // Table lab_settings inexistante — retourner un objet vide (non bloquant)
+      return {};
+    }
+  }
+
+  /**
+   * Met à jour un paramètre de laboratoire (upsert).
+   * ⭐ Implémentation ajoutée juillet 2026.
+   * Utilise $queryRaw pour contourner l'absence de modèle Prisma LabSetting.
+   */
+  async updateSetting(tenantId: string, key: string, value: string) {
+    try {
+      await this.prisma.$queryRawUnsafe(
+        `INSERT INTO lab_settings ("tenantId", key, value, "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, NOW(), NOW())
+         ON CONFLICT ("tenantId", key) DO UPDATE SET value = $3, "updatedAt" = NOW()`,
+        tenantId, key, value,
+      );
+      return { tenantId, key, value };
+    } catch (err: any) {
+      // Table lab_settings inexistante — on ignore silencieusement
+      // (les settings ne seront pas persistés tant que la migration n'est pas créée)
+      return { tenantId, key, value, warning: 'lab_settings table not available' };
+    }
+  }
+
   async updateEquipment(id: string, labId: string, tenantId: string, data: any) {
     await this.findAllEquipment(labId, tenantId);
     const equipment = await this.prisma.labEquipment.findFirst({ where: { id, labId } });

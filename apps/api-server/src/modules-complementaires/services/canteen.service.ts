@@ -28,14 +28,14 @@ export class CanteenService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const [enrolledCount, todayMeals, lowStockCount, recentIncidents] = await Promise.all([
+    const [enrolledCount, todayMeals, lowStockCount, recentIncidents, todayMenu] = await Promise.all([
       this.prisma.canteenEnrollment.count({ where: { tenantId, academicYearId, status: CanteenEnrollmentStatus.VALIDATED } }),
-      this.prisma.canteenMealService.count({ 
-        where: { 
+      this.prisma.canteenMealService.count({
+        where: {
           menu: { tenantId, academicYearId },
           serviceDate: today,
           status: MealServiceStatus.MEAL_SERVED
-        } 
+        }
       }),
       this.prisma.canteenFoodStock.count({
         where: {
@@ -47,7 +47,13 @@ export class CanteenService {
         where: { tenantId, academicYearId },
         take: 5,
         orderBy: { createdAt: 'desc' }
-      })
+      }),
+      // Menu du jour pour affichage dans le dashboard
+      this.prisma.canteenMenu.findMany({
+        where: { tenantId, academicYearId, date: today },
+        select: { period: true, mainPlate: true, accompaniment: true, entry: true, dessert: true },
+        take: 5,
+      }),
     ]);
 
     // ORION Insight Logic (Simulated for now, would use actual consumption data)
@@ -57,10 +63,32 @@ export class CanteenService {
       avgCostPerMeal: 850
     };
 
+    // ⭐ Juillet 2026 : Format aplati (stats à plat + todayMenu + alerts + recentActivity)
+    // pour aligner avec l'interface CanteenStats du frontend CanteenDashboard.tsx
+    // qui attend { enrolledStudents, mealsToday, stockAlerts, hygieneScore, todayMenu, alerts, recentActivity }
     return {
-      stats: { enrolledCount, todayMeals, lowStockCount, hygieneScore: "A+" },
+      // KPIs principaux (à plat pour le frontend)
+      enrolledStudents: enrolledCount,
+      mealsToday: todayMeals,
+      stockAlerts: lowStockCount,
+      hygieneScore: 'A+',
+      // Menu du jour formaté pour le dashboard
+      todayMenu: todayMenu.map((m) => ({
+        label: m.period || 'Repas',
+        value: [m.mainPlate, m.accompaniment, m.entry, m.dessert].filter(Boolean).join(' · '),
+      })),
+      // Alertes (incidents récents non résolus)
+      alerts: recentIncidents.filter((i: any) => i.status !== 'RESOLVED').slice(0, 3),
+      // Activité récente (incidents)
+      recentActivity: recentIncidents.map((i: any) => ({
+        id: i.id,
+        label: i.incidentType || i.description?.substring(0, 50) || 'Incident',
+        time: i.createdAt,
+      })),
+      // Compatibilité : conserver aussi l'ancien format imbriqué pour les autres consumers
+      stats: { enrolledCount, todayMeals, lowStockCount, hygieneScore: 'A+' },
       recentIncidents,
-      orion: insight
+      orion: insight,
     };
   }
 

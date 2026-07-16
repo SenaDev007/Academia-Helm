@@ -79,17 +79,57 @@ export class InfirmaryService {
         tenantId,
         academicYearId: data.academicYearId,
         studentId: data.studentId,
-        recordedBy: data.recordedBy,
-        emergencyType: data.emergencyType,
+        // ⚠️ Le schéma InfirmaryEmergency utilise `reportedBy` (pas `recordedBy`),
+        // `incidentType` (pas `emergencyType`), `firstAidGiven` (pas `actionTaken`),
+        // `incidentDate` + `incidentTime` (obligatoires), `parentContacted` (pas `parentsNotified`).
+        // On mappe les champs du frontend vers le schéma réel.
+        reportedBy: data.recordedBy ?? data.reportedBy,
+        incidentType: data.emergencyType ?? data.incidentType,
+        incidentDate: data.incidentDate ? new Date(data.incidentDate) : new Date(),
+        incidentTime: data.incidentTime ?? new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
         description: data.description,
         location: data.location,
-        severity: data.severity || 'HIGH',
-        actionTaken: data.actionTaken,
-        status: data.status || 'ACTIVE',
-        isHospitalized: data.isHospitalized || false,
-        hospitalName: data.hospitalName,
-        parentsNotified: data.parentsNotified || false,
+        severity: data.severity || 'MEDIUM',
+        firstAidGiven: data.actionTaken ?? data.firstAidGiven,
+        status: data.status || 'OPEN',
+        transferPerformed: data.isHospitalized || false,
+        transferDestination: data.hospitalName,
+        parentContacted: data.parentsNotified || false,
       }
+    });
+  }
+
+  /**
+   * Met à jour le statut d'une urgence infirmerie (OPEN → RESOLVED → CLOSED).
+   * ⭐ Implémentation ajoutée juillet 2026 — le frontend Emergencies.tsx appelle
+   * POST /infirmary/emergencies/:id pour changer le statut, mais cette route
+   * n'était pas gérée (404 car route POST /infirmary/emergencies est réservée à la création).
+   * On ajoute une route dédiée PUT /infirmary/emergencies/:id/status côté controller.
+   *
+   * Note : le schéma InfirmaryEmergency n'a pas de champ `resolvedAt` — on utilise
+   * `updatedAt` (auto) et `firstAidGiven` pour tracer la résolution.
+   */
+  async updateEmergencyStatus(
+    id: string,
+    tenantId: string,
+    status: string,
+    resolution?: string,
+  ) {
+    const emergency = await this.prisma.infirmaryEmergency.findFirst({
+      where: { id, tenantId },
+    });
+    if (!emergency) {
+      throw new NotFoundException(`Urgence infirmerie introuvable (id=${id}).`);
+    }
+
+    return this.prisma.infirmaryEmergency.update({
+      where: { id },
+      data: {
+        status,
+        // Stocker la résolution dans firstAidGiven (champ existant du schéma)
+        // si fournie, sinon conserver la valeur existante
+        ...(resolution ? { firstAidGiven: resolution } : {}),
+      },
     });
   }
 

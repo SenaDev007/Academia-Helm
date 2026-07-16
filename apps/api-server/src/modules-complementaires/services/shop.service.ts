@@ -389,6 +389,22 @@ export class ShopService {
   }
 
   async createPurchaseOrder(tenantId: string, academicYearId: string, data: any) {
+    // ⭐ Juillet 2026 : valider la structure des items.
+    // Le frontend ShopSuppliers.tsx envoie parfois des items en string[] (noms de produits)
+    // au lieu de {productId, quantity, unitPrice}[]. On valide et on rejette avec un
+    // message clair si la structure est incorrecte.
+    if (data.items && Array.isArray(data.items)) {
+      for (const item of data.items) {
+        if (typeof item === 'string' || !item?.productId || !item?.quantity) {
+          throw new BadRequestException(
+            `Structure d'item invalide pour le bon de commande. ` +
+            `Chaque item doit être un objet { productId, quantity, unitPrice? }. ` +
+            `Reçu: ${JSON.stringify(item)}`.substring(0, 300),
+          );
+        }
+      }
+    }
+
     const poCount = await this.prisma.shopPurchaseOrder.count({ where: { tenantId, academicYearId } });
     const poNumber = `ACH-${new Date().getFullYear()}-${String(poCount + 1).padStart(5, '0')}`;
 
@@ -405,8 +421,8 @@ export class ShopService {
           create: data.items.map((item: any) => ({
             productId: item.productId,
             quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            totalPrice: Number(item.unitPrice) * item.quantity
+            unitPrice: item.unitPrice ?? 0,
+            totalPrice: Number(item.unitPrice ?? 0) * item.quantity
           }))
         } : undefined
       },
@@ -478,6 +494,26 @@ export class ShopService {
   }
 
   async rechargeWallet(tenantId: string, cardId: string, amount: number, performedBy: string, reference?: string) {
+    // ⭐ Juillet 2026 : valider que cardId est fourni.
+    // Le frontend ShopPOS.tsx ne l'envoie pas toujours → crash Prisma ou wrong record.
+    if (!cardId) {
+      throw new BadRequestException(
+        'cardId est requis pour recharger le portefeuille. ' +
+        'Sélectionnez d\'abord une carte de fidélité (élève ou staff).',
+      );
+    }
+    if (!amount || amount <= 0) {
+      throw new BadRequestException('Le montant du rechargement doit être positif.');
+    }
+
+    // Vérifier que la carte existe et appartient au tenant
+    const card = await this.prisma.shopLoyaltyCard.findFirst({
+      where: { id: cardId, tenantId },
+    });
+    if (!card) {
+      throw new NotFoundException(`Carte de fidélité introuvable (id=${cardId}).`);
+    }
+
     return this.prisma.$transaction(async (tx) => {
       await tx.shopLoyaltyCard.update({
         where: { id: cardId },

@@ -416,7 +416,9 @@ export class ModulesComplementairesController {
     @Query('academicYearId') academicYearId: string,
     @Query() filters: any,
   ) {
-    return this.transportService.getIncidents(tenantId, academicYearId, filters);
+    // ⭐ Juillet 2026 : la méthode s'appelait getIncidents (inexistante) → 500.
+    // Renommée en findAllIncidents (implémentée dans le service).
+    return this.transportService.findAllIncidents(tenantId, academicYearId, filters);
   }
 
   @Post('transport/incidents')
@@ -427,6 +429,26 @@ export class ModulesComplementairesController {
     @Body() data: any,
   ) {
     return this.transportService.reportIncident(tenantId, academicYearId, data, user.id);
+  }
+
+  /**
+   * POST /transport/incidents/:id/resolve
+   * Marque un incident comme résolu (change status → RESOLVED + actionTaken).
+   * Body: { resolution: string }
+   */
+  @Post('transport/incidents/:id/resolve')
+  async resolveTransportIncident(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() data: { resolution?: string },
+  ) {
+    return this.transportService.resolveIncident(
+      id,
+      tenantId,
+      data?.resolution ?? 'Résolu sans commentaire',
+      user?.id ?? '',
+    );
   }
 
   @Post('transport/vehicles/:id/maintenance')
@@ -445,6 +467,16 @@ export class ModulesComplementairesController {
     @Query('academicYearId') academicYearId: string,
   ) {
     return this.transportService.getTransportStats(tenantId, academicYearId);
+  }
+
+  /**
+   * GET /transport/settings
+   * Récupère tous les paramètres de transport du tenant (objet key→value).
+   * ⭐ Juillet 2026 : le frontend TransportSettings faisait un GET qui retournait 404.
+   */
+  @Get('transport/settings')
+  async getTransportSettings(@TenantId() tenantId: string) {
+    return this.transportService.getSettings(tenantId);
   }
 
   @Put('transport/settings')
@@ -678,6 +710,63 @@ export class ModulesComplementairesController {
     @Body() data: any,
   ) {
     return this.labService.reportIncident(equipmentId, tenantId, data, user.id);
+  }
+
+  /**
+   * GET /labs/incidents
+   * Liste tous les incidents de laboratoire du tenant (tous équipements confondus).
+   * ⭐ Juillet 2026 : le frontend SafetyIncidents.tsx utilisait des mocks car
+   * seule la route POST /labs/incidents existait (pour la création).
+   * Query params optionnels : ?resolved=true&severity=HIGH
+   */
+  @Get('labs/incidents')
+  async getLabIncidents(
+    @TenantId() tenantId: string,
+    @Query('resolved') resolved?: string,
+    @Query('severity') severity?: string,
+  ) {
+    const filters: any = {};
+    if (resolved !== undefined) filters.resolved = resolved === 'true';
+    if (severity) filters.severity = severity;
+    return this.labService.findAllIncidents(tenantId, filters);
+  }
+
+  /**
+   * GET /labs/equipment
+   * Liste tous les équipements de laboratoire du tenant (tous labs confondus).
+   * ⭐ Juillet 2026 : le frontend EquipmentsInventory.tsx appelle GET /labs/equipment
+   * (sans labId) mais le backend exigeait labId en path (GET /labs/:id/equipment).
+   * Cette route globale accepte un labId optionnel en query param.
+   */
+  @Get('labs/equipment')
+  async getLabEquipmentGlobal(
+    @TenantId() tenantId: string,
+    @Query('labId') labId?: string,
+  ) {
+    return this.labService.findAllEquipmentGlobal(tenantId, labId);
+  }
+
+  /**
+   * GET /labs/settings
+   * Récupère tous les paramètres de laboratoire du tenant (objet key→value).
+   * ⭐ Juillet 2026 : le frontend LaboratorySettings.tsx utilisait des mocks.
+   */
+  @Get('labs/settings')
+  async getLabSettings(@TenantId() tenantId: string) {
+    return this.labService.getSettings(tenantId);
+  }
+
+  /**
+   * PUT /labs/settings
+   * Met à jour un paramètre de laboratoire (upsert).
+   * Body: { key: string, value: string }
+   */
+  @Put('labs/settings')
+  async updateLabSetting(
+    @TenantId() tenantId: string,
+    @Body() data: { key: string; value: string },
+  ) {
+    return this.labService.updateSetting(tenantId, data.key, data.value);
   }
 
   @Get('labs/stats')
@@ -942,6 +1031,27 @@ export class ModulesComplementairesController {
     @Body() data: any,
   ) {
     return this.infirmaryService.createEmergency(tenantId, { ...data, recordedBy: user.id });
+  }
+
+  /**
+   * PUT /infirmary/emergencies/:id/status
+   * Met à jour le statut d'une urgence (OPEN → RESOLVED → CLOSED).
+   * ⭐ Juillet 2026 : le frontend Emergencies.tsx tentait un POST /infirmary/emergencies/:id
+   * qui était interprété comme une création (404 ou erreur). Route dédiée ajoutée.
+   * Body: { status: string, resolution?: string }
+   */
+  @Put('infirmary/emergencies/:id/status')
+  async updateInfirmaryEmergencyStatus(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @Body() data: { status: string; resolution?: string },
+  ) {
+    return this.infirmaryService.updateEmergencyStatus(
+      id,
+      tenantId,
+      data.status,
+      data.resolution,
+    );
   }
 
   @Get('infirmary/stock')
@@ -1522,6 +1632,22 @@ export class ModulesComplementairesController {
   @Get('educast/webinars')
   async getEduCastWebinars(@TenantId() tenantId: string, @Query('academicYearId') academicYearId: string) {
     return this.educastService.findAllWebinars(tenantId, academicYearId);
+  }
+
+  /**
+   * POST /educast/webinars
+   * Crée un nouveau webinaire.
+   * ⭐ Juillet 2026 : la méthode service createWebinar existait mais n'était pas
+   * exposée (route absente). Le frontend EduCastWebinars affichait "Bientôt disponible".
+   */
+  @Post('educast/webinars')
+  async createEduCastWebinar(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @CurrentUser() user: any,
+    @Body() data: any,
+  ) {
+    return this.educastService.createWebinar(tenantId, academicYearId, data, user.id);
   }
 
   @Get('educast/playlists')

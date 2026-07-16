@@ -52,10 +52,28 @@ export function useModulesDashboard<T = any>(
     try {
       setLoading(true);
       setError(null);
-      const result = await modulesApi.get<T>(
-        `${module}/dashboard`,
-        buildModulesApiOptions(academicYearId),
-      );
+      // ⭐ Certains modules exposent GET /dashboard, d'autres seulement GET /stats.
+      // On essaie /dashboard en premier, et si on obtient une 404 on retombe sur /stats.
+      // Cela évite que les dashboards restent vides pour infirmary/labs/transport/educast
+      // qui n'ont pas de route /dashboard mais ont /stats.
+      let result: any;
+      try {
+        result = await modulesApi.get<T>(
+          `${module}/dashboard`,
+          buildModulesApiOptions(academicYearId),
+        );
+      } catch (dashErr: any) {
+        const status = dashErr?.response?.status ?? dashErr?.statusCode;
+        if (status === 404 || /not found/i.test(dashErr?.message || '')) {
+          // Fallback /stats
+          result = await modulesApi.get<T>(
+            `${module}/stats`,
+            buildModulesApiOptions(academicYearId),
+          );
+        } else {
+          throw dashErr;
+        }
+      }
       // Compatibilité : le backend peut retourner { data: ... } ou directement l'objet
       setData((result as any)?.data ?? result);
     } catch (e: any) {

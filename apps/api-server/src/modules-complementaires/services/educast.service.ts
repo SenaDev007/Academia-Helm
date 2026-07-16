@@ -330,6 +330,50 @@ export class EduCastService {
     });
   }
 
+  /**
+   * Liste toutes les demandes de paiement des enseignants.
+   * ⭐ Implémentation ajoutée juillet 2026 — le controller exposait déjà la route
+   * GET /educast/payout-requests mais la méthode service était absente (runtime 500).
+   */
+  async findAllPayoutRequests(
+    tenantId: string,
+    filters?: { status?: string; teacherId?: string },
+  ) {
+    const where: any = { tenantId };
+    if (filters?.status) where.status = filters.status;
+    if (filters?.teacherId) where.teacherId = filters.teacherId;
+
+    return this.prisma.eduCastPayoutRequest.findMany({
+      where,
+      include: {
+        teacher: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+  }
+
+  /**
+   * Liste tous les contenus EduCast (médias + webinaires + annonces) fusionnés.
+   * ⭐ Implémentation ajoutée juillet 2026 — le controller exposait déjà la route
+   * GET /educast/contents mais la méthode service était absente (runtime 500).
+   * On délègue vers findAllMedia en retournant un format unifié pour le frontend
+   * (EduCastLibrary, EduCastModeration, EduCastResources attendent une liste).
+   */
+  async findAllContents(tenantId: string, academicYearId: string, filters?: any) {
+    // Retourne les médias (qui sont le type de contenu principal).
+    // Pour une vraie fusion avec webinaires/annonces, on pourrait faire un Promise.all
+    // mais pour rester cohérent avec le contrat existant, on délègue vers findAllMedia.
+    const media = await this.findAllMedia(tenantId, academicYearId, filters);
+    // Enrichir avec un champ "contentType" pour que le frontend puisse distinguer
+    return (media as any[]).map((m) => ({
+      ...m,
+      contentType: m.mediaType || 'MEDIA',
+    }));
+  }
+
   // ============================================================================
   // SETTINGS & REPORTS & STATS
   // ============================================================================

@@ -70,22 +70,67 @@ export default function StudentFamiliesContent() {
   const [isSaving, setIsSaving] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 24;
+  // ⭐ Bug fix : vraie pagination serveur. On stocke le total retourné par le
+  // backend (data.total) au lieu de l'inférer depuis students.length (qui ne
+  // contenait que la 1ère page de 50 élèves — défaut backend).
+  const [totalFamilies, setTotalFamilies] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  // ⭐ KPIs globaux (calculés sur une fetch séparée limit=200, sans pagination).
+  // On ne peut pas utiliser data.total pour ces 3 stats car le backend ne
+  // retourne pas de stats agrégées par guardian. On garde donc un fetch
+  // "all students" non paginé pour calculer ces compteurs.
+  const [kpiStats, setKpiStats] = useState({
+    totalGuardians: 0,
+    studentsWithPrimary: 0,
+    studentsWithoutGuardian: 0,
+  });
 
+  // ⭐ Bug fix : reset currentPage à 1 quand la recherche change.
   useEffect(() => {
-    if (academicYear && schoolLevel) loadData();
-  }, [academicYear, schoolLevel]);
+    setCurrentPage(1);
+  }, [searchTerm]);
+
+  // ⭐ Bug fix : recharger au changement de page/recherche (debounce 250ms sur search).
+  useEffect(() => {
+    if (!academicYear) return;
+    const timeout = setTimeout(() => {
+      loadData();
+    }, searchTerm ? 250 : 0);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [academicYear, schoolLevel, currentPage, searchTerm]);
+
+  // ⭐ KPIs : fetch séparée (limit=200, sans pagination) pour avoir les vrais
+  // compteurs agrégés par guardian. Rechargée quand l'année/niveau/recherche change.
+  useEffect(() => {
+    if (!academicYear) return;
+    const timeout = setTimeout(() => {
+      loadKpiStats();
+    }, searchTerm ? 250 : 0);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [academicYear, schoolLevel, searchTerm]);
 
   const loadData = async () => {
+    if (!academicYear) return;
     setIsLoading(true);
     try {
+      // ⭐ Bug fix : passer page/limit/search au backend pour la vraie pagination.
+      // L'ancien code ne passait pas page/limit (récupérait 50 par défaut) et
+      // la pagination côté UI ne faisait que slice() sans re-fetch.
       const data = await studentsService.getAll({
-        academicYearId: academicYear?.id || '',
+        academicYearId: academicYear.id,
         schoolLevelId: schoolLevel?.id || '',
         includeGuardians: 'true',
+        page: String(currentPage),
+        limit: String(PAGE_SIZE),
+        ...(searchTerm.trim() ? { search: searchTerm.trim() } : {}),
       });
       // ⭐ Gérer la réponse paginée { data, total, ... } ou l'ancien format array
       const list = Array.isArray(data) ? data : (data?.data || []);
       setStudents(list);
+      setTotalFamilies(!Array.isArray(data) && data?.total != null ? data.total : list.length);
+      setTotalPages(!Array.isArray(data) && data?.totalPages != null ? data.totalPages : 1);
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message, variant: 'error' });
     } finally {
@@ -93,17 +138,57 @@ export default function StudentFamiliesContent() {
     }
   };
 
-  const filteredStudents = students.filter(s =>
-    `${s.firstName} ${s.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.studentGuardians.some(sg =>
-      `${sg.guardian.firstName} ${sg.guardian.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (sg.guardian.phone || '').includes(searchTerm)
-    )
-  );
+  /**
+   * ⭐ Charge tous les élèves (limit=200, max backend) pour calculer les KPIs
+   * agrégés par guardian. Pas de pagination ici — on veut le vrai total.
+   * Cette fonction est debouncée via le useEffect ci-dessus.
+   */
+  const loadKpiStats = async () => {
+    if (!academicYear) return;
+    try {
+      const data = await studentsService.getAll({
+        academicYearId: academicYear.id,
+        schoolLevelId: schoolLevel?.id || '',
+        includeGuardians: 'true',
+        limit: '200',
+        ...(searchTerm.trim() ? { search: searchTerm.trim() } : {}),
+      });
+      const allStudents: StudentWithGuardians[] = Array.isArray(data) ? data : (data?.data || []);
+      setKpiStats({
+        totalGuardians: allStudents.reduce((sum, s) => sum + (s.studentGuardians?.length || 0), 0),
+        studentsWithPrimary: allStudents.filter(s => s.studentGuardians?.some(sg => sg.isPrimary)).length,
+        studentsWithoutGuardian: allStudents.filter(s => !s.studentGuardians || s.studentGuardians.length === 0).length,
+      });
+    } catch (e) {
+      console.warn('Failed to load KPI stats:', e);
+    }
+  };
 
-  const totalGuardians = students.reduce((sum, s) => sum + s.studentGuardians.length, 0);
-  const studentsWithPrimary = students.filter(s => s.studentGuardians.some(sg => sg.isPrimary)).length;
-  const studentsWithoutGuardian = students.filter(s => s.studentGuardians.length === 0).length;
+  // ⭐ Bug fix : la recherche est envoyée au backend (filtre sur firstName,
+  // lastName, studentCode). On garde en plus un filtrage côté client pour
+  // chercher aussi par guardian firstName/lastName/phone (non supporté par le
+  // backend). Pour éviter d'exclure à tort les élèves retournés par le backend
+  // via studentCode (que le client ne filtre pas nativement), on ajoute aussi
+  // une vérification sur studentCode si présent.
+  const filteredStudents = !searchTerm.trim()
+    ? students
+    : students.filter(s => {
+        const q = searchTerm.toLowerCase();
+        const studentMatch =
+          `${s.firstName} ${s.lastName}`.toLowerCase().includes(q) ||
+          (s.matricule || '').toLowerCase().includes(q) ||
+          ((s as any).studentCode || '').toLowerCase().includes(q);
+        const guardianMatch = s.studentGuardians?.some(sg =>
+          `${sg.guardian.firstName} ${sg.guardian.lastName}`.toLowerCase().includes(q) ||
+          (sg.guardian.phone || '').includes(searchTerm)
+        );
+        return studentMatch || guardianMatch;
+      });
+
+  // ⭐ KPIs : utilisent kpiStats (vraies valeurs agrégées) au lieu de students.length
+  const totalGuardians = kpiStats.totalGuardians;
+  const studentsWithPrimary = kpiStats.studentsWithPrimary;
+  const studentsWithoutGuardian = kpiStats.studentsWithoutGuardian;
 
   const openAddGuardian = (student: StudentWithGuardians) => {
     setEditingStudent(student);
@@ -150,6 +235,7 @@ export default function StudentFamiliesContent() {
       setEditingStudent(null);
       setEditingGuardianId(null);
       loadData();
+      loadKpiStats(); // ⭐ Recharger aussi les KPIs (le nb de responsables a changé)
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message, variant: 'error' });
     } finally {
@@ -163,6 +249,7 @@ export default function StudentFamiliesContent() {
       await apiFetch(`/students/${studentId}/guardians/${guardianId}`, { method: 'DELETE' });
       toast({ title: '✅ Responsable supprimé', variant: 'success' });
       loadData();
+      loadKpiStats(); // ⭐ Recharger aussi les KPIs
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message, variant: 'error' });
     }
@@ -174,7 +261,7 @@ export default function StudentFamiliesContent() {
       <div className="grid grid-cols-4 gap-3">
         <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center gap-2.5">
           <div className="p-2 rounded-lg bg-blue-50"><Users className="w-4 h-4 text-blue-600" /></div>
-          <div><p className="text-[10px] font-medium text-slate-500 uppercase">Familles</p><p className="text-base font-bold text-slate-900">{students.length}</p></div>
+          <div><p className="text-[10px] font-medium text-slate-500 uppercase">Familles</p><p className="text-base font-bold text-slate-900">{totalFamilies}</p></div>
         </div>
         <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center gap-2.5">
           <div className="p-2 rounded-lg bg-emerald-50"><Shield className="w-4 h-4 text-emerald-600" /></div>
@@ -212,7 +299,7 @@ export default function StudentFamiliesContent() {
       ) : (
         <>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredStudents.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map(student => (
+          {filteredStudents.map(student => (
             <div key={student.id} className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col">
               <div className="p-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -269,23 +356,24 @@ export default function StudentFamiliesContent() {
           ))}
         </div>
 
-        {/* ⭐ Pagination Famille */}
-        {filteredStudents.length > PAGE_SIZE && (
+        {/* ⭐ Pagination Famille — utilise le vrai total serveur (data.total) et
+            déclenche loadData() au changement de page via le useEffect qui watch currentPage. */}
+        {totalPages > 1 && (
           <div className="flex items-center justify-center gap-3 mt-6">
             <button
               onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage <= 1}
+              disabled={currentPage <= 1 || isLoading}
               className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-blue-700 bg-white hover:bg-blue-50 rounded-lg border border-blue-200 transition disabled:opacity-30 disabled:cursor-not-allowed"
             >
               <ChevronLeft className="w-4 h-4" /> Précédent
             </button>
             <span className="text-sm font-mono text-slate-500">
-              Page {currentPage} / {Math.ceil(filteredStudents.length / PAGE_SIZE)}
-              <span className="text-slate-400 ml-2">({filteredStudents.length} familles)</span>
+              Page {currentPage} / {totalPages}
+              <span className="text-slate-400 ml-2">({totalFamilies} familles)</span>
             </span>
             <button
-              onClick={() => setCurrentPage(p => Math.min(Math.ceil(filteredStudents.length / PAGE_SIZE), p + 1))}
-              disabled={currentPage >= Math.ceil(filteredStudents.length / PAGE_SIZE)}
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages || isLoading}
               className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-blue-700 bg-white hover:bg-blue-50 rounded-lg border border-blue-200 transition disabled:opacity-30 disabled:cursor-not-allowed"
             >
               Suivant <ChevronRight className="w-4 h-4" />

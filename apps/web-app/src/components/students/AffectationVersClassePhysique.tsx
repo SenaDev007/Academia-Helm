@@ -92,23 +92,41 @@ export default function AffectationVersClassePhysique() {
     if (!academicYear?.id) return;
     setIsLoading(true);
     try {
+      // ⭐ Bug fix : la déstructuration cassait (3 noms pour 2 promesses).
+      // On ajoute un vrai fetch vers /api/academic-classes?isActive=true pour
+      // charger les classes officielles (AcademicClass). L'ancien code déduisait
+      // ces classes depuis /api/all-classes (cls.officialClass) mais le backend
+      // ne les inclut pas → la liste déroulante "Filtrer par classe officielle"
+      // était toujours vide.
+      // Pattern inspiré de EnrollmentsContent.tsx (lignes 266-269).
       const [studentsData, classesRes, academicClassesRes] = await Promise.all([
         studentsService.getStudentsWithoutPhysicalClass(academicYear.id).catch(() => []),
         fetch('/api/all-classes', { cache: 'no-store' })
           .then(r => r.ok ? r.json() : [])
           .catch(() => []),
+        fetch('/api/academic-classes?isActive=true', { cache: 'no-store' })
+          .then(r => r.ok ? r.json() : [])
+          .then(data => Array.isArray(data) ? data : (data?.data || data?.classes || []))
+          .catch(() => []),
       ]);
       setStudentsWithoutClass(Array.isArray(studentsData) ? studentsData : []);
       const allPhysicalClasses = Array.isArray(classesRes) ? classesRes : [];
       setPhysicalClasses(allPhysicalClasses);
-      // ⭐ Déduire les classes officielles des classes physiques (comme Liste des élèves)
-      const officialMap = new Map<string, any>();
-      for (const cls of allPhysicalClasses) {
-        if (cls.officialClass && !officialMap.has(cls.officialClass.id)) {
-          officialMap.set(cls.officialClass.id, cls.officialClass);
-        }
-      }
-      setAcademicClassesList(Array.from(officialMap.values()).sort((a: any, b: any) => a.name.localeCompare(b.name)));
+      // ⭐ Utiliser la liste chargée depuis /api/academic-classes (vraies classes officielles).
+      // Fallback : si l'API échoue, on déduira les classes officielles depuis les élèves
+      // sans classe physique (voir useMemo academicClasses ci-dessous).
+      const officialClasses: AcademicClassInfo[] = (Array.isArray(academicClassesRes) ? academicClassesRes : [])
+        .filter((ac: any) => ac && ac.id && ac.name)
+        .map((ac: any) => ({
+          id: ac.id,
+          name: ac.name,
+          code: ac.code,
+          level: ac.level ? { id: ac.level.id, name: ac.level.name, code: ac.level.code } : undefined,
+          cycle: ac.cycle,
+          series: ac.series,
+        }))
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      setAcademicClassesList(officialClasses);
     } catch (e: any) {
       console.error('Failed to load:', e);
       toast({ title: 'Erreur', description: e.message, variant: 'error' });

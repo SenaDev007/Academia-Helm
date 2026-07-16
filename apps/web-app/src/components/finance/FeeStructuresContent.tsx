@@ -94,13 +94,25 @@ export default function FeeStructuresContent() {
   };
 
   // Filtrer les classes officielles par niveau
+  // ⭐ On filtre par NOM de niveau (Maternelle/Primaire/Secondaire) et non par ID,
+  // car AcademicClass.levelId pointe vers pedagogy_academic_levels (AcademicLevel),
+  // tandis que levels viennent de school_levels (SchoolLevel) — ce sont 2 tables différentes.
+  // Le match par nom est insensible à la casse et gère les variantes (MATERNELLE vs Maternelle).
   const filteredSortedClasses = useMemo(() => {
-    if (!filterLevelId) return [...classes].sort((a, b) => classOrder(a.name) - classOrder(b.name));
-    const academicLevelId = toSchoolLevelId(filterLevelId);
-    return classes
-      .filter((c: any) => c.levelId === academicLevelId)
-      .sort((a, b) => classOrder(a.name) - classOrder(b.name));
-  }, [classes, filterLevelId, eduToSchoolLevelMap]);
+    const sorted = [...classes].sort((a, b) => classOrder(a.name) - classOrder(b.name));
+    if (!filterLevelId) return sorted;
+    const selectedLevel = levels.find((l) => l.id === filterLevelId);
+    if (!selectedLevel) return sorted;
+    const levelCode = (selectedLevel.code || '').toLowerCase();
+    const levelLabel = (selectedLevel.label || '').toLowerCase();
+    return sorted.filter((c: any) => {
+      const levelName = (c.level?.name || '').toLowerCase();
+      const classLevelCode = (c.level?.code || '').toLowerCase();
+      return levelName === levelCode || levelName === levelLabel ||
+             classLevelCode === levelCode || classLevelCode === levelLabel ||
+             c.schoolLevelId === selectedLevel.schoolLevelId;
+    });
+  }, [classes, filterLevelId, levels]);
 
   useEffect(() => {
     if (filterClassId && !filteredSortedClasses.find((c) => c.id === filterClassId)) {

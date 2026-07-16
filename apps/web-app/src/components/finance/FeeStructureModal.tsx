@@ -112,15 +112,25 @@ export default function FeeStructureModal({
       }];
   const [installments, setInstallments] = useState<Installment[]>(initialInstallments);
 
-  // Filtrer les classes officielles par niveau en utilisant le mapping eduToSchoolLevelMap
+  // Filtrer les classes officielles par niveau
+  // ⭐ On filtre par NOM de niveau (Maternelle/Primaire/Secondaire) et non par ID,
+  // car AcademicClass.levelId pointe vers pedagogy_academic_levels (AcademicLevel),
+  // tandis que levels viennent de school_levels (SchoolLevel) — ce sont 2 tables différentes.
   const modalFilteredClasses = useMemo(() => {
-    if (!levelId) return [...classes].sort((a, b) => classOrder(a.name) - classOrder(b.name));
-    const academicLevelId = eduToSchoolLevelMap[levelId];
-    if (!academicLevelId) return [];
-    return classes
-      .filter((c: any) => c.levelId === academicLevelId)
-      .sort((a, b) => classOrder(a.name) - classOrder(b.name));
-  }, [classes, levelId, eduToSchoolLevelMap]);
+    const sorted = [...classes].sort((a, b) => classOrder(a.name) - classOrder(b.name));
+    if (!levelId) return sorted;
+    const selectedLevel = levels.find((l) => l.id === levelId);
+    if (!selectedLevel) return sorted;
+    const levelCode = (selectedLevel.code || '').toLowerCase();
+    const levelLabel = (selectedLevel.label || '').toLowerCase();
+    return sorted.filter((c: any) => {
+      const levelName = (c.level?.name || '').toLowerCase();
+      const classLevelCode = (c.level?.code || '').toLowerCase();
+      return levelName === levelCode || levelName === levelLabel ||
+             classLevelCode === levelCode || classLevelCode === levelLabel ||
+             c.schoolLevelId === selectedLevel.schoolLevelId;
+    });
+  }, [classes, levelId, levels]);
 
   useEffect(() => {
     // Enlever les classIds qui ne sont plus dans la liste filtrée (ex: changement de niveau)

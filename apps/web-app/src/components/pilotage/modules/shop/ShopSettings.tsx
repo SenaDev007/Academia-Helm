@@ -46,6 +46,10 @@ export default function ShopSettings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // ⭐ orionChecked DOIT être déclaré AVANT le early return (if (loading) return ...)
+  // sinon React error #310 (Rendered more hooks than during the previous render).
+  // Valeur par défaut true ; synchronisée dans le useEffect quand settings arrivent.
+  const [orionChecked, setOrionChecked] = useState(true);
 
   const handleSave = async () => {
     try {
@@ -78,7 +82,12 @@ export default function ShopSettings() {
           'shop/settings',
           buildModulesApiOptions(academicYear.id),
         );
-        if (!cancelled) setSettings(data?.data ?? data);
+        if (!cancelled) {
+          const loaded = data?.data ?? data;
+          setSettings(loaded);
+          // ✅ Synchronisation du toggle ORION une fois settings chargés
+          setOrionChecked(loaded?.orionPredictiveInventory ?? true);
+        }
       } catch (e: any) {
         if (!cancelled) {
           setError(e?.response?.data?.message ?? e?.message ?? 'Erreur de chargement');
@@ -102,7 +111,6 @@ export default function ShopSettings() {
   }
 
   const s: ShopSettings = settings ?? {};
-  const [orionChecked, setOrionChecked] = useState(s.orionPredictiveInventory ?? true);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-700 max-w-5xl">

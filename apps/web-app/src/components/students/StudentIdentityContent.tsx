@@ -6,7 +6,7 @@ import {
   Search, Loader2, Download, Eye, X, CreditCard, FileText,
   History, BookOpen, GraduationCap, Calendar, MapPin, Hash,
   ArrowLeft, HeartPulse, Wallet, Activity, RotateCw,
-  ClipboardList, AlertTriangle, ChevronLeft, ChevronRight,
+  ClipboardList, AlertTriangle, ChevronLeft, ChevronRight, MoreHorizontal,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { studentsService } from '@/services/students.service';
@@ -84,6 +84,85 @@ type DetailTab = 'identite' | 'admin' | 'parents' | 'scolarite' | 'documents' | 
 const NAVY = '#0D1F6E';
 const LEVEL_ORDER: Record<string, number> = { MATERNELLE: 1, MAT: 1, PRIMAIRE: 2, PRIMARY: 2, SECONDAIRE: 3, SECONDARY: 3 };
 
+// ⭐ Composant Pagination réutilisable (pattern identique à StudentMovementsContent.tsx)
+function Pagination({
+  currentPage, totalPages, total, limit, onPageChange, isLoading,
+}: {
+  currentPage: number;
+  totalPages: number;
+  total: number;
+  limit: number;
+  onPageChange: (page: number) => void;
+  isLoading?: boolean;
+}) {
+  if (totalPages <= 1) return null;
+
+  const start = (currentPage - 1) * limit + 1;
+  const end = Math.min(currentPage * limit, total);
+
+  const pages: (number | 'ellipsis')[] = [];
+  const add = (p: number) => { if (!pages.includes(p)) pages.push(p); };
+  add(1);
+  if (currentPage - 1 > 2) pages.push('ellipsis');
+  for (let p = Math.max(2, currentPage - 1); p <= Math.min(totalPages - 1, currentPage + 1); p++) {
+    add(p);
+  }
+  if (currentPage + 1 < totalPages - 1) pages.push('ellipsis');
+  if (totalPages > 1) add(totalPages);
+
+  return (
+    <div className="bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+      <div className="text-xs text-slate-500">
+        Affichage <strong className="text-slate-700">{start}-{end}</strong> sur <strong className="text-slate-700">{total}</strong> élève(s)
+      </div>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage <= 1 || isLoading}
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+        >
+          <ChevronLeft className="w-3.5 h-3.5" />
+          Précédent
+        </button>
+        <div className="flex items-center gap-0.5">
+          {pages.map((p, i) => {
+            if (p === 'ellipsis') {
+              return (
+                <span key={`e-${i}`} className="px-2 text-slate-400">
+                  <MoreHorizontal className="w-3.5 h-3.5" />
+                </span>
+              );
+            }
+            return (
+              <button
+                key={p}
+                onClick={() => onPageChange(p)}
+                disabled={isLoading}
+                className={cn(
+                  'min-w-[28px] h-7 px-2 text-xs font-bold rounded-lg transition disabled:opacity-50',
+                  p === currentPage
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-600 bg-slate-50 hover:bg-blue-50 hover:text-blue-700 border border-slate-200'
+                )}
+              >
+                {p}
+              </button>
+            );
+          })}
+        </div>
+        <button
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage >= totalPages || isLoading}
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+        >
+          Suivant
+          <ChevronRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function getInitials(s: StudentIdentity) { return `${s.lastName?.[0] || ''}${s.firstName?.[0] || ''}`.toUpperCase(); }
 function getAge(dob?: string) { if (!dob) return null; return Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 3600 * 1000)); }
 function formatDate(d?: string) { if (!d) return 'N/A'; return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }); }
@@ -99,18 +178,52 @@ export default function StudentIdentityContent() {
   const [filterClassId, setFilterClassId] = useState<string>('');
   const [selectedStudent, setSelectedStudent] = useState<StudentIdentity | null>(null);
 
-  useEffect(() => { if (academicYear) loadData(); }, [academicYear, schoolLevel]);
+  // ⭐ Bug fix : vraie pagination (limit=50) au lieu de limit=200 sans pagination.
+  const PAGE_SIZE = 50;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalStudents, setTotalStudents] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
+  // ⭐ Bug fix : reset currentPage à 1 quand un filtre change.
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterLevelId, filterClassId, searchTerm]);
+
+  // ⭐ Bug fix : recharger au changement de page/filtre/recherche (debounce 250ms sur search).
+  useEffect(() => {
+    if (!academicYear) return;
+    const timeout = setTimeout(() => {
+      loadData();
+    }, searchTerm ? 250 : 0);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [academicYear, schoolLevel, currentPage, filterLevelId, filterClassId, searchTerm]);
 
   const loadData = async () => {
     if (!academicYear) return;
     setIsLoading(true);
     try {
+      // ⭐ Bug fix : passer page/limit/search/classId/schoolLevelId au backend.
+      // L'ancien code faisait limit=200 et filtrait côté client → pas de vraie pagination
+      // et recherche limitée aux 200 premiers élèves.
+      const params: Record<string, string> = {
+        academicYearId: academicYear.id,
+        page: String(currentPage),
+        limit: String(PAGE_SIZE),
+      };
+      if (filterLevelId) params.schoolLevelId = filterLevelId;
+      if (filterClassId) params.classId = filterClassId;
+      if (searchTerm.trim()) params.search = searchTerm.trim();
+
       const [studentsData, classesRes] = await Promise.all([
-        studentsService.getAll({ academicYearId: academicYear.id, limit: '200' }),
+        studentsService.getAll(params),
         fetch('/api/all-classes', { credentials: 'include', cache: 'no-store' }).then(r => r.ok ? r.json() : []).catch(() => []),
       ]);
       const allStudents = Array.isArray(studentsData) ? studentsData : (studentsData?.data || []);
       setStudents(allStudents);
+      // ⭐ Utiliser data.total pour le vrai total serveur (pas allStudents.length)
+      setTotalStudents(!Array.isArray(studentsData) && studentsData?.total != null ? studentsData.total : allStudents.length);
+      setTotalPages(!Array.isArray(studentsData) && studentsData?.totalPages != null ? studentsData.totalPages : 1);
       setAllClasses(Array.isArray(classesRes) ? classesRes : []);
 
       // ⭐ Présélection d'un élève si ?studentId=xxx est présent dans l'URL
@@ -171,23 +284,12 @@ export default function StudentIdentityContent() {
     return m;
   }, [students, allClasses]);
 
+  // ⭐ Bug fix : suppression du filtrage client (le backend filtre déjà par
+  // schoolLevelId/classId/search). On garde juste la liste telle quelle pour
+  // le grouping visuel par niveau/classe.
   const filteredStudents = useMemo(() => {
-    return students.filter(s => {
-      if (filterLevelId) {
-        const sci = studentClassMap.get(s.id);
-        if (!sci || sci.levelId !== filterLevelId) return false;
-      }
-      if (filterClassId) {
-        const sci = studentClassMap.get(s.id);
-        if (!sci || sci.id !== filterClassId) return false;
-      }
-      if (searchTerm.trim()) {
-        const q = searchTerm.toLowerCase();
-        return `${s.firstName} ${s.lastName}`.toLowerCase().includes(q) || (s.matricule || '').toLowerCase().includes(q);
-      }
-      return true;
-    });
-  }, [students, filterLevelId, filterClassId, searchTerm, studentClassMap]);
+    return students;
+  }, [students]);
 
   const groupedStudents = useMemo(() => {
     const groups = new Map<string, { levelName: string; classes: Map<string, { className: string; students: StudentIdentity[] }> }>();
@@ -227,7 +329,7 @@ export default function StudentIdentityContent() {
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-blue-50 rounded-lg"><Shield className="w-5 h-5 text-blue-600" /></div>
-          <div><h3 className="font-semibold text-slate-900">Dossiers Élèves</h3><p className="text-xs text-slate-500">{filteredStudents.length} élève(s) · {students.filter(s => s.npi).length} avec NPI</p></div>
+          <div><h3 className="font-semibold text-slate-900">Dossiers Élèves</h3><p className="text-xs text-slate-500">{filteredStudents.length} élève(s) affiché(s) sur {totalStudents} · {students.filter(s => s.npi).length} avec NPI</p></div>
         </div>
         <div className="relative w-48 sm:w-64">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -298,6 +400,16 @@ export default function StudentIdentityContent() {
           ))}
         </div>
       )}
+
+      {/* ⭐ Pagination — déclenche loadData() au changement de page (vraie pagination serveur) */}
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        total={totalStudents}
+        limit={PAGE_SIZE}
+        onPageChange={(page) => setCurrentPage(page)}
+        isLoading={isLoading}
+      />
     </div>
   );
 }

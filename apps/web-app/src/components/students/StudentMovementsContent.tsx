@@ -245,23 +245,39 @@ export default function StudentMovementsContent() {
       .catch(() => setClasses([]));
   }, []);
 
+  // ⭐ Bug fix : reset currentPage à 1 quand n'importe quel filtre change.
+  // Sans ça, on reste bloqué sur une page potentiellement vide (ex: page 3 avec
+  // un nouveau filtre qui ne retourne qu'1 page de résultats).
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterStatus, filterLevelId, filterClassId, searchQuery]);
+
+  // ⭐ Bug fix : recharger les données quand la page ou n'importe quel filtre change.
+  // searchQuery est debounce de 250ms pour éviter de spammer le backend à chaque touche.
+  useEffect(() => {
+    if (!effectiveYearId) return;
+    const timeout = setTimeout(() => {
+      loadData();
+    }, searchQuery ? 250 : 0);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, filterStatus, filterLevelId, filterClassId, searchQuery, effectiveYearId]);
+
+  // ⭐ Chargement initial + reload des stats globales quand l'année change.
+  // Les stats sont indépendantes des filtres de page (vrai total par statut).
   useEffect(() => {
     if (effectiveYearId) {
-      setCurrentPage(1); // reset page quand l'année change
-      loadData();
       loadGlobalStats();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveYearId]);
-
-  // Recharger les données quand la page ou les filtres backend changent
-  useEffect(() => {
-    if (effectiveYearId) loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, filterStatus]);
+  }, [effectiveYearId, filterLevelId, filterClassId, filterYearId, schoolLevel?.id]);
 
   /**
    * Charge la page courante des élèves (paginé, limit=50).
+   * ⭐ Bug fix : tous les filtres (status, level, class, search) sont envoyés
+   * au backend qui les applique en SQL (mode insensitive pour search).
+   * L'ancien code ne passait que `status` et filtrait le reste côté client,
+   * ce qui cassait la pagination (filtres appliqués sur 50 élèves max seulement).
    */
   const loadData = async () => {
     if (!effectiveYearId) return;
@@ -272,7 +288,11 @@ export default function StudentMovementsContent() {
         page: String(currentPage),
         limit: String(PAGE_SIZE),
       };
+      // ⭐ Tous les filtres passés au backend
       if (filterStatus !== 'ALL') params.status = filterStatus;
+      if (filterLevelId) params.schoolLevelId = filterLevelId;
+      if (filterClassId) params.classId = filterClassId;
+      if (searchQuery.trim()) params.search = searchQuery.trim();
 
       const [studentsData, enrollmentsData] = await Promise.all([
         studentsService.getAll(params),
@@ -306,24 +326,30 @@ export default function StudentMovementsContent() {
   };
 
   /**
-   * ⭐ Charge les stats globales (vrai chiffre) en récupérant TOUS les élèves
-   * sans pagination (limit=200). Les stats sont calculées sur l'ensemble des
-   * élèves de l'année, pas seulement sur la page courante.
+   * ⭐ Bug fix : utilise le vrai endpoint /api/students/statistics qui fait des
+   * count() SQL par statut. L'ancien code fetchait 200 élèves (limit=200) et
+   * comptait côté client → stats fausses dès qu'on dépassait 200 élèves.
+   *
+   * Le backend retourne : { total, active, preRegistered, admitted, pending,
+   * archived, withdrawn, byStatus: [{status, _count}], ... }.
+   * On calcule `transferred` depuis byStatus (non retourné directement).
    */
   const loadGlobalStats = async () => {
     if (!effectiveYearId) return;
     try {
-      const data = await studentsService.getAll({
-        academicYearId: effectiveYearId,
-        limit: '200', // récupérer tous les élèves (max backend)
-      });
-      const allStudents: Student[] = Array.isArray(data) ? data : (data?.data || []);
+      const stats = await studentsService.getStatistics(
+        effectiveYearId,
+        filterLevelId || schoolLevel?.id || 'ALL',
+      );
+      // Calculer transferred depuis byStatus (le backend ne le retourne pas directement)
+      const byStatus: Array<{ status: string; _count: number }> = Array.isArray(stats?.byStatus) ? stats.byStatus : [];
+      const transferred = byStatus.find(s => s.status === 'TRANSFERRED')?._count ?? 0;
       setGlobalStats({
-        total: allStudents.length,
-        active: allStudents.filter(s => s.status === 'ACTIVE' && s.isActive).length,
-        withdrawn: allStudents.filter(s => s.status === 'WITHDRAWN').length,
-        archived: allStudents.filter(s => s.status === 'ARCHIVED').length,
-        transferred: allStudents.filter(s => s.status === 'TRANSFERRED').length,
+        total: stats?.total ?? 0,
+        active: stats?.active ?? 0,
+        withdrawn: stats?.withdrawn ?? 0,
+        archived: stats?.archived ?? 0,
+        transferred,
       });
     } catch (e) {
       console.warn('Failed to load global stats:', e);
@@ -360,24 +386,15 @@ export default function StudentMovementsContent() {
     return classes.filter(c => c.schoolLevelId === filterLevelId);
   }, [classes, filterLevelId]);
 
-  // Filtrer les élèves selon statut + recherche + niveau + classe
+  // ⭐ Bug fix : suppression du filtrage client. Le backend applique déjà tous
+  // les filtres (status, schoolLevelId, classId, search) en SQL — refiltrer
+  // côté client cassait la pagination (les élèves hors-page étaient exclus).
+  // On conserve juste le tri alphabétique pour l'affichage.
   const filteredStudents = useMemo(() => {
-    return students.filter(s => {
-      // Filtre statut
-      if (filterStatus !== 'ALL' && s.status !== filterStatus) return false;
-      // Filtre niveau (par schoolLevelId du student)
-      if (filterLevelId && s.schoolLevelId !== filterLevelId) return false;
-      // Filtre classe (par enrollment)
-      if (filterClassId && studentClassMap.get(s.id) !== filterClassId) return false;
-      // Filtre recherche
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        return `${s.firstName} ${s.lastName}`.toLowerCase().includes(q) ||
-          (s.matricule || '').toLowerCase().includes(q);
-      }
-      return true;
-    });
-  }, [students, filterStatus, searchQuery, filterLevelId, filterClassId, studentClassMap]);
+    return [...students].sort((a, b) =>
+      `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`),
+    );
+  }, [students]);
 
   // ⭐ Stats GLOBALES (vrai chiffre) — proviennent de globalStats (tous les élèves)
   // PAS de filteredStudents.length qui ne reflète que la page courante.

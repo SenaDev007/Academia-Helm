@@ -7196,3 +7196,70 @@ Stage Summary:
 - TOUS les modules complémentaires (Boutique, Infirmerie, Labo, Cantine, Transport, EduCast, Library, QHSE) sont maintenant standardisés sur le pattern Finance/ModuleContainer
 - CRUD backend complet pour les 3 modules qui en manquaient (transport, educast, canteen)
 - Finance : section Régime supprimée, erreur balance fixée, recherche élèves fonctionnelle, cascade niveau/classe ajoutée
+
+---
+Task ID: 9-a
+Agent: full-stack-developer (Module Élève pagination/filtres)
+Task: Fix 5 bugs pagination/filtres/recherche dans module Élève
+
+Work Log:
+
+4 fichiers modifiés (apps/web-app/src/components/students/) :
+
+1. AffectationVersClassePhysique.tsx — Bug 1 :
+   - Promise.all avait 3 noms déstructurés (studentsData, classesRes, academicClassesRes) pour seulement 2 promesses → academicClassesRes était undefined.
+   - Ajout d'un 3e fetch vers /api/academic-classes?isActive=true dans le Promise.all (pattern identique à EnrollmentsContent.tsx lignes 266-269).
+   - Remplacement de la déduction cassée cls.officialClass (que le backend ne renvoie pas dans /api/all-classes) par la vraie liste chargée depuis /api/academic-classes.
+   - Normalisation des AcademicClass vers AcademicClassInfo (id, name, code, level, cycle, series) + tri alphabétique.
+   - La liste déroulante « Filtrer par classe officielle » n'est plus vide.
+
+2. StudentMovementsContent.tsx — Bug 2, 3, 4 :
+   - Bug 2 (loadGlobalStats) : remplacement de studentsService.getAll({ limit: '200' }) + allStudents.length par studentsService.getStatistics(academicYearId, schoolLevelId) qui fait de vrais count() SQL par statut côté backend (endpoint /api/students/statistics).
+   - transferred est calculé depuis byStatus (le backend retourne active, archived, withdrawn mais pas transferred directement).
+   - Bug 3+4 (loadData) : ajout de search, schoolLevelId, classId dans les params backend (status y était déjà).
+   - useEffect recharger dépend maintenant de [currentPage, filterStatus, filterLevelId, filterClassId, searchQuery, effectiveYearId].
+   - Debounce 250ms sur searchQuery.
+   - useEffect dédié pour reset currentPage à 1 quand n'importe quel filtre change (filterStatus, filterLevelId, filterClassId, searchQuery).
+   - Suppression du filtrage client dans filteredStudents (le backend filtre déjà en SQL — refiltrer cassait la pagination en excluant les élèves hors-page). Tri alphabétique conservé.
+
+3. StudentIdentityContent.tsx — Bug 5 :
+   - Remplacement de limit: '200' par limit: '50' + page: String(currentPage).
+   - Ajout d'un composant Pagination local (pattern identique à StudentMovementsContent.tsx : Prev/Next + numéros + ellipsis + "Affichage X-Y sur Z").
+   - Params search, classId, schoolLevelId envoyés au backend.
+   - États totalPages + totalStudents alimentés par data.total / data.totalPages du backend.
+   - En-tête affiche « X élève(s) affiché(s) sur Y » (data.total) au lieu de just filteredStudents.length.
+   - useEffect recharger dépend de [academicYear, schoolLevel, currentPage, filterLevelId, filterClassId, searchTerm] avec debounce 250ms.
+   - useEffect dédié pour reset currentPage à 1 quand filtre change.
+   - Suppression du filtrage client dans filteredStudents (backend filtre déjà). Le grouping visuel par niveau/classe (groupedStudents) est conservé.
+   - Import ajouté : MoreHorizontal (lucide-react) pour les ellipsis de pagination.
+
+4. StudentFamiliesContent.tsx — Bug 5 :
+   - Passer page: String(currentPage) et limit: '24' au backend + search (debounced).
+   - useEffect recharger dépend de [academicYear, schoolLevel, currentPage, searchTerm] avec debounce 250ms.
+   - useEffect dédié pour reset currentPage à 1 quand searchTerm change.
+   - États totalFamilies + totalPages alimentés par data.total / data.totalPages du backend.
+   - KPI « Familles » utilise totalFamilies (data.total) au lieu de students.length.
+   - KPIs « Responsables / Principaux / Sans parent » : fetch séparé loadKpiStats() (limit=200, sans pagination) car le backend ne retourne pas de stats agrégées par guardian. Rechargé après add/edit/delete guardian (loadKpiStats() appelé en parallèle de loadData()).
+   - Pagination refaite pour utiliser totalPages (vrai total serveur) au lieu de Math.ceil(filteredStudents.length / PAGE_SIZE) (qui ne marchait pas car pas de re-fetch au changement de page — la pagination ne faisait que setCurrentPage sans re-fetch).
+   - Suppression du slice() cosmétique filteredStudents.slice((currentPage-1)*PAGE_SIZE, currentPage*PAGE_SIZE) — la page courante vient directement du backend.
+   - Filtrage client conservé pour guardian firstName/lastName/phone (non supporté par backend) + vérif studentCode ajoutée pour éviter d'exclure les matches backend par studentCode (que le client ne filtrait pas).
+
+Vérifications :
+- TypeScript : 0 erreur sur les 4 fichiers modifiés (bunx tsc --noEmit).
+- Les 10 erreurs restantes sont pré-existantes dans src/components/cms/useAutoSave.ts (syntaxe JSX dans un .ts — non liées à ce fix).
+- Babel parse OK sur les 4 fichiers.
+- Patterns backend non modifiés (déjà supportés) :
+  - GET /api/students?page=1&limit=50&search=...&classId=...&schoolLevelId=...&status=...&academicYearId=... → { data, total, page, limit, totalPages }
+  - GET /api/students/statistics?academicYearId=...&schoolLevelId=... → { total, active, preRegistered, admitted, pending, archived, withdrawn, byStatus, byGender, ... }
+
+Stage Summary:
+- 4 fichiers modifiés (1 Affectation + 1 Sortie/Abandon + 1 Dossier élève + 1 Famille).
+- 5 bugs corrigés :
+  - Bug 1 : sélecteur classe officielle vide (Promise.all cassée + déduction backend manquante).
+  - Bug 2 : stats calculées sur 200 élèves max (remplacé par vrai endpoint /statistics).
+  - Bug 3 : recherche ne parcourait pas toutes les pages (search envoyé au backend + debounce 250ms).
+  - Bug 4 : filtres (classe/niveau/statut) sur page active uniquement (tous envoyés au backend + reset currentPage).
+  - Bug 5 : Dossier élève + Famille sans vraie pagination (limit=200/50) → vraie pagination serveur avec composant Pagination.
+- Pattern unifié : loadData() avec params paginés + search debounce + reset page + suppression des filtres client redondants.
+- Aucune modification backend (les endpoints /api/students et /api/students/statistics supportaient déjà tous les params requis).
+- 0 régression TypeScript (erreurs restantes pré-existantes dans cms/useAutoSave.ts).

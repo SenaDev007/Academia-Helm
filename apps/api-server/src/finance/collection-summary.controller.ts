@@ -88,7 +88,7 @@ export class CollectionSummaryController {
     const enrollments = await this.prisma.studentEnrollment.findMany({
       where: enrollmentWhere,
       include: {
-        student: { select: { id: true, firstName: true, lastName: true, middleName: true } },
+        student: { select: { id: true, firstName: true, lastName: true } },
         class: { select: { id: true, name: true, code: true, schoolLevelId: true, schoolLevel: true } },
         academicClass: { select: { id: true, name: true, code: true } },
       },
@@ -192,7 +192,6 @@ export class CollectionSummaryController {
       const studentName = [
         enrollment.student?.lastName,
         enrollment.student?.firstName,
-        enrollment.student?.middleName,
       ].filter(Boolean).join(' ');
 
       return {

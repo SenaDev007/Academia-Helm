@@ -10531,6 +10531,12 @@ model FinanceTransaction {
   createdAt        DateTime                       @default(now())
   cashRegisterId   String?
   integrityHash    String?
+  /// Montant remis par le client en espèces (uniquement pour paymentMethod = CASH).
+  /// Permet de tracer le reliquat (monnaie rendue) dans le reçu PDF, WhatsApp et SMS.
+  tenderedAmount   Decimal?                       @db.Decimal(10, 2)
+  /// Reliquat / monnaie rendue au client (calculé côté frontend : tenderedAmount - amount).
+  /// Re-vérifié côté backend par sécurité.
+  changeGiven      Decimal?                       @db.Decimal(10, 2)
   allocations      FinanceTransactionAllocation[]
   academicYear     AcademicYear                   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   cashRegister     CashRegister?                  @relation(fields: [cashRegisterId], references: [id])

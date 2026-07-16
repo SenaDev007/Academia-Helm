@@ -191,6 +191,9 @@ export class FinanceTransactionService {
       deviceId?: string;
       receiptUrl?: string;
       cashRegisterId?: string;  // ← NOUVEAU : caisse utilisée pour ce paiement
+      // ⭐ Espèces : montant remis par le client + reliquat rendu (pour traçabilité reçu)
+      tenderedAmount?: number;  // Montant remis (ex: 50000 pour un paiement de 45000)
+      changeGiven?: number;     // Reliquat rendu (ex: 5000)
     },
   ) {
     const paymentMethod = (typeof data.paymentMethod === 'string' && PAYMENT_METHODS.includes(data.paymentMethod as PaymentMethod))
@@ -346,6 +349,35 @@ export class FinanceTransactionService {
       transactionReference = `${prefix}${String(refSeq).padStart(3, '0')}`;
     }
 
+    // ⭐ Re-vérification backend du reliquat (sécurité) — uniquement pour CASH
+    // Le frontend envoie tenderedAmount + changeGiven. Pour les paiements standards,
+    // on re-calcule changeGiven = max(0, tenderedAmount - amount).
+    // ⚠️ Exception : pour le multi-action (frais + boutique), le changeGiven est
+    // calculé par MultiActionPaymentService sur le TOTAL combiné (feeAmount + shopAmount),
+    // pas juste sur amount. Dans ce cas, le multi-action passe un changeGiven déjà
+    // calculé qu'on doit respecter. On détecte ce cas via la présence d'une référence
+    // contenant "MULTI_ACTION".
+    let computedTendered: number | undefined;
+    let computedChange: number | undefined;
+    if (paymentMethod === 'CASH' && data.tenderedAmount != null && data.tenderedAmount > 0) {
+      computedTendered = Number(data.tenderedAmount);
+      const isMultiAction = (data.reference ?? '').includes('MULTI_ACTION');
+      if (isMultiAction && data.changeGiven != null) {
+        // Multi-action : respecter le changeGiven fourni (calculé sur total combiné)
+        computedChange = Number(data.changeGiven);
+      } else {
+        // Paiement standard : re-calculer changeGiven = max(0, tendered - amount)
+        computedChange = Math.max(0, computedTendered - data.amount);
+        // Log si le frontend a envoyé un changeGiven incohérent (à des fins de debug)
+        if (data.changeGiven != null && Math.abs(Number(data.changeGiven) - computedChange) > 0.01) {
+          this.logger.warn(
+            `changeGiven incohérent reçu du frontend: ${data.changeGiven} vs calculé ${computedChange} ` +
+            `(tendered=${computedTendered}, amount=${data.amount}). Utilisation de la valeur calculée.`,
+          );
+        }
+      }
+    }
+
     const tx = await this.prisma.financeTransaction.create({
       data: {
         tenantId,
@@ -360,6 +392,9 @@ export class FinanceTransactionService {
         receiptNumber,
         receiptUrl: data.receiptUrl ?? null,
         cashRegisterId: effectiveCashRegisterId ?? null,
+        // ⭐ Espèces : tracer le montant remis + reliquat pour le reçu PDF/WhatsApp/SMS
+        tenderedAmount: computedTendered ?? null,
+        changeGiven: computedChange ?? null,
         allocations: updates.length
           ? { create: updates.map((u) => ({ accountBreakdownId: u.breakdownId, amount: u.paidDelta })) }
           : undefined,

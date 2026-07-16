@@ -2,7 +2,7 @@
  * SOUS-MODULE 1 — Configuration des frais (FeeStructure, FeeStructureInstallment, FeeOverride)
  * Priorité : Classe > Niveau > Override. Aucune suppression (historisation). Année non clôturée. Audit.
  */
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { FeeType } from '@prisma/client';
 import { StudentAccountService } from './student-account.service';
@@ -11,6 +11,8 @@ const FEE_TYPES: FeeType[] = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEE
 
 @Injectable()
 export class FeeStructureService {
+  private readonly logger = new Logger(FeeStructureService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly studentAccountService: StudentAccountService,
@@ -79,6 +81,10 @@ export class FeeStructureService {
 
     // Résoudre levelId : le frontend peut envoyer un UUID de education_levels
     // au lieu de school_levels. On essaie les deux tables.
+    // ⚠️ Défense en profondeur (juillet 2026) : si l'ID n'est ni dans school_levels
+    // ni dans education_levels (ex: AcademicLevel.id envoyé par erreur), on met
+    // resolvedLevelId à null au lieu de garder la valeur invalide — cela évite
+    // une FK violation P2003 côté Prisma lors du create().
     let resolvedLevelId = data.levelId ?? null;
     if (resolvedLevelId) {
       // Vérifier si c'est un UUID de school_levels
@@ -104,6 +110,17 @@ export class FeeStructureService {
             // Si aucun school_level ne correspond, créer ou utiliser le code
             resolvedLevelId = null;
           }
+        } else {
+          // ⭐ L'ID n'est ni dans school_levels ni dans education_levels.
+          // C'est probablement un AcademicLevel.id (table pedagogy_academic_levels)
+          // envoyé par erreur par le frontend. On met à null pour éviter la
+          // FK violation — le frais sera créé sans niveau (levelId null est OK
+          // dans le schéma, c'est juste que le filtrage par niveau ne marchera pas).
+          this.logger.warn(
+            `levelId ${resolvedLevelId} introuvable dans school_levels ET education_levels — ` +
+            `mise à null pour éviter FK violation (probablement un AcademicLevel.id envoyé par erreur).`,
+          );
+          resolvedLevelId = null;
         }
       }
     }

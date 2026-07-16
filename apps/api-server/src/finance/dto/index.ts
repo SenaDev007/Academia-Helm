@@ -250,6 +250,23 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsString()
   cashRegisterId?: string;
+
+  /**
+   * Montant remis par le client en espèces (uniquement pour paymentMethod = CASH).
+   * Ex: client donne 50000 FCFA pour un paiement de 45000 FCFA → tenderedAmount = 50000.
+   * Le frontend envoie cette valeur saisie par l'utilisateur.
+   */
+  @IsOptional()
+  @IsNumber()
+  tenderedAmount?: number;
+
+  /**
+   * Reliquat / monnaie rendue au client (calculé côté frontend : tenderedAmount - amount).
+   * Ex: 50000 - 45000 = 5000 FCFA. Re-vérifié côté backend par sécurité.
+   */
+  @IsOptional()
+  @IsNumber()
+  changeGiven?: number;
 }
 
 // ─── 7. ExpenseCategory ─────────────────────────────────────────────────────

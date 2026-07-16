@@ -498,6 +498,16 @@ export class ReceiptFinanceService {
           <td style="padding: 10px 0; font-weight: 700; font-size: 15px; color: #5b21b6;">TOTAL ENCAISSÉ</td>
           <td style="padding: 10px 0; text-align: right; font-weight: 800; font-size: 16px; color: #5b21b6;">${(Number(tx.amount) + Number(linkedShopSale.totalAmount)).toLocaleString('fr-FR')} FCFA</td>
         </tr>
+        ${tx.paymentMethod === 'CASH' && tx.tenderedAmount != null ? `
+        <tr>
+          <td style="padding: 6px 0; color: #4c1d95; font-size: 12px;">Montant remis en espèces</td>
+          <td style="padding: 6px 0; text-align: right; font-weight: 600; color: #4c1d95; font-size: 12px;">${Number(tx.tenderedAmount).toLocaleString('fr-FR')} FCFA</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #059669; font-size: 12px; font-weight: 600;">Reliquat rendu au client</td>
+          <td style="padding: 6px 0; text-align: right; font-weight: 700; color: #059669; font-size: 12px;">${Number(tx.changeGiven ?? 0).toLocaleString('fr-FR')} FCFA</td>
+        </tr>
+        ` : ''}
       </tbody>
     </table>
   </div>
@@ -508,6 +518,10 @@ export class ReceiptFinanceService {
       <div class="info-item"><span class="info-label">Mode de paiement :</span><span class="info-value">${methodLabels[tx.paymentMethod] || tx.paymentMethod}</span></div>
       <div class="info-item"><span class="info-label">Référence :</span><span class="info-value">${tx.reference || '—'}</span></div>
       ${tx.cashRegister ? `<div class="info-item"><span class="info-label">Caisse :</span><span class="info-value">${tx.cashRegister.code} — ${tx.cashRegister.name}</span></div>` : ''}
+      ${tx.paymentMethod === 'CASH' && tx.tenderedAmount != null ? `
+        <div class="info-item"><span class="info-label">Montant remis :</span><span class="info-value" style="font-weight: 700;">${Number(tx.tenderedAmount).toLocaleString('fr-FR')} FCFA</span></div>
+        <div class="info-item"><span class="info-label">Reliquat rendu :</span><span class="info-value" style="font-weight: 700; color: #059669;">${Number(tx.changeGiven ?? 0).toLocaleString('fr-FR')} FCFA</span></div>
+      ` : ''}
     </div>
   </div>
 

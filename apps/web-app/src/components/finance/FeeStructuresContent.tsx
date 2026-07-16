@@ -118,29 +118,27 @@ export default function FeeStructuresContent() {
   const [regimeSubmitting, setRegimeSubmitting] = useState(false);
   const [regimeEditSubmitting, setRegimeEditSubmitting] = useState(false);
 
-  // Mapping education_levels UUID → AcademicLevel UUID
+  // Mapping education_levels UUID → SchoolLevel UUID (le vrai levelId pour fee_structures)
   // levels vient de /api/school-levels (avec code = "MATERNELLE"/"PRIMAIRE"/"SECONDAIRE")
-  // classes vient de /api/academic-classes (avec level.name = "Maternelle"/"Primaire"/"Secondaire")
-  // ⭐ AcademicLevel n'a PAS de champ 'code' — on matche par nom normalisé (minuscules).
+  // Chaque niveau exposé par /api/school-levels contient un champ `schoolLevelId` qui est
+  // le vrai UUID dans la table `school_levels` (FK de fee_structures.levelId).
+  // ⚠️ Ne PAS utiliser AcademicClass.levelId qui pointe vers `pedagogy_academic_levels`
+  // (table différente) — cela provoque une FK violation P2003 côté backend.
   const eduToSchoolLevelMap = useMemo(() => {
     const map: Record<string, string> = {};
     for (const level of levels) {
-      const code = (level.code || '').toLowerCase(); // maternelle / primaire / secondaire
-      // Chercher une classe officielle dont level.name correspond (insensible à la casse)
-      const matchingClass = classes.find((c: any) => {
-        const levelName = (c.level?.name || '').toLowerCase();
-        return levelName === code || levelName === (level.label || '').toLowerCase();
-      });
-      if (matchingClass) {
-        map[level.id] = matchingClass.levelId;
+      // ⭐ Utiliser directement schoolLevelId exposé par /api/school-levels
+      if (level.schoolLevelId) {
+        map[level.id] = level.schoolLevelId;
       }
     }
     return map;
-  }, [levels, classes]);
+  }, [levels]);
 
-  // Convertir education_levels UUID → levelId (AcademicLevel UUID)
+  // Convertir education_levels UUID → SchoolLevel UUID (vrai FK pour fee_structures)
+  // Retourne undefined si non trouvé (évite d'envoyer un mauvais ID au backend).
   const toSchoolLevelId = (eduId: string): string | undefined => {
-    return eduToSchoolLevelMap[eduId] || eduId;
+    return eduToSchoolLevelMap[eduId] || undefined;
   };
 
   // Filtrer les classes officielles par niveau
@@ -322,26 +320,39 @@ export default function FeeStructuresContent() {
 
         let successCount = 0;
         let failCount = 0;
+        let lastError: string | undefined;
         for (const cid of classIds) {
           try {
             // ⭐ Envoyer academicClassId (classe officielle) au lieu de classId (classe physique).
             await financeService.createFeeStructure({ ...basePayload, academicClassId: cid });
             successCount++;
-          } catch {
+          } catch (err: any) {
+            // ⚠️ Ne pas avaler silencieusement l'erreur — la logger et conserver le message
+            // pour l'afficher dans le toast (aide à diagnostiquer les FK violations, etc.)
+            console.error('createFeeStructure failed for class', cid, err);
             failCount++;
+            lastError = err?.message || String(err);
           }
         }
 
         setModalNewFee(false);
         if (failCount === 0) {
           toast({
-            title: 'Succès',
+            title: 'Configuration réussie',
             description: `${successCount} frais créés avec succès (un par classe sélectionnée).`,
           });
-        } else {
+        } else if (successCount === 0) {
+          // Échec total — ne pas dire "réussi" dans le titre
           toast({
-            title: 'Partiellement réussi',
-            description: `${successCount} créés, ${failCount} en échec sur ${classIds.length} classes.`,
+            title: 'Échec de la configuration',
+            description: `Échec sur les ${failCount} classe(s). ${lastError ?? ''}`.trim(),
+            variant: 'destructive',
+          });
+        } else {
+          // Échec partiel — "Partiellement réussi" reste approprié
+          toast({
+            title: 'Configuration partielle',
+            description: `${successCount} créés, ${failCount} en échec sur ${classIds.length} classes. ${lastError ?? ''}`.trim(),
             variant: 'destructive',
           });
         }
@@ -454,7 +465,18 @@ export default function FeeStructuresContent() {
     setRegimeSubmitting(true);
     try {
       // Convertir education_levels UUID → school_levels UUID
-      const schoolLevelId = eduToSchoolLevelMap[regimeForm.schoolLevelId] || regimeForm.schoolLevelId;
+      // ⚠️ Utiliser toSchoolLevelId() qui retourne undefined si non trouvé
+      // (évite d'envoyer un EducationLevel.id brut qui causerait une FK violation)
+      const schoolLevelId = toSchoolLevelId(regimeForm.schoolLevelId);
+      if (!schoolLevelId) {
+        toast({
+          title: 'Niveau invalide',
+          description: 'Impossible de résoudre le niveau scolaire sélectionné. Rechargez la page et réessayez.',
+          variant: 'destructive',
+        });
+        setRegimeSubmitting(false);
+        return;
+      }
       await financeService.createFeeRegime({
         academicYearId: academicYear.id,
         schoolLevelId,

@@ -103,6 +103,9 @@ class FinanceService {
     cashRegisterId?: string;
     customerName?: string;
     notes?: string;
+    // ⭐ Espèces : montant remis par le client + reliquat (pour traçabilité reçu)
+    tenderedAmount?: number;
+    changeGiven?: number;
   }): Promise<any> {
     return financeFetch('/api/finance/transactions/multi-action', { method: 'POST', body: data });
   }

@@ -38,6 +38,8 @@ export class FinanceTransactionController {
       deviceId: body.deviceId,
       receiptUrl: body.receiptUrl,
       cashRegisterId: body.cashRegisterId,
+      tenderedAmount: body.tenderedAmount != null ? Number(body.tenderedAmount) : undefined,
+      changeGiven: body.changeGiven != null ? Number(body.changeGiven) : undefined,
     });
   }
 
@@ -192,10 +194,17 @@ export class FinanceTransactionController {
     const receiptLink = `${frontendUrl}/receipt/${verificationToken}/${tx.id}`;
 
     // Construire le message WhatsApp (avec accents — le lien wa.me les supporte)
+    // ⭐ Pour les paiements en espèces, inclure le montant remis et le reliquat
+    const cashPart = (tx.paymentMethod === 'CASH' && tx.tenderedAmount != null)
+      ? `Montant remis : ${Number(tx.tenderedAmount).toLocaleString('fr-FR')} FCFA\n` +
+        `Reliquat rendu : ${Number(tx.changeGiven ?? 0).toLocaleString('fr-FR')} FCFA\n`
+      : '';
+
     const message = `Bonjour${contacts.name ? ` ${contacts.name}` : ''},\n\n` +
       `Nous confirmons la réception du paiement pour ${studentName} (Classe: ${className}) auprès de ${schoolName}.\n\n` +
       `Reçu n° : ${tx.receiptNumber}\n` +
       `Montant : ${amountStr} FCFA\n` +
+      `${cashPart}` +
       `Date : ${dateStr}\n` +
       `${balanceLine}\n\n` +
       `📄 Téléchargez le reçu PDF détaillé ici :\n${receiptLink}\n\n` +

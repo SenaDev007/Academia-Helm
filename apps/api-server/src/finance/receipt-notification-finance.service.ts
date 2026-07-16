@@ -208,6 +208,10 @@ export class ReceiptNotificationFinanceService {
             personalizationNote,
             className,
             amountAppliedToArrears,
+            // ⭐ Espèces : inclure montant remis + reliquat dans le SMS
+            paymentMethod: tx.paymentMethod,
+            tenderedAmount: tx.tenderedAmount != null ? Number(tx.tenderedAmount) : undefined,
+            changeGiven: tx.changeGiven != null ? Number(tx.changeGiven) : undefined,
           });
         }
       } catch (err: any) {
@@ -402,6 +406,10 @@ export class ReceiptNotificationFinanceService {
     personalizationNote?: string;
     className?: string;
     amountAppliedToArrears?: number;
+    // ⭐ Espèces : montant remis + reliquat (pour traçabilité SMS)
+    paymentMethod?: string;
+    tenderedAmount?: number;
+    changeGiven?: number;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun téléphone parent disponible' };
@@ -429,8 +437,13 @@ export class ReceiptNotificationFinanceService {
       ? ' Reduction appliquee.'
       : '';
 
+    // ⭐ Espèces : inclure montant remis + reliquat (format court pour SMS)
+    const cashPart = (params.paymentMethod === 'CASH' && params.tenderedAmount != null)
+      ? ` Remis: ${params.tenderedAmount.toLocaleString('fr-FR')}F. Reliquat: ${(params.changeGiven ?? 0).toLocaleString('fr-FR')}F.`
+      : '';
+
     // SMS peut être un peu plus long si solde (jusqu'à 200 car)
-    const message = `${schoolName}: Recu ${params.receiptNumber} - ${amountStr}F pour ${studentShort}${classPart}.${fifoPart}${balancePart}${persoPart} Recu PDF a l'ecole.`;
+    const message = `${schoolName}: Recu ${params.receiptNumber} - ${amountStr}F pour ${studentShort}${classPart}.${cashPart}${fifoPart}${balancePart}${persoPart} Recu PDF a l'ecole.`;
 
     const result = await this.smsService.sendSMS(params.to, message);
     if (result.success) {

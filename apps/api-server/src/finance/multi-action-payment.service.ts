@@ -46,6 +46,10 @@ export interface MultiActionPaymentInput {
   // Métadonnées optionnelles (client, observation…)
   customerName?: string;
   notes?: string;
+  // ⭐ Espèces : montant remis par le client + reliquat (pour traçabilité reçu)
+  // Le total encaissé = feeAmount + shopAmount. Le reliquat est calculé sur ce total.
+  tenderedAmount?: number;
+  changeGiven?: number;
 }
 
 export interface MultiActionResult {
@@ -91,6 +95,8 @@ export class MultiActionPaymentService {
       cashRegisterId,
       customerName,
       notes,
+      tenderedAmount,
+      changeGiven,
     } = input;
 
     // ─── Validation ───
@@ -113,6 +119,8 @@ export class MultiActionPaymentService {
         cashierId,
         deviceId,
         cashRegisterId,
+        tenderedAmount,
+        changeGiven,
       });
       return {
         transaction: tx,
@@ -169,6 +177,10 @@ export class MultiActionPaymentService {
     const shopAmount = shopSubTotal;
 
     // ─── 3. Créer la FinanceTransaction pour les frais (si feeAmount > 0) ───
+    // ⭐ Pour le multi-action, tenderedAmount et changeGiven sont stockés sur la
+    // FinanceTransaction (même si elle ne représente que les frais) car c'est le
+    // reçu principal qui sera généré. Le reliquat est calculé sur le TOTAL
+    // encaissé (feeAmount + shopAmount), pas juste sur feeAmount.
     let financeTx: any = null;
     if (feeAmount > 0) {
       financeTx = await this.financeTransactionService.create(tenantId, {
@@ -182,9 +194,19 @@ export class MultiActionPaymentService {
         cashierId,
         deviceId,
         cashRegisterId,
+        // ⭐ Espèces : tenderedAmount + changeGiven sont sur le total combiné
+        // (frais + boutique). Le backend re-calculera changeGiven à partir de
+        // amount=feeAmount, ce qui serait incorrect pour le multi-action.
+        // On passe donc tenderedAmount uniquement, et on calcule changeGiven
+        // nous-mêmes sur le total combiné, puis on l'envoie pour qu'il soit stocké.
+        tenderedAmount: tenderedAmount != null ? Number(tenderedAmount) : undefined,
+        changeGiven: (tenderedAmount != null && changeGiven != null)
+          ? Number(changeGiven)
+          : (tenderedAmount != null ? Math.max(0, Number(tenderedAmount) - feeAmount - shopSubTotal) : undefined),
       });
       this.logger.log(
-        `Multi-action: FinanceTransaction ${financeTx.receiptNumber} créée pour ${feeAmount} FCFA de frais`,
+        `Multi-action: FinanceTransaction ${financeTx.receiptNumber} créée pour ${feeAmount} FCFA de frais` +
+        (tenderedAmount ? ` (montant remis: ${tenderedAmount}, reliquat: ${changeGiven ?? 0})` : ''),
       );
     }
 

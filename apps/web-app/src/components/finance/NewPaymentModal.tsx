@@ -83,6 +83,10 @@ export default function NewPaymentModal({
   // Panier boutique (multi-action : frais + articles boutique en un seul encaissement)
   const [shopCartItems, setShopCartItems] = useState<ShopCartItem[]>([]);
 
+  // ⭐ Espèces : montant remis par le client + reliquat calculé automatiquement
+  // (uniquement pertinent quand paymentMethod === 'CASH')
+  const [tenderedAmount, setTenderedAmount] = useState('');
+
   // Sélecteurs niveau + classe + recherche élève
   const [levels, setLevels] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
@@ -198,6 +202,13 @@ export default function NewPaymentModal({
   const totalAmount = (amountNum || 0) + shopCartTotal;
   const hasShopItems = shopCartItems.length > 0;
 
+  // ⭐ Espèces : calcul automatique du reliquat (monnaie à rendre au client)
+  // tenderedNum = montant que le client a remis (ex: 50000 FCFA)
+  // changeGiven = monnaie à rendre = max(0, tenderedNum - totalAmount)
+  const tenderedNum = parseFloat(tenderedAmount) || 0;
+  const changeGiven = Math.max(0, tenderedNum - totalAmount);
+  const isTenderedInsufficient = tenderedNum > 0 && tenderedNum < totalAmount;
+
   // Aperçu d'imputation — détecte les personnalisations (initialAmount != feeStructure.totalAmount)
   useEffect(() => {
     if (!selectedAccount || !amountNum || amountNum <= 0) {
@@ -252,6 +263,16 @@ export default function NewPaymentModal({
     // Caisse obligatoire pour les espèces
     if (paymentMethod === 'CASH' && !cashRegisterId) {
       toast({ title: 'Caisse requise', description: 'Sélectionnez une caisse ouverte pour les paiements en espèces.', variant: 'destructive' });
+      return;
+    }
+
+    // ⭐ Espèces : vérifier que le montant remis est suffisant
+    if (paymentMethod === 'CASH' && tenderedNum > 0 && isTenderedInsufficient) {
+      toast({
+        title: 'Montant remis insuffisant',
+        description: `Le client a remis ${formatCurrency(tenderedNum)} mais le total à encaisser est ${formatCurrency(totalAmount)}. Manquant : ${formatCurrency(totalAmount - tenderedNum)}.`,
+        variant: 'destructive',
+      });
       return;
     }
 
@@ -411,6 +432,9 @@ export default function NewPaymentModal({
           paymentMethod,
           reference: reference.trim() || undefined,
           cashRegisterId: cashRegisterId || undefined,
+          // ⭐ Espèces : montant remis + reliquat (calculé sur le total combiné frais + boutique)
+          tenderedAmount: paymentMethod === 'CASH' && tenderedNum > 0 ? tenderedNum : undefined,
+          changeGiven: paymentMethod === 'CASH' && tenderedNum > 0 ? changeGiven : undefined,
         });
 
         // Le résultat contient { transaction, shopSale, totalAmount, feeAmount, shopAmount }
@@ -447,6 +471,9 @@ export default function NewPaymentModal({
           paymentMethod,
           reference: reference.trim() || undefined,
           cashRegisterId: cashRegisterId || undefined,
+          // ⭐ Espèces : montant remis + reliquat (pour traçabilité reçu PDF/WhatsApp/SMS)
+          tenderedAmount: paymentMethod === 'CASH' && tenderedNum > 0 ? tenderedNum : undefined,
+          changeGiven: paymentMethod === 'CASH' && tenderedNum > 0 ? changeGiven : undefined,
         });
         // Le backend renvoie la transaction avec receiptNumber + createdAt
         // + déclenche la génération PDF en fire-and-forget
@@ -504,6 +531,7 @@ export default function NewPaymentModal({
     setCashRegisterId('');
     setPreview(null);
     setShopCartItems([]);
+    setTenderedAmount('');
     setFeexpayModalOpen(false);
     setFeexpayPhone('');
     setFeexpayError(null);
@@ -725,6 +753,35 @@ export default function NewPaymentModal({
               </p>
             )}
           </div>
+
+          {/* ⭐ Montant remis en espèces + reliquat auto (uniquement pour CASH) */}
+          {paymentMethod === 'CASH' && (
+            <div>
+              <Label>Montant remis par le client (XOF)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={tenderedAmount}
+                onChange={(e) => setTenderedAmount(e.target.value)}
+                placeholder="Ex: 50000 (laisser vide si exact)"
+              />
+              {tenderedNum > 0 && (
+                <div className="mt-2 space-y-1">
+                  <div className="flex items-center justify-between text-sm bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                    <span className="text-emerald-700 font-medium">💰 Reliquat à rendre :</span>
+                    <span className="font-bold text-emerald-900">{formatCurrency(changeGiven)}</span>
+                  </div>
+                  {isTenderedInsufficient && (
+                    <p className="text-xs text-rose-600 flex items-center gap-1">
+                      ⚠️ Le montant remis ({formatCurrency(tenderedNum)}) est inférieur au total à encaisser ({formatCurrency(totalAmount)}).
+                      Manquant : {formatCurrency(totalAmount - tenderedNum)}.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           <div>
             <Label>Observation / Référence</Label>
             <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Optionnel" />

@@ -35,6 +35,7 @@ import { toast } from '@/components/ui/toast';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { cn } from '@/lib/utils';
 import IdCardVisual, { TenantInfo } from './IdCardVisual';
+import CardDesignTab from './CardDesignTab';
 
 interface IdCardStats {
   total: number;
@@ -101,6 +102,9 @@ function StudentAvatar({ photoUrl, firstName, lastName, size = 'sm' }: {
 export default function StudentIdCardsSection() {
   const confirmDialog = useConfirmDialog();
   const { academicYear, schoolLevel } = useModuleContext();
+  // ⭐ Sous-onglets internes : "Liste & Génération" (contenu historique)
+  // et "Paramètres Design" (CMS Carte Scolaire — Task 19-b).
+  const [activeTab, setActiveTab] = useState<'list' | 'design'>('list');
   const [stats, setStats] = useState<IdCardStats | null>(null);
   const [grouped, setGrouped] = useState<GroupedResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -534,15 +538,54 @@ export default function StudentIdCardsSection() {
     <>
       {confirmDialog.dialog}
       <div className="space-y-4">
-        {/* ─── En-tête : Stats + Boutons Paramétrage/Générer ─── */}
+        {/* ─── En-tête : titre + switch sous-onglets ─── */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <CreditCard className="w-5 h-5 text-blue-600" />
             Cartes Scolaires
           </h2>
+          {/* ⭐ Sous-onglets : Liste & Génération | Paramètres Design */}
+          <div className="inline-flex rounded-lg bg-slate-100 p-1 border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setActiveTab('list')}
+              className={cn(
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition',
+                activeTab === 'list'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700',
+              )}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              Liste & Génération
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('design')}
+              className={cn(
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition',
+                activeTab === 'design'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700',
+              )}
+            >
+              <Palette className="w-3.5 h-3.5" />
+              Paramètres Design
+            </button>
+          </div>
+        </div>
+
+        {/* ⭐ Sous-onglet "Paramètres Design" — CMS Carte Scolaire (Task 19-b) */}
+        {activeTab === 'design' ? (
+          <CardDesignTab />
+        ) : (
+        <>
+        {/* ─── Sous-onglet "Liste & Génération" (contenu historique) ─── */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             {/* ⭐ Ordre : 1. Générer → 2. Supprimer → 3. Paramétrage */}
             <button
+              type="button"
               onClick={handleGenerateBulk}
               disabled={isGenerating || isLoading}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-sm transition"
@@ -554,6 +597,7 @@ export default function StudentIdCardsSection() {
             {/* ⭐ Bouton "Supprimer toutes les cartes" (global) */}
             {(stats?.total || 0) > 0 && (
               <button
+                type="button"
                 onClick={handleDeleteAllCards}
                 disabled={isDeletingAll || isGenerating || isLoading}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 disabled:opacity-50 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition"
@@ -564,6 +608,7 @@ export default function StudentIdCardsSection() {
               </button>
             )}
             <button
+              type="button"
               onClick={() => setIsSettingsModalOpen(true)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200 transition"
             >
@@ -791,6 +836,8 @@ export default function StudentIdCardsSection() {
           <div className="flex justify-center items-center py-4">
             <RefreshCw className="h-5 w-5 animate-spin text-blue-600" />
           </div>
+        )}
+        </>
         )}
       </div>
 

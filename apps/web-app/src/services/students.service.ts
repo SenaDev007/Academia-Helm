@@ -1088,6 +1088,90 @@ class StudentsService {
     return `/api/students/id-cards/${encodeURIComponent(cardId)}/preview-html`;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  CMS Carte Scolaire — Templates de design (Phase 3+4 frontend)
+  //  Proxy BFF : /api/students/id-cards/templates
+  //  Backend   : /students/id-cards/templates (controller NestJS)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Liste tous les templates de design (4 presets système + custom).
+   * ⭐ Le backend est idempotent : il crée les presets système manquants à la volée.
+   *
+   * @param includeArchived Inclure les templates archivés (défaut : false)
+   */
+  async getCardTemplates(includeArchived = false): Promise<any[]> {
+    const qs = includeArchived ? '?includeArchived=true' : '';
+    try {
+      const result = await apiFetch(`${BASE_URL}/id-cards/templates${qs}`);
+      // Sécurité : si le backend renvoie un objet { data: [...] }, on extrait l'array.
+      if (Array.isArray(result)) return result;
+      if (result && Array.isArray((result as any).data)) return (result as any).data;
+      if (result && Array.isArray((result as any).templates)) return (result as any).templates;
+      return [];
+    } catch (error) {
+      console.error('[students.service] getCardTemplates error:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Récupère le détail d'un template par sa clé (CLASSIQUE, MODERNE, …) ou son id.
+   */
+  async getCardTemplate(keyOrId: string): Promise<any> {
+    return apiFetch(
+      `${BASE_URL}/id-cards/templates/${encodeURIComponent(keyOrId)}`,
+    );
+  }
+
+  /**
+   * Crée un template personnalisé.
+   *
+   * @param data { name, key, layout }
+   *  - name   : libellé affiché (ex. "Design Excellence 2025")
+   *  - key    : clé technique unique par tenant (UPPERCASE, alphanumérique + _)
+   *  - layout : objet JSON avec les design tokens (couleurs, flags, textes…)
+   */
+  async createCardTemplate(data: {
+    name: string;
+    key: string;
+    layout: Record<string, any>;
+  }): Promise<any> {
+    return apiFetch(`${BASE_URL}/id-cards/templates`, {
+      method: 'POST',
+      body: data,
+    });
+  }
+
+  /**
+   * Modifie un template personnalisé (nom, layout, isActive).
+   * ⚠️ Les templates système (isSystem=true) refusent la modification du layout.
+   */
+  async updateCardTemplate(
+    id: string,
+    data: {
+      name?: string;
+      layout?: Record<string, any>;
+      isActive?: boolean;
+    },
+  ): Promise<any> {
+    return apiFetch(
+      `${BASE_URL}/id-cards/templates/${encodeURIComponent(id)}`,
+      { method: 'PUT', body: data },
+    );
+  }
+
+  /**
+   * Archive (soft delete) un template personnalisé.
+   * ⚠️ Les templates système ne peuvent pas être archivés.
+   */
+  async deleteCardTemplate(id: string): Promise<any> {
+    return apiFetch(
+      `${BASE_URL}/id-cards/templates/${encodeURIComponent(id)}`,
+      { method: 'DELETE' },
+    );
+  }
+
   /**
    * Statistiques des matricules
    */

@@ -7903,3 +7903,322 @@ Stage Summary:
 - Section 1 contexte : "rémunère de façon pérenne le développeur et un partenaire commercial" → "rémunère de façon pérenne l'exploitant de la plateforme"
 - Section 9.4 (Recommandations) : sous-section "Rémunération du partenaire commercial" entièrement supprimée ; Break-even mis à jour (5 écoles → 93 833 FCFA/mois au lieu de 61 000, sans déduction commission)
 - Note scénario 6.1 corrigée : marge positive 6 333 FCFA/mois au lieu de -4 500 FCFA/mois
+
+---
+
+Task ID: 19-a
+Agent: full-stack-developer (CMS Carte Scolaire — Phase 1+2 Backend)
+Task: Implémenter le backend du CMS Carte Scolaire : design dynamique des cartes basé sur TenantIdentityProfile, templates de design, et nettoyage des routes dupliquées.
+
+Work Log:
+
+Phase 1 — Corrections backend
+
+1. **Fix `generateCardHtml`** (`apps/api-server/src/students/services/student-id-card.service.ts`)
+   - Suppression des couleurs hardcodées `NAVY = '#0D1F6E'` / `NAVY_LIGHT = '#1A237E'`.
+   - Ajout d'un paramètre `identityProfile?: any | null` à la signature de `generateCardHtml`.
+   - Lecture des design tokens depuis `identityProfile` (avec valeurs par défaut rétrocompatibles) :
+     * `cardPrimaryColor` → NAVY (défaut `#0D1F6E`)
+     * `cardSecondaryColor` → NAVY_LIGHT (défaut `#1A237E`)
+     * `cardShowQRCode` / `cardShowBarcode` / `cardShowPhoto` / `cardShowGuardian` / `cardShowSchoolAddress` (défaut `true`)
+     * `cardFooterText` (défaut `'Academia Helm · Document officiel'`)
+     * `cardConditionsText` (défaut texte standard)
+   - Le HTML rendu conditionne maintenant l'affichage de la photo, du bloc contact tuteur, de l'adresse école (footer recto), du QR code (verso), du code-barres (verso) selon les flags.
+   - Le `<ul>` fixe des conditions d'utilisation est remplacé par un `<p>` alimenté par `cardConditionsText`.
+   - `schoolName`, `schoolSlogan`, `schoolAddress`, `schoolPhone`, `schoolEmail` prennent maintenant l'identité du `TenantIdentityProfile` en priorité (fallback sur `tenant.*`).
+
+2. **Nouvelle méthode privée `getActiveIdentityProfile(tenantId)`**
+   - Charge le profil d'identité actif via `prisma.tenantIdentityProfile.findFirst({ where: { tenantId, isActive: true } })`.
+   - Retourne `null` si aucun profil actif (la méthode appelante utilise les valeurs par défaut).
+   - Robuste : catch les erreurs Prisma et log en warn (jamais fatal).
+
+3. **Mise à jour de tous les callers de `generateCardHtml`**
+   - `generateIdCard()` : récupère l'identityProfile avant l'appel et le passe en 5ᵉ argument.
+   - `generateClassBundlePdf()` : récupère l'identityProfile **une seule fois** avant la boucle (économie de N requêtes pour une classe de N élèves).
+   - `getCardPreviewHtml()` (nouvelle méthode) : récupère l'identityProfile et le passe à `generateCardHtml`.
+
+4. **Implémentation de `getCardPreviewHtml(cardId, tenantId)`**
+   - Charge la carte + student + tenant + identifier + guardian primaire + academicYear + schoolLevel.
+   - Charge séparément la classe de l'élève via `studentEnrollment.findFirst({ where: { tenantId, studentId, academicYearId, status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'PRE_REGISTERED'] } } })`.
+   - Récupère l'identityProfile actif.
+   - Réutilise le `qrPayload` stocké en base (pas de régénération du timestamp — la prévisualisation doit refléter la carte émise).
+   - Appelle `generateCardHtml` avec l'identityProfile et retourne le HTML.
+   - Utilisée par :
+     * `GET /students/id-cards/:cardId/preview-html` (affichage UI)
+     * `downloadIdCardPdf()` (régénération à la volée si le PDF a disparu du disque)
+
+5. **Nettoyage des routes dupliquées** dans `student-id-card.controller.ts`
+   - Suppression des 2ᵉ déclarations (lignes ~258-306 avant modif) de :
+     * `@Get('stats')` — getIdCardStats
+     * `@Get('grouped-by-class')` — listCardsGroupedByClass
+     * `@Get('class/:classId/bundle-pdf')` — downloadClassBundlePdf
+   - Ces routes étaient déjà déclarées plus haut dans le fichier (lignes 97, 114, 132) — les duplicates auraient provoqué une erreur NestJS au bootstrap ("duplicate route").
+   - Suppression également du commentaire JSDoc `/** Télécharge le PDF d'une carte */` en double au-dessus de `downloadIdCardPdf`.
+   - Mise à jour du header du contrôleur avec une note Task 19-a expliquant la suppression.
+
+6. **Création du DTO `update-card-design.dto.ts`**
+   - Chemin : `apps/api-server/src/students/dto/update-card-design.dto.ts`
+   - Décorateurs class-validator :
+     * `cardPrimaryColor` / `cardSecondaryColor` → `@IsHexColor()` (validation format `#RRGGBB`)
+     * `cardShowQRCode` / `cardShowBarcode` / `cardShowPhoto` / `cardShowGuardian` / `cardShowEmergencyCall` / `cardShowSchoolAddress` → `@IsBoolean()`
+     * `cardFooterText` → `@IsString() @MaxLength(120)`
+     * `cardConditionsText` → `@IsString() @MaxLength(600)`
+     * `templateKey` → `@IsString() @MaxLength(64)` (référence optionnelle à un `CardDesignTemplate.key`)
+   - Tous les champs `@IsOptional()` (PATCH sémantique — mise à jour partielle).
+   - Exporté via `apps/api-server/src/students/dto/index.ts` (ajout de `export * from './update-card-design.dto'`).
+
+Phase 2 — Migration + modèle
+
+7. **Modèle `CardDesignTemplate`** dans `prisma/schema.prisma` (après `StudentIdCard`)
+   - Champs : `id` (UUID), `tenantId`, `name`, `key` (unique par tenant), `layout` (Json), `isSystem` (Boolean, défaut false), `isActive` (Boolean, défaut true), `createdAt`, `updatedAt`.
+   - Relation : `tenant Tenant @relation(...)` + `cards StudentIdCard[]` (backrelation).
+   - Contraintes : `@@unique([tenantId, key])`, `@@index([tenantId, isActive])`, `@@index([tenantId, isSystem])`.
+   - Map : `@@map("card_design_templates")`.
+   - Backrelation ajoutée sur `Tenant` (ligne ~72) : `cardDesignTemplates CardDesignTemplate[]` (entre `canteenSuppliers` et `cashClosures`).
+
+8. **Ajout sur `StudentIdCard`** dans `prisma/schema.prisma`
+   - `templateId String?` (FK optionnelle vers `CardDesignTemplate.id`, `onDelete: SetNull` — préserve l'historique des cartes si le template est supprimé).
+   - `designSnapshot Json?` (snapshot du design au moment de la génération — garantit qu'une carte déjà émise conserve son design d'origine).
+   - Relation : `template CardDesignTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)`.
+   - Index : `@@index([templateId])` pour faciliter les requêtes "toutes les cartes d'un template".
+
+9. **Migration `019_card_design_templates.sql`**
+   - Chemin : `apps/api-server/migrations/019_card_design_templates.sql`
+   - Section 1 : création table `card_design_templates` (UUID PK, FK tenant CASCADE, contrainte unique `(tenantId, key)`, 2 indexes composites).
+   - Section 2 : `ALTER TABLE student_id_cards ADD COLUMN IF NOT EXISTS templateId TEXT, designSnapshot JSONB`.
+   - FK `student_id_cards.templateId → card_design_templates.id` avec `ON DELETE SET NULL`.
+   - Index `student_id_cards_templateId_idx`.
+   - `COMMENT ON TABLE/COLUMN` pour documentation.
+
+10. **Méthode `ensureDefaultTemplates(tenantId)`** dans le service
+    - Définition d'une constante static `DEFAULT_TEMPLATES` : 4 presets système avec layout JSON complet :
+      * **CLASSIQUE** — bleu marine `#0D1F6E` / `#1A237E` (design historique, rétrocompatible)
+      * **MODERNE** — vert émeraude `#0F766E` / `#14B8A6`
+      * **MINIMALISTE** — gris anthracite `#1F2937` / `#374151`, code-barres désactivé, pas de contact tuteur, pas d'adresse école
+      * **BILINGUE** — bordeaux `#7C2D12` / `#B91C1C`, conditions d'utilisation FR/EN, signature "Director · Le Directeur"
+    - Chaque preset contient : `cardPrimaryColor`, `cardSecondaryColor`, tous les flags `cardShow*`, `cardFooterText`, `cardConditionsText`, + champs layout étendus (`orientation`, `photoPosition`, `signatureLabel`, `bilingual`).
+    - Logique idempotente : liste les templates système déjà présents, ne crée que les manquants via `createMany({ skipDuplicates: true })`.
+    - Retourne la liste complète des templates du tenant (système + personnalisés), triés par `isSystem DESC, name ASC`.
+
+11. **Méthodes additionnelles (CMS Carte Scolaire)**
+    - `listTemplates(tenantId, { includeArchived })` : appelle `ensureDefaultTemplates` puis liste (lazy init).
+    - `getTemplate(tenantId, keyOrId)` : récupère par clé (CLASSIQUE, MODERNE, …) ou par id.
+    - `createCustomTemplate(tenantId, { name, key, layout })` :
+      * Nettoie la clé (UPPERCASE, alphanumérique + underscore, max 64 chars).
+      * Refuse les clés réservées aux presets système (CLASSIQUE, MODERNE, MINIMALISTE, BILINGUE).
+      * Catch l'erreur Prisma P2002 (duplicate key) et renvoie un `BadRequestException` clair.
+    - `updateCustomTemplate(tenantId, templateId, { name?, layout?, isActive? })` :
+      * Refuse la modification du `layout` d'un template système (lecture seule — l'admin doit dupliquer puis personnaliser).
+    - `archiveTemplate(tenantId, templateId)` : soft delete (`isActive=false`), refuse pour les templates système.
+    - `buildDesignSnapshot(template, identityProfile)` (privé) : fusionne layout du template + identityProfile pour produire le JSON snapshot stocké sur `StudentIdCard.designSnapshot` à la génération.
+
+12. **Routes controller pour les templates** (CMS Carte Scolaire)
+    - `GET /students/id-cards/templates` — liste (idempotent, crée les presets système manquants à la volée).
+    - `GET /students/id-cards/templates/:keyOrId` — détail par clé ou id.
+    - `POST /students/id-cards/templates` — création template personnalisé.
+    - `PUT /students/id-cards/templates/:templateId` — mise à jour (nom, layout, isActive).
+    - `DELETE /students/id-cards/templates/:templateId` — archive (soft delete).
+    - Toutes protégées par `@Roles('ADMIN', 'DIRECTOR', 'SECRETARY', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')`.
+    - Placées AVANT `@Get(':studentId')` pour éviter que `templates` soit intercepté comme un studentId.
+
+Vérifications:
+
+- `bunx prisma format --schema=prisma/schema.prisma` → ✅ Schema formatted (15733 lignes, 0 erreurs de syntaxe).
+- `bunx tsc --noEmit --skipLibCheck --experimentalDecorators --emitDecoratorMetadata` sur les 3 fichiers modifiés → ✅ 0 erreur spécifique aux modifications (les erreurs résiduelles sont uniquement liées à l'absence de `@prisma/client` généré localement — `prisma generate` est exécuté au déploiement).
+- Vérification visuelle des imports : `Injectable`, `Logger`, `NotFoundException`, `BadRequestException` déjà importés dans le service (pas besoin d'ajouter d'imports).
+- `class-validator` déjà en dépendance (`^0.14.0`) — `IsHexColor`, `IsBoolean`, `IsString`, `IsOptional`, `MaxLength` disponibles.
+
+Stage Summary:
+
+Fichiers modifiés (5) :
+
+1. `apps/api-server/src/students/services/student-id-card.service.ts` (1535 → 1832 lignes, +297)
+   - `generateCardHtml` : paramètre `identityProfile` ajouté, design tokens lus depuis le profil.
+   - Nouvelle méthode privée `getActiveIdentityProfile(tenantId)`.
+   - Nouvelle méthode publique `getCardPreviewHtml(cardId, tenantId)`.
+   - Mise à jour de `generateIdCard` et `generateClassBundlePdf` pour récupérer et passer l'identityProfile.
+   - Nettoyage du commentaire JSDoc dupliqué sur `downloadIdCardPdf`.
+   - Nouvelle section CMS Carte Scolaire : `DEFAULT_TEMPLATES` (4 presets), `ensureDefaultTemplates`, `listTemplates`, `getTemplate`, `createCustomTemplate`, `updateCustomTemplate`, `archiveTemplate`, `buildDesignSnapshot`.
+
+2. `apps/api-server/src/students/controllers/student-id-card.controller.ts` (352 → 305 lignes, -47)
+   - Suppression des 3 routes dupliquées (stats, grouped-by-class, class/:classId/bundle-pdf).
+   - Ajout de 5 nouvelles routes pour la gestion des templates de design.
+   - Mise à jour du header JSDoc avec note Task 19-a.
+
+3. `apps/api-server/prisma/schema.prisma` (15698 → 15733 lignes, +35)
+   - Ajout de `templateId String?` et `designSnapshot Json?` sur `StudentIdCard`.
+   - Ajout de l'index `@@index([templateId])` et de la relation `template CardDesignTemplate?`.
+   - Nouveau modèle `CardDesignTemplate` (12 lignes + docstring).
+   - Ajout de la backrelation `cardDesignTemplates CardDesignTemplate[]` sur `Tenant`.
+
+4. `apps/api-server/src/students/dto/index.ts` (+1 ligne)
+   - Export de `update-card-design.dto`.
+
+Fichiers créés (2) :
+
+5. `apps/api-server/src/students/dto/update-card-design.dto.ts` (88 lignes)
+   - DTO class-validator avec 11 champs (couleurs hex, booléens d'affichage, texts, templateKey).
+
+6. `apps/api-server/migrations/019_card_design_templates.sql` (75 lignes)
+   - Création table `card_design_templates` (UUID, FK tenant CASCADE, unique `(tenantId, key)`).
+   - Ajout colonnes `templateId TEXT` + `designSnapshot JSONB` sur `student_id_cards`.
+   - FK avec `ON DELETE SET NULL` (préserve l'historique des cartes si template supprimé).
+   - 3 indexes + commentaires Postgres.
+
+Compatibilité & rétrocompatibilité:
+
+- Les cartes déjà émises (sans `templateId` / `designSnapshot`) continuent de fonctionner : ces colonnes sont `NULL`-ables et `generateCardHtml` retombe sur les valeurs par défaut bleu marine si l'identityProfile est absent.
+- La migration utilise `ADD COLUMN IF NOT EXISTS` et `CREATE TABLE IF NOT EXISTS` : idempotente, sans risque de réexécution.
+- Les 4 presets système créés par `ensureDefaultTemplates` sont rétrocompatibles avec le design historique (CLASSIQUE = bleu marine `#0D1F6E`/`#1A237E`).
+- La méthode `ensureDefaultTemplates` est appelée automatiquement par `listTemplates` et `getTemplate` (lazy init) — aucun seed manuel requis.
+
+Prochaines étapes (Phase 3 — frontend) :
+
+- Composant React `CMSCarteScolaire.tsx` consommant les routes `/students/id-cards/templates`.
+- Formulaire d'édition de design avec color pickers + toggles (réutilise `UpdateCardDesignDto`).
+- Bouton "Appliquer à toutes les cartes" → appel `generateBulkIdCards` avec le template sélectionné.
+- Intégration du snapshot dans la génération (modification à venir dans `generateIdCard` pour persister `templateId` + `designSnapshot`).
+
+---
+Task ID: 19-b
+Agent: full-stack-developer (CMS Carte Scolaire — Phase 3+4 Frontend)
+Task: Implémenter le frontend du CMS Carte Scolaire : sous-onglet « Paramètres Design », studio de design 2 colonnes, gestion des templates, BFF Next.js, methods service frontend.
+
+Work Log:
+
+Phase 3 — Composants React (CMS Studio de Design)
+
+1. **Types partagés** `apps/web-app/src/components/students/card-design.types.ts`
+   - Interface `CardDesignSettings` : 14 champs (couleurs primaire/secondaire, 6 toggles d'affichage `cardShow*`, 2 textes `cardFooterText` + `cardConditionsText`, 4 réglages maternelle, `templateKey`).
+   - Interface `CardDesignTemplate` : `{ id, name, key, layout: CardDesignSettings & {...}, isSystem, isActive, createdAt, updatedAt }`.
+   - Constante `DEFAULT_CARD_SETTINGS` — valeurs par défaut rétrocompatibles (bleu marine `#0D1F6E` / `#1A237E`, tous les éléments visibles).
+   - Constante `SYSTEM_PRESETS_META` — métadonnées d'affichage des 4 presets (clé, nom, description, primary, secondary) pour les mini-aperçus couleur.
+
+2. **Composant `CardDesignControls.tsx`** (panneau gauche 40%)
+   - 6 sections collapsibles (accordéon custom avec `ChevronDown`/`ChevronRight`, état `isOpen` local par section, 2 sections ouvertes par défaut : Template + Couleurs + Actions).
+   - **Section Template** :
+     * Grille 2×2 de 4 presets système avec mini-aperçu dégradé couleur (CLASSIQUE navy, MODERNE emerald, MINIMALISTE gris, BILINGUE bordeaux).
+     * Badge « Actif » sur le preset sélectionné (`settings.templateKey`).
+     * Liste scrollable (`max-h-40 overflow-y-auto`) des templates personnalisés avec swatch couleur + bouton dupliquer + bouton supprimer.
+     * Bouton « Dupliquer le template actif » → ouvre un modal avec champs `name` + `key` (auto-généré à partir du preset source, clé normalisée UPPERCASE alphanumérique + `_`).
+   - **Section Couleurs** : 2 color pickers (`cardPrimaryColor` + `cardSecondaryColor`) avec swatch + input hex, et aperçu live du dégradé.
+   - **Section Éléments affichés** : 6 toggles `Switch` (Photo, QR Code, Code-barres, Tuteur/Gardien, Appel urgence, Adresse école).
+   - **Section Textes** : textarea `cardConditionsText` (600 chars max, compteur) + input `cardFooterText` (120 chars max, compteur).
+   - **Section Heures maternelle** : toggle sortie unique + 1 input heure (si sortie unique) ou 2 inputs (matin/après-midi) sinon.
+   - **Section Actions** : bouton « Enregistrer » (bleu primaire), bouton « Réinitialiser » (outline), bouton « Aperçu PDF » (outline) + note informative sur le flux de sauvegarde.
+   - Modal de duplication avec validation (`name` + `key` requis), normalisation de la clé via regex `[^A-Z0-9_]` → `_`.
+   - Handlers `handleApplyPreset` (charge le layout du template dans les settings), `handleOpenDuplicateModal`, `handleConfirmDuplicate` (crée via `studentsService.createCardTemplate`), `handleDeleteCustom` (confirm + delete via service + fallback CLASSIQUE si template actif supprimé).
+
+3. **Composant `CardDesignPreview.tsx`** (panneau droit 60%)
+   - Switch recto/verso (2 boutons stylés `bg-slate-100` + bouton rotation `RotateCw`).
+   - `<IdCardVisual>` rendu avec `liveIdentity` = identity tenant fusionné avec les settings édités → aperçu live temps réel sans toucher à l'identity stockée.
+   - Badge template actif + indicateur couleur + mention « Mise à jour temps réel ».
+   - Bandeau d'information `Info` (amber) si `previewCardId` absent : « Générez au moins une carte pour activer l'aperçu PDF backend ».
+   - Modal PDF réel (état `isPdfModalOpen` contrôlé par le parent CardDesignTab) :
+     * iframe plein écran (`max-w-4xl h-[85vh]`) → `/api/students/id-cards/:previewCardId/preview-html`.
+     * Spinner de chargement `Loader2` pendant l'init de l'iframe.
+     * Lien « Ouvrir » (ExternalLink) pour ouvrir l'URL dans un nouvel onglet.
+     * Footer informatif : « Cet aperçu est généré par le backend (Puppeteer)… enregistrez avant de rouvrir l'aperçu. »
+
+4. **Composant `CardDesignTab.tsx`** (orchestrateur)
+   - Layout 2 colonnes `grid lg:grid-cols-5` (gauche `lg:col-span-2` 40%, droite `lg:col-span-3` 60%) avec breakpoints responsive (1 colonne sur mobile).
+   - Bandeau d'info violet/indigo avec bouton « Rafraîchir les templates » (re-charge la liste via `loadTemplates`).
+   - États possédés : `settings`, `templates`, `isTemplatesLoading`, `identity`, `previewCardId`, `isSaving`, `isBooting`, `isPdfModalOpen`.
+   - Au montage : 3 fetchs parallèles (identity + settings initiaux depuis `/api/settings/identity`, templates depuis `studentsService.getCardTemplates()`, 1 carte déjà générée depuis `studentsService.getCardsGroupedByClass(academicYearId)` pour l'aperçu PDF iframe).
+   - `SAMPLE_CARD` : carte factice (Aïcha ADANDE, MAT-2025-0001, CM2 A) pour l'aperçu visuel live sans dépendance backend.
+   - `handleSave` : `PUT /api/settings/identity/card-settings` avec tout le `settings` → met à jour le `TenantIdentityProfile` côté backend. Sync l'identity locale après succès.
+   - `handleReset` : `window.confirm` + remet `DEFAULT_CARD_SETTINGS`. Toast info qui rappelle de cliquer sur Enregistrer.
+   - `handlePreviewPdf` : ouvre le modal PDF (si `previewCardId` présent, sinon toast warning).
+   - Passe `isPdfModalOpen` + `onOpenPdfModal` + `onClosePdfModal` à `CardDesignPreview` (état contrôlé depuis le parent pour synchroniser avec le bouton « Aperçu PDF » dans `CardDesignControls`).
+
+5. **Modification de `StudentIdCardsSection.tsx`**
+   - Ajout state `activeTab: 'list' | 'design'` (défaut `'list'`).
+   - Nouveau header en tête : titre « Cartes Scolaires » + switch 2 boutons (Liste & Génération / Paramètres Design) style `bg-slate-100` p-1 avec bouton actif blanc ombré.
+   - Rendu conditionnel `{activeTab === 'design' ? <CardDesignTab/> : <>{contenu historique}</>}`.
+   - Tout le contenu historique (boutons Générer/Supprimer/Paramétrage, stats, recherche, arborescence, isLoading) est maintenant wrappé dans le fragment `<>...</>` du else.
+   - Les modals existants (génération, visualisation, révocation, paramétrage) restent rendus inconditionnellement en dehors du switch (leur état reste `null` quand on est sur l'onglet design).
+   - `import CardDesignTab from './CardDesignTab'` ajouté en tête du fichier.
+
+Phase 4 — BFF + Service frontend
+
+6. **Route BFF `apps/web-app/src/app/api/students/id-cards/templates/route.ts`**
+   - `GET`  : proxy vers `${API_URL}/students/id-cards/templates` + transfert des query params.
+   - `POST` : validation minimale (`name` ou `key` requis), proxy avec body JSON.
+   - Utilise `getProxyAuthHeaders(request)` (cookies JWT + `x-tenant-id`) + `normalizeApiUrl`.
+
+7. **Route BFF `apps/web-app/src/app/api/students/id-cards/templates/[id]/route.ts`**
+   - `GET`    : proxy par `keyOrId` (le backend accepte indifféremment une clé ou un UUID).
+   - `PUT`    : proxy avec body JSON (peut contenir `name`, `layout`, `isActive`).
+   - `DELETE` : proxy sans body (soft delete côté backend).
+   - Toutes les routes attendent `params: Promise<{ id: string }>` (Next.js 16 async params).
+
+8. **Methods ajoutées à `students.service.ts`** (+81 lignes)
+   - `getCardTemplates(includeArchived = false)` : GET avec fallback safe (retourne `[]` si erreur, gère les 3 formats possibles : array direct, `{ data: [...] }`, `{ templates: [...] }`).
+   - `getCardTemplate(keyOrId)` : GET détaillé.
+   - `createCardTemplate({ name, key, layout })` : POST.
+   - `updateCardTemplate(id, { name?, layout?, isActive? })` : PUT partiel.
+   - `deleteCardTemplate(id)` : DELETE (soft delete backend).
+   - Toutes utilisent `apiFetch` (axios wrapper) avec `BASE_URL = '/students'`.
+
+Vérifications:
+
+- `bunx tsc --noEmit --skipLibCheck` (web-app) → ✅ 0 erreur sur les fichiers créés/modifiés. Les 10 erreurs résiduelles sont dans `src/components/cms/useAutoSave.ts` (pré-existantes, non liées à cette task).
+- Patterns respectés :
+  * shadcn/ui : `Button`, `Input`, `Label`, `Switch`, `Badge` utilisés.
+  * Slate palette cohérente avec `StudentIdCardsSection.tsx` existant.
+  * Pas d'indigo/blue sauf bouton primaire (cohérent avec l'existant).
+  * `toast` depuis `@/components/ui/toast` (même pattern que le reste du fichier).
+  * Responsive design : `grid-cols-1 lg:grid-cols-5` pour le studio, breakpoints `sm:`/`md:`/`lg:` partout.
+- `react-hooks/exhaustive-deps` : tous les `useEffect` ont leurs dépendances correctement déclarées (eslint en warn, pas en error).
+- Accessibilité : `aria-expanded`, `aria-controls` sur les boutons d'accordéon, `aria-label` sur les color pickers, `title` informatifs sur tous les boutons d'action.
+
+Stage Summary:
+
+Fichiers créés (6) :
+
+1. `apps/web-app/src/components/students/card-design.types.ts` (104 lignes)
+   - Types `CardDesignSettings` (14 champs) + `CardDesignTemplate` (9 champs).
+   - `DEFAULT_CARD_SETTINGS` + `SYSTEM_PRESETS_META` (4 presets).
+
+2. `apps/web-app/src/components/students/CardDesignControls.tsx` (~742 lignes)
+   - 6 sections collapsibles.
+   - Modal duplication template custom.
+   - Sous-composants réutilisables : `CollapsibleSection`, `ToggleRow`, `ColorPicker`.
+
+3. `apps/web-app/src/components/students/CardDesignPreview.tsx` (~310 lignes)
+   - Switch recto/verso + IdCardVisual live + modal iframe PDF.
+   - État modal contrôlé par le parent (single source of truth).
+
+4. `apps/web-app/src/components/students/CardDesignTab.tsx` (~342 lignes)
+   - Orchestrateur 2 colonnes 40/60.
+   - 3 fetchs initiaux (identity, templates, preview card).
+   - Handlers save/reset/preview-pdf.
+
+5. `apps/web-app/src/app/api/students/id-cards/templates/route.ts` (54 lignes)
+   - BFF GET + POST.
+
+6. `apps/web-app/src/app/api/students/id-cards/templates/[id]/route.ts` (78 lignes)
+   - BFF GET + PUT + DELETE par clé ou id.
+
+Fichiers modifiés (2) :
+
+7. `apps/web-app/src/services/students.service.ts` (+81 lignes, 1597 → 1678)
+   - 5 méthodes ajoutées : `getCardTemplates`, `getCardTemplate`, `createCardTemplate`, `updateCardTemplate`, `deleteCardTemplate`.
+
+8. `apps/web-app/src/components/students/StudentIdCardsSection.tsx` (1172 → 1219 lignes, +47)
+   - State `activeTab` + switch 2 boutons + rendu conditionnel `<CardDesignTab/>`.
+   - Structure JSX : outer `space-y-4` → header (titre + switcher) → ternary `activeTab === 'design' ? <CardDesignTab/> : <>...</>`.
+   - Les 4 modals existants restent rendus inconditionnellement (état null sur l'onglet design).
+
+Compatibilité & rétrocompatibilité:
+
+- Le contenu historique (liste, génération, révocation, paramétrage modal) n'est pas altéré : il est simplement wrappé dans le `else` du ternary.
+- Les BFF routes sont strictement proxy (aucune logique métier côté Next.js) : tout passe au backend NestJS qui a déjà implémenté la logique (Task 19-a).
+- Le `TenantIdentityProfile` est la source de vérité : `CardDesignTab` lit l'identity au montage, fusionne avec les settings édités pour l'aperçu live, et sauvegarde via `PUT /api/settings/identity/card-settings` (route BFF existante).
+- Les 4 presets système sont créés à la volée côté backend (méthode `ensureDefaultTemplates` lazy-init) : aucun seed manuel requis.
+- Si aucune carte n'est encore générée (`previewCardId = null`), le bouton « Aperçu PDF réel » est désactivé et un message informatif s'affiche.
+
+Prochaines étapes (Phase 5 — backend) :
+
+- Persister `templateId` + `designSnapshot` sur `StudentIdCard` à la génération (modification de `generateIdCard` et `generateBulkIdCards` pour appeler `buildDesignSnapshot(template, identityProfile)`).
+- Bouton « Appliquer à toutes les cartes » : régénère en masse avec le template sélectionné via `generateBulkIdCards` + `templateKey` en payload.

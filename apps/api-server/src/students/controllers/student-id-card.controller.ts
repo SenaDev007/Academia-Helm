@@ -12,6 +12,11 @@
  * Exemple du bug corrigé : @Get('grouped-by-class') était après @Get(':studentId')
  * → NestJS interprétait 'grouped-by-class' comme un studentId → 404
  *   "No active ID card found for student grouped-by-class"
+ *
+ * 🔧 Task 19-a (Phase 1, item 3) : suppression des routes dupliquées
+ *   (stats, grouped-by-class, class/:classId/bundle-pdf étaient déclarées
+ *   2× dans le fichier — les 2èmes déclarations, après la route
+ *   @Put(':cardId/revoke'), sont supprimées).
  * ============================================================================
  */
 
@@ -150,6 +155,87 @@ export class StudentIdCardController {
     return res.send(buffer);
   }
 
+  // ─── ROUTES TEMPLATES DE DESIGN (CMS Carte Scolaire — Task 19-a) ─────────
+  // ⚠️ DOIVENT être avant @Get(':studentId') sinon 'templates' est intercepté
+  // comme un studentId.
+
+  /**
+   * ⭐ GET /students/id-cards/templates
+   * Liste tous les templates actifs du tenant (système + personnalisés).
+   * Passe `includeArchived=true` en query pour inclure les templates archivés.
+   * Idempotent : crée les 4 presets système manquants à la volée.
+   */
+  @Get('templates')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'DIRECTOR', 'SECRETARY', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
+  async listTemplates(
+    @GetTenant() tenant: any,
+    @Query('includeArchived') includeArchived?: string,
+  ) {
+    return this.idCardService.listTemplates(tenant.id, {
+      includeArchived: includeArchived === 'true',
+    });
+  }
+
+  /**
+   * ⭐ GET /students/id-cards/templates/:keyOrId
+   * Récupère un template par sa clé (CLASSIQUE, MODERNE, ...) ou par son id.
+   */
+  @Get('templates/:keyOrId')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'DIRECTOR', 'SECRETARY', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
+  async getTemplate(
+    @GetTenant() tenant: any,
+    @Param('keyOrId') keyOrId: string,
+  ) {
+    return this.idCardService.getTemplate(tenant.id, keyOrId);
+  }
+
+  /**
+   * ⭐ POST /students/id-cards/templates
+   * Crée un template personnalisé (non-système).
+   */
+  @Post('templates')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'DIRECTOR', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
+  async createCustomTemplate(
+    @GetTenant() tenant: any,
+    @Body() data: { name: string; key: string; layout: Record<string, any> },
+  ) {
+    return this.idCardService.createCustomTemplate(tenant.id, data);
+  }
+
+  /**
+   * ⭐ PUT /students/id-cards/templates/:templateId
+   * Met à jour un template personnalisé (nom, layout, isActive).
+   * Les templates système sont en lecture seule (utiliser dupliquer).
+   */
+  @Put('templates/:templateId')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'DIRECTOR', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
+  async updateCustomTemplate(
+    @GetTenant() tenant: any,
+    @Param('templateId') templateId: string,
+    @Body() data: { name?: string; layout?: Record<string, any>; isActive?: boolean },
+  ) {
+    return this.idCardService.updateCustomTemplate(tenant.id, templateId, data);
+  }
+
+  /**
+   * ⭐ DELETE /students/id-cards/templates/:templateId
+   * Archive un template personnalisé (soft delete : isActive=false).
+   * Les templates système NE peuvent PAS être archivés.
+   */
+  @Delete('templates/:templateId')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'DIRECTOR', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
+  async archiveTemplate(
+    @GetTenant() tenant: any,
+    @Param('templateId') templateId: string,
+  ) {
+    return this.idCardService.archiveTemplate(tenant.id, templateId);
+  }
+
   // ─── ROUTES PARAMÉTRÉES (après les routes statiques) ──────────────────────
 
   // ⚠️ ORDRE CRITIQUE : les routes :cardId/* DOIVENT être avant :studentId
@@ -251,59 +337,6 @@ export class StudentIdCardController {
     return this.idCardService.revokeIdCard(cardId, tenant.id, user.id, data.reason);
   }
 
-
-  /**
-   * Récupère les statistiques des cartes
-   */
-  @Get('stats')
-  @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'DIRECTOR', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN', 'SECRETARY')
-  async getIdCardStats(
-    @GetTenant() tenant: any,
-    @Query('academicYearId') academicYearId?: string,
-  ) {
-    return this.idCardService.getIdCardStats(tenant.id, academicYearId);
-  }
-
-  /**
-   * ⭐ Liste les cartes groupées par niveau scolaire puis par classe.
-   * GET /students/id-cards/grouped-by-class?academicYearId=...
-   */
-  @Get('grouped-by-class')
-  async listCardsGroupedByClass(
-    @GetTenant() tenant: any,
-    @Query('academicYearId') academicYearId: string,
-  ) {
-    if (!academicYearId) {
-      throw new BadRequestException('academicYearId est requis');
-    }
-    return this.idCardService.listCardsGroupedByClass(tenant.id, academicYearId);
-  }
-
-  /**
-   * ⭐ Génère un PDF groupé contenant toutes les cartes d'une classe.
-   * GET /students/id-cards/class/:classId/bundle-pdf?academicYearId=...
-   */
-  @Get('class/:classId/bundle-pdf')
-  async downloadClassBundlePdf(
-    @GetTenant() tenant: any,
-    @Param('classId') classId: string,
-    @Query('academicYearId') academicYearId: string,
-    @Res() res: Response,
-  ) {
-    if (!academicYearId) {
-      throw new BadRequestException('academicYearId est requis');
-    }
-    const { buffer, className, cardsCount } = await this.idCardService.generateClassBundlePdf(
-      tenant.id,
-      academicYearId,
-      classId,
-    );
-    const safeName = className.replace(/[^a-zA-Z0-9-_]/g, '_');
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="cartes-scolaires-${safeName}-${cardsCount}eleves.pdf"`);
-    return res.send(buffer);
-  }
 
   /**
    * ⭐ DELETE /students/id-cards/all?academicYearId=...

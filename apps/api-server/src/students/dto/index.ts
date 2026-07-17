@@ -3,6 +3,7 @@ export * from './create-student.dto';
 export * from './update-student.dto';
 export * from './create-admission.dto';
 export * from './update-admission.dto';
+export * from './update-card-design.dto';
 
 // New DTOs for Prisma controller endpoints
 import { IsString, IsOptional, IsDateString, IsIn, IsUUID, IsBoolean } from 'class-validator';

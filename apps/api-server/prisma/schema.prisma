@@ -69,6 +69,7 @@ model Tenant {
   canteenStockMovements            CanteenStockMovement[]
   canteenSubscriptions             CanteenSubscription[]
   canteenSuppliers                 CanteenSupplier[]
+  cardDesignTemplates              CardDesignTemplate[]
   cashClosures                     CashClosure[]
   cashRegisters                    CashRegister[]
   certifiedElectronicSignatures    CertifiedElectronicSignature[]    @relation("CertifiedElectronicSignatureTenant")
@@ -1002,7 +1003,7 @@ model AcademicClass {
   /// ⭐ Demandes d'admission ciblant cette classe officielle
   admissions          Admission[]          @relation("AdmissionRequestedAcademicClass")
   /// ⭐ Structures de frais configurées pour cette classe officielle
-  feeStructures       FeeStructure[]      @relation("FeeStructureAcademicClass")
+  feeStructures       FeeStructure[]       @relation("FeeStructureAcademicClass")
   academicYear        AcademicYear         @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   cycle               AcademicCycle        @relation(fields: [cycleId], references: [id])
   level               AcademicLevel        @relation(fields: [levelId], references: [id])
@@ -4240,33 +4241,40 @@ model StudentIdentifier {
 }
 
 model StudentIdCard {
-  id               String       @id @default(uuid())
+  id               String              @id @default(uuid())
   tenantId         String
   academicYearId   String
   schoolLevelId    String
   studentId        String
-  cardNumber       String       @unique
+  cardNumber       String              @unique
   qrPayload        String
   qrHash           String
   frontImagePath   String?
   backImagePath    String?
   pdfPath          String?
-  generatedAt      DateTime     @default(now())
+  generatedAt      DateTime            @default(now())
   generatedBy      String?
   validUntil       DateTime?
-  isActive         Boolean      @default(true)
-  isRevoked        Boolean      @default(false)
+  isActive         Boolean             @default(true)
+  isRevoked        Boolean             @default(false)
   revokedAt        DateTime?
   revokedBy        String?
   revocationReason String?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
-  academicYear     AcademicYear @relation(fields: [academicYearId], references: [id])
-  generator        User?        @relation("StudentIdCardGenerator", fields: [generatedBy], references: [id])
-  revoker          User?        @relation("StudentIdCardRevoker", fields: [revokedBy], references: [id])
-  schoolLevel      SchoolLevel  @relation(fields: [schoolLevelId], references: [id])
-  student          Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  tenant           Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // ⭐ Task 19-a : template utilisé + snapshot du design (couleurs / flags /
+  // texts) au moment de la génération. Le snapshot garantit qu'une carte
+  // déjà émise conserve son design d'origine même si l'admin modifie le
+  // TenantIdentityProfile ou le template après coup.
+  templateId       String?
+  designSnapshot   Json?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  academicYear     AcademicYear        @relation(fields: [academicYearId], references: [id])
+  generator        User?               @relation("StudentIdCardGenerator", fields: [generatedBy], references: [id])
+  revoker          User?               @relation("StudentIdCardRevoker", fields: [revokedBy], references: [id])
+  schoolLevel      SchoolLevel         @relation(fields: [schoolLevelId], references: [id])
+  student          Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  template         CardDesignTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, academicYearId, studentId])
   @@index([tenantId, academicYearId, schoolLevelId])
@@ -4275,7 +4283,33 @@ model StudentIdCard {
   @@index([qrHash])
   @@index([isActive, isRevoked])
   @@index([validUntil])
+  @@index([templateId])
   @@map("student_id_cards")
+}
+
+/// ⭐ Task 19-a : Templates de design de carte scolaire (CMS Carte Scolaire).
+/// Chaque tenant dispose de 4 presets système (CLASSIQUE, MODERNE,
+/// MINIMALISTE, BILINGUE) créés automatiquement par ensureDefaultTemplates(),
+/// + un nombre illimité de templates personnalisés.
+/// `layout` stocke le JSON de configuration (couleurs, flags, texts, marges,
+/// orientation, etc.) — schéma libre pour permettre l'évolution sans migration.
+model CardDesignTemplate {
+  id        String          @id @default(uuid())
+  tenantId  String
+  name      String
+  key       String /// identifiant unique par tenant (ex: CLASSIQUE, MODERNE)
+  layout    Json /// configuration du template (couleurs, flags, texts, marges)
+  isSystem  Boolean         @default(false) /// true pour les 4 presets créés auto
+  isActive  Boolean         @default(true) /// false = archivé (non supprimé)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cards     StudentIdCard[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, isActive])
+  @@index([tenantId, isSystem])
+  @@map("card_design_templates")
 }
 
 model PublicVerificationToken {
@@ -15688,8 +15722,8 @@ model UserTenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([userId, tenantId])
   @@index([userId])

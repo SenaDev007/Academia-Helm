@@ -119,8 +119,18 @@ export class StudentIdCardService {
     // Récupérer la classe actuelle
     const currentClass = student.studentEnrollments[0]?.class;
 
+    // Récupérer le profil d'identité actif du tenant (couleurs / texts / flags
+    // de la carte scolaire). On tolère l'absence de profil (valeurs par défaut).
+    const identityProfile = await this.getActiveIdentityProfile(tenantId);
+
     // Générer le HTML de la carte (face avant + arrière)
-    const cardHtml = await this.generateCardHtml(student, currentClass, student.identifier.globalMatricule, qrPayload);
+    const cardHtml = await this.generateCardHtml(
+      student,
+      currentClass,
+      student.identifier.globalMatricule,
+      qrPayload,
+      identityProfile,
+    );
 
     // Générer le PDF
     let pdfPath: string | null = null;
@@ -455,12 +465,21 @@ export class StudentIdCardService {
     const cardHtmls: string[] = [];
     let className = enrollments[0]?.class?.name || 'Classe';
 
+    // Récupérer le profil d'identité actif (1 fois pour tout le bundle — économise N requêtes)
+    const identityProfile = await this.getActiveIdentityProfile(tenantId);
+
     for (const enr of enrollments) {
       const student = enr.student;
       if (!student.identifier?.globalMatricule) continue;
 
       const qrPayload = this.generateQRPayload(student.identifier.globalMatricule, tenantId, student.id);
-      const cardHtml = await this.generateCardHtml(student, enr.class, student.identifier.globalMatricule, qrPayload);
+      const cardHtml = await this.generateCardHtml(
+        student,
+        enr.class,
+        student.identifier.globalMatricule,
+        qrPayload,
+        identityProfile,
+      );
       // Extraire uniquement le contenu de <body>...</body> (la card-container)
       const bodyMatch = cardHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
       if (bodyMatch) {
@@ -747,9 +766,6 @@ export class StudentIdCardService {
   }
 
   /**
-   * Télécharge le PDF d'une carte
-   */
-  /**
    * Télécharge le PDF d'une carte.
    * ⭐ Si le fichier PDF n'existe pas sur disque (Fly.io éphémère sans stockage
    * persistant), on le RÉGÉNÈRE à la volée via getCardPreviewHtml + Puppeteer.
@@ -787,6 +803,78 @@ export class StudentIdCardService {
     }
 
     return Buffer.from(pdfBuffer);
+  }
+
+  /**
+   * ⭐ Génère le HTML d'aperçu d'une carte existante (recto + verso) à partir
+   * de la DB. Utilisé par :
+   *   - GET /students/id-cards/:cardId/preview-html (affichage dans l'UI)
+   *   - downloadIdCardPdf (régénération à la volée si le PDF a disparu)
+   *
+   * Étapes :
+   *   1. Charge la carte + student + tenant + academicYear + schoolLevel +
+   *      enrollment + identifier + guardian primaire.
+   *   2. Charge le TenantIdentityProfile actif (couleurs / texts / flags).
+   *   3. Reconstruit le QR payload (la carte le stocke déjà en base, on le
+   *      réutilise tel quel — pas de régénération du timestamp).
+   *   4. Appelle generateCardHtml avec l'identityProfile.
+   *
+   * ⚠️ Cette méthode ne modifie pas la carte ; elle est purement de lecture.
+   */
+  async getCardPreviewHtml(cardId: string, tenantId: string): Promise<string> {
+    const card = await this.prisma.studentIdCard.findFirst({
+      where: { id: cardId, tenantId },
+      include: {
+        student: {
+          include: {
+            tenant: true,
+            identifier: true,
+            studentGuardians: {
+              where: { isPrimary: true },
+              take: 1,
+              include: { guardian: true },
+            },
+          },
+        },
+        academicYear: { select: { id: true, name: true, startDate: true, endDate: true } },
+        schoolLevel: { select: { id: true, name: true, code: true, label: true } },
+      },
+    });
+
+    if (!card) {
+      throw new NotFoundException(`Carte ${cardId} introuvable`);
+    }
+
+    // Charger la classe de l'élève pour l'année de la carte (via StudentEnrollment)
+    const enrollment = await this.prisma.studentEnrollment.findFirst({
+      where: {
+        tenantId,
+        studentId: card.studentId,
+        academicYearId: card.academicYearId,
+        status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'PRE_REGISTERED'] },
+      },
+      include: { class: { select: { id: true, name: true } } },
+    });
+    const currentClass = enrollment?.class || null;
+
+    // Profil d'identité actif (couleurs / texts / flags carte)
+    const identityProfile = await this.getActiveIdentityProfile(tenantId);
+
+    // On réutilise le qrPayload stocké en base (pas de nouveau timestamp).
+    const qrPayload = card.qrPayload;
+    const matricule =
+      card.student?.identifier?.globalMatricule ||
+      (card.qrPayload.split(':')[1] ?? '');
+
+    // On remonte academicYear + schoolLevel au niveau du student pour que
+    // generateCardHtml les lise via student.academicYear / student.schoolLevel.
+    const student: any = {
+      ...card.student,
+      academicYear: card.academicYear,
+      schoolLevel: card.schoolLevel,
+    };
+
+    return this.generateCardHtml(student, currentClass, matricule, qrPayload, identityProfile);
   }
 
   /**
@@ -828,15 +916,40 @@ export class StudentIdCardService {
   }
 
   /**
+   * Récupère le profil d'identité actif du tenant (pour les paramètres de
+   * design des cartes scolaires). Retourne null si aucun profil actif —
+   * `generateCardHtml` utilisera alors les valeurs par défaut.
+   */
+  private async getActiveIdentityProfile(tenantId: string): Promise<any | null> {
+    try {
+      const profile = await this.prisma.tenantIdentityProfile.findFirst({
+        where: { tenantId, isActive: true },
+      });
+      return profile || null;
+    } catch (err) {
+      this.logger.warn(`getActiveIdentityProfile failed: ${(err as Error).message} — using defaults`);
+      return null;
+    }
+  }
+
+  /**
    * Génère le HTML d'UNE carte (recto + verso côte à côte, format paysage).
-   * Design inspiré du template fourni : bandeau bleu marine en-tête + pied,
-   * photo à gauche, informations à droite, verso avec terms + signature + barcode.
+   * Design inspiré du template fourni : bandeau en-tête + pied (couleur
+   * personnalisable), photo à gauche, informations à droite, verso avec
+   * conditions + signature + QR code + barcode.
+   *
+   * Toutes les valeurs de design proviennent de `identityProfile` (modèle
+   * TenantIdentityProfile — colonnes `cardPrimaryColor`, `cardSecondaryColor`,
+   * `cardShowBarcode`, `cardFooterText`, `cardConditionsText`, etc.).
+   * Si `identityProfile` est null ou incomplet, on retombe sur des valeurs
+   * par défaut (bleu marine institutionnel).
    */
   private async generateCardHtml(
     student: any,
     currentClass: any,
     matricule: string,
     qrPayload: string,
+    identityProfile?: any | null,
   ): Promise<string> {
     const formatDate = (date: Date | null) => {
       if (!date) return 'N/A';
@@ -846,6 +959,19 @@ export class StudentIdCardService {
     const academicYear = student.academicYear;
     const schoolLevel = student.schoolLevel;
     const tenant = student.tenant;
+
+    // ── Design tokens (issus de TenantIdentityProfile ou valeurs par défaut) ──
+    // Couleurs par défaut : bleu marine institutionnel Academia Helm.
+    const NAVY = identityProfile?.cardPrimaryColor || '#0D1F6E';
+    const NAVY_LIGHT = identityProfile?.cardSecondaryColor || '#1A237E';
+    const showQRCode = identityProfile?.cardShowQRCode !== false; // défaut true
+    const showBarcode = identityProfile?.cardShowBarcode !== false; // défaut true
+    const showPhoto = identityProfile?.cardShowPhoto !== false; // défaut true
+    const showGuardian = identityProfile?.cardShowGuardian !== false; // défaut true
+    const showSchoolAddress = identityProfile?.cardShowSchoolAddress !== false; // défaut true
+    const footerText = identityProfile?.cardFooterText || 'Academia Helm · Document officiel';
+    const conditionsText = identityProfile?.cardConditionsText ||
+      "Cette carte est strictement personnelle et incessible. À présenter à toute demande du personnel autorisé. Signaler toute perte ou vol à l'administration.";
 
     // URL absolue pour la photo
     const baseUrl = (process.env.APP_PUBLIC_URL || process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
@@ -858,6 +984,11 @@ export class StudentIdCardService {
     const photoHtml = photoSrc
       ? `<img src="${photoSrc}" alt="Photo" style="width:100%;height:100%;object-fit:cover;" />`
       : `<div style="font-size:7pt;color:#666;text-align:center;padding:4px;">PHOTO</div>`;
+
+    // Block photo complet (caché si cardShowPhoto = false)
+    const photoBoxHtml = showPhoto
+      ? `<div class="photo-box">${photoHtml}</div>`
+      : '';
 
     // Générer un vrai QR code en data URL (base64 PNG)
     let qrCodeDataUrl = '';
@@ -880,23 +1011,19 @@ export class StudentIdCardService {
       return `<div style="width:${width}px;height:100%;background:${isBlack ? '#000' : '#fff'};"></div>`;
     }).join('');
 
-    // Couleur principale (bleu marine du template)
-    const NAVY = '#0D1F6E';
-    const NAVY_LIGHT = '#1A237E';
-
     // Contact parent (si disponible)
     const guardian = student.studentGuardians?.[0]?.guardian;
     const guardianName = guardian ? `${guardian.firstName || ''} ${guardian.lastName || ''}`.trim() : 'N/A';
     const guardianPhone = guardian?.phone || 'N/A';
 
-    // Adresse école (si disponible)
-    const schoolAddress = tenant?.address || 'Cotonou, Bénin';
-    const schoolPhone = tenant?.phone || '+229 01 00 00 00 00';
-    const schoolEmail = tenant?.email || 'contact@ecole.bj';
+    // Adresse école (si disponible) — priorité au TenantIdentityProfile
+    const schoolAddress = identityProfile?.address || tenant?.address || 'Cotonou, Bénin';
+    const schoolPhone = identityProfile?.phonePrimary || tenant?.phone || '+229 01 00 00 00 00';
+    const schoolEmail = identityProfile?.email || tenant?.email || 'contact@ecole.bj';
 
-    // Slogan / type d'établissement
-    const schoolName = tenant?.name || 'Établissement Scolaire';
-    const schoolSlogan = tenant?.slogan || 'Excellence • Discipline • Travail';
+    // Slogan / type d'établissement — priorité au TenantIdentityProfile
+    const schoolName = identityProfile?.schoolName || tenant?.name || 'Établissement Scolaire';
+    const schoolSlogan = identityProfile?.slogan || tenant?.slogan || 'Excellence • Discipline • Travail';
 
     // Dates joined/expire
     const joinedDate = formatDate(student.createdAt || new Date());
@@ -1196,7 +1323,7 @@ export class StudentIdCardService {
       </div>
 
       <div class="card-body">
-        <div class="photo-box">${photoHtml}</div>
+        ${photoBoxHtml}
         <div class="info-list">
           <div class="info-row">
             <span class="info-label">Nom</span>
@@ -1222,16 +1349,16 @@ export class StudentIdCardService {
             <span class="info-label">Niveau</span>
             <span class="info-value">${schoolLevel?.label || schoolLevel?.name || schoolLevel?.code || 'N/A'}</span>
           </div>
-          <div class="info-row">
+          ${showGuardian ? `<div class="info-row">
             <span class="info-label">Contact</span>
             <span class="info-value">${guardianPhone} (${guardianName})</span>
-          </div>
+          </div>` : ''}
           <div class="matricule-box">${matricule}</div>
         </div>
       </div>
 
       <div class="card-footer">
-        <div class="footer-address">${schoolAddress}</div>
+        ${showSchoolAddress ? `<div class="footer-address">${schoolAddress}</div>` : '<div></div>'}
         <div class="footer-phone">${schoolPhone}</div>
       </div>
     </div>
@@ -1251,12 +1378,7 @@ export class StudentIdCardService {
           <div class="verso-left">
             <div class="verso-terms">
               <strong style="color:${NAVY};font-size:6pt;">Conditions d'utilisation</strong>
-              <ul>
-                <li>Cette carte est strictement personnelle et incessible.</li>
-                <li>Elle doit être présentée à toute demande du personnel autorisé.</li>
-                <li>En cas de perte ou vol, signaler immédiatement à l'administration.</li>
-                <li>La carte est valable pour l'année scolaire en cours.</li>
-              </ul>
+              <p style="font-size:5pt;line-height:1.3;color:#6b7280;margin-top:1px;">${conditionsText}</p>
             </div>
             <div class="verso-contact">
               <div><span class="verso-contact-label">Téléphone</span> ${schoolPhone}</div>
@@ -1265,12 +1387,12 @@ export class StudentIdCardService {
             </div>
           </div>
           <div class="verso-right">
-            ${qrCodeDataUrl ? `<div class="verso-qr"><img src="${qrCodeDataUrl}" alt="QR" /></div>` : ''}
+            ${showQRCode && qrCodeDataUrl ? `<div class="verso-qr"><img src="${qrCodeDataUrl}" alt="QR" /></div>` : ''}
             <div class="verso-signature">
               <div class="verso-signature-line">Le Directeur</div>
               <div>Signature & Cachet</div>
             </div>
-            <div class="verso-barcode">${barcodeBars}</div>
+            ${showBarcode ? `<div class="verso-barcode">${barcodeBars}</div>` : ''}
             <div class="verso-dates">
               <div><strong>Émise le</strong> ${joinedDate}</div>
               <div><strong>Expire le</strong> ${expireDate}</div>
@@ -1280,7 +1402,7 @@ export class StudentIdCardService {
       </div>
 
       <div class="card-footer">
-        <div class="footer-address">Academia Helm · Document officiel</div>
+        <div class="footer-address">${footerText}</div>
         <div class="footer-phone">Vérifiable via QR code</div>
       </div>
     </div>
@@ -1406,6 +1528,303 @@ export class StudentIdCardService {
       revoked,
       expired,
       expiredRate: total > 0 ? (expired / total) * 100 : 0,
+    };
+  }
+
+  // ==========================================================================
+  //  CMS CARTE SCOLAIRE — TEMPLATES DE DESIGN (Task 19-a, Phase 2)
+  // ==========================================================================
+
+  /**
+   * Définition des 4 presets système (CLASSIQUE, MODERNE, MINIMALISTE, BILINGUE).
+   * Le `layout` est un JSON libre consommé par generateCardHtml (couleurs,
+   * flags d'affichage, texts, marges, orientation logo, etc.).
+   *
+   * Les presets système ne sont jamais supprimés (isSystem=true) — on peut
+   * uniquement les désactiver (isActive=false). Les valeurs par défaut
+   * correspondent au design bleu marine historique (rétrocompatible).
+   */
+  private static readonly DEFAULT_TEMPLATES: Array<{
+    key: string;
+    name: string;
+    layout: Record<string, any>;
+  }> = [
+    {
+      key: 'CLASSIQUE',
+      name: 'Classique (bleu marine)',
+      layout: {
+        cardPrimaryColor: '#0D1F6E',
+        cardSecondaryColor: '#1A237E',
+        cardShowQRCode: true,
+        cardShowBarcode: true,
+        cardShowPhoto: true,
+        cardShowGuardian: true,
+        cardShowSchoolAddress: true,
+        cardFooterText: 'Academia Helm · Document officiel',
+        cardConditionsText:
+          "Cette carte est strictement personnelle et incessible. À présenter à toute demande du personnel autorisé. Signaler toute perte ou vol à l'administration.",
+        orientation: 'portrait',
+        photoPosition: 'left',
+        signatureLabel: 'Le Directeur',
+      },
+    },
+    {
+      key: 'MODERNE',
+      name: 'Moderne (vert émeraude)',
+      layout: {
+        cardPrimaryColor: '#0F766E',
+        cardSecondaryColor: '#14B8A6',
+        cardShowQRCode: true,
+        cardShowBarcode: true,
+        cardShowPhoto: true,
+        cardShowGuardian: true,
+        cardShowSchoolAddress: true,
+        cardFooterText: 'Carte officielle · Vérifiable en ligne',
+        cardConditionsText:
+          "Carte strictement personnelle. À présenter à toute réquisition de l'administration. Perte ou vol à signaler immédiatement.",
+        orientation: 'portrait',
+        photoPosition: 'left',
+        signatureLabel: 'La Direction',
+      },
+    },
+    {
+      key: 'MINIMALISTE',
+      name: 'Minimaliste (gris anthracite)',
+      layout: {
+        cardPrimaryColor: '#1F2937',
+        cardSecondaryColor: '#374151',
+        cardShowQRCode: true,
+        cardShowBarcode: false,
+        cardShowPhoto: true,
+        cardShowGuardian: false,
+        cardShowSchoolAddress: false,
+        cardFooterText: 'Document officiel',
+        cardConditionsText:
+          "Carte personnelle et incessible. À présenter à toute demande du personnel autorisé.",
+        orientation: 'portrait',
+        photoPosition: 'left',
+        signatureLabel: 'Signature',
+      },
+    },
+    {
+      key: 'BILINGUE',
+      name: 'Bilingue (français / anglais)',
+      layout: {
+        cardPrimaryColor: '#7C2D12',
+        cardSecondaryColor: '#B91C1C',
+        cardShowQRCode: true,
+        cardShowBarcode: true,
+        cardShowPhoto: true,
+        cardShowGuardian: true,
+        cardShowSchoolAddress: true,
+        cardFooterText: 'School ID Card · Academia Helm',
+        cardConditionsText:
+          "FR : Cette carte est strictement personnelle et incessible. Signaler toute perte ou vol. | EN: This card is strictly personal and non-transferable. Report any loss or theft.",
+        orientation: 'portrait',
+        photoPosition: 'left',
+        signatureLabel: 'Director · Le Directeur',
+        bilingual: true,
+      },
+    },
+  ];
+
+  /**
+   * ⭐ S'assure que les 4 templates système existent pour ce tenant.
+   * Idempotent : ne crée que les presets manquants (basé sur la clé unique
+   * `tenantId + key`). Retourne la liste complète des templates du tenant.
+   *
+   * À appeler :
+   *   - au démarrage de l'API (once per tenant, lazy)
+   *   - à l'ouverture du CMS Carte Scolaire (GET /students/id-cards/templates)
+   *   - à la création d'un nouveau tenant
+   */
+  async ensureDefaultTemplates(tenantId: string) {
+    if (!tenantId) {
+      throw new BadRequestException('tenantId est requis');
+    }
+
+    // Lister les templates système déjà présents
+    const existing = await this.prisma.cardDesignTemplate.findMany({
+      where: { tenantId, isSystem: true },
+      select: { key: true },
+    });
+    const existingKeys = new Set(existing.map((t) => t.key));
+
+    const missing = StudentIdCardService.DEFAULT_TEMPLATES.filter(
+      (t) => !existingKeys.has(t.key),
+    );
+
+    if (missing.length > 0) {
+      await this.prisma.cardDesignTemplate.createMany({
+        data: missing.map((t) => ({
+          tenantId,
+          name: t.name,
+          key: t.key,
+          layout: t.layout as any,
+          isSystem: true,
+          isActive: true,
+        })),
+        skipDuplicates: true,
+      });
+      this.logger.log(
+        `🎨 ${missing.length} template(s) système créé(s) pour tenant ${tenantId}: ` +
+          missing.map((t) => t.key).join(', '),
+      );
+    }
+
+    // Retourner la liste complète (système + personnalisés), actifs d'abord
+    return this.prisma.cardDesignTemplate.findMany({
+      where: { tenantId },
+      orderBy: [{ isSystem: 'desc' }, { name: 'asc' }],
+    });
+  }
+
+  /**
+   * Liste tous les templates (actifs + archivés) du tenant.
+   * Appelle ensureDefaultTemplates au passage pour garantir la présence des
+   * presets système (lazy init).
+   */
+  async listTemplates(tenantId: string, options?: { includeArchived?: boolean }) {
+    await this.ensureDefaultTemplates(tenantId);
+    return this.prisma.cardDesignTemplate.findMany({
+      where: {
+        tenantId,
+        ...(options?.includeArchived ? {} : { isActive: true }),
+      },
+      orderBy: [{ isSystem: 'desc' }, { name: 'asc' }],
+    });
+  }
+
+  /**
+   * Récupère un template par clé (CLASSIQUE, MODERNE, etc.) ou par id.
+   * S'assure au passage que les presets système existent.
+   */
+  async getTemplate(tenantId: string, keyOrId: string) {
+    await this.ensureDefaultTemplates(tenantId);
+    const template = await this.prisma.cardDesignTemplate.findFirst({
+      where: {
+        tenantId,
+        OR: [{ key: keyOrId }, { id: keyOrId }],
+      },
+    });
+    if (!template) {
+      throw new NotFoundException(`Template "${keyOrId}" introuvable`);
+    }
+    return template;
+  }
+
+  /**
+   * Crée un template personnalisé (non-système) pour le tenant.
+   */
+  async createCustomTemplate(
+    tenantId: string,
+    data: { name: string; key: string; layout: Record<string, any> },
+  ) {
+    if (!data.name || !data.key) {
+      throw new BadRequestException('name et key sont requis');
+    }
+    // Nettoyer la clé (UPPERCASE, alphanumérique + underscore)
+    const cleanKey = data.key.toUpperCase().replace(/[^A-Z0-9_]/g, '_').substring(0, 64);
+    if (cleanKey === 'CLASSIQUE' || cleanKey === 'MODERNE' || cleanKey === 'MINIMALISTE' || cleanKey === 'BILINGUE') {
+      throw new BadRequestException(`La clé "${cleanKey}" est réservée aux presets système`);
+    }
+    try {
+      return await this.prisma.cardDesignTemplate.create({
+        data: {
+          tenantId,
+          name: data.name,
+          key: cleanKey,
+          layout: data.layout as any,
+          isSystem: false,
+          isActive: true,
+        },
+      });
+    } catch (err: any) {
+      // Prisma lance une erreur P2002 si la clé unique (tenantId, key) existe déjà
+      if (err?.code === 'P2002') {
+        throw new BadRequestException(`Un template avec la clé "${cleanKey}" existe déjà`);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Met à jour un template personnalisé (nom + layout).
+   * Les templates système ne peuvent PAS être modifiés (lecture seule) —
+   * l'admin doit dupliquer puis personnaliser.
+   */
+  async updateCustomTemplate(
+    tenantId: string,
+    templateId: string,
+    data: { name?: string; layout?: Record<string, any>; isActive?: boolean },
+  ) {
+    const template = await this.prisma.cardDesignTemplate.findFirst({
+      where: { id: templateId, tenantId },
+    });
+    if (!template) {
+      throw new NotFoundException(`Template ${templateId} introuvable`);
+    }
+    if (template.isSystem && data.layout) {
+      throw new BadRequestException(
+        'Les templates système ne peuvent pas être modifiés. Dupliquez le template pour le personnaliser.',
+      );
+    }
+    return this.prisma.cardDesignTemplate.update({
+      where: { id: templateId },
+      data: {
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.layout !== undefined ? { layout: data.layout as any } : {}),
+        ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+      },
+    });
+  }
+
+  /**
+   * Archive un template (soft delete : isActive=false).
+   * Les templates système ne peuvent PAS être archivés.
+   */
+  async archiveTemplate(tenantId: string, templateId: string) {
+    const template = await this.prisma.cardDesignTemplate.findFirst({
+      where: { id: templateId, tenantId },
+    });
+    if (!template) {
+      throw new NotFoundException(`Template ${templateId} introuvable`);
+    }
+    if (template.isSystem) {
+      throw new BadRequestException('Les templates système ne peuvent pas être archivés');
+    }
+    return this.prisma.cardDesignTemplate.update({
+      where: { id: templateId },
+      data: { isActive: false },
+    });
+  }
+
+  /**
+   * Construit un `designSnapshot` JSON à partir d'un template + du
+   * TenantIdentityProfile actif. Le snapshot est stocké sur chaque carte
+   * générée pour garantir la reproductibilité (la carte conserve son design
+   * d'origine même si l'admin modifie le profil ou le template après coup).
+   */
+  private buildDesignSnapshot(template: any | null, identityProfile: any | null): Record<string, any> {
+    const tplLayout = (template?.layout as Record<string, any>) || {};
+    return {
+      templateKey: template?.key || null,
+      templateName: template?.name || null,
+      cardPrimaryColor: tplLayout.cardPrimaryColor || identityProfile?.cardPrimaryColor || '#0D1F6E',
+      cardSecondaryColor: tplLayout.cardSecondaryColor || identityProfile?.cardSecondaryColor || '#1A237E',
+      cardShowQRCode: tplLayout.cardShowQRCode ?? identityProfile?.cardShowQRCode ?? true,
+      cardShowBarcode: tplLayout.cardShowBarcode ?? identityProfile?.cardShowBarcode ?? true,
+      cardShowPhoto: tplLayout.cardShowPhoto ?? identityProfile?.cardShowPhoto ?? true,
+      cardShowGuardian: tplLayout.cardShowGuardian ?? identityProfile?.cardShowGuardian ?? true,
+      cardShowSchoolAddress:
+        tplLayout.cardShowSchoolAddress ?? identityProfile?.cardShowSchoolAddress ?? true,
+      cardFooterText:
+        tplLayout.cardFooterText || identityProfile?.cardFooterText || 'Academia Helm · Document officiel',
+      cardConditionsText:
+        tplLayout.cardConditionsText ||
+        identityProfile?.cardConditionsText ||
+        "Cette carte est strictement personnelle et incessible. À présenter à toute demande du personnel autorisé. Signaler toute perte ou vol à l'administration.",
+      capturedAt: new Date().toISOString(),
     };
   }
 }

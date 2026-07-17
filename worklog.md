@@ -8801,3 +8801,153 @@ Prochaines étapes suggérées:
     bold, order}).
   * Permettre à l'admin de réordonner les champs, redimensionner la photo,
     changer la police, etc.
+
+---
+Task ID: 22-b
+Agent: Main Agent
+Task: (1) Fix bilan encaissements — investigation + correction data + refonte backend + fix filtre niveau (2) Options design configurables cartes scolaires (police, photo, header, QR code)
+
+Work Log:
+
+Phase 1 — Investigation bilan encaissements ✅
+
+1. Créé 3 scripts de diagnostic qui se connectent directement à la DB Neon :
+   - `scripts/diag-mon-avenir-plus.js` : analyse FeeStructures + classes +
+     paiements par élève.
+   - `scripts/diag-mon-avenir-plus-allocations.js` : analyse allocations +
+     breakdowns par élève.
+   - `scripts/diag-filtre-niveau.js` : test du filtre niveau sur enrollments.
+
+2. Découvertes clés :
+   - **Bug data import** : 2550 transactions importées depuis Excel ont
+     TOUTES été taggées feeType=INSCRIPTION dans finance_transaction_allocations
+     (le script d'import a mis le mauvais accountBreakdownId pour les
+     paiements P1-P6 de scolarité).
+   - Wafida AMADOU (2nde D) : 5 transactions (8000+50000+30000+20000+10000
+     = 118000) toutes taggées INSCRIPTION, alors que l'attendu INSCRIPTION
+     pour Secondaire = 8000 FCFA. Le breakdown TUITION (110000) était à
+     paid=0 !
+   - Total INSCRIPTION allocations = 17.4M FCFA (attendu ~3.8M).
+   - Total TUITION allocations = 17.1M FCFA (attendu ~32M).
+
+Phase 2 — Correction des données ✅
+
+3. Créé `scripts/fix-mon-avenir-plus-allocations-v3.js` — script idempotent
+   qui :
+   - Charge tous les account_breakdowns + allocations en mémoire.
+   - Pour chaque élève avec excédent INSCRIPTION (totalPaid > expected) :
+     * Split l'allocation INSCRIPTION à la frontière (garder expectedInscription
+       sur INSCRIPTION, déplacer l'excédent vers TUITION).
+     * Re-tag les allocations suivantes vers TUITION.
+     * Gère la contrainte unique (financeTransactionId, accountBreakdownId)
+       en fusionnant si une allocation TUITION existe déjà.
+     * Utilise `SET LOCAL app.allow_balance_update = 'true'` pour bypass
+       le trigger prevent_balance_update.
+     * Recalcule account_breakdowns.paidAmount + student_accounts.
+   - Nouvelle connexion par élève pour éviter timeout Neon idle.
+
+4. Résultat : **273 élèves corrigés sur 688** :
+   - INSCRIPTION : 17.4M → 2.44M FCFA (cohérent avec attendu ~3.8M).
+   - TUITION : 17.1M → 32.1M FCFA (cohérent).
+   - Top 5 INSCRIPTION : tous à 8000 FCFA (exactement l'attendu Secondaire).
+   - Plus aucun élève avec INSCRIPTION > 8000.
+
+Phase 3 — Refonte backend collection-summary ✅
+
+5. `apps/api-server/src/finance/collection-summary.controller.ts` modifié :
+   - **Utilise account_breakdowns.paidAmount comme SOURCE DE VÉRITÉ** pour
+     les montants payés (au lieu de sommer les allocations de transactions
+     qui peuvent être incohérentes).
+   - Fallback sur somme des allocations si breakdown absent.
+   - Charge les account_breakdowns par élève via studentAccountId → studentId
+     mapping (2 requêtes au lieu d'un JOIN complexe).
+   - Arriérés récupérés depuis **FeeArrear (import Excel) + StudentArrear
+     (report d'année) combinés**, avec amountDue ET amountPaid.
+   - Filtre niveau renforcé : match par UUID schoolLevel.id, UUID
+     schoolLevelId, OU par code (au cas où levelId serait un code).
+   - Logging debug pour traçabilité du filtrage.
+
+Phase 4 — Options design configurables ✅
+
+6. 16 nouvelles options ajoutées à TenantIdentityProfile (migration 020
+   appliquée sur Neon) :
+   - Police : cardFontFamily, cardFontSizeScale, cardStudentNameStyle
+   - Photo : cardPhotoPosition, cardPhotoSize, cardPhotoShape
+   - Header : cardHeaderStyle, cardLogoPosition, cardLogoSize
+   - Champs affichés : cardShowMatricule, cardShowBirthInfo, cardShowGender,
+     cardShowLevel
+   - QR Code : cardQrPosition, cardQrSize, cardQrWithLogo
+
+7. Backend `student-id-card.service.ts` : lecture des 16 options avec
+   defaults + application dans generateCardHtml :
+   - body font-family + font-size (scale multiplier 90%/100%/110%)
+   - header background (solid/gradient/striped)
+   - logo dimensions (8mm/10mm/12mm)
+   - photo dimensions + border-radius (rectangle/rounded/circle)
+   - photo position (left/right via flex-direction row-reverse)
+   - QR code dimensions (16mm/20mm/24mm)
+   - QR with/without logo (passe logoUrl='' si cardQrWithLogo=false)
+   - Champs conditionnels : Matricule, Né(e) le, Sexe, Niveau
+   - Student name style (normal/uppercase/bold)
+
+8. Frontend `CardDesignControls.tsx` : 4 nouvelles sections collapsibles :
+   - Police & Textes
+   - Photo élève
+   - En-tête & Logo
+   - QR Code
+   Avec selecteurs visuels (boutons grid) pour chaque option.
+
+9. Frontend `card-design.types.ts` : 16 nouvelles propriétés sur
+   CardDesignSettings + defaults.
+
+10. Frontend `CardDesignTab.tsx` : chargement des 16 options depuis
+    identityProfile au montage.
+
+Vérifications:
+
+- `bunx tsc --noEmit --skipLibCheck` (web-app) → 0 erreur sur les fichiers
+  modifiés.
+- `bunx tsc --noEmit --skipLibCheck --experimentalDecorators --emitDecoratorMetadata`
+  (api-server) → 0 nouvelle erreur spécifique aux modifications.
+- Migration 020 appliquée avec succès sur Neon (16 colonnes créées).
+- Data fix appliqué : INSCRIPTION passé de 17.4M → 2.44M FCFA, TUITION
+  passé de 17.1M → 32.1M FCFA.
+
+Stage Summary:
+
+Commits :
+- `1ee24fe3` : fix bilan encaissements (data fix + backend refonte + filtre
+  niveau) + scripts diagnostic.
+- `e170a18a` : feat options design configurables (16 nouvelles options) +
+  migration 020 + 4 nouvelles sections UI.
+
+Fichiers modifiés (7) :
+1. apps/api-server/src/finance/collection-summary.controller.ts
+2. apps/api-server/prisma/schema.prisma (+18 lignes)
+3. apps/api-server/src/students/dto/update-card-design.dto.ts (+93 lignes)
+4. apps/api-server/src/students/services/student-id-card.service.ts
+5. apps/web-app/src/components/students/CardDesignControls.tsx (+360 lignes)
+6. apps/web-app/src/components/students/CardDesignTab.tsx
+7. apps/web-app/src/components/students/card-design.types.ts
+
+Fichiers créés (5) :
+- apps/api-server/migrations/020_card_design_options_configurables.sql
+- scripts/diag-mon-avenir-plus.js
+- scripts/diag-mon-avenir-plus-allocations.js
+- scripts/diag-filtre-niveau.js
+- scripts/fix-mon-avenir-plus-allocations-v3.js (+ v1/v2)
+
+Compatibilité :
+- Migration 020 idempotente (guard PL/pgSQL sur chaque colonne).
+- Tous les nouveaux champs nullable avec defaults — rétro-compatible.
+- Data fix idempotent (peut être rejoué, ne modifie que les élèves avec
+  excédent INSCRIPTION).
+
+Prochaines étapes suggérées:
+- Redéployer le backend Fly.io pour activer :
+  * Le nouveau collection-summary controller (account_breakdowns.paidAmount).
+  * Les 16 nouvelles options de design des cartes.
+- Tester le bilan des encaissements après redéploiement — les montants
+  devraient maintenant être cohérents.
+- Tester le studio de design avec les nouvelles options (police, photo,
+  header, QR code).

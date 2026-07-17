@@ -775,6 +775,18 @@ export default function CashRegistersContent() {
     return Math.max(640, diameter + 320);
   }, [secondaryRegisters.length]);
 
+  // Largeur dynamique de la zone de constellation.
+  // Garantit que toutes les caisses secondaires sont visibles sans être tronquées
+  // horizontalement. Le rayon du cercle croît avec le nombre de caisses ; on ajoute
+  // la largeur d'une carte (~200px) + padding (120) pour éviter le rognage.
+  const constellationWidth = useMemo(() => {
+    const total = secondaryRegisters.length;
+    const radius = Math.max(180, 140 + total * 45);
+    const diameter = radius * 2;
+    // 320 = cartes (200) + padding gauche/droite (120)
+    return Math.max(640, diameter + 320);
+  }, [secondaryRegisters.length]);
+
   return (
     <>
       {confirmDialog.dialog}
@@ -934,9 +946,18 @@ export default function CashRegistersContent() {
             <>
             {/* === CONSTELLATION COFFRE-FORT + CAISSES === */}
             <div
-              className="relative bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl border border-slate-200 overflow-y-auto overflow-x-hidden transition-all duration-500 ease-out"
+              className="relative bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl border border-slate-200 overflow-auto transition-all duration-500 ease-out"
               style={{ minHeight: `${constellationHeight}px`, maxHeight: '70vh' }}
             >
+              {/* Inner wrapper sized to the constellation dimensions so that
+                  absolutely-positioned children (coffre-fort + caisses + SVG)
+                  contribute correctly to scrollWidth/scrollHeight. Without this,
+                  cards positioned beyond the container's viewport width are
+                  clipped when overflow-x was 'hidden'. */}
+              <div
+                className="relative"
+                style={{ width: `${constellationWidth}px`, height: `${constellationHeight}px` }}
+              >
 
               {/* Décor : grille subtile en fond */}
               <div className="absolute inset-0 opacity-[0.03]" style={{
@@ -1151,6 +1172,7 @@ export default function CashRegistersContent() {
                 <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-slate-300" /> Fermée</span>
                 <span className="flex items-center gap-1"><Archive className="w-3 h-3" /> Archivée</span>
               </div>
+              </div>{/* fin inner wrapper sized */}
             </div>
             </>
             )}

@@ -9,12 +9,29 @@
  *   - students[] : liste détaillée par élève avec tranches de scolarité
  *   - recap[] : agrégation par classe
  *
- * Colonnes (conformes au modèle Excel fourni par l'utilisateur) :
+ * Colonnes (conformes au modèle demandé par l'utilisateur) :
  *   Détail : Noms et Prénoms | Classe | Arriéré | Inscription | Réinscription |
- *            [Tranches dynamiques] | Total Scolarité | Reste | Total des paiements
+ *            [Tranches dynamiques] | Total dû | Total payé | Reste à payer
  *   Récap  : Effectif | Classe | Arriérés | Inscription | Réinscription |
- *            [Tranches dynamiques] | Total Scolarité | Reste | Total des payements |
+ *            [Tranches dynamiques] | Total dû | Total payé | Reste à payer |
  *            Solde par classe
+ *
+ * ⭐ Corrections majeures (Juillet 2026) :
+ *   1. Total dû inclut TOUS les types de frais (Inscription + Réinscription +
+ *      Scolarité + Arriérés), pas uniquement la scolarité. Avant, Total dû =
+ *      totalTuitionExpected seulement, ce qui rendait les chiffres incohérents
+ *      (Total payé > Total dû pour les élèves ayant payé l'inscription).
+ *   2. Distribution FIFO des paiements de scolarité sur les tranches :
+ *      Si un parent paie plus que le montant de la Tranche 1, le surplus est
+ *      automatiquement affecté à la Tranche 2, et ainsi de suite. Cela permet
+ *      d'absorber les paiements "globaux" qui ne sont pas affectés à une
+ *      tranche précise dans la base.
+ *   3. Les arriérés sont récupérés depuis le modèle StudentArrear (et non
+ *      plus depuis FeeStructure avec feeType='ARREAR' qui n'existe pas dans
+ *      l'enum FeeType — INSCRIPTION/REINSCRIPTION/TUITION/CANTEEN/EXAMEN/OTHER).
+ *   4. Inscription attendue et Réinscription attendue sont calculées depuis
+ *      les FeeStructures correspondantes (matching class > physical class >
+ *      level > global), et non plus seulement depuis les paiements effectués.
  * ============================================================================
  */
 
@@ -50,13 +67,16 @@ export class CollectionSummaryController {
     const pageEff = Math.max(1, pageNum ?? 1);
     const limitEff = Math.min(500, Math.max(1, limitNum ?? 50));
 
-    // ─── 1. Récupérer les FeeStructures de type TUITION avec leurs tranches ───
+    // ─── 1. Récupérer TOUTES les FeeStructures actives de l'année ──────────────
+    // ⭐ On ne se limite plus à feeType='TUITION' : on a aussi besoin des
+    //    structures INSCRIPTION et REINSCRIPTION pour calculer les montants
+    //    attendus (Total dû) de chaque type de frais.
+    //    Les tranches (FeeStructureInstallment) ne s'appliquent qu'aux structures
+    //    TUITION isInstallment=true — on ne les charge que pour celles-ci.
     const feeStructures = await this.prisma.feeStructure.findMany({
       where: {
         tenantId,
         academicYearId,
-        feeType: 'TUITION',
-        isInstallment: true,
         isActive: true,
         ...(classId && { OR: [{ classId }, { academicClassId: classId }] }),
       },
@@ -73,6 +93,7 @@ export class CollectionSummaryController {
     // leur propre "Tranche 1" avec un ID différent.
     const installmentsMap = new Map<string, { id: string; label: string; amount: number; orderIndex: number }>();
     for (const fs of feeStructures) {
+      if (fs.feeType !== 'TUITION' || !fs.isInstallment) continue;
       for (const inst of fs.structureInstallments) {
         const key = inst.label || `Tranche ${inst.orderIndex + 1}`;
         if (!installmentsMap.has(key)) {
@@ -164,9 +185,7 @@ export class CollectionSummaryController {
           studentId: sid,
           feeType: fs?.feeType || null,
           feeStructureId: fs?.id || null,
-          feeStructureInstallmentId: null,
           amount: Number(alloc.amount) || 0,
-          classId: null,
         });
       }
       // Si la transaction n'a pas d'allocations (ex: paiement global), créer une entrée générique
@@ -175,11 +194,28 @@ export class CollectionSummaryController {
           studentId: sid,
           feeType: null,
           feeStructureId: null,
-          feeStructureInstallmentId: null,
           amount: Number(tx.amount) || 0,
-          classId: null,
         });
       }
+    }
+
+    // ─── 3b. Récupérer les arriérés des élèves pour l'année ──────────────────
+    // Les arriérés sont stockés dans StudentArrear (et non FeeStructure avec
+    // feeType='ARREAR' — ce feeType n'existe pas dans l'enum).
+    // `fromAcademicYearId` indique l'année d'origine de l'arriéré ; l'année
+    // courante est celle où l'élève doit le recouvrer.
+    const studentArrears = await this.prisma.studentArrear.findMany({
+      where: {
+        tenantId,
+        toAcademicYearId: academicYearId,
+        studentId: { in: studentIds },
+      },
+    });
+    const arrearByStudent = new Map<string, number>();
+    for (const ar of studentArrears) {
+      const current = arrearByStudent.get(ar.studentId) || 0;
+      // amountDue = montant total dû pour cet arriéré
+      arrearByStudent.set(ar.studentId, current + Number(ar.amountDue));
     }
 
     // ─── 4. Construire les lignes élèves (détail) ────────────────────────────
@@ -190,8 +226,8 @@ export class CollectionSummaryController {
       let inscriptionPaid = 0;
       let reinscriptionPaid = 0;
       let arrearPaid = 0;
-      const tuitionInstallments: { [id: string]: number } = {};
       let totalTuitionPaid = 0;
+      let otherPaid = 0; // CANTEEN, EXAMEN, OTHER — inclus dans Total payé mais pas dans une colonne dédiée
 
       for (const p of studentPayments) {
         const amount = Number(p.amount) || 0;
@@ -202,56 +238,94 @@ export class CollectionSummaryController {
           case 'REINSCRIPTION':
             reinscriptionPaid += amount;
             break;
-          case 'ARREAR':
-          case 'ARREARS':
-            arrearPaid += amount;
-            break;
           case 'TUITION':
-            if (p.feeStructureInstallmentId) {
-              tuitionInstallments[p.feeStructureInstallmentId] =
-                (tuitionInstallments[p.feeStructureInstallmentId] || 0) + amount;
-            }
             totalTuitionPaid += amount;
             break;
           default:
-            // Autres frais — inclus dans le total
+            // CANTEEN, EXAMEN, OTHER, ou null (paiement global non-allociné)
+            // → on l'ajoute à otherPaid pour que Total payé reste cohérent,
+            //   mais on ne l'affiche dans aucune colonne dédiée.
+            otherPaid += amount;
             break;
         }
       }
 
-      // Total scolarité attendu — priorité EXCLUSIVE (pas OR) :
-      // 1. Classe officielle (academicClassId) si la fee structure en a une
-      // 2. Classe physique (classId) si la fee structure en a une
-      // 3. Niveau (levelId) si la fee structure en a un
-      // 4. Global (aucun filtre)
-      // Cela évite de matcher plusieurs fee structures pour le même élève
-      // (ex: 3 structures de niveau Maternelle + 1 structure par classe = total × 4)
-      const classSpecific = feeStructures.filter(fs =>
-        fs.academicClassId && fs.academicClassId === enrollment.academicClassId
-      );
-      const physicalClassSpecific = feeStructures.filter(fs =>
-        !fs.academicClassId && fs.classId && fs.classId === enrollment.classId
-      );
-      const levelSpecific = feeStructures.filter(fs =>
-        !fs.academicClassId && !fs.classId && fs.levelId && fs.levelId === enrollment.class?.schoolLevelId
-      );
-      const global = feeStructures.filter(fs =>
-        !fs.academicClassId && !fs.classId && !fs.levelId
+      // ─── Matching EXCLUSIF des FeeStructures par type ─────────────────────
+      // Priorité : academicClass > physicalClass > level > global (exclusive).
+      // On retourne la(les) structure(s) qui matche(nt) au niveau le plus précis.
+      const matchByType = (feeType: string) => {
+        const classSpecific = feeStructures.filter(fs =>
+          fs.feeType === feeType && fs.academicClassId && fs.academicClassId === enrollment.academicClassId
+        );
+        if (classSpecific.length > 0) return classSpecific;
+
+        const physicalClassSpecific = feeStructures.filter(fs =>
+          fs.feeType === feeType && !fs.academicClassId && fs.classId && fs.classId === enrollment.classId
+        );
+        if (physicalClassSpecific.length > 0) return physicalClassSpecific;
+
+        const levelSpecific = feeStructures.filter(fs =>
+          fs.feeType === feeType && !fs.academicClassId && !fs.classId && fs.levelId && fs.levelId === enrollment.class?.schoolLevelId
+        );
+        if (levelSpecific.length > 0) return levelSpecific;
+
+        return feeStructures.filter(fs =>
+          fs.feeType === feeType && !fs.academicClassId && !fs.classId && !fs.levelId
+        );
+      };
+
+      // ─── Montants attendus (Total dû) par type ────────────────────────────
+      const inscriptionStructures = matchByType('INSCRIPTION');
+      const inscriptionExpected = inscriptionStructures.reduce(
+        (sum, fs) => sum + Number(fs.totalAmount), 0,
       );
 
-      const matchingFeeStructures =
-        classSpecific.length > 0 ? classSpecific :
-        physicalClassSpecific.length > 0 ? physicalClassSpecific :
-        levelSpecific.length > 0 ? levelSpecific :
-        global;
-
-      const totalTuitionExpected = matchingFeeStructures.reduce(
-        (sum, fs) => sum + Number(fs.totalAmount),
-        0,
+      const reinscriptionStructures = matchByType('REINSCRIPTION');
+      const reinscriptionExpected = reinscriptionStructures.reduce(
+        (sum, fs) => sum + Number(fs.totalAmount), 0,
       );
 
-      const totalPaid = inscriptionPaid + reinscriptionPaid + arrearPaid + totalTuitionPaid;
-      const reste = totalTuitionExpected - totalTuitionPaid;
+      const tuitionStructures = matchByType('TUITION');
+      const totalTuitionExpected = tuitionStructures.reduce(
+        (sum, fs) => sum + Number(fs.totalAmount), 0,
+      );
+
+      // Arriéré attendu depuis StudentArrear (importé / reporté de l'année précédente)
+      const arrearExpected = arrearByStudent.get(enrollment.studentId) || 0;
+
+      // ─── Distribution FIFO des paiements de scolarité sur les tranches ────
+      // Si un parent paie plus que la Tranche 1, le surplus est affecté
+      // automatiquement à la Tranche 2, et ainsi de suite. Permet d'absorber
+      // les paiements "globaux" non-allocinés à une tranche précise.
+      const tuitionInstallments: { [id: string]: number } = {};
+      let remainingTuitionPaid = totalTuitionPaid;
+
+      // Récupérer les tranches de la(les) structure(s) TUITION matchée(s),
+      // triées par orderIndex. On concatène les tranches de toutes les structures
+      // TUITION matchées (en général une seule).
+      const matchedInstallments = tuitionStructures
+        .flatMap(fs => fs.structureInstallments)
+        .sort((a, b) => a.orderIndex - b.orderIndex);
+
+      for (const inst of matchedInstallments) {
+        if (remainingTuitionPaid <= 0) {
+          tuitionInstallments[inst.id] = 0;
+          continue;
+        }
+        const trancheAmount = Number(inst.amount);
+        const allocated = Math.min(remainingTuitionPaid, trancheAmount);
+        tuitionInstallments[inst.id] = allocated;
+        remainingTuitionPaid -= allocated;
+      }
+      // Si remainingTuitionPaid > 0 à ce stade, c'est que l'élève a payé PLUS que
+      // la somme des tranches configurées. On l'ignore dans les colonnes de
+      // tranches (pas de colonne "surplus") mais le montant est bien inclus
+      // dans totalTuitionPaid → Total payé.
+
+      // ─── Totaux cohérents ─────────────────────────────────────────────────
+      const totalDue = inscriptionExpected + reinscriptionExpected + totalTuitionExpected + arrearExpected;
+      const totalPaid = inscriptionPaid + reinscriptionPaid + arrearPaid + totalTuitionPaid + otherPaid;
+      const reste = Math.max(0, totalDue - totalPaid);
 
       const studentName = [
         enrollment.student?.lastName,
@@ -263,14 +337,21 @@ export class CollectionSummaryController {
         studentName,
         className: enrollment.class?.name || enrollment.academicClass?.name || '—',
         classCode: enrollment.class?.code || '',
+        // Montants attendus (Total dû)
+        inscriptionExpected,
+        reinscriptionExpected,
+        arrearExpected,
+        totalTuitionExpected,
+        // Montants payés
         inscriptionPaid,
         reinscriptionPaid,
         arrearPaid,
         tuitionInstallments,
-        totalTuitionExpected,
         totalTuitionPaid,
-        reste: Math.max(0, reste),
+        // Totaux
+        totalDue,
         totalPaid,
+        reste,
       };
     });
 
@@ -284,32 +365,46 @@ export class CollectionSummaryController {
           effectif: 0,
           className: classKey,
           arrieres: 0,
+          arrieresPaid: 0,
           inscription: 0,
+          inscriptionPaid: 0,
           reinscription: 0,
+          reinscriptionPaid: 0,
           tuitionInstallments: {},
           totalTuition: 0,
-          reste: 0,
+          totalTuitionPaid: 0,
+          totalDue: 0,
           totalPaid: 0,
+          reste: 0,
           soldeParClasse: 0,
         });
       }
       const row = recapMap.get(classKey)!;
       row.effectif += 1;
-      row.arrieres += student.arrearPaid;
-      row.inscription += student.inscriptionPaid;
-      row.reinscription += student.reinscriptionPaid;
+      // Attendu
+      row.arrieres += student.arrearExpected;
+      row.inscription += student.inscriptionExpected;
+      row.reinscription += student.reinscriptionExpected;
       row.totalTuition += student.totalTuitionExpected;
-      row.reste += student.reste;
+      row.totalDue += student.totalDue;
+      // Payé
+      row.arrieresPaid += student.arrearPaid;
+      row.inscriptionPaid += student.inscriptionPaid;
+      row.reinscriptionPaid += student.reinscriptionPaid;
+      row.totalTuitionPaid += student.totalTuitionPaid;
       row.totalPaid += student.totalPaid;
+      // Reste
+      row.reste += student.reste;
+      // Tranches (payé)
       for (const inst of installments) {
         row.tuitionInstallments[inst.id] =
           (row.tuitionInstallments[inst.id] || 0) + (student.tuitionInstallments[inst.id] || 0);
       }
     }
 
-    // Calculer le solde par classe (total payé - total scolarité - arriérés - inscription)
+    // Calculer le solde par classe (total payé - total dû)
     const recap = Array.from(recapMap.values()).map((row) => {
-      row.soldeParClasse = row.totalPaid - row.totalTuition;
+      row.soldeParClasse = row.totalPaid - row.totalDue;
       return row;
     });
 
@@ -341,12 +436,20 @@ export class CollectionSummaryController {
 interface RecapRow {
   effectif: number;
   className: string;
+  // Attendu
   arrieres: number;
   inscription: number;
   reinscription: number;
-  tuitionInstallments: { [id: string]: number };
   totalTuition: number;
-  reste: number;
+  totalDue: number;
+  // Payé
+  arrieresPaid: number;
+  inscriptionPaid: number;
+  reinscriptionPaid: number;
+  totalTuitionPaid: number;
   totalPaid: number;
+  tuitionInstallments: { [id: string]: number };
+  // Reste
+  reste: number;
   soldeParClasse: number;
 }

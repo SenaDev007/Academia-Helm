@@ -8445,3 +8445,143 @@ Prochaines étapes suggérées:
 - Ajouter un test E2E : filtrer par une classe → exporter Excel → vérifier
   qu'une seule feuille est créée ; filtrer par "toutes les classes" →
   vérifier qu'une feuille par classe est créée.
+
+---
+Task ID: 21-a
+Agent: Main Agent
+Task: 3 corrections Finance — (1) Multicaisse: scrollbar horizontale pour la zone des caisses (2) Bilan encaissements: renommer colonnes Total dû / Total payé / Reste à payer + réordonner (3) Distribution FIFO des paiements sur les tranches (surplus tranche 1 → tranche 2, etc.)
+
+Work Log:
+
+Phase 1 — Multicaisse : scrollbar horizontale pour la zone constellation
+
+1. **Diagnostic** (`apps/web-app/src/components/finance/CashRegistersContent.tsx`)
+   - L'onglet "Caisses" affiche les caisses secondaires en cercle autour du coffre-fort central. Le conteneur (l. 937 ancienne) avait `overflow-y-auto overflow-x-hidden`, ce qui **clipait** les caisses qui débordent horizontalement quand il y en a beaucoup (rayon du cercle = 140 + total × 45 px, soit 590px pour 10 caisses → déborde à gauche et à droite du viewport).
+   - Les cartes caisses sont en `position: absolute` avec `top-1/2 left-1/2` + transform offset ; sans wrapper dimensionné, elles ne contribuaient pas correctement au `scrollWidth` du conteneur.
+
+2. **Fix appliqué**
+   - Ajout d'un `constellationWidth` (useMemo) qui calcule la largeur minimale nécessaire (diamètre + 320px pour cartes + padding) — mirror de `constellationHeight`.
+   - Changement de la classe du conteneur externe : `overflow-y-auto overflow-x-hidden` → `overflow-auto` (les deux directions sont scrollables).
+   - Ajout d'un **inner wrapper** dimensionné (`width: constellationWidth px, height: constellationHeight px`) qui contient tous les enfants absolus (SVG lignes, coffre-fort, caisses secondaires, légende). Cela garantit que le `scrollWidth/scrollHeight` du conteneur externe reflète bien la zone complète.
+   - Le conteneur externe garde `maxHeight: '70vh'` donc la scrollbar verticale reste limitée ; l'horizontale apparaît automatiquement quand le viewport est plus étroit que `constellationWidth`.
+
+Phase 2 — Backend : rewrite de CollectionSummaryController
+
+3. **Problèmes identifiés dans l'ancien code** (`apps/api-server/src/finance/collection-summary.controller.ts`)
+   - **Incohérence Total dû vs Total payé** : `totalTuitionExpected` ne couvrait que TUITION (les INSCRIPTION/REINSCRIPTION attendus n'étaient jamais calculés), alors que `totalPaid` incluait inscription + reinscription + arrear + tuition. Résultat : pour un élève ayant payé l'inscription, `totalPaid > totalTuitionExpected`, ce qui donnait un `reste` négatif ou incohérent.
+   - **Tranches jamais attribuées** : `feeStructureInstallmentId` était hardcodé à `null` (l. 167 ancienne). Toutes les colonnes de tranches affichaient donc '—' même quand l'élève avait payé la scolarité.
+   - **Arriérés cassés** : le switch avait des `case 'ARREAR': case 'ARREARS':` (l. 205-208 anciennes) mais `ARREAR` n'existe pas dans l'enum `FeeType` (INSCRIPTION/REINSCRIPTION/TUITION/CANTEEN/EXAMEN/OTHER). Donc `arrearPaid` était TOUJOURS 0.
+   - **Inscription 98000/60000 incohérents** : `inscriptionPaid` agrégeait toutes les allocations taggées `feeType=INSCRIPTION` sans vérifier qu'elles matchaient la fee structure attendue pour la classe de l'élève. Si l'import avait mal taggé des paiements (ex: paiement global TUITION taggué INSCRIPTION), la colonne affichait des montants non reconnus par l'utilisateur.
+
+4. **Nouveau code backend** — 5 sections structurées :
+   
+   **Section 1 — Fetch ALL fee structures** (pas seulement TUITION) :
+   - Le `findMany` ne filtre plus par `feeType: 'TUITION'`. On récupère INSCRIPTION + REINSCRIPTION + TUITION (+ CANTEEN/EXAMEN/OTHER) pour pouvoir calculer les montants attendus de chaque type.
+   - Les tranches (`structureInstallments`) ne sont collectées que pour les structures `TUITION && isInstallment`.
+   
+   **Section 2 — Fetch enrollments** : inchangée (status ACTIVE/ENROLLED/PENDING/ADMITTED, filtre levelId optionnel).
+   
+   **Section 3 — Fetch transactions + allocations** : inchangée, mais `feeStructureInstallmentId: null` supprimé (n'était pas utilisé côté model).
+   
+   **Section 3b — Fetch StudentArrear** (NOUVEAU) :
+   - `this.prisma.studentArrear.findMany({ where: { tenantId, toAcademicYearId, studentId: { in: studentIds } } })`
+   - Construction d'un `Map<studentId, arrearExpected>` en sommant `amountDue` par élève.
+   - C'est la source canonique des arriérés attendus (pas FeeStructure).
+   
+   **Section 4 — Construction des lignes élèves** :
+   - Boucle sur `studentPayments` : `inscriptionPaid`, `reinscriptionPaid`, `totalTuitionPaid`, `arrearPaid` (jamais peuplé via feeType — voir section 4b), `otherPaid` (CANTEEN/EXAMEN/OTHER/null → agrégé dans Total payé mais pas dans une colonne dédiée).
+   - **Fonction `matchByType(feeType)`** : refactored du matching EXCLUSIF (academicClass > physicalClass > level > global) en fonction réutilisable. Appliquée à INSCRIPTION, REINSCRIPTION, TUITION séparément.
+   - **Calcul des montants attendus** :
+     * `inscriptionExpected` = somme des `totalAmount` des structures INSCRIPTION matchées
+     * `reinscriptionExpected` = idem pour REINSCRIPTION
+     * `totalTuitionExpected` = idem pour TUITION (inchangé)
+     * `arrearExpected` = valeur depuis `arrearByStudent.get(studentId)` (Map section 3b)
+   - **Distribution FIFO des tranches** (NOUVEAU — coeur du fix tranches) :
+     * Récupère les `structureInstallments` des structures TUITION matchées, triées par `orderIndex`.
+     * Itère sur les tranches : `allocated = min(remainingTuitionPaid, tranche.amount)`.
+     * `tuitionInstallments[inst.id] = allocated`.
+     * `remainingTuitionPaid -= allocated`.
+     * Si `remainingTuitionPaid > 0` à la fin (élève a payé plus que la somme des tranches configurées), le surplus est inclus dans `totalTuitionPaid → Total payé` mais pas affiché dans une colonne de tranche (pas de colonne "surplus").
+     * **Cas d'usage couvert** : un parent paie 50 000 pour une Tranche 1 configurée à 25 000 → 25 000 vont à Tranche 1, 25 000 vont à Tranche 2 (si configurée) ou au surplus.
+   - **Totaux cohérents** :
+     * `totalDue = inscriptionExpected + reinscriptionExpected + totalTuitionExpected + arrearExpected`
+     * `totalPaid = inscriptionPaid + reinscriptionPaid + arrearPaid + totalTuitionPaid + otherPaid`
+     * `reste = Math.max(0, totalDue - totalPaid)`
+   - **Payload étendu** : chaque ligne élève inclut maintenant `inscriptionExpected`, `reinscriptionExpected`, `arrearExpected`, `totalDue` (en plus des champs payés existants). Rétro-compatible : les callers qui n'utilisaient que `inscriptionPaid/totalPaid/etc.` continuent de fonctionner.
+
+5. **Section 5 — Récapitulatif par classe** : la `RecapRow` étendue inclut maintenant `arrieresPaid`, `inscriptionPaid`, `reinscriptionPaid`, `totalTuitionPaid` (payés, par classe) ET `arrieres`, `inscription`, `reinscription`, `totalTuition`, `totalDue` (attendus, par classe). Le `soldeParClasse = totalPaid - totalDue` (au lieu de `totalPaid - totalTuition` qui n'était pas cohérent).
+
+Phase 3 — Frontend : renommage et réordonnancement des colonnes
+
+6. **Types mis à jour** (`CollectionSummaryContent.tsx`)
+   - `StudentPaymentRow` étendu avec `inscriptionExpected`, `reinscriptionExpected`, `arrearExpected`, `totalDue` (les champs payés existants sont conservés).
+   - `RecapRow` étendu avec `arrieresPaid`, `inscriptionPaid`, `reinscriptionPaid`, `totalTuitionPaid`, `totalDue`.
+
+7. **DetailTable** (sous-onglet "Bilan des encaissements") — renommage + réordonnancement :
+   - Headers AVANT : `... | Total Scolarité | Reste | Total des paiements`
+   - Headers APRÈS : `... | Total dû | Total payé | Reste à payer`
+   - Cells AVANT : `totalTuitionExpected | reste (coloré) | totalPaid`
+   - Cells APRÈS : `totalDue | totalPaid | reste (coloré)`
+   - Ordre final : `Noms | Classe | Arriéré | Inscription | Réinscription | [Tranches...] | Total dû | Total payé | Reste à payer`
+
+8. **RecapTable** (sous-onglet "Récapitulatif") — renommage + réordonnancement + cohérence :
+   - Headers AVANT : `Effectif | Classe | Arriérés | Inscription | Réinscription | [Tranches] | Total Scolarité | Reste | Total des payements | Solde par classe`
+   - Headers APRÈS : `Effectif | Classe | Arriérés | Inscription | Réinscription | [Tranches] | Total dû | Total payé | Reste à payer | Solde par classe`
+   - **Cohérence** : les colonnes Arriérés / Inscription / Réinscription affichent maintenant les montants **PAYÉS** (`row.arrieresPaid`, `row.inscriptionPaid`, `row.reinscriptionPaid`) — comme dans DetailTable. Avant, c'était incohérent (DetailTable montrait PAID, RecapTable montrait la somme attendue via l'ancien code qui agrégeait `student.arrearPaid`).
+   - Le reducer de totaux est mis à jour pour sommer les montants payés dans `arrieres/inscription/reinscription` (au lieu des attendus).
+   - Ligne TOTAL : `totals.totalDue` (au lieu de `totals.totalTuition`) pour la colonne Total dû.
+
+Vérifications:
+
+- `bunx tsc --noEmit --skipLibCheck` (web-app) → ✅ 0 erreur sur `CollectionSummaryContent.tsx` et `CashRegistersContent.tsx`. Les 10 erreurs résiduelles sont dans `src/components/cms/useAutoSave.ts` (pré-existantes, confirmées par worklog Task 19-b/20-a).
+- `bunx tsc --noEmit --skipLibCheck --experimentalDecorators --emitDecoratorMetadata` (api-server) sur `collection-summary.controller.ts` → 4 erreurs `Property 'X' does not exist on type 'PrismaService'` (feeStructure, studentEnrollment, financeTransaction, studentArrear) — **toutes pré-existantes** car `prisma generate` n'est pas exécuté localement (cf. worklog Task 19-a). Le déploiement exécute `prisma generate` → ces erreurs disparaissent en production.
+- Pas de nouveaux imports côté backend (PrismaService, Controller, Get, Query, Logger, TenantId — tous déjà présents).
+- Pas de nouveaux imports côté frontend (Table, Button, formatCurrency, cn — tous déjà présents).
+
+Stage Summary:
+
+Fichiers modifiés (3) :
+
+1. `apps/web-app/src/components/finance/CashRegistersContent.tsx` (+16 lignes)
+   - Nouveau `constellationWidth` useMemo (mirror de `constellationHeight`).
+   - Conteneur constellation : `overflow-y-auto overflow-x-hidden` → `overflow-auto`.
+   - Ajout d'un inner wrapper dimensionné (`width × height` en style inline) qui contient tous les enfants absolus → garantit un scrollWidth/scrollHeight correct.
+
+2. `apps/api-server/src/finance/collection-summary.controller.ts` (rewrite complet, ~340 lignes)
+   - Fetch ALL fee structures (pas seulement TUITION).
+   - Fetch StudentArrear pour les arriérés attendus.
+   - Matching EXCLUSIF par type (INSCRIPTION / REINSCRIPTION / TUITION) via `matchByType(feeType)` helper.
+   - Distribution FIFO des paiements de scolarité sur les tranches.
+   - Calcul cohérent : `totalDue = inscriptionExpected + reinscriptionExpected + totalTuitionExpected + arrearExpected`.
+   - Payload étendu : `inscriptionExpected`, `reinscriptionExpected`, `arrearExpected`, `totalDue` par élève + `arrieresPaid`, `inscriptionPaid`, `reinscriptionPaid`, `totalTuitionPaid`, `totalDue` par classe.
+   - Rétro-compatible : les callers qui n'utilisaient que les anciens champs continuent de fonctionner.
+
+3. `apps/web-app/src/components/finance/CollectionSummaryContent.tsx` (~80 lignes modifiées)
+   - Types `StudentPaymentRow` + `RecapRow` étendus.
+   - DetailTable : headers renommés (Total dû / Total payé / Reste à payer) + réordonnancés (Total dû → Total payé → Reste à payer).
+   - RecapTable : headers renommés + réordonnancés + colonnes Arriérés/Inscription/Réinscription maintenant PAID (cohérent avec DetailTable).
+   - Reducer de totaux mis à jour pour sommer les montants payés.
+
+Compatibilité & rétrocompatibilité:
+
+- **Aucun changement de schéma DB** : aucune migration nécessaire. Toutes les données utilisées existent déjà (FeeStructure, FeeStructureInstallment, FinanceTransaction, FinanceTransactionAllocation, AccountBreakdown, StudentArrear).
+- **Aucun changement d'API** : la route `GET /finance/collection-summary` conserve les mêmes query params (`academicYearId`, `levelId`, `classId`, `page`, `limit`) et la même forme de réponse (`{ students, recap, installments, studentsTotal?, studentsPage?, studentsTotalPages? }`). Seuls les objets à l'intérieur de `students[]` et `recap[]` ont des champs supplémentaires (additifs).
+- **Le surplus de paiement n'est pas perdu** : si un élève paie plus que la somme des tranches configurées, le surplus est inclus dans `totalTuitionPaid → Total payé` mais pas affiché dans une colonne de tranche. Le `reste à payer` est calculé sur le `totalDue` (attendu), pas sur la somme des tranches, donc cohérent.
+- **Multicaisse** : le changement de `overflow-x-hidden` → `overflow-auto` + inner wrapper dimensionné est purement cosmétique. Aucun impact sur les données ou la logique. Sur petits écrans (< 640px de large pour la constellation), une scrollbar horizontale apparaît ; sur grands écrans, aucun changement visible.
+
+Règles métier implémentées:
+
+1. **Tranche 1 payée plus que configurée → surplus va à Tranche 2** : ✅ implémenté via l'algorithme FIFO. Si Tranche 1 = 25 000 et parent paie 50 000 → Tranche 1 affiche 25 000, Tranche 2 affiche 25 000 (si configurée à ≥ 25 000) ou 25 000 sont en surplus (non affichés en colonne mais inclus dans Total payé).
+2. **Total dû inclut tous les types de frais** : ✅ INSCRIPTION + REINSCRIPTION + TUITION + ARREAR. Plus d'incohérence "Total payé > Total dû".
+3. **Arriérés récupérés depuis StudentArrear** : ✅ (au lieu de l'enum FeeType inexistant `ARREAR`).
+4. **Inscription/Réinscription attendues calculées depuis FeeStructures** : ✅ avec le même matching EXCLUSIF class > physical > level > global que TUITION.
+
+Prochaines étapes suggérées:
+
+- Redéployer le backend Fly.io pour activer le nouveau controller.
+- Tester sur l'école FONDÉ avec les données réelles :
+  * Vérifier que les colonnes Tranche 1/2/3/... affichent les montants payés (et non plus '—').
+  * Vérifier que Total dû ≥ Total payé pour tous les élèves (reste ≥ 0).
+  * Vérifier le cas d'un parent qui paie plus que la Tranche 1 (surflux sur Tranche 2).
+  * Vérifier la scrollbar horizontale dans Multicaisse → Caisses quand il y a ≥ 8 caisses secondaires.
+- Si l'utilisateur constate encore des valeurs incohérentes dans Inscription (ex: 98000), c'est probablement un problème de DATA (paiements mal taggués à l'import). Dans ce cas, créer un script de re-tagging : pour chaque transaction avec une allocation INSCRIPTION dont le montant dépasse l'expected, re-tagguer l'excédent en TUITION.

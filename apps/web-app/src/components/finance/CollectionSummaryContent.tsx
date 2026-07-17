@@ -28,26 +28,41 @@ interface StudentPaymentRow {
   studentName: string;
   className: string;
   classCode: string;
+  // Montants attendus (Total dû)
+  inscriptionExpected: number;
+  reinscriptionExpected: number;
+  arrearExpected: number;
+  totalTuitionExpected: number;
+  // Montants payés
   inscriptionPaid: number;
   reinscriptionPaid: number;
   arrearPaid: number;
   tuitionInstallments: { [installmentId: string]: number };
-  totalTuitionExpected: number;
   totalTuitionPaid: number;
-  reste: number;
+  // Totaux cohérents
+  totalDue: number;
   totalPaid: number;
+  reste: number;
 }
 
 interface RecapRow {
   effectif: number;
   className: string;
+  // Attendu
   arrieres: number;
   inscription: number;
   reinscription: number;
-  tuitionInstallments: { [installmentId: string]: number };
   totalTuition: number;
-  reste: number;
+  totalDue: number;
+  // Payé
+  arrieresPaid: number;
+  inscriptionPaid: number;
+  reinscriptionPaid: number;
+  totalTuitionPaid: number;
   totalPaid: number;
+  tuitionInstallments: { [installmentId: string]: number };
+  // Reste
+  reste: number;
   soldeParClasse: number;
 }
 
@@ -385,9 +400,9 @@ function DetailTable({
                 {inst.label}
               </TableHead>
             ))}
-            <TableHead className="font-bold">Total Scolarité</TableHead>
-            <TableHead className="font-bold">Reste</TableHead>
-            <TableHead className="font-bold">Total des paiements</TableHead>
+            <TableHead className="font-bold">Total dû</TableHead>
+            <TableHead className="font-bold">Total payé</TableHead>
+            <TableHead className="font-bold">Reste à payer</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -415,15 +430,15 @@ function DetailTable({
                 );
               })}
               <TableCell className="text-sm font-bold text-right">
-                {formatCurrency(row.totalTuitionExpected)}
+                {formatCurrency(row.totalDue)}
+              </TableCell>
+              <TableCell className="text-sm font-bold text-right">
+                {formatCurrency(row.totalPaid)}
               </TableCell>
               <TableCell className="text-sm font-bold text-right">
                 <span className={row.reste > 0 ? 'text-red-600' : 'text-green-600'}>
                   {formatCurrency(row.reste)}
                 </span>
-              </TableCell>
-              <TableCell className="text-sm font-bold text-right">
-                {formatCurrency(row.totalPaid)}
               </TableCell>
             </TableRow>
           ))}
@@ -450,16 +465,25 @@ function RecapTable({
     );
   }
 
-  // Calculer les totaux
+  // Calculer les totaux — cohérents avec la nouvelle semantique :
+  //   - Colonnes Arriérés / Inscription / Réinscription / Tranches = montants PAYÉS
+  //   - Total dû = somme des montants attendus (Inscription + Réinscription + Scolarité + Arriérés)
+  //   - Total payé = somme de tous les paiements
+  //   - Reste à payer = Total dû - Total payé
+  //   - Solde par classe = Total payé - Total dû
   const totals = recapRows.reduce(
     (acc, row) => {
       acc.effectif += row.effectif;
-      acc.arrieres += row.arrieres;
-      acc.inscription += row.inscription;
-      acc.reinscription += row.reinscription;
-      acc.totalTuition += row.totalTuition;
-      acc.reste += row.reste;
+      // Payé
+      acc.arrieres += row.arrieresPaid;
+      acc.inscription += row.inscriptionPaid;
+      acc.reinscription += row.reinscriptionPaid;
       acc.totalPaid += row.totalPaid;
+      // Attendu
+      acc.totalDue += row.totalDue;
+      acc.totalTuition += row.totalTuition;
+      // Reste
+      acc.reste += row.reste;
       acc.soldeParClasse += row.soldeParClasse;
       for (const inst of installments) {
         acc.installments[inst.id] = (acc.installments[inst.id] || 0) + (row.tuitionInstallments[inst.id] || 0);
@@ -468,7 +492,8 @@ function RecapTable({
     },
     {
       effectif: 0, arrieres: 0, inscription: 0, reinscription: 0,
-      totalTuition: 0, reste: 0, totalPaid: 0, soldeParClasse: 0,
+      totalTuition: 0, totalDue: 0, totalPaid: 0,
+      reste: 0, soldeParClasse: 0,
       installments: {} as { [id: string]: number },
     },
   );
@@ -488,9 +513,9 @@ function RecapTable({
                 {inst.label}
               </TableHead>
             ))}
-            <TableHead className="font-bold">Total Scolarité</TableHead>
-            <TableHead className="font-bold">Reste</TableHead>
-            <TableHead className="font-bold">Total des payements</TableHead>
+            <TableHead className="font-bold">Total dû</TableHead>
+            <TableHead className="font-bold">Total payé</TableHead>
+            <TableHead className="font-bold">Reste à payer</TableHead>
             <TableHead className="font-bold">Solde par classe</TableHead>
           </TableRow>
         </TableHeader>
@@ -500,13 +525,13 @@ function RecapTable({
               <TableCell className="text-sm text-center">{row.effectif}</TableCell>
               <TableCell className="font-medium">{row.className}</TableCell>
               <TableCell className="text-sm text-right">
-                {row.arrieres > 0 ? formatCurrency(row.arrieres) : '—'}
+                {row.arrieresPaid > 0 ? formatCurrency(row.arrieresPaid) : '—'}
               </TableCell>
               <TableCell className="text-sm text-right">
-                {row.inscription > 0 ? formatCurrency(row.inscription) : '—'}
+                {row.inscriptionPaid > 0 ? formatCurrency(row.inscriptionPaid) : '—'}
               </TableCell>
               <TableCell className="text-sm text-right">
-                {row.reinscription > 0 ? formatCurrency(row.reinscription) : '—'}
+                {row.reinscriptionPaid > 0 ? formatCurrency(row.reinscriptionPaid) : '—'}
               </TableCell>
               {installments.map((inst) => {
                 const amount = row.tuitionInstallments[inst.id] || 0;
@@ -517,15 +542,15 @@ function RecapTable({
                 );
               })}
               <TableCell className="text-sm font-bold text-right">
-                {formatCurrency(row.totalTuition)}
+                {formatCurrency(row.totalDue)}
+              </TableCell>
+              <TableCell className="text-sm font-bold text-right">
+                {formatCurrency(row.totalPaid)}
               </TableCell>
               <TableCell className="text-sm font-bold text-right">
                 <span className={row.reste > 0 ? 'text-red-600' : 'text-green-600'}>
                   {formatCurrency(row.reste)}
                 </span>
-              </TableCell>
-              <TableCell className="text-sm font-bold text-right">
-                {formatCurrency(row.totalPaid)}
               </TableCell>
               <TableCell className="text-sm font-bold text-right">
                 {formatCurrency(row.soldeParClasse)}
@@ -544,9 +569,9 @@ function RecapTable({
                 {formatCurrency(totals.installments[inst.id] || 0)}
               </TableCell>
             ))}
-            <TableCell className="text-right">{formatCurrency(totals.totalTuition)}</TableCell>
-            <TableCell className="text-right text-red-600">{formatCurrency(totals.reste)}</TableCell>
+            <TableCell className="text-right">{formatCurrency(totals.totalDue)}</TableCell>
             <TableCell className="text-right">{formatCurrency(totals.totalPaid)}</TableCell>
+            <TableCell className="text-right text-red-600">{formatCurrency(totals.reste)}</TableCell>
             <TableCell className="text-right">{formatCurrency(totals.soldeParClasse)}</TableCell>
           </TableRow>
         </TableBody>

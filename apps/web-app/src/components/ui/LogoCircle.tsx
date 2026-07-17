@@ -63,7 +63,7 @@ export default function LogoCircle({
       {/* Cadre circulaire avec overflow hidden — masque les logos carrés */}
       <div
         className="relative z-10 flex items-center justify-center rounded-full overflow-hidden"
-        style={{ width: size, height: size }}
+        style={{ width: size, height: size, background: '#FFFFFF' }}
       >
         {hasLogo ? (
           <Image

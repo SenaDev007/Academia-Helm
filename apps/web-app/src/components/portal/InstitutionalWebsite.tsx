@@ -308,23 +308,52 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
     loadThemeSettings();
   }, [slug]);
 
+  // ⭐ Timeout de sécurité : si les données ne chargent pas après 10s, afficher
+  // le contenu par défaut plutôt que de laisser le loader tourner indéfiniment.
+  // L'API Fly.io peut être en cold start (30-60s) — on ne peut pas attendre aussi longtemps.
+  useEffect(() => {
+    if (!isLoading) return;
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [isLoading]);
+
   const loadSchoolData = async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
     try {
-      const res = await fetch(`/api/public/schools/by-subdomain/${slug}`, { cache: 'no-store' });
+      const res = await fetch(`/api/public/schools/by-subdomain/${slug}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
       if (res.ok) {
         const data = await res.json();
         setSchoolData(data);
         if (data?.tenantId) setTenantId(data.tenantId);
         else if (data?.id) setTenantId(data.id);
       }
-    } catch (e) { console.error(e); } finally { setIsLoading(false); }
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.error(e);
+    } finally { setIsLoading(false); }
   };
 
   const loadWebsiteData = async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
     try {
-      const res = await fetch(`/api/tenant-website/public/${slug}`, { cache: 'no-store' });
+      const res = await fetch(`/api/tenant-website/public/${slug}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
       if (res.ok) setWebsiteData(await res.json());
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.error(e);
+    }
   };
 
   // ─── Chargement du thème officiel du tenant (themeId + mode) ──

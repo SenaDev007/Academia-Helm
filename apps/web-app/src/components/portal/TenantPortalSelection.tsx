@@ -204,7 +204,7 @@ export default function TenantPortalSelection({
       <main className="flex-1 pt-16 md:pt-20 pb-8">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           {/* ── En-tête : nom école + baseline ── */}
-          <div className="text-center mb-6 md:mb-8">
+          <div className="text-center mb-6 md:mb-8 pt-6 md:pt-8">
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
@@ -224,7 +224,7 @@ export default function TenantPortalSelection({
               Accéder à votre espace
             </h1>
             <p className="text-sm md:text-base text-slate-500 max-w-xl mx-auto">
-              {schoolSlogan || `Sélectionnez le portail correspondant à votre profil pour vous connecter à l'espace ${displayName}.`}
+              Sélectionnez le portail correspondant à votre profil pour vous connecter à l'espace {displayName}.
             </p>
             {/* Liseré or signature */}
             <div className="flex items-center justify-center gap-3 mt-4" aria-hidden>
@@ -253,7 +253,7 @@ export default function TenantPortalSelection({
                     style={{ color: NAVY }}
                   >
                     <MapPin className="w-3.5 h-3.5" style={{ color: GOLD }} />
-                    Carte du Bénin — Réseau {displayName}
+                    Carte du Bénin — Réseau Academia Helm
                   </h3>
                   <div
                     className="flex overflow-hidden rounded-lg border text-xs sm:text-[10px]"

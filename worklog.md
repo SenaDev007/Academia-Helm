@@ -7839,3 +7839,67 @@ Stage Summary:
   * Toutes les sections du site institutionnel sont maintenant CMS-ready : si l'admin configure ces champs via le back-office, ils s'affichent ; sinon fallback sur les defaults (préserve l'UI actuelle)
   * Rendu resilient pour admissionDocuments (supporte string ou objet {label/name/title})
   * Import `BRAND` inutilisé également supprimé de InstitutionalWebsite.tsx (bonus lint)
+
+---
+Task ID: 18-a
+Agent: full-stack-developer (Doc pricing sans commission)
+Task: Régénérer document pricing sans section commission partenaire
+
+Work Log:
+1. Modifications du script `scripts/generate-pricing-doc.js` (761 lignes après modif, contre 867 avant) :
+
+   a. Sommaire : suppression de l'entrée "6. Part du partenaire commercial" + renumérotation 7→6, 8→7, 9→8, 10→9.
+
+   b. Section 1 Contexte : "rémunère de façon pérenne le développeur et un partenaire commercial" → "rémunère de façon pérenne l'exploitant de la plateforme".
+
+   c. Section 6 "Part du partenaire commercial" : suppression entière du h1, du paragraphe d'intro, des 2 tableaux (Commission sur frais d'installation + Commission sur abonnement) et de la note.
+
+   d. Section 7→6 Projections : intro mise à jour (suppression mention "commission du partenaire commercial (30 % sur installation, 20 % sur abonnement annuel)"). Pour chaque scénario (6.1 à 6.4) :
+      - Ligne "Commission partenaire" supprimée
+      - Ligne "Revenu frais d'installation (unique)" supprimée (ne fait pas partie du calcul de marge récurrente)
+      - 2 lignes "Marge nette année 1 / année 2+" fusionnées en une seule "Marge nette (récurrent)"
+      - Marges recalculées :
+        * 6.1 (2 écoles, 1 SEED + 1 GROW) : 550 000 - 474 000 = 76 000 FCFA/an (6 333 FCFA/mois) — auparavant -54 000 (négatif)
+        * 6.2 (5 écoles) : 1 600 000 - 474 000 = 1 126 000 FCFA/an (93 833 FCFA/mois) — auparavant 736 000
+        * 6.3 (15 écoles) : 4 950 000 - 474 000 = 4 476 000 FCFA/an (373 000 FCFA/mois) — auparavant 3 486 000
+        * 6.4 (30 écoles) : 9 750 000 - 474 000 = 9 276 000 FCFA/an (773 000 FCFA/mois) — auparavant 7 326 000
+      - Note du scénario 6.1 mise à jour : "marge récurrente négative (-4 500 FCFA/mois)" → "marge récurrente positive mais limitée (6 333 FCFA/mois)"
+
+   e. Sections 8→7 (Politique), 9→8 (Positionnement) : renumérotation des titres + sous-sections 8.x→7.x.
+
+   f. Section 10→9 (Recommandations) :
+      - Sous-section 10.4 "Rémunération du partenaire commercial" ENTÈREMENT SUPPRIMÉE (titre + paragraphe)
+      - Renumérotation 10.1→9.1, 10.2→9.2, 10.3→9.3, 10.5→9.4
+      - Paragraphe 9.1 Break-even mis à jour : "~61 000 FCFA/mois (après commission partenaire et infrastructure)" → "~93 833 FCFA/mois (après infrastructure)"
+
+2. Vérifications :
+   - `node --check scripts/generate-pricing-doc.js` → SYNTAX OK
+   - Grep "partenaire commercial|commission partenaire" sur le script → 0 occurrences (uniquement "indépendamment de toute commission externe" dans l'intro des projections, qui est une clarification explicite que la marge NE déduit PAS de commission)
+
+3. Génération :
+   - `node scripts/generate-pricing-doc.js` → ✅ Document généré : `/home/z/my-project/download/Academia_Helm_Tarification_SaaS.docx` (19.2 KB)
+
+4. Postcheck :
+   - `python3 skills/docx/scripts/postcheck.py download/Academia_Helm_Tarification_SaaS.docx`
+   - Résultat : **9/9 passed, 0 errors, 0 warnings**
+
+5. Vérification du contenu du .docx (extraction XML + grep) :
+   - Phrases interdites (toutes à 0 occurrence) : "partenaire commercial", "commission partenaire", "6. Part du partenaire", "grand frère"
+   - Phrases attendues (toutes présentes) : "exploitant de la plateforme" (1), "6. Projections de rentabilité" (2 = sommaire + titre), "Marge nette (récurrent)" (4 = 1 par scénario), "76 000 FCFA" (3), "1 126 000 FCFA" (1), "4 476 000 FCFA" (1), "9 276 000 FCFA" (1)
+   - Structure des titres de niveau 1 : numérotation continue 1-9, sans saut, sans section 10
+
+Stage Summary:
+- 1 fichier source modifié (scripts/generate-pricing-doc.js) : 761 lignes après modif (vs 867 avant) — net -106 lignes (suppression complète de la section 6 + tableaux de projection simplifiés)
+- 1 document généré : `/home/z/my-project/download/Academia_Helm_Tarification_SaaS.docx` (19.2 KB)
+- Postcheck 9/9 : 0 errors, 0 warnings
+- Toutes les mentions "partenaire commercial" / "commission partenaire" / "grand frère" / "6. Part du partenaire" supprimées du document (vérifié par extraction du texte du .docx)
+- Section 6 "Part du partenaire commercial" entièrement supprimée (2 tableaux + intro + note)
+- Sections renumérotées : 7→6, 8→7, 9→8, 10→9 (sous-sections 8.x→7.x, 10.5→9.4 également)
+- Marges recalculées sans déduction de commission partenaire — les 4 scénarios affichent maintenant une marge positive correspondant exactement à (Revenu abonnements − Coût infrastructure) :
+  * 2 écoles : 76 000 FCFA/an (6 333 FCFA/mois)
+  * 5 écoles : 1 126 000 FCFA/an (93 833 FCFA/mois)
+  * 15 écoles : 4 476 000 FCFA/an (373 000 FCFA/mois)
+  * 30 écoles : 9 276 000 FCFA/an (773 000 FCFA/mois)
+- Section 1 contexte : "rémunère de façon pérenne le développeur et un partenaire commercial" → "rémunère de façon pérenne l'exploitant de la plateforme"
+- Section 9.4 (Recommandations) : sous-section "Rémunération du partenaire commercial" entièrement supprimée ; Break-even mis à jour (5 écoles → 93 833 FCFA/mois au lieu de 61 000, sans déduction commission)
+- Note scénario 6.1 corrigée : marge positive 6 333 FCFA/mois au lieu de -4 500 FCFA/mois

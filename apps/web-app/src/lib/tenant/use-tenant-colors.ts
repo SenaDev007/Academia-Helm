@@ -5,23 +5,33 @@
  * USE TENANT COLORS — Résolution dynamique de la palette de couleurs
  * ============================================================================
  *
- * Résout les couleurs d'une école tenante :
- *   1. Si customColors est configuré (2-4 couleurs) → utilise ces couleurs
- *   2. Sinon → fallback sur la palette Helm par défaut
+ * Résout les couleurs d'une école tenante selon 3 stratégies (par priorité) :
+ *
+ *   1. Thème officiel (themeId + mode sauvegardés via tenantThemeService) :
+ *      → themeToColors(theme, mode) extrait 4 couleurs hex depuis les 32
+ *        variables CSS HSL du thème shadcn/ui (system officiel 40+ thèmes).
+ *
+ *   2. customColors (2-4 couleurs configurées dans le CMS) :
+ *      → resolveTenantColors(customColors) mappe vers primary/secondary/
+ *        accent/dark avec dérivation automatique des couleurs manquantes.
+ *
+ *   3. Palette Helm par défaut (fallback) :
+ *      → NAVY #0b2f73 / BLUE #1d4fa5 / GOLD #f5b335 / DARK #091f4a
  *
  * Retourne un objet avec des noms sémantiques :
  *   primary   → couleur principale (fond header, hero, footer)
  *   secondary → couleur secondaire (gradient, accents)
  *   accent    → couleur d'accent (boutons, highlights, badges)
  *   dark      → couleur sombre (fond footer, textes)
- *
- * Palette Helm par défaut :
- *   primary   = #0b2f73 (Navy)
- *   secondary = #1d4fa5 (Blue)
- *   accent    = #f5b335 (Gold)
- *   dark      = #091f4a (Navy foncé)
  * ============================================================================
  */
+
+import {
+  type Theme,
+  type ThemeMode,
+  resolveThemeVariant,
+  hslToHex,
+} from '@/lib/themes/themes.config';
 
 export interface TenantColors {
   primary: string;
@@ -105,3 +115,44 @@ function adjustColor(hex: string, amount: number): string {
 }
 
 export { HELM_DEFAULT };
+
+/**
+ * ============================================================================
+ * THEME TO COLORS — Conversion d'un thème officiel vers TenantColors
+ * ============================================================================
+ *
+ * Convertit un thème officiel (40+ thèmes du system shadcn/ui, chacun exposant
+ * ~32 variables CSS HSL) en un objet TenantColors (4 couleurs hex) utilisable
+ * dans les styles inline du site institutionnel.
+ *
+ * Stratégie de mapping (alignée sur la palette Helm sémantique) :
+ *   primary   ← theme.colors.primary       (couleur principale d'action/fond)
+ *   secondary ← theme.colors.secondary     (couleur secondaire de gradient)
+ *   accent    ← theme.colors.accent        (couleur d'accent : boutons, badges)
+ *   dark      ← theme.colors.sidebar       (zone la plus sombre du thème)
+ *
+ *   Le `sidebar` est utilisé pour `dark` car c'est la couleur la plus foncée
+ *   disponible dans le thème (plus foncée que `background`), ce qui correspond
+ *   au rôle sémantique de `dark` (fond footer, texte sombre).
+ *
+ * En mode 'auto', suit l'OS du visiteur (light ou dark) via resolveThemeVariant.
+ *
+ * @example
+ *   import { getThemeById } from '@/lib/themes/themes.config';
+ *   import { themeToColors } from '@/lib/tenant/use-tenant-colors';
+ *
+ *   const theme = getThemeById('ocean-breeze');
+ *   const colors = theme ? themeToColors(theme, 'light') : HELM_DEFAULT;
+ *   // → { primary: '#0ea5e9', secondary: '#0284c7', accent: '#06b6d4', dark: '#0c4a6e' }
+ * ============================================================================
+ */
+export function themeToColors(theme: Theme, mode: ThemeMode = 'light'): TenantColors {
+  const variant = resolveThemeVariant(theme, mode);
+  const c = variant.colors;
+  return {
+    primary: hslToHex(c.primary),
+    secondary: hslToHex(c.secondary),
+    accent: hslToHex(c.accent),
+    dark: hslToHex(c.sidebar),
+  };
+}

@@ -58,7 +58,10 @@ import TenantRecruitmentBanner from '@/components/portal/TenantRecruitmentBanner
 import { ContactForm } from '@/components/portal/ContactForm';
 import TenantFooter from '@/components/ui/footer-column';
 import TenantHeader from '@/components/portal/TenantHeader';
-import { resolveTenantColors } from '@/lib/tenant/use-tenant-colors';
+import { resolveTenantColors, themeToColors, type TenantColors } from '@/lib/tenant/use-tenant-colors';
+import { getThemeById, type Theme, type ThemeMode } from '@/lib/themes/themes.config';
+import { tenantThemeService } from '@/services/tenant-theme.service';
+import { ThemeApplier } from '@/lib/themes/theme-applier';
 import {
   DEFAULT_WEBSITE_CONFIG,
   DEFAULT_NEWS_ARTICLES,
@@ -275,11 +278,21 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   const [isLoading, setIsLoading] = useState(!schoolInfo);
   const [activeTestimonial, setActiveTestimonial] = useState(0);
 
+  // ─── Thème officiel du tenant (40+ thèmes shadcn/ui) ──────────────────
+  // Résolu depuis tenantThemeService.getPublicSettings(slug) → { themeId, mode }.
+  // Quand un thème est actif, il PRIME sur customColors (CMS) et sur la palette
+  // Helm par défaut. Sinon, fallback sur resolveTenantColors(customColors).
+  const [activeTheme, setActiveTheme] = useState<Theme | null>(null);
+  const [themeMode, setThemeMode] = useState<ThemeMode>('light');
+
   const slug = subdomain || extractTenantSlug(typeof window !== 'undefined' ? window.location.hostname : '') || schoolInfo?.slug || '';
 
   useEffect(() => {
     if (!schoolInfo && slug) loadSchoolData();
-    if (slug) loadWebsiteData();
+    if (slug) {
+      loadWebsiteData();
+      loadThemeSettings();
+    }
   }, [slug]);
 
   const loadSchoolData = async () => {
@@ -299,6 +312,28 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       const res = await fetch(`/api/tenant-website/public/${slug}`, { cache: 'no-store' });
       if (res.ok) setWebsiteData(await res.json());
     } catch (e) { console.error(e); }
+  };
+
+  // ─── Chargement du thème officiel du tenant (themeId + mode) ──
+  // On récupère les settings publics via /api/tenant-theme/public/<slug>.
+  // Si un themeId est retourné et qu'il correspond à un thème connu de
+  // themes.config (40+ thèmes), on l'active — sinon on reste sur le fallback
+  // customColors / Helm default.
+  const loadThemeSettings = async () => {
+    try {
+      const settings = await tenantThemeService.getPublicSettings(slug);
+      if (settings?.themeId) {
+        const theme = getThemeById(settings.themeId);
+        if (theme) {
+          setActiveTheme(theme);
+          setThemeMode(settings.mode || 'light');
+        }
+      }
+    } catch (e) {
+      // Silencieux : le tenant n'a peut-être pas configuré de thème officiel.
+      // On conserve le fallback customColors / Helm default.
+      console.debug('[theme] No official theme for tenant', slug, e);
+    }
   };
 
   const handlePortalClick = (type: PortalType) => {
@@ -331,7 +366,13 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   const schoolSlogan = schoolData?.slogan || withDefault(rawWebsite?.heroSubtitle, DEFAULT_WEBSITE_CONFIG.heroSubtitle);
 
   // ─── Palette de couleurs (CDC 2 — par défaut #0B1E4D / #1E4FA3 / #F5B700) ──
-  const colors = resolveTenantColors(rawWebsite?.customColors);
+  // Stratégie de résolution (par priorité) :
+  //   1. activeTheme (themeId officiel configuré via tenantThemeService) → themeToColors
+  //   2. customColors (CMS — 2 à 4 couleurs personnalisées) → resolveTenantColors
+  //   3. Palette Helm par défaut (fallback NAVY/BLUE/GOLD)
+  const colors: TenantColors = activeTheme
+    ? themeToColors(activeTheme, themeMode)
+    : resolveTenantColors(rawWebsite?.customColors);
   const NAVY = colors.primary;
   const BLUE = colors.secondary;
   const GOLD = colors.accent;
@@ -387,6 +428,15 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
 
   return (
     <div className="min-h-screen bg-white">
+      {/* ─── Applique les variables CSS shadcn/ui du thème officiel sur <html> ───
+          Permet aux composants shadcn/ui (boutons, cards, etc.) utilisés dans
+          le site institutionnel de recevoir les couleurs du thème configuré
+          par l'admin (ex: ocean-breeze, sunset-glow, etc.).
+          Inactif si aucun thème officiel n'est configuré (fallback Helm). */}
+      {activeTheme && (
+        <ThemeApplier themeId={activeTheme.id} mode={themeMode} />
+      )}
+
       <TenantStructuredData
         schoolName={schoolName}
         schoolLogo={schoolLogo || undefined}

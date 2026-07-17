@@ -7680,3 +7680,88 @@ Stage Summary:
 - Signature `InstitutionalWebsite({ schoolInfo, subdomain })` préservée
 - Imports existants conservés, framer-motion utilisé, mobile-first respectif
 - Compatibilité /jobs préservée (props transparentAtTop=false + navLinks personnalisés)
+
+---
+Task ID: 16-a
+Agent: full-stack-developer (Fix portail tenant + thèmes site institutionnel)
+Task: Fix page portail + connecter thèmes au site institutionnel
+
+Work Log:
+
+Lecture préalable :
+- worklog.md Task 15-a — refonte site institutionnel (1208 lignes) + page portail tenant créée
+- InstitutionalWebsite.tsx — utilise `resolveTenantColors(rawWebsite?.customColors)` (système 2-4 couleurs) SANS lire le `themeId` officiel
+- themes.config.ts — 40+ thèmes shadcn/ui (~32 variables CSS HSL chacun) + DEFAULT_ACADEMIA_HELM_THEME
+- theme-applier.tsx — ThemeApplier injecte les vars CSS sur <html> via useEffect
+- use-tenant-colors.ts — système parallèle (primary/secondary/accent/dark en hex)
+- tenant-theme.service.ts — getPublicSettings(slug) → { themeId, mode }
+- LoginPage.tsx (3163 lignes) — useSchoolBranding ne lit PAS le searchParam `tenant` (uniquement sessionStorage + sous-domaine)
+- TenantPortalSelection.tsx — handlePortalClick ne persiste PAS sessionStorage avant redirection
+- TenantHeader.tsx / TenantFooter.tsx — utilisent déjà `displayName = schoolAcronym || schoolName` ✅
+
+Problème 1 — Page portail tenant → login sans sélection d'école :
+
+1. `apps/web-app/src/hooks/useSchoolBranding.ts` (modifié) :
+   - Ajout d'une 3e source de résolution : searchParam URL `tenant` (ex: /login?tenant=cspeb)
+   - Flux complet : serverBranding → sessionStorage → URL `tenant` param → sous-domaine
+   - Ajout du champ `schoolAcronym` dans SchoolBrandingData (pour cohérence avec TenantPortalSelection)
+   - Renommage `slug` → `resolvedSlug` (let) puis `const slug: string` (narrowing propre pour closure)
+
+2. `apps/web-app/src/components/portal/TenantPortalSelection.tsx` (modifié, +25 lignes) :
+   - handlePortalClick persiste maintenant `sessionStorage.setItem('academia_portal_school', JSON.stringify({...}))` avant la redirection vers /login
+   - Inclut : name, slug, logoUrl, city, phone, address, slogan, schoolAcronym
+   - Permet à LoginPage (useSchoolBranding) d'afficher immédiatement le nom + logo + slogan de l'école, même sur le domaine principal (pas de sous-domaine)
+
+3. Vérification LoginPage.tsx (aucune modification nécessaire) :
+   - `tenantSlug = searchParams?.get('tenant')` déjà lu (ligne 349) ✅
+   - `portalType` set depuis `portal` param → formulaire affiché directement (pas de sélection) ✅
+   - Boutons sélection portail affichés uniquement si `portalType === null && accessContext === 'school-subdomain'` (ligne 1709) — pas sur domaine principal ✅
+   - Titre : `{clientBranding?.name || schoolNameFromUrl || portalDef?.title || BRAND.name}` (ligne 1662) → affiche le nom école ✅
+   - Logo : `<LogoCircle logoUrl={clientBranding?.logoUrl} .../>` (ligne 1653) → affiche le logo école ✅
+
+4. Vérification TenantHeader / TenantFooter (aucune modification nécessaire) :
+   - TenantHeader : `displayName = schoolAcronym || schoolName` (ligne 76) → affiche nom/acronyme école, PAS "Academia Helm" ✅
+   - TenantFooter : `displayName = schoolAcronym || schoolName` (ligne 108) → pareil ✅
+   - "Academia Helm" apparaît uniquement dans "Propulsé par Academia Helm" (attribution plateforme, correct)
+   - Logo école : `LogoCircle logoUrl={schoolLogo}` reçu en prop ✅
+
+5. Vérification portal/page.tsx metadata (aucune modification nécessaire) :
+   - generateMetadata résout déjà dynamiquement `title = Portail — ${schoolName}` (ligne 55) ✅
+
+Problème 2 — Thèmes (40+) non appliqués au site institutionnel :
+
+6. `apps/web-app/src/lib/tenant/use-tenant-colors.ts` (modifié, +42 lignes) :
+   - Nouvelle fonction `themeToColors(theme: Theme, mode: ThemeMode = 'light'): TenantColors`
+   - Convertit les ~32 variables CSS HSL d'un thème officiel en 4 couleurs hex
+   - Mapping : primary ← theme.primary, secondary ← theme.secondary, accent ← theme.accent, dark ← theme.sidebar
+   - Utilise `resolveThemeVariant(theme, mode)` (mode 'auto' suit l'OS) + `hslToHex()` de themes.config
+   - Import de `Theme`, `ThemeMode`, `resolveThemeVariant`, `hslToHex` depuis themes.config (pas de dépendance circulaire)
+   - Doc JSDoc complète avec @example
+
+7. `apps/web-app/src/components/portal/InstitutionalWebsite.tsx` (modifié, +35 lignes) :
+   - Nouveaux imports : `themeToColors`, `TenantColors`, `getThemeById`, `Theme`, `ThemeMode`, `tenantThemeService`, `ThemeApplier`
+   - Nouveau state : `activeTheme: Theme | null`, `themeMode: ThemeMode ('light')`
+   - Nouvelle fonction `loadThemeSettings()` : appelle `tenantThemeService.getPublicSettings(slug)`, résout le thème via `getThemeById(themeId)`, set activeTheme + themeMode
+   - useEffect déclenche loadThemeSettings() en parallèle de loadWebsiteData()
+   - Calcul `colors` : `activeTheme ? themeToColors(activeTheme, themeMode) : resolveTenantColors(rawWebsite?.customColors)`
+     → Le thème officiel PRIME sur customColors (CMS) qui prime sur Helm default
+   - NAVY/BLUE/GOLD/DARK dérivés désormais du thème actif (tous les styles inline ~77 occurrences sont themed)
+   - `<ThemeApplier themeId={activeTheme.id} mode={themeMode} />` rendu conditionnellement en haut du JSX → injecte les ~32 variables CSS shadcn/ui sur <html> (pour les composants shadcn/ui du site)
+   - Fallback conservé : si pas de thème officiel → customColors CMS → Helm default (Navy/Blue/Gold du CDC)
+
+Vérifications TypeScript :
+- `bunx tsc --noEmit` sur apps/web-app : 10 erreurs pré-existantes dans `src/components/cms/useAutoSave.ts` (mentionnées Task 13-a). 0 erreur sur les 4 fichiers modifiés (use-tenant-colors.ts, InstitutionalWebsite.tsx, useSchoolBranding.ts, TenantPortalSelection.tsx).
+
+Stage Summary:
+- 4 fichiers modifiés (~110 lignes ajoutées)
+- Problème 1 résolu :
+  * useSchoolBranding lit maintenant le searchParam `tenant` (3e source de résolution)
+  * TenantPortalSelection persiste sessionStorage avant redirection → LoginPage affiche immédiatement nom + logo + slogan école
+  * Comportement LoginPage vérifié : pas de sélection d'école quand `tenant` dans URL, formulaire affiché directement
+  * TenantHeader/TenantFooter affichent déjà le nom/acronyme école (vérifié, aucune modif nécessaire)
+- Problème 2 résolu :
+  * Nouvelle fonction `themeToColors(theme, mode)` convertit thème officiel → TenantColors hex
+  * InstitutionalWebsite fetch `tenantThemeService.getPublicSettings(slug)` → applique thème aux ~77 styles inline (NAVY/BLUE/GOLD/DARK)
+  * ThemeApplier injecte les 32 vars CSS shadcn/ui sur <html> quand thème actif
+  * Stratégie 3 niveaux : thème officiel > customColors CMS > Helm default (CDC)
+  * 40+ thèmes maintenant fonctionnels sur le site institutionnel

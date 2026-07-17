@@ -2,14 +2,15 @@
  * useSchoolBranding Hook
  *
  * Résout le branding de l'école (logo, nom, couleurs, slogan)
- * depuis le sous-domaine courant ou le sessionStorage.
+ * depuis le sous-domaine courant, les searchParams URL ou le sessionStorage.
  * Utilisé par les pages publiques (LoginPage, Header, etc.)
  * pour afficher le branding de l'école au lieu du branding Academia Helm générique.
  *
  * Flux de résolution :
  *   1. serverBranding (prop du server component — via BFF)
  *   2. sessionStorage "academia_portal_school" (posé par le portail de sélection)
- *   3. API fetch via la route BFF /api/public/schools/by-subdomain/:slug
+ *   3. searchParam URL `tenant` (ex: /login?tenant=cspeb) → fetch via BFF
+ *   4. Sous-domaine courant (ex: cspeb.academiahelm.com) → fetch via BFF
  */
 
 'use client';
@@ -28,6 +29,8 @@ export interface SchoolBrandingData {
   secondaryColor: string | null;
   slogan: string | null;
   motto: string | null;
+  /** Acronyme de l'école (ex: CSPEB) — affiché à la place du nom complet. */
+  schoolAcronym?: string | null;
 }
 
 /** Clé sessionStorage utilisée par le portail de sélection d'école */
@@ -83,19 +86,42 @@ export function useSchoolBranding(serverBranding?: SchoolBrandingData | null): S
         secondaryColor: sessionData.secondaryColor || null,
         slogan: sessionData.slogan || null,
         motto: sessionData.motto || null,
+        schoolAcronym: sessionData.schoolAcronym || null,
       });
       setResolved(true);
       return;
     }
 
-    // PRIORITÉ 2 : Détecter le sous-domaine et fetch via la route BFF
-    const host = window.location.host;
-    const slug = extractTenantSlug(host);
+    // PRIORITÉ 2 : searchParam URL `tenant` (ex: /login?tenant=cspeb&school_name=CSPEB)
+    // Permet de résoudre le branding sur le domaine principal quand il n'y a
+    // pas de sous-domaine (ex: bouton "Portail École" cliqué depuis
+    // /school-portal/portal → redirection vers /login?tenant=xxx).
+    let resolvedSlug: string | null = null;
+    if (typeof window !== 'undefined') {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const tenantParam = urlParams.get('tenant');
+        if (tenantParam && tenantParam.trim()) {
+          resolvedSlug = tenantParam.trim();
+        }
+      } catch {
+        // URLSearchParams peut échouer dans certains contextes — ignore.
+      }
+    }
 
-    if (!slug) {
+    // PRIORITÉ 3 : Détecter le sous-domaine et fetch via la route BFF
+    if (!resolvedSlug) {
+      const host = window.location.host;
+      resolvedSlug = extractTenantSlug(host);
+    }
+
+    if (!resolvedSlug) {
       setResolved(true);
       return;
     }
+
+    // `slug` est maintenant garanti non-null (const pour la closure fetchBranding).
+    const slug: string = resolvedSlug;
 
     const fetchBranding = async () => {
       try {
@@ -179,6 +205,7 @@ export function useSchoolBranding(serverBranding?: SchoolBrandingData | null): S
             secondaryColor: data.secondaryColor || null,
             slogan: resolvedSlogan,
             motto: resolvedMotto,
+            schoolAcronym: data.schoolAcronym || null,
           });
         }
       } catch (error) {

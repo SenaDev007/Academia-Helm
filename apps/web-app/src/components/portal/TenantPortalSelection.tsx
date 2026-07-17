@@ -143,6 +143,30 @@ export default function TenantPortalSelection({
   ];
 
   const handlePortalClick = (type: PortalType) => {
+    // ── Persiste les infos école en sessionStorage avant redirection ──
+    // Permet à LoginPage (useSchoolBranding) de récupérer le nom + logo +
+    // slogan de l'école sans refetch, même sur le domaine principal
+    // (academiahelm.com/login?tenant=xxx) où il n'y a pas de sous-domaine.
+    if (typeof window !== 'undefined' && school) {
+      try {
+        sessionStorage.setItem(
+          'academia_portal_school',
+          JSON.stringify({
+            name: school.name,
+            slug,
+            logoUrl: school.logoUrl,
+            city: school.city,
+            phone: school.phone,
+            address: school.address,
+            slogan: school.slogan,
+            schoolAcronym: school.schoolAcronym || null,
+          }),
+        );
+      } catch {
+        // sessionStorage peut être indisponible (mode privé) — non bloquant.
+      }
+    }
+
     if (type === 'PUBLIC') {
       window.location.href = `/public/pre-enrollment?school=${slug}`;
       return;

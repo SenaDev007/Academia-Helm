@@ -393,7 +393,7 @@ function DetailTable({
         <TableBody>
           {studentRows.map((row) => (
             <TableRow key={row.studentId} className="hover:bg-slate-50">
-              <TableCell className="font-medium sticky left-0 bg-white z-10">
+              <TableCell className="font-medium sticky left-0 bg-white z-10 whitespace-nowrap">
                 {row.studentName}
               </TableCell>
               <TableCell className="text-sm">{row.className}</TableCell>

@@ -285,6 +285,7 @@ const PREDEFINED_CAISSES = [
   { name: 'Caisse comptabilité', code: 'COMPTA', location: 'Service comptabilité', description: 'Caisse du service comptable pour les virements et dépenses.' },
   { name: 'Caisse economat', code: 'ECO', location: 'Économat / Magasin', description: 'Caisse de l\'économat pour les achats et approvisionnements.' },
   { name: 'Caisse examen', code: 'EXAMEN', location: 'Salle des examens', description: 'Caisse dédiée aux frais d\'examens et concours.' },
+  { name: 'Caisse fondé', code: 'FONDE', location: 'Bureau du promoteur', description: 'Caisse du promoteur/fondateur pour les paiements directs (frais envoyés directement au promoteur).' },
   { name: 'Caisse transport', code: 'TRANSPORT', location: 'Service transport', description: 'Caisse pour la collecte des frais de transport scolaire.' },
   { name: 'Caisse activités', code: 'ACTIVITES', location: 'Service activités parascolaires', description: 'Caisse pour les activités parascolaires, sorties et événements.' },
   { name: 'Caisse banque', code: 'BANQUE', location: 'Banque partenaire', description: 'Caisse de liaison avec le compte bancaire de l\'établissement.' },
@@ -933,8 +934,8 @@ export default function CashRegistersContent() {
             <>
             {/* === CONSTELLATION COFFRE-FORT + CAISSES === */}
             <div
-              className="relative bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl border border-slate-200 overflow-hidden transition-all duration-500 ease-out"
-              style={{ minHeight: `${constellationHeight}px`, height: `${constellationHeight}px` }}
+              className="relative bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl border border-slate-200 overflow-y-auto overflow-x-hidden transition-all duration-500 ease-out"
+              style={{ minHeight: `${constellationHeight}px`, maxHeight: '70vh' }}
             >
 
               {/* Décor : grille subtile en fond */}

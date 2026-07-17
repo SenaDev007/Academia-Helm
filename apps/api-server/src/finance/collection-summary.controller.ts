@@ -58,7 +58,7 @@ export class CollectionSummaryController {
         feeType: 'TUITION',
         isInstallment: true,
         isActive: true,
-        ...(classId && { classId }),
+        ...(classId && { OR: [{ classId }, { academicClassId: classId }] }),
       },
       include: {
         structureInstallments: { orderBy: { orderIndex: 'asc' } },
@@ -68,12 +68,15 @@ export class CollectionSummaryController {
       },
     });
 
-    // Collecter tous les installments uniques
+    // Collecter tous les installments uniques — dédupliquer par LABEL (pas par ID)
+    // pour éviter d'avoir 5 colonnes "Tranche 1" quand 5 fee_structures ont chacune
+    // leur propre "Tranche 1" avec un ID différent.
     const installmentsMap = new Map<string, { id: string; label: string; amount: number; orderIndex: number }>();
     for (const fs of feeStructures) {
       for (const inst of fs.structureInstallments) {
-        if (!installmentsMap.has(inst.id)) {
-          installmentsMap.set(inst.id, {
+        const key = inst.label || `Tranche ${inst.orderIndex + 1}`;
+        if (!installmentsMap.has(key)) {
+          installmentsMap.set(key, {
             id: inst.id,
             label: inst.label,
             amount: Number(inst.amount),
@@ -98,22 +101,25 @@ export class CollectionSummaryController {
     const enrollments = await this.prisma.studentEnrollment.findMany({
       where: enrollmentWhere,
       include: {
-        student: { select: { id: true, firstName: true, lastName: true } },
+        student: { select: { id: true, firstName: true, lastName: true, matricule: true } },
         class: { select: { id: true, name: true, code: true, schoolLevelId: true, schoolLevel: true } },
         academicClass: { select: { id: true, name: true, code: true } },
       },
+      orderBy: [
+        { student: { lastName: 'asc' } },
+        { student: { firstName: 'asc' } },
+      ],
     });
 
-    // Filtrer par niveau si fourni
+    // Filtrer par niveau si fourni (levelId = UUID de school_levels)
     let filteredEnrollments = enrollments;
     if (levelId) {
       filteredEnrollments = enrollments.filter((e) => {
-        const enrollmentLevelCode = (e.class?.schoolLevel?.code || '').toLowerCase();
-        const levelCode = (levelId || '').toLowerCase();
-        // Comparer par code (MATERNELLE/PRIMAIRE/SECONDAIRE)
-        const matchingLevel = e.class?.schoolLevel?.id === levelId;
-        const matchingCode = enrollmentLevelCode === levelCode;
-        return matchingLevel || matchingCode;
+        // Match par UUID de school_levels
+        if (e.class?.schoolLevel?.id === levelId) return true;
+        // Match par UUID de schoolLevelId sur la classe
+        if (e.class?.schoolLevelId === levelId) return true;
+        return false;
       });
     }
 
@@ -213,15 +219,31 @@ export class CollectionSummaryController {
         }
       }
 
-      // Total scolarité attendu (somme des montants des fee structures TUITION pour cette classe)
-      const matchingFeeStructures = feeStructures.filter((fs) => {
-        return (
-          (fs.classId && fs.classId === enrollment.classId) ||
-          (fs.academicClassId && fs.academicClassId === enrollment.academicClassId) ||
-          (fs.levelId && fs.levelId === enrollment.class?.schoolLevelId) ||
-          (!fs.classId && !fs.academicClassId && !fs.levelId)
-        );
-      });
+      // Total scolarité attendu — priorité EXCLUSIVE (pas OR) :
+      // 1. Classe officielle (academicClassId) si la fee structure en a une
+      // 2. Classe physique (classId) si la fee structure en a une
+      // 3. Niveau (levelId) si la fee structure en a un
+      // 4. Global (aucun filtre)
+      // Cela évite de matcher plusieurs fee structures pour le même élève
+      // (ex: 3 structures de niveau Maternelle + 1 structure par classe = total × 4)
+      const classSpecific = feeStructures.filter(fs =>
+        fs.academicClassId && fs.academicClassId === enrollment.academicClassId
+      );
+      const physicalClassSpecific = feeStructures.filter(fs =>
+        !fs.academicClassId && fs.classId && fs.classId === enrollment.classId
+      );
+      const levelSpecific = feeStructures.filter(fs =>
+        !fs.academicClassId && !fs.classId && fs.levelId && fs.levelId === enrollment.class?.schoolLevelId
+      );
+      const global = feeStructures.filter(fs =>
+        !fs.academicClassId && !fs.classId && !fs.levelId
+      );
+
+      const matchingFeeStructures =
+        classSpecific.length > 0 ? classSpecific :
+        physicalClassSpecific.length > 0 ? physicalClassSpecific :
+        levelSpecific.length > 0 ? levelSpecific :
+        global;
 
       const totalTuitionExpected = matchingFeeStructures.reduce(
         (sum, fs) => sum + Number(fs.totalAmount),

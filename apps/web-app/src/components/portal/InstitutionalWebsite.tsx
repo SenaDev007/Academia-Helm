@@ -459,7 +459,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         activeNav="Accueil"
         transparentAtTop
         navLinks={navLinks}
-        portalHref="/portal"
+        portalHref="/school-portal/portal"
       />
 
       {/* Bandeau recrutement (optionnel — non sticky, sous la navbar) */}
@@ -518,9 +518,9 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
               >
                 {heroCtaText} <ChevronRight size={16} />
               </button>
-              {/* CTA secondaire — "Portail" (contour blanc) → /portal */}
+              {/* CTA secondaire — "Portail" (contour blanc) → /school-portal/portal (page portail tenant) */}
               <a
-                href="/portal"
+                href="/school-portal/portal"
                 className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl text-sm font-bold text-white border-2 border-white/40 hover:bg-white/10 hover:border-white/70 transition-all backdrop-blur-sm"
               >
                 Portail <ArrowRight size={16} />

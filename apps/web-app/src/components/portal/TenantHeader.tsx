@@ -98,9 +98,9 @@ export default function TenantHeader({
       style={{
         background: isOpaque
           ? `linear-gradient(135deg, ${colors.primary} 0%, ${colors.dark} 100%)`
-          : 'transparent',
-        backdropFilter: isOpaque ? 'blur(12px)' : 'none',
-        boxShadow: isOpaque ? '0 4px 24px rgba(0,0,0,0.18)' : 'none',
+          : 'rgba(255, 255, 255, 0.95)',
+        backdropFilter: isOpaque ? 'blur(12px)' : 'blur(8px)',
+        boxShadow: isOpaque ? '0 4px 24px rgba(0,0,0,0.18)' : '0 1px 3px rgba(0,0,0,0.08)',
       }}
     >
       {/* Liseré or signature Academia Helm */}
@@ -121,21 +121,21 @@ export default function TenantHeader({
             <div className="hidden sm:block leading-tight">
               <h1
                 className="text-sm md:text-base font-bold tracking-tight transition-colors"
-                style={{ color: '#FFFFFF' }}
+                style={{ color: isOpaque ? '#FFFFFF' : colors.primary }}
               >
                 {displayName}
               </h1>
               {schoolAcronym && schoolName !== schoolAcronym ? (
                 <p
                   className="text-[10px] truncate max-w-[200px]"
-                  style={{ color: `${colors.accent}cc` }}
+                  style={{ color: isOpaque ? `${colors.accent}cc` : colors.secondary }}
                 >
                   {schoolName}
                 </p>
               ) : !schoolAcronym && schoolSlogan ? (
                 <p
                   className="text-[10px] truncate max-w-[200px]"
-                  style={{ color: `${colors.accent}cc` }}
+                  style={{ color: isOpaque ? `${colors.accent}cc` : colors.secondary }}
                 >
                   {schoolSlogan}
                 </p>
@@ -152,7 +152,7 @@ export default function TenantHeader({
                   key={link.href}
                   onClick={() => handleNavClick(link.href)}
                   className="relative px-3 py-2 text-sm font-medium transition-colors rounded-lg group"
-                  style={{ color: isActive ? '#FFFFFF' : 'rgba(255,255,255,0.85)' }}
+                  style={{ color: isActive ? (isOpaque ? '#FFFFFF' : colors.primary) : (isOpaque ? 'rgba(255,255,255,0.85)' : colors.secondary) }}
                 >
                   {link.label}
                   {/* Underline or au survol */}
@@ -185,7 +185,8 @@ export default function TenantHeader({
             )}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 text-white rounded-lg hover:bg-white/10 transition-colors"
+              className="lg:hidden p-2 rounded-lg transition-colors"
+              style={{ color: isOpaque ? '#FFFFFF' : colors.primary }}
               aria-label={mobileMenuOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
               aria-expanded={mobileMenuOpen}
             >

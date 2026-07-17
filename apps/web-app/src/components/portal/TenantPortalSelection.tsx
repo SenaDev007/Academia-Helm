@@ -29,7 +29,6 @@ import LogoCircle from '@/components/ui/LogoCircle';
 import { extractTenantSlug } from '@/lib/tenant/constants';
 import { resolveTenantColors } from '@/lib/tenant/use-tenant-colors';
 import { type DepartmentData } from '@/data/benin-departments';
-import { BRAND } from '@/lib/brand';
 
 type PortalType = 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC';
 

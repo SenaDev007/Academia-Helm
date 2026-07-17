@@ -7765,3 +7765,77 @@ Stage Summary:
   * ThemeApplier injecte les 32 vars CSS shadcn/ui sur <html> quand thème actif
   * Stratégie 3 niveaux : thème officiel > customColors CMS > Helm default (CDC)
   * 40+ thèmes maintenant fonctionnels sur le site institutionnel
+
+---
+Task ID: 17-a
+Agent: full-stack-developer (Fix portail + CMS connection)
+Task: Fix page portail tenant + connecter toutes les sections au CMS
+
+Work Log:
+
+Lecture préalable :
+- worklog.md Task 16-a — fix portail tenant (useSchoolBranding lit searchParam `tenant`) + thèmes site institutionnel (themeToColors + ThemeApplier)
+- TenantPortalSelection.tsx — import `BRAND` inutilisé (ligne 32), footer OK (TenantFooter utilise displayName = schoolAcronym || schoolName)
+- InstitutionalWebsite.tsx (1258 lignes) — 5 sections hardcodées (programs, differentiators, faculty, admissionSteps, REQUIRED_DOCUMENTS) + 7 titres/sous-titres hardcodés
+- footer-column.tsx — vérifié : colonne 1 utilise `displayName = schoolAcronym || schoolName` + `LogoCircle logoUrl={schoolLogo}` ✅ (pas "Academia Helm" ; seule mention "Propulsé par Academia Helm" dans la ligne de bas, exigée par le CDC)
+- default-cms-content.ts — `withDefault<T>(real, fallback)` gère null/undefined/empty-string/empty-array
+- prisma schema TenantWebsite — pas (encore) de colonnes programs/differentiators/faculty/admissionSteps/admissionDocuments ; lecture `rawWebsite?.xxx` sera donc `undefined` → fallback automatique sur les defaults. Connexion CMS-ready pour future exposition dans l'éditeur.
+
+Problème 1 — Page portail tenant :
+
+1. `apps/web-app/src/components/portal/TenantPortalSelection.tsx` (modifié, -1 ligne) :
+   - Suppression de l'import inutilisé `import { BRAND } from '@/lib/brand';` (ligne 32)
+   - Vérification : handlePortalClick redirige déjà directement vers `/login?portal=...&tenant=slug&school_name=name` sans étape de sélection d'école ✅
+   - Vérification : pas de bouton "dev" ✅
+   - Vérification : le composant affiche déjà le logo + nom de l'école (pas "Academia Helm") ✅
+
+2. `apps/web-app/src/components/ui/footer-column.tsx` (vérifié, aucune modif nécessaire) :
+   - Colonne 1 : `<LogoCircle logoUrl={schoolLogo} alt={schoolName} />` + `<h3>{displayName}</h3>` où `displayName = schoolAcronym || schoolName` → affiche le logo + nom/acronyme de l'école ✅
+   - Ligne de bas : `Propulsé par Academia Helm` — exigée par le CDC § 3.10 (attribution plateforme) ✅
+
+Problème 2 — Connecter TOUTES les sections au CMS :
+
+3. `apps/web-app/src/components/portal/InstitutionalWebsite.tsx` (modifié, +65 lignes) :
+
+   a. Suppression de l'import inutilisé `import { BRAND } from '@/lib/brand';` (ligne 51)
+
+   b. Bloc de déclaration CMS-connecté (après `faqItems`, lignes 410-466) :
+      - `programs` : `(rawWebsite?.programs && Array.isArray && length > 0) ? rawWebsite.programs : DEFAULT_PROGRAMS`
+      - `differentiators` : même pattern → fallback DEFAULT_DIFFERENTIATORS
+      - `faculty` : même pattern → fallback DEFAULT_FACULTY
+      - `admissionSteps` : même pattern → fallback ADMISSION_STEPS
+      - `admissionDocuments` : même pattern → fallback REQUIRED_DOCUMENTS
+      - 13 variables de titres/sous-titres via `withDefault(rawWebsite?.xxx, 'défaut')` :
+        * presentationSubtitle, programsTitle, programsSubtitle, facultyTitle, facultySubtitle,
+          admissionTitle, admissionSubtitle, testimonialsTitle, testimonialsSubtitle,
+          contactTitle, contactSubtitle, newsTitle, newsSubtitle
+
+   c. Remplacement des usages hardcodés dans le JSX (11 sites) :
+      - Section Présentation : `subtitle={presentationSubtitle}` (title déjà connecté via `website.presentationTitle`)
+      - Section Programmes : `title={programsTitle}` + `subtitle={programsSubtitle}` + `programs.map(...)` (au lieu de `DEFAULT_PROGRAMS.map`)
+      - Section Différenciation : `differentiators.map(...)` (au lieu de `DEFAULT_DIFFERENTIATORS.map`)
+      - Section Corps enseignant : `title={facultyTitle}` + `subtitle={facultySubtitle}` + `faculty.map(...)` (au lieu de `DEFAULT_FACULTY.map`)
+      - Section Actualités : `title={newsTitle}` + `subtitle={newsSubtitle}`
+      - Section Admissions : `title={admissionTitle}` + `subtitle={admissionSubtitle}` + `admissionSteps.map(...)` (au lieu de `ADMISSION_STEPS.map`)
+      - Section Documents requis : `admissionDocuments.map(...)` (au lieu de `REQUIRED_DOCUMENTS.map`) + rendu resilient `typeof doc === 'string' ? doc : doc.label || doc.name || doc.title` (supporte string ou objet)
+      - Section Témoignages : `title={testimonialsTitle}` + `subtitle={testimonialsSubtitle}`
+      - Section Contact : `title={contactTitle}` + `subtitle={contactSubtitle}`
+
+   d. Typage : les paramètres `.map` sont typés `(item: any, i: number)` pour accepter indifféremment les objets defaults (avec `Icon` component) et les futurs objets CMS (potentiellement avec `iconName` string). Un résolveur d'icônes pourra être ajouté ultérieurement si le CMS expose ces champs avec des noms d'icônes string.
+
+Vérifications TypeScript :
+- `bunx tsc --noEmit` sur apps/web-app : 10 erreurs pré-existantes dans `src/components/cms/useAutoSave.ts` (mentionnées Task 13-a, non liées à ce commit). 0 erreur sur les 2 fichiers modifiés (TenantPortalSelection.tsx, InstitutionalWebsite.tsx).
+
+Stage Summary:
+- 2 fichiers modifiés (~64 lignes nettes ajoutées)
+- Problème 1 résolu :
+  * Import `BRAND` inutilisé supprimé de TenantPortalSelection.tsx
+  * Footer (footer-column.tsx) vérifié : affiche déjà logo + nom/acronyme école en colonne 1 ; "Propulsé par Academia Helm" uniquement dans la ligne de bas (attribution CDC)
+  * handlePortalClick déjà correct : redirection directe /login?portal=...&tenant=slug&school_name=name
+- Problème 2 résolu — 5 collections + 13 titres/sous-titres connectés au CMS :
+  * Collections : programs, differentiators, faculty, admissionSteps, admissionDocuments (pattern array-avec-fallback)
+  * Titres : programsTitle, facultyTitle, admissionTitle, testimonialsTitle, contactTitle, newsTitle (6)
+  * Sous-titres : presentationSubtitle, programsSubtitle, facultySubtitle, admissionSubtitle, testimonialsSubtitle, contactSubtitle, newsSubtitle (7)
+  * Toutes les sections du site institutionnel sont maintenant CMS-ready : si l'admin configure ces champs via le back-office, ils s'affichent ; sinon fallback sur les defaults (préserve l'UI actuelle)
+  * Rendu resilient pour admissionDocuments (supporte string ou objet {label/name/title})
+  * Import `BRAND` inutilisé également supprimé de InstitutionalWebsite.tsx (bonus lint)

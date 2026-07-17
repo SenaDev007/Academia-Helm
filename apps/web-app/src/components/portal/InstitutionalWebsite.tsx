@@ -48,7 +48,6 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
 import LogoCircle from '@/components/ui/LogoCircle';
-import { BRAND } from '@/lib/brand';
 import { extractTenantSlug } from '@/lib/tenant/constants';
 import { type PortalType } from '@/lib/auth/role-portal-map';
 import FloatingEduParticles from '@/components/ui/FloatingEduParticles';
@@ -403,6 +402,69 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
     ? websiteData.faqItems
     : DEFAULT_FAQ_ITEMS;
 
+  // ─── Sections CMS-connectées (avec fallback sur les defaults) ──────────
+  // Programs, differentiators, faculty, admissionSteps, admissionDocuments
+  // sont lus depuis rawWebsite (CMS) si présents et non vides, sinon fallback
+  // sur les constantes par défaut. Permet à l'admin de surcharger ces sections
+  // via le back-office CMS quand les champs seront exposés dans l'éditeur.
+  //
+  // Note : les objets DEFAULT_* contiennent une propriété `Icon` (composant
+  // Lucide). Si le CMS retourne des données avec `iconName` (string) au lieu
+  // de `Icon` (component), un résolveur d'icônes devra être ajouté.
+  const programs = (rawWebsite?.programs && Array.isArray(rawWebsite.programs) && rawWebsite.programs.length > 0)
+    ? rawWebsite.programs
+    : DEFAULT_PROGRAMS;
+  const differentiators = (rawWebsite?.differentiators && Array.isArray(rawWebsite.differentiators) && rawWebsite.differentiators.length > 0)
+    ? rawWebsite.differentiators
+    : DEFAULT_DIFFERENTIATORS;
+  const faculty = (rawWebsite?.faculty && Array.isArray(rawWebsite.faculty) && rawWebsite.faculty.length > 0)
+    ? rawWebsite.faculty
+    : DEFAULT_FACULTY;
+  const admissionSteps = (rawWebsite?.admissionSteps && Array.isArray(rawWebsite.admissionSteps) && rawWebsite.admissionSteps.length > 0)
+    ? rawWebsite.admissionSteps
+    : ADMISSION_STEPS;
+  const admissionDocuments = (rawWebsite?.admissionDocuments && Array.isArray(rawWebsite.admissionDocuments) && rawWebsite.admissionDocuments.length > 0)
+    ? rawWebsite.admissionDocuments
+    : REQUIRED_DOCUMENTS;
+
+  // ─── Titres & sous-titres de sections (CMS-connectés) ─────────────────
+  // Chaque titre/sous-titre de section est lu depuis le CMS avec fallback sur
+  // la valeur actuelle (préserve l'UI si le CMS n'est pas configuré).
+  const presentationSubtitle = withDefault(
+    rawWebsite?.presentationSubtitle,
+    'Mission, vision et ancrage local au service de la réussite de chaque élève.',
+  );
+  const programsTitle = withDefault(rawWebsite?.programsTitle, 'Nos programmes');
+  const programsSubtitle = withDefault(
+    rawWebsite?.programsSubtitle,
+    'De la maternelle au secondaire, un parcours pédagogique structuré et exigeant.',
+  );
+  const facultyTitle = withDefault(rawWebsite?.facultyTitle, 'Corps enseignant');
+  const facultySubtitle = withDefault(
+    rawWebsite?.facultySubtitle,
+    'Une équipe pédagogique engagée et qualifiée au service de la réussite de chaque élève.',
+  );
+  const admissionTitle = withDefault(rawWebsite?.admissionTitle, 'Admissions');
+  const admissionSubtitle = withDefault(
+    rawWebsite?.admissionSubtitle,
+    "Un parcours d'admission clair en 4 étapes pour rejoindre notre communauté éducative.",
+  );
+  const testimonialsTitle = withDefault(rawWebsite?.testimonialsTitle, 'Témoignages');
+  const testimonialsSubtitle = withDefault(
+    rawWebsite?.testimonialsSubtitle,
+    'Ce que les parents, élèves et anciens élèves disent de notre établissement.',
+  );
+  const contactTitle = withDefault(rawWebsite?.contactTitle, 'Contact');
+  const contactSubtitle = withDefault(
+    rawWebsite?.contactSubtitle,
+    "Une question sur l'inscription, les programmes ou la vie scolaire ? Écrivez-nous.",
+  );
+  const newsTitle = withDefault(rawWebsite?.newsTitle, "Actualités de l'établissement");
+  const newsSubtitle = withDefault(
+    rawWebsite?.newsSubtitle,
+    'Suivez la vie de notre établissement : événements, résultats et moments forts.',
+  );
+
   // ─── Coordonnées contact ──
   const contactEmail = withDefault(rawWebsite?.contactEmail, DEFAULT_WEBSITE_CONFIG.contactEmail) || schoolData?.phone || '';
   const contactPhone = withDefault(rawWebsite?.contactPhone, DEFAULT_WEBSITE_CONFIG.contactPhone) || schoolData?.phone || '';
@@ -550,7 +612,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
             <SectionHeader
               eyebrow="Notre établissement"
               title={withDefault(website.presentationTitle, 'À propos de notre école')}
-              subtitle="Mission, vision et ancrage local au service de la réussite de chaque élève."
+              subtitle={presentationSubtitle}
               navy={NAVY}
               gold={GOLD}
             />
@@ -637,15 +699,15 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <SectionHeader
             eyebrow="Excellence académique"
-            title="Nos programmes"
-            subtitle="De la maternelle au secondaire, un parcours pédagogique structuré et exigeant."
+            title={programsTitle}
+            subtitle={programsSubtitle}
             navy={NAVY}
             gold={GOLD}
           />
 
           {/* Grille de programmes — cartes avec icône (CDC 3.4) */}
           <div className="grid md:grid-cols-3 gap-6 mb-16">
-            {DEFAULT_PROGRAMS.map((program, i) => (
+            {programs.map((program: any, i: number) => (
               <motion.div
                 key={program.id}
                 initial={{ opacity: 0, y: 24 }}
@@ -684,7 +746,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
               Nos points de différenciation
             </h3>
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-              {DEFAULT_DIFFERENTIATORS.map((item, i) => (
+              {differentiators.map((item: any, i: number) => (
                 <motion.div
                   key={item.title}
                   initial={{ opacity: 0, y: 16 }}
@@ -712,8 +774,8 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <SectionHeader
             eyebrow="Notre équipe"
-            title="Corps enseignant"
-            subtitle="Une équipe pédagogique engagée et qualifiée au service de la réussite de chaque élève."
+            title={facultyTitle}
+            subtitle={facultySubtitle}
             navy={NAVY}
             gold={GOLD}
           />
@@ -733,7 +795,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
 
           {/* Grille d'enseignants clés (CDC 3.5 — 3-8 profils, responsive 2-4 colonnes) */}
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {DEFAULT_FACULTY.map((member, i) => (
+            {faculty.map((member: any, i: number) => (
               <motion.div
                 key={i}
                 initial={{ opacity: 0, y: 24 }}
@@ -769,8 +831,8 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <SectionHeader
             eyebrow="Vie scolaire"
-            title="Actualités de l'établissement"
-            subtitle="Suivez la vie de notre établissement : événements, résultats et moments forts."
+            title={newsTitle}
+            subtitle={newsSubtitle}
             navy={NAVY}
             gold={GOLD}
           />
@@ -869,8 +931,8 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <SectionHeader
             eyebrow="Rejoindre notre établissement"
-            title="Admissions"
-            subtitle="Un parcours d'admission clair en 4 étapes pour rejoindre notre communauté éducative."
+            title={admissionTitle}
+            subtitle={admissionSubtitle}
             navy={NAVY}
             gold={GOLD}
             inverted
@@ -881,7 +943,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
             <div className="grid md:grid-cols-4 gap-6 md:gap-4 relative">
               {/* Ligne de timeline horizontale (desktop) */}
               <div className="hidden md:block absolute top-8 left-[12.5%] right-[12.5%] h-0.5" style={{ background: `linear-gradient(90deg, ${GOLD}, ${GOLD}55, ${GOLD})` }} />
-              {ADMISSION_STEPS.map((step, i) => (
+              {admissionSteps.map((step: any, i: number) => (
                 <motion.div
                   key={step.num}
                   initial={{ opacity: 0, y: 20 }}
@@ -917,10 +979,10 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                 Documents requis
               </h3>
               <ul className="space-y-2.5">
-                {REQUIRED_DOCUMENTS.map((doc, i) => (
+                {admissionDocuments.map((doc: any, i: number) => (
                   <li key={i} className="flex items-start gap-2 text-sm text-blue-50/85">
                     <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" style={{ color: GOLD }} />
-                    <span>{doc}</span>
+                    <span>{typeof doc === 'string' ? doc : doc.label || doc.name || doc.title}</span>
                   </li>
                 ))}
               </ul>
@@ -957,8 +1019,8 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
             <SectionHeader
               eyebrow="Ils nous font confiance"
-              title="Témoignages"
-              subtitle="Ce que les parents, élèves et anciens élèves disent de notre établissement."
+              title={testimonialsTitle}
+              subtitle={testimonialsSubtitle}
               navy={NAVY}
               gold={GOLD}
             />
@@ -1065,8 +1127,8 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <SectionHeader
             eyebrow="Nous contacter"
-            title="Contact"
-            subtitle="Une question sur l'inscription, les programmes ou la vie scolaire ? Écrivez-nous."
+            title={contactTitle}
+            subtitle={contactSubtitle}
             navy={NAVY}
             gold={GOLD}
           />

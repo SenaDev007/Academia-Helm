@@ -80,7 +80,7 @@ export interface StudentAccountRow {
     lastName?: string;
     matricule?: string;
     studentCode?: string;
-    schoolLevel?: { name?: string };
+    schoolLevel?: { name?: string; code?: string };
   };
   studentEnrollments?: Array<{
     class?: { name?: string };
@@ -457,22 +457,31 @@ export async function exportTransactionsToExcel(
 /*  Export EXCEL — Comptes élèves                                      */
 /* ------------------------------------------------------------------ */
 
-export async function exportStudentAccountsToExcel(
+/**
+ * ⭐ Task 20-a : Construit une feuille Excel "Comptes élèves" (en-tête officielle
+ * + tableau stylé + ligne TOTAL). Factorisé pour pouvoir générer plusieurs
+ * feuilles (une par classe) lors de l'export global.
+ *
+ * @param ws        Worksheet ExcelJS déjà créée
+ * @param accounts  Liste des comptes à afficher dans cette feuille
+ * @param header    En-tête officielle (école, année, etc.)
+ * @param sheetTitle Titre affiché dans la cellule fusionnée (ex: "Comptes élèves — Maternelle 1")
+ * @param classLabel Libellé de la classe affiché sous le titre (ex: "Classe : Maternelle 1" ou "Toutes les classes")
+ * @returns nombre de lignes écrites (pour extension éventuelle)
+ */
+function buildStudentAccountsSheet(
+  ws: any,
   accounts: StudentAccountRow[],
-  header: SchoolHeader & { classFilter?: string }
-): Promise<void> {
-  const ExcelJS = await loadExcelJS();
-  const workbook = new ExcelJS.Workbook();
-  const ws = workbook.addWorksheet('Comptes élèves', {
-    properties: { defaultRowHeight: 18 },
-  });
-
+  header: SchoolHeader & { classFilter?: string },
+  sheetTitle: string,
+  classLabel: string,
+): number {
   const numCols = 10;
   let row = addOfficialHeader(ws, header, numCols);
 
   // Titre
   ws.mergeCells(row, 1, row, numCols);
-  ws.getCell(row, 1).value = 'Comptes élèves';
+  ws.getCell(row, 1).value = sheetTitle;
   ws.getCell(row, 1).font = { bold: true, size: 12, color: COLORS.headerBlue };
   ws.getCell(row, 1).alignment = { horizontal: 'center' };
   ws.getRow(row).height = 22;
@@ -487,7 +496,7 @@ export async function exportStudentAccountsToExcel(
     row++;
   }
   ws.mergeCells(row, 1, row, numCols);
-  ws.getCell(row, 1).value = header.classFilter ? `Classe : ${header.classFilter}` : 'Toutes les classes';
+  ws.getCell(row, 1).value = classLabel;
   ws.getCell(row, 1).font = { italic: true, size: 10, color: COLORS.grayText };
   ws.getCell(row, 1).alignment = { horizontal: 'center' };
   row++;
@@ -521,8 +530,9 @@ export async function exportStudentAccountsToExcel(
     const isEven = idx % 2 === 0;
     const status = getPaymentStatus(a);
     const sc = STATUS_CONFIG[status];
+    // ⭐ Task 20-a : fallback sur le code du niveau si le name est vide
     const className = a.studentEnrollments?.[0]?.class?.name || '—';
-    const level = a.student?.schoolLevel?.name || '—';
+    const level = a.student?.schoolLevel?.name || a.student?.schoolLevel?.code || '—';
     const arrearAmount = Number(a.actualArrears) || 0;
 
     const values = [
@@ -574,6 +584,106 @@ export async function exportStudentAccountsToExcel(
     { width: 16 }, { width: 20 }, { width: 20 }, { width: 18 }, { width: 14 },
     { width: 14 }, { width: 14 }, { width: 14 }, { width: 16 }, { width: 12 },
   ];
+
+  return row;
+}
+
+/**
+ * ⭐ Task 20-a : Nettoie un nom de classe pour en faire un nom de feuille Excel valide.
+ * Excel limite les noms de feuilles à 31 caractères et interdit : \ / ? * [ ]
+ */
+function sanitizeSheetName(name: string, maxLength: number = 28): string {
+  if (!name) return 'Sans classe';
+  const cleaned = String(name)
+    .replace(/[/\\?*[\]:]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned.substring(0, maxLength) || 'Sans classe';
+}
+
+/**
+ * ⭐ Task 20-a : Récupère le nom de la classe d'un compte élève (premier enrollment).
+ */
+function getAccountClassName(a: StudentAccountRow): string {
+  return a.studentEnrollments?.[0]?.class?.name || '';
+}
+
+export async function exportStudentAccountsToExcel(
+  accounts: StudentAccountRow[],
+  header: SchoolHeader & { classFilter?: string; groupByClass?: boolean }
+): Promise<void> {
+  const ExcelJS = await loadExcelJS();
+  const workbook = new ExcelJS.Workbook();
+
+  // ⭐ Task 20-a : si groupByClass=true et qu'on a plusieurs classes distinctes,
+  // on crée une feuille par classe. Sinon, une seule feuille "Comptes élèves".
+  const shouldGroupByClass = !!header.groupByClass && accounts.length > 0;
+
+  if (shouldGroupByClass) {
+    // Grouper par nom de classe en préservant l'ordre alphabétique des classes
+    const groups = new Map<string, StudentAccountRow[]>();
+    for (const a of accounts) {
+      const className = getAccountClassName(a) || 'Sans classe';
+      const list = groups.get(className) || [];
+      list.push(a);
+      groups.set(className, list);
+    }
+    // Trier les classes par ordre alphabétique (les "Sans classe" à la fin)
+    const sortedClassNames = Array.from(groups.keys()).sort((a, b) => {
+      if (a === 'Sans classe') return 1;
+      if (b === 'Sans classe') return -1;
+      return a.localeCompare(b, 'fr');
+    });
+
+    // ⚠️ Si une seule classe au final → une seule feuille (comportement historique)
+    if (sortedClassNames.length === 1) {
+      const className = sortedClassNames[0];
+      const ws = workbook.addWorksheet('Comptes élèves', {
+        properties: { defaultRowHeight: 18 },
+      });
+      const label = className === 'Sans classe'
+        ? 'Élèves non affectés à une classe'
+        : `Classe : ${className}`;
+      buildStudentAccountsSheet(
+        ws,
+        groups.get(className) || [],
+        header,
+        'Comptes élèves',
+        label,
+      );
+    } else {
+      // Plusieurs classes → une feuille par classe
+      for (const className of sortedClassNames) {
+        const sheetName = sanitizeSheetName(className);
+        const ws = workbook.addWorksheet(sheetName, {
+          properties: { defaultRowHeight: 18 },
+        });
+        const label = className === 'Sans classe'
+          ? 'Élèves non affectés à une classe'
+          : `Classe : ${className}`;
+        const title = `Comptes élèves — ${className}`;
+        buildStudentAccountsSheet(
+          ws,
+          groups.get(className) || [],
+          header,
+          title,
+          label,
+        );
+      }
+    }
+  } else {
+    // Comportement historique : une seule feuille globale
+    const ws = workbook.addWorksheet('Comptes élèves', {
+      properties: { defaultRowHeight: 18 },
+    });
+    buildStudentAccountsSheet(
+      ws,
+      accounts,
+      header,
+      'Comptes élèves',
+      header.classFilter ? `Classe : ${header.classFilter}` : 'Toutes les classes',
+    );
+  }
 
   await downloadExcel(workbook, studentAccountsFilename(header.classFilter, 'xlsx'));
 }

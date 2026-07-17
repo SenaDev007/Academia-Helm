@@ -35,9 +35,10 @@ export class FinancePdfExportController {
   async exportStudentAccountsPdf(
     @TenantId() tenantId: string,
     @Query('academicYearId') academicYearId: string,
+    @Query('classId') classId?: string,
     @Res() res?: Response,
   ) {
-    return this.pdfExportService.exportStudentAccountsPdf(tenantId, academicYearId, res);
+    return this.pdfExportService.exportStudentAccountsPdf(tenantId, academicYearId, res, classId);
   }
 
   @Get('cash-register/pdf')

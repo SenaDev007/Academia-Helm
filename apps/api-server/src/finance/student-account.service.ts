@@ -556,6 +556,8 @@ export class StudentAccountService {
       search?: string;
       page?: number;
       limit?: number;
+      // ⭐ Task 20-a : si true, lève la limite de 500 (export PDF/Excel tous les comptes)
+      exportAll?: boolean;
     },
   ) {
     const where: any = { tenantId, academicYearId: filters.academicYearId };
@@ -586,7 +588,10 @@ export class StudentAccountService {
     // pour que les KPIs affichés soient les vrais totaux serveur.
     const isPaginated = !!(filters.page && filters.limit);
     const page = Math.max(1, filters.page ?? 1);
-    const limit = Math.min(500, Math.max(1, filters.limit ?? 50));
+    // ⭐ Task 20-a : si exportAll=true, on lève la limite à 100 000 (export tous les comptes)
+    const limit = filters.exportAll
+      ? 100000
+      : Math.min(500, Math.max(1, filters.limit ?? 50));
 
     const findManyArgs = {
       where,
@@ -598,6 +603,8 @@ export class StudentAccountService {
             lastName: true,
             studentCode: true,
             matricule: true,
+            // ⭐ Task 20-a : inclure le niveau scolaire (name + code) pour les exports PDF/Excel
+            schoolLevel: { select: { id: true, name: true, code: true } },
             studentEnrollments: {
               where: { academicYearId: filters.academicYearId },
               select: { id: true, classId: true, class: { select: { id: true, name: true } } },
@@ -613,7 +620,10 @@ export class StudentAccountService {
         },
       },
       orderBy: [{ student: { lastName: 'asc' } }, { student: { firstName: 'asc' } }],
-      ...(isPaginated ? { skip: (page - 1) * limit, take: limit } : { take: 500 }),
+      ...(isPaginated
+        ? { skip: (page - 1) * limit, take: limit }
+        // ⭐ Task 20-a : si exportAll=true, on ne cappe pas à 500
+        : { take: filters.exportAll ? 100000 : 500 }),
     };
 
     const baseAccounts = await this.prisma.studentAccount.findMany(findManyArgs);

@@ -317,7 +317,10 @@ export default function StudentAccountsContent() {
     toast({ title: 'Export réussi', description: `${filteredAccounts.length} compte(s) exporté(s).` });
   };
 
-  // Export Excel de tous les comptes élèves filtrés
+  // Export Excel de TOUS les comptes élèves (pas seulement la page active)
+  // ⭐ Task 20-a : on fetch tous les comptes avec exportAll=true pour avoir la liste complète
+  // (au lieu des 50 comptes de la page courante). Pour l'export global (toutes les classes),
+  // on crée une feuille Excel par classe via l'option groupByClass.
   const handleExportExcel = async () => {
     if (filteredAccounts.length === 0) {
       toast({ title: 'Aucune donnée', description: 'Rien à exporter.', variant: 'destructive' });
@@ -329,7 +332,30 @@ export default function StudentAccountsContent() {
       const classLabel = filterClassId
         ? classes.find((c) => c.id === filterClassId)?.name || ''
         : '';
-      await exportStudentAccountsToExcel(filteredAccounts, {
+
+      // ⭐ Task 20-a : fetch de TOUS les comptes (sans pagination, cap levé côté backend)
+      const exportParams: Record<string, string> = {
+        academicYearId: effectiveYearId,
+        exportAll: 'true',
+        limit: '99999',
+      };
+      if (filterClassId) exportParams.classId = filterClassId;
+      if (filterStatus) exportParams.status = filterStatus;
+      if (searchQuery.trim()) exportParams.search = searchQuery.trim();
+
+      const data = await financeService.getStudentAccounts(exportParams);
+      const allAccounts: any[] = Array.isArray(data) ? data : (data?.data ?? []);
+
+      if (allAccounts.length === 0) {
+        toast({ title: 'Aucune donnée', description: 'Aucun compte à exporter.', variant: 'destructive' });
+        return;
+      }
+
+      // ⭐ Task 20-a : si aucune classe spécifique n'est filtrée → une feuille par classe.
+      // Si une classe est filtrée → une seule feuille (comportement historique).
+      const groupByClass = !filterClassId;
+
+      await exportStudentAccountsToExcel(allAccounts, {
         schoolName: tenant?.name || 'Établissement',
         schoolLogoUrl: tenant?.id ? `/api/tenants/${tenant.id}/logo` : null,
         academicYear: yearLabel,
@@ -338,8 +364,16 @@ export default function StudentAccountsContent() {
         schoolAddress: tenant?.address || null,
         schoolPhone: tenant?.phone || null,
         schoolEmail: tenant?.email || null,
+        groupByClass,
       });
-      toast({ title: '✅ Export Excel généré', description: `${filteredAccounts.length} compte(s) exporté(s).` });
+
+      const sheetInfo = groupByClass
+        ? ` (${new Set(allAccounts.map((a) => a.studentEnrollments?.[0]?.class?.name || 'Sans classe')).size} feuilles par classe)`
+        : '';
+      toast({
+        title: '✅ Export Excel généré',
+        description: `${allAccounts.length} compte(s) exporté(s)${sheetInfo}.`,
+      });
     } catch (e: any) {
       toast({ title: 'Erreur export Excel', description: e.message, variant: 'destructive' });
     } finally {
@@ -347,7 +381,9 @@ export default function StudentAccountsContent() {
     }
   };
 
-  // Export PDF de tous les comptes élèves filtrés
+  // Export PDF de TOUS les comptes élèves (généré côté backend via Puppeteer)
+  // ⭐ Task 20-a : passe le filtre classId au backend pour que le PDF respecte la vue courante.
+  // Le backend récupère TOUS les comptes (sans pagination) — pas seulement la page active.
   const handleExportPdf = async () => {
     if (filteredAccounts.length === 0) {
       toast({ title: 'Aucune donnée', description: 'Rien à exporter.', variant: 'destructive' });
@@ -355,8 +391,13 @@ export default function StudentAccountsContent() {
     }
     setExporting('pdf');
     try {
-      // Utiliser le backend Puppeteer pour un PDF professionnel
+      const classLabel = filterClassId
+        ? classes.find((c) => c.id === filterClassId)?.name || ''
+        : '';
+      // ⭐ Task 20-a : on transmet academicYearId + classId (optionnel) au backend.
+      // Le backend PDF récupère TOUS les comptes matchés (pas de pagination).
       const params = new URLSearchParams({ academicYearId: effectiveYearId });
+      if (filterClassId) params.set('classId', filterClassId);
       const res = await fetch(`/api/finance/exports/student-accounts/pdf?${params.toString()}`, { credentials: 'include' });
       if (!res.ok) throw new Error(`Erreur ${res.status}`);
       const blob = await res.blob();

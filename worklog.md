@@ -8222,3 +8222,226 @@ Prochaines étapes (Phase 5 — backend) :
 
 - Persister `templateId` + `designSnapshot` sur `StudentIdCard` à la génération (modification de `generateIdCard` et `generateBulkIdCards` pour appeler `buildDesignSnapshot(template, identityProfile)`).
 - Bouton « Appliquer à toutes les cartes » : régénère en masse avec le template sélectionné via `generateBulkIdCards` + `templateKey` en payload.
+
+---
+Task ID: 20-a
+Agent: full-stack-developer (Fix export PDF/Excel comptes élèves)
+Task: Corriger 4 problèmes sur l'export PDF/Excel des comptes élèves :
+  (1) export limité à la page active (50 comptes) au lieu de TOUS,
+  (2) colonne "Classe" vide dans le PDF/Excel,
+  (3) colonne "Niveau scolaire" vide dans le PDF/Excel,
+  (4) export Excel global doit créer une feuille par classe.
+
+Work Log:
+
+Phase 1 — Diagnostic
+
+1. **Analyse du flux d'export Excel** (`StudentAccountsContent.tsx`)
+   - `handleExportExcel` utilisait `filteredAccounts` (= `accounts` = 50 comptes
+     de la page courante, pagination `PAGE_SIZE = 50`). Aucun fetch complémentaire
+     → l'export était limité à la page active.
+   - `handleExportPdf` appelait bien le backend Puppeteer (qui récupère TOUS les
+     comptes), MAIS ne transmettait pas le `classId` filtré → le PDF montrait
+     toujours toutes les classes même si l'utilisateur avait filtré une classe.
+   - Bug additionnel : `classLabel` était référencé dans `setPreviewDoc` sans
+     être déclaré dans `handleExportPdf` (variable `undefined`).
+
+2. **Analyse du backend `findAll`** (`student-account.service.ts`)
+   - Include `studentEnrollments` déjà présent et filtré par `academicYearId` ✅.
+   - Mais la select `student` n'incluait PAS `schoolLevel` → la colonne
+     "Niveau scolaire" était vide côté frontend.
+   - `limit` cappé à `Math.min(500, Math.max(1, filters.limit ?? 50))` →
+     même avec `limit=99999` on était bloqué à 500.
+   - En mode non paginé : `take: 500` hardcodé → même problème.
+
+3. **Analyse du backend PDF** (`finance-pdf-export.service.ts`)
+   - `exportStudentAccountsPdf` incluait `studentEnrollments` SANS filtre
+     `where: { academicYearId }` → renvoyait la 1re inscription trouvée
+     (potentiellement d'une année antérieure où l'élève n'avait pas encore
+     de classe assignée).
+   - `schoolLevel` était inclus avec `select: { name: true }` mais sans
+     fallback sur `code`.
+
+4. **Analyse de l'Excel builder** (`excel-exports.ts`)
+   - `exportStudentAccountsToExcel` créait toujours UNE seule feuille
+     "Comptes élèves", même pour un export global multi-classes.
+   - Utilisait `a.student?.schoolLevel?.name` sans fallback sur `code`.
+
+Phase 2 — Corrections backend (4 fichiers)
+
+5. **`apps/api-server/src/finance/student-account.service.ts`** (+16 lignes)
+   - Ajout de `exportAll?: boolean` dans le type `filters` de `findAll`.
+   - Ajout de `schoolLevel: { select: { id: true, name: true, code: true } }`
+     dans la select `student` de l'include Prisma.
+   - Levée du cap de limite : `limit = filters.exportAll ? 100000 :
+     Math.min(500, Math.max(1, filters.limit ?? 50))`.
+   - En mode non paginé : `take: filters.exportAll ? 100000 : 500` au lieu du
+     `take: 500` hardcodé.
+
+6. **`apps/api-server/src/finance/student-account.controller.ts`** (+4 lignes)
+   - Ajout du paramètre `@Query('exportAll') exportAll?: string`.
+   - Transmission au service : `exportAll: exportAll === 'true'`.
+
+7. **`apps/api-server/src/finance/finance-pdf-export.service.ts`** (+26 lignes)
+   - `exportStudentAccountsPdf` accepte un 4ᵉ paramètre `classId?: string`.
+   - Construction d'un `where` Prisma avec filtre
+     `student.studentEnrollments.some { academicYearId, classId }` quand
+     `classId` est fourni.
+   - `studentEnrollments` maintenant filtré par `where: { academicYearId }`
+     pour récupérer la classe de l'année courante.
+   - `schoolLevel` select enrichi avec `code: true` (en plus de `name: true`).
+   - Fallbacks dans le rendu HTML :
+     * `levelName = schoolLevel.name || schoolLevel.code || '—'`
+     * `className = studentEnrollments[0].class.name || '—'`
+
+8. **`apps/api-server/src/finance/finance-pdf-export.controller.ts`** (+4 lignes)
+   - Ajout du paramètre `@Query('classId') classId?: string`.
+   - Passage au service : `exportStudentAccountsPdf(tenantId, academicYearId,
+     res, classId)`.
+
+Phase 3 — Corrections frontend (2 fichiers)
+
+9. **`apps/web-app/src/lib/exports/excel-exports.ts`** (+128 lignes, 1186 → 1314)
+   - Type `StudentAccountRow.student.schoolLevel` étendu avec `code?: string`.
+   - Refactor : extraction de la logique de construction d'une feuille dans
+     une fonction helper `buildStudentAccountsSheet(ws, accounts, header,
+     sheetTitle, classLabel)` réutilisable.
+   - Nouvelle fonction utilitaire `sanitizeSheetName(name)` : nettoyage des
+     caractères interdits par Excel (`\ / ? * [ ] :`) + tronque à 28 chars
+     (limite Excel = 31).
+   - Nouvelle fonction utilitaire `getAccountClassName(account)`.
+   - `exportStudentAccountsToExcel` accepte maintenant l'option
+     `groupByClass?: boolean` dans le `header` :
+     * Si `groupByClass=true` et ≥ 2 classes distinctes → une feuille par
+       classe, triées alphabétiquement ("Sans classe" à la fin).
+     * Si `groupByClass=true` et 1 seule classe → une feuille "Comptes élèves".
+     * Si `groupByClass=false` (défaut) → une feuille "Comptes élèves"
+       (comportement historique, rétro-compatible).
+   - Fallback `level = schoolLevel.name || schoolLevel.code || '—'`.
+
+10. **`apps/web-app/src/components/finance/StudentAccountsContent.tsx`** (+42 lignes, 1273 → 1315)
+    - `handleExportExcel` :
+      * Ne dépend plus de `filteredAccounts` (page active).
+      * Fetch de TOUS les comptes via `financeService.getStudentAccounts`
+        avec `{ academicYearId, exportAll: 'true', limit: '99999',
+        classId?, status?, search? }`.
+      * Gestion des 2 formats de réponse (array direct OU `{ data: [...] }`).
+      * `groupByClass = !filterClassId` → une feuille par classe si
+        l'utilisateur n'a pas filtré une classe précise.
+      * Toast enrichi : indique le nombre de feuilles par classe générées.
+    - `handleExportPdf` :
+      * Transmet maintenant `classId` (optionnel) au backend via query string.
+      * Le backend Puppeteer récupère TOUS les comptes matchés (pas de
+        pagination).
+      * Bugfix : `classLabel` était référencé sans être déclaré dans
+        l'ancienne version → désormais déclaré en tête du `try`.
+
+Phase 4 — BFF (pas de modification)
+
+11. **Vérification des routes BFF**
+    - `apps/web-app/src/app/api/finance/exports/student-accounts/pdf/route.ts` :
+      proxy générique qui forwards tous les query params (`qs`) → `classId`
+      est automatiquement transmis au backend. ✅ Aucune modif nécessaire.
+    - `apps/web-app/src/app/api/finance/student-accounts/route.ts` : idem,
+      proxy générique qui forwards `qs` → `exportAll` et `limit=99999` sont
+      transmis au backend. ✅ Aucune modif nécessaire.
+
+Vérifications:
+
+- `bunx tsc --noEmit --skipLibCheck` (web-app) → ✅ 0 erreur sur les fichiers
+  créés/modifiés. Les 10 erreurs résiduelles sont dans
+  `src/components/cms/useAutoSave.ts` (pré-existantes, non liées à cette task —
+  confirmé par worklog Task 19-b).
+- `bunx tsc --noEmit --skipLibCheck --experimentalDecorators --emitDecoratorMetadata`
+  sur les 4 fichiers backend modifiés → ✅ 0 nouvelle erreur spécifique aux
+  modifications. Les erreurs `Property 'X' does not exist on type
+  'PrismaService'` sont pré-existantes sur tout le fichier (Prisma client
+  non généré localement — `prisma generate` est exécuté au déploiement,
+  cf. worklog Task 19-a).
+- ESLint : impossible de lancer `next lint` (ESLint v10 incompatible avec
+  config `.eslintrc.json` legacy). Vérification manuelle : imports utilisés,
+  pas de variables non déclarées, patterns cohérents avec le reste du codebase.
+- Patterns respectés :
+  * shadcn/ui : `Button`, `Loader2`, `FileSpreadsheet`, `FileText` existants.
+  * Slate palette cohérente avec `StudentAccountsContent.tsx` existant.
+  * Pas d'indigo/blue sauf bouton primaire (cohérent avec l'existant).
+  * `toast` depuis `@/components/ui/use-toast` (même pattern que le reste).
+  * BFF proxy : `getProxyAuthHeaders` + `normalizeApiUrl` (pattern existant).
+
+Stage Summary:
+
+Fichiers modifiés (6) :
+
+1. `apps/api-server/src/finance/student-account.service.ts` (833 → 849, +16)
+   - Ajout `exportAll?: boolean` au type filters.
+   - Ajout include `schoolLevel: { select: { id, name, code } }`.
+   - Levée du cap limite à 100 000 si `exportAll=true`.
+
+2. `apps/api-server/src/finance/student-account.controller.ts` (64 → 68, +4)
+   - Ajout `@Query('exportAll')` + transmission au service.
+
+3. `apps/api-server/src/finance/finance-pdf-export.service.ts` (530 → 556, +26)
+   - `exportStudentAccountsPdf` accepte `classId?` (filtre optionnel).
+   - Filtre `studentEnrollments` par `academicYearId` (classe année courante).
+   - Fallback `schoolLevel.code` si `schoolLevel.name` vide.
+
+4. `apps/api-server/src/finance/finance-pdf-export.controller.ts` (59 → 63, +4)
+   - Ajout `@Query('classId')` + transmission au service.
+
+5. `apps/web-app/src/lib/exports/excel-exports.ts` (1186 → 1314, +128)
+   - Refactor : helper `buildStudentAccountsSheet` réutilisable.
+   - Helpers `sanitizeSheetName` + `getAccountClassName`.
+   - Option `groupByClass?: boolean` → une feuille par classe si ≥ 2 classes.
+   - Fallback `schoolLevel.code` si `schoolLevel.name` vide.
+
+6. `apps/web-app/src/components/finance/StudentAccountsContent.tsx` (1273 → 1315, +42)
+   - `handleExportExcel` : fetch ALL comptes avec `exportAll=true&limit=99999`.
+   - `groupByClass = !filterClassId` → une feuille par classe si pas de filtre.
+   - `handleExportPdf` : transmet `classId` au backend.
+   - Bugfix : `classLabel` désormais déclaré (était `undefined` avant).
+
+Fichiers créés (1) :
+
+7. `agent-ctx/20-a-fullstack-developer.md` — résumé de la task.
+
+Compatibilité & rétrocompatibilité:
+
+- **`exportAll` est optionnel** : si absent, `findAll` se comporte exactement
+  comme avant (cap 500, mode paginé/non paginé inchangé).
+- **`groupByClass` est optionnel** : si absent, `exportStudentAccountsToExcel`
+  crée UNE seule feuille "Comptes élèves" (comportement historique). Les
+  callers existants (autres modules éventuels) ne sont pas impactés.
+- **`classId` est optionnel** sur le PDF backend : si absent, génère le PDF
+  de toutes les classes (comportement historique).
+- **`schoolLevel` est désormais inclus** dans tous les comptes renvoyés par
+  `findAll` → léger surplus de données (3 champs : `id`, `name`, `code`)
+  mais aucun impact fonctionnel pour les callers existants qui ne
+  l'utilisaient pas.
+- **BFF proxy** : aucune modification → les query params supplémentaires
+  (`exportAll`, `classId`) passent transparents.
+
+Colonnes incluses dans les exports (PDF + Excel) :
+
+| Colonne        | Source                                                        |
+|----------------|---------------------------------------------------------------|
+| Matricule      | `student.studentCode` ou `student.matricule`                  |
+| Nom            | `student.lastName`                                            |
+| Prénom         | `student.firstName`                                           |
+| Classe         | `studentEnrollments[0].class.name` (filtré par academicYearId)|
+| Niveau scolaire| `student.schoolLevel.name` (fallback `code`)                  |
+| Total dû       | `account.totalDue` (inclut arriérés FIFO)                     |
+| Total payé     | `account.totalPaid`                                           |
+| Reste à payer  | `account.balance` (inclut arriérés FIFO)                      |
+| Statut         | calculé (Soldé / Partiel / Impayé)                           |
+| Arriérés       | `account.actualArrears` (Excel uniquement)                   |
+
+Prochaines étapes suggérées:
+
+- Étendre le pattern `exportAll` aux autres modules qui paginent
+  (Encaissements, Dépenses, etc.) si nécessaire.
+- Pour les très gros tenants (> 5 000 élèves), envisager un export streaming
+  ou asynchrone (file d'attente + notification) plutôt qu'un fetch synchrone
+  de 100 000 lignes.
+- Ajouter un test E2E : filtrer par une classe → exporter Excel → vérifier
+  qu'une seule feuille est créée ; filtrer par "toutes les classes" →
+  vérifier qu'une feuille par classe est créée.

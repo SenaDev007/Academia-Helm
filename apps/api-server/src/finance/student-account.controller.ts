@@ -22,6 +22,8 @@ export class StudentAccountController {
     @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    // ⭐ Task 20-a : flag exportAll pour lever la limite de 500 lors des exports PDF/Excel
+    @Query('exportAll') exportAll?: string,
   ) {
     if (!academicYearId) return [];
     const pageNum = page ? parseInt(page, 10) : undefined;
@@ -34,6 +36,8 @@ export class StudentAccountController {
       isBlocked: isBlocked === 'true' ? true : isBlocked === 'false' ? false : undefined,
       page: pageNum && !isNaN(pageNum) ? pageNum : undefined,
       limit: limitNum && !isNaN(limitNum) ? limitNum : undefined,
+      // ⭐ Task 20-a : passe le flag exportAll au service (lève le cap de 500)
+      exportAll: exportAll === 'true',
     });
   }
 

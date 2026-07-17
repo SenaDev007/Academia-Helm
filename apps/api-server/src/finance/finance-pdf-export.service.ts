@@ -280,23 +280,44 @@ export class FinancePdfExportService {
 
   /**
    * Génère le PDF des comptes élèves.
+   * ⭐ Task 20-a : supporte un filtre optionnel `classId` pour ne générer le PDF
+   * que d'une classe précise (cohérent avec la vue filtrée côté frontend).
+   * ⭐ Task 20-a : filtre les `studentEnrollments` par `academicYearId` pour
+   * récupérer la BONNE classe de l'année courante (au lieu de la 1re inscription trouvée).
    */
   async exportStudentAccountsPdf(
     tenantId: string,
     academicYearId: string,
     res?: Response,
+    classId?: string,
   ) {
     const branding = await this.getTenantBranding(tenantId);
     const ministry = "Ministère des Enseignements Maternel et Primaire";
 
+    // ⭐ Task 20-a : construction du `where` avec filtre classe optionnel
+    const where: any = { tenantId, academicYearId };
+    if (classId) {
+      where.student = {
+        studentEnrollments: {
+          some: { academicYearId, classId },
+        },
+      };
+    }
+
     const accounts = await this.prisma.studentAccount.findMany({
-      where: { tenantId, academicYearId },
+      where,
       include: {
         student: {
           select: {
             firstName: true, lastName: true, studentCode: true,
-            schoolLevel: { select: { name: true } },
-            studentEnrollments: { include: { class: { select: { name: true } } }, take: 1 },
+            // ⭐ Task 20-a : inclure code + name pour le niveau scolaire
+            schoolLevel: { select: { name: true, code: true } },
+            // ⭐ Task 20-a : filtrer par academicYearId pour avoir la classe de l'année courante
+            studentEnrollments: {
+              where: { academicYearId },
+              include: { class: { select: { name: true } } },
+              take: 1,
+            },
           },
         },
       },
@@ -315,13 +336,18 @@ export class FinancePdfExportService {
       if (balance <= 0) { statusClass = 'status-solde'; statusLabel = 'Soldé'; }
       else if (paid > 0) { statusClass = 'status-partiel'; statusLabel = 'Partiel'; }
 
+      // ⭐ Task 20-a : fallback sur le code si le name du niveau est vide
+      const levelName = a.student?.schoolLevel?.name || a.student?.schoolLevel?.code || '—';
+      // ⭐ Task 20-a : fallback sur academicClass.name si class.name vide (sécurité)
+      const className = a.student?.studentEnrollments?.[0]?.class?.name || '—';
+
       return `
         <tr>
           <td style="text-align:center;font-family:monospace;">${a.student?.studentCode || '—'}</td>
           <td>${a.student?.lastName || '—'}</td>
           <td>${a.student?.firstName || '—'}</td>
-          <td style="text-align:center;">${a.student?.studentEnrollments?.[0]?.class?.name || '—'}</td>
-          <td style="text-align:center;">${a.student?.schoolLevel?.name || '—'}</td>
+          <td style="text-align:center;">${className}</td>
+          <td style="text-align:center;">${levelName}</td>
           <td class="amount">${Number(a.balance ?? 0).toLocaleString('fr-FR')}</td>
           <td class="amount">${Number(a.totalPaid ?? 0).toLocaleString('fr-FR')}</td>
           <td class="amount">${Number(a.totalDue ?? 0).toLocaleString('fr-FR')}</td>

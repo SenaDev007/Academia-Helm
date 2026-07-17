@@ -36,6 +36,29 @@ export interface CardDesignSettings {
   maternelleSingleExitTime: string;
   // Référence au template appliqué (clé ou id)
   templateKey?: string;
+
+  // ⭐ Options design configurables (Phase 5 — Task 22-b)
+  // Police
+  cardFontFamily?: 'Helvetica' | 'Arial' | 'Times New Roman' | 'Courier New' | 'Georgia' | 'Verdana' | 'Trebuchet MS';
+  cardFontSizeScale?: 'small' | 'medium' | 'large'; // 90% / 100% / 110%
+  // Photo
+  cardPhotoPosition?: 'left' | 'right'; // position dans le body recto
+  cardPhotoSize?: 'small' | 'medium' | 'large'; // 20x26mm / 24x30mm / 28x34mm
+  cardPhotoShape?: 'rectangle' | 'rounded' | 'circle';
+  // Header
+  cardHeaderStyle?: 'solid' | 'gradient' | 'striped'; // style du bandeau
+  cardLogoPosition?: 'left' | 'center' | 'right'; // position du logo dans le header
+  cardLogoSize?: 'small' | 'medium' | 'large'; // 8mm / 10mm / 12mm
+  // Textes
+  cardShowMatricule?: boolean;
+  cardShowBirthInfo?: boolean;
+  cardShowGender?: boolean;
+  cardShowLevel?: boolean;
+  cardStudentNameStyle?: 'normal' | 'uppercase' | 'bold';
+  // QR Code
+  cardQrPosition?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+  cardQrSize?: 'small' | 'medium' | 'large'; // 16mm / 20mm / 24mm
+  cardQrWithLogo?: boolean; // logo école au centre du QR (défaut true)
 }
 
 /** Template de design (système ou personnalisé). */
@@ -79,6 +102,23 @@ export const DEFAULT_CARD_SETTINGS: CardDesignSettings = {
   maternellePickupAfternoon: '16:30',
   maternelleSingleExitTime: '15:30',
   templateKey: 'CLASSIQUE',
+  // ⭐ Options design configurables (défauts)
+  cardFontFamily: 'Helvetica',
+  cardFontSizeScale: 'medium',
+  cardPhotoPosition: 'left',
+  cardPhotoSize: 'medium',
+  cardPhotoShape: 'rectangle',
+  cardHeaderStyle: 'solid',
+  cardLogoPosition: 'left',
+  cardLogoSize: 'medium',
+  cardShowMatricule: true,
+  cardShowBirthInfo: true,
+  cardShowGender: true,
+  cardShowLevel: true,
+  cardStudentNameStyle: 'bold',
+  cardQrPosition: 'bottom-right',
+  cardQrSize: 'medium',
+  cardQrWithLogo: true,
 };
 
 /** Présentation visuelle des 4 presets système (mini-aperçous couleur). */

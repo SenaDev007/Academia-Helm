@@ -975,6 +975,46 @@ export class StudentIdCardService {
     const conditionsText = identityProfile?.cardConditionsText ||
       "Cette carte est strictement personnelle et incessible. À présenter à toute demande du personnel autorisé. Signaler toute perte ou vol à l'administration.";
 
+    // ⭐ Options design configurables (Phase 5 — Task 22-b)
+    const fontFamily = identityProfile?.cardFontFamily || 'Helvetica, Arial, sans-serif';
+    const fontSizeScale = identityProfile?.cardFontSizeScale || 'medium'; // small/medium/large
+    const fontSizeMultiplier = fontSizeScale === 'small' ? 0.9 : fontSizeScale === 'large' ? 1.1 : 1.0;
+    const photoPosition = identityProfile?.cardPhotoPosition || 'left'; // left/right
+    const photoSizePreset = identityProfile?.cardPhotoSize || 'medium'; // small/medium/large
+    const photoDimensions = {
+      small: { w: '20mm', h: '26mm' },
+      medium: { w: '24mm', h: '30mm' },
+      large: { w: '28mm', h: '34mm' },
+    }[photoSizePreset];
+    const photoShape = identityProfile?.cardPhotoShape || 'rectangle'; // rectangle/rounded/circle
+    const photoBorderRadius = photoShape === 'circle' ? '50%' : photoShape === 'rounded' ? '8px' : '4px';
+    const headerStyle = identityProfile?.cardHeaderStyle || 'solid'; // solid/gradient/striped
+    const headerBackground = headerStyle === 'gradient'
+      ? `linear-gradient(135deg, ${NAVY} 0%, ${NAVY_LIGHT} 100%)`
+      : headerStyle === 'striped'
+      ? `repeating-linear-gradient(45deg, ${NAVY} 0px, ${NAVY} 8px, ${NAVY_LIGHT} 8px, ${NAVY_LIGHT} 16px)`
+      : NAVY;
+    const logoPosition = identityProfile?.cardLogoPosition || 'left';
+    const logoSizePreset = identityProfile?.cardLogoSize || 'medium';
+    const logoDimensions = {
+      small: '8mm',
+      medium: '10mm',
+      large: '12mm',
+    }[logoSizePreset];
+    const showMatricule = identityProfile?.cardShowMatricule !== false;
+    const showBirthInfo = identityProfile?.cardShowBirthInfo !== false;
+    const showGender = identityProfile?.cardShowGender !== false;
+    const showLevel = identityProfile?.cardShowLevel !== false;
+    const studentNameStyle = identityProfile?.cardStudentNameStyle || 'bold';
+    const qrPosition = identityProfile?.cardQrPosition || 'bottom-right';
+    const qrSizePreset = identityProfile?.cardQrSize || 'medium';
+    const qrDimensions = {
+      small: '16mm',
+      medium: '20mm',
+      large: '24mm',
+    }[qrSizePreset];
+    const qrWithLogo = identityProfile?.cardQrWithLogo !== false;
+
     // URL absolue pour la photo
     const baseUrl = (process.env.APP_PUBLIC_URL || process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
     const photoSrc = student.photoUrl
@@ -1013,7 +1053,10 @@ export class StudentIdCardService {
     //    le TenantIdentityProfile, on génère un QR code simple sans logo.
     let qrCodeDataUrl = '';
     try {
-      qrCodeDataUrl = await this.generateQrCodeWithLogo(qrPayload, rawLogoUrl, {
+      // ⭐ Si cardQrWithLogo est désactivé, on passe logoUrl='' pour générer
+      // un QR code simple sans logo au centre.
+      const effectiveLogoUrl = qrWithLogo ? rawLogoUrl : '';
+      qrCodeDataUrl = await this.generateQrCodeWithLogo(qrPayload, effectiveLogoUrl, {
         primaryColor: NAVY,
       });
     } catch (err) {
@@ -1055,10 +1098,11 @@ export class StudentIdCardService {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-family: '${fontFamily}', Arial, sans-serif;
       background: #fff;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
+      font-size: ${fontSizeMultiplier * 100}%;
     }
     .card-container {
       display: flex;
@@ -1080,7 +1124,7 @@ export class StudentIdCardService {
     }
     /* En-tête bleu marine — logo à gauche, nom école centré, titre à droite */
     .card-header {
-      background: ${NAVY};
+      background: ${headerBackground};
       color: #fff;
       padding: 3px 6px;
       display: flex;
@@ -1100,8 +1144,8 @@ export class StudentIdCardService {
       opacity: 0.6;
     }
     .header-logo {
-      width: 10mm;
-      height: 10mm;
+      width: ${logoDimensions};
+      height: ${logoDimensions};
       background: #fff;
       border-radius: 4px;
       display: flex;
@@ -1154,10 +1198,10 @@ export class StudentIdCardService {
       align-items: stretch;
     }
     .photo-box {
-      width: 24mm;
-      height: 30mm;
+      width: ${photoDimensions.w};
+      height: ${photoDimensions.h};
       border: 2px solid ${NAVY};
-      border-radius: 4px;
+      border-radius: ${photoBorderRadius};
       overflow: hidden;
       background: #f3f4f6;
       display: flex;
@@ -1309,11 +1353,10 @@ export class StudentIdCardService {
       color: ${NAVY};
       font-size: 5.5pt;
     }
-    /* QR code avec logo intégré au centre — plus grand qu'avant pour bien
-       voir le logo (20mm au lieu de 18mm) */
+    /* QR code avec logo intégré au centre — taille configurable */
     .verso-qr {
-      width: 20mm;
-      height: 20mm;
+      width: ${qrDimensions};
+      height: ${qrDimensions};
       border: 1px solid ${NAVY_LIGHT};
       border-radius: 4px;
       display: flex;
@@ -1369,37 +1412,37 @@ export class StudentIdCardService {
         <div class="header-card-title">Carte Scolaire</div>
       </div>
 
-      <div class="card-body">
+      <div class="card-body"${photoPosition === 'right' ? ' style="flex-direction: row-reverse;"' : ''}>
         ${photoBoxHtml}
         <div class="info-list">
-          <div class="info-row">
+          ${showMatricule ? `<div class="info-row">
             <span class="info-label">Matricule</span>
             <span class="info-value bold">${matricule}</span>
-          </div>
+          </div>` : ''}
           <div class="info-row">
             <span class="info-label">Nom</span>
-            <span class="info-value bold">${student.lastName}</span>
+            <span class="info-value ${studentNameStyle === 'bold' ? 'bold' : ''}"${studentNameStyle === 'uppercase' ? ' style="text-transform: uppercase;"' : ''}>${student.lastName}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Prénom(s)</span>
-            <span class="info-value bold">${student.firstName}</span>
+            <span class="info-value ${studentNameStyle === 'bold' ? 'bold' : ''}"${studentNameStyle === 'uppercase' ? ' style="text-transform: uppercase;"' : ''}>${student.firstName}</span>
           </div>
-          <div class="info-row">
+          ${showBirthInfo ? `<div class="info-row">
             <span class="info-label">Né(e) le</span>
             <span class="info-value">${formatDate(student.dateOfBirth)}${student.placeOfBirth ? ' à ' + student.placeOfBirth : ''}</span>
-          </div>
-          <div class="info-row">
+          </div>` : ''}
+          ${showGender ? `<div class="info-row">
             <span class="info-label">Sexe</span>
             <span class="info-value">${student.gender === 'M' ? 'Masculin' : student.gender === 'F' ? 'Féminin' : 'N/A'}</span>
-          </div>
+          </div>` : ''}
           <div class="info-row">
             <span class="info-label">Classe</span>
             <span class="info-value">${currentClass?.name || 'N/A'}</span>
           </div>
-          <div class="info-row">
+          ${showLevel ? `<div class="info-row">
             <span class="info-label">Niveau</span>
             <span class="info-value">${schoolLevel?.label || schoolLevel?.name || schoolLevel?.code || 'N/A'}</span>
-          </div>
+          </div>` : ''}
           ${showGuardian ? `<div class="info-row">
             <span class="info-label">Parent/Tuteur</span>
             <span class="info-value">${guardianName}</span>

@@ -85,4 +85,97 @@ export class UpdateCardDesignDto {
   @IsString()
   @MaxLength(64)
   templateKey?: string;
+
+  // ⭐ Options design configurables (Phase 5 — Task 22-b)
+
+  /** Famille de police. Valeurs: Helvetica, Arial, Times New Roman, Georgia, Verdana, Trebuchet MS, Courier New. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  cardFontFamily?: string;
+
+  /** Échelle de taille des textes. Valeurs: small, medium, large. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  cardFontSizeScale?: string;
+
+  /** Style du nom élève. Valeurs: normal, uppercase, bold. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  cardStudentNameStyle?: string;
+
+  /** Position de la photo dans le body recto. Valeurs: left, right. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  cardPhotoPosition?: string;
+
+  /** Taille de la photo. Valeurs: small, medium, large. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  cardPhotoSize?: string;
+
+  /** Forme de la photo. Valeurs: rectangle, rounded, circle. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  cardPhotoShape?: string;
+
+  /** Style du bandeau en-tête. Valeurs: solid, gradient, striped. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  cardHeaderStyle?: string;
+
+  /** Position du logo dans le header. Valeurs: left, center, right. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  cardLogoPosition?: string;
+
+  /** Taille du logo. Valeurs: small, medium, large. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  cardLogoSize?: string;
+
+  /** Afficher le matricule de l'élève. */
+  @IsOptional()
+  @IsBoolean()
+  cardShowMatricule?: boolean;
+
+  /** Afficher la date et lieu de naissance. */
+  @IsOptional()
+  @IsBoolean()
+  cardShowBirthInfo?: boolean;
+
+  /** Afficher le sexe de l'élève. */
+  @IsOptional()
+  @IsBoolean()
+  cardShowGender?: boolean;
+
+  /** Afficher le niveau scolaire. */
+  @IsOptional()
+  @IsBoolean()
+  cardShowLevel?: boolean;
+
+  /** Position du QR code au verso. Valeurs: bottom-right, bottom-left, top-right, top-left. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  cardQrPosition?: string;
+
+  /** Taille du QR code. Valeurs: small, medium, large. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  cardQrSize?: string;
+
+  /** Logo école intégré au centre du QR code. */
+  @IsOptional()
+  @IsBoolean()
+  cardQrWithLogo?: boolean;
 }

@@ -134,6 +134,23 @@ export default function CardDesignTab() {
           maternellePickupAfternoon: tenantInfo.maternellePickupAfternoon || '16:30',
           maternelleSingleExitTime: tenantInfo.maternelleSingleExitTime || '15:30',
           templateKey: (p as any)?.templateKey || 'CLASSIQUE',
+          // ⭐ Options design configurables (Phase 5 — Task 22-b)
+          cardFontFamily: (p as any)?.cardFontFamily || DEFAULT_CARD_SETTINGS.cardFontFamily,
+          cardFontSizeScale: (p as any)?.cardFontSizeScale || DEFAULT_CARD_SETTINGS.cardFontSizeScale,
+          cardPhotoPosition: (p as any)?.cardPhotoPosition || DEFAULT_CARD_SETTINGS.cardPhotoPosition,
+          cardPhotoSize: (p as any)?.cardPhotoSize || DEFAULT_CARD_SETTINGS.cardPhotoSize,
+          cardPhotoShape: (p as any)?.cardPhotoShape || DEFAULT_CARD_SETTINGS.cardPhotoShape,
+          cardHeaderStyle: (p as any)?.cardHeaderStyle || DEFAULT_CARD_SETTINGS.cardHeaderStyle,
+          cardLogoPosition: (p as any)?.cardLogoPosition || DEFAULT_CARD_SETTINGS.cardLogoPosition,
+          cardLogoSize: (p as any)?.cardLogoSize || DEFAULT_CARD_SETTINGS.cardLogoSize,
+          cardShowMatricule: (p as any)?.cardShowMatricule ?? true,
+          cardShowBirthInfo: (p as any)?.cardShowBirthInfo ?? true,
+          cardShowGender: (p as any)?.cardShowGender ?? true,
+          cardShowLevel: (p as any)?.cardShowLevel ?? true,
+          cardStudentNameStyle: (p as any)?.cardStudentNameStyle || DEFAULT_CARD_SETTINGS.cardStudentNameStyle,
+          cardQrPosition: (p as any)?.cardQrPosition || DEFAULT_CARD_SETTINGS.cardQrPosition,
+          cardQrSize: (p as any)?.cardQrSize || DEFAULT_CARD_SETTINGS.cardQrSize,
+          cardQrWithLogo: (p as any)?.cardQrWithLogo ?? true,
         });
       } catch (e) {
         console.error('[CardDesignTab] identity load error:', e);

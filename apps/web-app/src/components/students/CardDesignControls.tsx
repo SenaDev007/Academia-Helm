@@ -41,6 +41,10 @@ import {
   Plus,
   X,
   Shield,
+  Type,
+  Image as ImageIcon,
+  LayoutTemplate,
+  QrCode,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -591,7 +595,363 @@ export default function CardDesignControls({
         </p>
       </CollapsibleSection>
 
-      {/* ═══ 6. Actions ═══ */}
+      {/* ═══ 6. Police & Textes ═══ */}
+      <CollapsibleSection
+        id="typography"
+        title="Police & Textes"
+        subtitle="Famille, taille, style des textes"
+        icon={<Type className="w-3.5 h-3.5" />}
+        iconColor="bg-indigo-100 text-indigo-700"
+      >
+        <div className="space-y-2">
+          <div>
+            <Label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              Famille de police
+            </Label>
+            <select
+              value={settings.cardFontFamily || 'Helvetica'}
+              onChange={e => onChange({ cardFontFamily: e.target.value as any })}
+              className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-md bg-white"
+            >
+              <option value="Helvetica">Helvetica (défaut)</option>
+              <option value="Arial">Arial</option>
+              <option value="Times New Roman">Times New Roman (serif)</option>
+              <option value="Georgia">Georgia (serif)</option>
+              <option value="Verdana">Verdana</option>
+              <option value="Trebuchet MS">Trebuchet MS</option>
+              <option value="Courier New">Courier New (mono)</option>
+            </select>
+          </div>
+
+          <div>
+            <Label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              Taille des textes
+            </Label>
+            <div className="grid grid-cols-3 gap-1">
+              {(['small', 'medium', 'large'] as const).map(size => (
+                <button
+                  key={size}
+                  type="button"
+                  onClick={() => onChange({ cardFontSizeScale: size })}
+                  className={cn(
+                    'px-2 py-1.5 text-[10px] font-bold uppercase rounded-md border transition',
+                    (settings.cardFontSizeScale || 'medium') === size
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
+                  )}
+                >
+                  {size === 'small' ? 'Petite' : size === 'medium' ? 'Moyenne' : 'Grande'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <Label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              Style nom élève
+            </Label>
+            <div className="grid grid-cols-3 gap-1">
+              {(['normal', 'uppercase', 'bold'] as const).map(style => (
+                <button
+                  key={style}
+                  type="button"
+                  onClick={() => onChange({ cardStudentNameStyle: style })}
+                  className={cn(
+                    'px-2 py-1.5 text-[10px] font-bold uppercase rounded-md border transition',
+                    (settings.cardStudentNameStyle || 'bold') === style
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
+                  )}
+                >
+                  {style === 'normal' ? 'Normal' : style === 'uppercase' ? 'MAJ' : 'Gras'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-slate-100">
+            <Label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              Champs affichés (recto)
+            </Label>
+            <div className="space-y-1">
+              <ToggleRow
+                label="Matricule"
+                description="Afficher le matricule de l'élève"
+                checked={settings.cardShowMatricule ?? true}
+                onChange={v => onChange({ cardShowMatricule: v })}
+              />
+              <ToggleRow
+                label="Date/lieu de naissance"
+                description="Afficher Né(e) le + lieu"
+                checked={settings.cardShowBirthInfo ?? true}
+                onChange={v => onChange({ cardShowBirthInfo: v })}
+              />
+              <ToggleRow
+                label="Sexe"
+                description="Afficher Masculin/Féminin"
+                checked={settings.cardShowGender ?? true}
+                onChange={v => onChange({ cardShowGender: v })}
+              />
+              <ToggleRow
+                label="Niveau scolaire"
+                description="Afficher le niveau (Maternelle/Primaire/Secondaire)"
+                checked={settings.cardShowLevel ?? true}
+                onChange={v => onChange({ cardShowLevel: v })}
+              />
+            </div>
+          </div>
+        </div>
+      </CollapsibleSection>
+
+      {/* ═══ 7. Photo ═══ */}
+      <CollapsibleSection
+        id="photo"
+        title="Photo élève"
+        subtitle="Position, taille, forme"
+        icon={<ImageIcon className="w-3.5 h-3.5" />}
+        iconColor="bg-emerald-100 text-emerald-700"
+      >
+        <div className="space-y-2">
+          <div>
+            <Label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              Position de la photo
+            </Label>
+            <div className="grid grid-cols-2 gap-1">
+              {(['left', 'right'] as const).map(pos => (
+                <button
+                  key={pos}
+                  type="button"
+                  onClick={() => onChange({ cardPhotoPosition: pos })}
+                  className={cn(
+                    'px-2 py-1.5 text-[10px] font-bold uppercase rounded-md border transition',
+                    (settings.cardPhotoPosition || 'left') === pos
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
+                  )}
+                >
+                  {pos === 'left' ? '← Gauche' : 'Droite →'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <Label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              Taille de la photo
+            </Label>
+            <div className="grid grid-cols-3 gap-1">
+              {(['small', 'medium', 'large'] as const).map(size => (
+                <button
+                  key={size}
+                  type="button"
+                  onClick={() => onChange({ cardPhotoSize: size })}
+                  className={cn(
+                    'px-2 py-1.5 text-[10px] font-bold uppercase rounded-md border transition',
+                    (settings.cardPhotoSize || 'medium') === size
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
+                  )}
+                >
+                  {size === 'small' ? '20mm' : size === 'medium' ? '24mm' : '28mm'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <Label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              Forme de la photo
+            </Label>
+            <div className="grid grid-cols-3 gap-1">
+              {(['rectangle', 'rounded', 'circle'] as const).map(shape => (
+                <button
+                  key={shape}
+                  type="button"
+                  onClick={() => onChange({ cardPhotoShape: shape })}
+                  className={cn(
+                    'px-2 py-1.5 text-[10px] font-bold uppercase rounded-md border transition',
+                    (settings.cardPhotoShape || 'rectangle') === shape
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
+                  )}
+                >
+                  {shape === 'rectangle' ? 'Rectangle' : shape === 'rounded' ? 'Arrondi' : 'Cercle'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <ToggleRow
+            label="Afficher la photo"
+            description="Désactivé = pas de photo sur la carte"
+            checked={settings.cardShowPhoto}
+            onChange={v => onChange({ cardShowPhoto: v })}
+          />
+        </div>
+      </CollapsibleSection>
+
+      {/* ═══ 8. En-tête & Logo ═══ */}
+      <CollapsibleSection
+        id="header"
+        title="En-tête & Logo"
+        subtitle="Style du bandeau, position et taille du logo"
+        icon={<LayoutTemplate className="w-3.5 h-3.5" />}
+        iconColor="bg-violet-100 text-violet-700"
+      >
+        <div className="space-y-2">
+          <div>
+            <Label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              Style du bandeau
+            </Label>
+            <div className="grid grid-cols-3 gap-1">
+              {(['solid', 'gradient', 'striped'] as const).map(style => (
+                <button
+                  key={style}
+                  type="button"
+                  onClick={() => onChange({ cardHeaderStyle: style })}
+                  className={cn(
+                    'px-2 py-1.5 text-[10px] font-bold uppercase rounded-md border transition',
+                    (settings.cardHeaderStyle || 'solid') === style
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
+                  )}
+                >
+                  {style === 'solid' ? 'Plein' : style === 'gradient' ? 'Dégradé' : 'Stries'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <Label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              Position du logo
+            </Label>
+            <div className="grid grid-cols-3 gap-1">
+              {(['left', 'center', 'right'] as const).map(pos => (
+                <button
+                  key={pos}
+                  type="button"
+                  onClick={() => onChange({ cardLogoPosition: pos })}
+                  className={cn(
+                    'px-2 py-1.5 text-[10px] font-bold uppercase rounded-md border transition',
+                    (settings.cardLogoPosition || 'left') === pos
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
+                  )}
+                >
+                  {pos === 'left' ? '← G' : pos === 'center' ? 'C' : 'D →'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <Label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+              Taille du logo
+            </Label>
+            <div className="grid grid-cols-3 gap-1">
+              {(['small', 'medium', 'large'] as const).map(size => (
+                <button
+                  key={size}
+                  type="button"
+                  onClick={() => onChange({ cardLogoSize: size })}
+                  className={cn(
+                    'px-2 py-1.5 text-[10px] font-bold uppercase rounded-md border transition',
+                    (settings.cardLogoSize || 'medium') === size
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
+                  )}
+                >
+                  {size === 'small' ? '8mm' : size === 'medium' ? '10mm' : '12mm'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-[9px] text-slate-400 italic">
+            Le logo est configuré dans Paramètres → Identité de l'établissement.
+          </p>
+        </div>
+      </CollapsibleSection>
+
+      {/* ═══ 9. QR Code ═══ */}
+      <CollapsibleSection
+        id="qr-code"
+        title="QR Code"
+        subtitle="Position, taille, logo intégré"
+        icon={<QrCode className="w-3.5 h-3.5" />}
+        iconColor="bg-blue-100 text-blue-700"
+      >
+        <div className="space-y-2">
+          <ToggleRow
+            label="Afficher le QR code"
+            description="Code de vérification au verso"
+            checked={settings.cardShowQRCode}
+            onChange={v => onChange({ cardShowQRCode: v })}
+          />
+
+          {settings.cardShowQRCode && (
+            <>
+              <ToggleRow
+                label="Logo école au centre"
+                description="Intègre le logo de l'école au milieu du QR code (recommandé)"
+                checked={settings.cardQrWithLogo ?? true}
+                onChange={v => onChange({ cardQrWithLogo: v })}
+              />
+
+              <div>
+                <Label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                  Position du QR code (verso)
+                </Label>
+                <div className="grid grid-cols-2 gap-1">
+                  {(['bottom-right', 'bottom-left', 'top-right', 'top-left'] as const).map(pos => (
+                    <button
+                      key={pos}
+                      type="button"
+                      onClick={() => onChange({ cardQrPosition: pos })}
+                      className={cn(
+                        'px-2 py-1.5 text-[10px] font-bold uppercase rounded-md border transition',
+                        (settings.cardQrPosition || 'bottom-right') === pos
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
+                      )}
+                    >
+                      {pos === 'bottom-right' ? '↓ Droite' :
+                       pos === 'bottom-left' ? '↓ Gauche' :
+                       pos === 'top-right' ? '↑ Droite' : '↑ Gauche'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <Label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                  Taille du QR code
+                </Label>
+                <div className="grid grid-cols-3 gap-1">
+                  {(['small', 'medium', 'large'] as const).map(size => (
+                    <button
+                      key={size}
+                      type="button"
+                      onClick={() => onChange({ cardQrSize: size })}
+                      className={cn(
+                        'px-2 py-1.5 text-[10px] font-bold uppercase rounded-md border transition',
+                        (settings.cardQrSize || 'medium') === size
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
+                      )}
+                    >
+                      {size === 'small' ? '16mm' : size === 'medium' ? '20mm' : '24mm'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </CollapsibleSection>
+
+      {/* ═══ 10. Actions ═══ */}
       <CollapsibleSection
         id="actions"
         title="Actions"

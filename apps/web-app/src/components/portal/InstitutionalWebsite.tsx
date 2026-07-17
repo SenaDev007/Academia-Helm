@@ -284,14 +284,28 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   const [activeTheme, setActiveTheme] = useState<Theme | null>(null);
   const [themeMode, setThemeMode] = useState<ThemeMode>('light');
 
-  const slug = subdomain || extractTenantSlug(typeof window !== 'undefined' ? window.location.hostname : '') || schoolInfo?.slug || '';
+  // ⭐ slug résolu côté client aussi (le SSR peut passer subdomain=null si l'API
+  // timeout — le composant client doit pouvoir récupérer le slug depuis window.location).
+  const [clientSlug, setClientSlug] = useState(subdomain || '');
+  const slug = clientSlug || schoolInfo?.slug || '';
 
   useEffect(() => {
-    if (!schoolInfo && slug) loadSchoolData();
-    if (slug) {
-      loadWebsiteData();
-      loadThemeSettings();
+    // Si le slug n'est pas encore résolu, essayer de le récupérer depuis le hostname
+    if (!clientSlug && typeof window !== 'undefined') {
+      const detected = extractTenantSlug(window.location.hostname);
+      if (detected) setClientSlug(detected);
     }
+  }, [clientSlug]);
+
+  useEffect(() => {
+    if (!slug) {
+      // Pas de slug → pas de données à charger → arrêter le loader
+      if (isLoading) setIsLoading(false);
+      return;
+    }
+    if (!schoolInfo) loadSchoolData();
+    loadWebsiteData();
+    loadThemeSettings();
   }, [slug]);
 
   const loadSchoolData = async () => {

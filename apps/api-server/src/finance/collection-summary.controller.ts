@@ -135,13 +135,31 @@ export class CollectionSummaryController {
     // Filtrer par niveau si fourni (levelId = UUID de school_levels)
     let filteredEnrollments = enrollments;
     if (levelId) {
+      // Charger le niveau scolaire pour récupérer son code (au cas où levelId
+      // serait un code plutôt qu'un UUID — robustesse).
+      let levelCode: string | null = null;
+      try {
+        const level = await this.prisma.schoolLevel.findUnique({
+          where: { id: levelId },
+          select: { code: true },
+        });
+        levelCode = level?.code || null;
+      } catch {
+        // Si ce n'est pas un UUID valide, on suppose que c'est déjà un code.
+        levelCode = levelId;
+      }
+
       filteredEnrollments = enrollments.filter((e) => {
         // Match par UUID de school_levels
         if (e.class?.schoolLevel?.id === levelId) return true;
         // Match par UUID de schoolLevelId sur la classe
         if (e.class?.schoolLevelId === levelId) return true;
+        // Match par code (au cas où levelId soit un code comme "SECONDAIRE")
+        if (levelCode && e.class?.schoolLevel?.code === levelCode) return true;
         return false;
       });
+
+      this.logger.debug(`Filter by level: levelId=${levelId}, levelCode=${levelCode}, total=${enrollments.length}, filtered=${filteredEnrollments.length}`);
     }
 
     // ─── 3. Récupérer tous les paiements pour ces élèves ──────────────────────
@@ -199,11 +217,59 @@ export class CollectionSummaryController {
       }
     }
 
-    // ─── 3b. Récupérer les arriérés des élèves pour l'année ──────────────────
-    // Les arriérés sont stockés dans StudentArrear (et non FeeStructure avec
-    // feeType='ARREAR' — ce feeType n'existe pas dans l'enum).
-    // `fromAcademicYearId` indique l'année d'origine de l'arriéré ; l'année
-    // courante est celle où l'élève doit le recouvrer.
+    // ─── 3b. Récupérer les account_breakdowns par élève ─────────────────────
+    // ⭐ SOURCE DE VÉRITÉ pour les montants payés : `account_breakdowns.paidAmount`
+    //    est maintenu par les triggers SQL après chaque transaction. On l'utilise
+    //    comme référence pour valider les montants payés par type de frais.
+    //    Si les allocations de transactions sont incohérentes (ex: bug d'import
+    //    qui a mal taggé les paiements), on retombe sur paidAmount qui est fiable.
+    const accountIds = new Set<string>();
+    for (const tx of transactions) {
+      if (tx.studentAccountId) accountIds.add(tx.studentAccountId);
+    }
+    const studentAccounts = await this.prisma.studentAccount.findMany({
+      where: { id: { in: Array.from(accountIds) } },
+      select: { id: true, studentId: true },
+    });
+    const accountIdToStudentId = new Map<string, string>();
+    for (const sa of studentAccounts) {
+      accountIdToStudentId.set(sa.id, sa.studentId);
+    }
+    const breakdownsByStudentDb = await this.prisma.accountBreakdown.findMany({
+      where: {
+        studentAccountId: { in: Array.from(accountIds) },
+      },
+      include: {
+        feeStructure: { select: { feeType: true, id: true } },
+      },
+    });
+    const breakdownsByStudent = new Map<string, { [feeType: string]: { paid: number; expected: number; feeStructureId: string } }>();
+    for (const bd of breakdownsByStudentDb) {
+      const studentId = accountIdToStudentId.get(bd.studentAccountId);
+      if (!studentId) continue;
+      if (!breakdownsByStudent.has(studentId)) {
+        breakdownsByStudent.set(studentId, {});
+      }
+      const feeType = bd.feeStructure?.feeType;
+      if (!feeType) continue;
+      breakdownsByStudent.get(studentId)![feeType] = {
+        paid: Number(bd.paidAmount) || 0,
+        expected: Number(bd.initialAmount) || 0,
+        feeStructureId: bd.feeStructureId,
+      };
+    }
+
+    // ─── 3c. Récupérer les arriérés des élèves pour l'année ──────────────────
+    // Les arriérés sont stockés dans FeeArrear (créés par l'import Excel) et
+    // StudentArrear (créés par le report d'année). On combine les deux sources
+    // pour avoir une vue complète.
+    const feeArrears = await this.prisma.feeArrear.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        studentId: { in: studentIds },
+      },
+    });
     const studentArrears = await this.prisma.studentArrear.findMany({
       where: {
         tenantId,
@@ -211,44 +277,68 @@ export class CollectionSummaryController {
         studentId: { in: studentIds },
       },
     });
-    const arrearByStudent = new Map<string, number>();
+    const arrearByStudent = new Map<string, { expected: number; paid: number }>();
+    // Source 1 : FeeArrear (import Excel)
+    for (const ar of feeArrears) {
+      const current = arrearByStudent.get(ar.studentId) || { expected: 0, paid: 0 };
+      arrearByStudent.set(ar.studentId, {
+        expected: current.expected + Number(ar.totalDue),
+        paid: current.paid + Number(ar.totalPaid),
+      });
+    }
+    // Source 2 : StudentArrear (report d'année)
     for (const ar of studentArrears) {
-      const current = arrearByStudent.get(ar.studentId) || 0;
-      // amountDue = montant total dû pour cet arriéré
-      arrearByStudent.set(ar.studentId, current + Number(ar.amountDue));
+      const current = arrearByStudent.get(ar.studentId) || { expected: 0, paid: 0 };
+      arrearByStudent.set(ar.studentId, {
+        expected: current.expected + Number(ar.amountDue),
+        paid: current.paid + Number(ar.amountPaid),
+      });
     }
 
     // ─── 4. Construire les lignes élèves (détail) ────────────────────────────
     const students = filteredEnrollments.map((enrollment) => {
       const studentPayments = paymentsByStudent.get(enrollment.studentId) || [];
+      const studentBreakdowns = breakdownsByStudent.get(enrollment.studentId) || {};
 
-      // Calculer les paiements par type
-      let inscriptionPaid = 0;
-      let reinscriptionPaid = 0;
-      let arrearPaid = 0;
-      let totalTuitionPaid = 0;
-      let otherPaid = 0; // CANTEEN, EXAMEN, OTHER — inclus dans Total payé mais pas dans une colonne dédiée
+      // ⭐ PRIORITÉ aux montants paidAmount des account_breakdowns (source de vérité
+      // maintenue par les triggers SQL). Si un type de frais a un breakdown, on
+      // utilise son paidAmount directement. Sinon, on retombe sur la somme des
+      // allocations de transactions (qui peut être incohérente si bug d'import).
+      const inscriptionBd = studentBreakdowns['INSCRIPTION'];
+      const reinscriptionBd = studentBreakdowns['REINSCRIPTION'];
+      const tuitionBd = studentBreakdowns['TUITION'];
+
+      // Calculer les paiements par type (fallback depuis les allocations)
+      let inscriptionPaidFromTx = 0;
+      let reinscriptionPaidFromTx = 0;
+      let totalTuitionPaidFromTx = 0;
+      let otherPaid = 0;
 
       for (const p of studentPayments) {
         const amount = Number(p.amount) || 0;
         switch (p.feeType) {
           case 'INSCRIPTION':
-            inscriptionPaid += amount;
+            inscriptionPaidFromTx += amount;
             break;
           case 'REINSCRIPTION':
-            reinscriptionPaid += amount;
+            reinscriptionPaidFromTx += amount;
             break;
           case 'TUITION':
-            totalTuitionPaid += amount;
+            totalTuitionPaidFromTx += amount;
             break;
           default:
             // CANTEEN, EXAMEN, OTHER, ou null (paiement global non-allociné)
-            // → on l'ajoute à otherPaid pour que Total payé reste cohérent,
-            //   mais on ne l'affiche dans aucune colonne dédiée.
             otherPaid += amount;
             break;
         }
       }
+
+      // ⭐ Utiliser paidAmount du breakdown si disponible (plus fiable), sinon fallback
+      const inscriptionPaid = inscriptionBd?.paid ?? inscriptionPaidFromTx;
+      const reinscriptionPaid = reinscriptionBd?.paid ?? reinscriptionPaidFromTx;
+      const totalTuitionPaid = tuitionBd?.paid ?? totalTuitionPaidFromTx;
+      const arrearInfo = arrearByStudent.get(enrollment.studentId) || { expected: 0, paid: 0 };
+      const arrearPaid = arrearInfo.paid;
 
       // ─── Matching EXCLUSIF des FeeStructures par type ─────────────────────
       // Priorité : academicClass > physicalClass > level > global (exclusive).
@@ -291,7 +381,7 @@ export class CollectionSummaryController {
       );
 
       // Arriéré attendu depuis StudentArrear (importé / reporté de l'année précédente)
-      const arrearExpected = arrearByStudent.get(enrollment.studentId) || 0;
+      const arrearExpected = arrearInfo.expected;
 
       // ─── Distribution FIFO des paiements de scolarité sur les tranches ────
       // Si un parent paie plus que la Tranche 1, le surplus est affecté

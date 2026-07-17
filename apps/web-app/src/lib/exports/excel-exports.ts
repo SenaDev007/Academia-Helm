@@ -530,8 +530,11 @@ function buildStudentAccountsSheet(
     const isEven = idx % 2 === 0;
     const status = getPaymentStatus(a);
     const sc = STATUS_CONFIG[status];
-    // ⭐ Task 20-a : fallback sur le code du niveau si le name est vide
-    const className = a.studentEnrollments?.[0]?.class?.name || '—';
+    // ⭐ Task 20-a : les enrollments sont sous a.student.studentEnrollments (pas a.studentEnrollments)
+    // fallback sur academicClass si class n'est pas trouvé
+    const className = a.student?.studentEnrollments?.[0]?.class?.name
+      || a.studentEnrollments?.[0]?.class?.name
+      || '—';
     const level = a.student?.schoolLevel?.name || a.student?.schoolLevel?.code || '—';
     const arrearAmount = Number(a.actualArrears) || 0;
 
@@ -605,7 +608,9 @@ function sanitizeSheetName(name: string, maxLength: number = 28): string {
  * ⭐ Task 20-a : Récupère le nom de la classe d'un compte élève (premier enrollment).
  */
 function getAccountClassName(a: StudentAccountRow): string {
-  return a.studentEnrollments?.[0]?.class?.name || '';
+  return a.student?.studentEnrollments?.[0]?.class?.name
+    || a.studentEnrollments?.[0]?.class?.name
+    || '';
 }
 
 export async function exportStudentAccountsToExcel(
@@ -619,19 +624,40 @@ export async function exportStudentAccountsToExcel(
   // on crée une feuille par classe. Sinon, une seule feuille "Comptes élèves".
   const shouldGroupByClass = !!header.groupByClass && accounts.length > 0;
 
+  // ⭐ Tri par niveau scolaire (Maternelle → Primaire → Secondaire) puis par classe puis par nom
+  const LEVEL_ORDER: Record<string, number> = { MATERNELLE: 1, PRIMAIRE: 2, SECONDAIRE: 3 };
+  const sortedAccounts = [...accounts].sort((a, b) => {
+    const levelA = a.student?.schoolLevel?.code || '';
+    const levelB = b.student?.schoolLevel?.code || '';
+    const orderA = LEVEL_ORDER[levelA] || 99;
+    const orderB = LEVEL_ORDER[levelB] || 99;
+    if (orderA !== orderB) return orderA - orderB;
+    const classA = getAccountClassName(a) || 'ZZZ';
+    const classB = getAccountClassName(b) || 'ZZZ';
+    if (classA !== classB) return classA.localeCompare(classB, 'fr');
+    const nameA = `${a.student?.lastName || ''} ${a.student?.firstName || ''}`;
+    const nameB = `${b.student?.lastName || ''} ${b.student?.firstName || ''}`;
+    return nameA.localeCompare(nameB, 'fr');
+  });
+
   if (shouldGroupByClass) {
-    // Grouper par nom de classe en préservant l'ordre alphabétique des classes
+    // Grouper par nom de classe — tri par niveau (Maternelle → Primaire → Secondaire)
     const groups = new Map<string, StudentAccountRow[]>();
-    for (const a of accounts) {
+    for (const a of sortedAccounts) {
       const className = getAccountClassName(a) || 'Sans classe';
       const list = groups.get(className) || [];
       list.push(a);
       groups.set(className, list);
     }
-    // Trier les classes par ordre alphabétique (les "Sans classe" à la fin)
+    // Trier les classes par niveau puis alphabétique
     const sortedClassNames = Array.from(groups.keys()).sort((a, b) => {
       if (a === 'Sans classe') return 1;
       if (b === 'Sans classe') return -1;
+      const levelA = groups.get(a)?.[0]?.student?.schoolLevel?.code || '';
+      const levelB = groups.get(b)?.[0]?.student?.schoolLevel?.code || '';
+      const orderA = LEVEL_ORDER[levelA] || 99;
+      const orderB = LEVEL_ORDER[levelB] || 99;
+      if (orderA !== orderB) return orderA - orderB;
       return a.localeCompare(b, 'fr');
     });
 
@@ -672,13 +698,13 @@ export async function exportStudentAccountsToExcel(
       }
     }
   } else {
-    // Comportement historique : une seule feuille globale
+    // Comportement historique : une seule feuille globale (avec tri par niveau)
     const ws = workbook.addWorksheet('Comptes élèves', {
       properties: { defaultRowHeight: 18 },
     });
     buildStudentAccountsSheet(
       ws,
-      accounts,
+      sortedAccounts,
       header,
       'Comptes élèves',
       header.classFilter ? `Classe : ${header.classFilter}` : 'Toutes les classes',

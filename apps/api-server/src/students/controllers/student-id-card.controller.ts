@@ -110,6 +110,25 @@ export class StudentIdCardController {
   }
 
   /**
+   * ⭐ Récupère l'ID d'UNE SEULE carte (la plus récente) pour l'aperçu PDF
+   * du studio de design — évite de charger toutes les cartes via
+   * `grouped-by-class` qui est coûteux (>1 minute pour 700+ élèves).
+   *
+   * GET /students/id-cards/preview-card?academicYearId=...
+   * Réponse : { cardId: string | null }
+   */
+  @Get('preview-card')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'DIRECTOR', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN', 'SECRETARY')
+  async getPreviewCardId(
+    @GetTenant() tenant: any,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    const cardId = await this.idCardService.getPreviewCardId(tenant.id, academicYearId);
+    return { cardId };
+  }
+
+  /**
    * ⭐ Liste les cartes groupées par niveau scolaire puis par classe.
    * GET /students/id-cards/grouped-by-class?academicYearId=...
    *

@@ -1044,6 +1044,24 @@ class StudentsService {
   }
 
   /**
+   * ⭐ Récupère l'ID d'UNE SEULE carte (la plus récente) pour l'aperçu PDF
+   * du studio de design. Léger (~50ms) vs `getCardsGroupedByClass` (>1 min
+   * pour 700+ élèves).
+   *
+   * @returns cardId ou null si aucune carte n'existe encore.
+   */
+  async getPreviewCardId(academicYearId?: string): Promise<string | null> {
+    const qs = academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : '';
+    try {
+      const result = await apiFetch(`${BASE_URL}/id-cards/preview-card${qs}`);
+      return (result as any)?.cardId ?? null;
+    } catch (error) {
+      console.error('[students.service] getPreviewCardId error:', error);
+      return null;
+    }
+  }
+
+  /**
    * ⭐ Télécharge un PDF groupé par classe (toutes les cartes de la classe dans un seul PDF).
    * Retourne un Blob pour déclencher le téléchargement côté navigateur.
    * ⚠️ Timeout 5 min (génération PDF via Puppeteer pour N élèves).

@@ -162,23 +162,16 @@ export default function CardDesignTab() {
   }, [loadTemplates]);
 
   // ─── Charger une carte déjà générée pour l'aperçu PDF réel ─────────────────
+  // ⭐ Avant : on appelait getCardsGroupedByClass qui charge TOUTES les cartes
+  //    (lent : >1 minute pour 700+ élèves). Maintenant : on appelle
+  //    getPreviewCardId qui ne récupère que l'ID de la plus récente (~50ms).
   useEffect(() => {
-    const academicYearId = academicYear?.id;
-    if (!academicYearId) return;
     let cancelled = false;
     (async () => {
       try {
-        const grouped = await studentsService
-          .getCardsGroupedByClass(academicYearId)
-          .catch(() => null);
-        if (cancelled || !grouped?.levels?.length) return;
-        // Prend la 1re carte du 1er niveau → 1re classe
-        const firstLevel = grouped.levels[0];
-        const firstClass = firstLevel?.classes?.[0];
-        const firstCard = firstClass?.cards?.[0];
-        if (firstCard?.id) {
-          setPreviewCardId(firstCard.id);
-        }
+        const cardId = await studentsService.getPreviewCardId(academicYear?.id);
+        if (cancelled || !cardId) return;
+        setPreviewCardId(cardId);
       } catch (e) {
         console.warn('[CardDesignTab] preview card not found:', e);
       }

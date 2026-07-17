@@ -1531,6 +1531,30 @@ export class StudentIdCardService {
     };
   }
 
+  /**
+   * ⭐ Récupère l'ID d'UNE SEULE carte (la plus récente, non révoquée) pour
+   * l'aperçu PDF du studio de design. Évite de charger toutes les cartes via
+   * `listCardsGroupedByClass` qui prend >1 minute pour 700+ élèves.
+   *
+   * Retourne null si aucune carte n'existe encore pour ce tenant/année.
+   */
+  async getPreviewCardId(tenantId: string, academicYearId?: string): Promise<string | null> {
+    const where: any = {
+      tenantId,
+      isActive: true,
+      isRevoked: false,
+    };
+    if (academicYearId) {
+      where.academicYearId = academicYearId;
+    }
+    const card = await this.prisma.studentIdCard.findFirst({
+      where,
+      orderBy: { generatedAt: 'desc' },
+      select: { id: true },
+    });
+    return card?.id ?? null;
+  }
+
   // ==========================================================================
   //  CMS CARTE SCOLAIRE — TEMPLATES DE DESIGN (Task 19-a, Phase 2)
   // ==========================================================================

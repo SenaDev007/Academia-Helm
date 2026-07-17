@@ -17,6 +17,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as QRCode from 'qrcode';
+import sharp from 'sharp';
 
 @Injectable()
 export class StudentIdCardService {
@@ -968,6 +969,7 @@ export class StudentIdCardService {
     const showBarcode = identityProfile?.cardShowBarcode !== false; // défaut true
     const showPhoto = identityProfile?.cardShowPhoto !== false; // défaut true
     const showGuardian = identityProfile?.cardShowGuardian !== false; // défaut true
+    const showEmergencyCall = identityProfile?.cardShowEmergencyCall !== false; // défaut true
     const showSchoolAddress = identityProfile?.cardShowSchoolAddress !== false; // défaut true
     const footerText = identityProfile?.cardFooterText || 'Academia Helm · Document officiel';
     const conditionsText = identityProfile?.cardConditionsText ||
@@ -990,17 +992,32 @@ export class StudentIdCardService {
       ? `<div class="photo-box">${photoHtml}</div>`
       : '';
 
-    // Générer un vrai QR code en data URL (base64 PNG)
+    // ⭐ Logo école (pour header recto + verso) : URL résolue en absolu si relative.
+    //    Si pas de logo, on affiche un placeholder avec les initiales (acronym).
+    const rawLogoUrl = identityProfile?.logoUrl || tenant?.logoUrl || '';
+    const schoolAcronym = identityProfile?.schoolAcronym ||
+      (schoolName.split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase()) ||
+      'AH';
+    const logoSrc = rawLogoUrl
+      ? (rawLogoUrl.startsWith('http') || rawLogoUrl.startsWith('data:')
+        ? rawLogoUrl
+        : `${baseUrl}${rawLogoUrl.startsWith('/') ? '' : '/'}${rawLogoUrl}`)
+      : '';
+    const headerLogoHtml = logoSrc
+      ? `<img src="${logoSrc}" alt="Logo" style="width:100%;height:100%;object-fit:contain;" />`
+      : `<span style="font-size:11pt;font-weight:800;color:${NAVY};">${schoolAcronym}</span>`;
+
+    // Générer un QR code en data URL (base64 PNG) avec logo de l'école au centre.
+    // ⭐ errorCorrectionLevel = 'H' (High) pour tolérer le logo central sans
+    //    altérer la lisibilité du QR code. Si aucun logo n'est configuré sur
+    //    le TenantIdentityProfile, on génère un QR code simple sans logo.
     let qrCodeDataUrl = '';
     try {
-      qrCodeDataUrl = await QRCode.toDataURL(qrPayload, {
-        width: 200,
-        margin: 1,
-        color: { dark: '#000000', light: '#ffffff' },
-        errorCorrectionLevel: 'M',
+      qrCodeDataUrl = await this.generateQrCodeWithLogo(qrPayload, rawLogoUrl, {
+        primaryColor: NAVY,
       });
     } catch (err) {
-      this.logger.warn(`QR code generation failed: ${err.message}`);
+      this.logger.warn(`QR code generation failed: ${(err as Error).message}`);
     }
 
     // Générer un code-barres visuel simple (barres verticales basées sur le matricule)
@@ -1061,24 +1078,28 @@ export class StudentIdCardService {
       flex-direction: column;
       box-shadow: 0 2px 4px rgba(0,0,0,0.08);
     }
-    /* En-tête bleu marine */
+    /* En-tête bleu marine — logo à gauche, nom école centré, titre à droite */
     .card-header {
       background: ${NAVY};
       color: #fff;
-      padding: 4px 8px;
+      padding: 3px 6px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      min-height: 11mm;
+      min-height: 12mm;
+      gap: 4px;
+      position: relative;
+    }
+    /* Ligne diagonale décorative séparant header du body */
+    .card-header::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0; bottom: -1px;
+      height: 2px;
+      background: linear-gradient(90deg, transparent 0%, ${NAVY_LIGHT} 50%, transparent 100%);
+      opacity: 0.6;
     }
     .header-logo {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 1px;
-      min-width: 18mm;
-    }
-    .header-logo-mark {
       width: 10mm;
       height: 10mm;
       background: #fff;
@@ -1086,52 +1107,56 @@ export class StudentIdCardService {
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 14pt;
-      font-weight: bold;
-      color: ${NAVY};
+      overflow: hidden;
+      flex-shrink: 0;
+      padding: 1px;
     }
     .header-school {
       flex: 1;
       text-align: center;
-      padding: 0 4px;
+      padding: 0 2px;
+      min-width: 0;
     }
     .header-school-name {
-      font-size: 8pt;
-      font-weight: bold;
-      line-height: 1.15;
+      font-size: 8.5pt;
+      font-weight: 800;
+      line-height: 1.1;
       text-transform: uppercase;
       letter-spacing: 0.3px;
       word-break: break-word;
       hyphens: auto;
     }
     .header-school-slogan {
-      font-size: 6pt;
+      font-size: 5.5pt;
       opacity: 0.85;
       margin-top: 1px;
       font-style: italic;
+      line-height: 1.1;
     }
     .header-card-title {
       font-size: 6pt;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      opacity: 0.9;
+      opacity: 0.95;
       padding: 2px 4px;
-      background: rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.18);
       border-radius: 3px;
+      flex-shrink: 0;
     }
 
-    /* Corps de la carte */
+    /* Corps de la carte — photo à gauche, infos à droite */
     .card-body {
       flex: 1;
       display: flex;
       padding: 4px 6px;
-      gap: 6px;
+      gap: 5px;
       background: #fff;
+      align-items: stretch;
     }
     .photo-box {
-      width: 22mm;
-      height: 28mm;
-      border: 1.5px solid ${NAVY};
+      width: 24mm;
+      height: 30mm;
+      border: 2px solid ${NAVY};
       border-radius: 4px;
       overflow: hidden;
       background: #f3f4f6;
@@ -1139,22 +1164,23 @@ export class StudentIdCardService {
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
+      align-self: center;
     }
     .info-list {
       flex: 1;
       display: flex;
       flex-direction: column;
       justify-content: center;
-      gap: 1.5px;
-      font-size: 7.5pt;
+      gap: 1.8px;
+      min-width: 0;
     }
     .info-row {
       display: flex;
       align-items: baseline;
-      line-height: 1.2;
+      line-height: 1.25;
     }
     .info-label {
-      font-weight: bold;
+      font-weight: 700;
       color: ${NAVY};
       min-width: 22mm;
       font-size: 6.5pt;
@@ -1168,38 +1194,47 @@ export class StudentIdCardService {
       font-weight: 500;
       word-break: break-word;
     }
+    .info-value.bold {
+      font-weight: 700;
+      font-size: 8pt;
+    }
     .matricule-box {
       margin-top: 3px;
-      padding: 2px 4px;
+      padding: 2.5px 4px;
       background: ${NAVY};
       color: #fff;
       font-size: 7pt;
-      font-weight: bold;
+      font-weight: 800;
       text-align: center;
       border-radius: 3px;
       letter-spacing: 0.5px;
     }
 
-    /* Pied de carte bleu marine */
+    /* Pied de carte bleu marine — adresse + téléphone */
     .card-footer {
       background: ${NAVY};
       color: #fff;
-      padding: 3px 8px;
+      padding: 3px 6px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       font-size: 6pt;
-      min-height: 6mm;
+      min-height: 5.5mm;
+      gap: 4px;
     }
     .footer-address {
       opacity: 0.9;
+      flex: 1;
+      min-width: 0;
+      line-height: 1.2;
     }
     .footer-phone {
-      opacity: 0.9;
-      font-weight: bold;
+      opacity: 0.95;
+      font-weight: 700;
+      flex-shrink: 0;
     }
 
-    /* Verso */
+    /* === VERSO === */
     .verso-body {
       flex: 1;
       display: flex;
@@ -1219,18 +1254,26 @@ export class StudentIdCardService {
       display: flex;
       flex-direction: column;
     }
+    .verso-terms-title {
+      font-size: 7pt;
+      font-weight: 800;
+      color: ${NAVY};
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      margin-bottom: 2px;
+      padding-bottom: 1px;
+      border-bottom: 1px solid ${NAVY_LIGHT};
+    }
     .verso-terms {
       font-size: 5pt;
       line-height: 1.3;
       color: #6b7280;
       margin-bottom: 3px;
     }
-    .verso-terms ul {
-      padding-left: 8px;
-      margin: 0;
-    }
-    .verso-terms li {
-      margin-bottom: 1px;
+    .verso-terms p {
+      font-size: 5pt;
+      line-height: 1.3;
+      color: #6b7280;
     }
     .verso-contact {
       font-size: 6pt;
@@ -1243,7 +1286,7 @@ export class StudentIdCardService {
     }
     .verso-contact-label {
       color: ${NAVY};
-      font-weight: bold;
+      font-weight: 700;
       display: inline-block;
       min-width: 12mm;
     }
@@ -1255,15 +1298,29 @@ export class StudentIdCardService {
       justify-content: space-between;
       gap: 3px;
     }
+    .verso-dates {
+      font-size: 5.5pt;
+      color: #424242;
+      text-align: center;
+      line-height: 1.4;
+      width: 100%;
+    }
+    .verso-dates strong {
+      color: ${NAVY};
+      font-size: 5.5pt;
+    }
+    /* QR code avec logo intégré au centre — plus grand qu'avant pour bien
+       voir le logo (20mm au lieu de 18mm) */
     .verso-qr {
-      width: 18mm;
-      height: 18mm;
-      border: 1px solid #e5e7eb;
-      border-radius: 3px;
+      width: 20mm;
+      height: 20mm;
+      border: 1px solid ${NAVY_LIGHT};
+      border-radius: 4px;
       display: flex;
       align-items: center;
       justify-content: center;
       background: #fff;
+      padding: 1px;
     }
     .verso-qr img {
       width: 100%;
@@ -1274,10 +1331,11 @@ export class StudentIdCardService {
       text-align: center;
       font-size: 5.5pt;
       color: #6b7280;
+      width: 100%;
     }
     .verso-signature-line {
       font-family: 'Brush Script MT', cursive;
-      font-size: 9pt;
+      font-size: 10pt;
       color: ${NAVY};
       font-style: italic;
       border-bottom: 1px solid #9ca3af;
@@ -1287,19 +1345,10 @@ export class StudentIdCardService {
     .verso-barcode {
       display: flex;
       align-items: center;
-      height: 6mm;
+      height: 5mm;
       width: 100%;
       gap: 0;
-      padding: 0 4px;
-    }
-    .verso-dates {
-      font-size: 5pt;
-      color: #6b7280;
-      text-align: center;
-      line-height: 1.3;
-    }
-    .verso-dates strong {
-      color: ${NAVY};
+      padding: 0 2px;
     }
 
     @media print {
@@ -1312,9 +1361,7 @@ export class StudentIdCardService {
     <!-- ============ RECTO ============ -->
     <div class="card card-front">
       <div class="card-header">
-        <div class="header-logo">
-          <div class="header-logo-mark">AH</div>
-        </div>
+        <div class="header-logo">${headerLogoHtml}</div>
         <div class="header-school">
           <div class="header-school-name">${schoolName}</div>
           <div class="header-school-slogan">${schoolSlogan}</div>
@@ -1326,12 +1373,16 @@ export class StudentIdCardService {
         ${photoBoxHtml}
         <div class="info-list">
           <div class="info-row">
-            <span class="info-label">Nom</span>
-            <span class="info-value">${student.lastName}</span>
+            <span class="info-label">Matricule</span>
+            <span class="info-value bold">${matricule}</span>
           </div>
           <div class="info-row">
-            <span class="info-label">Prénom</span>
-            <span class="info-value">${student.firstName}</span>
+            <span class="info-label">Nom</span>
+            <span class="info-value bold">${student.lastName}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Prénom(s)</span>
+            <span class="info-value bold">${student.firstName}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Né(e) le</span>
@@ -1350,53 +1401,59 @@ export class StudentIdCardService {
             <span class="info-value">${schoolLevel?.label || schoolLevel?.name || schoolLevel?.code || 'N/A'}</span>
           </div>
           ${showGuardian ? `<div class="info-row">
-            <span class="info-label">Contact</span>
-            <span class="info-value">${guardianPhone} (${guardianName})</span>
+            <span class="info-label">Parent/Tuteur</span>
+            <span class="info-value">${guardianName}</span>
           </div>` : ''}
-          <div class="matricule-box">${matricule}</div>
+          ${showEmergencyCall ? `<div class="info-row">
+            <span class="info-label">Urgence</span>
+            <span class="info-value">${guardianPhone}</span>
+          </div>` : ''}
         </div>
       </div>
 
       <div class="card-footer">
         ${showSchoolAddress ? `<div class="footer-address">${schoolAddress}</div>` : '<div></div>'}
-        <div class="footer-phone">${schoolPhone}</div>
+        <div class="footer-phone">Tél. ${schoolPhone}</div>
       </div>
     </div>
 
     <!-- ============ VERSO ============ -->
     <div class="card card-back">
       <div class="card-header">
-        <div class="header-card-title" style="background:transparent;">Informations</div>
+        <div class="header-card-title" style="background:transparent;">${footerText}</div>
         <div class="header-school">
-          <div class="header-school-name" style="font-size:8pt;">Année ${academicYear?.name || ''}</div>
+          <div class="header-school-name" style="font-size:8pt;">${schoolName}</div>
+          <div class="header-school-slogan">Année ${academicYear?.name || ''}</div>
         </div>
-        <div class="header-logo-mark" style="width:8mm;height:8mm;font-size:10pt;">AH</div>
+        <div class="header-logo" style="width:9mm;height:9mm;">${headerLogoHtml}</div>
       </div>
 
       <div class="verso-body">
         <div class="verso-section">
           <div class="verso-left">
+            <div class="verso-terms-title">Conditions d'utilisation</div>
             <div class="verso-terms">
-              <strong style="color:${NAVY};font-size:6pt;">Conditions d'utilisation</strong>
-              <p style="font-size:5pt;line-height:1.3;color:#6b7280;margin-top:1px;">${conditionsText}</p>
+              <p>${conditionsText}</p>
             </div>
             <div class="verso-contact">
               <div><span class="verso-contact-label">Téléphone</span> ${schoolPhone}</div>
               <div><span class="verso-contact-label">Email</span> ${schoolEmail}</div>
-              <div><span class="verso-contact-label">Établissement</span> ${schoolName}</div>
+              <div><span class="verso-contact-label">Adresse</span> ${schoolAddress}</div>
             </div>
           </div>
           <div class="verso-right">
+            <div class="verso-dates">
+              <div><strong>Émise le</strong></div>
+              <div>${joinedDate}</div>
+              <div style="margin-top:2px;"><strong>Expire le</strong></div>
+              <div>${expireDate}</div>
+            </div>
             ${showQRCode && qrCodeDataUrl ? `<div class="verso-qr"><img src="${qrCodeDataUrl}" alt="QR" /></div>` : ''}
             <div class="verso-signature">
               <div class="verso-signature-line">Le Directeur</div>
               <div>Signature & Cachet</div>
             </div>
             ${showBarcode ? `<div class="verso-barcode">${barcodeBars}</div>` : ''}
-            <div class="verso-dates">
-              <div><strong>Émise le</strong> ${joinedDate}</div>
-              <div><strong>Expire le</strong> ${expireDate}</div>
-            </div>
           </div>
         </div>
       </div>
@@ -1419,6 +1476,152 @@ export class StudentIdCardService {
     // Format: AH:{matricule}:{tenantId}:{studentId}:{timestamp}
     const timestamp = Date.now();
     return `AH:${globalMatricule}:${tenantId}:${studentId}:${timestamp}`;
+  }
+
+  /**
+   * ⭐ Génère un QR code (data URL PNG) avec le logo de l'école intégré AU CENTRE.
+   *
+   * Algorithme :
+   *   1. Génère le QR code avec errorCorrectionLevel = 'H' (High, 30% de
+   *      redondance) — nécessaire pour que le logo central n'altère pas la
+   *      lisibilité du QR code par les lecteurs.
+   *   2. Si un logo est fourni (URL http(s):// ou /uploads/...), on le
+   *      télécharge/charge, le redimensionne à ~25% de la taille du QR code
+   *      (avec padding blanc autour), puis on le compose au centre du QR code
+   *      via sharp.
+   *   3. Retourne le tout en data URL base64 PNG.
+   *
+   * Si pas de logo : retourne un QR code simple (fallback).
+   * Si le téléchargement du logo échoue : log warn + fallback QR simple.
+   *
+   * @param payload  Contenu encodé dans le QR code (ex: "AH:MAT-001:tenantId:studentId:1234")
+   * @param logoUrl  URL du logo (http(s)://... ou /uploads/... ou data:...). Vide = pas de logo.
+   * @param options  { primaryColor? } — couleur des modules du QR (défaut noir).
+   */
+  private async generateQrCodeWithLogo(
+    payload: string,
+    logoUrl: string,
+    options: { primaryColor?: string } = {},
+  ): Promise<string> {
+    const primaryColor = options.primaryColor || '#000000';
+    const QR_SIZE = 400; // Haute résolution pour rendu net à l'impression
+    const LOGO_RATIO = 0.28; // Logo occupe 28% de la largeur du QR code
+
+    // 1. Générer le QR code en haute qualité avec error correction 'H'
+    let qrBuffer: Buffer;
+    try {
+      const dataUrl = await QRCode.toDataURL(payload, {
+        width: QR_SIZE,
+        margin: 1,
+        color: { dark: primaryColor, light: '#ffffff' },
+        errorCorrectionLevel: 'H',
+      });
+      qrBuffer = Buffer.from(dataUrl.split(',')[1], 'base64');
+    } catch (err) {
+      throw new Error(`QR generation failed: ${(err as Error).message}`);
+    }
+
+    // 2. Si pas de logo, retourner le QR code simple
+    if (!logoUrl) {
+      return `data:image/png;base64,${qrBuffer.toString('base64')}`;
+    }
+
+    // 3. Charger le logo depuis URL http(s)://, /uploads/, ou data:
+    let logoBuffer: Buffer | null = null;
+    try {
+      if (logoUrl.startsWith('data:')) {
+        // data: URL (base64 inline)
+        const base64 = logoUrl.split(',')[1];
+        logoBuffer = Buffer.from(base64, 'base64');
+      } else if (logoUrl.startsWith('http://') || logoUrl.startsWith('https://')) {
+        // URL absolue — télécharger
+        const res = await fetch(logoUrl);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const arrayBuffer = await res.arrayBuffer();
+        logoBuffer = Buffer.from(arrayBuffer);
+      } else {
+        // Chemin relatif (/uploads/... ou /media/...) — lire depuis le filesystem
+        // du backend. On essaie plusieurs préfixes courants.
+        const baseUrl = (process.env.APP_PUBLIC_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
+        const isAbsoluteFs = logoUrl.startsWith('/');
+
+        // Tentative 1 : fichier local (si on a accès au filesystem)
+        if (isAbsoluteFs) {
+          // Construire un chemin absolu plausible : public/ + path, ou uploads/ + path
+          const candidates = [
+            path.join(process.cwd(), 'public', logoUrl),
+            path.join(process.cwd(), 'uploads', logoUrl.replace(/^\/uploads\//, '')),
+            path.join(process.cwd(), logoUrl),
+          ];
+          for (const candidate of candidates) {
+            try {
+              if (fs.existsSync(candidate)) {
+                logoBuffer = fs.readFileSync(candidate);
+                break;
+              }
+            } catch {
+              // continue
+            }
+          }
+        }
+
+        // Tentative 2 : télécharger via l'URL publique si baseUrl est configurée
+        if (!logoBuffer && baseUrl) {
+          try {
+            const fullUrl = `${baseUrl}${logoUrl.startsWith('/') ? '' : '/'}${logoUrl}`;
+            const res = await fetch(fullUrl);
+            if (res.ok) {
+              const arrayBuffer = await res.arrayBuffer();
+              logoBuffer = Buffer.from(arrayBuffer);
+            }
+          } catch {
+            // ignore — fallback to QR without logo
+          }
+        }
+      }
+    } catch (err) {
+      this.logger.warn(`Logo load failed (url=${logoUrl}): ${(err as Error).message} — fallback to QR without logo`);
+      return `data:image/png;base64,${qrBuffer.toString('base64')}`;
+    }
+
+    if (!logoBuffer) {
+      this.logger.warn(`Logo not found (url=${logoUrl}) — fallback to QR without logo`);
+      return `data:image/png;base64,${qrBuffer.toString('base64')}`;
+    }
+
+    // 4. Redimensionner le logo + ajouter padding blanc (carré) pour le
+    //    détacher visuellement des modules du QR code.
+    const logoFinalSize = Math.floor(QR_SIZE * LOGO_RATIO);
+    const padding = Math.floor(logoFinalSize * 0.12); // 12% padding autour du logo
+    const logoWithPaddingSize = logoFinalSize + padding * 2;
+
+    try {
+      const resizedLogo = await sharp(logoBuffer)
+        .resize(logoFinalSize, logoFinalSize, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
+        .extend({
+          top: padding,
+          bottom: padding,
+          left: padding,
+          right: padding,
+          background: { r: 255, g: 255, b: 255, alpha: 1 },
+        })
+        .png()
+        .toBuffer();
+
+      // 5. Compose : QR code + logo centré
+      const centerX = Math.floor((QR_SIZE - logoWithPaddingSize) / 2);
+      const centerY = Math.floor((QR_SIZE - logoWithPaddingSize) / 2);
+
+      const finalBuffer = await sharp(qrBuffer)
+        .composite([{ input: resizedLogo, left: centerX, top: centerY }])
+        .png()
+        .toBuffer();
+
+      return `data:image/png;base64,${finalBuffer.toString('base64')}`;
+    } catch (err) {
+      this.logger.warn(`Logo composite failed: ${(err as Error).message} — fallback to QR without logo`);
+      return `data:image/png;base64,${qrBuffer.toString('base64')}`;
+    }
   }
 
   /**

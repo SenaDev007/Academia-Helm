@@ -994,3 +994,4 @@ export class FeeStructureService {
       message: `${deleted.length} frais supprimé(s), ${blocked.length} bloqué(s)`,
     };
   }
+}

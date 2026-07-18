@@ -37,9 +37,27 @@ export function UploadZone({
   const loadClasses = useSaisieMasterStore((s) => s.loadClasses);
   const setImportError = useSaisieMasterStore((s) => s.setImportError);
   const setView = useSaisieMasterStore((s) => s.setView);
+  const setAuthView = useSaisieMasterStore((s) => s.setAuthView);
+  const isAuthenticated = useSaisieMasterStore((s) => !!s.token);
+
+  // ⭐ Task 33 : vérifier l'auth avant de permettre l'upload.
+  // Si l'utilisateur n'est pas connecté, afficher un modal de connexion.
+  const requireAuth = useCallback((): boolean => {
+    if (!isAuthenticated) {
+      toast.info("Connexion requise", {
+        description: "Veuillez créer un compte ou vous connecter pour importer votre fichier.",
+      });
+      setAuthView("signup");
+      return false;
+    }
+    return true;
+  }, [isAuthenticated, setAuthView]);
 
   const processFile = useCallback(
     async (file: File) => {
+      // ⭐ Vérifier l'auth avant de traiter le fichier
+      if (!requireAuth()) return;
+
       if (!isExcelFile(file)) {
         toast.error("Format non supporté", {
           description: "Veuillez sélectionner un fichier .xlsx ou .xls",
@@ -101,7 +119,7 @@ export function UploadZone({
         setTimeout(() => setProgress(0), 800);
       }
     },
-    [loadClasses, setImportError, setView, onProcessed],
+    [loadClasses, setImportError, setView, onProcessed, requireAuth],
   );
 
   const handleFileSelect = useCallback(
@@ -118,10 +136,12 @@ export function UploadZone({
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
       setIsDragging(false);
+      // ⭐ Vérifier l'auth avant d'accepter le drop
+      if (!requireAuth()) return;
       const file = e.dataTransfer.files?.[0];
       if (file) processFile(file);
     },
-    [processFile],
+    [processFile, requireAuth],
   );
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -153,11 +173,11 @@ export function UploadZone({
       <div
         role="button"
         tabIndex={0}
-        onClick={() => !isProcessing && inputRef.current?.click()}
+        onClick={() => !isProcessing && requireAuth() && inputRef.current?.click()}
         onKeyDown={(e) => {
           if ((e.key === "Enter" || e.key === " ") && !isProcessing) {
             e.preventDefault();
-            inputRef.current?.click();
+            if (requireAuth()) inputRef.current?.click();
           }
         }}
         onDrop={handleDrop}

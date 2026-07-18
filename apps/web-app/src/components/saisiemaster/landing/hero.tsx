@@ -13,22 +13,26 @@ interface HeroProps {
 export function Hero({ onUploadClick }: HeroProps) {
   return (
     <section className="relative overflow-hidden">
-      {/* Image de fond — couvre toute la section.
-          On utilise min-h-[600px] pour garantir une hauteur minimale
-          qui laisse l'image de fond pleinement visible, sans être écrasée
-          par le padding vertical. */}
+      {/* Image de fond — desktop/tablette */}
       <div
-        className="absolute inset-0 bg-cover bg-center"
+        className="absolute inset-0 bg-cover bg-center hidden sm:block"
         style={{
           backgroundImage: 'url("/images/Background-SaisieMaster-hero.png")',
-          minHeight: 600,
+        }}
+        aria-hidden
+      />
+      {/* Image de fond — mobile (image dédiée pour le responsiv) */}
+      <div
+        className="absolute inset-0 bg-cover bg-center sm:hidden"
+        style={{
+          backgroundImage: 'url("/images/Background-SaisieMaster-hero-mobile.png")',
         }}
         aria-hidden
       />
 
-      {/* Conteneur flex qui pousse les CTA tout en bas du hero.
-          min-h-[600px] garantit la pleine hauteur de l'image. */}
-      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 min-h-[600px] flex items-end justify-center pb-10 sm:pb-14">
+      {/* Conteneur — hauteur adaptée pour voir l'image en entier.
+          min-h-[700px] sur desktop, min-h-[600px] sur mobile. */}
+      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 min-h-[600px] sm:min-h-[700px] flex items-end justify-center pb-12 sm:pb-16">
         <div className="flex flex-wrap items-center justify-center gap-3 w-full">
           <Button
             size="lg"

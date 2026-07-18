@@ -412,6 +412,58 @@ export class StudentAccountService {
       });
     }
 
+    // ⭐ FIX (suppression d'override) : Traiter les breakdowns « orphelins » — ceux dont
+    // la feeStructure n'est plus dans la liste filtrée `feeStructures` (par ex. l'élève a
+    // changé de classe, la feeStructure a été désactivée, ou l'enrollmentType a changé).
+    //
+    // Sans ce bloc, ces breakdowns conservent leur ancien `initialAmount` = montant de
+    // l'override supprimé (ex: 35000), et le badge « Pers. » reste affiché côté frontend
+    // (StudentAccountsContent compare `b.initialAmount` à `b.feeStructure.totalAmount`).
+    //
+    // Pour chaque breakdown orphelin :
+    //   - Si un override actif existe encore pour (student, feeStructure) → l'appliquer
+    //   - Sinon → reset à `feeStructure.totalAmount` (montant original)
+    //   - Recalculer `remainingAmount = adjustedAmount - paidAmount`
+    const filteredFeeStructureIds = new Set(feeStructures.map((fs) => fs.id));
+    const orphanedBreakdowns = await this.prisma.accountBreakdown.findMany({
+      where: {
+        studentAccountId: account.id,
+        feeStructureId: { notIn: Array.from(filteredFeeStructureIds) },
+      },
+      include: {
+        feeStructure: {
+          select: {
+            id: true,
+            totalAmount: true,
+            isActive: true,
+            overrides: { where: { studentId } },
+          },
+        },
+      },
+    });
+
+    for (const b of orphanedBreakdowns) {
+      const override = b.feeStructure?.overrides?.[0];
+      const newAmount = override
+        ? Number(override.customAmount)
+        : Number(b.feeStructure?.totalAmount ?? 0);
+      // Toujours resynchroniser adjustedAmount avec initialAmount (au cas où ils auraient
+      // divergé), et recalculer remainingAmount.
+      if (
+        Number(b.initialAmount) !== newAmount ||
+        Number(b.adjustedAmount) !== newAmount
+      ) {
+        await this.prisma.accountBreakdown.update({
+          where: { id: b.id },
+          data: {
+            initialAmount: newAmount,
+            adjustedAmount: newAmount,
+            remainingAmount: newAmount - Number(b.paidAmount),
+          },
+        });
+      }
+    }
+
     // Recalculer totalDue et balance
     const allBreakdowns = await this.prisma.accountBreakdown.findMany({
       where: { studentAccountId: account.id },

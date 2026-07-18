@@ -147,11 +147,11 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validation basique
+    // ⭐ FIX: Validation basique — seuls firstName et lastName sont obligatoires.
+    // Tous les autres champs (dateOfBirth, gender, placeOfBirth, nationality,
+    // requestedLevelId, guardians, etc.) sont optionnels pour permettre une création
+    // rapide d'élève avec juste le nom, et remplir les détails plus tard.
     if (!formData.firstName.trim() || !formData.lastName.trim()) {
-      return;
-    }
-    if (!formData.requestedLevelId) {
       return;
     }
 
@@ -302,13 +302,12 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-500 uppercase">Niveau Souhaité *</label>
+            <label className="text-xs font-bold text-slate-500 uppercase">Niveau Souhaité <span className="normal-case font-normal text-slate-400">(optionnel)</span></label>
             <select
               name="requestedLevelId"
               value={formData.requestedLevelId}
               onChange={handleInputChange}
               className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
-              required
             >
               <option value="">Sélectionner un niveau</option>
               {levels.map(l => (

@@ -324,27 +324,27 @@ export default function StudentEnrollmentForm({
   };
 
   // ─── Validation ───
+  // ⭐ FIX: Seuls firstName et lastName sont obligatoires. Tous les autres champs
+  // (dateOfBirth, gender, placeOfBirth, nationality, npi, photo) sont optionnels
+  // pour permettre une création rapide d'élève avec juste le nom.
 
   const validateStep1 = () => {
     if (!formData.firstName.trim()) return setError('Le prénom est obligatoire'), false;
     if (!formData.lastName.trim()) return setError('Le nom est obligatoire'), false;
-    if (!formData.dateOfBirth) return setError('La date de naissance est obligatoire'), false;
     return true;
   };
 
   const validateStep3 = () => {
-    const primary = guardians[0];
-    if (!primary.firstName.trim() || !primary.lastName.trim()) {
-      return setError('Le parent principal doit avoir un nom et un prénom'), false;
-    }
+    // ⭐ FIX: Les parents sont optionnels — l'utilisateur peut créer un élève avec juste
+    // son nom et ajouter les parents plus tard. On ne bloque plus la navigation si le
+    // parent principal n'a pas de nom/prénom.
     return true;
   };
 
   const validateStep4 = () => {
-    // Le régime est optionnel si aucun n'est configuré
-    if (regimes.length > 0 && !formData.feeRegimeId) {
-      return setError('Veuillez sélectionner un régime tarifaire'), false;
-    }
+    // ⭐ FIX: Le régime tarifaire est optionnel — si aucun n'est sélectionné, le backend
+    // applique le régime standard par défaut. Seule la justification reste obligatoire
+    // pour le régime REDUCTION (règle métier — ne pas bloquer la création rapide).
     const regime = regimes.find(r => r.id === formData.feeRegimeId);
     if (regime?.code === 'REDUCTION' && !formData.justification.trim()) {
       return setError('Une justification est obligatoire pour une réduction'), false;
@@ -454,7 +454,7 @@ export default function StudentEnrollmentForm({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Date de naissance *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date de naissance</label>
               <input type="date" value={formData.dateOfBirth} onChange={e => handleInputChange('dateOfBirth', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
@@ -613,7 +613,7 @@ export default function StudentEnrollmentForm({
 
           {/* Niveau scolaire (sélecteur qui filtre les classes ET recharge les régimes) */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Niveau scolaire *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Niveau scolaire <span className="text-xs text-gray-400">(optionnel)</span></label>
             <select
               value={selectedLevelId}
               onChange={e => handleLevelChange(e.target.value)}

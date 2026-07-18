@@ -51,12 +51,20 @@ export default function FeeOverrideModal({
   // Pattern identique à NewPaymentModal : filtre par academicYearId (obligatoire),
   // inclut student.studentEnrollments (pour le filtre par classe) + student.matricule
   // (pour la recherche). Ne déclenche que si academicYear.id est disponible.
+  //
+  // ⭐ FIX: Quand une classe est sélectionnée (selectedClassId), on filtre côté backend
+  // via le paramètre classId pour ne charger QUE les élèves de cette classe (au lieu de
+  // paginer 50 par 50 côté serveur). On augmente aussi la limite à 9999 pour récupérer
+  // TOUS les élèves (au lieu de la limite par défaut de 50 qui empêchait de trouver
+  // les élèves en page 2+).
   useEffect(() => {
     if (!academicYear?.id) { setStudents([]); return; }
-    financeService.getStudentAccounts({ academicYearId: academicYear.id })
+    const params: any = { academicYearId: academicYear.id, limit: '9999' };
+    if (selectedClassId) params.classId = selectedClassId;
+    financeService.getStudentAccounts(params)
       .then((d) => setStudents(Array.isArray(d) ? d : d?.data ?? []))
       .catch(() => setStudents([]));
-  }, [academicYear?.id]);
+  }, [academicYear?.id, selectedClassId]);
 
   // Charge les niveaux scolaires activés
   useEffect(() => {
@@ -89,8 +97,11 @@ export default function FeeOverrideModal({
     );
   }, [classes, selectedLevelId, levels]);
 
-  // Filtrage pour l'autocomplétion (10 suggestions max).
-  // Combine filtres : niveau + classe + recherche par nom/prénom/matricule.
+  // Filtrage pour l'autocomplétion (sans limite — on affiche tous les résultats matchés).
+  // Combine filtres : niveau + recherche par nom/prénom/matricule.
+  // ⚠️ Le filtre par classe est désormais géré côté backend (le useEffect ci-dessus
+  // passe classId dans la query), donc on ne refiltre PAS ici par classe — la liste
+  // `students` contient déjà uniquement les élèves de la classe sélectionnée.
   // ⚠️ Les student-accounts ont la structure :
   //   { id, studentId, student: { firstName, lastName, matricule, studentEnrollments: [...] } }
   const filteredStudents = useMemo(() => {
@@ -98,7 +109,8 @@ export default function FeeOverrideModal({
 
     // Filtre par niveau : on récupère les classIds rattachés au niveau sélectionné,
     // puis on ne garde que les accounts dont l'élève a une inscription dans l'une de ces classes.
-    if (selectedLevelId) {
+    // (Uniquement quand aucune classe n'est sélectionnée — sinon le backend filtre déjà.)
+    if (selectedLevelId && !selectedClassId) {
       const selectedLevel = levels.find((l) => l.id === selectedLevelId);
       const schoolLevelId = selectedLevel?.schoolLevelId || selectedLevelId;
       const levelCode = selectedLevel?.code;
@@ -117,16 +129,8 @@ export default function FeeOverrideModal({
       });
     }
 
-    // Filtre par classe : ne garder que les accounts dont l'élève est inscrit dans la classe.
-    if (selectedClassId) {
-      result = result.filter((a: any) => {
-        const enrollments = a.student?.studentEnrollments ?? a.studentEnrollments ?? [];
-        return enrollments.some((e: any) => e.classId === selectedClassId);
-      });
-    }
-
-    // Filtre par recherche (nom/prénom/matricule/code étudiant)
-    if (searchQuery.trim()) {
+    // Filtre par recherche (nom/prénom/matricule/code étudiant) — uniquement en mode recherche texte
+    if (!selectedClassId && searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       result = result.filter((a: any) => {
         const s = a.student ?? a;
@@ -135,8 +139,18 @@ export default function FeeOverrideModal({
       });
     }
 
-    return result.slice(0, 10);
+    return result;
   }, [students, selectedLevelId, selectedClassId, searchQuery, levels, classes]);
+
+  // Liste triée par nom de famille — utilisée pour le dropdown <Select> quand une classe
+  // est sélectionnée (remplace la recherche texte par une liste déroulante exhaustive).
+  const studentsByLastName = useMemo(() => {
+    return [...filteredStudents].sort((a: any, b: any) => {
+      const sa = a.student ?? a;
+      const sb = b.student ?? b;
+      return (sa.lastName || '').localeCompare(sb.lastName || '', 'fr', { sensitivity: 'base' });
+    });
+  }, [filteredStudents]);
 
   // ⭐ `students` contient maintenant des student-accounts ; on match par `studentId`
   // (l'ID de l'élève, pas celui de l'account) car overrideFeeStructure attend un studentId.
@@ -327,6 +341,34 @@ export default function FeeOverrideModal({
                   ? ` (${editingOverride.student.matricule})`
                   : ''}
               </div>
+            ) : selectedClassId ? (
+              // ⭐ FIX: Quand une classe est sélectionnée, on affiche un <Select> listant
+              // TOUS les élèves de la classe (récupérés côté backend via classId), triés par
+              // nom de famille. Cela évite le bug de pagination (50 élèves/page) qui empêchait
+              // de trouver les élèves au-delà de la page 1.
+              <Select
+                value={studentId}
+                onValueChange={(v) => {
+                  const acc = students.find((a: any) => a.studentId === v);
+                  if (acc) selectStudent(acc);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={studentsByLastName.length === 0 ? 'Aucun élève dans cette classe' : 'Sélectionner un élève'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {studentsByLastName.map((a: any) => {
+                    const s = a.student ?? a;
+                    const label = `${s.lastName || ''} ${s.firstName || ''}`.trim();
+                    const matricule = s.matricule ? ` (${s.matricule})` : s.studentCode ? ` (${s.studentCode})` : '';
+                    return (
+                      <SelectItem key={a.id ?? a.studentId} value={a.studentId}>
+                        {label}{matricule}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
             ) : (
               <div className="relative" ref={suggestionsRef}>
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none z-10" />

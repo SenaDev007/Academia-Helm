@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useSaisieMasterStore, computeSaisieStats } from "@/lib/saisiemaster/store";
 import { exportEducMasterFile, downloadBlob } from "@/lib/saisiemaster/excel-generator";
+import { trackActivity } from "@/lib/saisiemaster/api";
 import { toast } from "sonner";
 
 interface ExportDialogProps {
@@ -45,6 +46,8 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
       toast.success("Fichier exporté avec succès", {
         description: fileName,
       });
+      // Track export activity for lead scoring (best-effort, non-blocking).
+      void trackActivity("export");
     } catch (err) {
       console.error(err);
       toast.error("Erreur lors de l'export", {

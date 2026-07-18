@@ -63,7 +63,7 @@ export interface ClassData {
 }
 
 /** États de l'application (vues principales). */
-export type AppView = "landing" | "editor";
+export type AppView = "landing" | "editor" | "auth";
 
 /** Validation d'une cellule de note. */
 export interface CellValidation {

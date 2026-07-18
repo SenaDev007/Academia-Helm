@@ -1,8 +1,11 @@
 /**
  * SaisieMaster — Store global (Zustand)
  *
- * Gère l'état de l'application: vue courante, classe active, données chargées.
- * Persiste automatiquement les saisies en localStorage pour reprise après crash.
+ * Gère l'état de l'application: vue courante, classe active, données chargées,
+ * ET l'authentification frictionless (prospect + token SaisieMaster).
+ *
+ * Persiste automatiquement les saisies en localStorage pour reprise après crash,
+ * ET synchronise les saisies vers le backend (debounced) pour le captage de leads.
  */
 
 import { create } from "zustand";
@@ -14,6 +17,17 @@ import type {
   SaisieStats,
 } from "./types";
 import { GRADING, STORAGE_KEY } from "./constants";
+import {
+  type Prospect,
+  type ActivityType,
+  classDataToSessionPayload,
+  saveSession,
+  trackActivity,
+  getToken,
+  getStoredProspect,
+  setAuth as persistAuth,
+  clearAuth as clearPersistedAuth,
+} from "./api";
 
 interface SaisieMasterState {
   /** Vue active. */
@@ -26,6 +40,12 @@ interface SaisieMasterState {
   importError: string | null;
   /** Indique si l'export est en cours. */
   isExporting: boolean;
+
+  // --- Auth (frictionless, SaisieMaster-only, separate from Academia Helm) ---
+  /** Prospect courant (null = non authentifié). */
+  prospect: Prospect | null;
+  /** Token JWT SaisieMaster (null = non authentifié). */
+  token: string | null;
 
   // Actions
   setView: (view: AppView) => void;
@@ -40,6 +60,47 @@ interface SaisieMasterState {
   ) => void;
   clearAll: () => void;
   setExporting: (exporting: boolean) => void;
+
+  // Auth actions
+  setAuth: (prospect: Prospect, token: string) => void;
+  logout: () => void;
+  /** Hydrate auth state from localStorage (call once on mount). */
+  hydrateAuth: () => void;
+}
+
+/**
+ * isAuthenticated is exposed as a selector helper (Zustand doesn't have
+ * built-in computed values). Use:
+ *   const isAuth = useSaisieMasterStore((s) => s.prospect !== null && s.token !== null);
+ */
+export function selectIsAuthenticated(s: SaisieMasterState): boolean {
+  return s.prospect !== null && s.token !== null;
+}
+
+// ---------------------------------------------------------------------------
+// Debounced backend sync (module-level so the timer survives re-renders)
+// ---------------------------------------------------------------------------
+
+let backendSyncTimer: ReturnType<typeof setTimeout> | null = null;
+const BACKEND_SYNC_DEBOUNCE_MS = 2000;
+
+function scheduleBackendSync(classes: ClassData[], activeClassIndex: number) {
+  // Only sync if authenticated
+  if (!getToken()) return;
+  const activeClass = classes[activeClassIndex];
+  if (!activeClass) return;
+
+  if (backendSyncTimer) {
+    clearTimeout(backendSyncTimer);
+  }
+  backendSyncTimer = setTimeout(() => {
+    const payload = classDataToSessionPayload(activeClass);
+    saveSession(payload).catch((e) => {
+      // Best-effort — don't block the user.
+      console.warn("[saisiemaster] backend sync failed:", e);
+    });
+    backendSyncTimer = null;
+  }, BACKEND_SYNC_DEBOUNCE_MS);
 }
 
 export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
@@ -48,18 +109,30 @@ export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
   activeClassIndex: 0,
   importError: null,
   isExporting: false,
+  prospect: null,
+  token: null,
 
   setView: (view) => set({ view }),
 
-  loadClasses: (classes) =>
+  loadClasses: (classes) => {
     set({
       classes,
       activeClassIndex: 0,
       importError: null,
       view: classes.length > 0 ? "editor" : "landing",
-    }),
+    });
+    // Track classes creation + trigger backend sync for the first class.
+    if (classes.length > 0 && getToken()) {
+      void trackActivity("grade_entered");
+      scheduleBackendSync(classes, 0);
+    }
+  },
 
-  setActiveClass: (index) => set({ activeClassIndex: index }),
+  setActiveClass: (index) => {
+    set({ activeClassIndex: index });
+    // Sync the newly-active class to the backend (debounced).
+    scheduleBackendSync(get().classes, index);
+  },
 
   setImportError: (error) => set({ importError: error }),
 
@@ -106,6 +179,9 @@ export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
         console.warn("Auto-save échoué:", e);
       }
     }
+
+    // Sync vers le backend (debounced) — si authentifié.
+    scheduleBackendSync(newClasses, activeClassIndex);
   },
 
   clearAll: () => {
@@ -118,9 +194,42 @@ export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(STORAGE_KEY);
     }
+    // Cancel any pending backend sync.
+    if (backendSyncTimer) {
+      clearTimeout(backendSyncTimer);
+      backendSyncTimer = null;
+    }
   },
 
   setExporting: (exporting) => set({ isExporting: exporting }),
+
+  // --- Auth ---
+
+  setAuth: (prospect, token) => {
+    set({ prospect, token });
+    persistAuth(prospect, token);
+    // Track login for lead scoring (best-effort, non-blocking).
+    void trackActivity("login" as ActivityType);
+  },
+
+  logout: () => {
+    set({ prospect: null, token: null, view: "landing" });
+    clearPersistedAuth();
+    if (backendSyncTimer) {
+      clearTimeout(backendSyncTimer);
+      backendSyncTimer = null;
+    }
+  },
+
+  hydrateAuth: () => {
+    // Only hydrate if not already authenticated.
+    if (get().prospect && get().token) return;
+    const token = getToken();
+    const prospect = getStoredProspect();
+    if (token && prospect) {
+      set({ token, prospect });
+    }
+  },
 }));
 
 // ============================================================================

@@ -17,8 +17,10 @@ import {
   School,
   Calendar,
   Users,
+  LogOut,
 } from "lucide-react";
 import { useSaisieMasterStore } from "@/lib/saisiemaster/store";
+import { SessionsList } from "./sessions-list";
 import type { ClassData } from "@/lib/saisiemaster/types";
 
 interface EditorHeaderProps {
@@ -30,10 +32,40 @@ interface EditorHeaderProps {
 export function EditorHeader({ onExport, onReset, onHome }: EditorHeaderProps) {
   const { classes, activeClassIndex, setActiveClass, isExporting } =
     useSaisieMasterStore();
+  const logout = useSaisieMasterStore((s) => s.logout);
+  const setView = useSaisieMasterStore((s) => s.setView);
 
   const activeClass: ClassData | undefined = classes[activeClassIndex];
 
   if (!activeClass) return null;
+
+  const handleLogout = () => {
+    logout();
+    setView("landing");
+  };
+
+  const handleResumeSession = (newClasses: ClassData[]) => {
+    // Replace current classes with the resumed session.
+    useSaisieMasterStore.setState({
+      classes: newClasses,
+      activeClassIndex: 0,
+    });
+    // Persist to localStorage so it survives reloads.
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(
+          "saisiemaster:autosave",
+          JSON.stringify({
+            classes: newClasses,
+            activeClassIndex: 0,
+            savedAt: new Date().toISOString(),
+          }),
+        );
+      } catch (e) {
+        console.warn("Persist resumed session failed:", e);
+      }
+    }
+  };
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border/60 bg-background/90 backdrop-blur-md">
@@ -95,6 +127,7 @@ export function EditorHeader({ onExport, onReset, onHome }: EditorHeaderProps) {
 
           {/* Droite — Actions */}
           <div className="flex items-center gap-2">
+            <SessionsList onResume={handleResumeSession} />
             <Button
               variant="ghost"
               size="sm"
@@ -114,6 +147,16 @@ export function EditorHeader({ onExport, onReset, onHome }: EditorHeaderProps) {
               <span className="hidden sm:inline">
                 {isExporting ? "Export…" : "Exporter Excel"}
               </span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleLogout}
+              aria-label="Se déconnecter"
+              title="Se déconnecter"
+              className="h-9 w-9 text-muted-foreground hover:text-[#e31b23]"
+            >
+              <LogOut className="h-4 w-4" />
             </Button>
           </div>
         </div>

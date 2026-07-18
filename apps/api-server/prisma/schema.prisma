@@ -3448,22 +3448,22 @@ model TenantIdentityProfile {
   cardConditionsText        String?  @default("Cette carte est strictement personnelle et incessible. À présenter à toute demande du personnel autorisé. Signaler toute perte ou vol à l'administration.")
 
   // ⭐ Options design configurables (Phase 5 — Task 22-b)
-  cardFontFamily            String?  @default("Helvetica")
-  cardFontSizeScale         String?  @default("medium")
-  cardPhotoPosition         String?  @default("left")
-  cardPhotoSize             String?  @default("medium")
-  cardPhotoShape            String?  @default("rectangle")
-  cardHeaderStyle           String?  @default("solid")
-  cardLogoPosition          String?  @default("left")
-  cardLogoSize              String?  @default("medium")
-  cardShowMatricule         Boolean? @default(true)
-  cardShowBirthInfo         Boolean? @default(true)
-  cardShowGender            Boolean? @default(true)
-  cardShowLevel             Boolean? @default(true)
-  cardStudentNameStyle      String?  @default("bold")
-  cardQrPosition            String?  @default("bottom-right")
-  cardQrSize                String?  @default("medium")
-  cardQrWithLogo            Boolean? @default(true)
+  cardFontFamily       String?  @default("Helvetica")
+  cardFontSizeScale    String?  @default("medium")
+  cardPhotoPosition    String?  @default("left")
+  cardPhotoSize        String?  @default("medium")
+  cardPhotoShape       String?  @default("rectangle")
+  cardHeaderStyle      String?  @default("solid")
+  cardLogoPosition     String?  @default("left")
+  cardLogoSize         String?  @default("medium")
+  cardShowMatricule    Boolean? @default(true)
+  cardShowBirthInfo    Boolean? @default(true)
+  cardShowGender       Boolean? @default(true)
+  cardShowLevel        Boolean? @default(true)
+  cardStudentNameStyle String?  @default("bold")
+  cardQrPosition       String?  @default("bottom-right")
+  cardQrSize           String?  @default("medium")
+  cardQrWithLogo       Boolean? @default(true)
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -12033,27 +12033,27 @@ model MedicalAlert {
 }
 
 model ShopProduct {
-  id                 String              @id @default(uuid())
+  id                 String                  @id @default(uuid())
   tenantId           String
   academicYearId     String
   code               String
   name               String
   description        String?
-  unitPrice          Decimal             @db.Decimal(10, 2)
-  costPrice          Decimal?            @db.Decimal(10, 2)
-  isActive           Boolean             @default(true)
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  unitPrice          Decimal                 @db.Decimal(10, 2)
+  costPrice          Decimal?                @db.Decimal(10, 2)
+  isActive           Boolean                 @default(true)
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
   categoryId         String?
   imageUrl           String?
   maxStock           Int?
-  minStock           Int                 @default(5)
-  taxRate            Decimal             @default(0) @db.Decimal(5, 2)
+  minStock           Int                     @default(5)
+  taxRate            Decimal                 @default(0) @db.Decimal(5, 2)
   orderItems         ShopOrderItem[]
   purchaseOrderItems ShopPurchaseOrderItem[]
-  academicYear       AcademicYear        @relation(fields: [academicYearId], references: [id])
-  category           ShopCategory?       @relation(fields: [categoryId], references: [id])
-  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear       AcademicYear            @relation(fields: [academicYearId], references: [id])
+  category           ShopCategory?           @relation(fields: [categoryId], references: [id])
+  tenant             Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   shopReturns        ShopReturn[]
   saleItems          ShopSaleItem[]
   shopSchoolKitItems ShopSchoolKitItem[]
@@ -12228,23 +12228,23 @@ model ShopSupplier {
 }
 
 model ShopPurchaseOrder {
-  id             String              @id @default(uuid())
+  id             String                  @id @default(uuid())
   tenantId       String
   academicYearId String
   supplierId     String
   poNumber       String
-  date           DateTime            @default(now())
-  totalAmount    Decimal             @db.Decimal(10, 2)
-  status         PurchaseOrderStatus @default(DRAFT)
+  date           DateTime                @default(now())
+  totalAmount    Decimal                 @db.Decimal(10, 2)
+  status         PurchaseOrderStatus     @default(DRAFT)
   notes          String?
   receivedAt     DateTime?
   receivedBy     String?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
-  academicYear   AcademicYear        @relation(fields: [academicYearId], references: [id])
-  receiver       User?               @relation("ShopPurchaseReceiver", fields: [receivedBy], references: [id])
-  supplier       ShopSupplier        @relation(fields: [supplierId], references: [id])
-  tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  academicYear   AcademicYear            @relation(fields: [academicYearId], references: [id])
+  receiver       User?                   @relation("ShopPurchaseReceiver", fields: [receivedBy], references: [id])
+  supplier       ShopSupplier            @relation(fields: [supplierId], references: [id])
+  tenant         Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   items          ShopPurchaseOrderItem[]
 
   @@unique([tenantId, academicYearId, poNumber])
@@ -12253,14 +12253,14 @@ model ShopPurchaseOrder {
 }
 
 model ShopPurchaseOrderItem {
-  id              String             @id @default(uuid())
+  id              String            @id @default(uuid())
   purchaseOrderId String
   productId       String
-  quantity        Int                @default(1)
-  unitPrice       Decimal?           @db.Decimal(10, 2)
-  totalPrice      Decimal            @db.Decimal(10, 2)
-  purchaseOrder   ShopPurchaseOrder  @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  product         ShopProduct        @relation(fields: [productId], references: [id])
+  quantity        Int               @default(1)
+  unitPrice       Decimal?          @db.Decimal(10, 2)
+  totalPrice      Decimal           @db.Decimal(10, 2)
+  purchaseOrder   ShopPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product         ShopProduct       @relation(fields: [productId], references: [id])
 
   @@index([purchaseOrderId])
   @@index([productId])
@@ -14247,6 +14247,66 @@ model AcademicSettingsAuditLog {
   @@index([settingsId])
   @@index([userId])
   @@map("academic_settings_audit_logs")
+}
+
+/// Prospect SaisieMaster — directeur d'école ayant créé un compte gratuit
+/// sur l'outil SaisieMaster (saisie de notes au format EducMaster).
+/// Capté comme lead pour conversion ultérieure vers Academia Helm.
+model SaisieMasterProspect {
+  id                   String    @id @default(uuid())
+  email                String    @unique
+  firstName            String
+  lastName             String
+  schoolName           String
+  phoneNumber          String?
+  city                 String?
+  // Tracking
+  source               String    @default("saiemaster")
+  status               String    @default("LEAD") // LEAD → CONTACTED → CONVERTED → LOST
+  signupDate           DateTime  @default(now())
+  lastLoginAt          DateTime?
+  loginCount           Int       @default(1)
+  // Email automation
+  firstFollowupSent    Boolean   @default(false)
+  firstFollowupSentAt  DateTime?
+  secondFollowupSent   Boolean   @default(false)
+  secondFollowupSentAt DateTime?
+  // Conversion
+  convertedToTenantId  String?
+  convertedAt          DateTime?
+  // Metadata
+  classesCreated       Int       @default(0)
+  gradesEntered        Int       @default(0)
+  exportsCount         Int       @default(0)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  sessions SaisieMasterSession[]
+
+  @@index([email])
+  @@index([status])
+  @@index([signupDate])
+  @@map("saisiemaster_prospects")
+}
+
+/// Session de saisie enregistrée par un prospect SaisieMaster.
+/// Représente une classe (feuille Excel) avec ses notes saisies.
+model SaisieMasterSession {
+  id           String   @id @default(uuid())
+  prospectId   String
+  className    String
+  schoolYear   String?
+  academicYear String?
+  studentCount Int      @default(0)
+  subjectCount Int      @default(0)
+  gradesData   Json // The full grades data as JSON
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  prospect SaisieMasterProspect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  @@index([prospectId])
+  @@map("saisiemaster_sessions")
 }
 
 enum AcademicPeriodType {

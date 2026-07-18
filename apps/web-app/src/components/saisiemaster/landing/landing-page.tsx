@@ -8,13 +8,22 @@ import { HowItWorks } from "./how-it-works";
 import { Features } from "./features";
 import { Footer } from "./footer";
 import { ResumeBanner } from "./resume-banner";
-import { useSaisieMasterStore } from "@/lib/saisiemaster/store";
+import {
+  useSaisieMasterStore,
+  selectIsAuthenticated,
+} from "@/lib/saisiemaster/store";
 
 export function LandingPage() {
   const uploadRef = useRef<HTMLDivElement>(null);
   const setView = useSaisieMasterStore((s) => s.setView);
+  const isAuthenticated = useSaisieMasterStore(selectIsAuthenticated);
 
   const scrollToUpload = () => {
+    if (!isAuthenticated) {
+      // Not authed → trigger the auth flow first.
+      setView("auth");
+      return;
+    }
     uploadRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
@@ -25,7 +34,7 @@ export function LandingPage() {
 
   return (
     <>
-      <Navbar />
+      <Navbar onStart={scrollToUpload} />
       <main className="flex-1">
         <Hero onUploadClick={scrollToUpload} />
 
@@ -77,11 +86,10 @@ export function LandingPage() {
                 format d&apos;import/export exigé par la plateforme.
               </p>
               <p>
-                Toutes les opérations (lecture du fichier Excel, saisie des notes,
-                génération du fichier final) se déroulent <strong className="text-foreground">entièrement
-                dans votre navigateur</strong>. Aucune donnée n&apos;est envoyée vers
-                un serveur : vos listes d&apos;élèves et leurs notes restent
-                strictement privées et locales à votre machine.
+                Vos saisies sont automatiquement sauvegardées sur votre compte
+                gratuit SaisieMaster pour que vous puissiez les reprendre à tout
+                moment, sur n&apos;importe quel appareil. Vos listes d&apos;élèves
+                et leurs notes restent strictement privées.
               </p>
               <p>
                 L&apos;interface adopte les couleurs nationales du Bénin (vert, jaune,

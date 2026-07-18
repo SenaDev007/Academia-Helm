@@ -5,6 +5,7 @@ import { FederisModule } from './federis/federis.module';
 import { AtlasModule } from './atlas/atlas.module';
 import { SaraModule } from './sara/sara.module';
 import { EducMasterModule } from './educmaster/educmaster.module';
+import { SaisieMasterModule } from './saisiemaster/saisiemaster.module';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -311,6 +312,9 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
 
     // EducMaster Module
     EducMasterModule,
+
+    // SaisieMaster Module (free lead-capture tool for school directors)
+    SaisieMasterModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

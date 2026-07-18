@@ -341,6 +341,26 @@ export async function middleware(request: NextRequest) {
       return federisResponse;
     }
 
+    // ── SaisieMaster satellite app ──
+    // saiemaster.academiahelm.com/* → /saisiemaster/*
+    // Application autonome de saisie de notes au format EducMaster (Benin).
+    // Layout dedie (/saisiemaster/layout.tsx) sans la navbar Academia Helm.
+    if (hostParts[0] === 'saiemaster') {
+      let saisiePath: string;
+      if (pathname === '/') {
+        saisiePath = '/saisiemaster';
+      } else if (pathname.startsWith('/saisiemaster')) {
+        // Déjà préfixé — utiliser tel quel (ex: ancien bookmark)
+        saisiePath = pathname;
+      } else {
+        saisiePath = `/saisiemaster${pathname}`;
+      }
+      const rewriteUrl = new URL(saisiePath + request.nextUrl.search, request.nextUrl.origin);
+      const saisieResponse = withAntiCacheHeaders(NextResponse.rewrite(rewriteUrl));
+      saisieResponse.headers.set('x-saisiemaster-subdomain', 'true');
+      return saisieResponse;
+    }
+
     // ── Admin subdomain: back-office centralisé d'Academia Helm ──
     // admin.academiahelm.com/* est volontairement laissé passer sans redirection.
     //

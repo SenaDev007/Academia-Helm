@@ -1,0 +1,225 @@
+/**
+ * SaisieMaster — Styles globaux
+ *
+ * Adapaté pour Tailwind CSS v3 (Academia Helm utilise Tailwind 3.4.7).
+ * Conserve les tokens Bénin + EducMaster et les utilitaires custom
+ * (bandeau tricolore, scrollbar discrète, animations, etc.)
+ *
+ * IMPORTANT : Ce fichier est chargé uniquement par /saisiemaster/layout.tsx,
+ * via `import './globals.css'`. Il ne doit PAS entrer en conflit avec
+ * le globals.css racine d'Academia Helm — d'où l'usage d'un scope
+ * `:root` + de classes préfixées `.saisiemaster-*` plutôt que de classes
+ * globales génériques.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =================================================================== */
+/* Tokens SaisieMaster (couleurs Bénin + EducMaster)                    */
+/* =================================================================== */
+
+:root {
+  --radius: 0.625rem;
+
+  /* Fond / texte — tons "cream" pour préserver l'identité Bénin */
+  --background: #fafaf7;
+  --foreground: #0a0a0a;
+  --card: #ffffff;
+  --card-foreground: #0a0a0a;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0a;
+
+  /* Primaire: vert Bénin */
+  --primary: #008751;
+  --primary-foreground: #ffffff;
+
+  /* Secondaire: jaune Bénin (survol, accents) */
+  --secondary: #f5f5f0;
+  --secondary-foreground: #0a0a0a;
+  --muted: #f1f1ec;
+  --muted-foreground: #6b6b66;
+  --accent: #fef6d6;
+  --accent-foreground: #0a0a0a;
+
+  --destructive: #e31b23;
+  --destructive-foreground: #ffffff;
+  --border: #e5e5e0;
+  --input: #e5e5e0;
+  --ring: #008751;
+
+  --chart-1: #008751;
+  --chart-2: #fcd116;
+  --chart-3: #0b3b6b;
+  --chart-4: #e31b23;
+  --chart-5: #8b5cf6;
+
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0a0a0a;
+  --sidebar-primary: #008751;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f5f5f0;
+  --sidebar-accent-foreground: #0a0a0a;
+  --sidebar-border: #e5e5e0;
+  --sidebar-ring: #008751;
+
+  /* Couleurs nationales du Bénin + tons EducMaster */
+  --color-benin-green: #008751;
+  --color-benin-yellow: #fcd116;
+  --color-benin-red: #e31b23;
+  --color-state-blue: #0b3b6b;
+  --color-cream: #fafaf7;
+  --color-benin-green-soft: #e6f4ee;
+  --color-benin-yellow-soft: #fef6d6;
+  --color-benin-red-soft: #fce4e6;
+  --color-state-blue-soft: #e2ecf6;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+.dark {
+  --background: #0a0f0d;
+  --foreground: #f5f5f0;
+  --card: #131915;
+  --card-foreground: #f5f5f0;
+  --popover: #131915;
+  --popover-foreground: #f5f5f0;
+  --primary: #00b86b;
+  --primary-foreground: #0a0a0a;
+  --secondary: #1a2520;
+  --secondary-foreground: #f5f5f0;
+  --muted: #1a2520;
+  --muted-foreground: #9ca39e;
+  --accent: #2a2410;
+  --accent-foreground: #fcd116;
+  --destructive: #ff5560;
+  --destructive-foreground: #ffffff;
+  --border: #1f2a25;
+  --input: #1f2a25;
+  --ring: #00b86b;
+  --chart-1: #00b86b;
+  --chart-2: #fcd116;
+  --chart-3: #4a90c2;
+  --chart-4: #ff5560;
+  --chart-5: #a78bfa;
+  --sidebar: #131915;
+  --sidebar-foreground: #f5f5f0;
+  --sidebar-primary: #00b86b;
+  --sidebar-primary-foreground: #0a0a0a;
+  --sidebar-accent: #1a2520;
+  --sidebar-accent-foreground: #f5f5f0;
+  --sidebar-border: #1f2a25;
+  --sidebar-ring: #00b86b;
+}
+
+/* =================================================================== */
+/* Base layer — appliqué uniquement au scope de la route /saisiemaster  */
+/* =================================================================== */
+
+@layer base {
+  /* On cible body pour préserver la cohérence avec les tokens SaisieMaster.
+     L'utilisation de variables CSS fait que seules les pages sous
+     /saisiemaster/layout.tsx héritent de ces valeurs. */
+  * {
+    border-color: var(--border);
+  }
+}
+
+/* =================================================================== */
+/* Utilitaires SaisieMaster                                            */
+/* =================================================================== */
+
+/* Bandeau tricolore béninois (vert/jaune/rouge) */
+.saisiemaster-tricolor {
+  background: linear-gradient(
+    90deg,
+    #008751 0%,
+    #008751 33.33%,
+    #fcd116 33.33%,
+    #fcd116 66.66%,
+    #e31b23 66.66%,
+    #e31b23 100%
+  );
+}
+
+.saisiemaster-tricolor-vertical {
+  background: linear-gradient(
+    180deg,
+    #008751 0%,
+    #008751 33.33%,
+    #fcd116 33.33%,
+    #fcd116 66.66%,
+    #e31b23 66.66%,
+    #e31b23 100%
+  );
+}
+
+/* Scrollbar discrète */
+.saisiemaster-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.saisiemaster-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.saisiemaster-scroll::-webkit-scrollbar-thumb {
+  background: var(--muted-foreground);
+  border-radius: 6px;
+  opacity: 0.4;
+}
+.saisiemaster-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+/* Cellule de note — focus visible */
+.note-cell-input:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  background: var(--accent);
+}
+
+/* Animation d'apparition douce */
+@keyframes saisie-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.saisie-fade-in {
+  animation: saisie-fade-in 0.35s ease-out;
+}
+
+/* Grille de fond décorative */
+.saisiemaster-grid-bg {
+  background-image:
+    linear-gradient(rgba(0, 135, 81, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 135, 81, 0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Sticky headers tableau */
+.sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  background: var(--card);
+}
+.sticky-col-header {
+  position: sticky;
+  left: 0;
+  z-index: 15;
+  background: var(--card);
+}

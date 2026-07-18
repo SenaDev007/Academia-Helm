@@ -9,7 +9,7 @@
  *
  * Categories:
  * - Web routing : www, app, portal
- * - Satellite applications : academiafederis
+ * - Satellite applications : academiafederis, saiemaster
  * - Infrastructure : api, cdn, mail, smtp, ftp, docs
  * - Environments : dev, test, staging, preview, localhost
  * - Admin : admin
@@ -21,6 +21,7 @@ export const RESERVED_SUBDOMAINS = [
   'portal',
   // Satellite applications
   'academiafederis',
+  'saiemaster',
   // Infrastructure
   'api',
   'cdn',

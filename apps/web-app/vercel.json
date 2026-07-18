@@ -36,6 +36,15 @@
           "value": "strict-origin-when-cross-origin"
         }
       ]
+    },
+    {
+      "source": "/api/saisiemaster/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "https://saisiemaster.academiahelm.com" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, PUT, DELETE, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" },
+        { "key": "Access-Control-Max-Age", "value": "86400" }
+      ]
     }
   ],
   "rewrites": [

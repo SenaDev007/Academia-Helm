@@ -28,6 +28,18 @@ class FinanceService {
     return financeFetch(`/api/finance/fee-structures/${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
 
+  /**
+   * ⭐ Task 24 : Suppression multiple (bulk delete) de fee structures.
+   * @param ids Tableau d'IDs à supprimer
+   * @returns { deleted: string[], blocked: { id, name, reason }[], message }
+   */
+  async bulkDeleteFeeStructures(ids: string[]): Promise<any> {
+    return financeFetch('/api/finance/fee-structures/bulk-delete', {
+      method: 'POST',
+      body: { ids },
+    });
+  }
+
   async copyFeeStructuresToYear(data: any): Promise<any> {
     return financeFetch('/api/finance/fee-structures/copy-to-year', { method: 'POST', body: data });
   }

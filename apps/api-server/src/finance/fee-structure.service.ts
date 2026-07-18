@@ -875,55 +875,122 @@ export class FeeStructureService {
   }
 
   /**
-   * Supprime un frais (désactive au lieu de supprimer physiquement).
-   * Désactive aussi le trigger SQL temporairement pour permettre la suppression
-   * si l'admin le souhaite vraiment.
+   * Supprime un frais DÉFINITIVEMENT de la base de données (hard delete).
+   *
+   * ⭐ Task 24 : le user a explicitement demandé la suppression définitive
+   *    (pas de soft delete isActive=false). On supprime en cascade :
+   *    - fee_structure_installments (tranches)
+   *    - fee_overrides (personnalisations élève)
+   *    - account_breakdowns (comptes élèves liés — seulement si pas de
+   *      paiement, sinon on bloque avec un message clair)
+   *    - fee_structure elle-même
+   *
+   * Si des account_breakdowns ont des paiements (paidAmount > 0), on bloque
+   * la suppression pour éviter de perdre l'historique financier.
    */
   async delete(id: string, tenantId: string) {
     const existing = await this.findOne(id, tenantId);
 
-    // Vérifier qu'aucun compte élève n'utilise ce frais
-    const breakdowns = await this.prisma.accountBreakdown.count({
-      where: { feeStructureId: id },
+    // Vérifier qu'aucun compte élève n'a de paiement sur ce frais
+    const breakdownsWithPayments = await this.prisma.accountBreakdown.count({
+      where: { feeStructureId: id, paidAmount: { gt: 0 } },
     });
-    if (breakdowns > 0) {
-      // Désactiver au lieu de supprimer
-      await this.prisma.feeStructure.update({
-        where: { id },
-        data: { isActive: false, updatedAt: new Date() },
-      });
-      await this.audit(tenantId, undefined, 'FEE_STRUCTURE_DEACTIVATE', 'FeeStructure', id, { isActive: true }, { isActive: false });
-      return { id, isActive: false, message: 'Frais désactivé (utilisé par des comptes élèves)' };
+    if (breakdownsWithPayments > 0) {
+      throw new Error(
+        `Impossible de supprimer ce frais : ${breakdownsWithPayments} compte(s) élève ont déjà des paiements enregistrés. ` +
+        `Veuillez d'abord supprimer ou annuler ces paiements avant de supprimer le frais.`
+      );
     }
 
     // Suppression physique (désactiver le trigger temporairement)
-    await this.prisma.$executeRawUnsafe('DROP TRIGGER IF EXISTS no_delete_fee ON "fee_structures"');
+    await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_structures" DISABLE TRIGGER no_delete_fee');
     try {
-      // Supprimer d'abord les installments liés
+      // 1. Supprimer les installments (tranches) liés
       await this.prisma.feeStructureInstallment.deleteMany({
         where: { feeStructureId: id },
       });
-      // Supprimer les overrides liés
+      // 2. Supprimer les overrides (personnalisations) liés
       await this.prisma.feeOverride.deleteMany({
         where: { feeStructureId: id },
       });
-      // Supprimer le frais
+      // 3. Supprimer les account_breakdowns sans paiement liés
+      await this.prisma.accountBreakdown.deleteMany({
+        where: { feeStructureId: id },
+      });
+      // 4. Supprimer le frais lui-même
       await this.prisma.feeStructure.delete({
         where: { id },
       });
       await this.audit(tenantId, undefined, 'FEE_STRUCTURE_DELETE', 'FeeStructure', id, { name: existing.name }, undefined);
     } finally {
-      // Recréer le trigger
-      await this.prisma.$executeRawUnsafe(`
-        CREATE OR REPLACE FUNCTION prevent_fee_delete()
-        RETURNS TRIGGER AS $$ BEGIN RAISE EXCEPTION 'Deletion forbidden'; END; $$ LANGUAGE plpgsql
-      `);
-      await this.prisma.$executeRawUnsafe(`
-        CREATE TRIGGER no_delete_fee BEFORE DELETE ON "fee_structures"
-        FOR EACH ROW EXECUTE FUNCTION prevent_fee_delete()
-      `);
+      // Réactiver le trigger
+      await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_structures" ENABLE TRIGGER no_delete_fee');
     }
 
     return { id, deleted: true };
   }
-}
+
+  /**
+   * ⭐ Task 24 : Suppression multiple (bulk delete).
+   *
+   * Supprime plusieurs frais en une seule opération. Même logique que delete() :
+   * - Bloque si un frais a des paiements (paidAmount > 0 sur account_breakdowns)
+   * - Supprime en cascade : installments, overrides, breakdowns sans paiement, fee_structure
+   *
+   * @param ids Tableau d'IDs de fee_structures à supprimer
+   * @returns { deleted: string[], blocked: { id: string, reason: string }[] }
+   */
+  async deleteMany(ids: string[], tenantId: string) {
+    if (!ids || ids.length === 0) {
+      return { deleted: [], blocked: [], message: 'Aucun ID fourni' };
+    }
+
+    const deleted: string[] = [];
+    const blocked: { id: string; name: string; reason: string }[] = [];
+
+    // Désactiver le trigger pour toute l'opération
+    await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_structures" DISABLE TRIGGER no_delete_fee');
+    try {
+      for (const id of ids) {
+        try {
+          const existing = await this.findOne(id, tenantId);
+
+          // Vérifier les paiements
+          const breakdownsWithPayments = await this.prisma.accountBreakdown.count({
+            where: { feeStructureId: id, paidAmount: { gt: 0 } },
+          });
+          if (breakdownsWithPayments > 0) {
+            blocked.push({
+              id,
+              name: existing.name,
+              reason: `${breakdownsWithPayments} compte(s) avec paiements`,
+            });
+            continue;
+          }
+
+          // Supprimer en cascade
+          await this.prisma.feeStructureInstallment.deleteMany({ where: { feeStructureId: id } });
+          await this.prisma.feeOverride.deleteMany({ where: { feeStructureId: id } });
+          await this.prisma.accountBreakdown.deleteMany({ where: { feeStructureId: id } });
+          await this.prisma.feeStructure.delete({ where: { id } });
+          await this.audit(tenantId, undefined, 'FEE_STRUCTURE_DELETE', 'FeeStructure', id, { name: existing.name }, undefined);
+          deleted.push(id);
+        } catch (err) {
+          blocked.push({
+            id,
+            name: '(inconnu)',
+            reason: err.message || 'Erreur lors de la suppression',
+          });
+        }
+      }
+    } finally {
+      // Réactiver le trigger
+      await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_structures" ENABLE TRIGGER no_delete_fee');
+    }
+
+    return {
+      deleted,
+      blocked,
+      message: `${deleted.length} frais supprimé(s), ${blocked.length} bloqué(s)`,
+    };
+  }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Plus, Copy, UserCog, Pencil, Trash2, X, ChevronDown, Calendar, Clock, CalendarClock } from 'lucide-react';
+import { Plus, Copy, UserCog, Pencil, Trash2, X, ChevronDown, Calendar, Clock, CalendarClock, CheckSquare, Square } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
@@ -67,6 +67,9 @@ export default function FeeStructuresContent() {
   const [copyYearModal, setCopyYearModal] = useState(false);
   const [copyFrom, setCopyFrom] = useState('');
   const [copyTo, setCopyTo] = useState('');
+  // ⭐ Task 24 : sélection multiple pour suppression en masse
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [installmentPopoverId, setInstallmentPopoverId] = useState<string | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
 
@@ -359,14 +362,77 @@ export default function FeeStructuresContent() {
   };
 
   const handleDelete = async (id: string) => {
-    const ok = await confirmDialog.danger('Ce frais sera supprimé.', 'Supprimer');
+    const ok = await confirmDialog.danger(
+      'Ce frais sera supprimé DÉFINITIVEMENT de la base de données.',
+      'Supprimer définitivement'
+    );
     if (!ok) return;
     try {
       await financeService.deleteFeeStructure(id);
-      toast({ title: 'Succès', description: 'Frais supprimé.' });
+      toast({ title: 'Succès', description: 'Frais supprimé définitivement.' });
+      // Retirer de la sélection si présent
+      setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+      await loadStructures();
+    } catch (error: any) {
+      toast({
+        title: 'Suppression impossible',
+        description: error?.message || 'Ce frais a des paiements liés et ne peut pas être supprimé.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // ⭐ Task 24 : Suppression multiple
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    const ok = await confirmDialog.danger(
+      `${selectedIds.size} frais seront supprimés DÉFINITIVEMENT de la base de données.`,
+      'Supprimer la sélection'
+    );
+    if (!ok) return;
+    setBulkDeleting(true);
+    try {
+      const result = await financeService.bulkDeleteFeeStructures(Array.from(selectedIds));
+      const deletedCount = result.deleted?.length || 0;
+      const blockedCount = result.blocked?.length || 0;
+      if (deletedCount > 0 && blockedCount === 0) {
+        toast({ title: 'Succès', description: `${deletedCount} frais supprimé(s) définitivement.` });
+      } else if (deletedCount > 0 && blockedCount > 0) {
+        toast({
+          title: 'Suppression partielle',
+          description: `${deletedCount} supprimé(s), ${blockedCount} bloqué(s) (paiements liés).`,
+          variant: 'default',
+        });
+      } else if (deletedCount === 0 && blockedCount > 0) {
+        toast({
+          title: 'Aucune suppression',
+          description: `Les ${blockedCount} frais sélectionnés ont des paiements liés et ne peuvent pas être supprimés.`,
+          variant: 'destructive',
+        });
+      }
+      setSelectedIds(new Set());
       await loadStructures();
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === structures.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(structures.map(s => s.id)));
     }
   };
 
@@ -431,22 +497,82 @@ export default function FeeStructuresContent() {
             </div>
           </div>
 
+          {/* ⭐ Task 24 : Barre d'actions pour suppression multiple */}
+          {selectedIds.size > 0 && (
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg">
+              <span className="text-sm font-semibold text-amber-800">
+                {selectedIds.size} sélectionné(s)
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedIds(new Set())}
+                  className="text-xs"
+                >
+                  Annuler
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting}
+                  className="text-xs"
+                >
+                  {bulkDeleting ? (
+                    <span className="animate-pulse">Suppression…</span>
+                  ) : (
+                    <>
+                      <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                      Supprimer ({selectedIds.size})
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50">
+                  {/* ⭐ Task 24 : Colonne checkbox pour sélection multiple */}
+                  <TableHead className="w-10">
+                    <button
+                      type="button"
+                      onClick={toggleSelectAll}
+                      className="flex items-center justify-center w-5 h-5"
+                      title={selectedIds.size === structures.length ? 'Tout désélectionner' : 'Tout sélectionner'}
+                    >
+                      {selectedIds.size === structures.length && structures.length > 0
+                        ? <CheckSquare className="w-4 h-4 text-blue-600" />
+                        : <Square className="w-4 h-4 text-slate-400" />}
+                    </button>
+                  </TableHead>
                   <TableHead>Nom du frais</TableHead><TableHead>Type</TableHead><TableHead>Niveau</TableHead><TableHead>Classe</TableHead>
                   <TableHead className="text-right">Montant</TableHead><TableHead>Tranches</TableHead><TableHead>Oblig.</TableHead><TableHead>Statut</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading ? (<TableRow><TableCell colSpan={9} className="text-center text-gray-500 py-8">Chargement...</TableCell></TableRow>
-                ) : structures.length === 0 ? (<TableRow><TableCell colSpan={9} className="text-center text-gray-500 py-12">
+                {loading ? (<TableRow><TableCell colSpan={10} className="text-center text-gray-500 py-8">Chargement...</TableCell></TableRow>
+                ) : structures.length === 0 ? (<TableRow><TableCell colSpan={10} className="text-center text-gray-500 py-12">
                   <div className="flex flex-col items-center gap-3"><Plus className="w-10 h-10 text-slate-300" /><p>Aucun frais configuré.</p><Button onClick={() => setModalNewFee(true)} size="sm"><Plus className="w-4 h-4 mr-2" />Configurer un frais</Button></div>
                 </TableCell></TableRow>
                 ) : structures.map((s) => (
-                  <TableRow key={s.id} className="hover:bg-slate-50">
+                  <TableRow key={s.id} className={`hover:bg-slate-50 ${selectedIds.has(s.id) ? 'bg-blue-50/40' : ''}`}>
+                    {/* ⭐ Task 24 : Checkbox de sélection */}
+                    <TableCell className="w-10">
+                      <button
+                        type="button"
+                        onClick={() => toggleSelect(s.id)}
+                        className="flex items-center justify-center w-5 h-5"
+                      >
+                        {selectedIds.has(s.id)
+                          ? <CheckSquare className="w-4 h-4 text-blue-600" />
+                          : <Square className="w-4 h-4 text-slate-300 hover:text-slate-500" />}
+                      </button>
+                    </TableCell>
                     <TableCell className="font-medium">{feeDisplayName(s)}</TableCell>
                     <TableCell><Badge variant="outline">{feeTypeLabel(s.feeType)}</Badge></TableCell>
                     <TableCell className="text-sm">{s.levelId ? <strong>{levelDisplay(s)}</strong> : <span className="text-slate-400">Tous</span>}</TableCell>

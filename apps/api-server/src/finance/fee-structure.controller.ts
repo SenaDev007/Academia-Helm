@@ -229,6 +229,21 @@ export class FeeStructureController {
     });
   }
 
+  /**
+   * ⭐ Task 24 : Suppression multiple (bulk delete).
+   * POST /finance/fee-structures/bulk-delete
+   * Body: { ids: string[] }
+   * Retourne { deleted: string[], blocked: { id, name, reason }[], message }
+   */
+  @Post('bulk-delete')
+  async bulkDelete(
+    @TenantId() tenantId: string,
+    @Body() body: { ids: string[] },
+  ) {
+    this.logger.log(`Bulk delete fee structures: ${body.ids?.length || 0} IDs`);
+    return this.service.deleteMany(body.ids || [], tenantId);
+  }
+
   @Delete(':id')
   async delete(
     @Param('id') id: string,

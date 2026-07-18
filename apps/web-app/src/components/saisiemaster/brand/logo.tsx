@@ -1,31 +1,46 @@
 /**
  * Logo SaisieMaster — image officielle de la marque.
  *
- * Affiche le logo SaisieMaster (fichier PNG) avec une hauteur responsive.
- * Si une `className` est fournie, elle est utilisée telle quelle (ex: "h-8").
- * Sinon, on applique une hauteur par défaut cohérente avec l'ancien size="md".
+ * Affiche le logo SaisieMaster (fichier PNG) dans un cadre circulaire
+ * avec une bordure verte subtile. La taille du cadre dépend de la prop
+ * `size` :
+ *   - "sm" → 36px (navbar compact)
+ *   - "md" → 44px (footer, défaut)
+ *   - "lg" → 56px (pages éditoriales)
  *
- * Les props `size` et `showText` sont conservées pour rétro-compatibilité
- * mais n'ont plus d'effet visuel : le logo est désormais une image unique.
+ * Si une `className` est fournie, elle est fusionnée (mais le cadre
+ * circulaire reste prioritaire sur les dimensions via `size`).
  */
 
 import { cn } from "@/lib/saisiemaster/utils";
 
 interface LogoProps {
-  /** Conservé pour rétro-compatibilité — n'a plus d'effet visuel. */
+  /** Taille du cadre circulaire. */
   size?: "sm" | "md" | "lg";
   /** Conservé pour rétro-compatibilité — n'a plus d'effet visuel. */
   showText?: boolean;
-  /** Classe CSS optionnelle (ex: "h-8", "h-10 w-auto"). */
+  /** Classe CSS optionnelle (ex: pour des overrides de marges). */
   className?: string;
 }
 
-export function Logo({ className }: LogoProps) {
+export function Logo({ size = "md", className }: LogoProps) {
+  const dim =
+    size === "lg" ? "56px" : size === "md" ? "44px" : "36px";
+
   return (
-    <img
-      src="/images/Logo-SaisieMaster.png"
-      alt="SaisieMaster"
-      className={cn("h-8 w-auto", className)}
-    />
+    <div
+      className={cn(
+        "rounded-full overflow-hidden border-2 border-[#008751]/20 flex items-center justify-center bg-white",
+        className,
+      )}
+      style={{ width: dim, height: dim }}
+      aria-label="SaisieMaster"
+    >
+      <img
+        src="/images/Logo-SaisieMaster.png"
+        alt="SaisieMaster"
+        className="w-full h-full object-cover"
+      />
+    </div>
   );
 }

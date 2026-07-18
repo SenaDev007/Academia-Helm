@@ -12,7 +12,9 @@
  * Le token SaisieMaster est stocké dans localStorage sous la clé
  * `saisiemaster:token` et le prospect sous `saisiemaster:prospect`.
  *
- * Auth frictionless : pas de mot de passe. Le login = juste l'email.
+ * Auth: email + mot de passe. Le mot de passe est hashé (bcrypt) côté backend.
+ * Pour les prospects créés avant l'ajout du mot de passe, le login peut
+ * toujours se faire en email-only (fallback de rétro-compatibilité).
  * ============================================================================
  */
 
@@ -80,6 +82,14 @@ export interface SignupPayload {
   schoolName: string;
   phoneNumber?: string;
   city?: string;
+  /** Mot de passe en clair (min 6 caractères). Hashé côté backend. */
+  password?: string;
+}
+
+export interface LoginPayload {
+  email: string;
+  /** Mot de passe en clair. Requis si le compte en possède un. */
+  password?: string;
 }
 
 export interface AuthResponse {
@@ -219,10 +229,10 @@ export async function signup(payload: SignupPayload): Promise<AuthResponse> {
   return result;
 }
 
-export async function login(email: string): Promise<AuthResponse> {
+export async function login(payload: LoginPayload): Promise<AuthResponse> {
   const result = await apiFetch<AuthResponse>("/api/saisiemaster/login", {
     method: "POST",
-    body: JSON.stringify({ email }),
+    body: JSON.stringify(payload),
   });
   setAuth(result.prospect, result.token);
   return result;

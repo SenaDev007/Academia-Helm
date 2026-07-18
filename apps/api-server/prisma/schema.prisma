@@ -14260,6 +14260,9 @@ model SaisieMasterProspect {
   schoolName           String
   phoneNumber          String?
   city                 String?
+  // Auth — mot de passe hashé (bcrypt). Null pour les prospects créés
+  // avant l'ajout du mot de passe (rétro-compatibilité email-only).
+  password             String?
   // Tracking
   source               String    @default("saiemaster")
   status               String    @default("LEAD") // LEAD → CONTACTED → CONVERTED → LOST

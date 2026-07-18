@@ -4,7 +4,7 @@
  * ============================================================================
  *
  * Proxy to the backend POST /api/saisiemaster/login endpoint.
- * Frictionless: just the email (no password).
+ * Forwards email + password (when provided) for password-based auth.
  * ============================================================================
  */
 
@@ -27,10 +27,16 @@ export async function POST(request: NextRequest) {
     const apiBaseUrl = getApiBaseUrlForRoutes();
     const targetUrl = normalizeApiUrl(`${apiBaseUrl}/saisiemaster/login`);
 
+    // Forward email + password (if provided) to the backend.
+    const payload: Record<string, string> = { email: body.email };
+    if (typeof body.password === 'string' && body.password.length > 0) {
+      payload.password = body.password;
+    }
+
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: body.email }),
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(15000),
     });
 

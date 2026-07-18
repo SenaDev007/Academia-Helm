@@ -295,10 +295,7 @@ export default function StudentAccountsContent() {
       const matricule = a.student?.studentCode || '';
       // ⭐ Task 29 : utiliser hasOverride du backend (pas de comparaison de montants)
       const hasOverride = a.hasOverride === true ||
-        (a.breakdowns ?? []).some((b: any) =>
-          b.hasOverride === true ||
-          (b.feeStructure?.overrides?.length ?? 0) > 0
-        );
+        (a.breakdowns ?? []).some((b: any) => b.hasOverride === true);
       return [
         name,
         matricule,
@@ -1228,7 +1225,7 @@ export default function StudentAccountsContent() {
                 const fsTotal = Number(b.feeStructure?.totalAmount ?? 0);
                 const initial = Number(b.initialAmount ?? 0);
                 // ⭐ Task 29 : utiliser hasOverride du backend au lieu de comparer les montants
-                const isOverridden = b.hasOverride === true || (b.feeStructure?.overrides?.length ?? 0) > 0;
+                const isOverridden = b.hasOverride === true;
                 return (
                   <li key={b.id} className="flex justify-between text-sm">
                     <span className="flex items-center gap-1">

@@ -3,7 +3,7 @@
 /**
  * SaisieMaster — Signup form
  *
- * Frictionless: no password, just email + name + school name.
+ * Email + name + school name + password (min 6 chars).
  * On submit, calls POST /api/saisiemaster/signup via the lib client.
  *
  * On success: calls onSuccess(prospect, token). The store wrapper will
@@ -36,6 +36,8 @@ export function SignupForm({
   const [email, setEmail] = useState(defaultEmail);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [city, setCity] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,6 +56,16 @@ export function SignupForm({
       return;
     }
 
+    if (password.length < 6) {
+      setError("Le mot de passe doit contenir au moins 6 caractères.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError("Les mots de passe ne correspondent pas.");
+      return;
+    }
+
     setLoading(true);
     try {
       const result = await signup({
@@ -63,6 +75,7 @@ export function SignupForm({
         schoolName: schoolName.trim(),
         phoneNumber: phoneNumber.trim() || undefined,
         city: city.trim() || undefined,
+        password,
       });
       onSuccess(result.prospect, result.token);
     } catch (err) {
@@ -93,8 +106,8 @@ export function SignupForm({
             </h2>
           </div>
           <p className="text-sm text-muted-foreground">
-            Aucun mot de passe. Aucune carte bancaire. Juste votre email pour
-            retrouver vos saisies d&apos;une visite à l&apos;autre.
+            Gratuit, sans carte bancaire. Créez votre compte avec un mot de
+            passe pour retrouver vos saisies d&apos;une visite à l&apos;autre.
           </p>
         </div>
 
@@ -160,6 +173,45 @@ export function SignupForm({
               required
             />
           </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="sm-password">
+                Mot de passe <span className="text-[#e31b23]">*</span>
+              </Label>
+              <Input
+                id="sm-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="new-password"
+                disabled={loading}
+                required
+                minLength={6}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="sm-confirmPassword">
+                Confirmer le mot de passe <span className="text-[#e31b23]">*</span>
+              </Label>
+              <Input
+                id="sm-confirmPassword"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="new-password"
+                disabled={loading}
+                required
+                minLength={6}
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground -mt-2">
+            Minimum 6 caractères. Votre mot de passe est hashé (bcrypt) et
+            jamais transmis en clair.
+          </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1">

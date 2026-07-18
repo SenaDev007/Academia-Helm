@@ -1,26 +1,30 @@
 "use client";
 
-import {
-  Wallet,
-  Users,
-  ClipboardCheck,
-  MessageSquare,
-  Briefcase,
-  Globe,
-  ArrowRight,
-} from "lucide-react";
-
 /**
  * Section marketing "Découvrez Academia Helm".
  *
  * Présente la plateforme mère Academia Helm aux utilisateurs de SaisieMaster,
- * en mettant en avant 6 modules complémentaires et un CTA "Démo gratuite".
+ * en mettant en avant 6 modules complémentaires et deux CTA :
+ *   - "Découvrir Academia Helm" → https://academiahelm.com
+ *   - "Demander une démo gratuite" → https://academiahelm.com/contact
+ *
  * Accent visuel : couleurs nationales du Bénin (vert #008751, jaune #FCD116, rouge #E31B23).
  */
 
+import {
+  BarChart3,
+  Users,
+  ClipboardCheck,
+  MessageSquare,
+  GraduationCap,
+  Building2,
+  ArrowRight,
+  ExternalLink,
+} from "lucide-react";
+
 interface AcademiaFeature {
-  icon: typeof Wallet;
-  emoji: string;
+  /** Icône Lucide représentant le module. */
+  icon: typeof BarChart3;
   title: string;
   description: string;
   /** Couleur d'accent issue du drapeau béninois. */
@@ -31,8 +35,7 @@ interface AcademiaFeature {
 
 const FEATURES: AcademiaFeature[] = [
   {
-    icon: Wallet,
-    emoji: "📊",
+    icon: BarChart3,
     title: "Gestion financière",
     description:
       "Suivi des frais de scolarité, encaissements, dépenses, multi-caisses.",
@@ -41,7 +44,6 @@ const FEATURES: AcademiaFeature[] = [
   },
   {
     icon: Users,
-    emoji: "👥",
     title: "Gestion des élèves",
     description:
       "Inscriptions, dossiers, cartes scolaires, transferts.",
@@ -50,7 +52,6 @@ const FEATURES: AcademiaFeature[] = [
   },
   {
     icon: ClipboardCheck,
-    emoji: "📝",
     title: "Examens & Bulletins",
     description:
       "Saisie des notes, calcul des moyennes, bulletins PDF.",
@@ -59,7 +60,6 @@ const FEATURES: AcademiaFeature[] = [
   },
   {
     icon: MessageSquare,
-    emoji: "💬",
     title: "Communication",
     description:
       "SMS, emails, WhatsApp aux parents.",
@@ -67,8 +67,7 @@ const FEATURES: AcademiaFeature[] = [
     bg: "rgba(227, 27, 35, 0.08)",
   },
   {
-    icon: Briefcase,
-    emoji: "👨‍🏫",
+    icon: GraduationCap,
     title: "RH & Personnel",
     description:
       "Contrats, paie, absences, congés.",
@@ -76,8 +75,7 @@ const FEATURES: AcademiaFeature[] = [
     bg: "rgba(0, 135, 81, 0.08)",
   },
   {
-    icon: Globe,
-    emoji: "🏫",
+    icon: Building2,
     title: "Site institutionnel",
     description:
       "Site web personnalisé pour votre école.",
@@ -149,16 +147,15 @@ export function AcademiaHelmCta() {
                 />
                 <div className="flex items-center gap-3 mb-3">
                   <div
-                    className="grid place-items-center h-12 w-12 rounded-xl text-2xl"
+                    className="grid place-items-center h-12 w-12 rounded-xl"
                     style={{ background: feature.bg }}
                     aria-hidden
                   >
-                    <span>{feature.emoji}</span>
+                    <Icon
+                      className="h-6 w-6 transition-transform group-hover:scale-110"
+                      style={{ color: feature.accent }}
+                    />
                   </div>
-                  <Icon
-                    className="h-5 w-5 opacity-70 group-hover:opacity-100 transition-opacity"
-                    style={{ color: feature.accent }}
-                  />
                 </div>
                 <h3 className="font-semibold text-foreground mb-2 text-lg">
                   {feature.title}
@@ -171,17 +168,30 @@ export function AcademiaHelmCta() {
           })}
         </div>
 
-        {/* CTA */}
-        <div className="mt-12 text-center">
+        {/* CTA principal — "Découvrir Academia Helm" */}
+        <div className="mt-12 text-center space-y-4">
           <a
-            href="https://academiahelm.com/contact"
+            href="https://academiahelm.com"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-xl bg-[#008751] hover:bg-[#008751]/90 px-7 py-3.5 text-base font-semibold text-white shadow-md hover:shadow-lg transition-all duration-200"
+            className="inline-flex items-center gap-2 rounded-xl bg-foreground hover:bg-foreground/90 px-7 py-3.5 text-base font-semibold text-background shadow-md hover:shadow-lg transition-all duration-200"
           >
-            Demander une démo gratuite
-            <ArrowRight className="h-5 w-5" />
+            Découvrir Academia Helm
+            <ExternalLink className="h-5 w-5" />
           </a>
+
+          <div>
+            <a
+              href="https://academiahelm.com/contact"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-xl bg-[#008751] hover:bg-[#008751]/90 px-7 py-3.5 text-base font-semibold text-white shadow-md hover:shadow-lg transition-all duration-200"
+            >
+              Demander une démo gratuite
+              <ArrowRight className="h-5 w-5" />
+            </a>
+          </div>
+
           <p className="mt-3 text-xs text-muted-foreground">
             Academia Helm — La plateforme complète de gestion scolaire au Bénin
           </p>

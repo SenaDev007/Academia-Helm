@@ -5,7 +5,6 @@ import { Navbar } from "./navbar";
 import { Hero } from "./hero";
 import { UploadZone } from "./upload-zone";
 import { HowItWorks } from "./how-it-works";
-import { Features } from "./features";
 import { AcademiaHelmCta } from "./academia-helm-cta";
 import { Footer } from "./footer";
 import { ResumeBanner } from "./resume-banner";
@@ -17,12 +16,13 @@ import {
 export function LandingPage() {
   const uploadRef = useRef<HTMLDivElement>(null);
   const setView = useSaisieMasterStore((s) => s.setView);
+  const setAuthView = useSaisieMasterStore((s) => s.setAuthView);
   const isAuthenticated = useSaisieMasterStore(selectIsAuthenticated);
 
   const scrollToUpload = () => {
     if (!isAuthenticated) {
-      // Not authed → trigger the auth flow first.
-      setView("auth");
+      // Not authed → trigger the auth flow first (signup mode by default).
+      setAuthView("signup");
       return;
     }
     uploadRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -63,7 +63,8 @@ export function LandingPage() {
         </section>
 
         <HowItWorks />
-        <Features />
+        {/* Section "Features" retirée — la section Academia Helm CTA ci-dessous
+            présente déjà les modules complémentaires. */}
 
         {/* Section marketing Academia Helm — ~25% de la landing */}
         <AcademiaHelmCta />

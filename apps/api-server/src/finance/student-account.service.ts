@@ -687,10 +687,7 @@ export class StudentAccountService {
         breakdowns: {
           include: {
             feeStructure: {
-              select: { id: true, name: true, feeType: true, totalAmount: true, customFeeTypeLabel: true,
-                // ⭐ Task 29 : inclure les overrides pour déterminer hasOverride
-                overrides: { select: { id: true }, take: 1 },
-              },
+              select: { id: true, name: true, feeType: true, totalAmount: true, customFeeTypeLabel: true },
             },
           },
         },
@@ -703,6 +700,26 @@ export class StudentAccountService {
     };
 
     const baseAccounts = await this.prisma.studentAccount.findMany(findManyArgs);
+
+    // ─── ⭐ Task 31 : Récupérer les overrides PAR ÉLÈVE pour hasOverride ───
+    // On ne peut pas utiliser feeStructure.overrides dans le include Prisma car
+    // ça retournerait TOUS les overrides de la feeStructure (pas filtrés par
+    // studentId). À la place, on charge les overrides séparément et on les
+    // joint manuellement par (studentId, feeStructureId).
+    const overridesForStudents = studentIds.length > 0
+      ? await this.prisma.feeOverride.findMany({
+          where: {
+            studentId: { in: studentIds },
+            feeStructure: { tenantId, academicYearId: filters.academicYearId },
+          },
+          select: { id: true, studentId: true, feeStructureId: true, customAmount: true },
+        })
+      : [];
+    // Index: "studentId|feeStructureId" → override
+    const overrideMap = new Map<string, any>();
+    for (const o of overridesForStudents) {
+      overrideMap.set(`${o.studentId}|${o.feeStructureId}`, o);
+    }
 
     // ─── Multi-année : récupérer les arriérés réels (FeeArrear) pour chaque élève ───
     // Les champs StudentAccount.arrearsAmount et carriedArrears ne sont pas toujours
@@ -752,13 +769,22 @@ export class StudentAccountService {
       const actualArrears = arrearData?.total ?? 0;
       const baseTotalDue = Number(account.totalDue ?? 0);
       const baseBalance = Number(account.balance ?? 0);
-      // ⭐ Task 29 : déterminer hasOverride depuis les breakdowns
-      // (breakdown.feeStructure.overrides est chargé via Prisma include)
+      // ⭐ Task 31 : déterminer hasOverride en vérifiant si CET élève spécifique
+      // a un override pour AU MOINS UNE de ses feeStructures.
+      // On utilise overrideMap (chargé séparément, filtré par studentId) au lieu
+      // de feeStructure.overrides (qui n'est PAS filtré par studentId et donc
+      // retourne les overrides de TOUS les élèves pour cette feeStructure).
       const hasOverride = (account.breakdowns ?? []).some(
-        (b: any) => b?.feeStructure?.overrides?.length > 0
+        (b: any) => overrideMap.has(`${account.studentId}|${b.feeStructureId}`)
       );
+      // Enrichir chaque breakdown avec hasOverride pour le frontend
+      const enrichedBreakdowns = (account.breakdowns ?? []).map((b: any) => ({
+        ...b,
+        hasOverride: overrideMap.has(`${account.studentId}|${b.feeStructureId}`),
+      }));
       return {
         ...account,
+        breakdowns: enrichedBreakdowns,
         hasOverride,
         // Montants "de base" (sans arriérés) — pour info / debug
         baseTotalDue,

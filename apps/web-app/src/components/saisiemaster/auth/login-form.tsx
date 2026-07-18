@@ -3,8 +3,8 @@
 /**
  * SaisieMaster — Login form
  *
- * Frictionless: just the email (no password).
- * On submit, calls POST /api/saisiemaster/login via the lib client.
+ * Email + password (required). Calls POST /api/saisiemaster/login via the
+ * lib client. Shows an error message if the login fails.
  */
 
 import { useState } from "react";
@@ -22,6 +22,7 @@ interface LoginFormProps {
 
 export function LoginForm({ onSuccess, onSwitchToSignup }: LoginFormProps) {
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,9 +41,17 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: LoginFormProps) {
       return;
     }
 
+    if (!password) {
+      setError("Veuillez saisir votre mot de passe.");
+      return;
+    }
+
     setLoading(true);
     try {
-      const result = await login(email.trim().toLowerCase());
+      const result = await login({
+        email: email.trim().toLowerCase(),
+        password,
+      });
       onSuccess(result.prospect, result.token);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -50,6 +59,10 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: LoginFormProps) {
         if (err.status === 404) {
           setError(
             "Aucun compte trouvé avec cet email. Inscrivez-vous gratuitement pour commencer.",
+          );
+        } else if (err.status === 401) {
+          setError(
+            "Email ou mot de passe incorrect. Vérifiez vos identifiants.",
           );
         } else {
           setError(err.message);
@@ -77,8 +90,8 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: LoginFormProps) {
             </h2>
           </div>
           <p className="text-sm text-muted-foreground">
-            Saisissez votre email pour retrouver vos saisies enregistrées.
-            Aucun mot de passe requis.
+            Saisissez votre email et votre mot de passe pour retrouver vos
+            saisies enregistrées.
           </p>
         </div>
 
@@ -93,6 +106,20 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: LoginFormProps) {
               placeholder="directeur@monecole.bj"
               autoComplete="email"
               autoFocus
+              disabled={loading}
+              required
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="sm-login-password">Mot de passe</Label>
+            <Input
+              id="sm-login-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
               disabled={loading}
               required
             />

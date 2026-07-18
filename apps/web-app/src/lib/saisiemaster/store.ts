@@ -42,6 +42,10 @@ export type EditorView =
 interface SaisieMasterState {
   /** Vue active. */
   view: AppView;
+  /** Mode initial de l'écran d'auth ("signup" ou "login").
+   *  Permet au navbar d'ouvrir directement le login quand l'utilisateur
+   *  clique sur "Se connecter". */
+  authInitialMode: "signup" | "login";
   /** Editor-internal navigation (which sidebar item is active). */
   editorView: EditorView;
   /** Classes chargées depuis le fichier importé. */
@@ -61,6 +65,8 @@ interface SaisieMasterState {
 
   // Actions
   setView: (view: AppView) => void;
+  /** Passe à la vue auth avec un mode initial spécifique (signup/login). */
+  setAuthView: (mode: "signup" | "login") => void;
   setEditorView: (view: EditorView) => void;
   loadClasses: (classes: ClassData[]) => void;
   setActiveClass: (index: number) => void;
@@ -140,6 +146,7 @@ function scheduleBackendSync(classes: ClassData[], activeClassIndex: number) {
 
 export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
   view: "landing",
+  authInitialMode: "signup",
   editorView: "notes",
   classes: [],
   activeClassIndex: 0,
@@ -149,6 +156,9 @@ export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
   token: null,
 
   setView: (view) => set({ view }),
+
+  setAuthView: (mode) =>
+    set({ view: "auth", authInitialMode: mode }),
 
   setEditorView: (editorView) => set({ editorView }),
 

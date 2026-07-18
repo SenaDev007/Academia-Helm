@@ -58,6 +58,7 @@ export class SaisieMasterController {
       schoolName: string;
       phoneNumber?: string;
       city?: string;
+      password?: string;
     },
   ) {
     return this.service.signup(body);
@@ -65,11 +66,13 @@ export class SaisieMasterController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body('email') email: string) {
-    if (!email) {
+  async login(
+    @Body() body: { email: string; password?: string },
+  ) {
+    if (!body?.email) {
       throw new BadRequestException('Email is required');
     }
-    return this.service.login(email);
+    return this.service.login(body.email, body.password);
   }
 
   // --------------------------------------------------------------------------

@@ -26,8 +26,10 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../database/prisma.service';
 
 export interface UpdateProfileDto {
@@ -45,6 +47,14 @@ export interface SignupDto {
   schoolName: string;
   phoneNumber?: string;
   city?: string;
+  /** Mot de passe en clair (sera hashé avant stockage). Min 6 caractères. */
+  password?: string;
+}
+
+export interface LoginDto {
+  email: string;
+  /** Mot de passe en clair à vérifier contre le hash stocké. */
+  password?: string;
 }
 
 export interface SaveSessionDto {
@@ -124,8 +134,12 @@ export class SaisieMasterService {
   ) {}
 
   /**
-   * Create or update a prospect by email. Frictionless: no password.
-   * Returns the prospect + a signed JWT token.
+   * Create or update a prospect by email. The password is hashed with bcrypt
+   * before storage. Returns the prospect + a signed JWT token.
+   *
+   * Backward compatibility: if `password` is omitted, the prospect is created
+   * without a password (legacy frictionless flow). Existing prospects without
+   * a password can still login via the email-only fallback.
    */
   async signup(data: SignupDto): Promise<AuthResult> {
     const email = (data.email || '').trim().toLowerCase();
@@ -136,6 +150,18 @@ export class SaisieMasterService {
       throw new BadRequestException(
         'firstName, lastName and schoolName are required',
       );
+    }
+
+    // Validate password if provided.
+    let hashedPassword: string | undefined;
+    if (data.password !== undefined && data.password !== null) {
+      const pwd = data.password.trim();
+      if (pwd.length < 6) {
+        throw new BadRequestException(
+          'Le mot de passe doit contenir au moins 6 caractères',
+        );
+      }
+      hashedPassword = await bcrypt.hash(pwd, 10);
     }
 
     // Upsert by email — if the prospect already exists (returning user),
@@ -149,6 +175,8 @@ export class SaisieMasterService {
         schoolName: data.schoolName.trim(),
         phoneNumber: data.phoneNumber?.trim() || null,
         city: data.city?.trim() || null,
+        // Only store the password if one was provided.
+        ...(hashedPassword ? { password: hashedPassword } : {}),
         source: 'saiemaster',
         status: 'LEAD',
         signupDate: new Date(),
@@ -161,6 +189,10 @@ export class SaisieMasterService {
         schoolName: data.schoolName.trim(),
         phoneNumber: data.phoneNumber?.trim() || null,
         city: data.city?.trim() || null,
+        // Update the password only if a new one was provided. Otherwise we
+        // keep the existing one (so re-signing up with no password doesn't
+        // wipe the user's password).
+        ...(hashedPassword ? { password: hashedPassword } : {}),
         lastLoginAt: new Date(),
         loginCount: { increment: 1 },
       },
@@ -174,9 +206,14 @@ export class SaisieMasterService {
   }
 
   /**
-   * Login by email only (frictionless). The prospect must already exist.
+   * Login by email + password.
+   *
+   * Backward compatibility: if the prospect has no stored password (created
+   * before passwords were introduced), we still allow login via email-only
+   * fallback — provided no password is sent in the request. This keeps old
+   * prospects working without forcing them to reset.
    */
-  async login(email: string): Promise<AuthResult> {
+  async login(email: string, password?: string): Promise<AuthResult> {
     const normalized = (email || '').trim().toLowerCase();
     if (!normalized) {
       throw new BadRequestException('Email is required');
@@ -192,6 +229,29 @@ export class SaisieMasterService {
       throw new NotFoundException(
         'Aucun compte trouvé avec cet email. Inscrivez-vous gratuitement pour commencer.',
       );
+    }
+
+    // Password verification.
+    if (prospect.password) {
+      // The prospect has a stored password — require a matching one.
+      if (!password) {
+        throw new UnauthorizedException(
+          'Mot de passe requis pour ce compte.',
+        );
+      }
+      const ok = await bcrypt.compare(password, prospect.password);
+      if (!ok) {
+        throw new UnauthorizedException('Email ou mot de passe incorrect.');
+      }
+    } else {
+      // Legacy prospect (no password stored). Allow email-only login if the
+      // caller did not send a password; otherwise reject to avoid silently
+      // accepting any password.
+      if (password) {
+        throw new UnauthorizedException(
+          'Ce compte ne possède pas encore de mot de passe. Veuillez réinitialiser votre compte ou contacter le support.',
+        );
+      }
     }
 
     const updated = await this.prisma.saisieMasterProspect.update({

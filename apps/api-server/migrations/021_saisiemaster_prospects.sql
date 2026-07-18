@@ -39,6 +39,13 @@ CREATE INDEX IF NOT EXISTS "saisiemaster_prospects_email_idx" ON "saisiemaster_p
 CREATE INDEX IF NOT EXISTS "saisiemaster_prospects_status_idx" ON "saisiemaster_prospects"("status");
 CREATE INDEX IF NOT EXISTS "saisiemaster_prospects_signupDate_idx" ON "saisiemaster_prospects"("signupDate");
 
+-- ----------------------------------------------------------------------------
+-- 021b: ajout du mot de passe hashé (bcrypt) pour les prospects SaisieMaster.
+-- Nullable pour préserver la rétro-compatibilité avec les prospects créés
+-- avant l'ajout de l'authentification par mot de passe.
+-- ----------------------------------------------------------------------------
+ALTER TABLE "saisiemaster_prospects" ADD COLUMN IF NOT EXISTS "password" TEXT;
+
 CREATE TABLE IF NOT EXISTS "saisiemaster_sessions" (
   "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
   "prospectId" TEXT NOT NULL REFERENCES "saisiemaster_prospects"("id") ON DELETE CASCADE,

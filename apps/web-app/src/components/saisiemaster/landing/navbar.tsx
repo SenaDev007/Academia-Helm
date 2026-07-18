@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { BookOpen, LogOut, User as UserIcon, History } from "lucide-react";
+import { BookOpen, LogOut, User as UserIcon, History, LogIn } from "lucide-react";
 import { useSaisieMasterStore, selectIsAuthenticated } from "@/lib/saisiemaster/store";
 
 interface NavbarProps {
@@ -21,6 +21,7 @@ export function Navbar({ onStart }: NavbarProps) {
   const isAuthenticated = useSaisieMasterStore(selectIsAuthenticated);
   const prospect = useSaisieMasterStore((s) => s.prospect);
   const setView = useSaisieMasterStore((s) => s.setView);
+  const setAuthView = useSaisieMasterStore((s) => s.setAuthView);
   const logout = useSaisieMasterStore((s) => s.logout);
 
   const handleStart = () => {
@@ -29,9 +30,14 @@ export function Navbar({ onStart }: NavbarProps) {
       const el = document.getElementById("demarrer");
       el?.scrollIntoView({ behavior: "smooth", block: "center" });
     } else {
-      // Not authed → trigger auth flow.
-      setView("auth");
+      // Not authed → trigger auth flow (signup mode).
+      setAuthView("signup");
     }
+  };
+
+  const handleLogin = () => {
+    // Open the auth screen directly in login mode.
+    setAuthView("login");
   };
 
   const handleLogout = () => {
@@ -101,6 +107,16 @@ export function Navbar({ onStart }: NavbarProps) {
             </DropdownMenu>
           ) : (
             <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleLogin}
+                className="gap-2"
+              >
+                <LogIn className="h-4 w-4" />
+                <span className="hidden sm:inline">Se connecter</span>
+                <span className="sm:hidden">Connexion</span>
+              </Button>
               <Button
                 size="sm"
                 onClick={handleStart}

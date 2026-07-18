@@ -8,11 +8,16 @@
  * ============================================================================
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import {
   getApiBaseUrlForRoutes,
   normalizeApiUrl,
 } from '@/lib/utils/api-urls';
+import { saisieMasterOptionsResponse, saisieMasterJsonResponse } from '../../_cors';
+
+export async function OPTIONS(request: NextRequest) {
+  return saisieMasterOptionsResponse(request);
+}
 
 export async function DELETE(
   request: NextRequest,
@@ -21,17 +26,19 @@ export async function DELETE(
   try {
     const authHeader = request.headers.get('authorization');
     if (!authHeader) {
-      return NextResponse.json(
+      return saisieMasterJsonResponse(
         { error: 'Non authentifié — token SaisieMaster manquant' },
-        { status: 401 },
+        401,
+        request,
       );
     }
 
     const { id } = await params;
     if (!id) {
-      return NextResponse.json(
+      return saisieMasterJsonResponse(
         { error: 'Session ID is required' },
-        { status: 400 },
+        400,
+        request,
       );
     }
 
@@ -55,24 +62,26 @@ export async function DELETE(
       try {
         data = JSON.parse(raw);
       } catch {
-        return NextResponse.json(
+        return saisieMasterJsonResponse(
           { error: 'Réponse invalide du serveur API', raw },
-          { status: 502 },
+          502,
+          request,
         );
       }
     }
 
     if (!response.ok) {
-      return NextResponse.json(data, { status: response.status });
+      return saisieMasterJsonResponse(data, response.status, request);
     }
-    return NextResponse.json(data);
+    return saisieMasterJsonResponse(data, 200, request);
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : 'Erreur inconnue';
     console.error('[saisiemaster/sessions/[id] DELETE] error:', error);
-    return NextResponse.json(
+    return saisieMasterJsonResponse(
       { error: 'Failed to delete session', message },
-      { status: 500 },
+      500,
+      request,
     );
   }
 }

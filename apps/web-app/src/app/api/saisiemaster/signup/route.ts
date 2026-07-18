@@ -1,31 +1,19 @@
-/**
- * ============================================================================
- * BFF ROUTE — /api/saisiemaster/signup
- * ============================================================================
- *
- * Proxy to the backend POST /api/saisiemaster/signup endpoint.
- * This is a PUBLIC route (no Academia Helm auth required).
- *
- * SaisieMaster uses its own frictionless auth (no password): the user just
- * provides their email + name + school name, and we capture them as a lead
- * prospect in the DB.
- * ============================================================================
- */
-
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import {
   getApiBaseUrlForRoutes,
   normalizeApiUrl,
 } from '@/lib/utils/api-urls';
+import { getSaisieMasterCorsHeaders, saisieMasterOptionsResponse, saisieMasterJsonResponse } from '../_cors';
+
+export async function OPTIONS(request: NextRequest) {
+  return saisieMasterOptionsResponse(request);
+}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => null);
     if (!body) {
-      return NextResponse.json(
-        { error: 'Invalid JSON body' },
-        { status: 400 },
-      );
+      return saisieMasterJsonResponse({ error: 'Invalid JSON body' }, 400, request);
     }
 
     const apiBaseUrl = getApiBaseUrlForRoutes();
@@ -44,24 +32,17 @@ export async function POST(request: NextRequest) {
       try {
         data = JSON.parse(raw);
       } catch {
-        return NextResponse.json(
-          { error: 'Réponse invalide du serveur API', raw },
-          { status: 502 },
-        );
+        return saisieMasterJsonResponse({ error: 'Réponse invalide du serveur API', raw }, 502, request);
       }
     }
 
     if (!response.ok) {
-      return NextResponse.json(data, { status: response.status });
+      return saisieMasterJsonResponse(data, response.status, request);
     }
-    return NextResponse.json(data);
+    return saisieMasterJsonResponse(data, 200, request);
   } catch (error: unknown) {
-    const message =
-      error instanceof Error ? error.message : 'Erreur inconnue';
+    const message = error instanceof Error ? error.message : 'Erreur inconnue';
     console.error('[saisiemaster/signup] error:', error);
-    return NextResponse.json(
-      { error: 'Failed to sign up prospect', message },
-      { status: 500 },
-    );
+    return saisieMasterJsonResponse({ error: 'Failed to sign up prospect', message }, 500, request);
   }
 }

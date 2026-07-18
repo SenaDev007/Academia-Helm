@@ -11,6 +11,7 @@
  *
  * Workflow :
  *   1. L'admin télécharge le template (GET /finance/fee-structures/overrides/import/template)
+ *      → une feuille par classe, pré-remplie avec les élèves (matricule + nom)
  *   2. L'admin remplit le template (une ligne par élève × type de frais)
  *   3. L'admin upload le fichier → preview (POST /finance/fee-structures/overrides/import/preview)
  *   4. L'admin corrige les erreurs éventuelles et confirme
@@ -20,7 +21,7 @@
  *         le customAmount + reason au lieu de créer un doublon)
  *      → recalcule le compte élève pour appliquer la personnalisation
  *
- * Format Excel (une feuille "Personnalisations") :
+ * Format Excel (une feuille par classe, nommée d'après la classe) :
  *   Matricule | Nom élève | Type de frais | Montant personnalisé | Motif
  *
  * Règles de validation :
@@ -45,6 +46,7 @@ import { FeeType } from '@prisma/client';
 
 export interface FeeOverrideImportRow {
   rowIndex: number;
+  sheetName: string; // nom de la feuille (= classe) d'où provient la ligne
   matricule: string | null;
   studentName: string;
   feeType: string;
@@ -65,12 +67,14 @@ export interface FeeOverrideImportPreviewResult {
   validRows: number;
   invalidRows: number;
   rows: FeeOverrideImportRow[];
+  sheetsProcessed: string[];
   summary: {
     totalCustomAmount: number;
     studentsAffected: number;
     willBeCreated: number;
     willBeUpdated: number;
     byFeeType: Record<string, number>;
+    bySheet: Record<string, number>;
   };
 }
 
@@ -81,6 +85,7 @@ export interface FeeOverrideImportRunResult {
   errors: number;
   results: Array<{
     rowIndex: number;
+    sheetName: string;
     studentName: string;
     feeType: string;
     action: 'CREATED' | 'UPDATED' | 'ERROR';
@@ -121,8 +126,10 @@ export class FeeOverrideImportService {
   // ─── Téléchargement du template ────────────────────────────────────────────
 
   /**
-   * Génère et télécharge le template Excel (une feuille "Personnalisations").
-   * Contient l'en-tête + 2 lignes d'exemple illustratives.
+   * Génère et télécharge le template Excel (une feuille par classe).
+   * Chaque feuille est pré-remplie avec les élèves de la classe (matricule + nom),
+   * les colonnes "Type de frais", "Montant personnalisé" et "Motif" restent vides
+   * à remplir par l'admin.
    */
   async downloadTemplate(
     tenantId: string,
@@ -133,73 +140,64 @@ export class FeeOverrideImportService {
     workbook.creator = 'Academia Helm';
     workbook.created = new Date();
 
-    const ws = workbook.addWorksheet('Personnalisations');
+    // Récupérer toutes les classes physiques du tenant pour l'année scolaire
+    const classes = await this.prisma.class.findMany({
+      where: { tenantId, academicYearId },
+      include: {
+        schoolLevel: { select: { id: true, name: true, code: true, order: true } },
+      },
+      orderBy: [
+        { schoolLevel: { order: 'asc' } },
+        { name: 'asc' },
+      ],
+    });
 
-    // Définir les colonnes avec largeurs
-    ws.columns = FeeOverrideImportService.HEADERS.map((header) => ({
-      header,
-      key: header,
-      width: header === 'Motif' ? 38 : header === 'Nom élève' ? 28 : 22,
-    }));
+    // Récupérer les inscriptions actives par classe (avec les élèves)
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        classId: { in: classes.map((c) => c.id) },
+        status: { in: ['ACTIVE', 'ENROLLED', 'PRE_REGISTERED', 'ADMITTED'] },
+        student: { status: { not: 'WITHDRAWN' } },
+      },
+      include: {
+        student: {
+          select: { id: true, firstName: true, lastName: true, matricule: true, studentCode: true },
+        },
+      },
+      orderBy: [{ student: { lastName: 'asc' } }, { student: { firstName: 'asc' } }],
+    });
 
-    // Style en-tête (ligne 1) — violet (couleur personnalisation finance)
-    const headerRow = ws.getRow(1);
-    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-    headerRow.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF6D28D9' }, // violet-700
-    };
-    headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    headerRow.height = 30;
-
-    // 2 lignes d'exemple
-    const examples = [
-      ['CSPMON-E-25-001', 'ADANDE Aïcha', 'TUITION', 35000, 'Bourse excellence'],
-      ['CSPMON-E-25-002', 'BAWA Rahim', 'INSCRIPTION', 3000, 'Cas social'],
-    ];
-    for (const ex of examples) {
-      ws.addRow(ex);
-    }
-    // Style des lignes d'exemple (italique gris)
-    for (let i = 2; i <= 3; i++) {
-      const row = ws.getRow(i);
-      row.font = { italic: true, color: { argb: 'FF6B7280' }, size: 10 };
-      row.alignment = { vertical: 'middle' };
-    }
-
-    // Bordures sur les colonnes (en-tête + lignes de données)
-    for (let i = 1; i <= 3; i++) {
-      const row = ws.getRow(i);
-      row.eachCell((cell) => {
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-          bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-          left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-          right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-        };
-      });
+    // Grouper les élèves par classId
+    const studentsByClass = new Map<string, any[]>();
+    for (const e of enrollments) {
+      if (!e.classId) continue;
+      if (!studentsByClass.has(e.classId)) studentsByClass.set(e.classId, []);
+      studentsByClass.get(e.classId)!.push(e.student);
     }
 
-    // Lignes d'instructions en bas de feuille
-    ws.addRow([]);
-    const instructions = [
-      '⚠️ Lignes d\'exemple à supprimer avant import.',
-      `📅 Type de frais autorisés : ${FEE_TYPES.join(', ')} (insensible à la casse).`,
-      '💰 Montant personnalisé : en FCFA, doit être > 0.',
-      '📋 Motif : obligatoire (ex: "Bourse excellence", "Cas social", "Réduction direction").',
-      '🧑‍🎓 Matricule : recommandé pour identifier précisément l\'élève. Si absent, résolution par nom.',
-      '📝 Nom élève : format "NOM Prénom" ou "Prénom NOM" (résolution insensible aux accents/casse).',
-      '🔄 Si une personnalisation existe déjà pour (élève × type de frais), elle sera MISE À JOUR (pas de doublon).',
-      `🏫 Année scolaire active : ${academicYearId || '(non spécifiée)'}.`,
-    ];
-    for (const inst of instructions) {
-      ws.addRow([inst]);
-    }
-    const lastRow = ws.rowCount;
-    for (let i = lastRow - instructions.length + 1; i <= lastRow; i++) {
-      const row = ws.getRow(i);
-      row.font = { italic: true, color: { argb: 'FF6D28D9' }, size: 10 };
+    if (classes.length === 0) {
+      // Fallback : template par défaut avec une seule feuille (exemple)
+      this.logger.warn(
+        `Aucune classe configurée pour le tenant ${tenantId} / year ${academicYearId} — template par défaut`,
+      );
+      const ws = workbook.addWorksheet('Personnalisations');
+      this.applySheetLayout(ws, '', []);
+      this.addInstructions(ws, academicYearId);
+    } else {
+      // Une feuille par classe
+      for (const cls of classes) {
+        const sheetName = this.sanitizeSheetName(cls.name || cls.code || `Classe-${cls.id.substring(0, 8)}`);
+        const schoolLevelName = cls.schoolLevel?.name || '';
+        const studentsInClass = studentsByClass.get(cls.id) || [];
+        const ws = workbook.addWorksheet(sheetName);
+        this.applySheetLayout(ws, schoolLevelName, studentsInClass);
+        this.addInstructions(ws, academicYearId);
+        this.logger.log(
+          `Feuille "${sheetName}" créée avec ${studentsInClass.length} élève(s) pré-rempli(s)`,
+        );
+      }
     }
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -296,42 +294,61 @@ export class FeeOverrideImportService {
     }
 
     const rows: FeeOverrideImportRow[] = [];
-    const sheet = workbook.worksheets[0];
-    if (!sheet) {
+    const sheetsProcessed: string[] = [];
+
+    if (workbook.worksheets.length === 0) {
       throw new BadRequestException('Aucune feuille dans le fichier Excel');
     }
 
-    let isFirstRow = true;
-    sheet.eachRow((row, rowNumber) => {
-      if (isFirstRow) {
-        isFirstRow = false;
+    // ⭐ Itérer sur TOUTES les feuilles du classeur (une feuille par classe)
+    workbook.eachSheet((worksheet) => {
+      const sheetName = worksheet.name;
+      // Ignorer les feuilles d'instructions / RECAP
+      if (sheetName === 'RECAP' || sheetName.startsWith('_') || /instruction/i.test(sheetName)) {
         return;
       }
-      const firstCell = row.getCell(1).value;
-      const secondCell = row.getCell(2).value;
-      // Skip lignes vides
-      if (
-        (!firstCell || (typeof firstCell === 'string' && !firstCell.trim())) &&
-        (!secondCell || (typeof secondCell === 'string' && !secondCell.trim()))
-      ) {
-        return;
-      }
-      // Skip lignes d'instructions (commencent par emoji)
-      const firstStr = typeof firstCell === 'string' ? firstCell.trim() : '';
-      if (firstStr && /^[⚠️📅💰📋🧑📝🏫🔄]/.test(firstStr)) {
-        return;
-      }
+      sheetsProcessed.push(sheetName);
 
-      const parsed = this.parseRow(row, rowNumber);
-      this.validateRow(
-        parsed,
-        studentByMatricule,
-        studentByNameVariants,
-        enrollmentByStudent,
-        feeStructures,
-        overrideByKey,
-      );
-      rows.push(parsed);
+      let isFirstRow = true;
+      worksheet.eachRow((row, rowNumber) => {
+        if (isFirstRow) {
+          isFirstRow = false;
+          return;
+        }
+        const firstCell = row.getCell(1).value;
+        const secondCell = row.getCell(2).value;
+        // Skip lignes vides
+        if (
+          (!firstCell || (typeof firstCell === 'string' && !firstCell.trim())) &&
+          (!secondCell || (typeof secondCell === 'string' && !secondCell.trim()))
+        ) {
+          return;
+        }
+        // Skip lignes d'instructions (commencent par emoji)
+        const firstStr = typeof firstCell === 'string' ? firstCell.trim() : '';
+        if (firstStr && /^[⚠️📅💰📋🧑📝🏫🔄]/.test(firstStr)) {
+          return;
+        }
+
+        const parsed = this.parseRow(row, rowNumber, sheetName);
+
+        // ⭐ Skip silencieux des lignes pré-remplies sans personnalisation à appliquer
+        // (l'élève est dans la feuille mais l'admin n'a rien rempli pour lui :
+        //  feeType vide + montant 0 + motif vide → on ignore la ligne sans erreur)
+        if (!parsed.feeType && parsed.customAmount <= 0 && !parsed.reason) {
+          return;
+        }
+
+        this.validateRow(
+          parsed,
+          studentByMatricule,
+          studentByNameVariants,
+          enrollmentByStudent,
+          feeStructures,
+          overrideByKey,
+        );
+        rows.push(parsed);
+      });
     });
 
     const validRows = rows.filter((r) => r.isValid).length;
@@ -348,12 +365,14 @@ export class FeeOverrideImportService {
       willBeCreated: rows.filter((r) => r.isValid && !r.existingOverrideId).length,
       willBeUpdated: rows.filter((r) => r.isValid && r.existingOverrideId).length,
       byFeeType: {} as Record<string, number>,
+      bySheet: {} as Record<string, number>,
     };
     for (const r of rows.filter((r) => r.isValid)) {
       summary.byFeeType[r.feeType] = (summary.byFeeType[r.feeType] || 0) + 1;
+      summary.bySheet[r.sheetName] = (summary.bySheet[r.sheetName] || 0) + 1;
     }
 
-    return { totalRows: rows.length, validRows, invalidRows, rows, summary };
+    return { totalRows: rows.length, validRows, invalidRows, rows, sheetsProcessed, summary };
   }
 
   // ─── Run (création / mise à jour effective) ────────────────────────────────
@@ -409,6 +428,7 @@ export class FeeOverrideImportService {
           updated++;
           results.push({
             rowIndex: row.rowIndex,
+            sheetName: row.sheetName,
             studentName: row.studentName,
             feeType: row.feeType,
             action: 'UPDATED',
@@ -433,6 +453,7 @@ export class FeeOverrideImportService {
           created++;
           results.push({
             rowIndex: row.rowIndex,
+            sheetName: row.sheetName,
             studentName: row.studentName,
             feeType: row.feeType,
             action: 'CREATED',
@@ -451,10 +472,11 @@ export class FeeOverrideImportService {
       } catch (e: any) {
         errors++;
         this.logger.error(
-          `Import override ligne ${row.rowIndex} (${row.studentName} / ${row.feeType}): ${e.message}`,
+          `Import override feuille "${row.sheetName}" ligne ${row.rowIndex} (${row.studentName} / ${row.feeType}): ${e.message}`,
         );
         results.push({
           rowIndex: row.rowIndex,
+          sheetName: row.sheetName,
           studentName: row.studentName,
           feeType: row.feeType,
           action: 'ERROR',
@@ -466,7 +488,133 @@ export class FeeOverrideImportService {
     return { total: preview.totalRows, created, updated, errors, results };
   }
 
-  // ─── Méthodes privées ──────────────────────────────────────────────────────
+  // ─── Méthodes privées : template ───────────────────────────────────────────
+
+  /**
+   * Nettoie un nom de feuille Excel (max 31 chars, pas de \ / ? * [ ] :).
+   */
+  private sanitizeSheetName(name: string): string {
+    let clean = name.replace(/[\\/?*\[\]:]/g, '-').trim();
+    if (clean.length > 31) clean = clean.substring(0, 31);
+    return clean || 'Feuille';
+  }
+
+  /**
+   * Applique la mise en page d'une feuille "Personnalisations" pour une classe :
+   *   - en-tête coloré (violet-700)
+   *   - une ligne par élève pré-remplie (matricule + nom), Type/Montant/Motif vides
+   *   - si aucun élève : 2 lignes d'exemple illustratives
+   *   - bordures sur toutes les cellules de données
+   *   - note d'information en bas
+   */
+  private applySheetLayout(
+    worksheet: ExcelJS.Worksheet,
+    schoolLevelName: string,
+    studentsInClass: any[],
+  ): void {
+    worksheet.columns = FeeOverrideImportService.HEADERS.map((header) => ({
+      header,
+      key: header,
+      width: header === 'Motif' ? 38 : header === 'Nom élève' ? 28 : 22,
+    }));
+
+    // Style en-tête (ligne 1) — violet (couleur personnalisation finance)
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF6D28D9' }, // violet-700
+    };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    headerRow.height = 30;
+
+    let endRow = 1;
+
+    if (studentsInClass.length > 0) {
+      // Pré-remplir avec les élèves de la classe : matricule + nom (Type/Montant/Motif vides)
+      for (const s of studentsInClass) {
+        const displayName = `${(s.lastName || '').toUpperCase()} ${s.firstName || ''}`.trim();
+        const matricule = s.matricule || s.studentCode || '';
+        worksheet.addRow([matricule, displayName, '', '', '']);
+        endRow++;
+      }
+      // Style des lignes de données (élèves réels — noir)
+      for (let i = 2; i <= endRow; i++) {
+        const row = worksheet.getRow(i);
+        row.font = { size: 10, color: { argb: 'FF1F2937' } };
+        row.alignment = { vertical: 'middle' };
+      }
+    } else {
+      // Aucun élève — 2 lignes d'exemple illustratives
+      const examples = [
+        ['CSPMON-E-25-001', 'ADANDE Aïcha', 'TUITION', 35000, 'Bourse excellence'],
+        ['CSPMON-E-25-002', 'BAWA Rahim', 'INSCRIPTION', 3000, 'Cas social'],
+      ];
+      for (const ex of examples) {
+        worksheet.addRow(ex);
+        endRow++;
+      }
+      // Style des lignes d'exemple (italique gris)
+      for (let i = 2; i <= endRow; i++) {
+        const row = worksheet.getRow(i);
+        row.font = { italic: true, color: { argb: 'FF6B7280' }, size: 10 };
+        row.alignment = { vertical: 'middle' };
+      }
+    }
+
+    // Bordures sur les colonnes (en-tête + lignes de données)
+    for (let i = 1; i <= endRow; i++) {
+      const row = worksheet.getRow(i);
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+        };
+      });
+    }
+
+    // Note d'information en bas de feuille
+    const noteText =
+      studentsInClass.length > 0
+        ? `🏫 Feuille pour la classe : ${worksheet.name}` +
+          `${schoolLevelName ? ` (${schoolLevelName})` : ''} — ` +
+          `${studentsInClass.length} élève(s) pré-rempli(s). ` +
+          `Saisissez le type de frais, le montant personnalisé et le motif pour chaque élève concerné. ` +
+          `Laissez les colonnes vides pour les élèves sans personnalisation.`
+        : `🏫 Feuille "${worksheet.name}" — aucune classe/élève trouvé. Lignes d'exemple à supprimer avant import.`;
+    const noteRow = worksheet.addRow([noteText]);
+    noteRow.font = { italic: true, color: { argb: 'FF6D28D9' }, size: 10 };
+  }
+
+  /**
+   * Ajoute des lignes d'instructions en bas de feuille.
+   */
+  private addInstructions(worksheet: ExcelJS.Worksheet, academicYearId: string): void {
+    worksheet.addRow([]);
+    const instructions = [
+      '⚠️ Lignes d\'exemple à supprimer avant import. Les lignes pré-remplies avec des élèves réels peuvent être conservées.',
+      `📅 Type de frais autorisés : ${FEE_TYPES.join(', ')} (insensible à la casse).`,
+      '💰 Montant personnalisé : en FCFA, doit être > 0.',
+      '📋 Motif : obligatoire (ex: "Bourse excellence", "Cas social", "Réduction direction").',
+      '🧑‍🎓 Matricule : recommandé pour identifier précisément l\'élève. Si absent, résolution par nom.',
+      '📝 Nom élève : format "NOM Prénom" ou "Prénom NOM" (résolution insensible aux accents/casse).',
+      '🔄 Si une personnalisation existe déjà pour (élève × type de frais), elle sera MISE À JOUR (pas de doublon).',
+      `🏫 Année scolaire active : ${academicYearId || '(non spécifiée)'}.`,
+    ];
+    for (const inst of instructions) {
+      worksheet.addRow([inst]);
+    }
+    const lastRow = worksheet.rowCount;
+    for (let i = lastRow - instructions.length + 1; i <= lastRow; i++) {
+      const row = worksheet.getRow(i);
+      row.font = { italic: true, color: { argb: 'FF6D28D9' }, size: 10 };
+    }
+  }
+
+  // ─── Méthodes privées : parsing + validation ───────────────────────────────
 
   private async parseExcelFile(fileDataUrl: string): Promise<ExcelJS.Workbook> {
     const base64Match = fileDataUrl.match(/^data:([^;]+);base64,(.+)$/);
@@ -480,7 +628,7 @@ export class FeeOverrideImportService {
   /**
    * Parse une ligne Excel en FeeOverrideImportRow.
    */
-  private parseRow(row: ExcelJS.Row, rowNumber: number): FeeOverrideImportRow {
+  private parseRow(row: ExcelJS.Row, rowNumber: number, sheetName: string): FeeOverrideImportRow {
     const getCell = (col: number): string => {
       const val = row.getCell(col).value;
       if (val === null || val === undefined) return '';
@@ -498,6 +646,7 @@ export class FeeOverrideImportService {
 
     return {
       rowIndex: rowNumber,
+      sheetName,
       matricule: getCell(1) || null,
       studentName: getCell(2),
       feeType: getCell(3).toUpperCase(),

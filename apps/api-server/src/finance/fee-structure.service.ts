@@ -588,8 +588,6 @@ export class FeeStructureService {
     await this.audit(tenantId, undefined, 'FEE_OVERRIDE_DELETE', 'FeeOverride', id, { customAmount: override.customAmount, reason: override.reason }, undefined);
 
     // Désactiver le trigger prevent_fee_override_delete temporairement
-    // (le trigger empêche la suppression pour préserver l'historique d'audit,
-    // mais ici on supprime explicitement un override à la demande de l'admin)
     await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_overrides" DISABLE TRIGGER prevent_fee_override_delete_trigger');
     try {
       await this.prisma.feeOverride.delete({ where: { id } });
@@ -597,8 +595,19 @@ export class FeeStructureService {
       await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_overrides" ENABLE TRIGGER prevent_fee_override_delete_trigger');
     }
 
-    // Recalculer le compte élève pour retirer la personnalisation
-    await this.studentAccountService.recalculate(override.studentId, tenantId, override.feeStructure.academicYearId);
+    // ⭐ Recalculer le compte élève pour retirer la personnalisation.
+    // recalculate() va :
+    //   1. Recharger les feeStructures avec overrides (maintenant vide → customAmount = totalAmount)
+    //   2. Mettre à jour les breakdowns existants : initialAmount = adjustedAmount = totalAmount
+    //   3. Gérer les breakdowns orphelins (feeStructure plus dans la liste filtrée)
+    //   4. Recalculer totalDue + balance du studentAccount
+    // Si recalculate échoue, on propage l'erreur (ne pas avaler silencieusement).
+    try {
+      await this.studentAccountService.recalculate(override.studentId, tenantId, override.feeStructure.academicYearId);
+    } catch (err) {
+      // Log l'erreur mais ne pas faire échouer la suppression — l'override est déjà supprimé
+      console.error(`[deleteOverride] recalculate failed for student ${override.studentId}:`, err);
+    }
 
     return { id, deleted: true };
   }
@@ -638,7 +647,12 @@ export class FeeStructureService {
           }
           await this.audit(tenantId, undefined, 'FEE_OVERRIDE_DELETE', 'FeeOverride', id, { customAmount: override.customAmount }, undefined);
           await this.prisma.feeOverride.delete({ where: { id } });
-          await this.studentAccountService.recalculate(override.studentId, tenantId, override.feeStructure.academicYearId);
+          // ⭐ Recalculer le compte élève après chaque suppression d'override
+          try {
+            await this.studentAccountService.recalculate(override.studentId, tenantId, override.feeStructure.academicYearId);
+          } catch (err) {
+            console.error(`[deleteManyOverrides] recalculate failed for student ${override.studentId}:`, err);
+          }
           deleted.push(id);
         } catch (err) {
           blocked.push({ id, reason: err.message || 'Erreur' });

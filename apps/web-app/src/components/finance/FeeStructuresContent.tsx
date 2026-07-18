@@ -212,6 +212,33 @@ export default function FeeStructuresContent() {
     return '—';
   };
 
+  // ⭐ Task 27 : tri par défaut par niveau (Maternelle → Primaire → Secondaire)
+  // puis par nom de classe, puis par nom de frais.
+  const LEVEL_ORDER: Record<string, number> = {
+    'MATERNELLE': 1,
+    'PRIMAIRE': 2,
+    'SECONDAIRE': 3,
+  };
+  const levelSortKey = (s: any): number => {
+    const code = s.level?.code?.toUpperCase() ?? '';
+    for (const [key, val] of Object.entries(LEVEL_ORDER)) {
+      if (code.includes(key)) return val;
+    }
+    return 99; // Niveau inconnu → à la fin
+  };
+
+  const sortedStructures = [...structures].sort((a, b) => {
+    const lvlA = levelSortKey(a);
+    const lvlB = levelSortKey(b);
+    if (lvlA !== lvlB) return lvlA - lvlB;
+    // Même niveau → tri par nom de classe
+    const clsA = classDisplay(a);
+    const clsB = classDisplay(b);
+    if (clsA !== clsB) return clsA.localeCompare(clsB);
+    // Même classe → tri par nom de frais
+    return (a.name ?? '').localeCompare(b.name ?? '');
+  });
+
   // Helper : nom intelligent du frais
   // Si le frais a une classe (academicClassId ou classId) mais que le nom ne contient pas déjà le nom de la classe,
   // on enrichit le nom avec " — NomClasse" (ex: "Frais de scolarité" → "Frais de scolarité — CE1")
@@ -429,10 +456,10 @@ export default function FeeStructuresContent() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === structures.length) {
+    if (selectedIds.size === sortedStructures.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(structures.map(s => s.id)));
+      setSelectedIds(new Set(sortedStructures.map(s => s.id)));
     }
   };
 
@@ -542,24 +569,24 @@ export default function FeeStructuresContent() {
                       type="button"
                       onClick={toggleSelectAll}
                       className="flex items-center justify-center w-5 h-5"
-                      title={selectedIds.size === structures.length ? 'Tout désélectionner' : 'Tout sélectionner'}
+                      title={selectedIds.size === sortedStructures.length ? 'Tout désélectionner' : 'Tout sélectionner'}
                     >
-                      {selectedIds.size === structures.length && structures.length > 0
+                      {selectedIds.size === sortedStructures.length && sortedStructures.length > 0
                         ? <CheckSquare className="w-4 h-4 text-blue-600" />
                         : <Square className="w-4 h-4 text-slate-400" />}
                     </button>
                   </TableHead>
                   <TableHead>Nom du frais</TableHead><TableHead>Type</TableHead><TableHead>Niveau</TableHead><TableHead>Classe</TableHead>
-                  <TableHead className="text-right">Montant</TableHead><TableHead>Tranches</TableHead><TableHead>Oblig.</TableHead><TableHead>Statut</TableHead>
+                  <TableHead className="text-right">Montant</TableHead><TableHead>Tranches</TableHead><TableHead>Oblig.</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading ? (<TableRow><TableCell colSpan={10} className="text-center text-gray-500 py-8">Chargement...</TableCell></TableRow>
-                ) : structures.length === 0 ? (<TableRow><TableCell colSpan={10} className="text-center text-gray-500 py-12">
+                {loading ? (<TableRow><TableCell colSpan={9} className="text-center text-gray-500 py-8">Chargement...</TableCell></TableRow>
+                ) : structures.length === 0 ? (<TableRow><TableCell colSpan={9} className="text-center text-gray-500 py-12">
                   <div className="flex flex-col items-center gap-3"><Plus className="w-10 h-10 text-slate-300" /><p>Aucun frais configuré.</p><Button onClick={() => setModalNewFee(true)} size="sm"><Plus className="w-4 h-4 mr-2" />Configurer un frais</Button></div>
                 </TableCell></TableRow>
-                ) : structures.map((s) => (
+                ) : sortedStructures.map((s) => (
                   <TableRow key={s.id} className={`hover:bg-slate-50 ${selectedIds.has(s.id) ? 'bg-blue-50/40' : ''}`}>
                     {/* ⭐ Task 24 : Checkbox de sélection */}
                     <TableCell className="w-10">
@@ -611,7 +638,6 @@ export default function FeeStructuresContent() {
                       )}
                     </TableCell>
                     <TableCell><Badge variant={s.isMandatory ? 'default' : 'outline'}>{s.isMandatory ? 'Obligatoire' : 'Facultatif'}</Badge></TableCell>
-                    <TableCell><Badge variant={s.isActive ? 'default' : 'secondary'}>{s.isActive ? 'Actif' : 'Inactif'}</Badge></TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="icon" onClick={() => setEditingFee(s)} title="Modifier"><Pencil className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" onClick={() => handleDelete(s.id)} title="Supprimer"><Trash2 className="h-4 w-4 text-red-500" /></Button>

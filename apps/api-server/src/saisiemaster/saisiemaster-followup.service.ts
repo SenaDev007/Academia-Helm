@@ -278,6 +278,7 @@ export class SaisieMasterFollowupService {
 
   <!-- Footer -->
   <div style="background:#0D1F6E;padding:20px 24px;text-align:center;">
+    <img src="https://academiahelm.com/images/logo-yehi-or-tech.png" alt="YEHI OR Tech" style="height:36px;margin-bottom:8px;" />
     <p style="color:#a8c5f0;font-size:12px;margin:0;">
       © 2026 Academia Helm — YEHI OR Tech<br/>
       Vous recevez cet email car vous avez créé un compte SaisieMaster.
@@ -354,6 +355,7 @@ export class SaisieMasterFollowupService {
 
   <!-- Footer -->
   <div style="background:#0D1F6E;padding:20px 24px;text-align:center;">
+    <img src="https://academiahelm.com/images/logo-yehi-or-tech.png" alt="YEHI OR Tech" style="height:36px;margin-bottom:8px;" />
     <p style="color:#a8c5f0;font-size:12px;margin:0;">
       © 2026 Academia Helm — YEHI OR Tech<br/>
       Vous recevez cet email car vous avez créé un compte SaisieMaster.
@@ -448,6 +450,7 @@ export class SaisieMasterFollowupService {
 
   <!-- Footer -->
   <div style="background:#0D1F6E;padding:20px 24px;text-align:center;">
+    <img src="https://academiahelm.com/images/logo-yehi-or-tech.png" alt="YEHI OR Tech" style="height:36px;margin-bottom:8px;" />
     <p style="color:#a8c5f0;font-size:12px;margin:0;">
       © 2026 Academia Helm — YEHI OR Tech<br/>
       Vous recevez cet email car vous avez créé un compte SaisieMaster.

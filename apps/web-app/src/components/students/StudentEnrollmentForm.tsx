@@ -6,7 +6,7 @@
  * Nouveau formulaire basé sur le pattern AdmissionForm.tsx qui fonctionne.
  * Utilise useModuleContext() + fetch() direct (pas de financeService).
  *
- * 4 étapes : Identité → Parents → Classe & Régime → Validation
+ * 4 étapes : Identité → Parents → Classe → Validation
  * ============================================================================
  */
 'use client';
@@ -19,19 +19,6 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { compressImageFileToDataUrl } from '@/lib/media';
 
 // ─── Types ───
-
-interface FeeRegime {
-  id: string;
-  code: string;
-  label: string;
-  description?: string;
-  isDefault: boolean;
-  rules: Array<{
-    feeType: string;
-    discountType: string;
-    discountValue: number;
-  }>;
-}
 
 interface Guardian {
   id?: string;
@@ -55,10 +42,6 @@ export interface EnrollmentSubmitData {
     npi?: string;
     photoUrl?: string;
   };
-  feeProfile: {
-    feeRegimeId: string;
-    justification?: string;
-  };
   guardians: Guardian[];
   classId?: string;
   schoolLevelId?: string; // UUID de school_levels sélectionné par l'utilisateur
@@ -70,28 +53,6 @@ interface StudentEnrollmentFormProps {
   onSubmit: (data: EnrollmentSubmitData) => Promise<any>;
   onCancel: () => void;
   initialData?: any;
-}
-
-// ─── Helpers ───
-
-function getRegimeLabel(code: string) {
-  switch (code) {
-    case 'STANDARD': return 'Standard';
-    case 'ENFANT_ENSEIGNANT': return "Enfant d'enseignant";
-    case 'REDUCTION': return 'Réduction exceptionnelle';
-    case 'BOURSE': return 'Boursier';
-    default: return code;
-  }
-}
-
-function getRegimeBadgeColor(code: string) {
-  switch (code) {
-    case 'STANDARD': return 'bg-blue-100 text-blue-800 border-blue-200';
-    case 'ENFANT_ENSEIGNANT': return 'bg-green-100 text-green-800 border-green-200';
-    case 'REDUCTION': return 'bg-orange-100 text-orange-800 border-orange-200';
-    case 'BOURSE': return 'bg-purple-100 text-purple-800 border-purple-200';
-    default: return 'bg-gray-100 text-gray-800 border-gray-200';
-  }
 }
 
 // ─── Composant principal ───
@@ -127,8 +88,6 @@ export default function StudentEnrollmentForm({
     npi: initialData?.npi || '',
     photoUrl: initialData?.photoUrl || '',
     classId: initialData?.classId || '',
-    feeRegimeId: initialData?.feeRegimeId || '',
-    justification: initialData?.justification || '',
   });
 
   // Parents — pré-rempli depuis initialData si mode édition
@@ -144,10 +103,6 @@ export default function StudentEnrollmentForm({
         }))
       : [{ firstName: '', lastName: '', phone: '', email: '', relationship: 'Père', isPrimary: true }]
   );
-
-  // Régimes
-  const [regimes, setRegimes] = useState<FeeRegime[]>([]);
-  const [isLoadingRegimes, setIsLoadingRegimes] = useState(false);
 
   // Classes
   const [classesList, setClassesList] = useState<any[]>([]);
@@ -210,35 +165,6 @@ export default function StudentEnrollmentForm({
       .finally(() => setIsLoadingClasses(false));
   }, [yearId]);
 
-  // ─── Chargement des régimes (basé sur selectedLevelId, pas levelId figé) ───
-  useEffect(() => {
-    if (!yearId || !selectedLevelId) {
-      setRegimes([]);
-      return;
-    }
-    setIsLoadingRegimes(true);
-    const url = `/api/finance/fee-regimes?academicYearId=${encodeURIComponent(yearId)}&schoolLevelId=${encodeURIComponent(selectedLevelId)}`;
-    fetch(url, { credentials: 'include' })
-      .then(r => {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
-      .then(data => {
-        const list = Array.isArray(data) ? data : [];
-        setRegimes(list);
-        // Auto-sélectionner le régime par défaut
-        const def = list.find(r => r.isDefault);
-        if (def) {
-          setFormData(prev => ({ ...prev, feeRegimeId: def.id }));
-        }
-      })
-      .catch(err => {
-        console.error('loadRegimes error:', err);
-        setRegimes([]);
-      })
-      .finally(() => setIsLoadingRegimes(false));
-  }, [yearId, selectedLevelId]);
-
   // ─── Handlers ───
 
   const handleInputChange = (field: string, value: string) => {
@@ -246,11 +172,10 @@ export default function StudentEnrollmentForm({
     setError(null);
   };
 
-  // Changement de niveau scolaire → recharge les régimes + reset classe
+  // Changement de niveau scolaire → reset classe
   const handleLevelChange = (newLevelId: string) => {
     setSelectedLevelId(newLevelId);
-    setFormData(prev => ({ ...prev, classId: '', feeRegimeId: '' }));
-    setRegimes([]);
+    setFormData(prev => ({ ...prev, classId: '' }));
   };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -342,13 +267,7 @@ export default function StudentEnrollmentForm({
   };
 
   const validateStep4 = () => {
-    // ⭐ FIX: Le régime tarifaire est optionnel — si aucun n'est sélectionné, le backend
-    // applique le régime standard par défaut. Seule la justification reste obligatoire
-    // pour le régime REDUCTION (règle métier — ne pas bloquer la création rapide).
-    const regime = regimes.find(r => r.id === formData.feeRegimeId);
-    if (regime?.code === 'REDUCTION' && !formData.justification.trim()) {
-      return setError('Une justification est obligatoire pour une réduction'), false;
-    }
+    // ⭐ Task 28 : le régime a été supprimé — on valide juste que tout est OK
     return true;
   };
 
@@ -381,10 +300,6 @@ export default function StudentEnrollmentForm({
           npi: formData.npi || undefined,
           photoUrl: formData.photoUrl || undefined,
         },
-        feeProfile: {
-          feeRegimeId: formData.feeRegimeId,
-          justification: formData.justification || undefined,
-        },
         guardians,
         // ⭐ classId = classe OFFICIELLE (AcademicClass) — envoyé aussi bien comme
         // classId (legacy) que comme academicClassId (nouveau) pour assurer la
@@ -411,7 +326,7 @@ export default function StudentEnrollmentForm({
     { num: 1, label: 'Identité' },
     { num: 2, label: 'Photo' },
     { num: 3, label: 'Parents' },
-    { num: 4, label: 'Classe & Régime' },
+    { num: 4, label: 'Classe' },
     { num: 5, label: 'Validation' },
   ];
 
@@ -600,20 +515,20 @@ export default function StudentEnrollmentForm({
         </div>
       )}
 
-      {/* ─── Étape 4 : Classe & Régime ─── */}
+      {/* ─── Étape 4 : Classe ─── */}
       {step === 4 && (
         <div className="space-y-5">
           <div className="bg-blue-50 border border-blue-200 rounded-md p-4 flex items-start gap-3">
             <BookOpen className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-medium text-blue-800">Classe et régime de scolarité</p>
-              <p className="text-sm text-blue-700">Choisissez le niveau, la classe et le régime tarifaire pour l'année scolaire.</p>
+              <p className="text-sm font-medium text-blue-800">Classe officielle</p>
+              <p className="text-sm text-blue-700">Choisissez le niveau et la classe officielle pour l'année scolaire. Les frais seront automatiquement liés à la classe sélectionnée.</p>
             </div>
           </div>
 
-          {/* Niveau scolaire (sélecteur qui filtre les classes ET recharge les régimes) */}
+          {/* Niveau scolaire (sélecteur qui filtre les classes) */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Niveau scolaire <span className="text-xs text-gray-400">(optionnel)</span></label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Niveau scolaire</label>
             <select
               value={selectedLevelId}
               onChange={e => handleLevelChange(e.target.value)}
@@ -640,77 +555,12 @@ export default function StudentEnrollmentForm({
             ) : (
               <select value={formData.classId} onChange={e => handleInputChange('classId', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">Aucune classe officielle (affectation physique ultérieure)</option>
+                <option value="">— Sélectionner une classe —</option>
                 {filteredClasses.map(c => (
                   <option key={c.id} value={c.id}>{c.name || c.code}</option>
                 ))}
               </select>
             )}
-          </div>
-
-          {/* Régime tarifaire */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Régime tarifaire</label>
-            {isLoadingRegimes ? (
-              <p className="text-sm text-gray-500">Chargement des régimes...</p>
-            ) : regimes.length === 0 ? (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                <p className="text-sm text-amber-800">
-                  Aucun régime tarifaire configuré pour ce niveau. Le régime standard sera appliqué par défaut.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {regimes.map(regime => (
-                  <label key={regime.id}
-                    className={`block border rounded-lg p-3 cursor-pointer transition ${formData.feeRegimeId === regime.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
-                    <div className="flex items-start gap-3">
-                      <input type="radio" name="feeRegime" value={regime.id}
-                        checked={formData.feeRegimeId === regime.id}
-                        onChange={e => handleInputChange('feeRegimeId', e.target.value)}
-                        className="mt-1" />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className={`text-xs font-bold px-2 py-0.5 rounded border ${getRegimeBadgeColor(regime.code)}`}>
-                            {regime.code}
-                          </span>
-                          {regime.isDefault && (
-                            <span className="text-xs text-blue-600 font-medium">Par défaut</span>
-                          )}
-                        </div>
-                        <p className="font-medium text-gray-800 mt-1">{regime.label}</p>
-                        {regime.description && <p className="text-sm text-gray-500 mt-0.5">{regime.description}</p>}
-                        {regime.rules.length > 0 && (
-                          <div className="mt-2 space-y-1">
-                            {regime.rules.map((rule, i) => (
-                              <p key={i} className="text-xs text-gray-600">
-                                → {rule.feeType}: {rule.discountType === 'PERCENT' ? `-${rule.discountValue}%` : `${rule.discountValue} FCFA`}
-                              </p>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            )}
-
-            {/* Justification si REDUCTION */}
-            {(() => {
-              const selected = regimes.find(r => r.id === formData.feeRegimeId);
-              if (selected?.code === 'REDUCTION') {
-                return (
-                  <div className="mt-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Justification *</label>
-                    <textarea value={formData.justification} onChange={e => handleInputChange('justification', e.target.value)} rows={2}
-                      placeholder="Motif de la réduction"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  </div>
-                );
-              }
-              return null;
-            })()}
           </div>
         </div>
       )}
@@ -724,7 +574,6 @@ export default function StudentEnrollmentForm({
             <div className="flex justify-between"><span className="text-gray-500">Date de naissance:</span><span className="font-medium">{formData.dateOfBirth || '—'}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Sexe:</span><span className="font-medium">{formData.gender === 'M' ? 'Garçon' : formData.gender === 'F' ? 'Fille' : '—'}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Classe:</span><span className="font-medium">{filteredClasses.find(c => c.id === formData.classId)?.name || 'Non assignée'}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Régime:</span><span className="font-medium">{regimes.find(r => r.id === formData.feeRegimeId)?.label || 'Standard (défaut)'}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Parents:</span><span className="font-medium">{guardians.filter(g => g.firstName).length} parent(s)</span></div>
           </div>
         </div>

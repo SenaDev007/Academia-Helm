@@ -1330,17 +1330,7 @@ export default function EnrollmentsContent() {
                 classId: data.classId || undefined,
               });
 
-              // 3. Appliquer le régime tarifaire (non bloquant)
-              if (data.feeProfile?.feeRegimeId) {
-                await financeService.createStudentFeeProfile({
-                  studentId: student.id,
-                  academicYearId: academicYear!.id,
-                  feeRegimeId: data.feeProfile.feeRegimeId,
-                  justification: data.feeProfile.justification,
-                }).catch((e: any) => console.warn('FeeProfile:', e?.message));
-              }
-
-              // 4. Ajouter les parents (non bloquant)
+              // 3. Ajouter les parents (non bloquant)
               if (data.guardians?.length) {
                 for (const g of data.guardians) {
                   if (!g.firstName?.trim() && !g.lastName?.trim()) continue;
@@ -1519,15 +1509,6 @@ export default function EnrollmentsContent() {
                       }],
                     }).catch((e: any) => console.warn('Guardian:', e?.message));
                   }
-                }
-                // Régime
-                if (data.feeProfile?.feeRegimeId) {
-                  await financeService.createStudentFeeProfile({
-                    studentId: editEnrollment.student.id,
-                    academicYearId: academicYear.id,
-                    feeRegimeId: data.feeProfile.feeRegimeId,
-                    justification: data.feeProfile.justification,
-                  }).catch((e: any) => console.warn('FeeProfile:', e?.message));
                 }
                 toast({ title: '✅ Inscription mise à jour', variant: 'success' });
                 setEditEnrollment(null);

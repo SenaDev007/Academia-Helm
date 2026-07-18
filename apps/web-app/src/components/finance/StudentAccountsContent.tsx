@@ -295,7 +295,10 @@ export default function StudentAccountsContent() {
       const matricule = a.student?.studentCode || '';
       // ⭐ Task 29 : utiliser hasOverride du backend (pas de comparaison de montants)
       const hasOverride = a.hasOverride === true ||
-        (a.breakdowns ?? []).some((b: any) => b.hasOverride === true);
+        (a.breakdowns ?? []).some((b: any) =>
+          b.hasOverride === true ||
+          (b.feeStructure?.overrides?.length ?? 0) > 0
+        );
       return [
         name,
         matricule,

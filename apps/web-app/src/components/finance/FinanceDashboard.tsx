@@ -172,108 +172,108 @@ export default function FinanceDashboard() {
       {/* KPI Section — 7 cartes (pattern StudentsModuleDashboard) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 sm:gap-4">
         {/* Prévisionnel Global (sans personnalisations) */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs sm:text-sm font-medium text-gray-500">Prévisionnel global</p>
-              <p className="text-xl sm:text-2xl font-bold text-indigo-600 mt-1">
+              <p className="text-base lg:text-lg font-bold text-indigo-600 mt-1">
                 {loading ? '—' : formatCurrency(previsonnementGlobal)}
               </p>
               <p className="text-[10px] text-gray-400 mt-0.5">avant personnalisations</p>
             </div>
-            <div className="p-2 sm:p-3 bg-indigo-50 rounded-lg">
-              <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-600" />
+            <div className="p-1.5 bg-indigo-50 rounded-lg">
+              <DollarSign className="w-4 h-4 text-indigo-600" />
             </div>
           </div>
         </div>
 
         {/* Réductions (personnalisations) */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs sm:text-sm font-medium text-gray-500">Réductions</p>
-              <p className="text-xl sm:text-2xl font-bold text-purple-600 mt-1">
+              <p className="text-base lg:text-lg font-bold text-purple-600 mt-1">
                 {loading ? '—' : formatCurrency(totalReductions)}
               </p>
               <p className="text-[10px] text-gray-400 mt-0.5">personnalisations</p>
             </div>
-            <div className="p-2 sm:p-3 bg-purple-50 rounded-lg">
-              <Percent className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600" />
+            <div className="p-1.5 bg-purple-50 rounded-lg">
+              <Percent className="w-4 h-4 text-purple-600" />
             </div>
           </div>
         </div>
 
         {/* Prévisionnel Net (après personnalisations) */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs sm:text-sm font-medium text-gray-500">Prévisionnel net</p>
-              <p className="text-xl sm:text-2xl font-bold text-blue-600 mt-1">
+              <p className="text-base lg:text-lg font-bold text-blue-600 mt-1">
                 {loading ? '—' : formatCurrency(totalDu)}
               </p>
               <p className="text-[10px] text-gray-400 mt-0.5">après personnalisations</p>
             </div>
-            <div className="p-2 sm:p-3 bg-blue-50 rounded-lg">
-              <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
+            <div className="p-1.5 bg-blue-50 rounded-lg">
+              <DollarSign className="w-4 h-4 text-blue-600" />
             </div>
           </div>
         </div>
         {/* Total Encaissé */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs sm:text-sm font-medium text-gray-500">Total encaissé</p>
-              <p className="text-xl sm:text-2xl font-bold text-emerald-600 mt-1">
+              <p className="text-base lg:text-lg font-bold text-emerald-600 mt-1">
                 {loading ? '—' : formatCurrency(totalEncaisse)}
               </p>
             </div>
-            <div className="p-2 sm:p-3 bg-emerald-50 rounded-lg">
-              <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600" />
+            <div className="p-1.5 bg-emerald-50 rounded-lg">
+              <TrendingUp className="w-4 h-4 text-emerald-600" />
             </div>
           </div>
         </div>
 
         {/* Taux Recouvrement */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs sm:text-sm font-medium text-gray-500">Taux recouvrement</p>
-              <p className="text-xl sm:text-2xl font-bold text-amber-600 mt-1">
+              <p className="text-base lg:text-lg font-bold text-amber-600 mt-1">
                 {loading ? '—' : `${tauxRecouvrement}%`}
               </p>
             </div>
-            <div className="p-2 sm:p-3 bg-amber-50 rounded-lg">
-              <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 text-amber-600" />
+            <div className="p-1.5 bg-amber-50 rounded-lg">
+              <BarChart3 className="w-4 h-4 text-amber-600" />
             </div>
           </div>
         </div>
 
         {/* Dépenses */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs sm:text-sm font-medium text-gray-500">Dépenses</p>
-              <p className="text-xl sm:text-2xl font-bold text-rose-600 mt-1">
+              <p className="text-base lg:text-lg font-bold text-rose-600 mt-1">
                 {loading ? '—' : formatCurrency(totalDepenses)}
               </p>
             </div>
-            <div className="p-2 sm:p-3 bg-rose-50 rounded-lg">
-              <TrendingDown className="w-5 h-5 sm:w-6 sm:h-6 text-rose-600" />
+            <div className="p-1.5 bg-rose-50 rounded-lg">
+              <TrendingDown className="w-4 h-4 text-rose-600" />
             </div>
           </div>
         </div>
 
         {/* Solde Net */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs sm:text-sm font-medium text-gray-500">Solde net</p>
-              <p className={`text-xl sm:text-2xl font-bold mt-1 ${soldeNet >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+              <p className={`text-base lg:text-lg font-bold mt-1 ${soldeNet >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                 {loading ? '—' : formatCurrency(soldeNet)}
               </p>
             </div>
-            <div className="p-2 sm:p-3 bg-gray-100 rounded-lg">
-              <Wallet className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600" />
+            <div className="p-1.5 bg-gray-100 rounded-lg">
+              <Wallet className="w-4 h-4 text-gray-600" />
             </div>
           </div>
         </div>

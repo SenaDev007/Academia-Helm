@@ -20,12 +20,13 @@ import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
-import { Loader2, Search, Plus, Package, Grid, List, Tag, ChevronRight, Bookmark, X, Pencil, Trash2 } from 'lucide-react';
+import { Loader2, Search, Plus, Package, Grid, List, Tag, ChevronRight, Bookmark, X, Pencil, Trash2, Upload, ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -77,34 +78,109 @@ export default function ShopCatalog() {
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<any | null>(null);
+  const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [productForm, setProductForm] = useState({ code: '', name: '', unitPrice: 0, categoryId: '', initialStock: 0, description: '' });
+  // ⭐ productForm inclut imageUrl (photo uploadée en base64 data URL) + mode édition
+  const [productForm, setProductForm] = useState({ code: '', name: '', unitPrice: 0, categoryId: '', initialStock: 0, description: '', imageUrl: '' });
   const [categoryForm, setCategoryForm] = useState({ name: '' });
 
-  const handleCreateProduct = async () => {
+  // ⭐ Helper : convertit un fichier image en data URL base64 (pour envoi direct au backend)
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Limiter à ~2 Mo pour éviter des payloads trop lourds
+    if (file.size > 2 * 1024 * 1024) {
+      toast({
+        title: 'Image trop volumineuse',
+        description: 'Veuillez sélectionner une image de moins de 2 Mo.',
+        variant: 'destructive',
+      });
+      e.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setProductForm(prev => ({ ...prev, imageUrl: dataUrl }));
+    };
+    reader.onerror = () => {
+      toast({ title: 'Erreur', description: 'Impossible de lire le fichier image.', variant: 'destructive' });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // ⭐ Ouvrir le modal produit en mode édition (pré-rempli)
+  const openEditProduct = (product: ProductItem) => {
+    setEditingProduct(product);
+    setProductForm({
+      code: product.code ?? product.sku ?? '',
+      name: product.name ?? '',
+      unitPrice: Number(product.unitPrice ?? product.price ?? 0),
+      categoryId: (product as any)?.categoryId ?? '',
+      initialStock: Number(product?.stock && typeof product.stock === 'object' ? product.stock.quantity : product?.quantity ?? 0),
+      description: product.description ?? '',
+      imageUrl: product.imageUrl ?? '',
+    });
+    setProductModalOpen(true);
+  };
+
+  // ⭐ Ouvrir le modal produit en mode création (vide)
+  const openCreateProduct = () => {
+    setEditingProduct(null);
+    setProductForm({ code: '', name: '', unitPrice: 0, categoryId: '', initialStock: 0, description: '', imageUrl: '' });
+    setProductModalOpen(true);
+  };
+
+  // ⭐ Création OU modification de produit (selon editingProduct)
+  const handleSubmitProduct = async () => {
     try {
       setSubmitting(true);
-      const payload = {
+      const payload: any = {
         code: productForm.code || 'PROD-' + Date.now(),
         name: productForm.name,
         unitPrice: Number(productForm.unitPrice),
         categoryId: productForm.categoryId || undefined,
         initialStock: Number(productForm.initialStock) || 0,
         description: productForm.description || undefined,
+        imageUrl: productForm.imageUrl || undefined,
       };
-      await modulesApi.post('shop/products', payload, buildModulesApiOptions(academicYear?.id));
+      if (editingProduct?.id) {
+        // Mode édition — PUT /shop/products/:id
+        await modulesApi.put(`shop/products/${editingProduct.id}`, payload, buildModulesApiOptions(academicYear?.id));
+        toast({ title: 'Produit modifié', description: 'L\'article a été mis à jour.' });
+      } else {
+        // Mode création — POST /shop/products
+        await modulesApi.post('shop/products', payload, buildModulesApiOptions(academicYear?.id));
+        toast({ title: 'Produit créé', description: 'Le nouvel article a été ajouté au catalogue.' });
+      }
       setProductModalOpen(false);
-      setProductForm({ code: '', name: '', unitPrice: 0, categoryId: '', initialStock: 0, description: '' });
+      setEditingProduct(null);
+      setProductForm({ code: '', name: '', unitPrice: 0, categoryId: '', initialStock: 0, description: '', imageUrl: '' });
       await refetch();
-      toast({ title: 'Produit créé', description: 'Le nouvel article a été ajouté au catalogue.' });
     } catch (e: any) {
       toast({
         title: 'Erreur',
-        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création du produit',
+        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de l\'enregistrement du produit',
         variant: 'destructive',
       });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // ⭐ Suppression d'un produit
+  const handleDeleteProduct = async (productId: string, productName: string) => {
+    if (!confirm(`Supprimer le produit « ${productName} » ?\n\nCette action est irréversible.`)) return;
+    try {
+      await modulesApi.delete(`shop/products/${productId}`, buildModulesApiOptions(academicYear?.id));
+      await refetch();
+      toast({ title: 'Produit supprimé', description: `Le produit « ${productName} » a été supprimé.` });
+    } catch (e: any) {
+      toast({
+        title: 'Suppression impossible',
+        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la suppression du produit',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -295,7 +371,7 @@ export default function ShopCatalog() {
                     <List className="w-4 h-4" />
                   </Button>
                 </div>
-                <Button onClick={() => setProductModalOpen(true)}>
+                <Button onClick={openCreateProduct}>
                   <Plus className="w-4 h-4 mr-2" />
                   Ajouter un Article
                 </Button>
@@ -311,18 +387,24 @@ export default function ShopCatalog() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
               {(products ?? []).map((product, i) => (
-                <ProductCard key={product?.id ?? `prod-${i}`} product={product} index={i + 1} />
+                <ProductCard
+                  key={product?.id ?? `prod-${i}`}
+                  product={product}
+                  index={i + 1}
+                  onEdit={() => product?.id && openEditProduct(product)}
+                  onDelete={() => product?.id && handleDeleteProduct(product.id, product.name ?? `Article #${i + 1}`)}
+                />
               ))}
             </div>
           )}
         </div>
       </div>
 
-      {/* Modal Nouvel Article */}
-      <Dialog open={productModalOpen} onOpenChange={setProductModalOpen}>
+      {/* Modal Article (création ou édition) */}
+      <Dialog open={productModalOpen} onOpenChange={(open) => { setProductModalOpen(open); if (!open) setEditingProduct(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Nouvel Article</DialogTitle>
+            <DialogTitle>{editingProduct ? 'Modifier l\'Article' : 'Nouvel Article'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-3">
@@ -360,17 +442,66 @@ export default function ShopCatalog() {
                   type="number"
                   value={productForm.initialStock}
                   onChange={(e) => setProductForm({ ...productForm, initialStock: Number(e.target.value) })}
+                  disabled={!!editingProduct}
                 />
               </div>
             </div>
+            {/* ⭐ 2a : Sélecteur de catégorie (remplace l'input texte « ID Catégorie ») */}
             <div>
-              <Label className="text-xs">ID Catégorie</Label>
-              <Input
-                type="text"
-                value={productForm.categoryId}
-                onChange={(e) => setProductForm({ ...productForm, categoryId: e.target.value })}
-                placeholder="Optionnel"
-              />
+              <Label className="text-xs">Catégorie</Label>
+              <Select
+                value={productForm.categoryId || 'NONE'}
+                onValueChange={(v) => setProductForm({ ...productForm, categoryId: v === 'NONE' ? '' : v })}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Sélectionner une catégorie (optionnel)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NONE">Aucune catégorie</SelectItem>
+                  {(categories ?? []).map((cat: CategoryItem, i: number) => (
+                    <SelectItem key={cat?.id ?? `cat-${i}`} value={cat?.id ?? `cat-${i}`}>
+                      {cat?.name ?? cat?.label ?? 'Catégorie'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {/* ⭐ 2b : Upload de photo (convertit en base64 data URL) */}
+            <div>
+              <Label className="text-xs">Photo du produit</Label>
+              <div className="flex items-center gap-3">
+                <div className="w-16 h-16 rounded-md border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {productForm.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={productForm.imageUrl} alt="Aperçu" className="w-full h-full object-cover" />
+                  ) : (
+                    <ImageIcon className="w-6 h-6 text-slate-300" />
+                  )}
+                </div>
+                <div className="flex-1 flex flex-col gap-1.5">
+                  <label htmlFor="product-photo-upload" className="inline-flex items-center justify-center cursor-pointer rounded-md text-xs font-medium border border-input bg-background hover:bg-accent px-3 py-2 h-9 gap-1.5">
+                    <Upload className="w-3.5 h-3.5" />
+                    {productForm.imageUrl ? 'Changer la photo' : 'Choisir une photo'}
+                  </label>
+                  <input
+                    id="product-photo-upload"
+                    type="file"
+                    accept="image/*"
+                    onChange={handlePhotoChange}
+                    className="hidden"
+                  />
+                  {productForm.imageUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setProductForm({ ...productForm, imageUrl: '' })}
+                      className="text-xs text-red-500 hover:underline self-start"
+                    >
+                      Retirer la photo
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">JPG, PNG ou GIF · 2 Mo max</p>
             </div>
             <div>
               <Label className="text-xs">Description</Label>
@@ -383,10 +514,12 @@ export default function ShopCatalog() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setProductModalOpen(false)}>Annuler</Button>
-            <Button onClick={handleCreateProduct} disabled={submitting}>
+            <Button variant="outline" onClick={() => { setProductModalOpen(false); setEditingProduct(null); }}>Annuler</Button>
+            <Button onClick={handleSubmitProduct} disabled={submitting}>
               {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {submitting ? 'Création...' : 'Créer l\'article'}
+              {submitting
+                ? (editingProduct ? 'Modification...' : 'Création...')
+                : (editingProduct ? 'Enregistrer' : 'Créer l\'article')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -449,7 +582,7 @@ export default function ShopCatalog() {
   );
 }
 
-function ProductCard({ product, index }: any) {
+function ProductCard({ product, index, onEdit, onDelete }: any) {
   const name = product?.name ?? `Article #${index}`;
   const sku = product?.code ?? product?.sku ?? `SKU-${index}`;
   const price = product?.unitPrice ?? product?.price ?? 0;
@@ -458,12 +591,18 @@ function ProductCard({ product, index }: any) {
   const stock = product?.stock?.quantity ?? product?.quantity ?? 0;
   const category = product?.category?.name ?? product?.categoryName ?? 'Général';
   const description = product?.description ?? '';
+  const imageUrl = product?.imageUrl ?? '';
   const isOutOfStock = product?.isActive === false || stock <= 0;
 
   return (
-    <Card className="overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300">
+    <Card className="overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 group">
       <div className="h-40 bg-slate-50 relative overflow-hidden flex items-center justify-center">
-        <Package className="w-14 h-14 text-slate-200" />
+        {imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imageUrl} alt={name} className="w-full h-full object-cover" />
+        ) : (
+          <Package className="w-14 h-14 text-slate-200" />
+        )}
         <div className="absolute top-3 left-3">
           <Badge variant="outline" className="bg-white/90 text-xs">
             {category}
@@ -479,6 +618,25 @@ function ProductCard({ product, index }: any) {
               En Stock: {stock}
             </Badge>
           )}
+        </div>
+        {/* ⭐ 2c/2d : Boutons Modifier / Supprimer — visibles au hover */}
+        <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="p-1.5 rounded-md bg-white/90 hover:bg-white shadow-sm border border-slate-200"
+            title="Modifier le produit"
+          >
+            <Pencil className="w-3.5 h-3.5 text-blue-600" />
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="p-1.5 rounded-md bg-white/90 hover:bg-white shadow-sm border border-slate-200"
+            title="Supprimer le produit"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-red-500" />
+          </button>
         </div>
       </div>
 
@@ -496,9 +654,15 @@ function ProductCard({ product, index }: any) {
             <p className="text-xs text-gray-400 mb-0.5">Prix Unitaire</p>
             <p className="text-lg font-semibold text-navy-900">{formatCurrency(price)}</p>
           </div>
-          <Button size="icon" variant="outline" className="h-9 w-9">
-            <Plus className="w-4 h-4" />
-          </Button>
+          {/* ⭐ Boutons Modifier / Supprimer — visibles sur mobile (toujours affichés) */}
+          <div className="flex gap-1">
+            <Button size="icon" variant="outline" className="h-9 w-9" onClick={onEdit} title="Modifier">
+              <Pencil className="w-4 h-4" />
+            </Button>
+            <Button size="icon" variant="outline" className="h-9 w-9 hover:bg-red-50 hover:border-red-200" onClick={onDelete} title="Supprimer">
+              <Trash2 className="w-4 h-4 text-red-500" />
+            </Button>
+          </div>
         </div>
       </div>
     </Card>

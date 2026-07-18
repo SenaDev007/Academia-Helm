@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, Search, User, Pencil, ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
+import { Plus, Trash2, Search, User, Pencil, ChevronLeft, ChevronRight, MoreHorizontal, CheckSquare, Square } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
@@ -73,6 +73,10 @@ export default function FeeOverridesContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [modalOverride, setModalOverride] = useState(false);
   const [editingOverride, setEditingOverride] = useState<any | null>(null);
+
+  // ⭐ Bulk delete — sélection multiple d'overrides (pattern FeeStructuresContent Task 24)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // ⭐ Pagination serveur (pattern identique à StudentMovementsContent.tsx — Task 9-a)
   const PAGE_SIZE = 25;
@@ -219,9 +223,65 @@ export default function FeeOverridesContent() {
     try {
       await financeService.deleteFeeOverride(id);
       toast({ title: 'Succès', description: 'Personnalisation supprimée.' });
+      // Retirer de la sélection si présent
+      setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
       await loadOverrides();
     } catch (error: any) {
       toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
+    }
+  };
+
+  // ⭐ Bulk delete — suppression multiple d'overrides
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    const ok = await confirmDialog.danger(
+      `${selectedIds.size} personnalisation(s) seront supprimées. Les comptes élèves seront recalculés avec les montants initiaux.`,
+      'Supprimer la sélection',
+    );
+    if (!ok) return;
+    setBulkDeleting(true);
+    try {
+      const result = await financeService.bulkDeleteFeeOverrides(Array.from(selectedIds));
+      const deletedCount = result.deleted?.length || 0;
+      const blockedCount = result.blocked?.length || 0;
+      if (deletedCount > 0 && blockedCount === 0) {
+        toast({ title: 'Succès', description: `${deletedCount} personnalisation(s) supprimée(s).` });
+      } else if (deletedCount > 0 && blockedCount > 0) {
+        toast({
+          title: 'Suppression partielle',
+          description: `${deletedCount} supprimée(s), ${blockedCount} bloquée(s).`,
+          variant: 'default',
+        });
+      } else if (deletedCount === 0 && blockedCount > 0) {
+        toast({
+          title: 'Aucune suppression',
+          description: `Les ${blockedCount} personnalisations sélectionnées n'ont pas pu être supprimées.`,
+          variant: 'destructive',
+        });
+      }
+      setSelectedIds(new Set());
+      await loadOverrides();
+    } catch (error: any) {
+      toast({ title: 'Erreur', description: error?.message || 'Erreur réseau', variant: 'destructive' });
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (filteredOverrides.length > 0 && selectedIds.size === filteredOverrides.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredOverrides.map(o => o.id)));
     }
   };
 
@@ -325,11 +385,64 @@ export default function FeeOverridesContent() {
           </div>
         </div>
 
+        {/* ⭐ Barre d'actions flottante pour suppression multiple */}
+        {selectedIds.size > 0 && (
+          <div className="sticky top-0 z-10 mb-3 flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg shadow-sm">
+            <span className="text-sm font-semibold text-amber-800">
+              {selectedIds.size} sélectionnée(s)
+            </span>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedIds(new Set())}
+                className="text-xs"
+                disabled={bulkDeleting}
+              >
+                Annuler
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+                className="text-xs"
+              >
+                {bulkDeleting ? (
+                  <span className="animate-pulse">Suppression…</span>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                    Supprimer ({selectedIds.size})
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Tableau principal — cellules avec hauteur confortable + single-line */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
+                {/* ⭐ Colonne checkbox pour sélection multiple */}
+                <TableHead className="w-10 py-3">
+                  <button
+                    type="button"
+                    onClick={toggleSelectAll}
+                    className="flex items-center justify-center w-5 h-5"
+                    title={
+                      filteredOverrides.length > 0 && selectedIds.size === filteredOverrides.length
+                        ? 'Tout désélectionner'
+                        : 'Tout sélectionner (page courante)'
+                    }
+                  >
+                    {filteredOverrides.length > 0 && selectedIds.size === filteredOverrides.length
+                      ? <CheckSquare className="w-4 h-4 text-blue-600" />
+                      : <Square className="w-4 h-4 text-slate-400" />}
+                  </button>
+                </TableHead>
                 <TableHead className="whitespace-nowrap py-3">Élève</TableHead>
                 <TableHead className="whitespace-nowrap py-3">Frais concerné</TableHead>
                 <TableHead className="whitespace-nowrap py-3">Type</TableHead>
@@ -343,10 +456,10 @@ export default function FeeOverridesContent() {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={9} className="text-center text-gray-500 py-8">Chargement...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center text-gray-500 py-8">Chargement...</TableCell></TableRow>
               ) : filteredOverrides.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center text-gray-500 py-12">
+                  <TableCell colSpan={10} className="text-center text-gray-500 py-12">
                     <div className="flex flex-col items-center gap-3">
                       <User className="w-10 h-10 text-slate-300" />
                       <p>Aucune personnalisation trouvée.</p>
@@ -365,7 +478,20 @@ export default function FeeOverridesContent() {
                   const studentName = `${o.student?.lastName || ''} ${o.student?.firstName || ''}`.trim();
                   const studentMatricule = o.student?.matricule || o.student?.studentCode || '';
                   return (
-                    <TableRow key={o.id} className="hover:bg-slate-50">
+                    <TableRow key={o.id} className={`hover:bg-slate-50 ${selectedIds.has(o.id) ? 'bg-blue-50/40' : ''}`}>
+                      {/* ⭐ Checkbox de sélection */}
+                      <TableCell className="w-10 py-3">
+                        <button
+                          type="button"
+                          onClick={() => toggleSelect(o.id)}
+                          className="flex items-center justify-center w-5 h-5"
+                          title={selectedIds.has(o.id) ? 'Désélectionner' : 'Sélectionner'}
+                        >
+                          {selectedIds.has(o.id)
+                            ? <CheckSquare className="w-4 h-4 text-blue-600" />
+                            : <Square className="w-4 h-4 text-slate-300 hover:text-slate-500" />}
+                        </button>
+                      </TableCell>
                       {/* Élève — single line: "Nom Prénom (matricule)" */}
                       <TableCell className="font-medium whitespace-nowrap py-3">
                         {studentName || '—'}

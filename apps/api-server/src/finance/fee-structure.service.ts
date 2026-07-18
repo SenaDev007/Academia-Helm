@@ -604,6 +604,58 @@ export class FeeStructureService {
   }
 
   /**
+   * ⭐ Bulk delete : supprime plusieurs overrides en une seule opération.
+   * Même logique que deleteOverride() :
+   * - Vérifie l'appartenance au tenant via feeStructure.tenantId
+   * - Désactive le trigger prevent_fee_override_delete pendant toute l'opération
+   * - Audite chaque suppression
+   * - Recalcule le compte élève après chaque suppression
+   *
+   * @param ids Tableau d'IDs d'overrides à supprimer
+   * @param tenantId ID du tenant courant
+   * @returns { deleted: string[], blocked: { id, reason }[], message }
+   */
+  async deleteManyOverrides(ids: string[], tenantId: string) {
+    if (!ids || ids.length === 0) {
+      return { deleted: [], blocked: [], message: 'Aucun ID fourni' };
+    }
+
+    const deleted: string[] = [];
+    const blocked: { id: string; reason: string }[] = [];
+
+    // Désactiver le trigger prevent_fee_override_delete pour toute l'opération
+    await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_overrides" DISABLE TRIGGER prevent_fee_override_delete_trigger');
+    try {
+      for (const id of ids) {
+        try {
+          const override = await this.prisma.feeOverride.findFirst({
+            where: { id, feeStructure: { tenantId } },
+            include: { feeStructure: true },
+          });
+          if (!override) {
+            blocked.push({ id, reason: 'Introuvable' });
+            continue;
+          }
+          await this.audit(tenantId, undefined, 'FEE_OVERRIDE_DELETE', 'FeeOverride', id, { customAmount: override.customAmount }, undefined);
+          await this.prisma.feeOverride.delete({ where: { id } });
+          await this.studentAccountService.recalculate(override.studentId, tenantId, override.feeStructure.academicYearId);
+          deleted.push(id);
+        } catch (err) {
+          blocked.push({ id, reason: err.message || 'Erreur' });
+        }
+      }
+    } finally {
+      await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_overrides" ENABLE TRIGGER prevent_fee_override_delete_trigger');
+    }
+
+    return {
+      deleted,
+      blocked,
+      message: `${deleted.length} supprimé(s), ${blocked.length} bloqué(s)`,
+    };
+  }
+
+  /**
    * Modifie un override existant (montant personnalisé + motif).
    * Vérifie que l'override appartient bien au tenant via feeStructure.tenantId.
    */

@@ -71,6 +71,18 @@ class FinanceService {
   }
 
   /**
+   * ⭐ Bulk delete : supprime plusieurs overrides en une seule opération.
+   * @param ids Tableau d'IDs d'overrides à supprimer
+   * @returns { deleted: string[], blocked: { id, reason }[], message }
+   */
+  async bulkDeleteFeeOverrides(ids: string[]): Promise<any> {
+    return financeFetch('/api/finance/fee-structures/overrides/bulk-delete', {
+      method: 'POST',
+      body: { ids },
+    });
+  }
+
+  /**
    * Modifie un override existant (montant personnalisé + motif).
    */
   async updateFeeOverride(id: string, data: { customAmount?: number; reason?: string }): Promise<any> {

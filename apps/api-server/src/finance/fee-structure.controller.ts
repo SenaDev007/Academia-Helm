@@ -167,6 +167,21 @@ export class FeeStructureController {
     return this.service.deleteOverride(id, tenantId);
   }
 
+  /**
+   * ⭐ Bulk delete : supprime plusieurs overrides en une seule opération.
+   * POST /finance/fee-structures/overrides/bulk-delete
+   * Body: { ids: string[] }
+   * Retourne { deleted: string[], blocked: { id, reason }[], message }
+   */
+  @Post('overrides/bulk-delete')
+  async bulkDeleteOverrides(
+    @TenantId() tenantId: string,
+    @Body() body: { ids: string[] },
+  ) {
+    this.logger.log(`Bulk delete fee overrides: ${body.ids?.length || 0} IDs`);
+    return this.service.deleteManyOverrides(body.ids || [], tenantId);
+  }
+
   @Patch('overrides/:id')
   async updateOverride(
     @Param('id') id: string,

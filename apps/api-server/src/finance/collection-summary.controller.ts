@@ -114,6 +114,9 @@ export class CollectionSummaryController {
       tenantId,
       academicYearId,
       status: { in: ['ACTIVE', 'ENROLLED', 'PENDING', 'ADMITTED'] },
+      // ⭐ Task 23 : exclure les élèves abandonnés (Student.status = 'WITHDRAWN')
+      // du bilan des encaissements pour ne pas fausser les totaux.
+      student: { status: { not: 'WITHDRAWN' } },
     };
     if (classId) {
       enrollmentWhere.classId = classId;

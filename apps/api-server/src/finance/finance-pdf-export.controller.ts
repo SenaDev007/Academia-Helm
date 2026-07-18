@@ -36,9 +36,18 @@ export class FinancePdfExportController {
     @TenantId() tenantId: string,
     @Query('academicYearId') academicYearId: string,
     @Query('classId') classId?: string,
+    // ⭐ Task 23 : flag includeWithdrawn pour inclure les élèves abandonnés
+    @Query('includeWithdrawn') includeWithdrawn?: string,
     @Res() res?: Response,
   ) {
-    return this.pdfExportService.exportStudentAccountsPdf(tenantId, academicYearId, res, classId);
+    return this.pdfExportService.exportStudentAccountsPdf(
+      tenantId,
+      academicYearId,
+      res,
+      classId,
+      // ⭐ Task 23 : transmettre le flag au service
+      includeWithdrawn === 'true',
+    );
   }
 
   @Get('cash-register/pdf')

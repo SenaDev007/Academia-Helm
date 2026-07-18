@@ -558,13 +558,27 @@ export class StudentAccountService {
       limit?: number;
       // ⭐ Task 20-a : si true, lève la limite de 500 (export PDF/Excel tous les comptes)
       exportAll?: boolean;
+      // ⭐ Task 23 : si true, inclut les élèves abandonnés (status=WITHDRAWN).
+      // Par défaut (false), les élèves abandonnés sont EXCLUS de la liste
+      // pour éviter les confusions dans le module Comptes élèves.
+      includeWithdrawn?: boolean;
     },
   ) {
     const where: any = { tenantId, academicYearId: filters.academicYearId };
     if (filters.status) where.status = filters.status;
     if (filters.isBlocked !== undefined) where.isBlocked = filters.isBlocked;
+    // ⭐ Task 23 : exclure les élèves abandonnés par défaut
+    // (status = 'WITHDRAWN' sur Student + isActive=false).
+    // Si filters.includeWithdrawn=true, on les inclut (utile pour audit/historique).
+    if (!filters.includeWithdrawn) {
+      where.student = {
+        ...(where.student || {}),
+        status: { not: 'WITHDRAWN' },
+      };
+    }
     if (filters.classId) {
       where.student = {
+        ...(where.student || {}),
         studentEnrollments: {
           some: { academicYearId: filters.academicYearId, classId: filters.classId },
         },
@@ -572,14 +586,21 @@ export class StudentAccountService {
     }
     // ⭐ Recherche côté backend (mode insensible à la casse) sur nom/prénom/matricule/studentCode
     // — pattern identique au module Élève (Task 9-a)
+    // ⭐ Task 23 : la recherche est combinée AVEC le filtre student.status (AND logique)
+    // pour ne jamais remonter les élèves abandonnés (sauf si includeWithdrawn=true).
     if (filters.search && filters.search.trim()) {
       const q = filters.search.trim();
-      where.OR = [
-        { student: { firstName: { contains: q, mode: 'insensitive' } } },
-        { student: { lastName: { contains: q, mode: 'insensitive' } } },
-        { student: { matricule: { contains: q, mode: 'insensitive' } } },
-        { student: { studentCode: { contains: q, mode: 'insensitive' } } },
+      // Construire un filtre student combiné : status NOT WITHDRAWN + (OR sur les champs)
+      const studentFilter: any = { ...(where.student || {}) };
+      studentFilter.OR = [
+        { firstName: { contains: q, mode: 'insensitive' } },
+        { lastName: { contains: q, mode: 'insensitive' } },
+        { matricule: { contains: q, mode: 'insensitive' } },
+        { studentCode: { contains: q, mode: 'insensitive' } },
       ];
+      where.student = studentFilter;
+      // Supprimer where.OR (qui était utilisé avant et entrait en conflit avec where.student)
+      delete where.OR;
     }
 
     // ⭐ Pagination optionnelle : si page/limit fournis → retour paginé avec sommes agrégées

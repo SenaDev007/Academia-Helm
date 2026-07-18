@@ -251,20 +251,9 @@ function withAntiCacheHeaders(response: NextResponse): NextResponse {
  * parent détecté depuis le host. Cela couvre tous les cas de figure.
  */
 function clearRedirectDepthCookie(response: NextResponse, request: NextRequest): NextResponse {
-  // Delete without domain (matches cookies set without domain)
+  // ⭐ Host-only cookie (pas de `domain`) — on supprime sans domaine pour
+  // matcher le cookie créé par safeRedirect (également host-only maintenant).
   response.cookies.delete('x-redirect-depth');
-  // Also try with the parent domain (matches cookies set with domain='.academiahelm.com')
-  const host = request.headers.get('host') || '';
-  const domainMatch = host.match(/\.[^.]+\.[^.]+$/); // .academiahelm.com
-  if (domainMatch) {
-    // Set with explicit domain + maxAge=0 → browser deletes the matching cookie
-    response.cookies.set('x-redirect-depth', '', {
-      path: '/',
-      maxAge: 0,
-      sameSite: 'lax',
-      domain: domainMatch[0],
-    });
-  }
   return response;
 }
 
@@ -290,15 +279,12 @@ function safeRedirect(url: URL | string, request: NextRequest, currentDepth: num
     return errorResponse;
   }
   const redirectResponse = NextResponse.redirect(url);
-  // Définir le cookie sur le domaine parent pour qu'il persiste
-  // across subdomains (évite les boucles quand la redirection change de domaine)
-  const host = request.headers.get('host') || '';
-  const domainMatch = host.match(/\.[^.]+\.[^.]+$/); // .academiahelm.com
+  // ⭐ Host-only cookie (pas de `domain`) — scoped au sous-domaine exact pour
+  // isoler les sessions entre tenants et éviter les conflits cross-onglet.
   redirectResponse.cookies.set('x-redirect-depth', String(nextDepth), {
     path: '/',
     maxAge: 30, // 30 secondes — expire rapidement si pas de boucle
     sameSite: 'lax',
-    ...(domainMatch ? { domain: domainMatch[0] } : {}),
   });
   return redirectResponse;
 }

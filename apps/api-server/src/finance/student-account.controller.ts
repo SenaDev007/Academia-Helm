@@ -24,6 +24,8 @@ export class StudentAccountController {
     @Query('limit') limit?: string,
     // ⭐ Task 20-a : flag exportAll pour lever la limite de 500 lors des exports PDF/Excel
     @Query('exportAll') exportAll?: string,
+    // ⭐ Task 23 : flag includeWithdrawn pour inclure les élèves abandonnés
+    @Query('includeWithdrawn') includeWithdrawn?: string,
   ) {
     if (!academicYearId) return [];
     const pageNum = page ? parseInt(page, 10) : undefined;
@@ -38,6 +40,8 @@ export class StudentAccountController {
       limit: limitNum && !isNaN(limitNum) ? limitNum : undefined,
       // ⭐ Task 20-a : passe le flag exportAll au service (lève le cap de 500)
       exportAll: exportAll === 'true',
+      // ⭐ Task 23 : par défaut les élèves abandonnés sont exclus
+      includeWithdrawn: includeWithdrawn === 'true',
     });
   }
 

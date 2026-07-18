@@ -58,6 +58,9 @@ export default function StudentAccountsContent() {
   const [filterClassId, setFilterClassId] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  // ⭐ Task 23 : par défaut, les élèves abandonnés (status=WITHDRAWN) sont masqués.
+  // L'utilisateur peut cliquer sur "Afficher les abandonnés" pour les inclure.
+  const [showWithdrawn, setShowWithdrawn] = useState(false);
   const [detailAccount, setDetailAccount] = useState<any | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
@@ -150,6 +153,8 @@ export default function StudentAccountsContent() {
       if (filterClassId) params.set('classId', filterClassId);
       if (filterStatus) params.set('status', filterStatus);
       if (searchQuery.trim()) params.set('search', searchQuery.trim());
+      // ⭐ Task 23 : inclure les élèves abandonnés si demandé
+      if (showWithdrawn) params.set('includeWithdrawn', 'true');
       const data = await financeService.getStudentAccounts(Object.fromEntries(params.entries()));
       // ⭐ Gérer la réponse paginée { data, total, page, totalPages, sums } ou l'ancien format array
       const allItems = Array.isArray(data) ? data : (data?.data ?? []);
@@ -194,12 +199,12 @@ export default function StudentAccountsContent() {
     }, searchQuery ? 250 : 0);
     return () => clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveYearId, filterClassId, filterStatus, searchQuery, currentPage]);
+  }, [effectiveYearId, filterClassId, filterStatus, searchQuery, currentPage, showWithdrawn]);
 
   // ⭐ Reset page à 1 quand les filtres changent (sinon on reste bloqué sur une page vide)
   useEffect(() => {
     setCurrentPage(1);
-  }, [filterClassId, filterStatus, searchQuery, effectiveYearId]);
+  }, [filterClassId, filterStatus, searchQuery, effectiveYearId, showWithdrawn]);
 
   useEffect(() => {
     classesService.getAll({})
@@ -342,6 +347,8 @@ export default function StudentAccountsContent() {
       if (filterClassId) exportParams.classId = filterClassId;
       if (filterStatus) exportParams.status = filterStatus;
       if (searchQuery.trim()) exportParams.search = searchQuery.trim();
+      // ⭐ Task 23 : respecter le toggle showWithdrawn pour les exports aussi
+      if (showWithdrawn) exportParams.includeWithdrawn = 'true';
 
       const data = await financeService.getStudentAccounts(exportParams);
       const allAccounts: any[] = Array.isArray(data) ? data : (data?.data ?? []);
@@ -398,6 +405,8 @@ export default function StudentAccountsContent() {
       // Le backend PDF récupère TOUS les comptes matchés (pas de pagination).
       const params = new URLSearchParams({ academicYearId: effectiveYearId });
       if (filterClassId) params.set('classId', filterClassId);
+      // ⭐ Task 23 : respecter le toggle showWithdrawn pour l'export PDF
+      if (showWithdrawn) params.set('includeWithdrawn', 'true');
       const res = await fetch(`/api/finance/exports/student-accounts/pdf?${params.toString()}`, { credentials: 'include' });
       if (!res.ok) throw new Error(`Erreur ${res.status}`);
       const blob = await res.blob();
@@ -593,6 +602,23 @@ export default function StudentAccountsContent() {
                 <SelectItem value="ACTIVE">Actif</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          {/* ⭐ Task 23 : Toggle pour afficher/masquer les élèves abandonnés (status=WITHDRAWN) */}
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Abandonnés</Label>
+            <button
+              type="button"
+              onClick={() => setShowWithdrawn(!showWithdrawn)}
+              className={`h-9 px-3 rounded-md border text-xs font-medium transition flex items-center gap-2 ${
+                showWithdrawn
+                  ? 'bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200'
+                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+              title="Afficher ou masquer les élèves qui ont abandonné (status=WITHDRAWN)"
+            >
+              <span className={`w-2 h-2 rounded-full ${showWithdrawn ? 'bg-amber-500' : 'bg-slate-300'}`} />
+              {showWithdrawn ? 'Affichés' : 'Masqués'}
+            </button>
           </div>
         </div>
 

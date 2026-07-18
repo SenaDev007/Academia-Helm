@@ -482,11 +482,12 @@ export const SCHOOL_PENDING_COOKIE_NAME = SCHOOL_PENDING_COOKIE;
 
 export function serializeSchoolPendingCookie(cookieValue: string): string {
   const maxAge = OTP_VALIDITY_MINUTES * 60;
-  const domain = process.env.NODE_ENV === 'production' ? '; Domain=.academiahelm.com' : '';
-  return `${SCHOOL_PENDING_COOKIE}=${cookieValue}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}${domain}`;
+  // ⭐ Host-only cookie (pas de `Domain`) — scoped au sous-domaine exact
+  // pour isoler les sessions entre tenants.
+  return `${SCHOOL_PENDING_COOKIE}=${cookieValue}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
 }
 
 export function clearSchoolPendingCookie(): string {
-  const domain = process.env.NODE_ENV === 'production' ? '; Domain=.academiahelm.com' : '';
-  return `${SCHOOL_PENDING_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0${domain}`;
+  // ⭐ Host-only cookie — pas de `Domain`.
+  return `${SCHOOL_PENDING_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 }

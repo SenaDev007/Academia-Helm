@@ -290,14 +290,24 @@ export class FinancePdfExportService {
     academicYearId: string,
     res?: Response,
     classId?: string,
+    // ⭐ Task 23 : si true, inclut les élèves abandonnés (status=WITHDRAWN)
+    includeWithdrawn?: boolean,
   ) {
     const branding = await this.getTenantBranding(tenantId);
     const ministry = "Ministère des Enseignements Maternel et Primaire";
 
     // ⭐ Task 20-a : construction du `where` avec filtre classe optionnel
     const where: any = { tenantId, academicYearId };
+    // ⭐ Task 23 : exclure les élèves abandonnés par défaut
+    if (!includeWithdrawn) {
+      where.student = {
+        ...(where.student || {}),
+        status: { not: 'WITHDRAWN' },
+      };
+    }
     if (classId) {
       where.student = {
+        ...(where.student || {}),
         studentEnrollments: {
           some: { academicYearId, classId },
         },

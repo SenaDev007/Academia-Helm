@@ -32,31 +32,19 @@ export function getClientToken(): string | null {
 
 /**
  * Définit le token côté client (pour les Server Actions)
+ *
+ * ⭐ Multi-tenant isolation (Juillet 2026) :
+ * Cookie host-only (pas de `domain`) pour isoler les sessions entre
+ * sous-domaines. Chaque tenant a sa propre session, permettant d'ouvrir
+ * 2 tenants dans 2 onglets sans conflit.
  */
 export function setClientToken(token: string): void {
   if (typeof window === 'undefined') return;
-  
-  // Définir le cookie côté client
+
+  // Définir le cookie côté client — host-only (pas de `domain`)
   const expires = new Date();
   expires.setTime(expires.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 jours
-  
-  let baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
-  if (!baseDomain && typeof window !== 'undefined') {
-    const host = window.location.host;
-    if (host.includes('academiahelm.com')) {
-      baseDomain = 'academiahelm.com';
-    } else if (!host.includes('localhost') && !host.includes('127.0.0.1')) {
-      const parts = host.split('.');
-      if (parts.length >= 2) {
-        baseDomain = parts.slice(-2).join('.');
-      }
-    }
-  }
 
-  const domainStr = baseDomain && !baseDomain.includes('localhost') 
-    ? `; domain=.${baseDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')}` 
-    : '';
-
-  document.cookie = `${TOKEN_COOKIE}=${token}; expires=${expires.toUTCString()}; path=/; SameSite=Lax${process.env.NODE_ENV === 'production' ? '; Secure' : ''}${domainStr}`;
+  document.cookie = `${TOKEN_COOKIE}=${token}; expires=${expires.toUTCString()}; path=/; SameSite=Lax${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`;
 }
 

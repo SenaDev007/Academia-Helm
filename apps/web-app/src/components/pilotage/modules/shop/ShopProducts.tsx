@@ -194,11 +194,12 @@ export default function ShopProducts() {
               ) : (
                 filteredProducts.map((product, i) => {
                   const name = product?.name ?? `Article #${i + 1}`;
-                  const sku = product?.sku ?? `SKU-${i + 1}`;
-                  const price = product?.price ?? product?.unitPrice ?? 0;
-                  const cost = product?.cost ?? product?.purchaseCost ?? 0;
+                  const sku = product?.code ?? product?.sku ?? `SKU-${i + 1}`;
+                  const price = product?.unitPrice ?? product?.price ?? 0;
+                  const cost = product?.costPrice ?? product?.cost ?? product?.purchaseCost ?? 0;
+                  const stockQty = product?.stock?.quantity ?? 0;
                   const variants = product?.variants ?? product?.variantCount ?? 0;
-                  const status = product?.active === false || product?.status === 'Rupture' ? 'Rupture' : 'Actif';
+                  const status = product?.isActive === false ? 'Inactif' : (stockQty <= 0 ? 'Rupture' : 'Actif');
                   return (
                     <ProductRow
                       key={product?.id ?? `prod-${i}`}

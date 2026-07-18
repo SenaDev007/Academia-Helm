@@ -20,7 +20,7 @@ import { formatCurrency } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useModulesList } from '@/lib/modules-complementaires/hooks';
 import { modulesApi, buildModulesApiOptions } from '@/lib/modules-complementaires/client';
-import { Loader2, Search, Plus, Package, Grid, List, Tag, ChevronRight, Bookmark, X } from 'lucide-react';
+import { Loader2, Search, Plus, Package, Grid, List, Tag, ChevronRight, Bookmark, X, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -34,15 +34,18 @@ import {
 interface ProductItem {
   id?: string;
   name?: string;
+  code?: string;
   sku?: string;
   price?: number;
   unitPrice?: number;
-  stock?: number;
+  // ⭐ stock est un objet ShopStock (relation Prisma), pas un nombre
+  stock?: { quantity?: number } | number;
   quantity?: number;
-  category?: string;
+  category?: { name?: string };
   categoryName?: string;
   description?: string;
   imageUrl?: string;
+  isActive?: boolean;
   status?: string;
 }
 
@@ -73,6 +76,7 @@ export default function ShopCatalog() {
 
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<any | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [productForm, setProductForm] = useState({ code: '', name: '', unitPrice: 0, categoryId: '', initialStock: 0, description: '' });
   const [categoryForm, setCategoryForm] = useState({ name: '' });
@@ -123,6 +127,48 @@ export default function ShopCatalog() {
     }
   };
 
+  // ⭐ Task 26 : Modifier une catégorie
+  const handleUpdateCategory = async () => {
+    if (!editingCategory) return;
+    try {
+      setSubmitting(true);
+      await modulesApi.put(`shop/categories/${editingCategory.id}`, categoryForm, buildModulesApiOptions(academicYear?.id));
+      setEditingCategory(null);
+      setCategoryForm({ name: '' });
+      await refetchCategories();
+      toast({ title: 'Catégorie modifiée', description: 'La catégorie a été mise à jour.' });
+    } catch (e: any) {
+      toast({
+        title: 'Erreur',
+        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la modification',
+        variant: 'destructive',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ⭐ Task 26 : Supprimer une catégorie
+  const handleDeleteCategory = async (categoryId: string, categoryName: string) => {
+    if (!confirm(`Supprimer la catégorie "${categoryName}" ?\n\nLes produits liés ne seront pas supprimés mais perdront leur catégorie.`)) return;
+    try {
+      await modulesApi.delete(`shop/categories/${categoryId}`, buildModulesApiOptions(academicYear?.id));
+      await refetchCategories();
+      toast({ title: 'Catégorie supprimée', description: `La catégorie "${categoryName}" a été supprimée.` });
+    } catch (e: any) {
+      toast({
+        title: 'Suppression impossible',
+        description: e?.response?.data?.message ?? e?.message ?? 'Cette catégorie a des produits liés et ne peut pas être supprimée.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const openEditCategory = (cat: any) => {
+    setEditingCategory(cat);
+    setCategoryForm({ name: cat?.name ?? '' });
+  };
+
   if (loading || catLoading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -133,6 +179,7 @@ export default function ShopCatalog() {
   }
 
   const safeCategories = (categories ?? []).map((c: any, i: number) => ({
+    id: c?.id,
     name: c?.name ?? c?.label ?? 'Catégorie',
     count: c?._count?.products ?? 0,
     icon: c?.icon ?? '🏷️',
@@ -175,11 +222,29 @@ export default function ShopCatalog() {
                     key={cat.key}
                     className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-slate-50 group transition-all"
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
                       <span className="text-base">{cat.icon}</span>
-                      <span className="text-xs font-medium text-gray-600 group-hover:text-navy-900 transition-colors">{cat.name}</span>
+                      <span className="text-xs font-medium text-gray-600 group-hover:text-navy-900 transition-colors truncate">{cat.name}</span>
                     </div>
-                    <span className="text-xs font-medium text-gray-400 group-hover:text-indigo-500">{cat.count}</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs font-medium text-gray-400 group-hover:text-indigo-500 mr-1">{cat.count}</span>
+                      <button
+                        type="button"
+                        onClick={() => openEditCategory(cat)}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-blue-100 transition"
+                        title="Modifier la catégorie"
+                      >
+                        <Pencil className="w-3 h-3 text-blue-600" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCategory(cat.id, cat.name)}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 transition"
+                        title="Supprimer la catégorie"
+                      >
+                        <Trash2 className="w-3 h-3 text-red-500" />
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
@@ -353,18 +418,47 @@ export default function ShopCatalog() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ⭐ Task 26 : Modal Modifier Catégorie */}
+      <Dialog open={!!editingCategory} onOpenChange={(open) => { if (!open) { setEditingCategory(null); setCategoryForm({ name: '' }); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Modifier la Catégorie</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-xs">Nom de la catégorie</Label>
+              <Input
+                type="text"
+                value={categoryForm.name}
+                onChange={(e) => setCategoryForm({ name: e.target.value })}
+                placeholder="Ex: Uniformes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setEditingCategory(null); setCategoryForm({ name: '' }); }}>Annuler</Button>
+            <Button onClick={handleUpdateCategory} disabled={submitting}>
+              {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting ? 'Modification...' : 'Modifier'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 function ProductCard({ product, index }: any) {
   const name = product?.name ?? `Article #${index}`;
-  const sku = product?.sku ?? `SKU-${index}`;
-  const price = product?.price ?? product?.unitPrice ?? 0;
-  const stock = product?.stock ?? product?.quantity ?? 0;
-  const category = product?.category ?? product?.categoryName ?? 'Général';
+  const sku = product?.code ?? product?.sku ?? `SKU-${index}`;
+  const price = product?.unitPrice ?? product?.price ?? 0;
+  // ⭐ Fix React error #31 : product.stock est un OBJET ShopStock (relation Prisma),
+  // pas un nombre. On doit extraire product.stock.quantity pour avoir la quantité.
+  const stock = product?.stock?.quantity ?? product?.quantity ?? 0;
+  const category = product?.category?.name ?? product?.categoryName ?? 'Général';
   const description = product?.description ?? '';
-  const isOutOfStock = product?.status === 'Rupture' || stock <= 0;
+  const isOutOfStock = product?.isActive === false || stock <= 0;
 
   return (
     <Card className="overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300">

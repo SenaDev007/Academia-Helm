@@ -170,7 +170,20 @@ async function apiFetch<T>(
     ...(options.headers as Record<string, string> | undefined),
   };
 
-  const response = await fetch(path, {
+  // ⭐ Fix: sur le sous-domaine saisiemaster.academiahelm.com, les routes
+  // /api/* ne sont pas accessibles (Vercel ne les sert pas correctement).
+  // On utilise une URL absolue vers le domaine principal pour les requêtes API.
+  let apiUrl = path;
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    // Si on est sur saisiemaster.academiahelm.com, rediriger les appels API
+    // vers www.academiahelm.com (qui a les routes BFF configurées)
+    if (host.startsWith("saisiemaster.")) {
+      apiUrl = `https://www.academiahelm.com${path}`;
+    }
+  }
+
+  const response = await fetch(apiUrl, {
     ...options,
     headers,
     signal: options.signal ?? AbortSignal.timeout(30000),

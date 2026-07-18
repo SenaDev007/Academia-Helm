@@ -22,6 +22,8 @@ import {
   type ActivityType,
   classDataToSessionPayload,
   saveSession,
+  deleteSession,
+  getSessions,
   trackActivity,
   getToken,
   getStoredProspect,
@@ -29,9 +31,19 @@ import {
   clearAuth as clearPersistedAuth,
 } from "./api";
 
+/** Editor-internal navigation (separate from `AppView`). */
+export type EditorView =
+  | "notes"
+  | "classes"
+  | "files"
+  | "history"
+  | "settings";
+
 interface SaisieMasterState {
   /** Vue active. */
   view: AppView;
+  /** Editor-internal navigation (which sidebar item is active). */
+  editorView: EditorView;
   /** Classes chargées depuis le fichier importé. */
   classes: ClassData[];
   /** Index de la classe active (pour multi-classes). */
@@ -49,8 +61,15 @@ interface SaisieMasterState {
 
   // Actions
   setView: (view: AppView) => void;
+  setEditorView: (view: EditorView) => void;
   loadClasses: (classes: ClassData[]) => void;
   setActiveClass: (index: number) => void;
+  /** Remove a class locally + its backend session (best-effort). */
+  deleteClass: (index: number) => Promise<void>;
+  /** Replace a class in the store with a new ClassData (used to load a session). */
+  replaceClasses: (classes: ClassData[]) => void;
+  /** Update the prospect info in the store + localStorage. */
+  updateProspect: (prospect: Prospect) => void;
   setImportError: (error: string | null) => void;
   updateNote: (
     studentId: string,
@@ -84,6 +103,22 @@ export function selectIsAuthenticated(s: SaisieMasterState): boolean {
 let backendSyncTimer: ReturnType<typeof setTimeout> | null = null;
 const BACKEND_SYNC_DEBOUNCE_MS = 2000;
 
+function persistClassesToStorage(classes: ClassData[], activeClassIndex: number) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        classes,
+        activeClassIndex,
+        savedAt: new Date().toISOString(),
+      }),
+    );
+  } catch (e) {
+    console.warn("Auto-save échoué:", e);
+  }
+}
+
 function scheduleBackendSync(classes: ClassData[], activeClassIndex: number) {
   // Only sync if authenticated
   if (!getToken()) return;
@@ -105,6 +140,7 @@ function scheduleBackendSync(classes: ClassData[], activeClassIndex: number) {
 
 export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
   view: "landing",
+  editorView: "notes",
   classes: [],
   activeClassIndex: 0,
   importError: null,
@@ -114,13 +150,17 @@ export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
 
   setView: (view) => set({ view }),
 
+  setEditorView: (editorView) => set({ editorView }),
+
   loadClasses: (classes) => {
     set({
       classes,
       activeClassIndex: 0,
       importError: null,
+      editorView: "notes",
       view: classes.length > 0 ? "editor" : "landing",
     });
+    persistClassesToStorage(classes, 0);
     // Track classes creation + trigger backend sync for the first class.
     if (classes.length > 0 && getToken()) {
       void trackActivity("grade_entered");
@@ -128,10 +168,63 @@ export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
     }
   },
 
+  replaceClasses: (classes) => {
+    set({
+      classes,
+      activeClassIndex: 0,
+      editorView: "notes",
+      view: classes.length > 0 ? "editor" : "landing",
+    });
+    persistClassesToStorage(classes, 0);
+  },
+
   setActiveClass: (index) => {
     set({ activeClassIndex: index });
     // Sync the newly-active class to the backend (debounced).
     scheduleBackendSync(get().classes, index);
+  },
+
+  deleteClass: async (index) => {
+    const state = get();
+    const { classes, activeClassIndex } = state;
+    if (index < 0 || index >= classes.length) return;
+
+    const removed = classes[index];
+    // Best-effort backend deletion: look up the matching session by className
+    // + academicYear (the same idempotency key used at save time).
+    if (getToken()) {
+      try {
+        const sessions = await getSessions();
+        const match = sessions.find(
+          (s) =>
+            s.className === (removed.className || removed.sheetName) &&
+            (s.academicYear ?? null) === (removed.academicYear ?? null),
+        );
+        if (match) {
+          await deleteSession(match.id);
+        }
+      } catch (e) {
+        console.warn("[saisiemaster] deleteClass backend sync failed:", e);
+      }
+    }
+
+    const newClasses = classes.filter((_, i) => i !== index);
+    let newIndex = activeClassIndex;
+    if (index < activeClassIndex) newIndex = activeClassIndex - 1;
+    if (newIndex >= newClasses.length) newIndex = Math.max(0, newClasses.length - 1);
+
+    set({
+      classes: newClasses,
+      activeClassIndex: newIndex,
+      editorView: newClasses.length === 0 ? "classes" : state.editorView,
+      view: newClasses.length === 0 ? "landing" : state.view,
+    });
+    persistClassesToStorage(newClasses, newIndex);
+  },
+
+  updateProspect: (prospect) => {
+    set({ prospect });
+    persistAuth(prospect, get().token ?? "");
   },
 
   setImportError: (error) => set({ importError: error }),
@@ -165,20 +258,7 @@ export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
     set({ classes: newClasses });
 
     // Auto-save en localStorage
-    if (typeof window !== "undefined") {
-      try {
-        window.localStorage.setItem(
-          STORAGE_KEY,
-          JSON.stringify({
-            classes: newClasses,
-            activeClassIndex,
-            savedAt: new Date().toISOString(),
-          }),
-        );
-      } catch (e) {
-        console.warn("Auto-save échoué:", e);
-      }
-    }
+    persistClassesToStorage(newClasses, activeClassIndex);
 
     // Sync vers le backend (debounced) — si authentifié.
     scheduleBackendSync(newClasses, activeClassIndex);
@@ -187,6 +267,7 @@ export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
   clearAll: () => {
     set({
       view: "landing",
+      editorView: "notes",
       classes: [],
       activeClassIndex: 0,
       importError: null,
@@ -213,7 +294,12 @@ export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
   },
 
   logout: () => {
-    set({ prospect: null, token: null, view: "landing" });
+    set({
+      prospect: null,
+      token: null,
+      view: "landing",
+      editorView: "notes",
+    });
     clearPersistedAuth();
     if (backendSyncTimer) {
       clearTimeout(backendSyncTimer);

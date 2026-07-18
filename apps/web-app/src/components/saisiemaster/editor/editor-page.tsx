@@ -5,7 +5,12 @@ import { EditorHeader } from "./editor-header";
 import { EditorSidebar, type EditorNavId } from "./editor-sidebar";
 import { StatsPanel } from "./stats-panel";
 import { NotesTable } from "./notes-table";
+import { NotesTableEleve } from "./notes-table-eleve";
 import { ExportDialog } from "./export-dialog";
+import { ClassesView } from "./classes-view";
+import { FilesView } from "./files-view";
+import { HistoryView } from "./history-view";
+import { SettingsView } from "./settings-view";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -23,8 +28,11 @@ import {
   CheckCircle2,
   RotateCcw,
   Info,
+  Columns3,
+  UserSquare2,
 } from "lucide-react";
 import { useSaisieMasterStore } from "@/lib/saisiemaster/store";
+import { cn } from "@/lib/saisiemaster/utils";
 import { toast } from "sonner";
 
 interface EditorPageProps {
@@ -38,23 +46,32 @@ interface EditorPageProps {
  *  ┌───────────────────────────────────────────────────────────────┐
  *  │  Header (logo + titre + infos user)                          │
  *  ├──────────┬────────────────────────────────────────────────────┤
- *  │          │  Stats panel (desktop) / déplacé SOUS la table      │
- *  │ Sidebar  │  sur mobile (order-2)                              │
+ *  │          │  Vue active (notes / classes / files / history /   │
+ *  │ Sidebar  │  settings) — voir `editorView` dans le store.      │
  *  │  (nav)   │                                                    │
- *  │          │  Heading "Saisie des notes" + astuce               │
- *  │          │  NotesTable (scrollable horizontalement sur mobile)│
+ *  │          │                                                    │
  *  ├──────────┴────────────────────────────────────────────────────┤
  *  │  Action bar : Save + Export + zone message succès            │
  *  └───────────────────────────────────────────────────────────────┘
+ *
+ * Notes view : un toggle en haut permet de basculer entre
+ *   - "Par matière" (défaut) : élèves en lignes, matières en colonnes
+ *   - "Par élève" : on choisit un élève, ses matières deviennent les lignes
  */
 export function EditorPage({ onHome }: EditorPageProps) {
   const [exportOpen, setExportOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
-  const [activeNav, setActiveNav] = useState<EditorNavId>("notes");
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
+    "idle",
+  );
+  const [saisieMode, setSaisieMode] = useState<"matiere" | "eleve">("matiere");
+  const [selectedStudentId, setSelectedStudentId] = useState<string>("");
 
   const clearAll = useSaisieMasterStore((s) => s.clearAll);
   const isExporting = useSaisieMasterStore((s) => s.isExporting);
+  const editorView = useSaisieMasterStore((s) => s.editorView);
+  const setEditorView = useSaisieMasterStore((s) => s.setEditorView);
+  const classes = useSaisieMasterStore((s) => s.classes);
 
   const handleReset = () => {
     clearAll();
@@ -101,41 +118,72 @@ export function EditorPage({ onHome }: EditorPageProps) {
       <EditorHeader onHome={onHome} />
 
       <div className="flex flex-1 min-h-0">
-        <EditorSidebar active={activeNav} onSelect={setActiveNav} />
+        <EditorSidebar
+          active={editorView}
+          onSelect={(id) => setEditorView(id)}
+        />
 
         {/* Zone principale (scrollable) */}
         <main className="flex-1 min-w-0 flex flex-col">
           <div className="flex-1 px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-            {/* Stats panel — desktop en haut, mobile sous la table (cf. order) */}
-            <div className="order-2 lg:order-1">
-              <StatsPanel />
-            </div>
+            {editorView === "notes" ? (
+              <>
+                {/* Stats panel — desktop en haut, mobile sous la table */}
+                <div className="order-2 lg:order-1">
+                  <StatsPanel />
+                </div>
 
-            <div className="order-1 lg:order-2 space-y-2">
-              <div className="flex items-baseline justify-between gap-3 flex-wrap">
-                <h2 className="text-lg font-semibold text-foreground">
-                  Saisie des notes
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Astuce :{" "}
-                  <kbd className="px-1.5 py-0.5 rounded border border-border bg-muted text-[10px] font-mono">
-                    Entrée
-                  </kbd>{" "}
-                  pour passer à la cellule suivante
-                </p>
-              </div>
-              <NotesTable />
-            </div>
+                <div className="order-1 lg:order-2 space-y-2">
+                  <div className="flex items-baseline justify-between gap-3 flex-wrap">
+                    <h2 className="text-lg font-semibold text-foreground">
+                      Saisie des notes
+                    </h2>
+                    <p className="text-xs text-muted-foreground hidden sm:block">
+                      Astuce :{" "}
+                      <kbd className="px-1.5 py-0.5 rounded border border-border bg-muted text-[10px] font-mono">
+                        Entrée
+                      </kbd>{" "}
+                      pour passer à la cellule suivante
+                    </p>
+                  </div>
+
+                  {/* Toggle "Par matière" / "Par élève" */}
+                  <SaisieModeToggle
+                    mode={saisieMode}
+                    onChange={setSaisieMode}
+                  />
+
+                  {saisieMode === "matiere" ? (
+                    <NotesTable />
+                  ) : (
+                    <NotesTableEleve
+                      studentId={selectedStudentId}
+                      onStudentChange={setSelectedStudentId}
+                    />
+                  )}
+                </div>
+              </>
+            ) : editorView === "classes" ? (
+              <ClassesView />
+            ) : editorView === "files" ? (
+              <FilesView />
+            ) : editorView === "history" ? (
+              <HistoryView />
+            ) : editorView === "settings" ? (
+              <SettingsView />
+            ) : null}
           </div>
 
-          {/* Barre d'action basse (sticky) */}
-          <ActionBar
-            onSave={handleSave}
-            saveStatus={saveStatus}
-            onExport={() => setExportOpen(true)}
-            onReset={() => setResetOpen(true)}
-            isExporting={isExporting}
-          />
+          {/* Barre d'action basse (sticky) — visible uniquement sur la vue "notes" */}
+          {editorView === "notes" && classes.length > 0 && (
+            <ActionBar
+              onSave={handleSave}
+              saveStatus={saveStatus}
+              onExport={() => setExportOpen(true)}
+              onReset={() => setResetOpen(true)}
+              isExporting={isExporting}
+            />
+          )}
         </main>
       </div>
 
@@ -163,6 +211,69 @@ export function EditorPage({ onHome }: EditorPageProps) {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+// ============================================================================
+// Toggle "Par matière" / "Par élève"
+// ============================================================================
+
+function SaisieModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: "matiere" | "eleve";
+  onChange: (mode: "matiere" | "eleve") => void;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Mode de saisie"
+      className="inline-flex items-center gap-1 p-1 rounded-lg bg-muted/60 border border-border/60 w-full sm:w-auto"
+    >
+      <ToggleButton
+        active={mode === "matiere"}
+        onClick={() => onChange("matiere")}
+        icon={Columns3}
+        label="Par matière"
+      />
+      <ToggleButton
+        active={mode === "eleve"}
+        onClick={() => onChange("eleve")}
+        icon={UserSquare2}
+        label="Par élève"
+      />
+    </div>
+  );
+}
+
+function ToggleButton({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: typeof Columns3;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        "flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors",
+        active
+          ? "bg-white dark:bg-zinc-950 text-[#0D6EFD] shadow-sm border border-[#0D6EFD]/30"
+          : "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5",
+      )}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </button>
   );
 }
 

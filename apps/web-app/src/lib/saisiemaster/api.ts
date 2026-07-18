@@ -65,6 +65,14 @@ export interface ProspectSession {
   updatedAt: string;
 }
 
+export interface UpdateProfilePayload {
+  firstName?: string;
+  lastName?: string;
+  schoolName?: string;
+  phoneNumber?: string | null;
+  city?: string | null;
+}
+
 export interface SignupPayload {
   email: string;
   firstName: string;
@@ -224,6 +232,21 @@ export async function getProfile(): Promise<ProspectProfile> {
   return apiFetch<ProspectProfile>("/api/saisiemaster/profile", {
     method: "GET",
     headers: authHeaders(),
+  });
+}
+
+/**
+ * Update the prospect's profile (firstName, lastName, schoolName,
+ * phoneNumber, city). Email cannot be changed.
+ * Returns the updated Prospect (without sessions).
+ */
+export async function updateProfile(
+  payload: UpdateProfilePayload,
+): Promise<Prospect> {
+  return apiFetch<Prospect>("/api/saisiemaster/profile", {
+    method: "PUT",
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
   });
 }
 

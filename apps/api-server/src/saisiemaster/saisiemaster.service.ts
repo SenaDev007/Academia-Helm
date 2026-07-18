@@ -30,6 +30,14 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../database/prisma.service';
 
+export interface UpdateProfileDto {
+  firstName?: string;
+  lastName?: string;
+  schoolName?: string;
+  phoneNumber?: string | null;
+  city?: string | null;
+}
+
 export interface SignupDto {
   email: string;
   firstName: string;
@@ -230,6 +238,54 @@ export class SaisieMasterService {
         updatedAt: s.updatedAt,
       })),
     };
+  }
+
+  /**
+   * Update the current prospect's profile (firstName, lastName, schoolName,
+   * phoneNumber, city). Email cannot be changed (it's the login key).
+   * Returns the updated prospect (without sessions).
+   */
+  async updateProfile(prospectId: string, data: UpdateProfileDto) {
+    const prospect = await this.prisma.saisieMasterProspect.findUnique({
+      where: { id: prospectId },
+      select: { id: true },
+    });
+    if (!prospect) {
+      throw new NotFoundException('Prospect not found');
+    }
+
+    const update: Record<string, string | null> = {};
+    if (typeof data.firstName === 'string' && data.firstName.trim()) {
+      update.firstName = data.firstName.trim();
+    }
+    if (typeof data.lastName === 'string' && data.lastName.trim()) {
+      update.lastName = data.lastName.trim();
+    }
+    if (typeof data.schoolName === 'string' && data.schoolName.trim()) {
+      update.schoolName = data.schoolName.trim();
+    }
+    if (data.phoneNumber !== undefined) {
+      update.phoneNumber = data.phoneNumber?.trim() || null;
+    }
+    if (data.city !== undefined) {
+      update.city = data.city?.trim() || null;
+    }
+
+    if (Object.keys(update).length === 0) {
+      throw new BadRequestException(
+        'No updatable fields provided (firstName, lastName, schoolName, phoneNumber, city)',
+      );
+    }
+
+    const updated = await this.prisma.saisieMasterProspect.update({
+      where: { id: prospectId },
+      data: update,
+    });
+
+    this.logger.log(
+      `Profile updated — prospect ${prospectId} (${updated.email})`,
+    );
+    return toPublic(updated);
   }
 
   /**

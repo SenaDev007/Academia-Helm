@@ -18,6 +18,7 @@ import {
   Controller,
   Post,
   Get,
+  Put,
   Delete,
   Body,
   Param,
@@ -29,7 +30,11 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Public } from '../auth/decorators/public.decorator';
-import { SaisieMasterService, type ActivityType } from './saisiemaster.service';
+import {
+  SaisieMasterService,
+  type ActivityType,
+  type UpdateProfileDto,
+} from './saisiemaster.service';
 
 @Controller('saisiemaster')
 @Public()
@@ -75,6 +80,15 @@ export class SaisieMasterController {
   async getProfile(@Headers('authorization') authHeader?: string) {
     const prospectId = await this.extractProspectId(authHeader);
     return this.service.getProfile(prospectId);
+  }
+
+  @Put('profile')
+  async updateProfile(
+    @Headers('authorization') authHeader: string | undefined,
+    @Body() body: UpdateProfileDto,
+  ) {
+    const prospectId = await this.extractProspectId(authHeader);
+    return this.service.updateProfile(prospectId, body);
   }
 
   // --------------------------------------------------------------------------

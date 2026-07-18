@@ -12,7 +12,6 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/saisiemaster/utils";
-import { toast } from "sonner";
 
 /**
  * Sidebar de l'éditeur SaisieMaster.
@@ -55,15 +54,7 @@ export function EditorSidebar({ active, onSelect }: EditorSidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const handleSelect = (id: EditorNavId) => {
-    if (id === "notes") {
-      onSelect(id);
-    } else {
-      // Les autres items sont des espaces réservés — Saisie des notes est
-      // la seule fonctionnalité active pour l'instant.
-      toast.info("Cette section sera bientôt disponible.", {
-        description: "SaisieMaster se concentre pour l'instant sur la saisie des notes.",
-      });
-    }
+    onSelect(id);
     setMobileOpen(false);
   };
 

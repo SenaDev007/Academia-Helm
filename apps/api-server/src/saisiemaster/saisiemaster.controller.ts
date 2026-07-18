@@ -35,13 +35,17 @@ import {
   type ActivityType,
   type UpdateProfileDto,
 } from './saisiemaster.service';
+import { SaisieMasterFollowupService } from './saisiemaster-followup.service';
 
 @Controller('saisiemaster')
 @Public()
 export class SaisieMasterController {
   private readonly logger = new Logger(SaisieMasterController.name);
 
-  constructor(private readonly service: SaisieMasterService) {}
+  constructor(
+    private readonly service: SaisieMasterService,
+    private readonly followupService: SaisieMasterFollowupService,
+  ) {}
 
   // --------------------------------------------------------------------------
   // Auth
@@ -169,5 +173,18 @@ export class SaisieMasterController {
     const token = match[1].trim();
     const payload = await this.service.verifyToken(token);
     return payload.prospectId;
+  }
+
+  // --------------------------------------------------------------------------
+  // ⭐ Follow-up emails — manual trigger (for testing or admin use)
+  // --------------------------------------------------------------------------
+
+  @Post('followups/run')
+  async triggerFollowups() {
+    this.logger.log(' Manual follow-up trigger');
+    await this.followupService.sendFirstFollowup();
+    await this.followupService.sendSecondFollowup();
+    await this.followupService.sendThirdFollowup();
+    return { message: 'Follow-ups processed' };
   }
 }

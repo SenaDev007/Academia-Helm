@@ -33,24 +33,26 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { SaisieMasterController } from './saisiemaster.controller';
 import { SaisieMasterService } from './saisiemaster.service';
+import { SaisieMasterFollowupService } from './saisiemaster-followup.service';
+import { CommunicationModule } from '../communication/communication.module';
 
 @Module({
   imports: [
-    // SaisieMaster uses its OWN JWT signing (separate from Academia Helm auth).
-    // The token is frictionless (no password) and contains { prospectId, email }.
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
         secret:
           configService.get<string>('JWT_SECRET') ||
           'saisiemaster-default-secret',
-        signOptions: { expiresIn: '365d' }, // Long-lived: free tool, frictionless
+        signOptions: { expiresIn: '365d' },
       }),
       inject: [ConfigService],
     }),
+    // ⭐ Import CommunicationModule to access EmailService for follow-up emails
+    CommunicationModule,
   ],
   controllers: [SaisieMasterController],
-  providers: [SaisieMasterService],
-  exports: [SaisieMasterService],
+  providers: [SaisieMasterService, SaisieMasterFollowupService],
+  exports: [SaisieMasterService, SaisieMasterFollowupService],
 })
 export class SaisieMasterModule {}

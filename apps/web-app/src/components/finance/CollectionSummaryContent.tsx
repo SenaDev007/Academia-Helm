@@ -7,12 +7,13 @@ import {
 import { Button } from '@/components/ui/button';
 import {
   Download, FileText, Loader2, Filter,
-  ChevronLeft, ChevronRight, MoreHorizontal,
+  ChevronLeft, ChevronRight, MoreHorizontal, Upload,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { getAcademicYears } from '@/services/settings.service';
 import { formatCurrency, cn } from '@/lib/utils';
+import ImportBilanModal from './ImportBilanModal';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -91,6 +92,9 @@ export default function CollectionSummaryContent() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalStudents, setTotalStudents] = useState(0);
+
+  // Modal d'import en masse du bilan des encaissements
+  const [modalImport, setModalImport] = useState(false);
 
   // ─── Load school levels + classes + academic year ──────────────────────────
   useEffect(() => {
@@ -207,6 +211,9 @@ export default function CollectionSummaryContent() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setModalImport(true)} disabled={!academicYearId}>
+            <Upload className="w-4 h-4 mr-2" /> Importer
+          </Button>
           <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={loading}>
             <Download className="w-4 h-4 mr-2" /> Excel
           </Button>
@@ -364,6 +371,14 @@ export default function CollectionSummaryContent() {
           installments={installments}
         />
       )}
+
+      {/* Modal d'import en masse du bilan des encaissements */}
+      <ImportBilanModal
+        open={modalImport}
+        onClose={() => setModalImport(false)}
+        academicYearId={academicYearId}
+        onSuccess={() => loadData()}
+      />
     </ModuleContentArea>
   );
 }

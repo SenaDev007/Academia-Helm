@@ -10,10 +10,14 @@ import {
   Body,
   Param,
   Query,
+  Res,
   UseGuards,
   Logger,
+  BadRequestException,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { FeeStructureService } from './fee-structure.service';
+import { FeeOverrideImportService } from './fee-override-import.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -23,7 +27,10 @@ import { CreateFeeStructureDto, UpdateFeeStructureDto } from './dto';
 @UseGuards(JwtAuthGuard)
 export class FeeStructureController {
   private readonly logger = new Logger(FeeStructureController.name);
-  constructor(private readonly service: FeeStructureService) {}
+  constructor(
+    private readonly service: FeeStructureService,
+    private readonly overrideImportService: FeeOverrideImportService,
+  ) {}
 
   @Post()
   async create(
@@ -180,6 +187,70 @@ export class FeeStructureController {
   ) {
     this.logger.log(`Bulk delete fee overrides: ${body.ids?.length || 0} IDs`);
     return this.service.deleteManyOverrides(body.ids || [], tenantId);
+  }
+
+  // ─── Import en masse de personnalisations (FeeOverride) ─────────────────────
+  // Workflow : download template → upload → preview → run
+  // Détails : apps/api-server/src/finance/fee-override-import.service.ts
+
+  /**
+   * GET /finance/fee-structures/overrides/import/template
+   * Télécharge le template Excel pour l'import de personnalisations.
+   * Une feuille "Personnalisations" avec en-tête + 2 lignes d'exemple.
+   */
+  @Get('overrides/import/template')
+  async downloadOverrideTemplate(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Res() res: Response,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est requis (query param)');
+    }
+    this.logger.log(`Download override import template: tenant=${tenantId}, year=${academicYearId}`);
+    await this.overrideImportService.downloadTemplate(tenantId, academicYearId, res);
+  }
+
+  /**
+   * POST /finance/fee-structures/overrides/import/preview
+   * Valide le fichier Excel sans créer d'overrides.
+   * Body : { academicYearId, fileDataUrl }
+   * Retourne : { totalRows, validRows, invalidRows, rows[], summary }
+   */
+  @Post('overrides/import/preview')
+  async previewOverrideImport(
+    @TenantId() tenantId: string,
+    @Body() body: { academicYearId: string; fileDataUrl: string },
+  ) {
+    if (!body.fileDataUrl) {
+      throw new BadRequestException('fileDataUrl est requis (base64 data URL du fichier Excel)');
+    }
+    if (!body.academicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
+    return this.overrideImportService.previewImport(tenantId, body.academicYearId, body.fileDataUrl);
+  }
+
+  /**
+   * POST /finance/fee-structures/overrides/import/run
+   * Importe réellement les overrides (crée ou met à jour).
+   * Body : { academicYearId, fileDataUrl }
+   * Retourne : { total, created, updated, errors, results[] }
+   */
+  @Post('overrides/import/run')
+  async runOverrideImport(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: { academicYearId: string; fileDataUrl: string },
+  ) {
+    if (!body.fileDataUrl) {
+      throw new BadRequestException('fileDataUrl est requis (base64 data URL du fichier Excel)');
+    }
+    if (!body.academicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
+    this.logger.log(`Run override import: tenant=${tenantId}, user=${user?.id}, rows=...`);
+    return this.overrideImportService.runImport(tenantId, body.academicYearId, body.fileDataUrl, user?.id);
   }
 
   @Patch('overrides/:id')

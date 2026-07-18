@@ -35,15 +35,33 @@
  * ============================================================================
  */
 
-import { Controller, Get, Query, Logger } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Query,
+  Res,
+  UseGuards,
+  Logger,
+  BadRequestException,
+} from '@nestjs/common';
+import { Response } from 'express';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PrismaService } from '../database/prisma.service';
+import { CollectionSummaryImportService } from './collection-summary-import.service';
 
 @Controller('finance')
+@UseGuards(JwtAuthGuard)
 export class CollectionSummaryController {
   private readonly logger = new Logger(CollectionSummaryController.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly importService: CollectionSummaryImportService,
+  ) {}
 
   @Get('collection-summary')
   async getCollectionSummary(
@@ -523,6 +541,69 @@ export class CollectionSummaryController {
     }
 
     return { students, recap, installments };
+  }
+
+  // ─── Import en masse du bilan des encaissements ─────────────────────────────
+  // Workflow : download template → upload → preview → run
+  // Détails : apps/api-server/src/finance/collection-summary-import.service.ts
+
+  /**
+   * GET /finance/collection-summary/import/template
+   * Télécharge le template Excel : une feuille par classe, pré-remplie avec les élèves.
+   */
+  @Get('collection-summary/import/template')
+  async downloadImportTemplate(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Res() res: Response,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est requis (query param)');
+    }
+    this.logger.log(`Download bilan import template: tenant=${tenantId}, year=${academicYearId}`);
+    await this.importService.downloadTemplate(tenantId, academicYearId, res);
+  }
+
+  /**
+   * POST /finance/collection-summary/import/preview
+   * Valide le fichier Excel sans créer de transactions.
+   * Body : { academicYearId, fileDataUrl }
+   * Retourne : { totalRows, validRows, invalidRows, rows[], sheetsProcessed[], summary }
+   */
+  @Post('collection-summary/import/preview')
+  async previewImport(
+    @TenantId() tenantId: string,
+    @Body() body: { academicYearId: string; fileDataUrl: string },
+  ) {
+    if (!body.fileDataUrl) {
+      throw new BadRequestException('fileDataUrl est requis (base64 data URL du fichier Excel)');
+    }
+    if (!body.academicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
+    return this.importService.previewImport(tenantId, body.academicYearId, body.fileDataUrl);
+  }
+
+  /**
+   * POST /finance/collection-summary/import/run
+   * Importe réellement le bilan : crée une FinanceTransaction par élève valide.
+   * Body : { academicYearId, fileDataUrl }
+   * Retourne : { total, imported, skipped, errors, results[] }
+   */
+  @Post('collection-summary/import/run')
+  async runImport(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: { academicYearId: string; fileDataUrl: string },
+  ) {
+    if (!body.fileDataUrl) {
+      throw new BadRequestException('fileDataUrl est requis (base64 data URL du fichier Excel)');
+    }
+    if (!body.academicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
+    this.logger.log(`Run bilan import: tenant=${tenantId}, user=${user?.id}`);
+    return this.importService.runImport(tenantId, body.academicYearId, body.fileDataUrl, user?.id);
   }
 }
 

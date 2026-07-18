@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, Search, User, Pencil, ChevronLeft, ChevronRight, MoreHorizontal, CheckSquare, Square } from 'lucide-react';
+import { Plus, Trash2, Search, User, Pencil, ChevronLeft, ChevronRight, MoreHorizontal, CheckSquare, Square, Upload } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import { financeService } from '@/services/finance.service';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { formatCurrency, cn } from '@/lib/utils';
 import FeeOverrideModal from './FeeOverrideModal';
+import ImportOverridesModal from './ImportOverridesModal';
 
 const FEE_TYPES = [
   { value: 'INSCRIPTION', label: 'Inscription' },
@@ -73,6 +74,7 @@ export default function FeeOverridesContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [modalOverride, setModalOverride] = useState(false);
   const [editingOverride, setEditingOverride] = useState<any | null>(null);
+  const [modalImport, setModalImport] = useState(false);
 
   // ⭐ Bulk delete — sélection multiple d'overrides (pattern FeeStructuresContent Task 24)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -307,6 +309,9 @@ export default function FeeOverridesContent() {
         layout="custom"
         toolbar={
           <div className="flex items-center justify-end flex-wrap gap-3">
+            <Button variant="outline" onClick={() => setModalImport(true)}>
+              <Upload className="w-4 h-4 mr-2" />Importer
+            </Button>
             <Button onClick={() => setModalOverride(true)}>
               <Plus className="w-4 h-4 mr-2" />Nouvelle personnalisation
             </Button>
@@ -616,6 +621,13 @@ export default function FeeOverridesContent() {
           onClose={() => { setEditingOverride(null); loadOverrides(); }}
         />
       )}
+
+      {/* Modal d'import en masse — bourses, réductions, cas sociaux */}
+      <ImportOverridesModal
+        open={modalImport}
+        onClose={() => setModalImport(false)}
+        onSuccess={() => loadOverrides()}
+      />
     </>
   );
 }

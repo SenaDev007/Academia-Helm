@@ -83,6 +83,8 @@ import { ComptaExportController } from './compta-export.controller';
 import { ComptaAutoExportService } from './compta-auto-export.service';
 import { ArrearsImportService } from './arrears-import.service';
 import { ArrearsImportController } from './arrears-import.controller';
+import { FeeOverrideImportService } from './fee-override-import.service';
+import { CollectionSummaryImportService } from './collection-summary-import.service';
 import { CollectionSummaryController } from './collection-summary.controller';
 import { MultiActionPaymentService } from './multi-action-payment.service';
 import { MultiActionPaymentController } from './multi-action-payment.controller';
@@ -176,6 +178,10 @@ import { CommunicationModule } from '../communication/communication.module';
     ComptaAutoExportService,
     // Import d'arriérés via Excel
     ArrearsImportService,
+    // Import en masse de personnalisations de frais (FeeOverride)
+    FeeOverrideImportService,
+    // Import en masse du bilan des encaissements (FinanceTransaction)
+    CollectionSummaryImportService,
     // Multi-action : frais + articles boutique en un seul encaissement
     MultiActionPaymentService,
   ],

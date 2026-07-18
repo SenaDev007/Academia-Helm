@@ -135,15 +135,15 @@ function getLandingPageUrlFromApp(): string {
 
 /**
  * Renvoie l'URL absolue de l'app satellite SaisieMaster
- * (saiemaster.academiahelm.com) — saisie de notes au format EducMaster.
+ * (saisiemaster.academiahelm.com) — saisie de notes au format EducMaster.
  *
- * - En production : sous-domaine `saiemaster` du domaine parent courant.
+ * - En production : sous-domaine `saisiemaster` du domaine parent courant.
  * - En développement local : localhost:3000/saisiemaster (route interne directe,
  *   puisqu'on n'a pas de résolution DNS pour les sous-domaines en local).
  */
 function getSaisieMasterUrl(): string {
   if (typeof window === 'undefined') {
-    return 'https://saiemaster.academiahelm.com';
+    return 'https://saisiemaster.academiahelm.com';
   }
   const host = window.location.hostname || '';
   if (host === 'localhost' || host === '127.0.0.1') {
@@ -153,9 +153,9 @@ function getSaisieMasterUrl(): string {
   const parts = host.split('.');
   if (parts.length >= 2) {
     const parentDomain = parts.slice(-2).join('.');
-    return `${window.location.protocol}//saiemaster.${parentDomain}`;
+    return `${window.location.protocol}//saisiemaster.${parentDomain}`;
   }
-  return `${window.location.protocol}//saiemaster.${host}`;
+  return `${window.location.protocol}//saisiemaster.${host}`;
 }
 
 /**
@@ -813,7 +813,7 @@ export default function PilotageSidebar({
             </a>
           )}
           {/* SaisieMaster — app satellite de saisie de notes au format
-              EducMaster (Benin). Ouvre saiemaster.academiahelm.com dans un
+              EducMaster (Benin). Ouvre saisiemaster.academiahelm.com dans un
               nouvel onglet. Visible pour tous les utilisateurs connectes
               (sauf sur le sous-domaine admin, reserve au back-office). */}
           {!isAdminSubdomain && (

@@ -1,11 +1,8 @@
 "use client";
 
 import { Logo } from "@/components/saisiemaster/brand/logo";
-import { Heart } from "lucide-react";
 
 export function Footer() {
-  const year = new Date().getFullYear();
-
   return (
     <footer className="mt-auto border-t border-border/60 bg-card">
       <div className="h-1 w-full saisiemaster-tricolor" aria-hidden />
@@ -51,9 +48,13 @@ export function Footer() {
         </div>
 
         <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-border/60 pt-6 text-xs text-muted-foreground">
-          <p>
-            © {year} SaisieMaster — Conçu avec{" "}
-            <Heart className="inline h-3 w-3 text-[#e31b23] fill-[#e31b23]" /> au Bénin
+          <p className="flex items-center">
+            Copyright 2026 SaisieMaster — YEHI OR Tech
+            <img
+              src="/images/logo YEHI OR Tech 4.png"
+              alt="YEHI OR Tech"
+              className="h-6 inline-block ml-2"
+            />
           </p>
           <p className="text-[11px]">
             Non affilié à EducMaster — Outil indépendant de saisie

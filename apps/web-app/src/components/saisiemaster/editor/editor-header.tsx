@@ -12,28 +12,33 @@ import {
 } from "@/components/ui/select";
 import {
   Home,
-  Download,
-  RotateCcw,
   School,
-  Calendar,
-  Users,
   LogOut,
+  CircleDot,
+  ChevronRight,
 } from "lucide-react";
 import { useSaisieMasterStore } from "@/lib/saisiemaster/store";
-import { SessionsList } from "./sessions-list";
 import type { ClassData } from "@/lib/saisiemaster/types";
 
 interface EditorHeaderProps {
-  onExport: () => void;
-  onReset: () => void;
   onHome: () => void;
 }
 
-export function EditorHeader({ onExport, onReset, onHome }: EditorHeaderProps) {
-  const { classes, activeClassIndex, setActiveClass, isExporting } =
-    useSaisieMasterStore();
+/**
+ * En-tête de l'éditeur SaisieMaster — version redesign "screenshot".
+ *
+ * Layout :
+ *  - Gauche : logo SaisieMaster + titre de page ("Saisie des notes – Classe : CI")
+ *  - Droite : infos utilisateur (nom école, "Directeur", badge "En ligne")
+ *
+ * Le sélecteur multi-classes (si plusieurs feuilles ont été importées) est
+ * intégré au titre de page sous forme de dropdown discret.
+ */
+export function EditorHeader({ onHome }: EditorHeaderProps) {
+  const { classes, activeClassIndex, setActiveClass } = useSaisieMasterStore();
   const logout = useSaisieMasterStore((s) => s.logout);
   const setView = useSaisieMasterStore((s) => s.setView);
+  const prospect = useSaisieMasterStore((s) => s.prospect);
 
   const activeClass: ClassData | undefined = classes[activeClassIndex];
 
@@ -44,110 +49,108 @@ export function EditorHeader({ onExport, onReset, onHome }: EditorHeaderProps) {
     setView("landing");
   };
 
-  const handleResumeSession = (newClasses: ClassData[]) => {
-    // Replace current classes with the resumed session.
-    useSaisieMasterStore.setState({
-      classes: newClasses,
-      activeClassIndex: 0,
-    });
-    // Persist to localStorage so it survives reloads.
-    if (typeof window !== "undefined") {
-      try {
-        window.localStorage.setItem(
-          "saisiemaster:autosave",
-          JSON.stringify({
-            classes: newClasses,
-            activeClassIndex: 0,
-            savedAt: new Date().toISOString(),
-          }),
-        );
-      } catch (e) {
-        console.warn("Persist resumed session failed:", e);
-      }
-    }
-  };
+  // Nom du directeur = prénom + nom du prospect (s'il est connecté).
+  const directorName =
+    prospect && prospect.firstName
+      ? `${prospect.firstName} ${prospect.lastName}`.trim()
+      : "Directeur";
+
+  // Nom de l'école = depuis le prospect si présent, sinon depuis les
+  // métadonnées du fichier importé.
+  const schoolName = prospect?.schoolName || activeClass.schoolName || "École";
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-border/60 bg-background/90 backdrop-blur-md">
+    <header className="sticky top-0 z-30 w-full border-b border-border/60 bg-white dark:bg-zinc-950">
       <div className="h-0.5 w-full saisiemaster-tricolor" aria-hidden />
-      <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8">
+      <div className="px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between gap-4">
-          {/* Gauche — Logo + retour */}
-          <div className="flex items-center gap-3">
+          {/* Gauche — Logo + retour + titre */}
+          <div className="flex items-center gap-3 min-w-0">
             <Button
               variant="ghost"
               size="icon"
               onClick={onHome}
               aria-label="Retour à l'accueil"
-              className="h-9 w-9"
+              className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
             >
               <Home className="h-4 w-4" />
             </Button>
-            <Logo size="sm" showText={false} />
-            <div className="hidden sm:flex items-center gap-2 text-sm">
-              <span className="font-semibold text-foreground">SaisieMaster</span>
-              <span className="text-muted-foreground">/</span>
-              <span className="text-muted-foreground">Éditeur</span>
+            <Logo className="h-8 w-auto shrink-0" />
+
+            <div className="hidden sm:flex items-center gap-2 min-w-0">
+              <span className="text-muted-foreground/60">/</span>
+              <span className="font-semibold text-foreground text-sm whitespace-nowrap">
+                Saisie des notes
+              </span>
+              <ChevronRight className="h-4 w-4 text-muted-foreground/60" />
+              {classes.length > 1 ? (
+                <Select
+                  value={String(activeClassIndex)}
+                  onValueChange={(v) => setActiveClass(Number(v))}
+                >
+                  <SelectTrigger className="h-9 w-[160px] sm:w-[200px]">
+                    <SelectValue placeholder="Choisir une classe" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {classes.map((cls, idx) => (
+                      <SelectItem key={cls.sheetName} value={String(idx)}>
+                        <span className="font-medium">{cls.className}</span>
+                        <span className="text-muted-foreground ml-2">
+                          ({cls.students.length} él.)
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 text-sm whitespace-nowrap">
+                  <span className="text-muted-foreground">Classe :</span>
+                  <span className="font-semibold text-[#0D6EFD]">
+                    {activeClass.className}
+                  </span>
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Centre — Infos classe + sélecteur multi-classes */}
-          <div className="flex items-center gap-2">
-            {classes.length > 1 ? (
-              <Select
-                value={String(activeClassIndex)}
-                onValueChange={(v) => setActiveClass(Number(v))}
+          {/* Droite — Infos utilisateur */}
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex flex-col items-end leading-tight min-w-0 max-w-[260px]">
+              <span
+                className="text-sm font-semibold text-foreground truncate max-w-full"
+                title={schoolName}
               >
-                <SelectTrigger className="h-9 w-[200px] sm:w-[260px]">
-                  <SelectValue placeholder="Choisir une classe" />
-                </SelectTrigger>
-                <SelectContent>
-                  {classes.map((cls, idx) => (
-                    <SelectItem key={cls.sheetName} value={String(idx)}>
-                      <span className="font-medium">{cls.className}</span>
-                      <span className="text-muted-foreground ml-2">
-                        ({cls.students.length} él.)
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Badge
-                variant="outline"
-                className="h-9 px-3 gap-1.5 border-[#008751]/30 bg-[#008751]/5 text-[#008751]"
-              >
-                <School className="h-3.5 w-3.5" />
-                <span className="font-semibold uppercase tracking-wide text-xs">
-                  Classe {activeClass.className}
-                </span>
-              </Badge>
-            )}
-          </div>
-
-          {/* Droite — Actions */}
-          <div className="flex items-center gap-2">
-            <SessionsList onResume={handleResumeSession} />
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onReset}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <RotateCcw className="h-4 w-4" />
-              <span className="hidden sm:inline">Réinitialiser</span>
-            </Button>
-            <Button
-              size="sm"
-              onClick={onExport}
-              disabled={isExporting}
-              className="bg-[#008751] hover:bg-[#008751]/90 shadow-sm"
-            >
-              <Download className="h-4 w-4" />
-              <span className="hidden sm:inline">
-                {isExporting ? "Export…" : "Exporter Excel"}
+                {schoolName}
               </span>
-            </Button>
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <School className="h-3 w-3" />
+                <span className="truncate max-w-[160px]" title={directorName}>
+                  {directorName}
+                </span>
+                <span className="text-border">·</span>
+                <span>Directeur</span>
+              </div>
+            </div>
+
+            <Badge
+              variant="outline"
+              className="hidden md:inline-flex items-center gap-1.5 border-[#008751]/30 bg-[#008751]/5 text-[#008751] px-2 py-1"
+              title="Statut de connexion"
+            >
+              <CircleDot className="h-3 w-3 animate-pulse" />
+              <span className="text-[11px] font-semibold">En ligne</span>
+            </Badge>
+
+            {/* Avatar compact (mobile) */}
+            {prospect && (
+              <div className="flex sm:hidden items-center">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#0D6EFD]/10 text-[#0D6EFD] text-xs font-semibold">
+                  {prospect.firstName.charAt(0).toUpperCase()}
+                  {prospect.lastName.charAt(0).toUpperCase()}
+                </span>
+              </div>
+            )}
+
             <Button
               variant="ghost"
               size="icon"
@@ -159,38 +162,6 @@ export function EditorHeader({ onExport, onReset, onHome }: EditorHeaderProps) {
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
-        </div>
-
-        {/* Bandeau métadonnées */}
-        <div className="flex flex-wrap items-center gap-3 pb-3 text-xs text-muted-foreground">
-          {activeClass.schoolName && (
-            <span className="inline-flex items-center gap-1.5">
-              <School className="h-3.5 w-3.5 text-[#008751]" />
-              <span className="font-medium text-foreground">
-                {activeClass.schoolName}
-              </span>
-            </span>
-          )}
-          {activeClass.academicYear && (
-            <>
-              <span className="text-border">·</span>
-              <span className="inline-flex items-center gap-1.5">
-                <Calendar className="h-3.5 w-3.5" />
-                {activeClass.academicYear}
-              </span>
-            </>
-          )}
-          <span className="text-border">·</span>
-          <span className="inline-flex items-center gap-1.5">
-            <Users className="h-3.5 w-3.5" />
-            {activeClass.students.length} élève
-            {activeClass.students.length > 1 ? "s" : ""}
-          </span>
-          <span className="text-border">·</span>
-          <span className="inline-flex items-center gap-1.5">
-            {activeClass.subjects.length} matière
-            {activeClass.subjects.length > 1 ? "s" : ""}
-          </span>
         </div>
       </div>
     </header>

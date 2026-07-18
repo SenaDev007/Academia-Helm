@@ -342,10 +342,10 @@ export async function middleware(request: NextRequest) {
     }
 
     // ── SaisieMaster satellite app ──
-    // saiemaster.academiahelm.com/* → /saisiemaster/*
+    // saisiemaster.academiahelm.com/* → /saisiemaster/*
     // Application autonome de saisie de notes au format EducMaster (Benin).
     // Layout dedie (/saisiemaster/layout.tsx) sans la navbar Academia Helm.
-    if (hostParts[0] === 'saiemaster') {
+    if (hostParts[0] === 'saisiemaster') {
       let saisiePath: string;
       if (pathname === '/') {
         saisiePath = '/saisiemaster';

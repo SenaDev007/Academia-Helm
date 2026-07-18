@@ -1,69 +1,31 @@
 /**
- * Logo SaisieMaster — combinaison d'une icône (livre + stylo stylisé)
- * et du nom de marque, avec touches tricolores du Bénin.
+ * Logo SaisieMaster — image officielle de la marque.
+ *
+ * Affiche le logo SaisieMaster (fichier PNG) avec une hauteur responsive.
+ * Si une `className` est fournie, elle est utilisée telle quelle (ex: "h-8").
+ * Sinon, on applique une hauteur par défaut cohérente avec l'ancien size="md".
+ *
+ * Les props `size` et `showText` sont conservées pour rétro-compatibilité
+ * mais n'ont plus d'effet visuel : le logo est désormais une image unique.
  */
 
 import { cn } from "@/lib/saisiemaster/utils";
 
 interface LogoProps {
+  /** Conservé pour rétro-compatibilité — n'a plus d'effet visuel. */
   size?: "sm" | "md" | "lg";
+  /** Conservé pour rétro-compatibilité — n'a plus d'effet visuel. */
   showText?: boolean;
+  /** Classe CSS optionnelle (ex: "h-8", "h-10 w-auto"). */
   className?: string;
 }
 
-export function Logo({ size = "md", showText = true, className }: LogoProps) {
-  const dims = {
-    sm: { box: "h-7 w-7", icon: 16, text: "text-base" },
-    md: { box: "h-9 w-9", icon: 20, text: "text-lg" },
-    lg: { box: "h-12 w-12", icon: 28, text: "text-2xl" },
-  }[size];
-
+export function Logo({ className }: LogoProps) {
   return (
-    <div className={cn("flex items-center gap-2.5", className)}>
-      <div
-        className={cn(
-          "relative grid place-items-center rounded-lg shadow-sm overflow-hidden",
-          dims.box,
-        )}
-        aria-hidden
-      >
-        {/* Fond vert Bénin */}
-        <div className="absolute inset-0 bg-[#008751]" />
-        {/* Bande tricolore verticale à gauche */}
-        <div className="absolute inset-y-0 left-0 w-1/4 saisiemaster-tricolor-vertical opacity-90" />
-        {/* Icône stylisée : livre ouvert */}
-        <svg
-          width={dims.icon}
-          height={dims.icon}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="white"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="relative z-10 drop-shadow-sm"
-        >
-          <path d="M3 4h6a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H3z" />
-          <path d="M21 4h-6a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h7z" />
-        </svg>
-      </div>
-      {showText && (
-        <div className="flex flex-col leading-none">
-          <span
-            className={cn(
-              "font-bold tracking-tight text-foreground",
-              dims.text,
-            )}
-          >
-            Saisie<span className="text-[#008751]">Master</span>
-          </span>
-          {size === "lg" && (
-            <span className="text-[11px] text-muted-foreground tracking-wide mt-0.5">
-              Notes EducMaster
-            </span>
-          )}
-        </div>
-      )}
-    </div>
+    <img
+      src="/images/Logo-SaisieMaster.png"
+      alt="SaisieMaster"
+      className={cn("h-8 w-auto", className)}
+    />
   );
 }

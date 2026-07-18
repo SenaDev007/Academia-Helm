@@ -6,6 +6,7 @@ import { Hero } from "./hero";
 import { UploadZone } from "./upload-zone";
 import { HowItWorks } from "./how-it-works";
 import { Features } from "./features";
+import { AcademiaHelmCta } from "./academia-helm-cta";
 import { Footer } from "./footer";
 import { ResumeBanner } from "./resume-banner";
 import {
@@ -63,6 +64,9 @@ export function LandingPage() {
 
         <HowItWorks />
         <Features />
+
+        {/* Section marketing Academia Helm — ~25% de la landing */}
+        <AcademiaHelmCta />
 
         {/* Section À propos / FAQ légère */}
         <section id="a-propos" className="py-16 sm:py-24 bg-card border-t border-border">

@@ -1,6 +1,5 @@
 "use client";
 
-import { Logo } from "@/components/saisiemaster/brand/logo";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -47,7 +46,7 @@ export function Navbar({ onStart }: NavbarProps) {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border/60 bg-background/85 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Logo size="md" />
+        <img src="/images/Logo-SaisieMaster.png" alt="SaisieMaster" className="h-8 w-auto" />
 
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">
           <a href="#fonctionnement" className="hover:text-foreground transition-colors">

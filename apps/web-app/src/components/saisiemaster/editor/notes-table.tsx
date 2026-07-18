@@ -9,13 +9,63 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { AlertTriangle, Minus } from "lucide-react";
 
 /**
+ * Couleur d'une note en fonction de sa valeur (règle "screenshot") :
+ *  - value >= 14  → vert   (#198754)  "bonne note"
+ *  - 10 <= value < 14 → orange (#FD7E14)  "note moyenne"
+ *  - value < 10   → rouge   (#DC3545)  "note faible"
+ *  - valeur vide  → neutre (transparent)
+ *
+ * Cette règle s'applique à la valeur brute saisie (obtenue ou perfectionnement).
+ * L'ancien système de validation (status ok/warning/error hors plage) reste
+ * utilisé pour afficher l'icône d'alerte, mais la couleur de fond suit la règle
+ * ci-dessus pour correspondre au screenshot.
+ */
+function getNoteColor(value: number | null, isFocused: boolean) {
+  if (isFocused) {
+    return {
+      background: "var(--accent)",
+      borderColor: "#0D6EFD",
+      color: "var(--foreground)",
+    };
+  }
+  if (value === null || value === undefined) {
+    return {
+      background: "transparent",
+      borderColor: "var(--border)",
+      color: "var(--foreground)",
+    };
+  }
+  if (value >= 14) {
+    return {
+      background: "rgba(25, 135, 84, 0.12)",
+      borderColor: "rgba(25, 135, 84, 0.45)",
+      color: "#198754",
+    };
+  }
+  if (value >= 10) {
+    return {
+      background: "rgba(253, 126, 20, 0.14)",
+      borderColor: "rgba(253, 126, 20, 0.45)",
+      color: "#b35a00",
+    };
+  }
+  return {
+    background: "rgba(220, 53, 69, 0.10)",
+    borderColor: "rgba(220, 53, 69, 0.45)",
+    color: "#DC3545",
+  };
+}
+
+/**
  * Tableau interactif de saisie des notes.
  *
- * Architecture:
- * - En-tête à 2 lignes figé (sticky) : matières (row 1) + sous-colonnes (row 2)
- * - Colonne Matricule/Nom/Prénoms figée horizontalement (sticky left)
- * - Chaque cellule = input number avec validation à la volée
- * - Navigation clavier: Tab (suivant), Shift+Tab (précédent), Entrée (ligne suivante)
+ * Architecture :
+ *  - En-tête à 2 lignes figé (sticky) : matières (row 1) + sous-colonnes (row 2)
+ *  - Colonne Matricule/Nom/Prénoms figée horizontalement (sticky left)
+ *  - Chaque cellule = input number avec validation à la volée
+ *  - Coloration des cellules selon la valeur (vert/orange/rouge)
+ *  - Lignes alternées (blanc / gris très clair) comme dans le screenshot
+ *  - Navigation clavier : Tab (suivant), Shift+Tab (précédent), Entrée (ligne suivante)
  */
 export function NotesTable() {
   const { classes, activeClassIndex, updateNote } = useSaisieMasterStore();
@@ -32,11 +82,11 @@ export function NotesTable() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <div className="rounded-xl border border-border bg-white dark:bg-zinc-950 shadow-sm overflow-hidden">
         {/* Bande tricolore */}
         <div className="h-1 w-full saisiemaster-tricolor" />
 
-        <div className="overflow-auto saisiemaster-scroll max-h-[70vh]">
+        <div className="overflow-auto saisiemaster-scroll max-h-[60vh] lg:max-h-[70vh]">
           <table
             ref={tableRef}
             className="w-full border-collapse text-sm"
@@ -51,25 +101,26 @@ export function NotesTable() {
           </table>
         </div>
 
-        {/* Légende */}
-        <div className="border-t border-border bg-muted/30 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-muted-foreground">
+        {/* Légende des couleurs */}
+        <div className="border-t border-border bg-[#F8F9FA] dark:bg-zinc-900 px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-muted-foreground">
+          <span className="font-semibold text-foreground mr-1">Légende :</span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2 w-2 rounded-sm bg-[#008751]" />
-            Note valide
+            <span className="inline-block h-3 w-3 rounded-sm" style={{ background: "rgba(25, 135, 84, 0.35)", border: "1px solid rgba(25, 135, 84, 0.6)" }} />
+            Bonne note (≥ 14)
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2 w-2 rounded-sm bg-[#fcd116]" />
-            Note faible (&lt; 50%)
+            <span className="inline-block h-3 w-3 rounded-sm" style={{ background: "rgba(253, 126, 20, 0.35)", border: "1px solid rgba(253, 126, 20, 0.6)" }} />
+            Note moyenne (10 – 13)
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2 w-2 rounded-sm bg-[#e31b23]" />
-            Hors plage
+            <span className="inline-block h-3 w-3 rounded-sm" style={{ background: "rgba(220, 53, 69, 0.35)", border: "1px solid rgba(220, 53, 69, 0.6)" }} />
+            Note faible (&lt; 10)
           </span>
           <span className="ml-auto hidden sm:inline">
-            Barème: <strong className="text-foreground">Note obtenue /{GRADING.obtainedMaxWithPerf}</strong> +{" "}
+            Barème : <strong className="text-foreground">Note obtenue /{GRADING.obtainedMaxWithPerf}</strong> +{" "}
             <strong className="text-foreground">Perfectionnement /{GRADING.perfectionMax}</strong> = /{GRADING.totalMax}
             <span className="mx-2 text-border">·</span>
-            Sans perfectionnement: <strong className="text-foreground">Note obtenue /{GRADING.obtainedMaxWithoutPerf}</strong>
+            Sans perfectionnement : <strong className="text-foreground">Note obtenue /{GRADING.obtainedMaxWithoutPerf}</strong>
           </span>
         </div>
       </div>
@@ -84,23 +135,23 @@ export function NotesTable() {
 function NotesTableHeader({ classData }: { classData: ClassData }) {
   return (
     <thead className="sticky top-0 z-20">
-      {/* Ligne 1: Matières (cellules fusionnées horizontalement sur 2 colonnes si perf) */}
-      <tr className="bg-foreground text-background">
+      {/* Ligne 1 : Matières (cellules fusionnées horizontalement sur 2 colonnes si perf) */}
+      <tr className="bg-[#0D6EFD] text-white">
         <th
           rowSpan={2}
-          className="sticky left-0 z-30 bg-foreground text-background px-3 py-2.5 text-left font-semibold border-r border-background/20 min-w-[140px] max-w-[180px]"
+          className="sticky left-0 z-30 bg-[#0D6EFD] text-white px-3 py-2.5 text-left font-semibold border-r border-white/20 min-w-[140px] max-w-[180px]"
         >
           Matricule
         </th>
         <th
           rowSpan={2}
-          className="sticky left-[140px] z-30 bg-foreground text-background px-3 py-2.5 text-left font-semibold border-r border-background/20 min-w-[140px] max-w-[180px]"
+          className="sticky left-[140px] z-30 bg-[#0D6EFD] text-white px-3 py-2.5 text-left font-semibold border-r border-white/20 min-w-[140px] max-w-[180px]"
         >
           Nom
         </th>
         <th
           rowSpan={2}
-          className="sticky left-[280px] z-30 bg-foreground text-background px-3 py-2.5 text-left font-semibold border-r border-background/20 min-w-[140px] max-w-[200px] hidden md:table-cell"
+          className="sticky left-[280px] z-30 bg-[#0D6EFD] text-white px-3 py-2.5 text-left font-semibold border-r border-white/20 min-w-[140px] max-w-[200px] hidden md:table-cell"
         >
           Prénoms
         </th>
@@ -108,11 +159,11 @@ function NotesTableHeader({ classData }: { classData: ClassData }) {
           <th
             key={subject.id}
             colSpan={subject.hasPerfectionnement ? 2 : 1}
-            className="px-2 py-2 text-center font-semibold border-r border-background/20 min-w-[120px]"
+            className="px-2 py-2 text-center font-semibold border-r border-white/20 min-w-[120px]"
           >
             <div className="flex flex-col items-center gap-0.5">
               <span className="text-xs sm:text-sm">{subject.name}</span>
-              <span className="text-[10px] font-normal opacity-70">
+              <span className="text-[10px] font-normal opacity-80">
                 {subject.hasPerfectionnement
                   ? `/18 + /2 = /20`
                   : `/20`}
@@ -122,14 +173,14 @@ function NotesTableHeader({ classData }: { classData: ClassData }) {
         ))}
         <th
           rowSpan={2}
-          className="px-3 py-2.5 text-center font-semibold bg-[#008751] border-l border-background/20 min-w-[80px] sticky right-0 z-30"
+          className="px-3 py-2.5 text-center font-semibold bg-[#198754] text-white border-l border-white/20 min-w-[80px] sticky right-0 z-30"
         >
           <span className="text-xs sm:text-sm">Moy.</span>
-          <span className="block text-[10px] font-normal opacity-80">/20</span>
+          <span className="block text-[10px] font-normal opacity-90">/20</span>
         </th>
       </tr>
-      {/* Ligne 2: Sous-en-têtes */}
-      <tr className="bg-muted/80 text-foreground">
+      {/* Ligne 2 : Sous-en-têtes */}
+      <tr className="bg-[#F8F9FA] dark:bg-zinc-800 text-foreground border-b border-border">
         {classData.subjects.flatMap((subject) =>
           subject.hasPerfectionnement
             ? [
@@ -186,18 +237,25 @@ function NotesTableBody({ classData, updateNote }: NotesTableBodyProps) {
             hasPerfectionnement: s.hasPerfectionnement,
           })),
         );
-        const rowBg = idx % 2 === 0 ? "bg-card" : "bg-muted/20";
+        // Alternance de couleurs : lignes paires en blanc, lignes impaires en gris clair
+        const isEven = idx % 2 === 0;
+        const rowBg = isEven
+          ? "bg-white dark:bg-zinc-950"
+          : "bg-[#F8F9FA] dark:bg-zinc-900/60";
+        const stickyRowBg = isEven
+          ? "bg-white dark:bg-zinc-950"
+          : "bg-[#F8F9FA] dark:bg-zinc-900/60";
 
         return (
           <tr
             key={student.id}
-            className={cn(rowBg, "hover:bg-[#008751]/5 transition-colors")}
+            className={cn(rowBg, "hover:bg-[#0D6EFD]/5 transition-colors border-b border-border/40")}
           >
             {/* Matricule */}
             <td
               className={cn(
                 "sticky left-0 z-10 border-r border-border/60 px-3 py-2 text-xs font-mono text-muted-foreground",
-                rowBg,
+                stickyRowBg,
               )}
             >
               <span className="block truncate" title={student.matricule}>
@@ -207,8 +265,8 @@ function NotesTableBody({ classData, updateNote }: NotesTableBodyProps) {
             {/* Nom */}
             <td
               className={cn(
-                "sticky left-[140px] z-10 border-r border-border/60 px-3 py-2 font-medium",
-                rowBg,
+                "sticky left-[140px] z-10 border-r border-border/60 px-3 py-2 font-medium text-foreground",
+                stickyRowBg,
               )}
             >
               <span className="block truncate" title={student.nom}>
@@ -219,7 +277,7 @@ function NotesTableBody({ classData, updateNote }: NotesTableBodyProps) {
             <td
               className={cn(
                 "sticky left-[280px] z-10 border-r border-border/60 px-3 py-2 text-muted-foreground hidden md:table-cell",
-                rowBg,
+                stickyRowBg,
               )}
             >
               <span className="block truncate" title={student.prenoms}>
@@ -267,14 +325,14 @@ function NotesTableBody({ classData, updateNote }: NotesTableBodyProps) {
             })}
 
             {/* Moyenne élève */}
-            <td className="sticky right-0 z-10 border-l border-border/60 px-2 py-2 text-center bg-[#008751]/5">
+            <td className="sticky right-0 z-10 border-l border-border/60 px-2 py-2 text-center bg-[#198754]/5">
               {avg !== null ? (
                 <span
                   className={cn(
                     "inline-flex items-center justify-center min-w-[2.5rem] h-6 px-1.5 rounded-md text-xs font-bold",
                     avg >= 10
-                      ? "bg-[#008751]/10 text-[#008751]"
-                      : "bg-[#e31b23]/10 text-[#e31b23]",
+                      ? "bg-[#198754]/15 text-[#198754]"
+                      : "bg-[#DC3545]/15 text-[#DC3545]",
                   )}
                 >
                   {avg.toFixed(2)}
@@ -347,53 +405,20 @@ function NoteCell({ value, max, validation, onChange }: NoteCellProps) {
 
   const status = validation?.status ?? "empty";
 
-  const cellStyles = useMemo(() => {
-    if (isFocused) {
-      return {
-        background: "var(--accent)",
-        borderColor: "var(--primary)",
-        color: "var(--foreground)",
-      };
-    }
-    switch (status) {
-      case "ok":
-        return {
-          background: "rgba(0, 135, 81, 0.08)",
-          borderColor: "rgba(0, 135, 81, 0.25)",
-          color: "#008751",
-        };
-      case "warning":
-        return {
-          background: "rgba(252, 209, 22, 0.18)",
-          borderColor: "rgba(252, 209, 22, 0.5)",
-          color: "#8a6d0b",
-        };
-      case "error":
-        return {
-          background: "rgba(227, 27, 35, 0.10)",
-          borderColor: "rgba(227, 27, 35, 0.45)",
-          color: "#e31b23",
-        };
-      default:
-        return {
-          background: "transparent",
-          borderColor: "var(--border)",
-          color: "var(--foreground)",
-        };
-    }
-  }, [status, isFocused]);
+  const cellStyles = useMemo(
+    () => getNoteColor(value, isFocused),
+    [value, isFocused],
+  );
 
+  // L'icône d'alerte reste gouvernée par la validation hors-plage.
   const icon = useMemo(() => {
     if (status === "error")
-      return <AlertTriangle className="h-3 w-3 text-[#e31b23]" />;
-    if (status === "warning")
-      return <AlertTriangle className="h-3 w-3 text-[#fcd116]" />;
-    if (status === "ok") return null;
+      return <AlertTriangle className="h-3 w-3 text-[#DC3545]" />;
     return null;
   }, [status]);
 
   return (
-    <td className="border-r border-border/60 px-1 py-1 text-center">
+    <td className="border-r border-border/40 px-1 py-1 text-center">
       <Tooltip>
         <TooltipTrigger asChild>
           <div className="relative">
@@ -413,7 +438,7 @@ function NoteCell({ value, max, validation, onChange }: NoteCellProps) {
               placeholder="—"
               className={cn(
                 "w-full h-8 text-center text-sm font-medium rounded-md border transition-colors",
-                "focus:outline-none focus:ring-2 focus:ring-[#008751]/30",
+                "focus:outline-none focus:ring-2 focus:ring-[#0D6EFD]/40",
               )}
               style={cellStyles}
               aria-label={`Note (max ${max})`}

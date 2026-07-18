@@ -12,6 +12,15 @@ import {
 import { useSaisieMasterStore, computeSaisieStats } from "@/lib/saisiemaster/store";
 import { cn } from "@/lib/saisiemaster/utils";
 
+/**
+ * Panneau de statistiques — version "clean summary panel".
+ *
+ * Affiche 4 cartes métriques (élèves, matières, saisie, moyenne classe) +
+ * une barre de progression globale. Style minimaliste :
+ *  - Fond blanc, bordures légères
+ *  - Pas d'icônes criardes, palette cohérente avec le redesign
+ *  - Couleurs d'accent : vert #198754 (ok), orange #FD7E14 (moyen), rouge #DC3545 (faible)
+ */
 export function StatsPanel() {
   const { classes, activeClassIndex } = useSaisieMasterStore();
   const classData = classes[activeClassIndex];
@@ -25,10 +34,10 @@ export function StatsPanel() {
 
   const completionColor =
     stats.completionRate === 100
-      ? "#008751"
+      ? "#198754"
       : stats.completionRate >= 50
-        ? "#fcd116"
-        : "#e31b23";
+        ? "#FD7E14"
+        : "#DC3545";
 
   const cards = [
     {
@@ -38,16 +47,16 @@ export function StatsPanel() {
       sub: `${stats.etudiantsComplets} complet${
         stats.etudiantsComplets > 1 ? "s" : ""
       }`,
-      color: "#0b3b6b",
-      bg: "rgba(11, 59, 107, 0.08)",
+      color: "#0D6EFD",
+      bg: "rgba(13, 110, 253, 0.08)",
     },
     {
       icon: BookOpen,
       label: "Matières",
       value: classData.subjects.length,
       sub: `${classData.subjects.filter((s) => s.hasPerfectionnement).length} avec perf.`,
-      color: "#008751",
-      bg: "rgba(0, 135, 81, 0.08)",
+      color: "#0D6EFD",
+      bg: "rgba(13, 110, 253, 0.08)",
     },
     {
       icon: CheckCircle2,
@@ -65,59 +74,74 @@ export function StatsPanel() {
           ? stats.moyenneClasse.toFixed(2)
           : "—",
       sub: stats.moyenneClasse !== null ? "sur 20" : "à calculer",
-      color: "#fcd116",
-      bg: "rgba(252, 209, 22, 0.18)",
+      color:
+        stats.moyenneClasse === null
+          ? "#6c757d"
+          : stats.moyenneClasse >= 10
+            ? "#198754"
+            : "#DC3545",
+      bg:
+        stats.moyenneClasse === null
+          ? "rgba(108, 117, 125, 0.10)"
+          : stats.moyenneClasse >= 10
+            ? "rgba(25, 135, 84, 0.10)"
+            : "rgba(220, 53, 69, 0.10)",
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      {cards.map((c) => {
-        const Icon = c.icon;
-        return (
-          <Card
-            key={c.label}
-            className="p-3 sm:p-4 border-border/60 shadow-sm"
-          >
-            <div className="flex items-center gap-3">
-              <div
-                className="grid place-items-center h-9 w-9 sm:h-10 sm:w-10 rounded-lg shrink-0"
-                style={{ background: c.bg, color: c.color }}
-              >
-                <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] sm:text-xs uppercase tracking-wide text-muted-foreground truncate">
+    <Card className="p-4 sm:p-5 border-border/60 shadow-sm bg-white dark:bg-zinc-950">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="h-4 w-4 text-[#0D6EFD]" />
+          <h3 className="text-sm font-semibold text-foreground">
+            Résumé de la saisie
+          </h3>
+        </div>
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          Classe {classData.className}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {cards.map((c) => {
+          const Icon = c.icon;
+          return (
+            <div
+              key={c.label}
+              className="rounded-lg border border-border/40 bg-[#F8F9FA] dark:bg-zinc-900/40 p-3"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div
+                  className="grid place-items-center h-7 w-7 rounded-md shrink-0"
+                  style={{ background: c.bg, color: c.color }}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                </div>
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground truncate">
                   {c.label}
-                </p>
-                <p className="text-lg sm:text-xl font-bold text-foreground leading-tight">
-                  {c.value}
-                </p>
-                <p className="text-[10px] text-muted-foreground truncate">{c.sub}</p>
+                </span>
               </div>
+              <p className="text-xl font-bold text-foreground leading-tight">
+                {c.value}
+              </p>
+              <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                {c.sub}
+              </p>
             </div>
-          </Card>
-        );
-      })}
+          );
+        })}
+      </div>
 
       {/* Barre de progression globale */}
-      <Card className="col-span-2 sm:col-span-4 p-3 sm:p-4 border-border/60">
+      <div className="mt-4 pt-4 border-t border-border/40">
         <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-[#008751]" />
-            <span className="text-xs sm:text-sm font-medium text-foreground">
-              Progression de la saisie
-            </span>
-          </div>
+          <span className="text-xs sm:text-sm font-medium text-foreground">
+            Progression de la saisie
+          </span>
           <span
-            className={cn(
-              "text-xs sm:text-sm font-bold",
-              stats.completionRate === 100
-                ? "text-[#008751]"
-                : stats.completionRate >= 50
-                  ? "text-[#8a6d0b]"
-                  : "text-[#e31b23]",
-            )}
+            className="text-xs sm:text-sm font-bold"
+            style={{ color: completionColor }}
           >
             {stats.completionRate}%
           </span>
@@ -137,14 +161,14 @@ export function StatsPanel() {
             }}
           />
         </div>
-        <p className="mt-2 text-[10px] sm:text-xs text-muted-foreground">
+        <p className="mt-2 text-[11px] text-muted-foreground">
           {stats.completionRate === 100
-            ? "✓ Toutes les notes sont saisies — vous pouvez exporter"
+            ? "✓ Toutes les notes sont saisies — vous pouvez exporter."
             : stats.completionRate >= 50
               ? "Plus de la moitié des notes saisies — continuez !"
-              : "Commencez à saisir les notes dans le tableau ci-dessous"}
+              : "Commencez à saisir les notes dans le tableau ci-dessous."}
         </p>
-      </Card>
-    </div>
+      </div>
+    </Card>
   );
 }

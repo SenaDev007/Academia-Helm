@@ -18,14 +18,25 @@ interface HeroProps {
 export function Hero({ onUploadClick }: HeroProps) {
   return (
     <section className="relative overflow-hidden">
-      {/* Fond décoratif */}
-      <div className="absolute inset-0 saisiemaster-grid-bg" aria-hidden />
+      {/* Image de fond + overlay dégradé pour la lisibilité du texte */}
       <div
-        className="absolute -top-32 -right-32 h-96 w-96 rounded-full bg-[#008751]/10 blur-3xl"
+        className="absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: 'url("/images/Background-SaisieMaster-hero.png")' }}
+        aria-hidden
+      />
+      {/* Overlay dégradé : assombrit légèrement le fond pour que le texte blanc/lisible ressorte,
+          tout en conservant l'esprit lumineux du hero. */}
+      <div
+        className="absolute inset-0 bg-gradient-to-br from-white/90 via-white/75 to-white/60 dark:from-black/70 dark:via-black/55 dark:to-black/40"
+        aria-hidden
+      />
+      {/* Halos colorés Bénin par-dessus */}
+      <div
+        className="absolute -top-32 -right-32 h-96 w-96 rounded-full bg-[#008751]/15 blur-3xl"
         aria-hidden
       />
       <div
-        className="absolute -bottom-32 -left-32 h-96 w-96 rounded-full bg-[#fcd116]/15 blur-3xl"
+        className="absolute -bottom-32 -left-32 h-96 w-96 rounded-full bg-[#fcd116]/20 blur-3xl"
         aria-hidden
       />
 

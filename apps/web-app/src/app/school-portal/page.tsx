@@ -105,8 +105,9 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function SchoolPortalPage() {
   // Délai minimum côté serveur pour garantir l'affichage du loading
-  // Le loading.tsx (TenantSchoolLoader) doit être visible au moins 3 secondes
-  const loadingDelay = new Promise(resolve => setTimeout(resolve, 3000));
+  // Le loading.tsx (AcademiaLoader) doit être visible au moins 2 secondes
+  // (réduit de 3s à 2s — Task 25 : unifié avec le loader Academia Helm)
+  const loadingDelay = new Promise(resolve => setTimeout(resolve, 2000));
 
   // Tenter de résoudre les informations de l'école côté serveur
   let schoolInfo = null;

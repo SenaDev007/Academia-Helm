@@ -293,11 +293,9 @@ export default function StudentAccountsContent() {
     const rows = filteredAccounts.map((a) => {
       const name = a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId;
       const matricule = a.student?.studentCode || '';
-      const hasOverride = (a.breakdowns ?? []).some((b: any) => {
-        const fsTotal = Number(b.feeStructure?.totalAmount ?? 0);
-        const initial = Number(b.initialAmount ?? 0);
-        return Math.abs(fsTotal - initial) > 0.01;
-      });
+      // ⭐ Task 29 : utiliser hasOverride du backend (pas de comparaison de montants)
+      const hasOverride = a.hasOverride === true ||
+        (a.breakdowns ?? []).some((b: any) => b.hasOverride === true);
       return [
         name,
         matricule,
@@ -663,11 +661,13 @@ export default function StudentAccountsContent() {
                     </TableRow>
                   ) : (
                     filteredAccounts.map((a) => {
-                      const hasOverride = (a.breakdowns ?? []).some((b: any) => {
-                        const fsTotal = Number(b.feeStructure?.totalAmount ?? 0);
-                        const initial = Number(b.initialAmount ?? 0);
-                        return Math.abs(fsTotal - initial) > 0.01;
-                      });
+                      // ⭐ Task 29 : le badge "Pers." ne doit s'afficher que si l'élève
+                      // a VRAIMENT un override en DB. Avant on comparait initialAmount
+                      // avec feeStructure.totalAmount, ce qui était faux après suppression
+                      // d'un override (les breakdowns n'étaient pas toujours recalculés).
+                      // Maintenant on utilise la propriété hasOverride envoyée par le backend.
+                      const hasOverride = a.hasOverride === true ||
+                        (a.breakdowns ?? []).some((b: any) => b.hasOverride === true);
                       const isSelected = selectedAccountId === a.id;
 
                       // Code couleur basé sur le statut de paiement
@@ -1224,7 +1224,8 @@ export default function StudentAccountsContent() {
               {detailAccount.breakdowns?.map((b: any) => {
                 const fsTotal = Number(b.feeStructure?.totalAmount ?? 0);
                 const initial = Number(b.initialAmount ?? 0);
-                const isOverridden = Math.abs(fsTotal - initial) > 0.01;
+                // ⭐ Task 29 : utiliser hasOverride du backend au lieu de comparer les montants
+                const isOverridden = b.hasOverride === true || (b.feeStructure?.overrides?.length ?? 0) > 0;
                 return (
                   <li key={b.id} className="flex justify-between text-sm">
                     <span className="flex items-center gap-1">

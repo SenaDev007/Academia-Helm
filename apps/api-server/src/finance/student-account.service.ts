@@ -687,7 +687,10 @@ export class StudentAccountService {
         breakdowns: {
           include: {
             feeStructure: {
-              select: { id: true, name: true, feeType: true, totalAmount: true, customFeeTypeLabel: true },
+              select: { id: true, name: true, feeType: true, totalAmount: true, customFeeTypeLabel: true,
+                // ⭐ Task 29 : inclure les overrides pour déterminer hasOverride
+                overrides: { select: { id: true }, take: 1 },
+              },
             },
           },
         },
@@ -749,8 +752,14 @@ export class StudentAccountService {
       const actualArrears = arrearData?.total ?? 0;
       const baseTotalDue = Number(account.totalDue ?? 0);
       const baseBalance = Number(account.balance ?? 0);
+      // ⭐ Task 29 : déterminer hasOverride depuis les breakdowns
+      // (breakdown.feeStructure.overrides est chargé via Prisma include)
+      const hasOverride = (account.breakdowns ?? []).some(
+        (b: any) => b?.feeStructure?.overrides?.length > 0
+      );
       return {
         ...account,
+        hasOverride,
         // Montants "de base" (sans arriérés) — pour info / debug
         baseTotalDue,
         baseBalance,

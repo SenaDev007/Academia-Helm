@@ -44,8 +44,33 @@ export class FinanceReportsService {
     const depenses = Number(expensesSum._sum.amount ?? 0);
     const tauxRecouvrement = due > 0 ? Math.round((paid / due) * 100) : 0;
     const soldeNet = encaissement - depenses;
+
+    // ⭐ Task 30 : Calculer le prévisionnel global (sans personnalisations)
+    // et le montant total des réductions (personnalisations).
+    // Pour chaque fee_override : réduction = feeStructure.totalAmount - override.customAmount
+    const overrides = await this.prisma.feeOverride.findMany({
+      where: {
+        feeStructure: { tenantId, academicYearId },
+      },
+      include: {
+        feeStructure: { select: { totalAmount: true } },
+      },
+    });
+    let totalReductions = 0;
+    for (const o of overrides) {
+      const original = Number(o.feeStructure.totalAmount ?? 0);
+      const custom = Number(o.customAmount ?? 0);
+      const reduction = Math.max(0, original - custom);
+      totalReductions += reduction;
+    }
+    // Prévisionnel global = totalDue (net) + réductions
+    // (car totalDue inclut déjà les personnalisations = montants réduits)
+    const previsonnementGlobal = due + totalReductions;
+
     return {
-      totalDue: due,
+      totalDue: due,                      // Prévisionnel net (après personnalisations)
+      previsonnementGlobal,               // Prévisionnel global (sans personnalisations)
+      totalReductions,                    // Montant total des réductions (personnalisations)
       totalPaid: paid,
       totalEncaissement: encaissement,
       totalDepenses: depenses,

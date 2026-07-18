@@ -23,6 +23,7 @@ import {
   ArrowUpRight,
   Clock,
   RefreshCw,
+  Percent,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import Link from 'next/link';
@@ -157,6 +158,9 @@ export default function FinanceDashboard() {
   const tauxRecouvrement = kpis?.tauxRecouvrement ?? 0;
   const totalDepenses = kpis?.totalDepenses ?? 0;
   const soldeNet = (kpis?.soldeNet as number) ?? totalEncaisse - totalDepenses;
+  // ⭐ Task 30 : Nouveaux KPIs pour les personnalisations
+  const previsonnementGlobal = kpis?.previsonnementGlobal ?? totalDu;
+  const totalReductions = kpis?.totalReductions ?? 0;
 
   // Calcul du max pour l'affichage du graphique mensuel
   const maxMonthly = monthlyData.length > 0
@@ -165,8 +169,55 @@ export default function FinanceDashboard() {
 
   return (
     <div className="space-y-6 pb-8">
-      {/* KPI Section — 5 cartes minimaliste (pattern StudentsModuleDashboard) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+      {/* KPI Section — 7 cartes (pattern StudentsModuleDashboard) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 sm:gap-4">
+        {/* Prévisionnel Global (sans personnalisations) */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs sm:text-sm font-medium text-gray-500">Prévisionnel global</p>
+              <p className="text-xl sm:text-2xl font-bold text-indigo-600 mt-1">
+                {loading ? '—' : formatCurrency(previsonnementGlobal)}
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">avant personnalisations</p>
+            </div>
+            <div className="p-2 sm:p-3 bg-indigo-50 rounded-lg">
+              <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-600" />
+            </div>
+          </div>
+        </div>
+
+        {/* Réductions (personnalisations) */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs sm:text-sm font-medium text-gray-500">Réductions</p>
+              <p className="text-xl sm:text-2xl font-bold text-purple-600 mt-1">
+                {loading ? '—' : formatCurrency(totalReductions)}
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">personnalisations</p>
+            </div>
+            <div className="p-2 sm:p-3 bg-purple-50 rounded-lg">
+              <Percent className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600" />
+            </div>
+          </div>
+        </div>
+
+        {/* Prévisionnel Net (après personnalisations) */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs sm:text-sm font-medium text-gray-500">Prévisionnel net</p>
+              <p className="text-xl sm:text-2xl font-bold text-blue-600 mt-1">
+                {loading ? '—' : formatCurrency(totalDu)}
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">après personnalisations</p>
+            </div>
+            <div className="p-2 sm:p-3 bg-blue-50 rounded-lg">
+              <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
+            </div>
+          </div>
+        </div>
         {/* Total Encaissé */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
@@ -178,21 +229,6 @@ export default function FinanceDashboard() {
             </div>
             <div className="p-2 sm:p-3 bg-emerald-50 rounded-lg">
               <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600" />
-            </div>
-          </div>
-        </div>
-
-        {/* Total Dû */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs sm:text-sm font-medium text-gray-500">Prévisionnel dû</p>
-              <p className="text-xl sm:text-2xl font-bold text-blue-600 mt-1">
-                {loading ? '—' : formatCurrency(totalDu)}
-              </p>
-            </div>
-            <div className="p-2 sm:p-3 bg-blue-50 rounded-lg">
-              <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
             </div>
           </div>
         </div>

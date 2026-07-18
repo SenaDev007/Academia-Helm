@@ -586,7 +586,16 @@ export class FeeStructureService {
       throw new NotFoundException(`FeeOverride ${id} not found`);
     }
     await this.audit(tenantId, undefined, 'FEE_OVERRIDE_DELETE', 'FeeOverride', id, { customAmount: override.customAmount, reason: override.reason }, undefined);
-    await this.prisma.feeOverride.delete({ where: { id } });
+
+    // Désactiver le trigger prevent_fee_override_delete temporairement
+    // (le trigger empêche la suppression pour préserver l'historique d'audit,
+    // mais ici on supprime explicitement un override à la demande de l'admin)
+    await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_overrides" DISABLE TRIGGER prevent_fee_override_delete_trigger');
+    try {
+      await this.prisma.feeOverride.delete({ where: { id } });
+    } finally {
+      await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_overrides" ENABLE TRIGGER prevent_fee_override_delete_trigger');
+    }
 
     // Recalculer le compte élève pour retirer la personnalisation
     await this.studentAccountService.recalculate(override.studentId, tenantId, override.feeStructure.academicYearId);
@@ -902,8 +911,12 @@ export class FeeStructureService {
       );
     }
 
-    // Suppression physique (désactiver le trigger temporairement)
+    // Suppression physique (désactiver les triggers temporairement)
+    // - no_delete_fee : empêche la suppression de fee_structures
+    // - prevent_fee_override_delete_trigger : empêche la suppression de fee_overrides
+    //   (historique d'audit) — on le désactive car on supprime le frais parent
     await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_structures" DISABLE TRIGGER no_delete_fee');
+    await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_overrides" DISABLE TRIGGER prevent_fee_override_delete_trigger');
     try {
       // 1. Supprimer les installments (tranches) liés
       await this.prisma.feeStructureInstallment.deleteMany({
@@ -923,8 +936,9 @@ export class FeeStructureService {
       });
       await this.audit(tenantId, undefined, 'FEE_STRUCTURE_DELETE', 'FeeStructure', id, { name: existing.name }, undefined);
     } finally {
-      // Réactiver le trigger
+      // Réactiver les triggers
       await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_structures" ENABLE TRIGGER no_delete_fee');
+      await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_overrides" ENABLE TRIGGER prevent_fee_override_delete_trigger');
     }
 
     return { id, deleted: true };
@@ -948,8 +962,11 @@ export class FeeStructureService {
     const deleted: string[] = [];
     const blocked: { id: string; name: string; reason: string }[] = [];
 
-    // Désactiver le trigger pour toute l'opération
+    // Désactiver les triggers pour toute l'opération
+    // - no_delete_fee : empêche la suppression de fee_structures
+    // - prevent_fee_override_delete_trigger : empêche la suppression de fee_overrides
     await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_structures" DISABLE TRIGGER no_delete_fee');
+    await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_overrides" DISABLE TRIGGER prevent_fee_override_delete_trigger');
     try {
       for (const id of ids) {
         try {
@@ -984,8 +1001,9 @@ export class FeeStructureService {
         }
       }
     } finally {
-      // Réactiver le trigger
+      // Réactiver les triggers
       await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_structures" ENABLE TRIGGER no_delete_fee');
+      await this.prisma.$executeRawUnsafe('ALTER TABLE "fee_overrides" ENABLE TRIGGER prevent_fee_override_delete_trigger');
     }
 
     return {

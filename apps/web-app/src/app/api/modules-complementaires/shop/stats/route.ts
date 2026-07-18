@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
@@ -15,12 +16,8 @@ export async function GET(request: NextRequest) {
     const queryString = searchParams.toString();
     const url = `${API_BASE_URL}/modules-complementaires/shop/stats${queryString ? `?${queryString}` : ''}`;
 
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': request.headers.get('Authorization') || '',
-        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
-      },
-    });
+    const headers = await getProxyAuthHeaders(request);
+    const response = await fetch(url, { headers, cache: 'no-store' });
 
     const data = await response.json();
     return NextResponse.json(data);

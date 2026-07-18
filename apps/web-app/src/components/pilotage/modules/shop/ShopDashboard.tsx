@@ -31,10 +31,10 @@ import {
 } from '@/components/ui/table';
 
 interface ShopStats {
-  totalSales?: number;
+  totalRevenueMonth?: number;
+  totalSalesMonth?: number;
   totalOrders?: number;
-  pendingOrders?: number;
-  lowStockItems?: number;
+  lowStockAlerts?: number;
   recentOrders?: Array<{
     id?: string;
     refNo: string;
@@ -50,10 +50,10 @@ interface ShopStats {
 }
 
 const DEFAULT_STATS: ShopStats = {
-  totalSales: 0,
+  totalRevenueMonth: 0,
+  totalSalesMonth: 0,
   totalOrders: 0,
-  pendingOrders: 0,
-  lowStockItems: 0,
+  lowStockAlerts: 0,
   recentOrders: [],
   topProducts: [],
 };
@@ -85,28 +85,28 @@ export default function ShopDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard
           title="Chiffre d'affaires (mois)"
-          value={formatCurrency(stats.totalSales ?? 0)}
+          value={formatCurrency(stats.totalRevenueMonth ?? 0)}
           icon={<TrendingUp className="w-5 h-5" />}
           accent="emerald"
           trend="+15.4%"
         />
         <SummaryCard
           title="Commandes totales"
-          value={String(stats.totalOrders ?? 0)}
+          value={String(stats.totalSalesMonth ?? 0)}
           icon={<ShoppingCart className="w-5 h-5" />}
           accent="blue"
           trend="+5%"
         />
         <SummaryCard
           title="Commandes en attente"
-          value={String(stats.pendingOrders ?? 0)}
+          value={String(stats.totalOrders ?? 0)}
           icon={<Clock className="w-5 h-5" />}
           accent="amber"
           sub="À préparer"
         />
         <SummaryCard
           title="Articles en rupture"
-          value={String(stats.lowStockItems ?? 0)}
+          value={String(stats.lowStockAlerts ?? 0)}
           icon={<AlertCircle className="w-5 h-5" />}
           accent="red"
           sub="Action requise"

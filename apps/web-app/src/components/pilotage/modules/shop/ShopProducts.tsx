@@ -59,11 +59,9 @@ export default function ShopProducts() {
   );
 
   const [productModalOpen, setProductModalOpen] = useState(false);
-  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [productForm, setProductForm] = useState({ name: '', price: 0, categoryId: '', stock: 0, description: '' });
-  const [categoryForm, setCategoryForm] = useState({ name: '' });
+  const [productForm, setProductForm] = useState({ code: '', name: '', unitPrice: 0, categoryId: '', initialStock: 0, description: '' });
 
   const handleCreateProduct = async () => {
     if (!productForm.name.trim()) {
@@ -72,9 +70,17 @@ export default function ShopProducts() {
     }
     try {
       setSubmitting(true);
-      await modulesApi.post('shop/products', productForm, buildModulesApiOptions(academicYear?.id));
+      const payload = {
+        code: productForm.code || 'PROD-' + Date.now(),
+        name: productForm.name,
+        unitPrice: Number(productForm.unitPrice),
+        categoryId: productForm.categoryId || undefined,
+        initialStock: Number(productForm.initialStock) || 0,
+        description: productForm.description || undefined,
+      };
+      await modulesApi.post('shop/products', payload, buildModulesApiOptions(academicYear?.id));
       setProductModalOpen(false);
-      setProductForm({ name: '', price: 0, categoryId: '', stock: 0, description: '' });
+      setProductForm({ code: '', name: '', unitPrice: 0, categoryId: '', initialStock: 0, description: '' });
       await refetch();
       toast({ title: 'Produit créé', description: 'Le nouvel article a été ajouté au catalogue.' });
     } catch (e: any) {
@@ -88,28 +94,7 @@ export default function ShopProducts() {
     }
   };
 
-  const handleCreateCategory = async () => {
-    if (!categoryForm.name.trim()) {
-      toast({ title: 'Nom requis', description: 'Veuillez saisir le nom de la catégorie.', variant: 'destructive' });
-      return;
-    }
-    try {
-      setSubmitting(true);
-      await modulesApi.post('shop/categories', categoryForm, buildModulesApiOptions(academicYear?.id));
-      setCategoryModalOpen(false);
-      setCategoryForm({ name: '' });
-      await refetch();
-      toast({ title: 'Catégorie créée', description: 'La nouvelle catégorie a été ajoutée.' });
-    } catch (e: any) {
-      toast({
-        title: 'Erreur',
-        description: e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la création de la catégorie',
-        variant: 'destructive',
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  // Note : la création de catégories n'est pas gérée ici. Utilisez l'onglet Catalogue.
 
   // Filtrage local par recherche
   const filteredProducts = React.useMemo(() => {
@@ -145,14 +130,9 @@ export default function ShopProducts() {
           <p className="text-sm text-gray-500">Configurez les SKU, tailles, couleurs et coûts d'achat</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setCategoryModalOpen(true)}
-            disabled={submitting}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Catégorie
-          </Button>
+          <span className="text-xs text-gray-400 hidden sm:inline">
+            Utilisez l'onglet Catalogue pour créer des catégories
+          </span>
           <Button
             onClick={() => setProductModalOpen(true)}
             disabled={submitting}
@@ -248,30 +228,41 @@ export default function ShopProducts() {
               </Button>
             </div>
             <div className="p-6 space-y-4">
-              <div>
-                <Label className="text-xs">Nom</Label>
-                <Input
-                  type="text"
-                  value={productForm.name}
-                  onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
-                  placeholder="Ex: Uniforme CP1"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Code</Label>
+                  <Input
+                    type="text"
+                    value={productForm.code}
+                    onChange={(e) => setProductForm({ ...productForm, code: e.target.value })}
+                    placeholder="Ex: UNIF-CP1 (auto si vide)"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Nom</Label>
+                  <Input
+                    type="text"
+                    value={productForm.name}
+                    onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
+                    placeholder="Ex: Uniforme CP1"
+                  />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-xs">Prix (FCFA)</Label>
+                  <Label className="text-xs">Prix unitaire (FCFA)</Label>
                   <Input
                     type="number"
-                    value={productForm.price}
-                    onChange={(e) => setProductForm({ ...productForm, price: Number(e.target.value) })}
+                    value={productForm.unitPrice}
+                    onChange={(e) => setProductForm({ ...productForm, unitPrice: Number(e.target.value) })}
                   />
                 </div>
                 <div>
                   <Label className="text-xs">Stock initial</Label>
                   <Input
                     type="number"
-                    value={productForm.stock}
-                    onChange={(e) => setProductForm({ ...productForm, stock: Number(e.target.value) })}
+                    value={productForm.initialStock}
+                    onChange={(e) => setProductForm({ ...productForm, initialStock: Number(e.target.value) })}
                   />
                 </div>
               </div>
@@ -299,38 +290,6 @@ export default function ShopProducts() {
               <Button onClick={handleCreateProduct} disabled={submitting}>
                 {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                 {submitting ? 'Création...' : 'Créer l\'article'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Nouvelle Catégorie */}
-      {categoryModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
-            <div className="flex items-center justify-between p-6 border-b border-gray-100">
-              <h3 className="text-lg font-semibold text-navy-900">Nouvelle catégorie</h3>
-              <Button variant="ghost" size="icon" onClick={() => setCategoryModalOpen(false)} className="h-8 w-8">
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <Label className="text-xs">Nom de la catégorie</Label>
-                <Input
-                  type="text"
-                  value={categoryForm.name}
-                  onChange={(e) => setCategoryForm({ name: e.target.value })}
-                  placeholder="Ex: Uniformes"
-                />
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end p-6 border-t border-gray-100">
-              <Button variant="outline" onClick={() => setCategoryModalOpen(false)}>Annuler</Button>
-              <Button onClick={handleCreateCategory} disabled={submitting}>
-                {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                {submitting ? 'Création...' : 'Créer la catégorie'}
               </Button>
             </div>
           </div>

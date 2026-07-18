@@ -96,9 +96,9 @@ export default function ShopPOS() {
       await modulesApi.post(
         'shop/sales',
         {
-          items: cart.map((it) => ({ productId: it.id, quantity: it.qty, price: it.price })),
-          paymentMethod: paymentMode,
-          total,
+          items: cart.map((it) => ({ productId: it.id, quantity: it.qty, unitPrice: it.price })),
+          paymentMode: paymentMode,
+          customerType: 'WALK_IN',
         },
         buildModulesApiOptions(academicYear?.id),
       );

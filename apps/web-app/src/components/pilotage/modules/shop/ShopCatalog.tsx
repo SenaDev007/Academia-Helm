@@ -74,15 +74,23 @@ export default function ShopCatalog() {
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [productForm, setProductForm] = useState({ name: '', price: 0, categoryId: '', stock: 0, description: '' });
+  const [productForm, setProductForm] = useState({ code: '', name: '', unitPrice: 0, categoryId: '', initialStock: 0, description: '' });
   const [categoryForm, setCategoryForm] = useState({ name: '' });
 
   const handleCreateProduct = async () => {
     try {
       setSubmitting(true);
-      await modulesApi.post('shop/products', productForm, buildModulesApiOptions(academicYear?.id));
+      const payload = {
+        code: productForm.code || 'PROD-' + Date.now(),
+        name: productForm.name,
+        unitPrice: Number(productForm.unitPrice),
+        categoryId: productForm.categoryId || undefined,
+        initialStock: Number(productForm.initialStock) || 0,
+        description: productForm.description || undefined,
+      };
+      await modulesApi.post('shop/products', payload, buildModulesApiOptions(academicYear?.id));
       setProductModalOpen(false);
-      setProductForm({ name: '', price: 0, categoryId: '', stock: 0, description: '' });
+      setProductForm({ code: '', name: '', unitPrice: 0, categoryId: '', initialStock: 0, description: '' });
       await refetch();
       toast({ title: 'Produit créé', description: 'Le nouvel article a été ajouté au catalogue.' });
     } catch (e: any) {
@@ -126,7 +134,7 @@ export default function ShopCatalog() {
 
   const safeCategories = (categories ?? []).map((c: any, i: number) => ({
     name: c?.name ?? c?.label ?? 'Catégorie',
-    count: c?.count ?? c?.productCount ?? 0,
+    count: c?._count?.products ?? 0,
     icon: c?.icon ?? '🏷️',
     key: c?.id ?? `cat-${i}`,
   }));
@@ -252,30 +260,41 @@ export default function ShopCatalog() {
             <DialogTitle>Nouvel Article</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div>
-              <Label className="text-xs">Nom</Label>
-              <Input
-                type="text"
-                value={productForm.name}
-                onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
-                placeholder="Ex: Uniforme CP1"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Code</Label>
+                <Input
+                  type="text"
+                  value={productForm.code}
+                  onChange={(e) => setProductForm({ ...productForm, code: e.target.value })}
+                  placeholder="Ex: UNIF-CP1 (auto si vide)"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Nom</Label>
+                <Input
+                  type="text"
+                  value={productForm.name}
+                  onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
+                  placeholder="Ex: Uniforme CP1"
+                />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs">Prix (FCFA)</Label>
+                <Label className="text-xs">Prix unitaire (FCFA)</Label>
                 <Input
                   type="number"
-                  value={productForm.price}
-                  onChange={(e) => setProductForm({ ...productForm, price: Number(e.target.value) })}
+                  value={productForm.unitPrice}
+                  onChange={(e) => setProductForm({ ...productForm, unitPrice: Number(e.target.value) })}
                 />
               </div>
               <div>
                 <Label className="text-xs">Stock initial</Label>
                 <Input
                   type="number"
-                  value={productForm.stock}
-                  onChange={(e) => setProductForm({ ...productForm, stock: Number(e.target.value) })}
+                  value={productForm.initialStock}
+                  onChange={(e) => setProductForm({ ...productForm, initialStock: Number(e.target.value) })}
                 />
               </div>
             </div>

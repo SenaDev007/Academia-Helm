@@ -12050,6 +12050,7 @@ model ShopProduct {
   minStock           Int                 @default(5)
   taxRate            Decimal             @default(0) @db.Decimal(5, 2)
   orderItems         ShopOrderItem[]
+  purchaseOrderItems ShopPurchaseOrderItem[]
   academicYear       AcademicYear        @relation(fields: [academicYearId], references: [id])
   category           ShopCategory?       @relation(fields: [categoryId], references: [id])
   tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -12244,10 +12245,26 @@ model ShopPurchaseOrder {
   receiver       User?               @relation("ShopPurchaseReceiver", fields: [receivedBy], references: [id])
   supplier       ShopSupplier        @relation(fields: [supplierId], references: [id])
   tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items          ShopPurchaseOrderItem[]
 
   @@unique([tenantId, academicYearId, poNumber])
   @@index([tenantId])
   @@map("shop_purchase_orders")
+}
+
+model ShopPurchaseOrderItem {
+  id              String             @id @default(uuid())
+  purchaseOrderId String
+  productId       String
+  quantity        Int                @default(1)
+  unitPrice       Decimal?           @db.Decimal(10, 2)
+  totalPrice      Decimal            @db.Decimal(10, 2)
+  purchaseOrder   ShopPurchaseOrder  @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product         ShopProduct        @relation(fields: [productId], references: [id])
+
+  @@index([purchaseOrderId])
+  @@index([productId])
+  @@map("shop_purchase_order_items")
 }
 
 model ShopLoyaltyCard {

@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
@@ -16,13 +17,10 @@ export async function POST(request: NextRequest) {
     const queryString = searchParams.toString();
     const url = `${API_BASE_URL}/modules-complementaires/shop/orders${queryString ? `?${queryString}` : ''}`;
 
+    const headers = await getProxyAuthHeaders(request);
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': request.headers.get('Authorization') || '',
-        'X-Tenant-ID': request.headers.get('X-Tenant-ID') || '',
-      },
+      headers,
       body: JSON.stringify(body),
     });
 

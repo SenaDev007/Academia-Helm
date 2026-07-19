@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LandingPage } from "@/components/saisiemaster/landing/landing-page";
 import { EditorPage } from "@/components/saisiemaster/editor/editor-page";
 import { AuthScreen } from "@/components/saisiemaster/auth/auth-screen";
@@ -20,6 +20,16 @@ export default function SaisieMasterPage() {
   const setAuth = useSaisieMasterStore((s) => s.setAuth);
   const hasRestoredRef = useRef(false);
 
+  // ⭐ Délai minimum pour garantir que le loading page reste visible
+  // au moins 2 secondes (même durée que le loader Academia Helm).
+  // Sans cela, le loading disparaît trop vite car la page est 100%
+  // client-side (pas de requête serveur à attendre).
+  const [minLoadElapsed, setMinLoadElapsed] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setMinLoadElapsed(true), 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
   // Hydrate auth from localStorage + restore any saved classes (auto-save).
   useEffect(() => {
     if (hasRestoredRef.current) return;
@@ -29,15 +39,12 @@ export default function SaisieMasterPage() {
 
     const restored = restoreFromStorage();
     if (restored && restored.classes.length > 0) {
-      // On ne restaure que les données, pas la vue — l'utilisateur choisit
-      // (sauf s'il est déjà authentifié, auquel cas on va directement à l'éditeur).
       useSaisieMasterStore.setState({
         classes: restored.classes,
         activeClassIndex: Math.min(
           restored.activeClassIndex,
           restored.classes.length - 1,
         ),
-        // If authenticated AND has classes → skip straight to the editor.
         view:
           useSaisieMasterStore.getState().prospect && restored.classes.length > 0
             ? "editor"
@@ -63,15 +70,18 @@ export default function SaisieMasterPage() {
   // --- Auth flow ---
   const handleAuthSuccess = (prospect: Prospect, token: string) => {
     setAuth(prospect, token);
-    // After auth, send the user to the landing page so they can upload their
-    // Excel template. If they already have classes restored (from localStorage),
-    // jump straight to the editor.
     if (classes.length > 0) {
       setView("editor");
     } else {
       setView("landing");
     }
   };
+
+  // ⭐ Ne rien rendre tant que le délai minimum n'est pas écoulé
+  // → le loading.tsx (SaisieMasterLoader) reste visible pendant 2s
+  if (!minLoadElapsed) {
+    return null;
+  }
 
   if (view === "auth" && !isAuthenticated) {
     return <AuthScreen onSuccess={handleAuthSuccess} />;

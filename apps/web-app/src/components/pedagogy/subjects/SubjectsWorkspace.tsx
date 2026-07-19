@@ -619,7 +619,7 @@ export default function SubjectsWorkspace() {
           throw new Error('Le backend a répondu sans données valides (création non confirmée). Vérifiez que Fly.io est bien redéployé.');
         }
       } else {
-        await pedagogyFetch(`/api/subjects/${subjectForm.id}`, { method: 'PATCH', body: {
+        await pedagogyFetch(`/api/subjects/${subjectForm.id}`, { method: 'PUT', body: {
           code: subjectForm.code.trim(),
           name: subjectForm.name.trim(),
           abbreviation: subjectForm.abbreviation.trim() || undefined,

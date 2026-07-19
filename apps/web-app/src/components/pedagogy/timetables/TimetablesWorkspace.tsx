@@ -137,45 +137,9 @@ export default function TimetablesWorkspace() {
 
   return (
     <div className="flex flex-col gap-5">
-      <motion.div
-        initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-br from-blue-700 via-blue-800 to-indigo-900 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden"
-      >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.18),transparent_45%)]" />
-        <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/15 backdrop-blur text-[10px] font-bold uppercase tracking-wider">
-                <Zap className="w-3 h-3" /> Moteur V2+
-              </span>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-100 text-[10px] font-bold uppercase">
-                <CheckCircle className="w-3 h-3" /> Actif
-              </span>
-            </div>
-            <h1 className="text-2xl font-extrabold tracking-tight">Générateur d'Emploi du Temps</h1>
-            <p className="text-blue-100 text-sm mt-1">
-              Multi-solutions Pareto · backtracking · contraintes dures/souples · 6 types de règles pédagogiques
-            </p>
-          </div>
-          <div className="flex gap-3 flex-wrap">
-            <div className="bg-white/10 backdrop-blur rounded-xl px-4 py-2.5 text-center min-w-[100px]">
-              <div className="text-2xl font-extrabold">{solutions.length}</div>
-              <div className="text-[10px] text-blue-100 uppercase font-bold tracking-wider">Solutions</div>
-            </div>
-            <div className="bg-white/10 backdrop-blur rounded-xl px-4 py-2.5 text-center min-w-[100px]">
-              <div className="text-2xl font-extrabold">
-                {solutions.find(s => s.status === 'ACCEPTED')?.score ?? '—'}
-                {solutions.find(s => s.status === 'ACCEPTED') ? '%' : ''}
-              </div>
-              <div className="text-[10px] text-blue-100 uppercase font-bold tracking-wider">EDT actif</div>
-            </div>
-            <div className="bg-white/10 backdrop-blur rounded-xl px-4 py-2.5 text-center min-w-[100px]">
-              <div className="text-2xl font-extrabold">{blockCount}</div>
-              <div className="text-[10px] text-blue-100 uppercase font-bold tracking-wider">Créneaux</div>
-            </div>
-          </div>
-        </div>
-      </motion.div>
+      {/* ⭐ Carte "Générateur d'Emploi du Temps" supprimée sur demande utilisateur.
+          Les sous-onglets (Configuration, Contraintes, Génération, Emploi du temps)
+          sont directement affichés ci-dessous. */}
 
       {/* Tabs + content — pas de conteneur border/bg (le ModuleContentArea le fournit déjà) */}
       <div className="space-y-4">
@@ -1242,9 +1206,7 @@ function ManualEditor({ schoolLevelId, academicYearId }: { schoolLevelId: string
   const handleDeleteEntry = async (id: string) => {
     if (!confirm('Supprimer cette séance ?')) return;
     try {
-      await pedagogyFetch(`/api/timetable/entries/${id}`, { method: 'DELETE' }).catch(() =>
-        pedagogyFetch(`/api/timetables/entries/${id}`, { method: 'DELETE' }),
-      );
+      await pedagogyFetch(`/api/timetables/entries/${id}`, { method: 'DELETE' });
       await loadEntries();
       toast({ title: '✅ Séance supprimée' });
     } catch (e: any) {

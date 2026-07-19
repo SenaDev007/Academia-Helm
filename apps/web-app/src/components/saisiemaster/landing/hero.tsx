@@ -54,10 +54,11 @@ export function Hero({ onUploadClick }: HeroProps) {
         />
       </div>
 
-      {/* Boutons d'action — positionnés en absolu par-dessus l'image,
-          en bas du hero. On utilise un conteneur relatif avec padding
-          pour les positionner au-dessus du bas de l'image. */}
-      <div className="absolute inset-x-0 bottom-0 z-10 flex items-end justify-center pb-8 sm:pb-12 px-4">
+      {/* ⭐ Boutons d'action — placés SOUS l'image (pas par-dessus) pour
+          ne pas masquer le bas de l'image (desk, laptop).
+          Le conteneur est en relatif (après les divs image qui sont en
+          relatif aussi), donc les boutons s'affichent en dessous. */}
+      <div className="relative z-10 flex items-center justify-center py-8 sm:py-10 px-4 bg-[#0B3B6B]">
         <div className="flex flex-wrap items-center justify-center gap-3 w-full max-w-7xl">
           <Button
             size="lg"

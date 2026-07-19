@@ -152,6 +152,27 @@ export class SaisieMasterService {
       );
     }
 
+    // ⭐ Pour les NOUVEAUX prospects, phoneNumber (WhatsApp) et city sont
+    // obligatoires — l'admin doit savoir d'où vient le promoteur et avoir
+    // un moyen de le contacter. Pour les prospects existants (update via
+    // upsert), on tolère l'absence (rétro-compatibilité).
+    const existingProspect = await this.prisma.saisieMasterProspect.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+    if (!existingProspect) {
+      if (!data.phoneNumber || !data.phoneNumber.trim()) {
+        throw new BadRequestException(
+          'Le numéro WhatsApp est obligatoire pour créer un compte',
+        );
+      }
+      if (!data.city || !data.city.trim()) {
+        throw new BadRequestException(
+          'La ville est obligatoire pour créer un compte',
+        );
+      }
+    }
+
     // Validate password if provided.
     let hashedPassword: string | undefined;
     if (data.password !== undefined && data.password !== null) {

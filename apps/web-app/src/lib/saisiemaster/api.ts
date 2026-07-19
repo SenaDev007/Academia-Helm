@@ -186,7 +186,7 @@ async function apiFetch<T>(
   const response = await fetch(apiUrl, {
     ...options,
     headers,
-    signal: options.signal ?? AbortSignal.timeout(30000),
+    signal: options.signal ?? AbortSignal.timeout(60000),
   });
 
   const raw = await response.text();

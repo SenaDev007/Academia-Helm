@@ -41,13 +41,17 @@ import {
 } from '@nestjs/common';
 import { Public } from '../../auth/decorators/public.decorator';
 import { PlatformService } from '../services/platform.service';
+import { SaisieMasterTestimonialService } from '../../saisiemaster/saisiemaster-testimonial.service';
 
 @Controller('platform')
 @Public()
 export class PlatformController {
   private readonly logger = new Logger(PlatformController.name);
 
-  constructor(private readonly platformService: PlatformService) {}
+  constructor(
+    private readonly platformService: PlatformService,
+    private readonly saisieMasterTestimonialService: SaisieMasterTestimonialService,
+  ) {}
 
   /**
    * Vérifie que la requête vient bien du proxy Next.js (qui a déjà validé
@@ -596,5 +600,74 @@ export class PlatformController {
   ) {
     this.assertAdminProxyRequest(adminEmail);
     return this.platformService.recordManualPaymentStandalone(body, adminEmail);
+  }
+
+  // ─── SAISIEMASTER TESTIMONIALS (MODÉRATION) ──────────────────────────────
+  // Permet aux admins de modérer les témoignages déposés par les utilisateurs
+  // SaisieMaster depuis l'éditeur. Les témoignages sont isPublished=false par
+  // défaut et doivent être validés avant publication sur la landing page.
+
+  /** GET /platform/saisiemaster/testimonials — Tous les témoignages */
+  @Get('saisiemaster/testimonials')
+  async getSaisieMasterTestimonials(
+    @Headers('x-platform-admin-email') adminEmail?: string,
+    @Query('onlyPending') onlyPending?: string,
+    @Query('onlyPublished') onlyPublished?: string,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.saisieMasterTestimonialService.listAllForAdmin({
+      onlyPending: onlyPending === 'true' || onlyPending === '1',
+      onlyPublished: onlyPublished === 'true' || onlyPublished === '1',
+    });
+  }
+
+  /** PATCH /platform/saisiemaster/testimonials/:id/publish — Publier un témoignage */
+  @Post('saisiemaster/testimonials/:id/publish')
+  async publishSaisieMasterTestimonial(
+    @Headers('x-platform-admin-email') adminEmail?: string,
+    @Param('id') id: string,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.saisieMasterTestimonialService.publish(id);
+  }
+
+  /** POST /platform/saisiemaster/testimonials/:id/unpublish — Dépublier */
+  @Post('saisiemaster/testimonials/:id/unpublish')
+  async unpublishSaisieMasterTestimonial(
+    @Headers('x-platform-admin-email') adminEmail?: string,
+    @Param('id') id: string,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.saisieMasterTestimonialService.unpublish(id);
+  }
+
+  /** POST /platform/saisiemaster/testimonials/:id/feature — Mettre en avant */
+  @Post('saisiemaster/testimonials/:id/feature')
+  async featureSaisieMasterTestimonial(
+    @Headers('x-platform-admin-email') adminEmail?: string,
+    @Param('id') id: string,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.saisieMasterTestimonialService.feature(id);
+  }
+
+  /** POST /platform/saisiemaster/testimonials/:id/unfeature — Retirer mise en avant */
+  @Post('saisiemaster/testimonials/:id/unfeature')
+  async unfeatureSaisieMasterTestimonial(
+    @Headers('x-platform-admin-email') adminEmail?: string,
+    @Param('id') id: string,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.saisieMasterTestimonialService.unfeature(id);
+  }
+
+  /** DELETE /platform/saisiemaster/testimonials/:id — Supprimer */
+  @Delete('saisiemaster/testimonials/:id')
+  async deleteSaisieMasterTestimonial(
+    @Headers('x-platform-admin-email') adminEmail?: string,
+    @Param('id') id: string,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.saisieMasterTestimonialService.delete(id);
   }
 }

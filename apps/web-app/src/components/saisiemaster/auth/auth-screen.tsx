@@ -62,7 +62,7 @@ export function AuthScreen({ onSuccess }: AuthScreenProps) {
       </header>
 
       <main className="flex-1 flex items-center justify-center px-4 py-10 sm:py-16">
-        <div className="w-full max-w-md space-y-6">
+        <div className="w-full max-w-md sm:max-w-lg space-y-6">
           {/* Hero text */}
           <div className="text-center space-y-2">
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">

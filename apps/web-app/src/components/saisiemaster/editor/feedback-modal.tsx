@@ -39,8 +39,9 @@ export function FeedbackModal({ open, onOpenChange }: FeedbackModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [mine, setMine] = useState<MyTestimonial[]>([]);
+  const [loadingMine, setLoadingMine] = useState(false);
 
-  // Reset on open
+  // Reset on open + load existing testimonials (pour empêcher un 2e avis)
   useEffect(() => {
     if (open) {
       setRating(0);
@@ -51,18 +52,31 @@ export function FeedbackModal({ open, onOpenChange }: FeedbackModalProps) {
       setError(null);
       setSuccess(false);
       setSubmitting(false);
+      setLoadingMine(true);
       // Load user's existing testimonials
       (async () => {
         const list = await getMyTestimonials();
         setMine(list);
+        setLoadingMine(false);
       })();
     }
   }, [open]);
 
   const displayRating = hoverRating || rating;
 
+  // ⭐ L'utilisateur a déjà donné son avis → on bloque le formulaire
+  const hasAlreadySubmitted = mine.length > 0;
+
   const handleSubmit = async () => {
     setError(null);
+
+    // Sécurité : si l'utilisateur a déjà un témoignage, on bloque
+    if (hasAlreadySubmitted) {
+      setError(
+        "Vous avez déjà donné votre avis. Vous ne pouvez pas en soumettre un second.",
+      );
+      return;
+    }
 
     if (rating < 1 || rating > 5) {
       setError("Veuillez sélectionner une note (1 à 5 étoiles)");
@@ -76,6 +90,11 @@ export function FeedbackModal({ open, onOpenChange }: FeedbackModalProps) {
       setError("Le témoignage ne peut pas dépasser 2000 caractères");
       return;
     }
+    // ⭐ Ville obligatoire
+    if (city.trim().length < 2) {
+      setError("Veuillez indiquer votre ville");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -83,7 +102,7 @@ export function FeedbackModal({ open, onOpenChange }: FeedbackModalProps) {
         rating,
         content: content.trim(),
         authorRole,
-        city: city.trim() || undefined,
+        city: city.trim(),
       });
       setSuccess(true);
       // Refresh list
@@ -128,6 +147,70 @@ export function FeedbackModal({ open, onOpenChange }: FeedbackModalProps) {
             <Button onClick={handleClose} className="bg-[#0D6EFD] hover:bg-[#0D6EFD]/90 text-white">
               Fermer
             </Button>
+          </div>
+        ) : loadingMine ? (
+          <div className="py-10 text-center">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mx-auto" />
+            <p className="mt-2 text-sm text-muted-foreground">
+              Vérification de vos témoignages existants…
+            </p>
+          </div>
+        ) : hasAlreadySubmitted ? (
+          // ⭐ L'utilisateur a déjà donné son avis → on bloque le formulaire
+          <div className="py-6 space-y-4">
+            <div className="rounded-md border border-[#FD7E14]/30 bg-[#FD7E14]/5 px-4 py-3 text-sm text-[#FD7E14]">
+              <p className="font-medium">Vous avez déjà donné votre avis</p>
+              <p className="text-xs mt-1">
+                Pour garantir la diversité des retours, chaque utilisateur ne
+                peut soumettre qu&apos;un seul témoignage. Le vôtre est en attente
+                de validation par notre équipe.
+              </p>
+            </div>
+
+            {/* Afficher le témoignage existant */}
+            <div className="rounded-md border border-border bg-muted/30 p-3">
+              <p className="text-xs font-semibold text-foreground mb-2">
+                Votre témoignage
+              </p>
+              <ul className="space-y-2">
+                {mine.map((t) => (
+                  <li key={t.id} className="text-xs">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="inline-flex items-center gap-0.5">
+                        {[1, 2, 3, 4, 5].map((s) => (
+                          <Star
+                            key={s}
+                            className={cn(
+                              "h-3 w-3",
+                              s <= t.rating
+                                ? "fill-[#FCD116] text-[#FCD116]"
+                                : "text-muted-foreground/30",
+                            )}
+                          />
+                        ))}
+                      </span>
+                      <span
+                        className={cn(
+                          "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium",
+                          t.isPublished
+                            ? "bg-[#198754]/15 text-[#198754]"
+                            : "bg-[#FD7E14]/15 text-[#FD7E14]",
+                        )}
+                      >
+                        {t.isPublished ? "Publié" : "En attente de validation"}
+                      </span>
+                    </div>
+                    <p className="text-muted-foreground">{t.content}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <DialogFooter>
+              <Button onClick={handleClose} className="bg-[#0D6EFD] hover:bg-[#0D6EFD]/90 text-white">
+                Fermer
+              </Button>
+            </DialogFooter>
           </div>
         ) : (
           <div className="space-y-5 py-2">
@@ -200,16 +283,17 @@ export function FeedbackModal({ open, onOpenChange }: FeedbackModalProps) {
               </select>
             </div>
 
-            {/* Ville (optionnel) */}
+            {/* Ville (obligatoire) */}
             <div>
               <label className="text-sm font-medium text-foreground">
-                Ville <span className="text-muted-foreground font-normal">(optionnel)</span>
+                Ville <span className="text-[#DC3545]">*</span>
               </label>
               <input
                 type="text"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
                 placeholder="Parakou, Cotonou, Porto-Novo..."
+                required
                 className="mt-2 w-full h-10 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#0D6EFD]/40"
               />
             </div>
@@ -271,7 +355,7 @@ export function FeedbackModal({ open, onOpenChange }: FeedbackModalProps) {
               </Button>
               <Button
                 onClick={handleSubmit}
-                disabled={submitting || rating === 0 || content.trim().length < 20}
+                disabled={submitting || rating === 0 || content.trim().length < 20 || city.trim().length < 2}
                 className="bg-[#008751] hover:bg-[#008751]/90 text-white gap-2"
               >
                 {submitting ? (

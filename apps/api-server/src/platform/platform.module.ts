@@ -11,9 +11,10 @@ import { CmsController } from './controllers/cms.controller';
 import { PlatformService } from './services/platform.service';
 import { AuthModule } from '../auth/auth.module';
 import { DatabaseModule } from '../database/database.module';
+import { SaisieMasterModule } from '../saisiemaster/saisiemaster.module';
 
 @Module({
-  imports: [AuthModule, DatabaseModule],
+  imports: [AuthModule, DatabaseModule, SaisieMasterModule],
   controllers: [PlatformController, CmsController],
   providers: [PlatformService],
   exports: [PlatformService],

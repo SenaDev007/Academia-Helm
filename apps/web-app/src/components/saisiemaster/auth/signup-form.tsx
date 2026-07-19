@@ -45,7 +45,14 @@ export function SignupForm({
     e.preventDefault();
     setError(null);
 
-    if (!email.trim() || !firstName.trim() || !lastName.trim() || !schoolName.trim()) {
+    if (
+      !email.trim() ||
+      !firstName.trim() ||
+      !lastName.trim() ||
+      !schoolName.trim() ||
+      !phoneNumber.trim() ||
+      !city.trim()
+    ) {
       setError("Veuillez remplir tous les champs obligatoires (*).");
       return;
     }
@@ -53,6 +60,13 @@ export function SignupForm({
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
       setError("Adresse email invalide.");
+      return;
+    }
+
+    // Validation du numéro WhatsApp : au moins 8 chiffres
+    const phoneDigits = phoneNumber.replace(/\D/g, "");
+    if (phoneDigits.length < 8) {
+      setError("Numéro WhatsApp invalide. Ex: +229 01 97 00 00 00");
       return;
     }
 
@@ -73,8 +87,8 @@ export function SignupForm({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         schoolName: schoolName.trim(),
-        phoneNumber: phoneNumber.trim() || undefined,
-        city: city.trim() || undefined,
+        phoneNumber: phoneNumber.trim(),
+        city: city.trim(),
         password,
       });
       onSuccess(result.prospect, result.token);
@@ -209,13 +223,15 @@ export function SignupForm({
             </div>
           </div>
           <p className="text-xs text-muted-foreground -mt-2">
-            Minimum 6 caractères. Votre mot de passe est hashé (bcrypt) et
-            jamais transmis en clair.
+            Minimum 6 caractères. Votre mot de passe est haché et jamais
+            transmis en clair.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1">
-              <Label htmlFor="sm-phone">Téléphone (optionnel)</Label>
+              <Label htmlFor="sm-phone">
+                Numéro WhatsApp <span className="text-[#e31b23]">*</span>
+              </Label>
               <Input
                 id="sm-phone"
                 type="tel"
@@ -224,10 +240,13 @@ export function SignupForm({
                 placeholder="+229 01 97 00 00 00"
                 autoComplete="tel"
                 disabled={loading}
+                required
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="sm-city">Ville (optionnel)</Label>
+              <Label htmlFor="sm-city">
+                Ville <span className="text-[#e31b23]">*</span>
+              </Label>
               <Input
                 id="sm-city"
                 value={city}
@@ -235,6 +254,7 @@ export function SignupForm({
                 placeholder="Cotonou"
                 autoComplete="address-level2"
                 disabled={loading}
+                required
               />
             </div>
           </div>

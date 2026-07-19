@@ -717,61 +717,39 @@ export class TimetableEngineService {
     });
     if (subjects.length === 0) throw new BadRequestException('Aucune matière trouvée.');
 
-<<<<<<< HEAD
-    // ⭐ FIX: subject_assignments est souvent vide. Les vraies affectations sont
-    // dans teacher_class_assignments (TCA) + class_subjects (CS).
-    // On essaie d'abord subject_assignments, puis fallback sur TCA+CS.
-    let assignments: any[] = await this.prisma.subjectAssignment.findMany({
-      where: { tenantId, academicYearId, schoolLevelId },
-=======
-    const assignmentFilter: any = { tenantId, academicYearId };
-    if (resolvedSchoolLevelId === schoolLevelId || educationLevel === null) {
-      assignmentFilter.schoolLevelId = resolvedSchoolLevelId;
-    }
-    const assignments = await this.prisma.subjectAssignment.findMany({
-      where: assignmentFilter,
->>>>>>> a28c741ea9f1a5faba7e36a116e63d929e9cab51
+    // ⭐ Utilisation directe de teacher_class_assignments + class_subjects
+    // (les vraies tables d'affectation du module pédagogique).
+    // L'ancienne table subject_assignments n'est plus utilisée.
+    const tcaRecords = await this.prisma.teacherClassAssignment.findMany({
+      where: { tenantId, academicYearId },
       include: {
-        subject: { select: { id: true, name: true } },
         teacher: { select: { id: true, firstName: true, lastName: true } },
+        classSubject: {
+          select: {
+            id: true,
+            subjectId: true,
+            subject: { select: { id: true, name: true } },
+            weeklyHours: true,
+            coefficient: true,
+          },
+        },
       },
     });
 
-    // ⭐ Fallback: si subject_assignments est vide, utiliser teacher_class_assignments
-    // + class_subjects pour construire les affectations
-    if (assignments.length === 0) {
-      this.logger.log('⚠️ subject_assignments vide — fallback sur teacher_class_assignments + class_subjects');
-      const tcaRecords = await this.prisma.teacherClassAssignment.findMany({
-        where: { tenantId, academicYearId },
-        include: {
-          teacher: { select: { id: true, firstName: true, lastName: true } },
-          classSubject: {
-            select: {
-              id: true,
-              subjectId: true,
-              subject: { select: { id: true, name: true } },
-              weeklyHours: true,
-              coefficient: true,
-            },
-          },
-        },
-      });
+    const assignments: any[] = tcaRecords
+      .filter((tca: any) => tca.teacher && tca.classSubject?.subject)
+      .map((tca: any) => ({
+        id: tca.id,
+        teacherId: tca.teacherId,
+        classId: tca.classId,
+        subjectId: tca.classSubject.subjectId,
+        hoursPerWeek: tca.classSubject.weeklyHours || 2,
+        coefficient: tca.classSubject.coefficient || 1,
+        teacher: tca.teacher,
+        subject: tca.classSubject.subject,
+      }));
 
-      assignments = tcaRecords
-        .filter((tca: any) => tca.teacher && tca.classSubject?.subject)
-        .map((tca: any) => ({
-          id: tca.id,
-          teacherId: tca.teacherId,
-          classId: tca.classId,
-          subjectId: tca.classSubject.subjectId,
-          hoursPerWeek: tca.classSubject.weeklyHours || 2,
-          coefficient: tca.classSubject.coefficient || 1,
-          teacher: tca.teacher,
-          subject: tca.classSubject.subject,
-        }));
-
-      this.logger.log(`✅ ${assignments.length} affectations reconstruites depuis TCA+CS`);
-    }
+    this.logger.log(`✅ ${assignments.length} affectations chargées depuis teacher_class_assignments + class_subjects`);
 
     const rooms = await this.prisma.room.findMany({
       where: { tenantId, schoolLevelId },
@@ -838,7 +816,7 @@ export class TimetableEngineService {
 
         // ─── Expansion multigrade : garantir la parité des matières ──
         // Pour chaque groupe multigrade (CE1+CE2 avec teacher T) :
-        // - Si T a une SubjectAssignment pour CE1-Maths mais pas pour CE2-Maths,
+        // - Si T a une affectation (TCA) pour CE1-Maths mais pas pour CE2-Maths,
         //   créer une assignment virtuelle CE2-Maths avec le même teacher T.
         // - Le STE placera naturellement CE2-Maths à un créneau différent
         //   (le teacher ne peut pas être dans 2 classes au même moment).

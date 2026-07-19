@@ -146,11 +146,49 @@ apiClient.interceptors.response.use(
         return Promise.reject(offlineError);
       }
 
+      // ⭐ Détermine la route de login selon le contexte (admin vs tenant).
+      // Sur admin.academiahelm.com, on redirige vers /admin-login au lieu
+      // de /login (qui est réservé aux tenants écoles). Cela évite la boucle
+      // admin-login → platform → 401 tenant → /login → middleware → /admin-login
+      // qui donnait l'impression d'une déconnexion immédiate.
+      const getLoginRedirectUrl = (): string => {
+        if (typeof window === 'undefined') return '/login?reason=session_expired';
+        const host = window.location.hostname;
+        // Sous-domaine admin → login admin
+        if (host.startsWith('admin.') || host === 'admin.academiahelm.com') {
+          return '/admin-login?reason=session_expired';
+        }
+        // Sous-domaine saisiemaster → landing SaisieMaster
+        if (host.startsWith('saisiemaster.')) {
+          return '/?reason=session_expired';
+        }
+        // Sinon → login tenant classique
+        return '/login?reason=session_expired';
+      };
+
+      // ⭐ Sur admin.academiahelm.com, les 401 sur endpoints tenant (settings,
+      // orion, etc.) sont NORMAUX — l'admin n'a pas de tenant. On ne doit
+      // PAS le déconnecter pour autant. On rejette simplement la requête
+      // sans rediriger.
+      const isAdminContext =
+        typeof window !== 'undefined' &&
+        (window.location.hostname.startsWith('admin.') ||
+          window.location.pathname.startsWith('/platform'));
+
+      if (isAdminContext) {
+        // L'admin a sa propre session (cookie academia_admin_session).
+        // Un 401 sur un endpoint tenant signifie juste que cet endpoint
+        // n'est pas accessible aux admins — c'est attendu. On rejette
+        // sans clearClientSessionSync ni redirect.
+        console.warn('[API Client] 401 ignoré en contexte admin (endpoint tenant non applicable)');
+        return Promise.reject(error);
+      }
+
       // Si c'est déjà une requête retry, ne pas boucler → rediriger vers login
       if (originalRequest._retry) {
         if (typeof window !== 'undefined') {
           clearClientSessionSync();
-          window.location.href = '/login?reason=session_expired';
+          window.location.href = getLoginRedirectUrl();
         }
         return Promise.reject(error);
       }
@@ -183,14 +221,14 @@ apiClient.interceptors.response.use(
         processQueue(error, null);
         if (typeof window !== 'undefined') {
           clearClientSessionSync();
-          window.location.href = '/login?reason=session_expired';
+          window.location.href = getLoginRedirectUrl();
         }
         return Promise.reject(error);
       } catch (refreshError) {
         processQueue(refreshError, null);
         if (typeof window !== 'undefined') {
           clearClientSessionSync();
-          window.location.href = '/login?reason=session_expired';
+          window.location.href = getLoginRedirectUrl();
         }
         return Promise.reject(refreshError);
       } finally {

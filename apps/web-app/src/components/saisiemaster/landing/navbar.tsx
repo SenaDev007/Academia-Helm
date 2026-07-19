@@ -20,6 +20,39 @@ export function Navbar({ onStart }: NavbarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
+  // ⭐ Auto-hide navbar : invisible au scroll vers le bas, visible au scroll
+  // vers le haut. La navbar reste visible tant qu'on est en haut de page
+  // (scrollY < 100px), et réapparaît dès qu'on remonte.
+  const [hidden, setHidden] = useState(false);
+  const lastScrollY = useRef(0);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+
+      // En haut de page (0-100px) → toujours visible
+      if (currentScrollY < 100) {
+        setHidden(false);
+        lastScrollY.current = currentScrollY;
+        return;
+      }
+
+      // Scroll vers le bas → cacher
+      if (currentScrollY > lastScrollY.current + 10) {
+        setHidden(true);
+      }
+      // Scroll vers le haut → montrer
+      else if (currentScrollY < lastScrollY.current - 10) {
+        setHidden(false);
+      }
+
+      lastScrollY.current = currentScrollY;
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   // Fermer le menu au clic en dehors
   useEffect(() => {
     if (!menuOpen) return;
@@ -61,7 +94,13 @@ export function Navbar({ onStart }: NavbarProps) {
     : "";
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-border/60 bg-background/85 backdrop-blur-md">
+    <header
+      className={
+        "sticky top-0 z-40 w-full border-b border-border/60 bg-background/85 backdrop-blur-md " +
+        "transition-transform duration-300 ease-in-out " +
+        (hidden ? "-translate-y-full" : "translate-y-0")
+      }
+    >
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* ⭐ Logo avec halo tricolore léger */}
         <LogoWithHalo size="md" />

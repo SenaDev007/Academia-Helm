@@ -558,26 +558,24 @@ export class SaisieMasterService {
    * Inclut le nombre de sessions (classes) et la dernière activité.
    * Tri : plus récemment actifs en premier.
    */
-  async listAllProspectsForAdmin(): Promise<
-    Array<{
-      id: string;
-      email: string;
-      firstName: string;
-      lastName: string;
-      schoolName: string;
-      phoneNumber: string | null;
-      city: string | null;
-      status: string;
-      signupDate: string;
-      lastLoginAt: string | null;
-      loginCount: number;
-      classesCreated: number;
-      gradesEntered: number;
-      exportsCount: number;
-      sessionsCount: number;
-      lastSessionAt: string | null;
-    }>
-  {
+  async listAllProspectsForAdmin(): Promise<Array<{
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    schoolName: string;
+    phoneNumber: string | null;
+    city: string | null;
+    status: string;
+    signupDate: string;
+    lastLoginAt: string | null;
+    loginCount: number;
+    classesCreated: number;
+    gradesEntered: number;
+    exportsCount: number;
+    sessionsCount: number;
+    lastSessionAt: string | null;
+  }>> {
     const prospects = await this.prisma.saisieMasterProspect.findMany({
       orderBy: [{ lastLoginAt: 'desc' }, { signupDate: 'desc' }],
       take: 500,

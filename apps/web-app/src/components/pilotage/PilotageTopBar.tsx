@@ -144,6 +144,11 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
   }, []);
 
   useEffect(() => {
+    // ⭐ Les admins platform n'ont pas de tenant — skip les appels tenant.
+    // Ces appels retournent 401 pour les admins, ce qui déclenchait
+    // l'intercepteur axios et donnait l'impression d'une déconnexion.
+    if (isPlatformAdmin) return;
+
     loadSchoolIdentity();
     const onIdentityUpdated = () => {
       void loadSchoolIdentity();
@@ -152,9 +157,13 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
     return () => {
       window.removeEventListener(SCHOOL_IDENTITY_UPDATED_EVENT, onIdentityUpdated);
     };
-  }, [loadSchoolIdentity]);
+  }, [loadSchoolIdentity, isPlatformAdmin]);
 
   useEffect(() => {
+    // ⭐ Les admins platform n'ont pas de tenant — skip les alertes ORION
+    // (endpoint tenant-scoped qui retourne 401 pour les admins).
+    if (isPlatformAdmin) return;
+
     const loadOrionAlerts = async () => {
       try {
         const response = await fetch('/api/orion/alerts?status=active');
@@ -170,7 +179,7 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
     loadOrionAlerts();
     const interval = setInterval(loadOrionAlerts, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isPlatformAdmin]);
 
   const handleLogout = async () => {
     try {

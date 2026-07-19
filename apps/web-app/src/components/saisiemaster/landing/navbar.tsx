@@ -1,19 +1,11 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { BookOpen, LogOut, User as UserIcon, History, LogIn } from "lucide-react";
+import { BookOpen, LogOut, History, LogIn, ChevronDown } from "lucide-react";
 import { useSaisieMasterStore, selectIsAuthenticated } from "@/lib/saisiemaster/store";
 
 interface NavbarProps {
-  /** Called when the user clicks the "Commencer" CTA. */
   onStart: () => void;
 }
 
@@ -24,19 +16,31 @@ export function Navbar({ onStart }: NavbarProps) {
   const setAuthView = useSaisieMasterStore((s) => s.setAuthView);
   const logout = useSaisieMasterStore((s) => s.logout);
 
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // Fermer le menu au clic en dehors
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
+
   const handleStart = () => {
     if (isAuthenticated) {
-      // Already authed → scroll to upload section.
       const el = document.getElementById("demarrer");
       el?.scrollIntoView({ behavior: "smooth", block: "center" });
     } else {
-      // Not authed → trigger auth flow (signup mode).
       setAuthView("signup");
     }
   };
 
   const handleLogin = () => {
-    // Open the auth screen directly in login mode.
     setAuthView("login");
   };
 
@@ -47,7 +51,13 @@ export function Navbar({ onStart }: NavbarProps) {
 
   const handleMesSaisies = () => {
     setView("editor");
+    setMenuOpen(false);
   };
+
+  // Get initials safely
+  const initials = prospect
+    ? `${prospect.firstName?.[0] ?? ""}${prospect.lastName?.[0] ?? ""}`.toUpperCase()
+    : "";
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border/60 bg-background/85 backdrop-blur-md">
@@ -68,43 +78,58 @@ export function Navbar({ onStart }: NavbarProps) {
 
         <div className="flex items-center gap-2">
           {isAuthenticated && prospect ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-2">
-                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#008751]/10 text-[#008751] text-xs font-semibold">
-                    {prospect.firstName.charAt(0).toUpperCase()}
-                    {prospect.lastName.charAt(0).toUpperCase()}
-                  </span>
-                  <span className="hidden sm:inline font-medium">
-                    {prospect.firstName}
-                  </span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel className="flex flex-col gap-0.5">
-                  <span className="font-medium">{prospect.firstName} {prospect.lastName}</span>
-                  <span className="text-xs font-normal text-muted-foreground truncate">
-                    {prospect.email}
-                  </span>
-                  <span className="text-xs font-normal text-muted-foreground">
-                    {prospect.schoolName}
-                  </span>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleMesSaisies} className="cursor-pointer">
-                  <History className="h-4 w-4 mr-2" />
-                  Mes saisies
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={handleLogout}
-                  className="cursor-pointer text-[#e31b23] focus:text-[#e31b23]"
-                >
-                  <LogOut className="h-4 w-4 mr-2" />
-                  Se déconnecter
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div className="relative" ref={menuRef}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-2"
+                onClick={() => setMenuOpen(!menuOpen)}
+              >
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#008751]/10 text-[#008751] text-xs font-semibold">
+                  {initials}
+                </span>
+                <span className="hidden sm:inline font-medium">
+                  {prospect.firstName || ""}
+                </span>
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </Button>
+
+              {menuOpen && (
+                <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg border border-gray-200 shadow-lg z-50 overflow-hidden">
+                  <div className="px-3 py-2 border-b border-gray-100">
+                    <p className="text-sm font-medium text-gray-900">
+                      {prospect.firstName || ""} {prospect.lastName || ""}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {prospect.email || ""}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {prospect.schoolName || ""}
+                    </p>
+                  </div>
+                  <div className="py-1">
+                    <button
+                      type="button"
+                      onClick={handleMesSaisies}
+                      className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
+                    >
+                      <History className="h-4 w-4" />
+                      Mes saisies
+                    </button>
+                  </div>
+                  <div className="border-t border-gray-100 py-1">
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="w-full text-left px-3 py-2 text-sm text-[#e31b23] hover:bg-red-50 flex items-center gap-2 transition-colors"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Se déconnecter
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           ) : (
             <>
               <Button

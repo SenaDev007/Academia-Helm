@@ -27,7 +27,7 @@ import {
   FileText, Download, UserCheck, GraduationCap, BookOpen, Baby,
   RotateCcw, CheckCircle, XCircle, Clock, AlertCircle, Upload,
   ShieldAlert, Info, BrainCircuit, ChevronUp, EyeOff, Eye, FileDown, Pencil, FileSpreadsheet,
-  DollarSign, UserPlus, RefreshCw,
+  DollarSign, UserPlus, RefreshCw, Trash2,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { FormModal } from '@/components/modules/blueprint';
@@ -613,6 +613,36 @@ export default function EnrollmentsContent() {
     }
   };
 
+  // ⭐ Suppression définitive d'un élève (uniquement si PRE_REGISTERED ou ADMITTED)
+  const handleDeleteStudent = async (enrollment: Enrollment) => {
+    if (!confirm(
+      `Êtes-vous sûr de vouloir supprimer définitivement ${enrollment.student.firstName} ${enrollment.student.lastName} ?\n\n` +
+      `Cette action est IRRÉVERSIBLE et supprimera :\n` +
+      `• L'inscription et le dossier académique\n` +
+      `• Le compte financier (s'il n'y a pas de paiements)\n` +
+      `• Les photos, responsables, et toutes les données liées\n\n` +
+      `Tapez "SUPPRIMER" pour confirmer :`
+    )) return;
+
+    const input = prompt('Confirmez la suppression en tapant SUPPRIMER :');
+    if (input !== 'SUPPRIMER') {
+      toast({ title: 'Suppression annulée', variant: 'info' });
+      return;
+    }
+
+    try {
+      const result = await studentsService.deleteStudent(enrollment.student.id);
+      toast({
+        title: '✅ Élève supprimé',
+        description: result.message,
+        variant: 'success',
+      });
+      loadData();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'error' });
+    }
+  };
+
   // Export CSV
   const handleExportCSV = async () => {
     if (!academicYear) return;
@@ -1067,6 +1097,14 @@ export default function EnrollmentsContent() {
                                                 className="p-1 hover:bg-emerald-100 rounded text-emerald-600"
                                                 title="Régime & Finance"
                                               ><DollarSign className="w-4 h-4" /></button>
+                                              {/* ⭐ Supprimer (seulement si PRE_REGISTERED ou ADMITTED) */}
+                                              {(enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED') && (
+                                                <button
+                                                  onClick={() => handleDeleteStudent(enr)}
+                                                  className="p-1 hover:bg-red-100 rounded text-red-600"
+                                                  title="Supprimer définitivement"
+                                                ><Trash2 className="w-4 h-4" /></button>
+                                              )}
                                             </div>
                                           </div>
                                         );
@@ -1322,6 +1360,14 @@ export default function EnrollmentsContent() {
                                                         className="p-1 hover:bg-emerald-100 rounded text-emerald-600"
                                                         title="Régime & Finance"
                                                       ><DollarSign className="w-4 h-4" /></button>
+                                                      {/* ⭐ Supprimer (seulement si PRE_REGISTERED ou ADMITTED) */}
+                                                      {(enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED') && (
+                                                        <button
+                                                          onClick={() => handleDeleteStudent(enr)}
+                                                          className="p-1 hover:bg-red-100 rounded text-red-600"
+                                                          title="Supprimer définitivement"
+                                                        ><Trash2 className="w-4 h-4" /></button>
+                                                      )}
                                                     </div>
                                                   </div>
                                                 );

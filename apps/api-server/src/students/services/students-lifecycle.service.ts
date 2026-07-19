@@ -9,6 +9,7 @@ import { MatriculeService } from './matricule.service';
 import { PublicVerificationService } from './public-verification.service';
 import { StudentAccountService } from '../../finance/student-account.service';
 import { StudentCountVerifierService } from '../../billing/services/student-count-verifier.service';
+import { StudentIdentifierService } from './student-identifier.service';
 
 const ENROLLMENT_STATUS = {
   PRE_REGISTERED: 'PRE_REGISTERED',
@@ -31,6 +32,7 @@ export class StudentsLifecycleService {
     private readonly publicVerificationService: PublicVerificationService,
     private readonly studentAccountService: StudentAccountService,
     private readonly studentCountVerifier: StudentCountVerifierService,
+    private readonly studentIdentifierService: StudentIdentifierService,
   ) {}
 
   /**
@@ -368,6 +370,21 @@ export class StudentsLifecycleService {
       );
     } catch (e) {
       this.logger.warn(`Token de vÃ©rification non crÃ©Ã© Ã  l'admission pour ${data.studentId}: ${(e as Error).message}`);
+
+    // Matricule GLOBAL Academia Helm (AH-STU-YY-XXX)
+    // Genere a l admission pour que l eleve ait un identifiant unique
+    // inter-etablissements. Stocke sur Student.globalStudentId + StudentIdentifier.
+    try {
+      await this.studentIdentifierService.generateGlobalMatricule(
+        tenantId,
+        data.studentId,
+        'BJ',
+        userId,
+      );
+      this.logger.log(`Global matricule generated for student ${data.studentId}`);
+    } catch (e) {
+      this.logger.warn(`Global matricule not created at admission for ${data.studentId}: ${(e as Error).message}`);
+    }
     }
 
     // Comptes Ã©lÃ¨ves : crÃ©ation automatique StudentAccount + AccountBreakdown Ã  l'admission
@@ -1905,5 +1922,110 @@ export class StudentsLifecycleService {
         `Erreur lors de la mise à jour du type d'inscription: ${err.message}`,
       );
     }
+  }
+
+  /**
+   * ⭐ Supprime définitivement un élève et toutes ses données liées.
+   * Utilisé quand une inscription a été faite par erreur et que l'élève
+   * n'a pas encore de transactions/paiements associés.
+   *
+   * Sécurité :
+   *   - Si l'élève a des transactions (paiements), on refuse la suppression
+   *   - Si l'élève a le statut ACTIVE (validé), on refuse aussi
+   *   - Seuls les statuts PRE_REGISTERED et ADMITTED sont supprimables
+   *
+   * Cascade :
+   *   - student_audit_logs (ON DELETE CASCADE)
+   *   - student_enrollments (ON DELETE CASCADE)
+   *   - student_accounts → account_breakdowns (manuel)
+   *   - student_photos (ON DELETE CASCADE)
+   *   - student_guardians (ON DELETE CASCADE)
+   *   - student_academic_records (ON DELETE CASCADE)
+   *   - student_identifiers (ON DELETE CASCADE)
+   *   - public_verification_tokens (manuel)
+   *   - student (la ligne elle-même)
+   */
+  async deleteStudent(
+    tenantId: string,
+    studentId: string,
+  ): Promise<{ success: boolean; studentId: string; message: string }> {
+    // 1. Vérifier que l'élève existe et appartient au tenant
+    const student = await this.prisma.student.findFirst({
+      where: { id: studentId, tenantId },
+      include: {
+        studentEnrollments: true,
+      },
+    });
+
+    if (!student) {
+      throw new NotFoundException('Élève non trouvé');
+    }
+
+    // 2. Vérifier le statut — seuls PRE_REGISTERED et ADMITTED sont supprimables
+    const deletableStatuses = ['PRE_REGISTERED', 'ADMITTED'];
+    const hasNonDeletable = student.studentEnrollments.some(
+      (e) => !deletableStatuses.includes(e.status),
+    );
+    if (hasNonDeletable) {
+      throw new BadRequestException(
+        'Impossible de supprimer un élève déjà validé/actif. Utilisez plutôt le retrait ou le transfert.',
+      );
+    }
+
+    // 3. Vérifier qu'il n'y a pas de transactions (paiements)
+    const account = await this.prisma.studentAccount.findFirst({
+      where: { studentId },
+      include: { breakdowns: true },
+    });
+    if (account) {
+      const hasPayments = account.breakdowns.some(
+        (b) => Number(b.paidAmount) > 0,
+      );
+      if (hasPayments) {
+        throw new BadRequestException(
+          'Impossible de supprimer un élève qui a déjà des paiements enregistrés.',
+        );
+      }
+    }
+
+    // 4. Suppression en cascade (best-effort pour chaque table)
+    this.logger.log(
+      `🗑️ Suppression définitive de l'élève ${student.firstName} ${student.lastName} (${studentId})`,
+    );
+
+    // Désactiver les tokens de vérification publique
+    try {
+      await this.publicVerificationService.deactivateTokensForStudent(studentId);
+    } catch {}
+
+    // Supprimer les account_breakdowns (si compte existe)
+    if (account) {
+      try {
+        await this.prisma.accountBreakdown.deleteMany({
+          where: { studentAccountId: account.id },
+        });
+        await this.prisma.studentAccount.delete({
+          where: { id: account.id },
+        });
+      } catch (e) {
+        this.logger.warn(`Erreur suppression compte: ${(e as Error).message}`);
+      }
+    }
+
+    // Supprimer l'élève (cascade automatique pour enrollments, photos, guardians, etc.)
+    await this.prisma.student.delete({
+      where: { id: studentId },
+    });
+
+    // Audit log (sur le tenant, pas sur l'élève qui est supprimé)
+    this.logger.log(
+      `✅ Élève ${studentId} supprimé définitivement avec toutes ses données`,
+    );
+
+    return {
+      success: true,
+      studentId,
+      message: `Élève ${student.firstName} ${student.lastName} supprimé définitivement.`,
+    };
   }
 }

@@ -669,20 +669,60 @@ export class TimetableEngineService {
     const timeBlocks: any[] = Array.isArray(config.timeBlocks) ? config.timeBlocks : JSON.parse(config.timeBlocks || '[]');
     if (timeBlocks.length === 0) throw new BadRequestException('Aucun créneau horaire configuré.');
 
+    // ⭐ FIX: schoolLevelId dans la config peut venir de education_levels (pas school_levels).
+    // Les classes, sujets, etc. utilisent school_levels.id. On doit résoudre le
+    // bon UUID en cherchant dans les deux tables.
+    let resolvedSchoolLevelId = schoolLevelId;
+    const educationLevel = await this.prisma.educationLevel.findUnique({
+      where: { id: schoolLevelId },
+      select: { name: true },
+    }).catch(() => null);
+
+    if (educationLevel) {
+      // C'est un education_level — on cherche le school_level correspondant par code
+      const schoolLevel = await this.prisma.schoolLevel.findFirst({
+        where: { tenantId, code: educationLevel.name },
+        select: { id: true },
+      }).catch(() => null);
+      if (schoolLevel) {
+        resolvedSchoolLevelId = schoolLevel.id;
+      } else {
+        // Pas de school_level correspondant — on essaie toutes les classes du tenant
+        // sans filtre schoolLevelId
+        this.logger.warn(`No school_level found for education_level "${educationLevel.name}" — trying without level filter`);
+      }
+    }
+
+    const classFilter: any = { tenantId, academicYearId };
+    if (resolvedSchoolLevelId === schoolLevelId || educationLevel === null) {
+      // schoolLevelId est déjà un school_level UUID, ou on n'a pas trouvé de mapping
+      classFilter.schoolLevelId = resolvedSchoolLevelId;
+    }
+    // Si educationLevel existe mais pas de mapping → pas de filtre schoolLevelId
+    // (on prend toutes les classes du tenant/year)
+
     const classes = await this.prisma.class.findMany({
-      where: { tenantId, academicYearId, schoolLevelId },
+      where: classFilter,
       select: { id: true, name: true, capacity: true },
     });
     if (classes.length === 0) throw new BadRequestException('Aucune classe trouvée.');
 
+    const subjectFilter: any = { tenantId, academicYearId };
+    if (resolvedSchoolLevelId === schoolLevelId || educationLevel === null) {
+      subjectFilter.schoolLevelId = resolvedSchoolLevelId;
+    }
     const subjects = await this.prisma.subject.findMany({
-      where: { tenantId, academicYearId, schoolLevelId },
+      where: subjectFilter,
       select: { id: true, name: true, code: true },
     });
     if (subjects.length === 0) throw new BadRequestException('Aucune matière trouvée.');
 
+    const assignmentFilter: any = { tenantId, academicYearId };
+    if (resolvedSchoolLevelId === schoolLevelId || educationLevel === null) {
+      assignmentFilter.schoolLevelId = resolvedSchoolLevelId;
+    }
     const assignments = await this.prisma.subjectAssignment.findMany({
-      where: { tenantId, academicYearId, schoolLevelId },
+      where: assignmentFilter,
       include: {
         subject: { select: { id: true, name: true } },
         teacher: { select: { id: true, firstName: true, lastName: true } },

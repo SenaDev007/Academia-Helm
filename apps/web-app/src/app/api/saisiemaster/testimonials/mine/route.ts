@@ -15,7 +15,7 @@ import {
   getApiBaseUrlForRoutes,
   normalizeApiUrl,
 } from '@/lib/utils/api-urls';
-import { saisieMasterOptionsResponse, saisieMasterJsonResponse } from '../../../_cors';
+import { saisieMasterOptionsResponse, saisieMasterJsonResponse } from '../../_cors';
 
 export async function OPTIONS(request: NextRequest) {
   return saisieMasterOptionsResponse(request);

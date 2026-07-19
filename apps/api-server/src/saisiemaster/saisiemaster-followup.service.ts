@@ -331,7 +331,7 @@ export class SaisieMasterFollowupService {
         <tr>
           <td style="padding:8px 0;width:40px;vertical-align:top;">🌍</td>
           <td style="padding:8px 0;">
-            <strong style="color:#0D1F6E;">Module Bilingue (Français / Anglais)</strong><br/>
+            <strong style="color:#0D1F6E;">Option Bilingue (Français / Anglais)</strong><br/>
             <span style="font-size:13px;color:#666;">Séparation des matières francophones et anglophones, notes distinctes par section, bulletins adaptés au parcours de chaque élève</span>
           </td>
         </tr>
@@ -356,9 +356,9 @@ export class SaisieMasterFollowupService {
     </p>
   </div>
 
-  <!-- Footer (clair pour visibilité du texte YEHI OR Tech) -->
+  <!-- Footer (clair pour visibilité du logo YEHI OR Tech) -->
   <div style="background:#f4f5f7;padding:24px;text-align:center;border-top:1px solid #e5e7eb;">
-    <p style="color:#0D1F6E;font-size:15px;font-weight:700;margin:0 0 4px;">YEHI OR Tech</p>
+    <img src="https://www.academiahelm.com/images/logo-yehi-or-tech.png" alt="YEHI OR Tech" style="height:40px;margin:0 auto 10px;display:block;" />
     <p style="color:#666;font-size:12px;margin:0;">
       © 2026 Academia Helm — YEHI OR Tech · Parakou, Bénin<br/>
       Vous recevez cet email car vous avez créé un compte SaisieMaster.
@@ -433,9 +433,9 @@ export class SaisieMasterFollowupService {
     </p>
   </div>
 
-  <!-- Footer (clair pour visibilité du texte YEHI OR Tech) -->
+  <!-- Footer (clair pour visibilité du logo YEHI OR Tech) -->
   <div style="background:#f4f5f7;padding:24px;text-align:center;border-top:1px solid #e5e7eb;">
-    <p style="color:#0D1F6E;font-size:15px;font-weight:700;margin:0 0 4px;">YEHI OR Tech</p>
+    <img src="https://www.academiahelm.com/images/logo-yehi-or-tech.png" alt="YEHI OR Tech" style="height:40px;margin:0 auto 10px;display:block;" />
     <p style="color:#666;font-size:12px;margin:0;">
       © 2026 Academia Helm — YEHI OR Tech · Parakou, Bénin<br/>
       Vous recevez cet email car vous avez créé un compte SaisieMaster.
@@ -528,9 +528,9 @@ export class SaisieMasterFollowupService {
     </p>
   </div>
 
-  <!-- Footer (clair pour visibilité du texte YEHI OR Tech) -->
+  <!-- Footer (clair pour visibilité du logo YEHI OR Tech) -->
   <div style="background:#f4f5f7;padding:24px;text-align:center;border-top:1px solid #e5e7eb;">
-    <p style="color:#0D1F6E;font-size:15px;font-weight:700;margin:0 0 4px;">YEHI OR Tech</p>
+    <img src="https://www.academiahelm.com/images/logo-yehi-or-tech.png" alt="YEHI OR Tech" style="height:40px;margin:0 auto 10px;display:block;" />
     <p style="color:#666;font-size:12px;margin:0;">
       © 2026 Academia Helm — YEHI OR Tech · Parakou, Bénin<br/>
       Vous recevez cet email car vous avez créé un compte SaisieMaster.

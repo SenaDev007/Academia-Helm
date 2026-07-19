@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Star, Quote, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,12 +12,18 @@ import { useSaisieMasterStore, selectIsAuthenticated } from "@/lib/saisiemaster/
 /**
  * Section témoignages — affichée sur la landing page SaisieMaster.
  *
- * Charge les témoignages publiés depuis l'API publique.
- * Si l'utilisateur est authentifié, un CTA "Donner mon avis" s'affiche
- * et ouvre le modal de témoignage (géré par le parent via onGiveFeedback).
+ * Comportement :
+ *  - Charge les témoignages publiés depuis l'API publique.
+ *  - Si l'utilisateur est authentifié, un CTA "Donner mon avis" s'affiche
+ *    et ouvre le modal de témoignage (géré par le parent via onGiveFeedback).
+ *  - Affichage des cartes :
+ *    * 0 témoignage  : si authentifié → CTA seul ; sinon → section masquée
+ *    * 1 témoignage  : carte centrée au milieu (justify-center)
+ *    * 2 témoignages : 2 cartes centrées au milieu (justify-center)
+ *    * 3+ témoignages : carousel animé infini droite → gauche
  *
- * Si aucun témoignage n'est encore publié, la section reste discrète :
- * on n'affiche que le CTA "Partagez votre expérience".
+ * Animation : les cartes défilent horizontalement de droite à gauche en
+ * continu. Au hover, l'animation se met en pause (respect de l'utilisateur).
  */
 interface TestimonialsProps {
   onGiveFeedback?: () => void;
@@ -44,15 +50,13 @@ export function Testimonials({ onGiveFeedback }: TestimonialsProps) {
   }, []);
 
   // Pas de témoignages ET pas authentifié → on n'affiche rien
-  // (la section n'a pas de valeur ajoutée pour un visiteur non connecté
-  // si personne n'a encore laissé d'avis)
   if (!loading && testimonials.length === 0 && !isAuthenticated) {
     return null;
   }
 
   return (
-    <section id="temoignages" className="py-16 sm:py-24 bg-background">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+    <section id="temoignages" className="py-16 sm:py-24 bg-background overflow-hidden">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* En-tête */}
         <div className="text-center mb-10">
           <span className="inline-block text-xs font-semibold uppercase tracking-widest text-[#008751]">
@@ -67,46 +71,30 @@ export function Testimonials({ onGiveFeedback }: TestimonialsProps) {
           </p>
         </div>
 
-        {/* Grille de témoignages */}
+        {/* Affichage des témoignages selon le nombre */}
         {loading ? (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="rounded-xl border border-border bg-card p-6 animate-pulse"
-              >
-                <div className="h-4 w-24 bg-muted rounded mb-3" />
-                <div className="h-3 w-full bg-muted rounded mb-2" />
-                <div className="h-3 w-5/6 bg-muted rounded mb-2" />
-                <div className="h-3 w-4/6 bg-muted rounded mb-6" />
-                <div className="h-3 w-32 bg-muted rounded" />
-              </div>
-            ))}
-          </div>
-        ) : testimonials.length > 0 ? (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <LoadingSkeleton />
+        ) : testimonials.length === 0 ? (
+          // Authentifié mais aucun témoignage publié
+          <EmptyState onGiveFeedback={onGiveFeedback} />
+        ) : testimonials.length <= 2 ? (
+          // 1 ou 2 témoignages → cartes centrées (justify-center)
+          <div className="flex flex-wrap items-stretch justify-center gap-5 max-w-5xl mx-auto">
             {testimonials.map((t) => (
-              <TestimonialCard key={t.id} testimonial={t} />
+              <TestimonialCard
+                key={t.id}
+                testimonial={t}
+                className="w-full sm:w-[420px]"
+              />
             ))}
           </div>
         ) : (
-          // Authentifié mais aucun témoignage publié
-          <div className="text-center py-12">
-            <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-[#FCD116]/10 mb-4">
-              <Quote className="h-7 w-7 text-[#008751]" />
-            </div>
-            <p className="text-lg font-medium text-foreground">
-              Soyez le premier à partager votre expérience !
-            </p>
-            <p className="text-sm text-muted-foreground mt-1 max-w-md mx-auto">
-              Votre avis aide d&apos;autres directeurs à découvrir SaisieMaster
-              et nous aide à améliorer l&apos;outil.
-            </p>
-          </div>
+          // 3+ témoignages → carousel animé infini droite → gauche
+          <TestimonialsCarousel testimonials={testimonials} />
         )}
 
-        {/* CTA — Donner mon avis */}
-        {isAuthenticated && (
+        {/* CTA — Donner mon avis (centré) */}
+        {isAuthenticated && testimonials.length > 0 && (
           <div className="mt-10 text-center">
             <Button
               size="lg"
@@ -122,7 +110,64 @@ export function Testimonials({ onGiveFeedback }: TestimonialsProps) {
           </div>
         )}
       </div>
+
+      {/* Keyframes pour l'animation du carousel */}
+      <style>{`
+        @keyframes saisiemasterTestimonialScroll {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+      `}</style>
     </section>
+  );
+}
+
+// ============================================================================
+// Carousel animé (3+ témoignages)
+// ============================================================================
+
+function TestimonialsCarousel({ testimonials }: { testimonials: PublicTestimonial[] }) {
+  // On duplique la liste pour créer un effet de boucle infinie
+  // (quand le premier exemplaire disparaît à gauche, le second est déjà
+  // en train d'apparaître à droite).
+  const duplicated = [...testimonials, ...testimonials];
+
+  // Durée de l'animation basée sur le nombre de cartes
+  // (~8s par carte pour un défilement lisible)
+  const duration = Math.max(20, testimonials.length * 8);
+
+  return (
+    <div
+      className="relative overflow-hidden"
+      style={{
+        // Masque les bords pour un fondu élégant
+        maskImage:
+          'linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%)',
+        WebkitMaskImage:
+          'linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%)',
+      }}
+    >
+      <div
+        className="flex gap-5 w-max"
+        style={{
+          animation: `saisiemasterTestimonialScroll ${duration}s linear infinite`,
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.animationPlayState = 'paused';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.animationPlayState = 'running';
+        }}
+      >
+        {duplicated.map((t, idx) => (
+          <TestimonialCard
+            key={`${t.id}-${idx}`}
+            testimonial={t}
+            className="w-[340px] sm:w-[380px] shrink-0"
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -130,66 +175,131 @@ export function Testimonials({ onGiveFeedback }: TestimonialsProps) {
 // Carte témoignage
 // ============================================================================
 
-function TestimonialCard({ testimonial }: { testimonial: PublicTestimonial }) {
+function TestimonialCard({
+  testimonial,
+  className = '',
+}: {
+  testimonial: PublicTestimonial;
+  className?: string;
+}) {
   const { authorName, authorRole, schoolName, city, rating, content, createdAt } =
     testimonial;
 
   // Initiales pour l'avatar
   const initials = authorName
-    .split(" ")
+    .split(' ')
     .map((n) => n[0])
     .filter(Boolean)
     .slice(0, 2)
-    .join("")
+    .join('')
     .toUpperCase();
 
   // Date formatée
-  const dateFmt = new Date(createdAt).toLocaleDateString("fr-FR", {
-    month: "long",
-    year: "numeric",
+  const dateFmt = new Date(createdAt).toLocaleDateString('fr-FR', {
+    month: 'long',
+    year: 'numeric',
   });
 
   return (
-    <article className="rounded-xl border border-border bg-card p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col">
+    <article
+      className={
+        'rounded-xl border border-border bg-card p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col ' +
+        className
+      }
+    >
       {/* Étoiles */}
-      <div className="flex items-center gap-0.5 mb-3">
+      <div className="flex items-center justify-center gap-0.5 mb-3">
         {[1, 2, 3, 4, 5].map((star) => (
           <Star
             key={star}
             className={
               star <= rating
-                ? "h-4 w-4 fill-[#FCD116] text-[#FCD116]"
-                : "h-4 w-4 text-muted-foreground/30"
+                ? 'h-4 w-4 fill-[#FCD116] text-[#FCD116]'
+                : 'h-4 w-4 text-muted-foreground/30'
             }
           />
         ))}
       </div>
 
       {/* Citation */}
-      <blockquote className="text-sm text-foreground/90 leading-relaxed flex-1 mb-4">
+      <blockquote className="text-sm text-foreground/90 leading-relaxed flex-1 mb-4 text-center">
         <Quote className="inline h-4 w-4 text-[#008751]/40 mr-1 -mt-1" />
         {content}
       </blockquote>
 
-      {/* Auteur */}
-      <div className="flex items-center gap-3 pt-4 border-t border-border/60">
+      {/* Auteur — centré */}
+      <div className="flex flex-col items-center gap-2 pt-4 border-t border-border/60">
         <div className="grid place-items-center h-10 w-10 rounded-full bg-gradient-to-br from-[#008751]/15 to-[#FCD116]/15 text-[#0D6EFD] text-sm font-bold shrink-0">
-          {initials || "?"}
+          {initials || '?'}
         </div>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate">
-            {authorName}
-          </p>
-          <p className="text-xs text-muted-foreground truncate">
+        <div className="text-center">
+          <p className="text-sm font-semibold text-foreground">{authorName}</p>
+          <p className="text-xs text-muted-foreground">
             {authorRole} · {schoolName}
-            {city ? ` · ${city}` : ""}
+            {city ? ` · ${city}` : ''}
           </p>
         </div>
       </div>
 
-      <p className="mt-3 text-[10px] uppercase tracking-wider text-muted-foreground/60">
+      <p className="mt-3 text-[10px] uppercase tracking-wider text-muted-foreground/60 text-center">
         {dateFmt}
       </p>
     </article>
+  );
+}
+
+// ============================================================================
+// Skeleton loading
+// ============================================================================
+
+function LoadingSkeleton() {
+  return (
+    <div className="flex flex-wrap justify-center gap-5">
+      {[1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className="rounded-xl border border-border bg-card p-6 animate-pulse w-full sm:w-[380px]"
+        >
+          <div className="h-4 w-24 bg-muted rounded mb-3 mx-auto" />
+          <div className="h-3 w-full bg-muted rounded mb-2" />
+          <div className="h-3 w-5/6 bg-muted rounded mb-2" />
+          <div className="h-3 w-4/6 bg-muted rounded mb-6" />
+          <div className="h-3 w-32 bg-muted rounded mx-auto" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================================
+// État vide (authentifié, 0 témoignage)
+// ============================================================================
+
+function EmptyState({ onGiveFeedback }: { onGiveFeedback?: () => void }) {
+  return (
+    <div className="text-center py-12">
+      <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-[#FCD116]/10 mb-4">
+        <Quote className="h-7 w-7 text-[#008751]" />
+      </div>
+      <p className="text-lg font-medium text-foreground">
+        Soyez le premier à partager votre expérience !
+      </p>
+      <p className="text-sm text-muted-foreground mt-1 max-w-md mx-auto">
+        Votre avis aide d&apos;autres directeurs à découvrir SaisieMaster
+        et nous aide à améliorer l&apos;outil.
+      </p>
+      {onGiveFeedback && (
+        <div className="mt-6">
+          <Button
+            size="lg"
+            onClick={onGiveFeedback}
+            className="gap-2 bg-[#008751] hover:bg-[#008751]/90 text-white"
+          >
+            <MessageSquare className="h-4 w-4" />
+            Partager mon expérience
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }

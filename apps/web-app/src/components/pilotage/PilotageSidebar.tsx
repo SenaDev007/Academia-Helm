@@ -338,6 +338,16 @@ const FEDERIS_MODULES = [
   { path: '/platform/federis/deliberations', label: 'Délibérations', icon: PieChart },
 ];
 
+/**
+ * Section SaisieMaster : back-office de l'app satellite de saisie de notes.
+ * - Prospects : directeurs inscrits sur SaisieMaster avec relances email/WhatsApp
+ * - Témoignages : avis à modérer avant publication sur la landing page
+ */
+const SAISIEMASTER_MODULES = [
+  { path: '/platform/saisiemaster/prospects', label: 'Prospects SaisieMaster', icon: Users },
+  { path: '/platform/saisiemaster/testimonials', label: 'Témoignages SaisieMaster', icon: Star },
+];
+
 const SUPPLEMENTARY_MODULES = [
   { path: '/app/library', label: 'Bibliothèque', icon: Library, featureCode: 'LIBRARY' },
   { path: '/app/transport', label: 'Transport', icon: Bus, featureCode: 'TRANSPORT' },
@@ -408,6 +418,7 @@ export default function PilotageSidebar({
   const [publicSiteOpen, setPublicSiteOpen] = useState(true);
   const [academiaHelmOpen, setAcademiaHelmOpen] = useState(true);
   const [federisOpen, setFederisOpen] = useState(true);
+  const [saisieMasterOpen, setSaisieMasterOpen] = useState(true);
 
   // ── Tenant context for in-app review modal ──
   const { tenant } = useModuleContext();
@@ -456,6 +467,7 @@ export default function PilotageSidebar({
   const publicSiteModules = useMemo(() => PUBLIC_SITE_MODULES, []);
   const academiaHelmModules = useMemo(() => ACADEMIA_HELM_MODULES, []);
   const federisModules = useMemo(() => FEDERIS_MODULES, []);
+  const saisieMasterModules = useMemo(() => SAISIEMASTER_MODULES, []);
 
   const isPlatformOwner =
     user?.role === 'PLATFORM_OWNER' ||
@@ -748,6 +760,13 @@ export default function PilotageSidebar({
               federisOpen,
               setFederisOpen,
               'Bientôt disponible',
+            )}
+            {renderPlatformSection(
+              'SaisieMaster',
+              FileSpreadsheet,
+              saisieMasterModules,
+              saisieMasterOpen,
+              setSaisieMasterOpen,
             )}
           </>
         )}

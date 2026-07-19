@@ -1,6 +1,6 @@
 "use client";
 
-import { Logo } from "@/components/saisiemaster/brand/logo";
+import { LogoWithHalo } from "@/components/saisiemaster/brand/logo-with-halo";
 
 export function Footer() {
   return (
@@ -9,7 +9,8 @@ export function Footer() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
         <div className="grid gap-8 md:grid-cols-3">
           <div className="space-y-3">
-            <Logo size="lg" />
+            {/* ⭐ Logo agrandi avec halo tricolore animé */}
+            <LogoWithHalo size="lg" />
             <p className="text-sm text-muted-foreground max-w-xs">
               Saisie intelligente des notes scolaires au Bénin. Conforme au format
               officiel EducMaster du gouvernement.
@@ -25,13 +26,13 @@ export function Footer() {
                 </a>
               </li>
               <li>
-                <a href="#fonctionnalites" className="hover:text-foreground transition-colors">
-                  Fonctionnalités
+                <a href="#temoignages" className="hover:text-foreground transition-colors">
+                  Témoignages
                 </a>
               </li>
               <li>
-                <a href="#faq" className="hover:text-foreground transition-colors">
-                  Questions fréquentes
+                <a href="#a-propos" className="hover:text-foreground transition-colors">
+                  À propos
                 </a>
               </li>
             </ul>

@@ -15,7 +15,7 @@ export function Hero({ onUploadClick }: HeroProps) {
     <section className="relative overflow-hidden">
       {/* Image de fond — desktop/tablette */}
       <div
-        className="absolute inset-0 bg-cover bg-center hidden sm:block"
+        className="absolute inset-0 bg-cover bg-top hidden sm:block"
         style={{
           backgroundImage: 'url("/images/Background-SaisieMaster-hero.png")',
         }}
@@ -23,16 +23,17 @@ export function Hero({ onUploadClick }: HeroProps) {
       />
       {/* Image de fond — mobile (image dédiée pour le responsiv) */}
       <div
-        className="absolute inset-0 bg-cover bg-center sm:hidden"
+        className="absolute inset-0 bg-cover bg-top sm:hidden"
         style={{
           backgroundImage: 'url("/images/Background-SaisieMaster-hero-mobile.png")',
         }}
         aria-hidden
       />
 
-      {/* Conteneur — hauteur adaptée pour voir l'image en entier.
-          min-h-[700px] sur desktop, min-h-[600px] sur mobile. */}
-      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 min-h-[600px] sm:min-h-[700px] flex items-end justify-center pb-12 sm:pb-16">
+      {/* Conteneur — hauteur plus grande pour voir l'image en entier.
+          min-h-[900px] sur desktop, min-h-[760px] sur mobile.
+          bg-top pour ancrer l'image en haut et révéler le bas. */}
+      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 min-h-[760px] sm:min-h-[900px] flex items-end justify-center pb-16 sm:pb-20">
         <div className="flex flex-wrap items-center justify-center gap-3 w-full">
           <Button
             size="lg"

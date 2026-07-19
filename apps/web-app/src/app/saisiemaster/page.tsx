@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { LandingPage } from "@/components/saisiemaster/landing/landing-page";
 import { EditorPage } from "@/components/saisiemaster/editor/editor-page";
 import { AuthScreen } from "@/components/saisiemaster/auth/auth-screen";
+import SaisieMasterLoader from "@/components/saisiemaster/SaisieMasterLoader";
 import {
   useSaisieMasterStore,
   restoreFromStorage,
@@ -24,6 +25,12 @@ export default function SaisieMasterPage() {
   // au moins 5 secondes (même durée que le loader Academia Helm).
   // Sans cela, le loading disparaît trop vite car la page est 100%
   // client-side (pas de requête serveur à attendre).
+  //
+  // ⚠️ En Next.js App Router, le fichier loading.tsx ne s'affiche QUE
+  // pendant le suspense de la page. Comme cette page est "use client" et
+  // ne fait pas de requête serveur, loading.tsx est démonté presque
+  // immédiatement. Pour garder le loader visible 5s, on l'affiche
+  // DIRECTEMENT dans la page (au lieu de retourner null).
   const [minLoadElapsed, setMinLoadElapsed] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setMinLoadElapsed(true), 5000);
@@ -95,10 +102,10 @@ export default function SaisieMasterPage() {
     });
   };
 
-  // ⭐ Ne rien rendre tant que le délai minimum n'est pas écoulé
-  // → le loading.tsx (SaisieMasterLoader) reste visible pendant 5s
+  // ⭐ Tant que le délai minimum n'est pas écoulé, on affiche le loader
+  // DIRECTEMENT (et non `null`) car loading.tsx est déjà démonté.
   if (!minLoadElapsed) {
-    return null;
+    return <SaisieMasterLoader />;
   }
 
   if (view === "auth" && !isAuthenticated) {

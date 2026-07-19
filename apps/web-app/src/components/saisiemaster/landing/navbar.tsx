@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { BookOpen, LogOut, History, LogIn, ChevronDown } from "lucide-react";
 import { useSaisieMasterStore, selectIsAuthenticated } from "@/lib/saisiemaster/store";
+import { LogoWithHalo } from "@/components/saisiemaster/brand/logo-with-halo";
 
 interface NavbarProps {
   onStart: () => void;
@@ -61,16 +62,15 @@ export function Navbar({ onStart }: NavbarProps) {
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border/60 bg-background/85 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <img src="/images/Logo-SaisieMaster.png" alt="SaisieMaster" className="h-8 w-auto" />
+      <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+        {/* ⭐ Logo agrandi (44px) avec halo tricolore animé */}
+        <LogoWithHalo size="md" />
 
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">
           <a href="#fonctionnement" className="hover:text-foreground transition-colors">
             Fonctionnement
           </a>
-          <a href="#fonctionnalites" className="hover:text-foreground transition-colors">
-            Fonctionnalités
-          </a>
+          {/* ⭐ Bouton "Fonctionnalités" supprimé — la section n'existe plus */}
           <a href="#a-propos" className="hover:text-foreground transition-colors">
             À propos
           </a>

@@ -4,9 +4,12 @@
  * Section marketing "Découvrez Academia Helm".
  *
  * Présente la plateforme mère Academia Helm aux utilisateurs de SaisieMaster,
- * en mettant en avant 6 modules complémentaires et deux CTA :
- *   - "Découvrir Academia Helm" → https://academiahelm.com
- *   - "Demander une démo gratuite" → https://academiahelm.com/contact
+ * en mettant en avant 6 modules complémentaires.
+ *
+ * ⭐ Nouveautés :
+ *  - Logo Academia Helm en filigrane (watermark) au-dessus des cartes
+ *  - Les 2 boutons CTA ("Découvrir Academia Helm" et "Demander une démo
+ *    gratuite") ont été supprimés sur demande utilisateur.
  *
  * Accent visuel : couleurs nationales du Bénin (vert #008751, jaune #FCD116, rouge #E31B23).
  */
@@ -18,8 +21,6 @@ import {
   MessageSquare,
   GraduationCap,
   Building2,
-  ArrowRight,
-  ExternalLink,
 } from "lucide-react";
 
 interface AcademiaFeature {
@@ -108,6 +109,26 @@ export function AcademiaHelmCta() {
       />
 
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        {/* ⭐ Logo Academia Helm en filigrane (watermark) au-dessus des cartes */}
+        <div className="flex justify-center mb-8">
+          <div className="relative">
+            {/* Halo lumineux derrière le logo */}
+            <div
+              className="absolute inset-0 -m-6 rounded-full bg-[#0D1F6E]/8 blur-2xl"
+              aria-hidden
+            />
+            <img
+              src="https://www.academiahelm.com/images/logo-Academia%20Hub.png"
+              alt="Academia Helm"
+              className="relative h-20 sm:h-24 w-auto opacity-30 hover:opacity-50 transition-opacity duration-500 object-contain"
+              style={{
+                filter: "grayscale(20%)",
+              }}
+              aria-hidden
+            />
+          </div>
+        </div>
+
         {/* En-tête */}
         <div className="text-center max-w-3xl mx-auto mb-12">
           <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-[#008751]">
@@ -168,34 +189,13 @@ export function AcademiaHelmCta() {
           })}
         </div>
 
-        {/* CTA principal — "Découvrir Academia Helm" */}
-        <div className="mt-12 text-center space-y-4">
-          <a
-            href="https://academiahelm.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-xl bg-foreground hover:bg-foreground/90 px-7 py-3.5 text-base font-semibold text-background shadow-md hover:shadow-lg transition-all duration-200"
-          >
-            Découvrir Academia Helm
-            <ExternalLink className="h-5 w-5" />
-          </a>
+        {/* ⭐ Les 2 boutons CTA ont été supprimés sur demande utilisateur.
+            La section se termine maintenant par les cartes, sans appel à
+            l'action redondant avec les autres sections. */}
 
-          <div>
-            <a
-              href="https://academiahelm.com/contact"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-xl bg-[#008751] hover:bg-[#008751]/90 px-7 py-3.5 text-base font-semibold text-white shadow-md hover:shadow-lg transition-all duration-200"
-            >
-              Demander une démo gratuite
-              <ArrowRight className="h-5 w-5" />
-            </a>
-          </div>
-
-          <p className="mt-3 text-xs text-muted-foreground">
-            Academia Helm — La plateforme complète de gestion scolaire au Bénin
-          </p>
-        </div>
+        <p className="mt-10 text-center text-xs text-muted-foreground">
+          Academia Helm — La plateforme complète de gestion scolaire au Bénin
+        </p>
       </div>
     </section>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +22,7 @@ import {
   Plus,
   FolderTree,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { useSaisieMasterStore, computeSaisieStats } from "@/lib/saisiemaster/store";
 import { UploadZone } from "@/components/saisiemaster/landing/upload-zone";
@@ -32,11 +33,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  getSessions,
+  sessionToClassData,
+  type ProspectSession,
+} from "@/lib/saisiemaster/api";
 import { toast } from "sonner";
 
 /**
  * Vue "Mes classes" :
  *  - Grille de cartes, une par classe importée (depuis le store).
+ *  - ⭐ Si le store local est vide mais que des sessions existent côté
+ *    backend, on les charge automatiquement (auto-restore au login).
  *  - Chaque carte : nom, nb élèves, nb matières, dern. modification.
  *  - Bouton "Ouvrir" → bascule sur "Saisie des notes" avec cette classe active.
  *  - Bouton "Supprimer" (avec confirmation) → deleteClass(index).
@@ -47,10 +55,47 @@ export function ClassesView() {
   const setActiveClass = useSaisieMasterStore((s) => s.setActiveClass);
   const deleteClass = useSaisieMasterStore((s) => s.deleteClass);
   const setEditorView = useSaisieMasterStore((s) => s.setEditorView);
+  const replaceClasses = useSaisieMasterStore((s) => s.replaceClasses);
 
   const [deleteIndex, setDeleteIndex] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [loadingSessions, setLoadingSessions] = useState(false);
+
+  // ⭐ Auto-chargement : si le store local est vide, on tente de récupérer
+  // les sessions sauvegardées sur le backend. Cela évite à l'utilisateur
+  // d'avoir à aller dans "Mes fichiers" pour voir ses classes.
+  useEffect(() => {
+    if (classes.length > 0) return; // déjà chargé
+
+    let cancelled = false;
+    (async () => {
+      setLoadingSessions(true);
+      try {
+        const sessions = await getSessions();
+        if (cancelled) return;
+        if (sessions.length === 0) return;
+
+        // Convertit chaque session en ClassData et les charge dans le store.
+        const classDataList = sessions
+          .map(sessionToClassData)
+          .filter((c): c is NonNullable<typeof c> => c !== null);
+
+        if (classDataList.length > 0) {
+          replaceClasses(classDataList);
+        }
+      } catch (e) {
+        console.warn("[saisiemaster] auto-load sessions failed:", e);
+      } finally {
+        if (!cancelled) setLoadingSessions(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // une seule fois au montage
 
   const handleOpen = (index: number) => {
     setActiveClass(index);
@@ -83,9 +128,11 @@ export function ClassesView() {
             Mes classes
           </h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {classes.length === 0
-              ? "Aucune classe importée pour l'instant."
-              : `${classes.length} classe(s) importée(s) au total.`}
+            {loadingSessions
+              ? "Chargement de vos classes…"
+              : classes.length === 0
+                ? "Aucune classe importée pour l'instant."
+                : `${classes.length} classe(s) importée(s) au total.`}
           </p>
         </div>
         <Button
@@ -97,8 +144,24 @@ export function ClassesView() {
         </Button>
       </div>
 
+      {/* Loading state */}
+      {loadingSessions && classes.length === 0 ? (
+        <Card className="p-8 text-center border-dashed">
+          <div className="mx-auto grid place-items-center h-14 w-14 rounded-full bg-muted mb-4">
+            <Loader2 className="h-7 w-7 text-muted-foreground animate-spin" />
+          </div>
+          <p className="font-semibold text-foreground mb-1">
+            Chargement de vos classes…
+          </p>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            Récupération de vos classes sauvegardées sur votre compte
+            SaisieMaster.
+          </p>
+        </Card>
+      ) : null}
+
       {/* Empty state */}
-      {classes.length === 0 ? (
+      {!loadingSessions && classes.length === 0 ? (
         <Card className="p-8 text-center border-dashed">
           <div className="mx-auto grid place-items-center h-14 w-14 rounded-full bg-muted mb-4">
             <FolderTree className="h-7 w-7 text-muted-foreground" />
@@ -119,7 +182,10 @@ export function ClassesView() {
             Importer un fichier
           </Button>
         </Card>
-      ) : (
+      ) : null}
+
+      {/* Classes grid */}
+      {classes.length > 0 ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {classes.map((cls, idx) => (
             <ClassCard
@@ -137,7 +203,7 @@ export function ClassesView() {
             />
           ))}
         </div>
-      )}
+      ) : null}
 
       {/* Dialog: Nouveau import */}
       <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>

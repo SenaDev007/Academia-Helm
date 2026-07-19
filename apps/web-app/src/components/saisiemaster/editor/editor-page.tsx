@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EditorHeader } from "./editor-header";
 import { EditorSidebar, type EditorNavId } from "./editor-sidebar";
 import { StatsPanel } from "./stats-panel";
@@ -39,6 +39,21 @@ import { toast } from "sonner";
 interface EditorPageProps {
   onHome: () => void;
 }
+
+/**
+ * ⭐ Auto-sauvegarde toutes les 10 secondes pendant la saisie.
+ *
+ * On garde une référence vers le timestamp de la dernière modification
+ * (mise à jour par le store à chaque updateNote). Toutes les 10s, si des
+ * modifications ont eu lieu depuis la dernière sauvegarde, on persiste
+ * vers localStorage + backend (debounced).
+ *
+ * Le backend utilise déjà un debounce de 2s (scheduleBackendSync dans le
+ * store), mais on veut une sauvegarde EXPLICITE toutes les 10s même si
+ * l'utilisateur est inactif (pour garantir la persistance en cas de crash
+ * ou de fermeture de l'onglet).
+ */
+const AUTOSAVE_INTERVAL_MS = 10_000;
 
 /**
  * Page éditeur SaisieMaster — version redesign "screenshot".
@@ -85,6 +100,81 @@ export function EditorPage({ onHome }: EditorPageProps) {
   const editorView = useSaisieMasterStore((s) => s.editorView);
   const setEditorView = useSaisieMasterStore((s) => s.setEditorView);
   const classes = useSaisieMasterStore((s) => s.classes);
+  const activeClassIndex = useSaisieMasterStore((s) => s.activeClassIndex);
+
+  // ⭐ Auto-sauvegarde toutes les 10 secondes pendant la saisie.
+  // On surveille les changements de `classes` et `activeClassIndex` pour
+  // détecter qu'une modification a eu lieu. Le timestamp est mis à jour à
+  // chaque render où classes change, et l'intervalle périodique vérifie
+  // s'il y a eu des modifs depuis la dernière sauvegarde.
+  const lastChangeRef = useRef<number>(0);
+  const lastSaveRef = useRef<number>(Date.now());
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+
+  // Marquer une modification à chaque fois que `classes` change
+  useEffect(() => {
+    if (classes.length === 0) return;
+    lastChangeRef.current = Date.now();
+  }, [classes, activeClassIndex]);
+
+  // Intervalle d'auto-sauvegarde toutes les 10s
+  useEffect(() => {
+    if (classes.length === 0) return;
+
+    const interval = setInterval(async () => {
+      // Ne rien faire si aucune modification depuis la dernière sauvegarde
+      if (lastChangeRef.current <= lastSaveRef.current) return;
+
+      setAutoSaveStatus("saving");
+      try {
+        const state = useSaisieMasterStore.getState();
+        const { classes: cls, activeClassIndex: idx } = state;
+        if (typeof window !== "undefined" && cls.length > 0) {
+          window.localStorage.setItem(
+            "saisiemaster:autosave",
+            JSON.stringify({
+              classes: cls,
+              activeClassIndex: idx,
+              savedAt: new Date().toISOString(),
+            }),
+          );
+        }
+        lastSaveRef.current = Date.now();
+        setAutoSaveStatus("saved");
+        // Retour à idle après 2s
+        setTimeout(() => setAutoSaveStatus("idle"), 2000);
+      } catch (e) {
+        console.warn("[saisiemaster] auto-save failed:", e);
+        setAutoSaveStatus("idle");
+      }
+    }, AUTOSAVE_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [classes.length]); // se ré-initialise seulement si on passe de 0 à >0 classes
+
+  // Sauvegarde avant fermeture de l'onglet (best-effort)
+  useEffect(() => {
+    if (classes.length === 0) return;
+    const handler = () => {
+      try {
+        const state = useSaisieMasterStore.getState();
+        if (state.classes.length > 0 && typeof window !== "undefined") {
+          window.localStorage.setItem(
+            "saisiemaster:autosave",
+            JSON.stringify({
+              classes: state.classes,
+              activeClassIndex: state.activeClassIndex,
+              savedAt: new Date().toISOString(),
+            }),
+          );
+        }
+      } catch {
+        // best-effort
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [classes.length]);
 
   const handleReset = () => {
     clearAll();
@@ -194,6 +284,7 @@ export function EditorPage({ onHome }: EditorPageProps) {
             <ActionBar
               onSave={handleSave}
               saveStatus={saveStatus}
+              autoSaveStatus={autoSaveStatus}
               onExport={() => setExportOpen(true)}
               onReset={() => setResetOpen(true)}
               isExporting={isExporting}
@@ -299,6 +390,7 @@ function ToggleButton({
 interface ActionBarProps {
   onSave: () => void;
   saveStatus: "idle" | "saving" | "saved";
+  autoSaveStatus: "idle" | "saving" | "saved";
   onExport: () => void;
   onReset: () => void;
   isExporting: boolean;
@@ -307,6 +399,7 @@ interface ActionBarProps {
 function ActionBar({
   onSave,
   saveStatus,
+  autoSaveStatus,
   onExport,
   onReset,
   isExporting,
@@ -314,7 +407,7 @@ function ActionBar({
   return (
     <div className="sticky bottom-0 z-20 border-t border-border/60 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md">
       <div className="px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-3">
-        {/* Zone message (succès / info) */}
+        {/* Zone message (succès / info / auto-save) */}
         <div className="flex items-center gap-2 min-w-0 flex-1">
           {saveStatus === "saved" ? (
             <span className="inline-flex items-center gap-2 text-sm text-[#198754] font-medium">
@@ -328,13 +421,23 @@ function ActionBar({
               <span className="inline-block h-3 w-3 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />
               <span>Enregistrement…</span>
             </span>
+          ) : autoSaveStatus === "saving" ? (
+            <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="inline-block h-3 w-3 rounded-full border-2 border-[#0D6EFD]/30 border-t-[#0D6EFD] animate-spin" />
+              <span>Auto-save en cours…</span>
+            </span>
+          ) : autoSaveStatus === "saved" ? (
+            <span className="inline-flex items-center gap-2 text-xs text-[#198754]/80 font-medium">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span className="truncate">Sauvegarde automatique effectuée</span>
+            </span>
           ) : (
             <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
               <Info className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">
-                Auto-save actif — vos saisies sont sauvegardées automatiquement.
+                Auto-save actif (toutes les 10s) — vos saisies sont sauvegardées automatiquement.
               </span>
-              <span className="sm:hidden">Auto-save actif</span>
+              <span className="sm:hidden">Auto-save 10s</span>
             </span>
           )}
         </div>

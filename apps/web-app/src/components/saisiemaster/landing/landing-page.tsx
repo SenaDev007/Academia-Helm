@@ -8,7 +8,6 @@ import { HowItWorks } from "./how-it-works";
 import { AcademiaHelmCta } from "./academia-helm-cta";
 import { Testimonials } from "./testimonials";
 import { Footer } from "./footer";
-import { ResumeBanner } from "./resume-banner";
 import { FeedbackModal } from "@/components/saisiemaster/editor/feedback-modal";
 import {
   useSaisieMasterStore,
@@ -57,7 +56,10 @@ export function LandingPage() {
               </p>
             </div>
 
-            <ResumeBanner onResume={handleResume} />
+            {/* ⭐ ResumeBanner supprimé — il s'affichait même quand l'utilisateur
+                était déconnecté (basé sur localStorage), ce qui créait une
+                confusion. L'utilisateur ne doit pas voir "Reprise possible"
+                sur la landing publique. */}
 
             <div ref={uploadRef} className="scroll-mt-32">
               <UploadZone />
@@ -75,41 +77,9 @@ export function LandingPage() {
         {/* Section témoignages utilisateurs */}
         <Testimonials onGiveFeedback={() => setFeedbackOpen(true)} />
 
-        {/* Section À propos / FAQ légère */}
-        <section id="a-propos" className="py-16 sm:py-24 bg-card border-t border-border">
-          <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-10">
-              <span className="inline-block text-xs font-semibold uppercase tracking-widest text-[#008751]">
-                À propos
-              </span>
-              <h2 className="mt-2 text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
-                Un outil indépendant, au service des écoles béninoises
-              </h2>
-            </div>
-
-            <div className="prose prose-sm sm:prose-base max-w-none text-muted-foreground space-y-4">
-              <p>
-                SaisieMaster est une application web indépendante conçue pour
-                faciliter la tâche des directeurs d&apos;école et enseignants qui
-                doivent remplir le template Excel officiel EducMaster du
-                gouvernement béninois. Elle n&apos;est pas affiliée à EducMaster :
-                c&apos;est un outil complémentaire qui préserve strictement le
-                format d&apos;import/export exigé par la plateforme.
-              </p>
-              <p>
-                Vos saisies sont automatiquement sauvegardées sur votre compte
-                gratuit SaisieMaster pour que vous puissiez les reprendre à tout
-                moment, sur n&apos;importe quel appareil. Vos listes d&apos;élèves
-                et leurs notes restent strictement privées.
-              </p>
-              <p>
-                L&apos;interface adopte les couleurs nationales du Bénin (vert, jaune,
-                rouge) en hommage au contexte éducatif du pays, et reprend les codes
-                visuels d&apos;EducMaster pour une intégration cohérente.
-              </p>
-            </div>
-          </div>
-        </section>
+        {/* ⭐ Section "À propos" supprimée sur demande utilisateur —
+            le contenu institutionnel est déjà couvert par la section
+            Démarrage et la section témoignages. */}
       </main>
       <Footer />
 

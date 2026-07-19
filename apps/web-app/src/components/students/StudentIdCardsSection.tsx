@@ -677,7 +677,7 @@ export default function StudentIdCardsSection() {
               return (
                 <div key={level.level.id}>
                   {/* Niveau scolaire — titre aéré, pas dans un conteneur */}
-                  <div className="flex items-center gap-2 mb-3">
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
                     <button
                       onClick={() => toggleLevel(level.level.id)}
                       className="flex items-center gap-2 group text-left"
@@ -713,7 +713,7 @@ export default function StudentIdCardsSection() {
                         return (
                           <div key={cls.class.id}>
                             {/* Classe — titre + bouton PDF groupé */}
-                            <div className="flex items-center gap-2 mb-3">
+                            <div className="flex flex-wrap items-center gap-2 mb-3">
                               <button
                                 onClick={() => toggleClass(cls.class.id)}
                                 className="flex items-center gap-2 text-left"

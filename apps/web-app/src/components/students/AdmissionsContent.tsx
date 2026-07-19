@@ -1080,7 +1080,7 @@ export default function AdmissionsContent() {
 
       {/* Barre d'actions batch (multi-sélection) */}
       {selectedIds.size > 0 && (
-        <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold text-blue-900">
               {selectedIds.size} sélectionnée(s)

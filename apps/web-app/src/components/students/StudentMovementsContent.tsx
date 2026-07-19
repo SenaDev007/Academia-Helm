@@ -609,7 +609,7 @@ export default function StudentMovementsContent() {
             <p className="text-sm text-slate-500">Aucun élève trouvé avec ces filtres</p>
           </div>
         ) : (
-          <div className="overflow-y-auto flex-1">
+          <div className="overflow-auto flex-1">
             <table className="min-w-full divide-y divide-slate-200">
               <thead className="bg-slate-50/50 sticky top-0">
                 <tr>

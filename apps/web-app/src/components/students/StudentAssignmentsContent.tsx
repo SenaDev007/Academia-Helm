@@ -356,7 +356,7 @@ export default function StudentAssignmentsContent() {
         {/* ─── Panneau gauche : élèves de la classe de départ ─── */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
           <div className="p-3 border-b border-slate-100 bg-amber-50/50">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
               <h4 className="text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
                 <ArrowRight className="w-3.5 h-3.5 text-amber-600" />
                 {fromClassName ? `Départ : ${fromClassName}` : 'Classe de départ'}
@@ -488,7 +488,7 @@ export default function StudentAssignmentsContent() {
 
       {/* Récapitulatif transfert */}
       {canTransfer && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center justify-between">
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm text-blue-800">
             <ArrowRightLeft className="w-4 h-4" />
             <span>

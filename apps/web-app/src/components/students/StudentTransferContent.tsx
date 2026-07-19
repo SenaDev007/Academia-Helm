@@ -345,7 +345,7 @@ export default function StudentTransferContent() {
       {/* ⭐ Header — style white card cohérent avec les autres onglets */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
               <ArrowRightLeft className="w-5 h-5 text-blue-600" />
             </div>
@@ -409,7 +409,7 @@ export default function StudentTransferContent() {
 
       {/* Barre de recherche + refresh */}
       {activeTab !== 'SETTINGS' && (
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
@@ -472,7 +472,7 @@ export default function StudentTransferContent() {
               </h3>
             </div>
             <div className="px-6 py-4 space-y-3">
-              <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
+              <div className="flex flex-wrap items-center gap-3 p-3 bg-slate-50 rounded-lg">
                 <div className="w-10 h-10 bg-blue-50 rounded-lg overflow-hidden flex items-center justify-center">
                   {actionTransfer.student.photoUrl ? (
                     <img src={actionTransfer.student.photoUrl} alt="" className="w-full h-full object-cover" />

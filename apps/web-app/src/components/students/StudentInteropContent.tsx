@@ -50,7 +50,7 @@ export default function StudentInteropContent() {
     <div className="space-y-4">
       {/* Header — white card cohérent avec les autres onglets */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
+        <div className="flex flex-wrap items-center justify-between gap-2 p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
               <Globe className="w-5 h-5 text-blue-600" />
@@ -80,7 +80,7 @@ export default function StudentInteropContent() {
           .filter(l => l.id !== 'ALL' && ['MATERNELLE', 'PRIMAIRE'].includes(l.code))
           .map((level) => (
             <div key={level.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 hover:shadow-md transition">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                 {/* ⭐ Icône Excel officielle (vert Excel) */}
                 <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#E8F5E9' }}>
                   <svg viewBox="0 0 24 24" className="w-5 h-5" fill="#217346">

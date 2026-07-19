@@ -75,7 +75,7 @@ export default function StudentAnalyticsContent() {
     <div className="space-y-4">
       {/* Header — white card cohérent avec les autres onglets */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
+        <div className="flex flex-wrap items-center justify-between gap-2 p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
               <Activity className="w-5 h-5 text-blue-600" />
@@ -144,7 +144,7 @@ export default function StudentAnalyticsContent() {
               <div className="space-y-3">
                 {bars.map(bar => (
                   <div key={bar.label}>
-                    <div className="flex items-center justify-between text-xs mb-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs mb-1">
                       <span className="font-medium text-slate-600">{bar.label}</span>
                       <span className="font-bold text-slate-900">{bar.count}</span>
                     </div>
@@ -219,7 +219,7 @@ export default function StudentAnalyticsContent() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Alerts Center */}
         <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between px-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-2">
             <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 text-rose-500" />
               Journal des Alertes de Conformité
@@ -240,7 +240,7 @@ export default function StudentAnalyticsContent() {
                     {alert.severity === 'CRITICAL' ? <AlertCircle className="w-4 h-4" /> : <Info className="w-4 h-4" />}
                   </div>
                   <div className="flex-1 space-y-1">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm font-bold text-slate-900">{alert.title || alert.type}</p>
                       <span className="text-[10px] font-medium text-slate-400">Il y a 2h</span>
                     </div>

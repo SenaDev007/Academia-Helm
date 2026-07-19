@@ -209,7 +209,7 @@ export default function StudentHistoryContent() {
   return (
     <div className="space-y-4">
       {/* Header — white card cohérent avec les autres onglets */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
         <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
@@ -301,7 +301,7 @@ export default function StudentHistoryContent() {
       </div>
 
       {/* Tableau */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
             <tr>
@@ -319,7 +319,7 @@ export default function StudentHistoryContent() {
                 <tr key={item.id} className="hover:bg-blue-50/30 transition-colors group">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-gray-100 overflow-hidden flex items-center justify-center font-bold text-gray-400 group-hover:bg-purple-100 group-hover:text-purple-600 transition-all">
+                      <div className="w-8 h-8 rounded-lg bg-gray-100 overflow-x-auto flex items-center justify-center font-bold text-gray-400 group-hover:bg-purple-100 group-hover:text-purple-600 transition-all">
                         {student.photoUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={student.photoUrl} alt="" className="w-full h-full object-cover" />

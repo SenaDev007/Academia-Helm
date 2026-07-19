@@ -367,3 +367,92 @@ export function sessionToClassData(session: ProspectSession): ClassData | null {
     importedAt: session.createdAt,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Testimonials (avis utilisateurs)
+// ---------------------------------------------------------------------------
+
+export interface PublicTestimonial {
+  id: string;
+  authorName: string;
+  authorRole: string;
+  schoolName: string;
+  city: string | null;
+  rating: number;
+  content: string;
+  createdAt: string;
+}
+
+export interface MyTestimonial {
+  id: string;
+  rating: number;
+  content: string;
+  authorRole: string;
+  city: string | null;
+  isPublished: boolean;
+  isFeatured: boolean;
+  createdAt: string;
+  publishedAt: string | null;
+}
+
+export interface SubmitTestimonialPayload {
+  rating: number;
+  content: string;
+  authorRole?: string;
+  city?: string;
+}
+
+export interface SubmitTestimonialResponse {
+  id: string;
+  isPublished: boolean;
+  message: string;
+}
+
+/**
+ * Liste publique des témoignages publiés — pour la landing page.
+ * Pas d'auth requise.
+ */
+export async function getPublishedTestimonials(): Promise<PublicTestimonial[]> {
+  try {
+    return await apiFetch<PublicTestimonial[]>("/api/saisiemaster/testimonials", {
+      method: "GET",
+    });
+  } catch (e) {
+    console.warn("[saisiemaster] getPublishedTestimonials failed:", e);
+    return [];
+  }
+}
+
+/**
+ * Soumet un nouveau témoignage — nécessite auth.
+ * Le témoignage est créé non-publié (modération admin nécessaire).
+ */
+export async function submitTestimonial(
+  payload: SubmitTestimonialPayload,
+): Promise<SubmitTestimonialResponse> {
+  return apiFetch<SubmitTestimonialResponse>("/api/saisiemaster/testimonials", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Liste MES témoignages (ceux du prospect authentifié).
+ */
+export async function getMyTestimonials(): Promise<MyTestimonial[]> {
+  try {
+    const result = await apiFetch<
+      MyTestimonial[] | { testimonials?: MyTestimonial[] }
+    >("/api/saisiemaster/testimonials/mine", {
+      method: "GET",
+      headers: authHeaders(),
+    });
+    if (Array.isArray(result)) return result;
+    if (result && Array.isArray(result.testimonials)) return result.testimonials;
+    return [];
+  } catch (e) {
+    console.warn("[saisiemaster] getMyTestimonials failed:", e);
+    return [];
+  }
+}

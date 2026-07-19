@@ -34,6 +34,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { SaisieMasterController } from './saisiemaster.controller';
 import { SaisieMasterService } from './saisiemaster.service';
 import { SaisieMasterFollowupService } from './saisiemaster-followup.service';
+import { SaisieMasterTestimonialService } from './saisiemaster-testimonial.service';
 import { CommunicationModule } from '../communication/communication.module';
 
 @Module({
@@ -52,7 +53,15 @@ import { CommunicationModule } from '../communication/communication.module';
     CommunicationModule,
   ],
   controllers: [SaisieMasterController],
-  providers: [SaisieMasterService, SaisieMasterFollowupService],
-  exports: [SaisieMasterService, SaisieMasterFollowupService],
+  providers: [
+    SaisieMasterService,
+    SaisieMasterFollowupService,
+    SaisieMasterTestimonialService,
+  ],
+  exports: [
+    SaisieMasterService,
+    SaisieMasterFollowupService,
+    SaisieMasterTestimonialService,
+  ],
 })
 export class SaisieMasterModule {}

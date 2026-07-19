@@ -37,6 +37,10 @@ import {
   type UpdateProfileDto,
 } from './saisiemaster.service';
 import { SaisieMasterFollowupService } from './saisiemaster-followup.service';
+import {
+  SaisieMasterTestimonialService,
+  type SubmitTestimonialDto,
+} from './saisiemaster-testimonial.service';
 
 @Controller('saisiemaster')
 @Public()
@@ -46,6 +50,7 @@ export class SaisieMasterController {
   constructor(
     private readonly service: SaisieMasterService,
     private readonly followupService: SaisieMasterFollowupService,
+    private readonly testimonialService: SaisieMasterTestimonialService,
   ) {}
 
   // --------------------------------------------------------------------------
@@ -221,5 +226,44 @@ export class SaisieMasterController {
       }
       throw err;
     }
+  }
+
+  // --------------------------------------------------------------------------
+  // ⭐ Testimonials (avis utilisateurs affichés sur la landing)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Liste publique des témoignages publiés — utilisée par la landing page
+   * SaisieMaster (section témoignages). Pas d'auth requise.
+   */
+  @Get('testimonials')
+  async listPublishedTestimonials() {
+    return this.testimonialService.listPublished(12);
+  }
+
+  /**
+   * Soumet un nouveau témoignage — nécessite un Bearer token SaisieMaster.
+   * Le témoignage est créé avec isPublished=false : un admin doit le modérer.
+   */
+  @Post('testimonials')
+  @HttpCode(HttpStatus.CREATED)
+  async submitTestimonial(
+    @Headers('authorization') authHeader: string | undefined,
+    @Body() body: SubmitTestimonialDto,
+  ) {
+    const prospectId = await this.extractProspectId(authHeader);
+    return this.testimonialService.submit(prospectId, body);
+  }
+
+  /**
+   * Liste MES témoignages (ceux du prospect authentifié).
+   * Inclut ceux non encore publiés.
+   */
+  @Get('testimonials/mine')
+  async listMyTestimonials(
+    @Headers('authorization') authHeader: string | undefined,
+  ) {
+    const prospectId = await this.extractProspectId(authHeader);
+    return this.testimonialService.listMine(prospectId);
   }
 }

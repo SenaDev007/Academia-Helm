@@ -10,8 +10,10 @@ import {
   PanelLeftClose,
   PanelLeft,
   X,
+  MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/saisiemaster/utils";
+import { FeedbackModal } from "./feedback-modal";
 
 /**
  * Sidebar de l'éditeur SaisieMaster.
@@ -52,6 +54,7 @@ interface EditorSidebarProps {
 export function EditorSidebar({ active, onSelect }: EditorSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   const handleSelect = (id: EditorNavId) => {
     onSelect(id);
@@ -147,8 +150,23 @@ export function EditorSidebar({ active, onSelect }: EditorSidebarProps) {
           })}
         </nav>
 
-        {/* Pied de sidebar */}
-        <div className="p-3 border-t border-border/60">
+        {/* Pied de sidebar — bouton témoignage + version */}
+        <div className="p-3 border-t border-border/60 space-y-2">
+          <button
+            type="button"
+            onClick={() => setFeedbackOpen(true)}
+            title={collapsed ? "Donner mon avis" : undefined}
+            className={cn(
+              "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+              "text-[#008751] hover:bg-[#008751]/10",
+              collapsed && "md:justify-center md:px-0",
+            )}
+          >
+            <MessageSquare className="h-5 w-5 shrink-0" />
+            <span className={cn("truncate", collapsed && "md:hidden")}>
+              Donner mon avis
+            </span>
+          </button>
           <div
             className={cn(
               "flex items-center gap-2 text-[10px] text-muted-foreground",
@@ -160,6 +178,8 @@ export function EditorSidebar({ active, onSelect }: EditorSidebarProps) {
           </div>
         </div>
       </aside>
+
+      <FeedbackModal open={feedbackOpen} onOpenChange={setFeedbackOpen} />
     </>
   );
 }

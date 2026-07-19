@@ -1,13 +1,15 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Navbar } from "./navbar";
 import { Hero } from "./hero";
 import { UploadZone } from "./upload-zone";
 import { HowItWorks } from "./how-it-works";
 import { AcademiaHelmCta } from "./academia-helm-cta";
+import { Testimonials } from "./testimonials";
 import { Footer } from "./footer";
 import { ResumeBanner } from "./resume-banner";
+import { FeedbackModal } from "@/components/saisiemaster/editor/feedback-modal";
 import {
   useSaisieMasterStore,
   selectIsAuthenticated,
@@ -18,6 +20,7 @@ export function LandingPage() {
   const setView = useSaisieMasterStore((s) => s.setView);
   const setAuthView = useSaisieMasterStore((s) => s.setAuthView);
   const isAuthenticated = useSaisieMasterStore(selectIsAuthenticated);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   const scrollToUpload = () => {
     if (!isAuthenticated) {
@@ -69,6 +72,9 @@ export function LandingPage() {
         {/* Section marketing Academia Helm — ~25% de la landing */}
         <AcademiaHelmCta />
 
+        {/* Section témoignages utilisateurs */}
+        <Testimonials onGiveFeedback={() => setFeedbackOpen(true)} />
+
         {/* Section À propos / FAQ légère */}
         <section id="a-propos" className="py-16 sm:py-24 bg-card border-t border-border">
           <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
@@ -106,6 +112,9 @@ export function LandingPage() {
         </section>
       </main>
       <Footer />
+
+      {/* Modal de témoignage (utilisateur authentifié) */}
+      <FeedbackModal open={feedbackOpen} onOpenChange={setFeedbackOpen} />
     </>
   );
 }

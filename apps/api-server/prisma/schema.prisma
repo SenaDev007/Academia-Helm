@@ -14285,6 +14285,7 @@ model SaisieMasterProspect {
   updatedAt            DateTime  @updatedAt
 
   sessions SaisieMasterSession[]
+  testimonials SaisieMasterTestimonial[]
 
   @@index([email])
   @@index([status])
@@ -14310,6 +14311,35 @@ model SaisieMasterSession {
 
   @@index([prospectId])
   @@map("saisiemaster_sessions")
+}
+
+/// Témoignage laissé par un utilisateur SaisieMaster.
+/// S'affiche sur la landing page SaisieMaster après modération (isPublished=true).
+model SaisieMasterTestimonial {
+  id          String   @id @default(uuid())
+  prospectId  String?  // null si le témoignage a été supprimé mais reste publié
+  // Identité affichée (dénormalisée pour résister à la suppression du prospect)
+  authorName  String
+  authorRole  String   // ex: "Directeur", "Enseignant", "Secrétaire"
+  schoolName  String
+  city        String?
+  // Contenu
+  rating      Int      // 1-5 étoiles
+  content     String
+  // Statut de modération
+  isPublished Boolean  @default(false)
+  isFeatured  Boolean  @default(false) // mis en avant sur la landing
+  // Dates
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  publishedAt DateTime?
+
+  prospect SaisieMasterProspect? @relation(fields: [prospectId], references: [id], onDelete: SetNull)
+
+  @@index([isPublished])
+  @@index([isFeatured])
+  @@index([prospectId])
+  @@map("saisiemaster_testimonials")
 }
 
 enum AcademicPeriodType {

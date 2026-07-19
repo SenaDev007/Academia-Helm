@@ -264,7 +264,7 @@ export class SaisieMasterFollowupService {
 <body style="margin:0;padding:0;font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f5f7;color:#1a1a1a;">
   <!-- Header -->
   <div style="background:linear-gradient(135deg,#0D1F6E 0%,#1A3A8F 100%);padding:32px 24px;text-align:center;">
-    <img src="https://academiahelm.com/images/logo-academia-helm-signature.png" alt="Academia Helm" style="height:48px;margin-bottom:12px;" />
+    <img src="https://www.academiahelm.com/images/logo-Academia%20Hub.png" alt="Academia Helm" style="height:48px;margin-bottom:12px;" />
     <h1 style="color:#fff;font-size:24px;margin:0;font-weight:700;">Découvrez Academia Helm</h1>
     <p style="color:#a8c5f0;font-size:14px;margin:8px 0 0;">La plateforme complète de gestion scolaire</p>
   </div>
@@ -328,6 +328,13 @@ export class SaisieMasterFollowupService {
             <span style="font-size:13px;color:#666;">Contrats, paie, absences, congés, organisation pédagogique</span>
           </td>
         </tr>
+        <tr>
+          <td style="padding:8px 0;width:40px;vertical-align:top;">🌍</td>
+          <td style="padding:8px 0;">
+            <strong style="color:#0D1F6E;">Module Bilingue (Français / Anglais)</strong><br/>
+            <span style="font-size:13px;color:#666;">Séparation des matières francophones et anglophones, notes distinctes par section, bulletins adaptés au parcours de chaque élève</span>
+          </td>
+        </tr>
       </table>
     </div>
 
@@ -349,11 +356,11 @@ export class SaisieMasterFollowupService {
     </p>
   </div>
 
-  <!-- Footer -->
-  <div style="background:#0D1F6E;padding:20px 24px;text-align:center;">
-    <img src="https://academiahelm.com/images/logo-yehi-or-tech.png" alt="YEHI OR Tech" style="height:36px;margin-bottom:8px;" />
-    <p style="color:#a8c5f0;font-size:12px;margin:0;">
-      © 2026 Academia Helm — YEHI OR Tech<br/>
+  <!-- Footer (clair pour visibilité du texte YEHI OR Tech) -->
+  <div style="background:#f4f5f7;padding:24px;text-align:center;border-top:1px solid #e5e7eb;">
+    <p style="color:#0D1F6E;font-size:15px;font-weight:700;margin:0 0 4px;">YEHI OR Tech</p>
+    <p style="color:#666;font-size:12px;margin:0;">
+      © 2026 Academia Helm — YEHI OR Tech · Parakou, Bénin<br/>
       Vous recevez cet email car vous avez créé un compte SaisieMaster.
     </p>
   </div>
@@ -372,7 +379,7 @@ export class SaisieMasterFollowupService {
 <body style="margin:0;padding:0;font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f5f7;color:#1a1a1a;">
   <!-- Header -->
   <div style="background:linear-gradient(135deg,#0D1F6E 0%,#1A3A8F 100%);padding:32px 24px;text-align:center;">
-    <img src="https://academiahelm.com/images/logo-academia-helm-signature.png" alt="Academia Helm" style="height:48px;margin-bottom:12px;" />
+    <img src="https://www.academiahelm.com/images/logo-Academia%20Hub.png" alt="Academia Helm" style="height:48px;margin-bottom:12px;" />
     <h1 style="color:#fff;font-size:22px;margin:0;font-weight:700;">Simplifiez la gestion de ${prospect.schoolName}</h1>
   </div>
 
@@ -426,11 +433,11 @@ export class SaisieMasterFollowupService {
     </p>
   </div>
 
-  <!-- Footer -->
-  <div style="background:#0D1F6E;padding:20px 24px;text-align:center;">
-    <img src="https://academiahelm.com/images/logo-yehi-or-tech.png" alt="YEHI OR Tech" style="height:36px;margin-bottom:8px;" />
-    <p style="color:#a8c5f0;font-size:12px;margin:0;">
-      © 2026 Academia Helm — YEHI OR Tech<br/>
+  <!-- Footer (clair pour visibilité du texte YEHI OR Tech) -->
+  <div style="background:#f4f5f7;padding:24px;text-align:center;border-top:1px solid #e5e7eb;">
+    <p style="color:#0D1F6E;font-size:15px;font-weight:700;margin:0 0 4px;">YEHI OR Tech</p>
+    <p style="color:#666;font-size:12px;margin:0;">
+      © 2026 Academia Helm — YEHI OR Tech · Parakou, Bénin<br/>
       Vous recevez cet email car vous avez créé un compte SaisieMaster.
     </p>
   </div>
@@ -449,7 +456,7 @@ export class SaisieMasterFollowupService {
 <body style="margin:0;padding:0;font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f5f7;color:#1a1a1a;">
   <!-- Header -->
   <div style="background:linear-gradient(135deg,#0D1F6E 0%,#1A3A8F 100%);padding:32px 24px;text-align:center;">
-    <img src="https://academiahelm.com/images/logo-academia-helm-signature.png" alt="Academia Helm" style="height:48px;margin-bottom:12px;" />
+    <img src="https://www.academiahelm.com/images/logo-Academia%20Hub.png" alt="Academia Helm" style="height:48px;margin-bottom:12px;" />
     <h1 style="color:#fff;font-size:22px;margin:0;font-weight:700;">Dernière chance de transformer ${prospect.schoolName}</h1>
   </div>
 
@@ -521,11 +528,11 @@ export class SaisieMasterFollowupService {
     </p>
   </div>
 
-  <!-- Footer -->
-  <div style="background:#0D1F6E;padding:20px 24px;text-align:center;">
-    <img src="https://academiahelm.com/images/logo-yehi-or-tech.png" alt="YEHI OR Tech" style="height:36px;margin-bottom:8px;" />
-    <p style="color:#a8c5f0;font-size:12px;margin:0;">
-      © 2026 Academia Helm — YEHI OR Tech<br/>
+  <!-- Footer (clair pour visibilité du texte YEHI OR Tech) -->
+  <div style="background:#f4f5f7;padding:24px;text-align:center;border-top:1px solid #e5e7eb;">
+    <p style="color:#0D1F6E;font-size:15px;font-weight:700;margin:0 0 4px;">YEHI OR Tech</p>
+    <p style="color:#666;font-size:12px;margin:0;">
+      © 2026 Academia Helm — YEHI OR Tech · Parakou, Bénin<br/>
       Vous recevez cet email car vous avez créé un compte SaisieMaster.
     </p>
   </div>

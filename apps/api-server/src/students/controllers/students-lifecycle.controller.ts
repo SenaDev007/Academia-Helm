@@ -776,7 +776,7 @@ export class StudentsLifecycleController {
     @TenantId() tenantId: string,
     @Body() body: { studentId: string; academicYearId: string; enrollmentType: 'NEW' | 'REPEAT' | 'PROMOTION' | 'TRANSFER' },
   ) {
-    return this.service.updateEnrollmentType(
+    return this.lifecycle.updateEnrollmentType(
       tenantId,
       body.studentId,
       body.academicYearId,

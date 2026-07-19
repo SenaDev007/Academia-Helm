@@ -567,6 +567,33 @@ class StudentsService {
   }
 
   /**
+   * ⭐ Bascule "Nouvel élève / Ancien élève" pour un enrollment existant.
+   *
+   * Met à jour `enrollmentType` sur le StudentEnrollment, puis recalcule
+   * automatiquement le StudentAccount pour refléter le changement au niveau
+   * financier (frais d'INSCRIPTION vs REINSCRIPTION).
+   *
+   * Backend : POST /students/update-enrollment-type
+   */
+  async updateEnrollmentType(data: {
+    studentId: string;
+    academicYearId: string;
+    enrollmentType: 'NEW' | 'REPEAT' | 'PROMOTION' | 'TRANSFER';
+  }): Promise<{
+    success: boolean;
+    studentId: string;
+    academicYearId: string;
+    enrollmentType: string;
+    previousType: string;
+    accountRecalculated: boolean;
+  }> {
+    return apiFetch(`${BASE_URL}/update-enrollment-type`, {
+      method: "POST",
+      body: data,
+    });
+  }
+
+  /**
    * Promotion manuelle d'un élève vers l'année suivante.
    * Backend : POST /students/promote
    */

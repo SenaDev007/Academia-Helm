@@ -57,6 +57,24 @@ export class EnrollStudentDto {
   @IsOptional() @IsString() tenantId?: string;
 }
 
+/**
+ * ⭐ Bascule "Nouvel élève / Ancien élève" pour un StudentEnrollment existant.
+ *
+ * Règle métier :
+ *   - 'NEW' → l'élève paie les frais d'INSCRIPTION (exclut REINSCRIPTION)
+ *   - 'REPEAT' (ou PROMOTION/TRANSFER) → l'élève paie les frais de
+ *     REINSCRIPTION (exclut INSCRIPTION). S'il n'y a pas de frais de
+ *     réinscription configurés, il ne paie que la scolarité.
+ *
+ * Effet de bord : après mise à jour, le StudentAccount de l'élève pour
+ * l'année courante est recalculé (breakdowns + totalDue) pour refléter
+ * le nouveau type d'enrollment.
+ */
+export class UpdateEnrollmentTypeDto {
+  @IsIn(['NEW', 'REPEAT', 'PROMOTION', 'TRANSFER']) enrollmentType: string;
+  @IsUUID() academicYearId: string;
+}
+
 export class ArchiveStudentDto {
   @IsOptional() @IsString() reason?: string;
 }

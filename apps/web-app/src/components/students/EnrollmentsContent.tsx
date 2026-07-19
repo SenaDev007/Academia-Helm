@@ -27,7 +27,7 @@ import {
   FileText, Download, UserCheck, GraduationCap, BookOpen, Baby,
   RotateCcw, CheckCircle, XCircle, Clock, AlertCircle, Upload,
   ShieldAlert, Info, BrainCircuit, ChevronUp, EyeOff, Eye, FileDown, Pencil, FileSpreadsheet,
-  DollarSign,
+  DollarSign, UserPlus, RefreshCw,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { FormModal } from '@/components/modules/blueprint';
@@ -586,6 +586,33 @@ export default function EnrollmentsContent() {
     }
   };
 
+  // ⭐ Bascule "Nouvel élève / Ancien élève" — impacte les frais
+  // (INSCRIPTION vs REINSCRIPTION) en recalculant le StudentAccount.
+  const handleToggleEnrollmentType = async (
+    enrollment: Enrollment,
+    newType: 'NEW' | 'REPEAT',
+  ) => {
+    if (!academicYear) return;
+    if (enrollment.enrollmentType === newType) return; // pas de changement
+    try {
+      const result = await studentsService.updateEnrollmentType({
+        studentId: enrollment.student.id,
+        academicYearId: academicYear.id,
+        enrollmentType: newType,
+      });
+      toast({
+        title: newType === 'NEW' ? '✅ Marqué comme nouvel élève' : '✅ Marqué comme ancien élève',
+        description: result.accountRecalculated
+          ? 'Compte financier recalculé automatiquement'
+          : 'Type mis à jour (compte financier non recalculé)',
+        variant: 'success',
+      });
+      loadData();
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'error' });
+    }
+  };
+
   // Export CSV
   const handleExportCSV = async () => {
     if (!academicYear) return;
@@ -1021,6 +1048,20 @@ export default function EnrollmentsContent() {
                                                 ><FileText className="w-4 h-4" /></button>
                                               )}
                                               <button onClick={() => handleReEnroll(enr)} className="p-1 hover:bg-indigo-100 rounded text-indigo-600" title="Réinscrire"><RotateCcw className="w-4 h-4" /></button>
+                                              {/* ⭐ Toggle Nouvel/Ancien élève — impacte les frais */}
+                                              {enr.enrollmentType === 'NEW' ? (
+                                                <button
+                                                  onClick={() => handleToggleEnrollmentType(enr, 'REPEAT')}
+                                                  className="p-1 hover:bg-amber-100 rounded text-amber-600"
+                                                  title="Marquer comme ancien élève (frais de réinscription)"
+                                                ><RefreshCw className="w-4 h-4" /></button>
+                                              ) : (
+                                                <button
+                                                  onClick={() => handleToggleEnrollmentType(enr, 'NEW')}
+                                                  className="p-1 hover:bg-blue-100 rounded text-blue-600"
+                                                  title="Marquer comme nouvel élève (frais d'inscription)"
+                                                ><UserPlus className="w-4 h-4" /></button>
+                                              )}
                                               <button
                                                 onClick={() => router.push(`/app/finance/accounts?studentId=${enr.student.id}`)}
                                                 className="p-1 hover:bg-emerald-100 rounded text-emerald-600"
@@ -1256,12 +1297,26 @@ export default function EnrollmentsContent() {
                                                     <div className="w-20 shrink-0 flex justify-center"><span className={cn('px-1.5 py-0.5 rounded text-[10px] font-bold inline-block', typeInfo.color)}>{typeInfo.label}</span></div>
                                                     <div className="w-24 shrink-0 flex justify-center"><span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold border inline-block', statusInfo.color)}>{statusInfo.label}</span></div>
                                                     <span className="w-24 text-xs text-slate-500 shrink-0">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
-                                                    <div className="flex gap-1 w-28 shrink-0">
+                                                    <div className="flex gap-1 w-32 shrink-0">
                                                       {enr.status === 'PENDING' || enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED' ? (
                                                         <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-4 h-4" /></button>
                                                       ) : null}
                                                       <button onClick={() => setEditEnrollment(enr)} className="p-1 hover:bg-amber-100 rounded text-amber-600" title="Éditer / Compléter"><Pencil className="w-4 h-4" /></button>
                                                       <button onClick={() => handleReEnroll(enr)} className="p-1 hover:bg-indigo-100 rounded text-indigo-600" title="Réinscrire"><RotateCcw className="w-4 h-4" /></button>
+                                                      {/* ⭐ Toggle Nouvel/Ancien élève — impacte les frais */}
+                                                      {enr.enrollmentType === 'NEW' ? (
+                                                        <button
+                                                          onClick={() => handleToggleEnrollmentType(enr, 'REPEAT')}
+                                                          className="p-1 hover:bg-amber-100 rounded text-amber-600"
+                                                          title="Marquer comme ancien élève (frais de réinscription)"
+                                                        ><RefreshCw className="w-4 h-4" /></button>
+                                                      ) : (
+                                                        <button
+                                                          onClick={() => handleToggleEnrollmentType(enr, 'NEW')}
+                                                          className="p-1 hover:bg-blue-100 rounded text-blue-600"
+                                                          title="Marquer comme nouvel élève (frais d'inscription)"
+                                                        ><UserPlus className="w-4 h-4" /></button>
+                                                      )}
                                                       <button
                                                         onClick={() => router.push(`/app/finance/accounts?studentId=${enr.student.id}`)}
                                                         className="p-1 hover:bg-emerald-100 rounded text-emerald-600"

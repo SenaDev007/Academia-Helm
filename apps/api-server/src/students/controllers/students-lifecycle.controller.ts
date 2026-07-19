@@ -761,4 +761,26 @@ export class StudentsLifecycleController {
       fileSize: doc?.fileSize || null,
     };
   }
+
+  /**
+   * ⭐ Bascule "Nouvel élève / Ancien élève" pour un enrollment existant.
+   *
+   * Met à jour `enrollmentType` sur le StudentEnrollment, puis recalcule
+   * automatiquement le StudentAccount pour refléter le changement au niveau
+   * financier (frais d'INSCRIPTION vs REINSCRIPTION).
+   *
+   * Body: { studentId, academicYearId, enrollmentType: 'NEW' | 'REPEAT' | 'PROMOTION' | 'TRANSFER' }
+   */
+  @Post('update-enrollment-type')
+  async updateEnrollmentType(
+    @TenantId() tenantId: string,
+    @Body() body: { studentId: string; academicYearId: string; enrollmentType: 'NEW' | 'REPEAT' | 'PROMOTION' | 'TRANSFER' },
+  ) {
+    return this.service.updateEnrollmentType(
+      tenantId,
+      body.studentId,
+      body.academicYearId,
+      body.enrollmentType,
+    );
+  }
 }

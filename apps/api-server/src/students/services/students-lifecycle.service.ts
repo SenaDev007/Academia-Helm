@@ -1772,4 +1772,117 @@ export class StudentsLifecycleService {
       afterData: e.afterData,
     }));
   }
+
+  /**
+   * ⭐ Bascule "Nouvel élève / Ancien élève" pour un enrollment existant.
+   *
+   * Met à jour `enrollmentType` sur le StudentEnrollment (studentId +
+   * academicYearId), puis recalcule le StudentAccount pour refléter le
+   * changement au niveau financier :
+   *   - 'NEW' → l'élève paie les frais d'INSCRIPTION (exclut REINSCRIPTION)
+   *   - 'REPEAT' / 'PROMOTION' / 'TRANSFER' → l'élève paie les frais de
+   *     REINSCRIPTION (exclut INSCRIPTION). S'il n'y a pas de frais de
+   *     réinscription configurés, il ne paie que la scolarité.
+   *
+   * Le StudentAccount doit être recalculé car `getOrCreate()` short-circuit
+   * si le compte existe déjà — il faut appeler `recalculate()` pour
+   * reconstruire les breakdowns selon le nouveau type.
+   */
+  async updateEnrollmentType(
+    tenantId: string,
+    studentId: string,
+    academicYearId: string,
+    enrollmentType: 'NEW' | 'REPEAT' | 'PROMOTION' | 'TRANSFER',
+  ): Promise<{
+    success: boolean;
+    studentId: string;
+    academicYearId: string;
+    enrollmentType: string;
+    previousType: string;
+    accountRecalculated: boolean;
+  }> {
+    // 1. Trouver l'enrollment existant
+    const enrollment = await this.prisma.studentEnrollment.findFirst({
+      where: { tenantId, studentId, academicYearId },
+      select: { id: true, enrollmentType: true },
+    });
+
+    if (!enrollment) {
+      throw new NotFoundException(
+        `Aucune inscription trouvée pour l'élève ${studentId} sur l'année ${academicYearId}`,
+      );
+    }
+
+    const previousType = enrollment.enrollmentType;
+
+    // 2. Si pas de changement, on ne fait rien (évite recalcul inutile)
+    if (previousType === enrollmentType) {
+      this.logger.log(
+        `⏭️  updateEnrollmentType: pas de changement (${previousType} → ${enrollmentType}) — skip`,
+      );
+      return {
+        success: true,
+        studentId,
+        academicYearId,
+        enrollmentType,
+        previousType,
+        accountRecalculated: false,
+      };
+    }
+
+    // 3. Mettre à jour l'enrollment
+    await this.prisma.studentEnrollment.update({
+      where: { id: enrollment.id },
+      data: { enrollmentType },
+    });
+
+    this.logger.log(
+      `🔄 Enrollment type mis à jour: élève ${studentId}, ${previousType} → ${enrollmentType}`,
+    );
+
+    // 4. Recalculer le StudentAccount pour refléter le changement
+    //    (getOrCreate short-circuit si le compte existe → il faut recalculate)
+    let accountRecalculated = false;
+    try {
+      // S'assurer que le compte existe (le crée si nécessaire)
+      await this.studentAccountService.getOrCreate(tenantId, studentId, academicYearId);
+      // Recalculer les breakdowns selon le nouveau enrollmentType
+      // ⚠️ Signature: recalculate(studentId, tenantId, academicYearId)
+      await this.studentAccountService.recalculate(studentId, tenantId, academicYearId);
+      accountRecalculated = true;
+      this.logger.log(
+        `✅ StudentAccount recalculé pour élève ${studentId} (nouveau type: ${enrollmentType})`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `❌ Échec recalcul StudentAccount pour élève ${studentId}: ${err.message}`,
+      );
+      // On ne fait pas échouer l'opération — l'enrollment est déjà mis à jour,
+      // l'utilisateur pourra relancer un recalcul depuis le module finance.
+    }
+
+    // 5. Audit log
+    try {
+      await this.prisma.studentAuditLog.create({
+        data: {
+          tenantId,
+          studentId,
+          action: 'ENROLLMENT_TYPE_CHANGE',
+          beforeData: { enrollmentType: previousType },
+          afterData: { enrollmentType },
+        },
+      });
+    } catch {
+      // best-effort
+    }
+
+    return {
+      success: true,
+      studentId,
+      academicYearId,
+      enrollmentType,
+      previousType,
+      accountRecalculated,
+    };
+  }
 }

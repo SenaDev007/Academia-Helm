@@ -734,6 +734,24 @@ export default function StudentAccountsContent() {
                               <div>
                                 {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId}
                               </div>
+                              {/* ⭐ Badge Nouvel/Ancien élève */}
+                              {(() => {
+                                const enrollmentType = a.student?.studentEnrollments?.[0]?.enrollmentType;
+                                if (!enrollmentType) return null;
+                                const isNew = enrollmentType === 'NEW';
+                                return (
+                                  <span
+                                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                      isNew
+                                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                                        : 'bg-amber-100 text-amber-700 border border-amber-200'
+                                    }`}
+                                    title={isNew ? 'Nouvel élève — paie les frais d\'inscription' : 'Ancien élève — paie les frais de réinscription'}
+                                  >
+                                    {isNew ? 'Nouveau' : 'Ancien'}
+                                  </span>
+                                );
+                              })()}
                               {hasOverride && (
                                 <Badge variant="outline" className="text-purple-700 border-purple-300 bg-purple-50" title="Cet élève a une personnalisation de frais">
                                   <UserCog className="w-3 h-3 mr-1" />Pers.

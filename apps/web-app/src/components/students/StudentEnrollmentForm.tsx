@@ -45,6 +45,8 @@ export interface EnrollmentSubmitData {
   guardians: Guardian[];
   classId?: string;
   schoolLevelId?: string; // UUID de school_levels sélectionné par l'utilisateur
+  /** ⭐ Type d'enrollment : 'NEW' (frais INSCRIPTION) | 'REPEAT' (frais RÉINSCRIPTION) */
+  enrollmentType?: 'NEW' | 'REPEAT';
 }
 
 interface StudentEnrollmentFormProps {
@@ -78,6 +80,9 @@ export default function StudentEnrollmentForm({
   const [error, setError] = useState<string | null>(null);
 
   // Données formulaire — pré-rempli depuis initialData si mode édition
+  // ⭐ enrollmentType : 'NEW' (nouvel élève → frais d'INSCRIPTION) ou
+  //    'REPEAT' (ancien élève → frais de RÉINSCRIPTION).
+  //    Par défaut 'NEW' sauf si initialData fournit déjà un type.
   const [formData, setFormData] = useState({
     firstName: initialData?.firstName || '',
     lastName: initialData?.lastName || '',
@@ -88,6 +93,7 @@ export default function StudentEnrollmentForm({
     npi: initialData?.npi || '',
     photoUrl: initialData?.photoUrl || '',
     classId: initialData?.classId || '',
+    enrollmentType: (initialData?.enrollmentType as 'NEW' | 'REPEAT') || 'NEW',
   });
 
   // Parents — pré-rempli depuis initialData si mode édition
@@ -307,6 +313,8 @@ export default function StudentEnrollmentForm({
         classId: formData.classId || undefined,
         academicClassId: formData.classId || undefined,
         schoolLevelId: selectedLevelId || undefined,
+        // ⭐ enrollmentType : 'NEW' (frais d'INSCRIPTION) ou 'REPEAT' (frais de RÉINSCRIPTION)
+        enrollmentType: formData.enrollmentType,
       });
     } catch (err: any) {
       setError(err.message || "Erreur lors de l'inscription");
@@ -562,6 +570,59 @@ export default function StudentEnrollmentForm({
               </select>
             )}
           </div>
+
+          {/* ⭐ Toggle Nouvel élève / Ancien élève
+              Détermine le type de frais à appliquer :
+              - Nouvel élève → frais d'INSCRIPTION (exclut REINSCRIPTION)
+              - Ancien élève → frais de RÉINSCRIPTION (exclut INSCRIPTION).
+                S'il n'y a pas de frais de réinscription configurés,
+                l'élève ne paiera que la scolarité. */}
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="text-xs font-bold text-blue-700 uppercase">Statut de l'élève</div>
+              <span className="text-[10px] text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+                Impacte les frais
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, enrollmentType: 'NEW' })}
+                className={`text-left p-3 rounded-lg border transition-all ${
+                  formData.enrollmentType === 'NEW'
+                    ? 'border-blue-500 bg-white ring-2 ring-blue-200'
+                    : 'border-slate-200 bg-white/50 hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <div className={`w-4 h-4 rounded-full border-2 ${formData.enrollmentType === 'NEW' ? 'border-blue-500 bg-blue-500' : 'border-slate-300'}`} />
+                  <span className="text-sm font-semibold text-slate-900">Nouvel élève</span>
+                </div>
+                <p className="text-xs text-slate-500 ml-6">Première inscription → Frais d'inscription</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, enrollmentType: 'REPEAT' })}
+                className={`text-left p-3 rounded-lg border transition-all ${
+                  formData.enrollmentType === 'REPEAT'
+                    ? 'border-blue-500 bg-white ring-2 ring-blue-200'
+                    : 'border-slate-200 bg-white/50 hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <div className={`w-4 h-4 rounded-full border-2 ${formData.enrollmentType === 'REPEAT' ? 'border-blue-500 bg-blue-500' : 'border-slate-300'}`} />
+                  <span className="text-sm font-semibold text-slate-900">Ancien élève</span>
+                </div>
+                <p className="text-xs text-slate-500 ml-6">Déjà inscrit → Frais de réinscription</p>
+              </button>
+            </div>
+            {formData.enrollmentType === 'REPEAT' && (
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                ⚠️ S'il n'y a pas de frais de réinscription configurés pour cette
+                classe, l'élève ne paiera que la scolarité.
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -574,6 +635,12 @@ export default function StudentEnrollmentForm({
             <div className="flex justify-between"><span className="text-gray-500">Date de naissance:</span><span className="font-medium">{formData.dateOfBirth || '—'}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Sexe:</span><span className="font-medium">{formData.gender === 'M' ? 'Garçon' : formData.gender === 'F' ? 'Fille' : '—'}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Classe:</span><span className="font-medium">{filteredClasses.find(c => c.id === formData.classId)?.name || 'Non assignée'}</span></div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Statut élève:</span>
+              <span className="font-medium">
+                {formData.enrollmentType === 'NEW' ? '🌟 Nouvel élève (frais d\'inscription)' : '↻ Ancien élève (frais de réinscription)'}
+              </span>
+            </div>
             <div className="flex justify-between"><span className="text-gray-500">Parents:</span><span className="font-medium">{guardians.filter(g => g.firstName).length} parent(s)</span></div>
           </div>
         </div>

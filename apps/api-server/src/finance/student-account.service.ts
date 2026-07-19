@@ -680,7 +680,13 @@ export class StudentAccountService {
             schoolLevel: { select: { id: true, name: true, code: true } },
             studentEnrollments: {
               where: { academicYearId: filters.academicYearId },
-              select: { id: true, classId: true, class: { select: { id: true, name: true } } },
+              select: {
+                id: true,
+                classId: true,
+                class: { select: { id: true, name: true } },
+                // ⭐ enrollmentType pour afficher le badge Nouvel/Ancien élève
+                enrollmentType: true,
+              },
             },
           },
         },

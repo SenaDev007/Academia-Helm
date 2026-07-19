@@ -1801,88 +1801,109 @@ export class StudentsLifecycleService {
     previousType: string;
     accountRecalculated: boolean;
   }> {
-    // 1. Trouver l'enrollment existant
-    const enrollment = await this.prisma.studentEnrollment.findFirst({
-      where: { tenantId, studentId, academicYearId },
-      select: { id: true, enrollmentType: true },
-    });
+    // ⭐ Wrap global pour éviter toute erreur 500 non gérée
+    // Chaque étape critique est dans son propre try/catch
+    try {
+      // 1. Trouver l'enrollment existant
+      const enrollment = await this.prisma.studentEnrollment.findFirst({
+        where: { tenantId, studentId, academicYearId },
+        select: { id: true, enrollmentType: true },
+      });
 
-    if (!enrollment) {
-      throw new NotFoundException(
-        `Aucune inscription trouvée pour l'élève ${studentId} sur l'année ${academicYearId}`,
-      );
-    }
+      if (!enrollment) {
+        throw new NotFoundException(
+          `Aucune inscription trouvée pour l'élève ${studentId} sur l'année ${academicYearId}`,
+        );
+      }
 
-    const previousType = enrollment.enrollmentType;
+      const previousType = enrollment.enrollmentType;
 
-    // 2. Si pas de changement, on ne fait rien (évite recalcul inutile)
-    if (previousType === enrollmentType) {
-      this.logger.log(
-        `⏭️  updateEnrollmentType: pas de changement (${previousType} → ${enrollmentType}) — skip`,
-      );
+      // 2. Si pas de changement, on ne fait rien
+      if (previousType === enrollmentType) {
+        this.logger.log(
+          `⏭️  updateEnrollmentType: pas de changement (${previousType} → ${enrollmentType}) — skip`,
+        );
+        return {
+          success: true,
+          studentId,
+          academicYearId,
+          enrollmentType,
+          previousType,
+          accountRecalculated: false,
+        };
+      }
+
+      // 3. Mettre à jour l'enrollment (dans un try/catch dédié)
+      try {
+        await this.prisma.studentEnrollment.update({
+          where: { id: enrollment.id },
+          data: { enrollmentType },
+        });
+        this.logger.log(
+          `🔄 Enrollment type mis à jour: élève ${studentId}, ${previousType} → ${enrollmentType}`,
+        );
+      } catch (updateErr) {
+        this.logger.error(
+          `❌ Échec mise à jour enrollment: ${updateErr.message}`,
+        );
+        throw new BadRequestException(
+          `Impossible de mettre à jour le type d'inscription: ${updateErr.message}`,
+        );
+      }
+
+      // 4. Recalculer le StudentAccount (best-effort, non bloquant)
+      //    recalculate() gère déjà le cas où le compte n'existe pas
+      let accountRecalculated = false;
+      try {
+        await this.studentAccountService.recalculate(studentId, tenantId, academicYearId);
+        accountRecalculated = true;
+        this.logger.log(
+          `✅ StudentAccount recalculé pour élève ${studentId} (nouveau type: ${enrollmentType})`,
+        );
+      } catch (recalcErr) {
+        this.logger.error(
+          `❌ Échec recalcul StudentAccount pour élève ${studentId}: ${recalcErr.message}`,
+        );
+        // Non bloquant — l'enrollment est déjà mis à jour
+      }
+
+      // 5. Audit log (best-effort)
+      try {
+        await this.prisma.studentAuditLog.create({
+          data: {
+            tenantId,
+            studentId,
+            action: 'ENROLLMENT_TYPE_CHANGE',
+            beforeData: { enrollmentType: previousType },
+            afterData: { enrollmentType },
+          },
+        });
+      } catch {
+        // best-effort
+      }
+
       return {
         success: true,
         studentId,
         academicYearId,
         enrollmentType,
         previousType,
-        accountRecalculated: false,
+        accountRecalculated,
       };
-    }
-
-    // 3. Mettre à jour l'enrollment
-    await this.prisma.studentEnrollment.update({
-      where: { id: enrollment.id },
-      data: { enrollmentType },
-    });
-
-    this.logger.log(
-      `🔄 Enrollment type mis à jour: élève ${studentId}, ${previousType} → ${enrollmentType}`,
-    );
-
-    // 4. Recalculer le StudentAccount pour refléter le changement
-    //    (getOrCreate short-circuit si le compte existe → il faut recalculate)
-    let accountRecalculated = false;
-    try {
-      // S'assurer que le compte existe (le crée si nécessaire)
-      await this.studentAccountService.getOrCreate(tenantId, studentId, academicYearId);
-      // Recalculer les breakdowns selon le nouveau enrollmentType
-      // ⚠️ Signature: recalculate(studentId, tenantId, academicYearId)
-      await this.studentAccountService.recalculate(studentId, tenantId, academicYearId);
-      accountRecalculated = true;
-      this.logger.log(
-        `✅ StudentAccount recalculé pour élève ${studentId} (nouveau type: ${enrollmentType})`,
-      );
     } catch (err) {
+      // Re-throw les NestJS exceptions (NotFoundException, BadRequestException)
+      // qui ont déjà le bon status code
+      if (err instanceof NotFoundException || err instanceof BadRequestException) {
+        throw err;
+      }
+      // Pour toute autre erreur inattendue, logger et renvoyer une erreur 500 propre
       this.logger.error(
-        `❌ Échec recalcul StudentAccount pour élève ${studentId}: ${err.message}`,
+        `❌ updateEnrollmentType erreur inattendue: ${err.message}`,
+        err.stack,
       );
-      // On ne fait pas échouer l'opération — l'enrollment est déjà mis à jour,
-      // l'utilisateur pourra relancer un recalcul depuis le module finance.
+      throw new BadRequestException(
+        `Erreur lors de la mise à jour du type d'inscription: ${err.message}`,
+      );
     }
-
-    // 5. Audit log
-    try {
-      await this.prisma.studentAuditLog.create({
-        data: {
-          tenantId,
-          studentId,
-          action: 'ENROLLMENT_TYPE_CHANGE',
-          beforeData: { enrollmentType: previousType },
-          afterData: { enrollmentType },
-        },
-      });
-    } catch {
-      // best-effort
-    }
-
-    return {
-      success: true,
-      studentId,
-      academicYearId,
-      enrollmentType,
-      previousType,
-      accountRecalculated,
-    };
   }
 }

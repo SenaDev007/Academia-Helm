@@ -21,12 +21,12 @@ export default function SaisieMasterPage() {
   const hasRestoredRef = useRef(false);
 
   // ⭐ Délai minimum pour garantir que le loading page reste visible
-  // au moins 2 secondes (même durée que le loader Academia Helm).
+  // au moins 5 secondes (même durée que le loader Academia Helm).
   // Sans cela, le loading disparaît trop vite car la page est 100%
   // client-side (pas de requête serveur à attendre).
   const [minLoadElapsed, setMinLoadElapsed] = useState(false);
   useEffect(() => {
-    const timer = setTimeout(() => setMinLoadElapsed(true), 2000);
+    const timer = setTimeout(() => setMinLoadElapsed(true), 5000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -78,7 +78,7 @@ export default function SaisieMasterPage() {
   };
 
   // ⭐ Ne rien rendre tant que le délai minimum n'est pas écoulé
-  // → le loading.tsx (SaisieMasterLoader) reste visible pendant 2s
+  // → le loading.tsx (SaisieMasterLoader) reste visible pendant 5s
   if (!minLoadElapsed) {
     return null;
   }

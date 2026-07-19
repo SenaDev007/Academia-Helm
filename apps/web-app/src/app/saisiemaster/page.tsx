@@ -35,20 +35,33 @@ export default function SaisieMasterPage() {
     if (hasRestoredRef.current) return;
     hasRestoredRef.current = true;
 
+    // Hydrate auth first (synchronous — reads from localStorage).
     hydrateAuth();
+    const isAuth =
+      useSaisieMasterStore.getState().prospect !== null &&
+      useSaisieMasterStore.getState().token !== null;
 
+    // Restore any saved classes from localStorage.
     const restored = restoreFromStorage();
-    if (restored && restored.classes.length > 0) {
+    const hasRestoredClasses = !!(restored && restored.classes.length > 0);
+    if (hasRestoredClasses) {
       useSaisieMasterStore.setState({
-        classes: restored.classes,
+        classes: restored!.classes,
         activeClassIndex: Math.min(
-          restored.activeClassIndex,
-          restored.classes.length - 1,
+          restored!.activeClassIndex,
+          restored!.classes.length - 1,
         ),
-        view:
-          useSaisieMasterStore.getState().prospect && restored.classes.length > 0
-            ? "editor"
-            : "landing",
+      });
+    }
+
+    // ⭐ Utilisateur authentifié → TOUJOURS aller à l'éditeur (l'application
+    // proprement dite), jamais sur la landing page marketing.
+    //   - Si des classes sont restaurées → vue "notes" (saisie directe)
+    //   - Sinon → vue "classes" (UI d'import pour charger un template)
+    if (isAuth) {
+      useSaisieMasterStore.setState({
+        view: "editor",
+        editorView: hasRestoredClasses ? "notes" : "classes",
       });
     }
   }, [hydrateAuth]);
@@ -60,21 +73,26 @@ export default function SaisieMasterPage() {
     }
   }, [view]);
 
-  // Si on est sur la vue éditeur mais qu'il n'y a plus de classes, retour landing
+  // ⭐ Un utilisateur authentifié ne doit JAMAIS être renvoyé sur la landing
+  // page marketing. Si on est en vue "landing" alors qu'on est connecté,
+  // on bascule automatiquement vers l'éditeur.
   useEffect(() => {
-    if (view === "editor" && classes.length === 0) {
-      setView("landing");
+    if (view === "landing" && isAuthenticated) {
+      setView("editor");
     }
-  }, [view, classes.length, setView]);
+  }, [view, isAuthenticated, setView]);
 
   // --- Auth flow ---
+  // ⭐ Après une connexion réussie, on envoie TOUJOURS l'utilisateur dans
+  // l'application (éditeur). S'il n'a pas encore de classes, on bascule
+  // directement sur la vue "classes" qui contient l'UI d'import.
   const handleAuthSuccess = (prospect: Prospect, token: string) => {
     setAuth(prospect, token);
-    if (classes.length > 0) {
-      setView("editor");
-    } else {
-      setView("landing");
-    }
+    const hasClasses = useSaisieMasterStore.getState().classes.length > 0;
+    useSaisieMasterStore.setState({
+      view: "editor",
+      editorView: hasClasses ? "notes" : "classes",
+    });
   };
 
   // ⭐ Ne rien rendre tant que le délai minimum n'est pas écoulé
@@ -87,9 +105,14 @@ export default function SaisieMasterPage() {
     return <AuthScreen onSuccess={handleAuthSuccess} />;
   }
 
-  if (view === "editor" && classes.length > 0) {
+  // ⭐ Utilisateur authentifié → éditeur (l'application), peu importe qu'il
+  // ait ou non des classes. L'éditeur gère les deux cas :
+  //   - avec classes  → vue "notes" (saisie)
+  //   - sans classes  → vue "classes" (import)
+  if (view === "editor" && isAuthenticated) {
     return <EditorPage onHome={() => setView("landing")} />;
   }
 
+  // Utilisateur non authentifié → landing page marketing.
   return <LandingPage />;
 }

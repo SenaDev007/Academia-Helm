@@ -42,8 +42,6 @@ export function EditorHeader({ onHome }: EditorHeaderProps) {
 
   const activeClass: ClassData | undefined = classes[activeClassIndex];
 
-  if (!activeClass) return null;
-
   const handleLogout = () => {
     logout();
     setView("landing");
@@ -57,7 +55,7 @@ export function EditorHeader({ onHome }: EditorHeaderProps) {
 
   // Nom de l'école = depuis le prospect si présent, sinon depuis les
   // métadonnées du fichier importé.
-  const schoolName = prospect?.schoolName || activeClass.schoolName || "École";
+  const schoolName = prospect?.schoolName || activeClass?.schoolName || "École";
 
   return (
     <header className="sticky top-0 z-30 w-full border-b border-border/60 bg-white dark:bg-zinc-950">
@@ -82,32 +80,41 @@ export function EditorHeader({ onHome }: EditorHeaderProps) {
               <span className="font-semibold text-foreground text-sm whitespace-nowrap">
                 Saisie des notes
               </span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground/60" />
-              {classes.length > 1 ? (
-                <Select
-                  value={String(activeClassIndex)}
-                  onValueChange={(v) => setActiveClass(Number(v))}
-                >
-                  <SelectTrigger className="h-9 w-[160px] sm:w-[200px]">
-                    <SelectValue placeholder="Choisir une classe" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {classes.map((cls, idx) => (
-                      <SelectItem key={cls.sheetName} value={String(idx)}>
-                        <span className="font-medium">{cls.className}</span>
-                        <span className="text-muted-foreground ml-2">
-                          ({cls.students.length} él.)
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 text-sm whitespace-nowrap">
-                  <span className="text-muted-foreground">Classe :</span>
-                  <span className="font-semibold text-[#0D6EFD]">
-                    {activeClass.className}
-                  </span>
+              {activeClass && (
+                <>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/60" />
+                  {classes.length > 1 ? (
+                    <Select
+                      value={String(activeClassIndex)}
+                      onValueChange={(v) => setActiveClass(Number(v))}
+                    >
+                      <SelectTrigger className="h-9 w-[160px] sm:w-[200px]">
+                        <SelectValue placeholder="Choisir une classe" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {classes.map((cls, idx) => (
+                          <SelectItem key={cls.sheetName} value={String(idx)}>
+                            <span className="font-medium">{cls.className}</span>
+                            <span className="text-muted-foreground ml-2">
+                              ({cls.students.length} él.)
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-sm whitespace-nowrap">
+                      <span className="text-muted-foreground">Classe :</span>
+                      <span className="font-semibold text-[#0D6EFD]">
+                        {activeClass.className}
+                      </span>
+                    </span>
+                  )}
+                </>
+              )}
+              {!activeClass && (
+                <span className="inline-flex items-center gap-1.5 text-sm whitespace-nowrap text-muted-foreground">
+                  Aucune classe — importez un template
                 </span>
               )}
             </div>

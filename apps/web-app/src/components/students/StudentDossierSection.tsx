@@ -205,7 +205,7 @@ export default function StudentDossierSection({ studentId }: { studentId: string
       {/* Tabs */}
       <div className="bg-white rounded-lg shadow">
         <div className="border-b border-gray-200">
-          <nav className="flex -mb-px">
+          <nav className="flex -mb-px overflow-x-auto scrollbar-thin">
             {[
               { id: 'identity', label: 'Identité', icon: User },
               { id: 'admin', label: 'Infos Admin', icon: ClipboardList },
@@ -224,7 +224,7 @@ export default function StudentDossierSection({ studentId }: { studentId: string
                 <button
                   key={tab.id}
                   onClick={() => setSelectedTab(tab.id as any)}
-                  className={`flex items-center space-x-2 px-6 py-4 border-b-2 font-medium text-sm ${
+                  className={`flex items-center space-x-2 px-3 sm:px-6 py-3 sm:py-4 border-b-2 font-medium text-sm whitespace-nowrap ${
                     selectedTab === tab.id
                       ? 'border-blue-600 text-blue-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -239,7 +239,7 @@ export default function StudentDossierSection({ studentId }: { studentId: string
         </div>
 
         {/* Tab Content */}
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {selectedTab === 'identity' && (
             <div className="space-y-6">
               <div>

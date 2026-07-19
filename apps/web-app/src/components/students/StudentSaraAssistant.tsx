@@ -70,7 +70,7 @@ export default function StudentSaraAssistant() {
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="fixed bottom-28 right-8 w-[400px] h-[650px] bg-slate-900 text-white rounded-[2.5rem] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] border border-slate-800 flex flex-col z-50 overflow-hidden"
+            className="fixed bottom-28 right-8 w-[calc(100vw-2rem)] max-w-[400px] h-[650px] bg-slate-900 text-white rounded-[2.5rem] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] border border-slate-800 flex flex-col z-50 overflow-hidden"
           >
             {/* Premium Header */}
             <div className="p-8 bg-gradient-to-br from-blue-600 to-indigo-700 relative overflow-hidden">

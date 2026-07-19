@@ -104,6 +104,9 @@ export function clearClientSessionSync(): void {
   localStorage.removeItem('serverSessionId');
   localStorage.removeItem('portalSessionId');
   localStorage.removeItem('session');
+  // ⭐ Clear LAST_ACTIVITY_KEY pour éviter qu'une session ultérieure
+  // détecte une "inactivité prolongée" basée sur un timestamp stale.
+  localStorage.removeItem('academia_helm_last_activity');
 }
 
 /**

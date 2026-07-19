@@ -594,6 +594,22 @@ class StudentsService {
   }
 
   /**
+   * ⭐ Supprime définitivement un élève et toutes ses données liées.
+   * Sécurité : seuls les élèves PRE_REGISTERED ou ADMITTED (sans paiements)
+   * peuvent être supprimés.
+   */
+  async deleteStudent(studentId: string): Promise<{
+    success: boolean;
+    studentId: string;
+    message: string;
+  }> {
+    return apiFetch(`${BASE_URL}/delete-student`, {
+      method: "POST",
+      body: { studentId },
+    });
+  }
+
+  /**
    * Promotion manuelle d'un élève vers l'année suivante.
    * Backend : POST /students/promote
    */

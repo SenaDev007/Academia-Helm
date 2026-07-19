@@ -331,7 +331,7 @@ export default function StudentIdentityContent() {
           <div className="p-2 bg-blue-50 rounded-lg"><Shield className="w-5 h-5 text-blue-600" /></div>
           <div><h3 className="font-semibold text-slate-900">Dossiers Élèves</h3><p className="text-xs text-slate-500">{filteredStudents.length} élève(s) affiché(s) sur {totalStudents} · {students.filter(s => s.npi).length} avec NPI</p></div>
         </div>
-        <div className="relative w-48 sm:w-64">
+        <div className="relative w-full sm:w-64">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input type="text" placeholder="Rechercher..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
         </div>
@@ -504,7 +504,7 @@ function StudentDashboard({ student, academicYear, onBack, currentIndex, totalSt
   return (
     <div className="animate-in fade-in duration-300">
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-4">
-        <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
+        <div className="flex flex-wrap items-center justify-between gap-2 p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
           <div className="flex items-center gap-3">
             <button onClick={onBack} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 transition"><ArrowLeft className="w-3.5 h-3.5" /> Retour</button>
             {/* ⭐ Pagination élève */}

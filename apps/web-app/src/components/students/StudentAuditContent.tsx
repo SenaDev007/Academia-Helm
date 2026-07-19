@@ -138,7 +138,7 @@ export default function StudentAuditContent() {
     <div className="flex flex-col h-full space-y-4">
       {/* Header — white card cohérent */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
+        <div className="flex flex-wrap items-center justify-between gap-2 p-4 bg-gradient-to-r from-blue-50 to-indigo-50">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
               <Fingerprint className="w-5 h-5 text-indigo-600" />
@@ -204,7 +204,7 @@ export default function StudentAuditContent() {
             <>
               {/* Header + filtres */}
               <div className="p-3 border-b border-slate-100 space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h3 className="text-sm font-bold text-slate-800">{selectedStudent?.lastName} {selectedStudent?.firstName}</h3>
                     <p className="text-xs text-slate-400">{auditLogs.length} événement(s) · {filteredLogs.length} après filtres</p>
@@ -257,7 +257,7 @@ export default function StudentAuditContent() {
                             </div>
                             <div className="flex-1 pb-3">
                               <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
-                                <div className="flex items-center justify-between mb-1">
+                                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
                                   <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase', meta.color)}>{meta.label}</span>
                                   <span className="text-[10px] text-slate-400">{log.createdAt ? format(new Date(log.createdAt), 'dd MMM yyyy à HH:mm', { locale: fr }) : '—'}</span>
                                 </div>

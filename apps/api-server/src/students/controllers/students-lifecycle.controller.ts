@@ -776,11 +776,24 @@ export class StudentsLifecycleController {
     @TenantId() tenantId: string,
     @Body() body: { studentId: string; academicYearId: string; enrollmentType: 'NEW' | 'REPEAT' | 'PROMOTION' | 'TRANSFER' },
   ) {
-    return this.service.updateEnrollmentType(
+    return this.lifecycle.updateEnrollmentType(
       tenantId,
       body.studentId,
       body.academicYearId,
       body.enrollmentType,
     );
+  }
+
+  /**
+   * ⭐ Supprime définitivement un élève et toutes ses données liées.
+   * Sécurité : seuls les élèves avec statut PRE_REGISTERED ou ADMITTED
+   * (sans paiements) peuvent être supprimés.
+   */
+  @Post('delete-student')
+  async deleteStudent(
+    @TenantId() tenantId: string,
+    @Body() body: { studentId: string },
+  ) {
+    return this.lifecycle.deleteStudent(tenantId, body.studentId);
   }
 }

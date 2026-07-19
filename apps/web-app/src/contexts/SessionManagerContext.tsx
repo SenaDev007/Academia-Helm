@@ -389,6 +389,10 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
 
   // ---------------------------------------------------------------------------
   // Check on mount if already idle (user came back to a long-idle tab)
+  // ⭐ FIX : Si l'activité est stale (trop ancienne), on RESET au lieu de
+  // verrouiller. L'utilisateur vient d'arriver sur la page (soit fraîchement
+  // login, soit retour de background tab) — ce n'est pas une "inactivité
+  // prolongée" au sens de la session.
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
@@ -397,14 +401,18 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
       if (lastActivityStr) {
         const lastActivity = parseInt(lastActivityStr, 10);
         const elapsed = Date.now() - lastActivity;
-        if (elapsed >= IDLE_TIMEOUT_MS + WARNING_COUNTDOWN_S * 1000) {
-          // Déjà au-delà du délai de warning → verrouiller directement
-          setSessionState('locked');
-          lockedAtRef.current = lastActivity + IDLE_TIMEOUT_MS + WARNING_COUNTDOWN_S * 1000;
-        } else if (elapsed >= IDLE_TIMEOUT_MS) {
-          // Dans la période de warning → afficher le modal
-          enterWarning();
+        if (elapsed >= IDLE_TIMEOUT_MS) {
+          // ⭐ L'activité est stale (trop ancienne). Au lieu de verrouiller
+          // et déconnecter immédiatement l'utilisateur (ce qui se produisait
+          // sur mobile après login car le timestamp datait de la session
+          // précédente), on RESET l'activité à maintenant.
+          // L'utilisateur est ACTIVEMENT sur la page → ce n'est pas de
+          // l'inactivité.
+          recordActivity();
         }
+      } else {
+        // Pas de timestamp → initialiser
+        recordActivity();
       }
     } catch {}
     // Uniquement au montage

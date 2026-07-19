@@ -125,21 +125,28 @@ export default function StudentEnrollmentForm({
   // ─── Chargement des niveaux scolaires depuis /api/academic-classes ───
   // ⭐ On utilise les classes OFFICIELLES (AcademicClass) pour l'inscription.
   // Le parent choisit une classe officielle (CP, CE1, 6ème…), l'affectation à
-  // ⭐ FIX : Charger les niveaux scolaires depuis /api/school-levels (table school_levels)
-  // au lieu d'extraire les levelId depuis /api/academic-classes.
-  // Les levelId de AcademicClass ne correspondent pas toujours aux id de
-  // SchoolLevel (ce sont parfois des IDs d'une autre table), ce qui causait
-  // une erreur P2003 "Référence invalide" lors du preRegister.
+  // ⭐ FIX : Charger les niveaux scolaires depuis /api/school-levels.
+  // Cette API retourne des objets avec:
+  //   - id: UUID de education_levels (PAS school_levels)
+  //   - code: "MATERNELLE" (majuscule)
+  //   - label: "Maternelle" (nom d'affichage)
+  //   - schoolLevelId: UUID de school_levels (le VRAI UUID pour le backend)
+  //
+  // On utilise schoolLevelId comme id du select (pour que le preRegister
+  // reçoive le bon UUID), et label comme nom d'affichage.
   useEffect(() => {
     fetch('/api/school-levels', { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .then(data => {
         const allLevels = Array.isArray(data) ? data : (data?.data || []);
-        const levels = allLevels.map((sl: any) => ({
-          id: sl.id,
-          name: sl.name || sl.code || 'Niveau',
-          code: sl.code,
-        })).sort((a: any, b: any) => a.name.localeCompare(b.name));
+        const levels = allLevels
+          .filter((sl: any) => sl.schoolLevelId) // seulement si on a le vrai UUID
+          .map((sl: any) => ({
+            id: sl.schoolLevelId,                    // ← VRAI UUID de school_levels
+            name: sl.label || sl.name || sl.code || 'Niveau',  // ← "Maternelle" pas "MATERNELLE"
+            code: sl.code,
+          }))
+          .sort((a: any, b: any) => a.name.localeCompare(b.name));
         setSchoolLevels(levels);
         if (!selectedLevelId && levels.length > 0) {
           setSelectedLevelId(levels[0].id);

@@ -701,11 +701,20 @@ export class StudentAccountService {
 
     const baseAccounts = await this.prisma.studentAccount.findMany(findManyArgs);
 
-    // ─── ⭐ Task 31 : Récupérer les overrides PAR ÉLÈVE pour hasOverride ───
+    // ⭐ Task 31 : Récupérer les overrides PAR ÉLÈVE pour hasOverride
     // On ne peut pas utiliser feeStructure.overrides dans le include Prisma car
     // ça retournerait TOUS les overrides de la feeStructure (pas filtrés par
     // studentId). À la place, on charge les overrides séparément et on les
     // joint manuellement par (studentId, feeStructureId).
+    //
+    // ⚠️ FIX : studentIds DOIT être déclaré AVANT son utilisation (TDZ).
+    // Avant ce fix, studentIds était déclaré à la ligne 729 (après son
+    // utilisation à la ligne 709), ce qui provoquait :
+    //   ReferenceError: Cannot access 'studentIds' before initialization
+    // → caught by global exception filter → "Erreur interne (ReferenceError)"
+    // → frontend toast "erreur interne, erreur référence account not access student ID"
+    const studentIds = baseAccounts.map((a) => a.studentId);
+
     const overridesForStudents = studentIds.length > 0
       ? await this.prisma.feeOverride.findMany({
           where: {
@@ -726,7 +735,6 @@ export class StudentAccountService {
     // synchronisés avec les FeeArrear (ex: arriérés créés manuellement via le module
     // Recouvrement). On agrège donc les FeeArrear ouverts (OPEN ou PARTIALLY_PAID)
     // pour afficher le vrai total d'arriérés dans la colonne "Arriérés".
-    const studentIds = baseAccounts.map((a) => a.studentId);
     const openArrears: any[] = studentIds.length > 0
       ? await this.prisma.feeArrear.findMany({
           where: {

@@ -1,7 +1,7 @@
 /**
  * SOUS-MODULE 2 — Comptes élèves — API
  */
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { StudentAccountService } from './student-account.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
@@ -51,7 +51,10 @@ export class StudentAccountController {
     @Query('academicYearId') academicYearId: string,
     @TenantId() tenantId: string,
   ) {
-    if (!academicYearId) throw new Error('academicYearId required');
+    // ⚠️ FIX : utiliser BadRequestException (HTTP 400) au lieu de Error
+    // (qui était catché par le filtre global et renvoyait HTTP 500
+    // "Erreur interne (Error): academicYearId required")
+    if (!academicYearId) throw new BadRequestException('academicYearId required');
     return this.service.getOrCreate(tenantId, studentId, academicYearId);
   }
 

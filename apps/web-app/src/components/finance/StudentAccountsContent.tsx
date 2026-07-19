@@ -547,7 +547,7 @@ export default function StudentAccountsContent() {
               value={filterYearId || (academicYear?.id ?? 'ALL')}
               onValueChange={(v) => setFilterYearId(v === 'ALL' ? '' : v)}
             >
-              <SelectTrigger className="w-[220px]">
+              <SelectTrigger className="w-full sm:w-[220px]">
                 <SelectValue placeholder="Année courante" />
               </SelectTrigger>
               <SelectContent>
@@ -567,14 +567,14 @@ export default function StudentAccountsContent() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Nom, prénom ou matricule..."
-                className="pl-9 w-[260px]"
+                className="pl-9 w-full sm:w-[260px]"
               />
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Classe</Label>
             <Select value={filterClassId || 'ALL'} onValueChange={(v) => setFilterClassId(v === 'ALL' ? '' : v)}>
-              <SelectTrigger className="w-[220px]">
+              <SelectTrigger className="w-full sm:w-[220px]">
                 <SelectValue placeholder="Toutes les classes" />
               </SelectTrigger>
               <SelectContent>
@@ -588,7 +588,7 @@ export default function StudentAccountsContent() {
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Statut</Label>
             <Select value={filterStatus || 'ALL'} onValueChange={(v) => setFilterStatus(v === 'ALL' ? '' : v)}>
-              <SelectTrigger className="w-[220px]">
+              <SelectTrigger className="w-full sm:w-[220px]">
                 <SelectValue placeholder="Tous les statuts" />
               </SelectTrigger>
               <SelectContent>
@@ -749,7 +749,7 @@ export default function StudentAccountsContent() {
                                 dont arriérés : {formatCurrency(totalArrears)}
                               </div>
                             )}
-                            <div className="mt-1 space-y-0.5 min-w-[140px]">
+                            <div className="mt-1 space-y-0.5 min-w-[120px]">
                               {inscription.due > 0 && <FeeDetail label="Inscription" {...inscription} />}
                               {hasReinscription && <FeeDetail label="Réinscription" {...reinscription} />}
                               {tuition.due > 0 && <FeeDetail label="Scolarité" {...tuition} />}
@@ -778,7 +778,7 @@ export default function StudentAccountsContent() {
                           {/* Payé — avec détail par frais */}
                           <TableCell className="text-right">
                             <div className="font-semibold text-emerald-700">{formatCurrency(totalPaid)}</div>
-                            <div className="mt-1 space-y-0.5 min-w-[140px]">
+                            <div className="mt-1 space-y-0.5 min-w-[120px]">
                               {inscription.due > 0 && (
                                 <div className="flex justify-between text-[10px] text-slate-500">
                                   <span>Inscription :</span>
@@ -802,7 +802,7 @@ export default function StudentAccountsContent() {
                           {/* Solde — avec détail par frais (inclut arriérés) */}
                           <TableCell className="text-right">
                             <div className={`font-bold ${balance <= 0 ? 'text-green-600' : 'text-red-600'} whitespace-nowrap`}>{formatCurrency(balance)}</div>
-                            <div className="mt-1 space-y-0.5 min-w-[140px]">
+                            <div className="mt-1 space-y-0.5 min-w-[120px]">
                               {totalArrears > 0 && (
                                 <div className="flex justify-between text-[10px] text-amber-600">
                                   <span>Arriérés :</span>
@@ -1079,7 +1079,7 @@ export default function StudentAccountsContent() {
                                 <WhatsAppIcon className="w-3.5 h-3.5" />
                               </Button>
                               {whatsappMenuId === t.id && (
-                                <div className="absolute right-0 top-8 z-50 bg-white rounded-lg shadow-xl border border-slate-200 py-1 min-w-[180px]">
+                                <div className="absolute right-0 top-8 z-50 bg-white rounded-lg shadow-xl border border-slate-200 py-1 min-w-full sm:w-[180px]">
                                   <button
                                     className="w-full text-left px-3 py-2 text-xs hover:bg-emerald-50 flex items-center gap-2"
                                     onClick={async () => {

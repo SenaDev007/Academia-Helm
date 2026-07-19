@@ -1555,7 +1555,7 @@ function ArrearsTab({
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Année scolaire</Label>
             <Select value={yearId} onValueChange={setYearId}>
-              <SelectTrigger className="w-[160px] h-9"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[160px] h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Toutes les années</SelectItem>
                 {allYears.map((y) => (
@@ -1569,7 +1569,7 @@ function ArrearsTab({
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Niveau scolaire</Label>
             <Select value={schoolLevelId} onValueChange={(v) => { setSchoolLevelId(v); setClassId('ALL'); }}>
-              <SelectTrigger className="w-[180px] h-9"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[180px] h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Tous les niveaux</SelectItem>
                 {schoolLevels.map((l) => (
@@ -1583,7 +1583,7 @@ function ArrearsTab({
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Classe</Label>
             <Select value={classId} onValueChange={setClassId}>
-              <SelectTrigger className="w-[180px] h-9"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[180px] h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Toutes les classes</SelectItem>
                 {filteredClasses.map((c: any) => (
@@ -1597,7 +1597,7 @@ function ArrearsTab({
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Niveau de gravité</Label>
             <Select value={levelFilter} onValueChange={setLevelFilter}>
-              <SelectTrigger className="w-[160px] h-9"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[160px] h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Tous</SelectItem>
                 <SelectItem value="LOW">Faible</SelectItem>
@@ -2665,7 +2665,7 @@ function PromisesTab({
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Statut</Label>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">Tous les statuts</SelectItem>
               <SelectItem value="PENDING">En attente</SelectItem>
@@ -2677,7 +2677,7 @@ function PromisesTab({
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Classe</Label>
           <Select value={classFilter} onValueChange={setClassFilter}>
-            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">Toutes les classes</SelectItem>
               {classes.map((c: any) => (
@@ -3009,7 +3009,7 @@ function ActionsTab({
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Type d'action</Label>
           <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-[220px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-[220px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">Tous les types</SelectItem>
               {Object.entries(ACTION_TYPE_CONFIG).map(([key, cfg]) => (
@@ -3021,7 +3021,7 @@ function ActionsTab({
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Classe</Label>
           <Select value={classFilter} onValueChange={setClassFilter}>
-            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">Toutes les classes</SelectItem>
               {classes.map((c: any) => (
@@ -3392,7 +3392,7 @@ function CasesTab({
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Niveau scolaire</Label>
             <Select value={filterSchoolLevelId} onValueChange={(v) => { setFilterSchoolLevelId(v); setFilterClassId('ALL'); }}>
-              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Tous les niveaux</SelectItem>
                 {schoolLevels.map((l) => (<SelectItem key={l.id} value={l.id}>{l.label || l.code || l.name}</SelectItem>))}
@@ -3402,7 +3402,7 @@ function CasesTab({
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Classe</Label>
             <Select value={filterClassId} onValueChange={setFilterClassId}>
-              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Toutes les classes</SelectItem>
                 {filteredClasses.map((c: any) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}

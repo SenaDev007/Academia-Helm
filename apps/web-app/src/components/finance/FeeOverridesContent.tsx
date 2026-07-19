@@ -354,14 +354,14 @@ export default function FeeOverridesContent() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Nom, prénom ou matricule..."
-                className="pl-10 w-[260px]"
+                className="pl-10 w-full sm:w-[260px]"
               />
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Niveau</Label>
             <Select value={filterLevelId || 'ALL'} onValueChange={(v) => { setFilterLevelId(v === 'ALL' ? '' : v); setFilterClassId(''); }}>
-              <SelectTrigger className="w-[220px]"><SelectValue placeholder="Tous les niveaux" /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[220px]"><SelectValue placeholder="Tous les niveaux" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Tous les niveaux</SelectItem>
                 {levels.map((l) => (<SelectItem key={l.id} value={l.id}>{l.label ?? l.code ?? l.name}</SelectItem>))}
@@ -371,7 +371,7 @@ export default function FeeOverridesContent() {
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Classe</Label>
             <Select value={filterClassId || 'ALL'} onValueChange={(v) => setFilterClassId(v === 'ALL' ? '' : v)}>
-              <SelectTrigger className="w-[220px]"><SelectValue placeholder="Toutes les classes" /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[220px]"><SelectValue placeholder="Toutes les classes" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Toutes les classes</SelectItem>
                 {filteredClasses.map((c) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}
@@ -381,7 +381,7 @@ export default function FeeOverridesContent() {
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Type de frais</Label>
             <Select value={filterFeeType || 'ALL'} onValueChange={(v) => setFilterFeeType(v === 'ALL' ? '' : v)}>
-              <SelectTrigger className="w-[220px]"><SelectValue placeholder="Tous les types" /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[220px]"><SelectValue placeholder="Tous les types" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Tous les types</SelectItem>
                 {FEE_TYPES.map((f) => (<SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>))}
@@ -392,7 +392,7 @@ export default function FeeOverridesContent() {
 
         {/* ⭐ Barre d'actions flottante pour suppression multiple */}
         {selectedIds.size > 0 && (
-          <div className="sticky top-0 z-10 mb-3 flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg shadow-sm">
+          <div className="sticky top-0 z-10 mb-3 flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg shadow-sm">
             <span className="text-sm font-semibold text-amber-800">
               {selectedIds.size} sélectionnée(s)
             </span>
@@ -519,7 +519,7 @@ export default function FeeOverridesContent() {
                         )}
                       </TableCell>
                       {/* Motif — single line, tronqué */}
-                      <TableCell className="text-sm text-slate-600 max-w-[180px] truncate whitespace-nowrap py-3" title={o.reason}>{o.reason}</TableCell>
+                      <TableCell className="text-sm text-slate-600 max-w-full sm:w-[180px] truncate whitespace-nowrap py-3" title={o.reason}>{o.reason}</TableCell>
                       <TableCell className="text-xs text-slate-500 whitespace-nowrap py-3">
                         {o.creator ? `${o.creator.firstName || ''} ${o.creator.lastName || ''}` : 'Système'}
                         <span className="text-slate-400 ml-1">· {o.createdAt ? new Date(o.createdAt).toLocaleDateString('fr-FR') : ''}</span>

@@ -241,6 +241,7 @@ export default function TransactionsContent() {
         }
       >
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
@@ -402,6 +403,7 @@ export default function TransactionsContent() {
               )}
             </TableBody>
           </Table>
+          </div>
         </div>
 
         {/* ⭐ Pagination serveur — pattern identique à StudentMovementsContent.tsx */}

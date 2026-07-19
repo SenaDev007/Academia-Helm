@@ -958,6 +958,7 @@ export default function ExpensesPage() {
             }
           >
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50">
@@ -1089,6 +1090,7 @@ export default function ExpensesPage() {
                   </tfoot>
                 )}
               </Table>
+              </div>
             </div>
           </ModuleContentArea>
         )}
@@ -1120,6 +1122,7 @@ export default function ExpensesPage() {
             }
           >
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50">
@@ -1239,6 +1242,7 @@ export default function ExpensesPage() {
                   </tfoot>
                 )}
               </Table>
+              </div>
             </div>
           </ModuleContentArea>
         )}
@@ -1266,6 +1270,7 @@ export default function ExpensesPage() {
             }
           >
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50">
@@ -1343,6 +1348,7 @@ export default function ExpensesPage() {
                   )}
                 </TableBody>
               </Table>
+              </div>
             </div>
           </ModuleContentArea>
         )}

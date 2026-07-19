@@ -495,7 +495,7 @@ export default function FeeStructuresContent() {
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Niveau</Label>
               <Select value={filterLevelId || 'ALL'} onValueChange={(v) => { setFilterLevelId(v === 'ALL' ? '' : v); setFilterClassId(''); }}>
-                <SelectTrigger className="w-[220px]"><SelectValue placeholder="Tous les niveaux" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-[220px]"><SelectValue placeholder="Tous les niveaux" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">Tous les niveaux</SelectItem>
                   {levels.map((l) => (<SelectItem key={l.id} value={l.id}>{l.label ?? l.code ?? l.name}</SelectItem>))}
@@ -505,7 +505,7 @@ export default function FeeStructuresContent() {
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Classe</Label>
               <Select value={filterClassId || 'ALL'} onValueChange={(v) => setFilterClassId(v === 'ALL' ? '' : v)}>
-                <SelectTrigger className="w-[220px]"><SelectValue placeholder="Toutes les classes" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-[220px]"><SelectValue placeholder="Toutes les classes" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">Toutes les classes</SelectItem>
                   {filteredSortedClasses.map((c) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}
@@ -515,7 +515,7 @@ export default function FeeStructuresContent() {
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Type</Label>
               <Select value={filterFeeType || 'ALL'} onValueChange={(v) => setFilterFeeType(v === 'ALL' ? '' : v)}>
-                <SelectTrigger className="w-[220px]"><SelectValue placeholder="Tous les types" /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-[220px]"><SelectValue placeholder="Tous les types" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">Tous les types</SelectItem>
                   {FEE_TYPES.map((f) => (<SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>))}
@@ -526,7 +526,7 @@ export default function FeeStructuresContent() {
 
           {/* ⭐ Task 24 : Barre d'actions pour suppression multiple */}
           {selectedIds.size > 0 && (
-            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg">
               <span className="text-sm font-semibold text-amber-800">
                 {selectedIds.size} sélectionné(s)
               </span>
@@ -560,6 +560,7 @@ export default function FeeStructuresContent() {
           )}
 
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50">
@@ -646,6 +647,7 @@ export default function FeeStructuresContent() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           </div>
         </ModuleContentArea>
 

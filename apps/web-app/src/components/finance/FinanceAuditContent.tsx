@@ -413,6 +413,7 @@ export default function FinanceAuditContent() {
                 Top 5 comptables actifs (30j)
               </h3>
             </div>
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50">
@@ -445,6 +446,7 @@ export default function FinanceAuditContent() {
                 )}
               </TableBody>
             </Table>
+            </div>
           </div>
         </div>
 
@@ -513,6 +515,7 @@ export default function FinanceAuditContent() {
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto -mx-4 sm:mx-0">
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50">
@@ -555,6 +558,7 @@ export default function FinanceAuditContent() {
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
     </div>
   );
@@ -580,6 +584,7 @@ export default function FinanceAuditContent() {
               Annulations récentes (30 jours)
             </h3>
           </div>
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
@@ -616,6 +621,7 @@ export default function FinanceAuditContent() {
               )}
             </TableBody>
           </Table>
+          </div>
         </div>
 
         {/* Transactions nocturnes */}
@@ -626,6 +632,7 @@ export default function FinanceAuditContent() {
               Transactions nocturnes (21h - 6h)
             </h3>
           </div>
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
@@ -658,6 +665,7 @@ export default function FinanceAuditContent() {
               )}
             </TableBody>
           </Table>
+          </div>
         </div>
 
         {/* Montants élevés */}
@@ -668,6 +676,7 @@ export default function FinanceAuditContent() {
               Transactions à montant élevé (≥ 100 000 FCFA)
             </h3>
           </div>
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
@@ -702,6 +711,7 @@ export default function FinanceAuditContent() {
               )}
             </TableBody>
           </Table>
+          </div>
         </div>
       </div>
     );
@@ -721,6 +731,7 @@ export default function FinanceAuditContent() {
             Un écart &gt; 1 000 FCFA est considéré comme critique.
           </p>
         </div>
+        <div className="overflow-x-auto -mx-4 sm:mx-0">
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50">
@@ -763,6 +774,7 @@ export default function FinanceAuditContent() {
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
     </div>
   );
@@ -782,6 +794,7 @@ export default function FinanceAuditContent() {
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto -mx-4 sm:mx-0">
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50">
@@ -823,6 +836,7 @@ export default function FinanceAuditContent() {
             )}
           </TableBody>
         </Table>
+        </div>
         {filteredAuditLogs.length > 100 && (
           <div className="p-3 bg-slate-50 border-t border-slate-200 text-center text-xs text-slate-500">
             100 premiers résultats affichés sur {filteredAuditLogs.length}. Utilisez l'export Excel pour la liste complète.

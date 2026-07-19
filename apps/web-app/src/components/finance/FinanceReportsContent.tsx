@@ -627,7 +627,7 @@ export default function FinanceReportsContent() {
 
   // ─── Sous-onglets ───
   const renderSubTabs = () => (
-    <div className="flex items-center gap-1 border-b border-slate-200 mb-4">
+    <div className="flex items-center gap-1 border-b border-slate-200 mb-4 overflow-x-auto scrollbar-thin">
       {SUB_TABS.map((t) => {
         const Icon = t.icon;
         const isActive = subTab === t.id;
@@ -833,6 +833,7 @@ export default function FinanceReportsContent() {
                 Encaissements par classe
               </h3>
             </div>
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50">
@@ -857,6 +858,7 @@ export default function FinanceReportsContent() {
                 )}
               </TableBody>
             </Table>
+            </div>
           </div>
 
           {/* Répartition par catégorie */}
@@ -867,6 +869,7 @@ export default function FinanceReportsContent() {
                 Dépenses par catégorie
               </h3>
             </div>
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50">
@@ -891,6 +894,7 @@ export default function FinanceReportsContent() {
                 )}
               </TableBody>
             </Table>
+            </div>
           </div>
         </div>
       </div>
@@ -918,6 +922,7 @@ export default function FinanceReportsContent() {
               {filteredArrears.length} élève(s) — filtres appliqués : niveau {arrearLevel || 'tous'}, statut {arrearStatus || 'tous'}
             </p>
           </div>
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
@@ -965,6 +970,7 @@ export default function FinanceReportsContent() {
               )}
             </TableBody>
           </Table>
+          </div>
           {filteredArrears.length > 100 && (
             <div className="p-3 bg-slate-50 border-t border-slate-200 text-center text-xs text-slate-500">
               100 premiers résultats affichés sur {filteredArrears.length}. Utilisez l'export Excel pour la liste complète.
@@ -998,6 +1004,7 @@ export default function FinanceReportsContent() {
               {rows.length} opération(s) — filtrées par caisse {cashRegisterId ? cashRegisters.find((c) => c.id === cashRegisterId)?.name : 'toutes'} et type {txType || 'tous'}
             </p>
           </div>
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
@@ -1043,6 +1050,7 @@ export default function FinanceReportsContent() {
               )}
             </TableBody>
           </Table>
+          </div>
           {rows.length > 100 && (
             <div className="p-3 bg-slate-50 border-t border-slate-200 text-center text-xs text-slate-500">
               100 premiers résultats affichés sur {rows.length}. Utilisez l'export Excel pour la liste complète.
@@ -1070,6 +1078,7 @@ export default function FinanceReportsContent() {
             </h3>
             {!prev && <p className="text-xs text-amber-600 mt-1">Aucune année précédente trouvée pour comparaison.</p>}
           </div>
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
@@ -1096,6 +1105,7 @@ export default function FinanceReportsContent() {
               )}
             </TableBody>
           </Table>
+          </div>
         </div>
 
         {/* Projection trésorerie */}
@@ -1136,6 +1146,7 @@ export default function FinanceReportsContent() {
               Comparatif par caisse
             </h3>
           </div>
+          <div className="overflow-x-auto -mx-4 sm:mx-0">
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
@@ -1173,6 +1184,7 @@ export default function FinanceReportsContent() {
               )}
             </TableBody>
           </Table>
+          </div>
         </div>
       </div>
     );

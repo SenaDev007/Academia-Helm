@@ -596,7 +596,7 @@ export default function FinanceSettingsContent() {
 
                   {/* Stats inline (4 cartes) */}
                   {orionAlerts.stats?.total > 0 && (
-                    <div className="grid grid-cols-4 gap-2 lg:gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 lg:gap-3">
                       <div className="bg-white rounded-lg p-2.5 border border-rose-200 text-center min-w-[64px]">
                         <p className="text-xl font-bold text-rose-600">
                           {orionAlerts.stats.critical}

@@ -389,6 +389,7 @@ export default function TreasuryPage() {
           }
         >
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto -mx-4 sm:mx-0">
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50">
@@ -489,6 +490,7 @@ export default function TreasuryPage() {
                 </tfoot>
               )}
             </Table>
+            </div>
           </div>
         </ModuleContentArea>
         )}

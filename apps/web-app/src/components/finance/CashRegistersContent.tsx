@@ -896,7 +896,7 @@ export default function CashRegistersContent() {
             </div>
 
             {/* === ONGLETS : Tableau de bord | Caisses | Historique === */}
-            <div className="flex items-center gap-2 border-b border-slate-200">
+            <div className="flex items-center gap-2 border-b border-slate-200 overflow-x-auto scrollbar-thin">
               <button
                 onClick={() => setActiveTab('dashboard')}
                 className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
@@ -1681,7 +1681,7 @@ export default function CashRegistersContent() {
                           </Badge>
                         </div>
                         <div className="border border-slate-200 rounded-lg overflow-hidden">
-                          <div className="max-h-80 overflow-y-auto">
+                          <div className="max-h-80 overflow-auto">
                             <table className="w-full text-sm">
                               <thead className="bg-slate-50 sticky top-0">
                                 <tr>
@@ -1814,7 +1814,7 @@ export default function CashRegistersContent() {
                           </Badge>
                         </div>
                         <div className="border border-rose-200 rounded-lg overflow-hidden">
-                          <div className="max-h-60 overflow-y-auto">
+                          <div className="max-h-60 overflow-auto">
                             <table className="w-full text-sm">
                               <thead className="bg-rose-50/50 sticky top-0">
                                 <tr>
@@ -1899,7 +1899,7 @@ export default function CashRegistersContent() {
                           </Badge>
                         </div>
                         <div className="border border-emerald-200 rounded-lg overflow-hidden">
-                          <div className="max-h-64 overflow-y-auto">
+                          <div className="max-h-64 overflow-auto">
                             <table className="w-full text-sm">
                               <thead className="bg-emerald-50/60 sticky top-0">
                                 <tr>
@@ -1978,7 +1978,7 @@ export default function CashRegistersContent() {
                           </Badge>
                         </div>
                         <div className="border border-rose-200 rounded-lg overflow-hidden">
-                          <div className="max-h-64 overflow-y-auto">
+                          <div className="max-h-64 overflow-auto">
                             <table className="w-full text-sm">
                               <thead className="bg-rose-50/60 sticky top-0">
                                 <tr>

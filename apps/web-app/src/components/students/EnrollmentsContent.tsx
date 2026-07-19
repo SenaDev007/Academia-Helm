@@ -1357,6 +1357,11 @@ export default function EnrollmentsContent() {
               // 1. Pré-inscrire l'élève — ne PAS envoyer photoUrl dans le payload
               //    (sera uploadée via uploadPhoto séparément pour persister dans student_photos).
               //    Le backend preRegister persiste déjà npi, photoUrl, placeOfBirth, etc.
+              // ⭐ FIX: data.classId est en réalité l'UUID d'un AcademicClass (CP, CE1, 6ème…)
+              //    récupéré depuis /api/academic-classes. Il faut l'envoyer comme
+              //    `academicClassId` (pas `classId`) sinon le backend lève une erreur
+              //    P2003 FK violation car l'UUID n'existe pas dans la table `classes`
+              //    (classes physiques) → HTTP 400 "Référence invalide".
               const student = await studentsService.preRegister({
                 academicYearId: academicYear!.id,
                 schoolLevelId: effectiveSchoolLevelId,
@@ -1368,7 +1373,10 @@ export default function EnrollmentsContent() {
                 nationality: data.student.nationality || undefined,
                 placeOfBirth: data.student.placeOfBirth || undefined,
                 npi: data.student.npi || undefined,
-                classId: data.classId || undefined,
+                // ⭐ data.classId = UUID d'AcademicClass → envoyé comme academicClassId
+                academicClassId: data.classId || undefined,
+                // ⭐ enrollmentType : 'NEW' (frais INSCRIPTION) ou 'REPEAT' (frais RÉINSCRIPTION)
+                enrollmentType: data.enrollmentType,
               });
 
               // 1b. Upload photo via endpoint dédié (pattern RH) si data URL présente
@@ -1378,11 +1386,14 @@ export default function EnrollmentsContent() {
               }
 
               // 2. Admettre l'élève (génère matricule + compte financier)
+              // ⭐ Ne PAS envoyer classId ici — data.classId est un AcademicClass UUID,
+              // pas un Class UUID. Le preRegister a déjà assigné academicClassId.
+              // admit n'a pas de paramètre academicClassId, donc on ne fait rien
+              // pour la classe ici (l'enrollment a déjà academicClassId du preRegister).
               const admitted = await studentsService.admit({
                 studentId: student.id,
                 academicYearId: academicYear!.id,
                 schoolLevelId: effectiveSchoolLevelId,
-                classId: data.classId || undefined,
               });
 
               // 3. Ajouter les parents (non bloquant)

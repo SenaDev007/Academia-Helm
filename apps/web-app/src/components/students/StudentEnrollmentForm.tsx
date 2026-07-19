@@ -325,9 +325,33 @@ export default function StudentEnrollmentForm({
   };
 
   // ─── Filtrage des classes par niveau ───
-  const filteredClasses = selectedLevelId
-    ? classesList.filter(c => (c.levelId || c.schoolLevelId) === selectedLevelId)
-    : classesList;
+  // ⭐ FIX: `selectedLevelId` est le `schoolLevelId` (UUID de school_levels).
+  // Mais `academic-classes.levelId` est un UUID d'une autre table (education_levels).
+  // On doit donc construire un mapping: academic-class → schoolLevelId.
+  //
+  // Stratégie: pour chaque academic-class, on cherche le school-level dont le
+  // `label` (ex: "Maternelle") correspond au `level.name` de l'academic-class.
+  // On utilise ce mapping pour filtrer les classes par `selectedLevelId`.
+  const filteredClasses = useMemo(() => {
+    if (!selectedLevelId || classesList.length === 0) return classesList;
+
+    // Construire le mapping level.name → schoolLevelId depuis schoolLevels
+    const labelToSchoolLevelId = new Map<string, string>();
+    schoolLevels.forEach((sl: any) => {
+      if (sl.id && sl.name) {
+        labelToSchoolLevelId.set(sl.name.toLowerCase(), sl.id);
+      }
+    });
+
+    // Filtrer les classes: on cherche les classes dont le level.name correspond
+    // à un school-level dont l'id est selectedLevelId
+    return classesList.filter((c: any) => {
+      const levelName = c.level?.name || c.schoolLevel?.name || '';
+      if (!levelName) return false;
+      const mappedSchoolLevelId = labelToSchoolLevelId.get(levelName.toLowerCase());
+      return mappedSchoolLevelId === selectedLevelId;
+    });
+  }, [selectedLevelId, classesList, schoolLevels]);
 
   // ─── Render ───
 

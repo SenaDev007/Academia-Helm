@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { EditorHeader } from "./editor-header";
 import { EditorSidebar, type EditorNavId } from "./editor-sidebar";
 import { StatsPanel } from "./stats-panel";
@@ -32,6 +32,7 @@ import {
   UserSquare2,
 } from "lucide-react";
 import { useSaisieMasterStore } from "@/lib/saisiemaster/store";
+import { useIsMobile } from "@/hooks/saisiemaster/use-mobile";
 import { cn } from "@/lib/saisiemaster/utils";
 import { toast } from "sonner";
 
@@ -64,8 +65,20 @@ export function EditorPage({ onHome }: EditorPageProps) {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
     "idle",
   );
+  const isMobile = useIsMobile();
+  // ⭐ Sur mobile, on force le mode "Par élève" qui est beaucoup plus
+  // confortable pour la saisie tactile (une carte par matière avec deux
+  // larges inputs au lieu d'un grand tableau à scroll horizontal).
   const [saisieMode, setSaisieMode] = useState<"matiere" | "eleve">("matiere");
   const [selectedStudentId, setSelectedStudentId] = useState<string>("");
+
+  // Sync mode with viewport: when entering mobile, switch to "eleve";
+  // when returning to desktop, keep the user's last choice.
+  useEffect(() => {
+    if (isMobile) {
+      setSaisieMode("eleve");
+    }
+  }, [isMobile]);
 
   const clearAll = useSaisieMasterStore((s) => s.clearAll);
   const isExporting = useSaisieMasterStore((s) => s.isExporting);
@@ -147,11 +160,13 @@ export function EditorPage({ onHome }: EditorPageProps) {
                     </p>
                   </div>
 
-                  {/* Toggle "Par matière" / "Par élève" */}
-                  <SaisieModeToggle
-                    mode={saisieMode}
-                    onChange={setSaisieMode}
-                  />
+                  {/* Toggle "Par matière" / "Par élève" — caché sur mobile */}
+                  {!isMobile && (
+                    <SaisieModeToggle
+                      mode={saisieMode}
+                      onChange={setSaisieMode}
+                    />
+                  )}
 
                   {saisieMode === "matiere" ? (
                     <NotesTable />

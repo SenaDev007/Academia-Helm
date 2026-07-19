@@ -26,6 +26,7 @@ import {
   HttpCode,
   HttpStatus,
   BadRequestException,
+  NotFoundException,
   UnauthorizedException,
   Logger,
 } from '@nestjs/common';
@@ -186,5 +187,39 @@ export class SaisieMasterController {
     await this.followupService.sendSecondFollowup();
     await this.followupService.sendThirdFollowup();
     return { message: 'Follow-ups processed' };
+  }
+
+  /**
+   * ⭐ Envoie le PREMIER email de la séquence à UN prospect spécifique
+   * identifié par son email — sans tenir compte du délai de 3 jours.
+   *
+   * Body : { email: string }
+   *
+   * Cas d'usage :
+   *  - Vérifier le rendu de l'email (test forme + fond)
+   *  - Renvoyer manuellement un email qui aurait échoué
+   *
+   * Réponse : { sent, prospect, alreadySent }
+   */
+  @Post('followups/send-first')
+  @HttpCode(HttpStatus.OK)
+  async sendFirstFollowupToEmail(
+    @Body() body: { email: string },
+  ) {
+    if (!body?.email || typeof body.email !== 'string') {
+      throw new BadRequestException('email is required');
+    }
+    try {
+      const result = await this.followupService.sendFirstFollowupToEmail(
+        body.email,
+      );
+      return result;
+    } catch (err) {
+      // Prospect introuvable → 404 (sinon Nest renvoie 500 par défaut)
+      if (err.message?.includes('Aucun prospect')) {
+        throw new NotFoundException(err.message);
+      }
+      throw err;
+    }
   }
 }

@@ -91,6 +91,79 @@ export class SaisieMasterFollowupService {
   }
 
   /**
+   * ⭐ Envoie le premier email (Email 1) à UN prospect spécifique identifié
+   * par son email — sans tenir compte du filtre de délai (3 jours).
+   *
+   * Utilisé pour :
+   *  - tests manuels (vérifier le rendu de l'email)
+   *  - renvoi manuel par un admin si l'email automatique a échoué
+   *
+   * Comportement :
+   *  - Si le prospect n'existe pas → NotFoundException
+   *  - Si firstFollowupSent = true → on re-envoie quand même (mode test)
+   *    mais on ne met PAS à jour firstFollowupSentAt (pour ne pas perturber
+   *    la séquence 2/3).
+   *  - Si firstFollowupSent = false → envoie et marque comme envoyé.
+   */
+  async sendFirstFollowupToEmail(email: string): Promise<{
+    sent: boolean;
+    prospect: { id: string; email: string; firstName: string; schoolName: string };
+    alreadySent: boolean;
+  }> {
+    const normalized = (email || '').trim().toLowerCase();
+    if (!normalized) {
+      throw new Error('Email is required');
+    }
+
+    const prospect = await this.prisma.saisieMasterProspect.findUnique({
+      where: { email: normalized },
+    });
+
+    if (!prospect) {
+      throw new Error(`Aucun prospect SaisieMaster trouvé avec l'email "${normalized}"`);
+    }
+
+    const alreadySent = prospect.firstFollowupSent;
+
+    this.logger.log(
+      `📧 [manual] Email 1 → ${prospect.email} (déjà envoyé: ${alreadySent})`,
+    );
+
+    const html = this.buildFirstEmailHtml(prospect);
+    await this.emailService.sendEmail({
+      to: prospect.email,
+      subject: `${prospect.firstName}, découvrez Academia Helm — la plateforme complète pour votre école`,
+      html,
+      fromName: 'Academia Helm',
+    });
+
+    // Marquer comme envoyé uniquement si ce n'était pas déjà le cas.
+    if (!alreadySent) {
+      await this.prisma.saisieMasterProspect.update({
+        where: { id: prospect.id },
+        data: {
+          firstFollowupSent: true,
+          firstFollowupSentAt: new Date(),
+          status: 'CONTACTED',
+        },
+      });
+    }
+
+    this.logger.log(`  ✅ [manual] Email 1 envoyé à ${prospect.email}`);
+
+    return {
+      sent: true,
+      prospect: {
+        id: prospect.id,
+        email: prospect.email,
+        firstName: prospect.firstName,
+        schoolName: prospect.schoolName,
+      },
+      alreadySent,
+    };
+  }
+
+  /**
    * Email 2 (Jour +7) : Relance + invitation démo
    */
   async sendSecondFollowup() {

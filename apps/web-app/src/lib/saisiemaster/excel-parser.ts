@@ -49,10 +49,17 @@ export function colToLetter(col: number): string {
   return letter;
 }
 
-/** Normalise une valeur de cellule en string. */
+/** Normalise une valeur de cellule en string.
+ *
+ * ⭐ Gère le cas fréquent où Excel (ou un outil tiers comme openpyxl) encode
+ * un matricule en préfixant la chaîne par une apostrophe littérale
+ * (ex: `'24001`). Cette apostrophe n'a pas de sens métier — c'est un marqueur
+ * de format texte Excel — et doit être supprimée.
+ * On retire donc tout préfixe d'apostrophes (un ou plusieurs).
+ */
 function cellToString(v: unknown): string {
   if (v === null || v === undefined) return "";
-  return String(v).trim();
+  return String(v).replace(/^'+/, "").trim();
 }
 
 /**

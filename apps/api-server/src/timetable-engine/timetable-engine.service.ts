@@ -681,13 +681,52 @@ export class TimetableEngineService {
     });
     if (subjects.length === 0) throw new BadRequestException('Aucune matière trouvée.');
 
-    const assignments = await this.prisma.subjectAssignment.findMany({
+    // ⭐ FIX: subject_assignments est souvent vide. Les vraies affectations sont
+    // dans teacher_class_assignments (TCA) + class_subjects (CS).
+    // On essaie d'abord subject_assignments, puis fallback sur TCA+CS.
+    let assignments: any[] = await this.prisma.subjectAssignment.findMany({
       where: { tenantId, academicYearId, schoolLevelId },
       include: {
         subject: { select: { id: true, name: true } },
         teacher: { select: { id: true, firstName: true, lastName: true } },
       },
     });
+
+    // ⭐ Fallback: si subject_assignments est vide, utiliser teacher_class_assignments
+    // + class_subjects pour construire les affectations
+    if (assignments.length === 0) {
+      this.logger.log('⚠️ subject_assignments vide — fallback sur teacher_class_assignments + class_subjects');
+      const tcaRecords = await this.prisma.teacherClassAssignment.findMany({
+        where: { tenantId, academicYearId },
+        include: {
+          teacher: { select: { id: true, firstName: true, lastName: true } },
+          classSubject: {
+            select: {
+              id: true,
+              subjectId: true,
+              subject: { select: { id: true, name: true } },
+              weeklyHours: true,
+              coefficient: true,
+            },
+          },
+        },
+      });
+
+      assignments = tcaRecords
+        .filter((tca: any) => tca.teacher && tca.classSubject?.subject)
+        .map((tca: any) => ({
+          id: tca.id,
+          teacherId: tca.teacherId,
+          classId: tca.classId,
+          subjectId: tca.classSubject.subjectId,
+          hoursPerWeek: tca.classSubject.weeklyHours || 2,
+          coefficient: tca.classSubject.coefficient || 1,
+          teacher: tca.teacher,
+          subject: tca.classSubject.subject,
+        }));
+
+      this.logger.log(`✅ ${assignments.length} affectations reconstruites depuis TCA+CS`);
+    }
 
     const rooms = await this.prisma.room.findMany({
       where: { tenantId, schoolLevelId },

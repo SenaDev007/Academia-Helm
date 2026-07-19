@@ -548,4 +548,68 @@ export class SaisieMasterService {
       );
     }
   }
+
+  // ===========================================================================
+  // ⭐ ADMIN : liste des prospects pour le back-office admin
+  // ===========================================================================
+
+  /**
+   * Liste tous les prospects SaisieMaster (admin only).
+   * Inclut le nombre de sessions (classes) et la dernière activité.
+   * Tri : plus récemment actifs en premier.
+   */
+  async listAllProspectsForAdmin(): Promise<
+    Array<{
+      id: string;
+      email: string;
+      firstName: string;
+      lastName: string;
+      schoolName: string;
+      phoneNumber: string | null;
+      city: string | null;
+      status: string;
+      signupDate: string;
+      lastLoginAt: string | null;
+      loginCount: number;
+      classesCreated: number;
+      gradesEntered: number;
+      exportsCount: number;
+      sessionsCount: number;
+      lastSessionAt: string | null;
+    }>
+  {
+    const prospects = await this.prisma.saisieMasterProspect.findMany({
+      orderBy: [{ lastLoginAt: 'desc' }, { signupDate: 'desc' }],
+      take: 500,
+      include: {
+        sessions: {
+          select: { id: true, updatedAt: true },
+          orderBy: { updatedAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    return prospects.map((p) => ({
+      id: p.id,
+      email: p.email,
+      firstName: p.firstName,
+      lastName: p.lastName,
+      schoolName: p.schoolName,
+      phoneNumber: p.phoneNumber,
+      city: p.city,
+      status: p.status,
+      signupDate: p.signupDate.toISOString(),
+      lastLoginAt: p.lastLoginAt ? p.lastLoginAt.toISOString() : null,
+      loginCount: p.loginCount,
+      classesCreated: p.classesCreated,
+      gradesEntered: p.gradesEntered,
+      exportsCount: p.exportsCount,
+      sessionsCount: p.sessions.length,
+      lastSessionAt:
+        p.sessions.length > 0 && p.sessions[0].updatedAt
+          ? p.sessions[0].updatedAt.toISOString()
+          : null,
+    }));
+  }
 }

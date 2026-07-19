@@ -6,8 +6,9 @@
  * Wraps the SignupForm / LoginForm in a centered layout with the SaisieMaster
  * branding and the Benin tricolor ribbon. Switches between the two modes.
  *
- * The top navbar is solid white (bg-white) so it remains visible in both
- * light/dark themes — no white-on-white issue.
+ * ⭐ Utilise la même Navbar que la landing page (cohérence visuelle).
+ *    Le bouton "Retour" est placé SOUS la navbar (en haut du contenu) plutôt
+ *    que dans un header séparé.
  */
 
 import { useState } from "react";
@@ -15,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { SignupForm } from "./signup-form";
 import { LoginForm } from "./login-form";
-import { Logo } from "@/components/saisiemaster/brand/logo";
+import { Navbar } from "@/components/saisiemaster/landing/navbar";
 import { useSaisieMasterStore } from "@/lib/saisiemaster/store";
 import type { Prospect } from "@/lib/saisiemaster/api";
 
@@ -36,33 +37,30 @@ export function AuthScreen({ onSuccess }: AuthScreenProps) {
     setView("landing");
   };
 
+  // La navbar appelle onStart quand on clique sur "Commencer". En mode auth,
+  // on ne fait rien (on est déjà sur l'écran d'auth).
+  const noopStart = () => {};
+
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#fafaf7] to-[#f3f7f4]">
-      {/* Top bar — solid white background so it's visible in any theme */}
-      <header className="sticky top-0 z-40 w-full bg-white border-b border-gray-200 shadow-sm">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <Logo size="sm" />
-            <span className="font-semibold text-foreground hidden sm:inline">
-              SaisieMaster
-            </span>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleBack}
-            className="gap-2 text-foreground hover:bg-gray-100"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span className="hidden sm:inline">Retour</span>
-            <span className="sm:hidden">Retour</span>
-          </Button>
-        </div>
-        <div className="h-0.5 w-full saisiemaster-tricolor" aria-hidden />
-      </header>
+      {/* ⭐ Même navbar que la landing page (cohérence visuelle) */}
+      <Navbar onStart={noopStart} />
 
-      <main className="flex-1 flex items-center justify-center px-4 py-10 sm:py-16">
+      <main className="flex-1 flex items-center justify-center px-4 py-8 sm:py-12">
         <div className="w-full max-w-md sm:max-w-lg space-y-6">
+          {/* Bouton Retour — placé au-dessus du formulaire, sous la navbar */}
+          <div className="flex justify-start">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleBack}
+              className="gap-2 text-foreground hover:bg-gray-100"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Retour à l&apos;accueil
+            </Button>
+          </div>
+
           {/* Hero text */}
           <div className="text-center space-y-2">
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">

@@ -21,6 +21,7 @@ import {
   MessageSquare,
   GraduationCap,
   Building2,
+  ExternalLink,
 } from "lucide-react";
 
 interface AcademiaFeature {
@@ -189,13 +190,29 @@ export function AcademiaHelmCta() {
           })}
         </div>
 
-        {/* ⭐ Les 2 boutons CTA ont été supprimés sur demande utilisateur.
-            La section se termine maintenant par les cartes, sans appel à
-            l'action redondant avec les autres sections. */}
+        {/* ⭐ Bouton "Découvrir Academia Helm" restauré avec la palette
+            Academia Helm (navy #0D1F6E + accent doré #F5A623).
+            Seul "Demander une démo gratuite" a été supprimé. */}
+        <div className="mt-12 text-center space-y-4">
+          <a
+            href="https://academiahelm.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-xl px-7 py-3.5 text-base font-semibold shadow-md hover:shadow-lg transition-all duration-200"
+            style={{
+              background: "linear-gradient(135deg, #0D1F6E 0%, #1A3A8F 100%)",
+              color: "#ffffff",
+              border: "2px solid #F5A623",
+            }}
+          >
+            Découvrir Academia Helm
+            <ExternalLink className="h-5 w-5" style={{ color: "#F5A623" }} />
+          </a>
 
-        <p className="mt-10 text-center text-xs text-muted-foreground">
-          Academia Helm — La plateforme complète de gestion scolaire au Bénin
-        </p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Academia Helm — La plateforme complète de gestion scolaire au Bénin
+          </p>
+        </div>
       </div>
     </section>
   );

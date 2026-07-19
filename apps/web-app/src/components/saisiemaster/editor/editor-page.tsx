@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EditorHeader } from "./editor-header";
 import { EditorSidebar, type EditorNavId } from "./editor-sidebar";
 import { StatsPanel } from "./stats-panel";
@@ -11,6 +11,7 @@ import { ClassesView } from "./classes-view";
 import { FilesView } from "./files-view";
 import { HistoryView } from "./history-view";
 import { SettingsView } from "./settings-view";
+import { FeedbackModal } from "./feedback-modal";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -31,8 +32,9 @@ import {
   Columns3,
   UserSquare2,
 } from "lucide-react";
-import { useSaisieMasterStore } from "@/lib/saisiemaster/store";
+import { useSaisieMasterStore, selectIsAuthenticated } from "@/lib/saisiemaster/store";
 import { useIsMobile } from "@/hooks/saisiemaster/use-mobile";
+import { getMyTestimonials } from "@/lib/saisiemaster/api";
 import { cn } from "@/lib/saisiemaster/utils";
 import { toast } from "sonner";
 
@@ -42,18 +44,25 @@ interface EditorPageProps {
 
 /**
  * ⭐ Auto-sauvegarde toutes les 10 secondes pendant la saisie.
- *
- * On garde une référence vers le timestamp de la dernière modification
- * (mise à jour par le store à chaque updateNote). Toutes les 10s, si des
- * modifications ont eu lieu depuis la dernière sauvegarde, on persiste
- * vers localStorage + backend (debounced).
- *
- * Le backend utilise déjà un debounce de 2s (scheduleBackendSync dans le
- * store), mais on veut une sauvegarde EXPLICITE toutes les 10s même si
- * l'utilisateur est inactif (pour garantir la persistance en cas de crash
- * ou de fermeture de l'onglet).
  */
 const AUTOSAVE_INTERVAL_MS = 10_000;
+
+/**
+ * ⭐ Auto-feedback : après qu'un utilisateur a saisi un certain nombre de
+ * notes, on lui propose automatiquement de laisser un avis.
+ *
+ * Logique :
+ *  1. On compte le nombre total de notes saisies (toutes classes confondues).
+ *  2. Si ce nombre dépasse FEEDBACK_THRESHOLD (5 notes) ET que l'utilisateur
+ *     n'a pas encore donné d'avis ET qu'on ne lui a pas déjà proposé ce
+ *     session, on affiche le modal après un court délai (3s).
+ *  3. On utilise localStorage pour ne pas re-proposer à chaque session :
+ *     - 'saisiemaster:feedbackDismissed' = 'true' si l'utilisateur a fermé
+ *       le modal sans donner d'avis (on ne re-proposera que 7 jours plus tard)
+ */
+const FEEDBACK_THRESHOLD = 5; // 5 notes saisies = usage significatif
+const FEEDBACK_DELAY_MS = 3000; // 3s après le seuil atteint
+const FEEDBACK_REPROPOSE_DAYS = 7; // re-proposer après 7 jours si dismiss
 
 /**
  * Page éditeur SaisieMaster — version redesign "screenshot".
@@ -175,6 +184,86 @@ export function EditorPage({ onHome }: EditorPageProps) {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [classes.length]);
+
+  // ⭐ Auto-feedback : compte le nombre total de notes saisies et propose
+  // automatiquement le modal d'avis après un usage significatif.
+  const isAuthenticated = useSaisieMasterStore(selectIsAuthenticated);
+  const [autoFeedbackOpen, setAutoFeedbackOpen] = useState(false);
+  const feedbackCheckDoneRef = useRef(false);
+
+  const totalNotesEntered = useMemo(() => {
+    let count = 0;
+    for (const cls of classes) {
+      for (const studentId of Object.keys(cls.notes)) {
+        const studentNotes = cls.notes[studentId];
+        for (const subjectId of Object.keys(studentNotes)) {
+          const note = studentNotes[subjectId];
+          if (note?.obtenue !== null && note?.obtenue !== undefined) count++;
+          if (note?.perfectionnement !== null && note?.perfectionnement !== undefined) count++;
+        }
+      }
+    }
+    return count;
+  }, [classes]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (feedbackCheckDoneRef.current) return;
+    if (totalNotesEntered < FEEDBACK_THRESHOLD) return;
+
+    // Vérifier si l'utilisateur a déjà donné un avis
+    (async () => {
+      try {
+        const mine = await getMyTestimonials();
+        if (mine.length > 0) {
+          // Avis déjà donné → ne jamais re-proposer
+          feedbackCheckDoneRef.current = true;
+          return;
+        }
+
+        // Vérifier le dismiss récent (within 7 jours)
+        try {
+          const dismissedAt = window.localStorage.getItem("saisiemaster:feedbackDismissedAt");
+          if (dismissedAt) {
+            const dismissed = parseInt(dismissedAt, 10);
+            const daysSince = (Date.now() - dismissed) / (1000 * 60 * 60 * 24);
+            if (daysSince < FEEDBACK_REPROPOSE_DAYS) {
+              feedbackCheckDoneRef.current = true;
+              return;
+            }
+          }
+        } catch {
+          /* localStorage indisponible */
+        }
+
+        // Attendre un court délai puis afficher le modal
+        const timer = setTimeout(() => {
+          setAutoFeedbackOpen(true);
+          feedbackCheckDoneRef.current = true;
+        }, FEEDBACK_DELAY_MS);
+
+        return () => clearTimeout(timer);
+      } catch (e) {
+        console.warn("[saisiemaster] auto-feedback check failed:", e);
+      }
+    })();
+  }, [isAuthenticated, totalNotesEntered]);
+
+  // Quand l'utilisateur ferme le modal sans donner d'avis, on enregistre
+  // le timestamp pour ne pas re-proposer trop vite.
+  const handleAutoFeedbackClose = (open: boolean) => {
+    setAutoFeedbackOpen(open);
+    if (!open) {
+      try {
+        window.localStorage.setItem(
+          "saisiemaster:feedbackDismissedAt",
+          String(Date.now()),
+        );
+      } catch {
+        /* ignore */
+      }
+    }
+  };
 
   const handleReset = () => {
     clearAll();
@@ -316,6 +405,9 @@ export function EditorPage({ onHome }: EditorPageProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ⭐ Modal d'avis automatique — s'ouvre après un usage significatif */}
+      <FeedbackModal open={autoFeedbackOpen} onOpenChange={handleAutoFeedbackClose} />
     </div>
   );
 }

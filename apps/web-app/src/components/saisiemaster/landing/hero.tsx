@@ -13,27 +13,34 @@ interface HeroProps {
 export function Hero({ onUploadClick }: HeroProps) {
   return (
     <section className="relative overflow-hidden">
-      {/* Image de fond — desktop/tablette */}
+      {/* Image de fond — desktop/tablette (1717x916, ratio ~1.88:1)
+          bg-contain pour afficher TOUTE l'image sans crop.
+          bg-top pour ancrer en haut. */}
       <div
-        className="absolute inset-0 bg-cover bg-top hidden sm:block"
+        className="absolute inset-0 hidden sm:block bg-no-repeat bg-contain bg-top"
         style={{
           backgroundImage: 'url("/images/Background-SaisieMaster-hero.png")',
+          backgroundColor: '#0B3B6B',
         }}
         aria-hidden
       />
-      {/* Image de fond — mobile (image dédiée pour le responsiv) */}
+      {/* Image de fond — mobile (853x1844, ratio ~0.46:1 portrait)
+          bg-contain pour afficher toute l'image sans crop. */}
       <div
-        className="absolute inset-0 bg-cover bg-top sm:hidden"
+        className="absolute inset-0 sm:hidden bg-no-repeat bg-contain bg-top"
         style={{
           backgroundImage: 'url("/images/Background-SaisieMaster-hero-mobile.png")',
+          backgroundColor: '#0B3B6B',
         }}
         aria-hidden
       />
 
-      {/* Conteneur — hauteur plus grande pour voir l'image en entier.
-          min-h-[900px] sur desktop, min-h-[760px] sur mobile.
-          bg-top pour ancrer l'image en haut et révéler le bas. */}
-      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 min-h-[760px] sm:min-h-[900px] flex items-end justify-center pb-16 sm:pb-20">
+      {/* Conteneur — hauteur calculée pour englober toute l'image.
+          Desktop: ratio 1.88:1 → pour 100vw on a ~53vh d'image.
+          On prend min-h-[80vh] pour garantir que toute l'image + boutons tiennent.
+          Mobile: ratio 0.46:1 (très portrait) → image fait ~2.16× la largeur
+          en hauteur, soit sur 375px = ~810px. On prend min-h-[85vh]. */}
+      <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 min-h-[85vh] sm:min-h-[80vh] flex items-end justify-center pb-12 sm:pb-16">
         <div className="flex flex-wrap items-center justify-center gap-3 w-full">
           <Button
             size="lg"

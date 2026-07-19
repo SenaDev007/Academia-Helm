@@ -42,6 +42,7 @@ import {
 import { Public } from '../../auth/decorators/public.decorator';
 import { PlatformService } from '../services/platform.service';
 import { SaisieMasterTestimonialService } from '../../saisiemaster/saisiemaster-testimonial.service';
+import { SaisieMasterService } from '../../saisiemaster/saisiemaster.service';
 
 @Controller('platform')
 @Public()
@@ -51,6 +52,7 @@ export class PlatformController {
   constructor(
     private readonly platformService: PlatformService,
     private readonly saisieMasterTestimonialService: SaisieMasterTestimonialService,
+    private readonly saisieMasterService: SaisieMasterService,
   ) {}
 
   /**
@@ -606,6 +608,15 @@ export class PlatformController {
   // Permet aux admins de modérer les témoignages déposés par les utilisateurs
   // SaisieMaster depuis l'éditeur. Les témoignages sont isPublished=false par
   // défaut et doivent être validés avant publication sur la landing page.
+
+  /** GET /platform/saisiemaster/prospects — Liste tous les prospects */
+  @Get('saisiemaster/prospects')
+  async getSaisieMasterProspects(
+    @Headers('x-platform-admin-email') adminEmail?: string,
+  ) {
+    this.assertAdminProxyRequest(adminEmail);
+    return this.saisieMasterService.listAllProspectsForAdmin();
+  }
 
   /** GET /platform/saisiemaster/testimonials — Tous les témoignages */
   @Get('saisiemaster/testimonials')

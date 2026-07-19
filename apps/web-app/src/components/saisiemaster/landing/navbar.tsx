@@ -62,8 +62,8 @@ export function Navbar({ onStart }: NavbarProps) {
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border/60 bg-background/85 backdrop-blur-md">
-      <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        {/* ⭐ Logo agrandi (44px) avec halo tricolore animé */}
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+        {/* ⭐ Logo avec halo tricolore léger */}
         <LogoWithHalo size="md" />
 
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">

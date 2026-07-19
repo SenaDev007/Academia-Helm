@@ -80,14 +80,13 @@ export default function SaisieMasterPage() {
     }
   }, [view]);
 
-  // ⭐ Un utilisateur authentifié ne doit JAMAIS être renvoyé sur la landing
-  // page marketing. Si on est en vue "landing" alors qu'on est connecté,
-  // on bascule automatiquement vers l'éditeur.
-  useEffect(() => {
-    if (view === "landing" && isAuthenticated) {
-      setView("editor");
-    }
-  }, [view, isAuthenticated, setView]);
+  // ⭐ L'utilisateur authentifié peut ALLER sur la landing page S'IL LE
+  // SOUHAITE explicitement (bouton Home). L'auto-redirect a été supprimé
+  // car il empêchait le bouton Home de fonctionner — l'utilisateur
+  // cliquait sur Home, view passait à "landing", puis l'effet le
+  // renvoyait immédiatement à "editor".
+  // L'initial routing au montage est déjà géré par l'effet de restauration
+  // ci-dessus (qui envoie les users authentifiés vers l'éditeur au load).
 
   // --- Auth flow ---
   // ⭐ Après une connexion réussie, on envoie TOUJOURS l'utilisateur dans

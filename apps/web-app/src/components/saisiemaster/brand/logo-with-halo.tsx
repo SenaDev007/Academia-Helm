@@ -3,7 +3,7 @@
 import { cn } from "@/lib/saisiemaster/utils";
 
 interface LogoWithHaloProps {
-  /** Taille du logo (le halo fait 1.6× cette taille). */
+  /** Taille du logo (le halo fait 1.15× cette taille — discret). */
   size?: "sm" | "md" | "lg" | "xl";
   /** Classe optionnelle (marges, positionnement). */
   className?: string;
@@ -14,16 +14,13 @@ interface LogoWithHaloProps {
 }
 
 /**
- * Logo SaisieMaster avec halo circulaire animé aux 3 couleurs du Bénin.
+ * Logo SaisieMaster avec halo tricolore LÉGER.
  *
- * Le halo tourne autour du logo en conic-gradient (vert → jaune → rouge),
- * avec une légère pulsation pour un effet vivant.
+ * Le halo est un anneau fin (1.15× la taille du logo) en conic-gradient
+ * (vert → jaune → rouge) qui tourne lentement. Pas de pulsation, pas de
+ * halo flou — un effet discret et professionnel.
  *
  * Utilisé dans la navbar et le footer de la landing page SaisieMaster.
- *
- * Animations définies inline (this component is self-contained, no globals.css
- * dependency) — référence les keyframes `saisiemasterHaloSpin` et
- * `saisiemasterHaloPulse` qui sont injectées via une balise <style>.
  */
 export function LogoWithHalo({
   size = "md",
@@ -36,40 +33,27 @@ export function LogoWithHalo({
 
   return (
     <div className={cn("relative inline-flex items-center justify-center", className)}>
-      {/* Halo extérieur — conic-gradient tricolore qui tourne */}
+      {/* Halo — anneau fin tricolore qui tourne lentement */}
       <div
-        className="absolute inset-0 rounded-full"
+        className="absolute rounded-full"
         style={{
-          width: `calc(${dim} * 1.55)`,
-          height: `calc(${dim} * 1.55)`,
-          left: `calc((${dim} - ${dim} * 1.55) / 2)`,
-          top: `calc((${dim} - ${dim} * 1.55) / 2)`,
+          width: `calc(${dim} * 1.18)`,
+          height: `calc(${dim} * 1.18)`,
+          left: `calc((${dim} - ${dim} * 1.18) / 2)`,
+          top: `calc((${dim} - ${dim} * 1.18) / 2)`,
           background:
             "conic-gradient(from 0deg, #008751 0deg 120deg, #FCD116 120deg 240deg, #E31B23 240deg 360deg)",
-          animation: "saisiemasterHaloSpin 6s linear infinite",
-          maskImage: "radial-gradient(transparent 56%, black 58%, black 100%)",
-          WebkitMaskImage: "radial-gradient(transparent 56%, black 58%, black 100%)",
-          opacity: 0.85,
-        }}
-        aria-hidden
-      />
-
-      {/* Halo de pulsation (couleur jaune, flou) */}
-      <div
-        className="absolute rounded-full bg-[#FCD116]/20 blur-md"
-        style={{
-          width: `calc(${dim} * 1.35)`,
-          height: `calc(${dim} * 1.35)`,
-          left: `calc((${dim} - ${dim} * 1.35) / 2)`,
-          top: `calc((${dim} - ${dim} * 1.35) / 2)`,
-          animation: "saisiemasterHaloPulse 3s ease-in-out infinite",
+          animation: "saisiemasterHaloSpin 8s linear infinite",
+          maskImage: "radial-gradient(transparent 70%, black 72%, black 100%)",
+          WebkitMaskImage: "radial-gradient(transparent 70%, black 72%, black 100%)",
+          opacity: 0.6,
         }}
         aria-hidden
       />
 
       {/* Logo central — cercle blanc avec image */}
       <div
-        className="relative rounded-full overflow-hidden border-2 border-white shadow-md bg-white flex items-center justify-center"
+        className="relative rounded-full overflow-hidden border-2 border-white shadow-sm bg-white flex items-center justify-center"
         style={{ width: dim, height: dim, zIndex: 2 }}
       >
         <img
@@ -84,10 +68,6 @@ export function LogoWithHalo({
         @keyframes saisiemasterHaloSpin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
-        }
-        @keyframes saisiemasterHaloPulse {
-          0%, 100% { opacity: 0.5; transform: scale(1); }
-          50% { opacity: 1; transform: scale(1.1); }
         }
       `}</style>
     </div>

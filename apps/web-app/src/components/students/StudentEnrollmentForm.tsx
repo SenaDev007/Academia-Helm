@@ -125,28 +125,22 @@ export default function StudentEnrollmentForm({
   // ─── Chargement des niveaux scolaires depuis /api/academic-classes ───
   // ⭐ On utilise les classes OFFICIELLES (AcademicClass) pour l'inscription.
   // Le parent choisit une classe officielle (CP, CE1, 6ème…), l'affectation à
-  // une section physique (CE1-A, CE1-B) se fera plus tard via le module Affectations.
-  // On extrait les niveaux uniques des AcademicClass (qui ont levelId + level.name).
+  // ⭐ FIX : Charger les niveaux scolaires depuis /api/school-levels (table school_levels)
+  // au lieu d'extraire les levelId depuis /api/academic-classes.
+  // Les levelId de AcademicClass ne correspondent pas toujours aux id de
+  // SchoolLevel (ce sont parfois des IDs d'une autre table), ce qui causait
+  // une erreur P2003 "Référence invalide" lors du preRegister.
   useEffect(() => {
-    fetch('/api/academic-classes?isActive=true', { credentials: 'include' })
+    fetch('/api/school-levels', { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .then(data => {
-        const allClasses = Array.isArray(data) ? data : (data?.data || data?.classes || []);
-        // Extraire les niveaux uniques
-        const levelMap = new Map<string, { id: string; name: string; code?: string }>();
-        allClasses.forEach((c: any) => {
-          const levelId = c.levelId || c.schoolLevelId;
-          if (levelId && !levelMap.has(levelId)) {
-            levelMap.set(levelId, {
-              id: levelId,
-              name: c.level?.name || c.level?.code || c.schoolLevel?.name || c.schoolLevel?.code || 'Niveau',
-              code: c.level?.code || c.schoolLevel?.code,
-            });
-          }
-        });
-        const levels = Array.from(levelMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+        const allLevels = Array.isArray(data) ? data : (data?.data || []);
+        const levels = allLevels.map((sl: any) => ({
+          id: sl.id,
+          name: sl.name || sl.code || 'Niveau',
+          code: sl.code,
+        })).sort((a: any, b: any) => a.name.localeCompare(b.name));
         setSchoolLevels(levels);
-        // Si aucun niveau sélectionné, prendre le premier
         if (!selectedLevelId && levels.length > 0) {
           setSelectedLevelId(levels[0].id);
         }

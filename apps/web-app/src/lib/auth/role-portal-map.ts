@@ -550,7 +550,7 @@ export function getVisibleModulesForRole(role: string): {
   return {
     showPlatformModules: false,
     showDirectionModules: isFullAccess || ['BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', ...levelSpecificDirectorRoles].includes(role),
-    showFinanceModules: isFullAccess || ['CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER', ...levelSpecificComptableRoles].includes(role),
+    showFinanceModules: isFullAccess || ['CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'COMPTABLE', 'CASHIER', 'RECOVERY_MANAGER', 'SECRETAIRE_COMPTABLE', ...levelSpecificComptableRoles].includes(role),
     showPedagogyModules: isFullAccess || ['PEDAGOGIC_DIRECTOR', 'CENSOR', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE', 'PEDAGOGIC_COORDINATOR', ...levelSpecificDirectorRoles].includes(role),
     showHrModules: isFullAccess || ['HR_MANAGER', 'PAYROLL_MANAGER'].includes(role),
     showCommunicationModules: isFullAccess || ['COMMUNICATION_MANAGER', 'COMMUNICATION_AGENT', 'SCHOOL_LIFE_MANAGER'].includes(role),

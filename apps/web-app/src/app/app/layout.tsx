@@ -58,6 +58,59 @@ export default async function AppLayout({
   }
 
   const user = session.user as User;
+
+  // ⭐ Rediriger les enseignants et parents vers leurs portails dédiés
+  // AVANT de rendre le PilotageLayout (qui contient la sidebar école).
+  const teacherRoles = ['teacher', 'TEACHER', 'TEACHER_RESP', 'ENSEIGNANT'];
+  const parentRoles = ['PARENT', 'STUDENT', 'PARENT_PRIMARY', 'LEGAL_GUARDIAN', 'FINANCIAL_RESPONSIBLE'];
+  const isTeacherOrParent = teacherRoles.includes(user.role) || parentRoles.includes(user.role);
+
+  // Pour les routes /app/teacher et /app/parent, on rend directement
+  // les children SANS le PilotageLayout (ils ont leur propre layout).
+  // On détecte via le header x-path ou via l'URL.
+  const allHeaders = await headers();
+  const reqUrl = allHeaders.get('x-path') || allHeaders.get('x-forwarded-uri') || allHeaders.get('referer') || '';
+  const isOnDedicatedPortal = reqUrl.includes('/app/teacher') || reqUrl.includes('/app/parent');
+
+  if (isTeacherOrParent && !isOnDedicatedPortal) {
+    // Rediriger vers le portail dédié
+    if (teacherRoles.includes(user.role)) {
+      redirect('/app/teacher');
+    } else {
+      redirect('/app/parent');
+    }
+  }
+
+  // ⭐ Pour les routes /app/teacher et /app/parent, on rend directement
+  // les children SANS le PilotageLayout.
+  if (isOnDedicatedPortal) {
+    // Tenant info still needed for context
+    const sessionTenant2 = session.tenant;
+    const tenantIdFromUser2 = (user as any).tenantId || '';
+    const effectiveTenantId2 = sessionTenant2?.id || tenantIdFromUser2;
+    const tenant2: Tenant = sessionTenant2 && effectiveTenantId2
+      ? { ...sessionTenant2, id: sessionTenant2.id || effectiveTenantId2 }
+      : {
+          id: effectiveTenantId2,
+          name: effectiveTenantId2 ? 'Mon École' : '',
+          slug: sessionTenant2?.slug ?? '',
+          subdomain: sessionTenant2?.subdomain ?? '',
+          status: 'active',
+          subscriptionStatus: 'ACTIVE_SUBSCRIBED',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          trialEndsAt: undefined,
+          nextPaymentDueAt: undefined,
+        } as Tenant as Tenant;
+
+    return (
+      <ModalProvider>
+        <AppLayoutClient user={user} tenant={tenant2}>
+          {children}
+        </AppLayoutClient>
+      </ModalProvider>
+    );
+  }
   
   // Tenant : session.tenant prioritaire ; si id manquant, utiliser user.tenantId (connexion avec école en mode dev)
   const sessionTenant = session.tenant;

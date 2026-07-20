@@ -30,14 +30,14 @@ import {
 import { MyClassesTab } from "./MyClassesTab";
 import { AttendanceTab } from "./AttendanceTab";
 import { ClassLogTab } from "./ClassLogTab";
-import { WeeklyLogTab } from "./WeeklyLogTab";
+import { CahierSemaineTab } from "./CahierSemaineTab";
 import { HomeworkTab } from "./HomeworkTab";
 
 const TABS = [
   { id: 'classes', label: 'Mes Classes', icon: Users, description: 'Effectifs & élèves' },
   { id: 'attendance', label: 'Appel', icon: CalendarCheck, description: 'Présences journalières' },
   { id: 'classlog', label: 'Cahier Journal', icon: NotebookPen, description: 'Séances quotidiennes' },
-  { id: 'weekly', label: 'Semainier', icon: CalendarDays, description: 'Vue hebdo & soumission' },
+  { id: 'weekly', label: 'Cahier de Semaine', icon: CalendarDays, description: 'Monitoring institutionnel' },
   { id: 'homework', label: 'Devoirs', icon: FileText, description: 'Exercices & suivi' },
 ] as const;
 
@@ -124,7 +124,7 @@ export function PedagogicalSpaceWorkspace() {
             />
           )}
           {tab === 'weekly' && (
-            <WeeklyLogTab
+            <CahierSemaineTab
               tenantId={tenant?.id || ''}
               academicYearId={academicYear.id}
               teacherId={teacherId}

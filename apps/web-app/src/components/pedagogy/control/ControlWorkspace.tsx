@@ -13,6 +13,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { DirectorControl } from '../production/DirectorControl';
 import { 
   ShieldCheck, 
   BarChart3, 
@@ -119,7 +120,7 @@ export default function ControlWorkspace() {
     }
   }, [academicYear?.id]);
 
-  const [activeTab, setActiveTab] = useState<'global' | 'documents' | 'teachers' | 'classes' | 'reports'>('global');
+  const [activeTab, setActiveTab] = useState<'global' | 'documents' | 'teachers' | 'classes' | 'reports' | 'cahier'>('global');
 
   useEffect(() => { loadControlData(); }, [loadControlData]);
 
@@ -162,6 +163,12 @@ export default function ControlWorkspace() {
           className={cn("px-6 py-4 text-sm font-black tracking-wide border-b-2 transition-all", activeTab === 'reports' ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-400 hover:text-gray-600")}
         >
           Rapports Institutionnels
+        </button>
+        <button
+          onClick={() => setActiveTab('cahier')}
+          className={cn("px-6 py-4 text-sm font-black tracking-wide border-b-2 transition-all", activeTab === 'cahier' ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-400 hover:text-gray-600")}
+        >
+          Cahier de Semaine
         </button>
       </div>
 
@@ -499,6 +506,14 @@ export default function ControlWorkspace() {
               ))}
            </div>
         </div>
+      )}
+
+      {activeTab === 'cahier' && (
+        <DirectorControl
+          tenantId={tenant?.id || ''}
+          academicYearId={academicYear?.id || ''}
+          userId={user?.id || ''}
+        />
       )}
     </div>
   );

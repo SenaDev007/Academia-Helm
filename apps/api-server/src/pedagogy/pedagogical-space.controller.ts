@@ -251,4 +251,104 @@ export class PedagogicalSpaceController {
       body.rejectionReason,
     );
   }
+
+  // ─── CAHIER DE SEMAINE — Rapports journaliers ────────────────────────────
+
+  @Get('weekly-log/daily-reports')
+  async getDailyReports(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('weekNumber') weekNumber: string,
+  ) {
+    return this.service.getDailyReports(tenantId, academicYearId, parseInt(weekNumber));
+  }
+
+  @Post('weekly-log/daily-reports')
+  async getOrCreateDailyReport(
+    @TenantId() tenantId: string,
+    @Body() body: {
+      academicYearId: string;
+      weekNumber: number;
+      trimester: number;
+      dayOfWeek: number;
+      reportDate: string;
+      filledBy?: string;
+    },
+  ) {
+    return this.service.getOrCreateDailyReport(
+      tenantId, body.academicYearId, body.weekNumber, body.trimester,
+      body.dayOfWeek, body.reportDate, body.filledBy,
+    );
+  }
+
+  @Put('weekly-log/daily-reports/:id')
+  async updateDailyReport(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    return this.service.updateDailyReport(tenantId, id, body);
+  }
+
+  // ─── CAHIER DE SEMAINE — Rapport de fin de semaine ───────────────────────
+
+  @Post('weekly-log/summary')
+  async getOrCreateWeeklySummary(
+    @TenantId() tenantId: string,
+    @Body() body: {
+      academicYearId: string;
+      weekNumber: number;
+      trimester: number;
+      weekStartDate: string;
+      weekEndDate: string;
+      filledBy?: string;
+    },
+  ) {
+    return this.service.getOrCreateWeeklySummary(
+      tenantId, body.academicYearId, body.weekNumber, body.trimester,
+      body.weekStartDate, body.weekEndDate, body.filledBy,
+    );
+  }
+
+  @Put('weekly-log/summary/:id')
+  async updateWeeklySummary(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    return this.service.updateWeeklySummary(tenantId, id, body);
+  }
+
+  @Post('weekly-log/summary/:id/submit')
+  @HttpCode(HttpStatus.OK)
+  async submitWeeklySummary(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.submitWeeklySummary(tenantId, id);
+  }
+
+  @Get('director/pending-summaries')
+  async getPendingWeeklySummaries(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.service.getPendingWeeklySummaries(tenantId, academicYearId);
+  }
+
+  @Post('director/validate-summary/:id')
+  @HttpCode(HttpStatus.OK)
+  async validateWeeklySummary(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: {
+      action: 'VALIDATED' | 'REJECTED';
+      validatedBy: string;
+      rejectionReason?: string;
+    },
+  ) {
+    return this.service.validateWeeklySummary(
+      tenantId, id, body.action, body.validatedBy, body.rejectionReason,
+    );
+  }
 }

@@ -732,4 +732,225 @@ export class PedagogicalSpaceService {
       },
     });
   }
+
+  // ===========================================================================
+  // CAHIER DE SEMAINE — Rapports journaliers (8 sections)
+  // ===========================================================================
+
+  /**
+   * Récupère ou crée un rapport journalier pour un jour donné.
+   */
+  async getOrCreateDailyReport(
+    tenantId: string,
+    academicYearId: string,
+    weekNumber: number,
+    trimester: number,
+    dayOfWeek: number,
+    reportDate: string,
+    filledBy?: string,
+  ) {
+    const dateObj = new Date(reportDate);
+    let report = await this.prisma.weeklyLogDailyReport.findFirst({
+      where: { tenantId, academicYearId, weekNumber, dayOfWeek },
+    });
+    if (!report) {
+      report = await this.prisma.weeklyLogDailyReport.create({
+        data: {
+          tenantId, academicYearId, weekNumber, trimester, dayOfWeek,
+          reportDate: dateObj,
+          filledBy: filledBy || null,
+        },
+      });
+    }
+    return report;
+  }
+
+  /**
+   * Récupère tous les rapports journaliers d'une semaine.
+   */
+  async getDailyReports(tenantId: string, academicYearId: string, weekNumber: number) {
+    return this.prisma.weeklyLogDailyReport.findMany({
+      where: { tenantId, academicYearId, weekNumber },
+      orderBy: { dayOfWeek: 'asc' },
+    });
+  }
+
+  /**
+   * Met à jour un rapport journalier (sauvegarde des 8 sections).
+   */
+  async updateDailyReport(
+    tenantId: string,
+    reportId: string,
+    data: any,
+  ) {
+    const report = await this.prisma.weeklyLogDailyReport.findFirst({
+      where: { id: reportId, tenantId },
+    });
+    if (!report) throw new NotFoundException('Rapport journalier non trouvé');
+
+    return this.prisma.weeklyLogDailyReport.update({
+      where: { id: reportId },
+      data: {
+        // Section 1
+        ...(data.staffAttendance !== undefined && { staffAttendance: data.staffAttendance }),
+        ...(data.staffSummary !== undefined && { staffSummary: data.staffSummary || null }),
+        // Section 2
+        ...(data.studentAttendanceRate !== undefined && { studentAttendanceRate: data.studentAttendanceRate }),
+        ...(data.highAbsenceClasses !== undefined && { highAbsenceClasses: data.highAbsenceClasses || null }),
+        ...(data.parentNotifiedAbsences !== undefined && { parentNotifiedAbsences: data.parentNotifiedAbsences || null }),
+        ...(data.lateCount !== undefined && { lateCount: data.lateCount }),
+        ...(data.specialCases !== undefined && { specialCases: data.specialCases || null }),
+        // Section 3
+        ...(data.scheduleRespected !== undefined && { scheduleRespected: data.scheduleRespected || null }),
+        ...(data.modifiedCourses !== undefined && { modifiedCourses: data.modifiedCourses || null }),
+        ...(data.remarkableActivities !== undefined && { remarkableActivities: data.remarkableActivities || null }),
+        ...(data.classClimate !== undefined && { classClimate: data.classClimate || null }),
+        // Section 4
+        ...(data.positiveBehaviors !== undefined && { positiveBehaviors: data.positiveBehaviors || null }),
+        ...(data.problematicBehaviors !== undefined && { problematicBehaviors: data.problematicBehaviors || null }),
+        ...(data.correctiveMeasures !== undefined && { correctiveMeasures: data.correctiveMeasures || null }),
+        // Section 5
+        ...(data.roomCleanliness !== undefined && { roomCleanliness: data.roomCleanliness || null }),
+        ...(data.toiletsCondition !== undefined && { toiletsCondition: data.toiletsCondition || null }),
+        ...(data.waterStatus !== undefined && { waterStatus: data.waterStatus || null }),
+        ...(data.electricityStatus !== undefined && { electricityStatus: data.electricityStatus || null }),
+        ...(data.urgentRepairs !== undefined && { urgentRepairs: data.urgentRepairs || null }),
+        // Section 6
+        ...(data.adminVisit !== undefined && { adminVisit: data.adminVisit }),
+        ...(data.pedagoVisit !== undefined && { pedagoVisit: data.pedagoVisit }),
+        ...(data.parentVisit !== undefined && { parentVisit: data.parentVisit }),
+        ...(data.visitDetails !== undefined && { visitDetails: data.visitDetails || null }),
+        // Section 7
+        ...(data.directorInstructions !== undefined && { directorInstructions: data.directorInstructions || null }),
+        ...(data.urgentNeeds !== undefined && { urgentNeeds: data.urgentNeeds || null }),
+        // Section 8
+        ...(data.strengths !== undefined && { strengths: data.strengths || null }),
+        ...(data.improvements !== undefined && { improvements: data.improvements || null }),
+        ...(data.recommendations !== undefined && { recommendations: data.recommendations || null }),
+        // Status
+        ...(data.status !== undefined && { status: data.status }),
+        ...(data.filledBy !== undefined && { filledBy: data.filledBy || null }),
+      },
+    });
+  }
+
+  // ===========================================================================
+  // CAHIER DE SEMAINE — Rapport de fin de semaine (7 sections)
+  // ===========================================================================
+
+  /**
+   * Récupère ou crée le rapport de fin de semaine.
+   */
+  async getOrCreateWeeklySummary(
+    tenantId: string,
+    academicYearId: string,
+    weekNumber: number,
+    trimester: number,
+    weekStartDate: string,
+    weekEndDate: string,
+    filledBy?: string,
+  ) {
+    let summary = await this.prisma.weeklyLogSummary.findFirst({
+      where: { tenantId, academicYearId, weekNumber },
+    });
+    if (!summary) {
+      summary = await this.prisma.weeklyLogSummary.create({
+        data: {
+          tenantId, academicYearId, weekNumber, trimester,
+          weekStartDate: new Date(weekStartDate),
+          weekEndDate: new Date(weekEndDate),
+          filledBy: filledBy || null,
+        },
+      });
+    }
+    return summary;
+  }
+
+  /**
+   * Met à jour le rapport de fin de semaine.
+   */
+  async updateWeeklySummary(
+    tenantId: string,
+    summaryId: string,
+    data: any,
+  ) {
+    const summary = await this.prisma.weeklyLogSummary.findFirst({
+      where: { id: summaryId, tenantId },
+    });
+    if (!summary) throw new NotFoundException('Rapport de fin de semaine non trouvé');
+
+    return this.prisma.weeklyLogSummary.update({
+      where: { id: summaryId },
+      data: {
+        ...(data.globalLevel !== undefined && { globalLevel: data.globalLevel || null }),
+        ...(data.generalObservations !== undefined && { generalObservations: data.generalObservations || null }),
+        ...(data.scheduleRespect !== undefined && { scheduleRespect: data.scheduleRespect || null }),
+        ...(data.engagedTeachers !== undefined && { engagedTeachers: data.engagedTeachers || null }),
+        ...(data.recurringDifficulties !== undefined && { recurringDifficulties: data.recurringDifficulties || null }),
+        ...(data.studentBehavior !== undefined && { studentBehavior: data.studentBehavior || null }),
+        ...(data.specialFollowUp !== undefined && { specialFollowUp: data.specialFollowUp || null }),
+        ...(data.criticalPoints !== undefined && { criticalPoints: data.criticalPoints || null }),
+        ...(data.urgentInterventions !== undefined && { urgentInterventions: data.urgentInterventions || null }),
+        ...(data.weeklyVisits !== undefined && { weeklyVisits: data.weeklyVisits || null }),
+        ...(data.visitorRecommendations !== undefined && { visitorRecommendations: data.visitorRecommendations || null }),
+        ...(data.weeklyStats !== undefined && { weeklyStats: data.weeklyStats }),
+        ...(data.priorityActions !== undefined && { priorityActions: data.priorityActions || null }),
+        ...(data.status !== undefined && { status: data.status }),
+        ...(data.submittedAt !== undefined && { submittedAt: data.submittedAt ? new Date(data.submittedAt) : null }),
+      },
+    });
+  }
+
+  /**
+   * Soumet le rapport de fin de semaine au directeur.
+   */
+  async submitWeeklySummary(tenantId: string, summaryId: string) {
+    const summary = await this.prisma.weeklyLogSummary.findFirst({
+      where: { id: summaryId, tenantId },
+    });
+    if (!summary) throw new NotFoundException('Rapport non trouvé');
+    if (summary.status !== 'DRAFT') throw new BadRequestException('Déjà soumis');
+
+    return this.prisma.weeklyLogSummary.update({
+      where: { id: summaryId },
+      data: { status: 'SUBMITTED', submittedAt: new Date() },
+    });
+  }
+
+  /**
+   * Liste les rapports de fin de semaine en attente de validation (direction).
+   */
+  async getPendingWeeklySummaries(tenantId: string, academicYearId: string) {
+    return this.prisma.weeklyLogSummary.findMany({
+      where: { tenantId, academicYearId, status: 'SUBMITTED' },
+      orderBy: { submittedAt: 'desc' },
+    });
+  }
+
+  /**
+   * Valide ou rejette un rapport de fin de semaine.
+   */
+  async validateWeeklySummary(
+    tenantId: string,
+    summaryId: string,
+    action: 'VALIDATED' | 'REJECTED',
+    validatedBy: string,
+    rejectionReason?: string,
+  ) {
+    const summary = await this.prisma.weeklyLogSummary.findFirst({
+      where: { id: summaryId, tenantId },
+    });
+    if (!summary) throw new NotFoundException('Rapport non trouvé');
+    if (summary.status !== 'SUBMITTED') throw new BadRequestException('Pas en attente');
+
+    return this.prisma.weeklyLogSummary.update({
+      where: { id: summaryId },
+      data: {
+        status: action,
+        validatedAt: new Date(),
+        validatedBy,
+        ...(action === 'REJECTED' && rejectionReason ? { rejectionReason } : {}),
+      },
+    });
+  }
 }

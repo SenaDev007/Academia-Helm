@@ -15918,3 +15918,130 @@ model PedagogicalTaskStudent {
   @@index([teacherId])
   @@map("pedagogical_task_students")
 }
+
+// ============================================================================
+// CAHIER DE SEMAINE — Monitoring institutionnel (semainier)
+// ============================================================================
+
+/// Rapport journalier du cahier de semaine (8 sections par jour).
+/// Rempli par le semainier de la semaine (enseignant désigné).
+/// Une entrée par jour (Lundi à Vendredi) × semaine × tenant.
+model WeeklyLogDailyReport {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  weeklyLogId     String?  // lien vers le PedagogicalWeeklyLog parent
+  weekNumber      Int      // 1-36
+  trimester       Int      // 1-3
+  dayOfWeek       Int      // 1=Lundi, 2=Mardi, ... 5=Vendredi
+  reportDate      DateTime @db.Date
+
+  // Section 1: Présence du personnel enseignant (JSON array of {teacherName, present, absent, absenceReason, replacement})
+  staffAttendance Json?
+  staffSummary    String?
+
+  // Section 2: Présence des élèves
+  studentAttendanceRate Float?
+  highAbsenceClasses    String?  // classes avec >10% d'absences
+  parentNotifiedAbsences String?
+  lateCount             Int?
+  specialCases          String?
+
+  // Section 3: Déroulement pédagogique
+  scheduleRespected    String?  // OUI | NON | PARTIEL
+  modifiedCourses      String?
+  remarkableActivities String?
+  classClimate         String?  // CALME | MOYEN | PERTURBE
+
+  // Section 4: Discipline & vie scolaire
+  positiveBehaviors    String?
+  problematicBehaviors String?
+  correctiveMeasures   String?
+
+  // Section 5: Hygiène, sécurité & logistique
+  roomCleanliness   String?  // TRES_BONNE | BONNE | ACCEPTABLE | INSUFFISANTE
+  toiletsCondition  String?  // TRES_PROPRES | CORRECTES | A_REVOIR | INSALUBRES
+  waterStatus       String?  // NORMALE | INSTABLE | COUPURE
+  electricityStatus String?  // NORMALE | INSTABLE | COUPURE
+  urgentRepairs     String?
+
+  // Section 6: Visites reçues
+  adminVisit    Boolean @default(false)
+  pedagoVisit   Boolean @default(false)
+  parentVisit   Boolean @default(false)
+  visitDetails  String?
+
+  // Section 7: Communication & circulaires
+  directorInstructions String?
+  urgentNeeds          String?
+
+  // Section 8: Synthèse globale du jour
+  strengths      String?
+  improvements   String?
+  recommendations String?
+
+  // Méta
+  status         String   @default("DRAFT") // DRAFT | COMPLETED
+  filledBy       String?  // teacherId du semainier
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([tenantId, academicYearId, weekNumber, dayOfWeek])
+  @@index([tenantId, academicYearId, weekNumber])
+  @@index([reportDate])
+  @@map("weekly_log_daily_reports")
+}
+
+/// Rapport de fin de semaine (7 sections).
+/// Rempli par le semainier en fin de semaine, validé par le directeur.
+model WeeklyLogSummary {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  weekNumber      Int
+  trimester       Int
+  weekStartDate   DateTime @db.Date
+  weekEndDate     DateTime @db.Date
+
+  // Section 1: Fonctionnement général
+  globalLevel       String?  // EXCELLENT | BON | MOYEN | A_RENFORCER
+  generalObservations String?
+
+  // Section 2: Synthèse pédagogique
+  scheduleRespect      String?
+  engagedTeachers      String?
+  recurringDifficulties String?
+
+  // Section 3: Discipline & vie scolaire
+  studentBehavior      String?
+  specialFollowUp      String?
+
+  // Section 4: Infrastructures & logistique
+  criticalPoints       String?
+  urgentInterventions  String?
+
+  // Section 5: Bilan des visites
+  weeklyVisits         String?
+  visitorRecommendations String?
+
+  // Section 6: Statistiques de la semaine (JSON: [{indicateur, lun, mar, mer, jeu, ven, moyenne}])
+  weeklyStats Json?
+
+  // Section 7: Recommandations stratégiques
+  priorityActions String?
+
+  // Méta
+  status          String   @default("DRAFT") // DRAFT | SUBMITTED | VALIDATED | REJECTED
+  submittedAt     DateTime?
+  validatedAt     DateTime?
+  validatedBy     String?
+  rejectionReason String?
+  filledBy        String?  // teacherId du semainier
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([tenantId, academicYearId, weekNumber])
+  @@index([tenantId, academicYearId])
+  @@index([status])
+  @@map("weekly_log_summaries")
+}

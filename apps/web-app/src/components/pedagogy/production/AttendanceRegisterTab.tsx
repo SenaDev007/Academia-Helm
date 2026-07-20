@@ -36,7 +36,8 @@ import { useState, useEffect, useCallback } from "react";
 import {
   ClipboardList, Loader2, Save, RefreshCw, Send, Lock,
   ChevronLeft, Calendar, FileText, BookOpen, BarChart3,
-  CheckCircle2, XCircle, Clock, Printer,
+  CheckCircle2, XCircle, Clock, Printer, Settings, AlertCircle,
+  Plus, Trash2, X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -102,6 +103,13 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"register" | "evaluation" | "summary">("register");
+
+  // États pour la configuration des matières
+  const [showSubjectConfig, setShowSubjectConfig] = useState(false);
+  const [availableSubjects, setAvailableSubjects] = useState<any[]>([]);
+  const [selectedSubjects, setSelectedSubjects] = useState<any[]>([]);
+  const [customSubjectName, setCustomSubjectName] = useState("");
+  const [loadingSubjects, setLoadingSubjects] = useState(false);
 
   // === Chargement des classes ===
   useEffect(() => {
@@ -281,6 +289,132 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
     }
   };
 
+  // === Soumettre l'évaluation mensuelle au directeur ===
+  const handleSubmitEvaluation = async () => {
+    if (!evaluation) return;
+    if (subjectsConfig.length === 0) {
+      toast.error("Veuillez d'abord configurer les matières");
+      return;
+    }
+    if (!confirm("Soumettre cette évaluation au directeur ?")) return;
+    setSaving(true);
+    try {
+      // D'abord sauvegarder les scores
+      await handleSaveEvaluation(true);
+      // Puis soumettre
+      const res = await fetch(`/api/pedagogy-space/monthly-evaluations/${evaluation.id}/submit`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Erreur");
+      toast.success("✅ Évaluation soumise au directeur");
+      loadRegister();
+    } catch (e: any) {
+      toast.error("Erreur", { description: e.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // === Chargement des matières disponibles pour la classe ===
+  const loadAvailableSubjects = useCallback(async () => {
+    if (!selectedClassId) return;
+    setLoadingSubjects(true);
+    try {
+      const res = await fetch(
+        `/api/pedagogy-space/subjects/available?academicYearId=${academicYearId}&classId=${selectedClassId}`,
+        { credentials: "include" }
+      );
+      const data = await res.json();
+      setAvailableSubjects(Array.isArray(data) ? data : []);
+    } catch {
+      setAvailableSubjects([]);
+    } finally {
+      setLoadingSubjects(false);
+    }
+  }, [academicYearId, selectedClassId]);
+
+  // === Ouvrir la modale de config des matières ===
+  const openSubjectConfig = () => {
+    // Pré-remplir avec les matières déjà configurées
+    setSelectedSubjects(subjectsConfig.map((s: any) => ({
+      subjectId: s.subjectId,
+      subjectName: s.subjectName,
+      coefficient: s.coefficient ?? 1,
+    })));
+    loadAvailableSubjects();
+    setShowSubjectConfig(true);
+  };
+
+  // === Ajouter une matière disponible à la sélection ===
+  const addAvailableSubject = (subj: any) => {
+    if (selectedSubjects.find(s => s.subjectName === subj.subjectName)) {
+      toast.error("Cette matière est déjà ajoutée");
+      return;
+    }
+    setSelectedSubjects(prev => [...prev, {
+      subjectId: subj.subjectId,
+      subjectName: subj.subjectName,
+      coefficient: subj.coefficient ?? 1,
+    }]);
+  };
+
+  // === Ajouter une matière personnalisée ===
+  const addCustomSubject = () => {
+    if (!customSubjectName.trim()) {
+      toast.error("Veuillez saisir un nom de matière");
+      return;
+    }
+    if (selectedSubjects.find(s => s.subjectName.toLowerCase() === customSubjectName.trim().toLowerCase())) {
+      toast.error("Cette matière est déjà ajoutée");
+      return;
+    }
+    setSelectedSubjects(prev => [...prev, {
+      subjectId: null,
+      subjectName: customSubjectName.trim(),
+      coefficient: 1,
+    }]);
+    setCustomSubjectName("");
+  };
+
+  // === Retirer une matière de la sélection ===
+  const removeSubject = (idx: number) => {
+    setSelectedSubjects(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  // === Sauvegarder la config des matières ===
+  const handleSaveSubjects = async () => {
+    if (!evaluation) return;
+    if (selectedSubjects.length === 0) {
+      toast.error("Veuillez sélectionner au moins une matière");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/pedagogy-space/monthly-evaluations/${evaluation.id}/subjects`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          subjectsConfig: selectedSubjects.map((s, idx) => ({
+            subjectId: s.subjectId,
+            subjectName: s.subjectName,
+            order: idx + 1,
+            coefficient: s.coefficient || 1,
+          })),
+        }),
+      });
+      if (!res.ok) throw new Error("Erreur");
+      toast.success(`✅ ${selectedSubjects.length} matière(s) configurée(s)`);
+      setShowSubjectConfig(false);
+      loadRegister();
+    } catch (e: any) {
+      toast.error("Erreur", { description: e.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // === Évaluation : maj d'un score ===
   const updateStudentScore = (studentIdx: number, subjectIdx: number, field: "cm" | "cp", value: number) => {
     if (!evaluation) return;
@@ -302,9 +436,9 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
     setEvaluation({ ...evaluation, studentScores: newScores });
   };
 
-  const handleSaveEvaluation = async () => {
+  const handleSaveEvaluation = async (silent: boolean = false) => {
     if (!evaluation) return;
-    setSaving(true);
+    if (!silent) setSaving(true);
     try {
       const scores = typeof evaluation.studentScores === "string"
         ? JSON.parse(evaluation.studentScores)
@@ -349,12 +483,15 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         }),
       });
       if (!res.ok) throw new Error();
-      toast.success("✅ Évaluation enregistrée");
-      loadRegister();
+      if (!silent) {
+        toast.success("✅ Évaluation enregistrée");
+        loadRegister();
+      }
     } catch (e: any) {
       toast.error("Erreur", { description: e.message });
+      throw e;
     } finally {
-      setSaving(false);
+      if (!silent) setSaving(false);
     }
   };
 
@@ -714,20 +851,52 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
             </p>
           </div>
 
-          {/* Sélection du seuil de réussite */}
-          <div className="flex items-center gap-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+          {/* Sélection du seuil de réussite + Bouton config matières */}
+          <div className="flex flex-wrap items-center gap-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
             <label className="text-xs font-bold text-slate-700 uppercase">Seuil de réussite (sur 20)</label>
             <input type="number" step="0.5" min={0} max={20}
               value={evaluation.seuilReussite || 10.0}
               onChange={(e) => setEvaluation({ ...evaluation, seuilReussite: parseFloat(e.target.value) || 10.0 })}
               disabled={isReadOnly}
               className="w-20 px-2 py-1 border border-slate-200 rounded text-sm font-bold" />
+
+            {/* Bouton config matières */}
+            <button
+              onClick={openSubjectConfig}
+              disabled={isReadOnly}
+              className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700 disabled:opacity-50"
+            >
+              <Settings className="h-4 w-4" />
+              Configurer les matières ({subjectsConfig.length})
+            </button>
+
+            {/* Bouton soumettre */}
+            {evaluation.status === "DRAFT" && (
+              <button onClick={handleSubmitEvaluation} disabled={saving}
+                className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">
+                <Send className="h-4 w-4" />
+                Soumettre au directeur
+              </button>
+            )}
+
             <button onClick={handleSaveEvaluation} disabled={saving || isReadOnly}
               className="ml-auto flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Enregistrer l'évaluation
+              Enregistrer
             </button>
           </div>
+
+          {/* Si aucune matière configurée */}
+          {subjectsConfig.length === 0 && (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center gap-2 text-sm text-blue-700">
+                <AlertCircle className="h-4 w-4" />
+                <span>
+                  <strong>Aucune matière configurée.</strong> Cliquez sur "Configurer les matières" pour sélectionner les matières à évaluer.
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Tableau d'évaluation : matières × CM/CP/Total */}
           <div className="overflow-x-auto">
@@ -977,6 +1146,167 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
           <Lock className="h-4 w-4" />
           Ce registre est verrouillé (statut: {register?.status}).
+        </div>
+      )}
+
+      {/* === Modale de configuration des matières === */}
+      {showSubjectConfig && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-slate-200 sticky top-0 bg-white z-10">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Configurer les matières de l'évaluation</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Évaluation de {MONTH_NAMES[selectedMonth]} {selectedYear} — Classe: {selectedClass?.className || "—"}
+                </p>
+              </div>
+              <button onClick={() => setShowSubjectConfig(false)} className="p-1 hover:bg-slate-100 rounded">
+                <X className="h-5 w-5 text-slate-500" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* === Matières sélectionnées === */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-bold text-slate-700 uppercase">
+                    Matières de l'évaluation ({selectedSubjects.length})
+                  </h4>
+                </div>
+                {selectedSubjects.length === 0 ? (
+                  <div className="text-xs text-slate-400 italic p-3 bg-slate-50 rounded-lg">
+                    Aucune matière sélectionnée. Ajoutez des matières ci-dessous.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {selectedSubjects.map((subj, idx) => (
+                      <div key={idx} className="flex items-center gap-2 p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                        <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-emerald-600 text-white text-xs font-bold rounded">
+                          {idx + 1}
+                        </span>
+                        <input
+                          type="text"
+                          value={subj.subjectName}
+                          onChange={(e) => setSelectedSubjects(prev => prev.map((s, i) =>
+                            i === idx ? { ...s, subjectName: e.target.value } : s
+                          ))}
+                          className="flex-1 px-2 py-1 text-sm border border-slate-200 rounded bg-white"
+                        />
+                        <input
+                          type="number"
+                          step="0.5"
+                          min={0.5}
+                          value={subj.coefficient || 1}
+                          onChange={(e) => setSelectedSubjects(prev => prev.map((s, i) =>
+                            i === idx ? { ...s, coefficient: parseFloat(e.target.value) || 1 } : s
+                          ))}
+                          title="Coefficient"
+                          className="w-16 px-2 py-1 text-sm border border-slate-200 rounded bg-white"
+                          placeholder="Coef."
+                        />
+                        <button
+                          onClick={() => removeSubject(idx)}
+                          className="p-1 text-red-500 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* === Ajout d'une matière personnalisée === */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                <h4 className="text-sm font-bold text-slate-700 uppercase mb-2">
+                  Ajouter une matière personnalisée
+                </h4>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={customSubjectName}
+                    onChange={(e) => setCustomSubjectName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && addCustomSubject()}
+                    placeholder="Nom de la matière (ex: Communication orale, Mathématiques...)"
+                    className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg"
+                  />
+                  <button
+                    onClick={addCustomSubject}
+                    className="flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700"
+                  >
+                    <Plus className="h-4 w-4" /> Ajouter
+                  </button>
+                </div>
+              </div>
+
+              {/* === Matières disponibles (depuis le système) === */}
+              {loadingSubjects ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-slate-400 mr-2" />
+                  <span className="text-sm text-slate-500">Chargement des matières...</span>
+                </div>
+              ) : availableSubjects.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-bold text-slate-700 uppercase mb-2">
+                    Matières disponibles pour cette classe ({availableSubjects.length})
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {availableSubjects.map((subj, idx) => {
+                      const alreadyAdded = selectedSubjects.find(s => s.subjectName === subj.subjectName);
+                      return (
+                        <button
+                          key={subj.subjectId || idx}
+                          onClick={() => addAvailableSubject(subj)}
+                          disabled={!!alreadyAdded}
+                          className={cn(
+                            "flex items-center justify-between gap-2 px-3 py-2 border rounded-lg text-xs font-medium text-left transition-all",
+                            alreadyAdded
+                              ? "bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed"
+                              : "bg-white border-slate-200 text-slate-700 hover:bg-blue-50 hover:border-blue-300 cursor-pointer"
+                          )}
+                        >
+                          <span className="truncate">{subj.subjectName}</span>
+                          {alreadyAdded ? (
+                            <CheckCircle2 className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                          ) : (
+                            <Plus className="h-3 w-3 text-blue-600 flex-shrink-0" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* === Aide === */}
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
+                <strong>Rappel :</strong> Chaque matière est notée sur 20 points répartis comme suit :
+                <ul className="mt-1 ml-4 list-disc">
+                  <li><strong>CM (Critère Maîtrise)</strong> : noté sur 18 points</li>
+                  <li><strong>CP (Critère Perfectionnement)</strong> : noté sur 2 points (bonus)</li>
+                  <li><strong>Total</strong> = CM + CP (sur 20)</li>
+                </ul>
+                <div className="mt-2">Les scores des élèves seront automatiquement initialisés à 0 pour chaque matière ajoutée.</div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 p-5 border-t border-slate-200 sticky bottom-0 bg-white">
+              <button
+                onClick={() => setShowSubjectConfig(false)}
+                className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleSaveSubjects}
+                disabled={saving || selectedSubjects.length === 0}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700 disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Enregistrer la configuration
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -14,6 +14,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { DirectorControl } from '../production/DirectorControl';
+import { DirectorPedagogyControl } from '../production/DirectorPedagogyControl';
 import { 
   ShieldCheck, 
   BarChart3, 
@@ -509,7 +510,7 @@ export default function ControlWorkspace() {
       )}
 
       {activeTab === 'cahier' && (
-        <DirectorControl
+        <DirectorPedagogyControl
           tenantId={tenant?.id || ''}
           academicYearId={academicYear?.id || ''}
           userId={user?.id || ''}

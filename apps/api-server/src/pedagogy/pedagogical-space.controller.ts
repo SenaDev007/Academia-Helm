@@ -561,4 +561,196 @@ export class PedagogicalSpaceController {
   ) {
     return this.service.refreshMonthlySummary(tenantId, body.academicYearId, body.classId);
   }
+
+  // ===========================================================================
+  // VALIDATION DIRECTION — Cahier Journal, Fiches, Registres, Évaluations
+  // ===========================================================================
+
+  @Get('director/pedagogy-dashboard')
+  async getDirectorPedagogyDashboard(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) throw new BadRequestException('academicYearId est requis');
+    return this.service.getDirectorPedagogyDashboard(tenantId, academicYearId);
+  }
+
+  // --- Cahier Journal ---
+
+  @Get('director/pending-cahier-journals')
+  async getPendingCahierJournals(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) throw new BadRequestException('academicYearId est requis');
+    return this.service.getPendingCahierJournals(tenantId, academicYearId);
+  }
+
+  @Get('director/cahier-journal/:id')
+  async getCahierJournalDetail(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.getCahierJournalDetail(tenantId, id);
+  }
+
+  @Post('director/validate-cahier-journal/:id')
+  @HttpCode(HttpStatus.OK)
+  async validateCahierJournal(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: {
+      action: 'VALIDATED' | 'REJECTED';
+      validatedBy: string;
+      rejectionReason?: string;
+    },
+  ) {
+    return this.service.validateCahierJournal(
+      tenantId, id, body.action, body.validatedBy, body.rejectionReason,
+    );
+  }
+
+  // --- Fiches Pédagogiques ---
+
+  @Get('director/pending-fiches')
+  async getPendingPedagogicalFiches(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) throw new BadRequestException('academicYearId est requis');
+    return this.service.getPendingPedagogicalFiches(tenantId, academicYearId);
+  }
+
+  @Get('director/fiches/:id')
+  async getPedagogicalFicheDetail(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.getPedagogicalFicheDetail(tenantId, id);
+  }
+
+  @Post('director/validate-fiche/:id')
+  @HttpCode(HttpStatus.OK)
+  async validatePedagogicalFiche(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: {
+      action: 'VALIDATED' | 'REJECTED';
+      validatedBy: string;
+      rejectionReason?: string;
+    },
+  ) {
+    return this.service.validatePedagogicalFiche(
+      tenantId, id, body.action, body.validatedBy, body.rejectionReason,
+    );
+  }
+
+  // --- Registres d'appel ---
+
+  @Get('director/pending-registers')
+  async getPendingAttendanceRegisters(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) throw new BadRequestException('academicYearId est requis');
+    return this.service.getPendingAttendanceRegisters(tenantId, academicYearId);
+  }
+
+  @Get('director/attendance-register/:id')
+  async getAttendanceRegisterDetail(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.getAttendanceRegisterDetail(tenantId, id);
+  }
+
+  @Post('director/validate-attendance-register/:id')
+  @HttpCode(HttpStatus.OK)
+  async validateAttendanceRegister(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: {
+      action: 'VALIDATED' | 'REJECTED';
+      validatedBy: string;
+      rejectionReason?: string;
+    },
+  ) {
+    return this.service.validateAttendanceRegister(
+      tenantId, id, body.action, body.validatedBy, body.rejectionReason,
+    );
+  }
+
+  // --- Évaluations mensuelles ---
+
+  @Get('director/pending-evaluations')
+  async getPendingMonthlyEvaluations(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) throw new BadRequestException('academicYearId est requis');
+    return this.service.getPendingMonthlyEvaluations(tenantId, academicYearId);
+  }
+
+  @Get('director/evaluation/:id')
+  async getMonthlyEvaluationDetail(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.getMonthlyEvaluationDetail(tenantId, id);
+  }
+
+  @Post('director/validate-evaluation/:id')
+  @HttpCode(HttpStatus.OK)
+  async validateMonthlyEvaluation(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: {
+      action: 'VALIDATED' | 'REJECTED';
+      validatedBy: string;
+      rejectionReason?: string;
+    },
+  ) {
+    return this.service.validateMonthlyEvaluation(
+      tenantId, id, body.action, body.validatedBy, body.rejectionReason,
+    );
+  }
+
+  // ===========================================================================
+  // CONFIGURATION DES MATIÈRES — Évaluation mensuelle
+  // ===========================================================================
+
+  @Get('subjects/available')
+  async getAvailableSubjectsForClass(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('classId') classId: string,
+  ) {
+    if (!academicYearId || !classId) {
+      throw new BadRequestException('academicYearId et classId sont requis');
+    }
+    return this.service.getAvailableSubjectsForClass(tenantId, academicYearId, classId);
+  }
+
+  @Put('monthly-evaluations/:id/subjects')
+  async setMonthlyEvaluationSubjects(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: {
+      subjectsConfig: Array<{ subjectId?: string; subjectName: string; order?: number; coefficient?: number }>;
+    },
+  ) {
+    if (!body.subjectsConfig || !Array.isArray(body.subjectsConfig)) {
+      throw new BadRequestException('subjectsConfig doit être un tableau');
+    }
+    return this.service.setMonthlyEvaluationSubjects(tenantId, id, body.subjectsConfig);
+  }
+
+  @Post('monthly-evaluations/:id/submit')
+  @HttpCode(HttpStatus.OK)
+  async submitMonthlyEvaluation(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.submitMonthlyEvaluation(tenantId, id);
+  }
 }

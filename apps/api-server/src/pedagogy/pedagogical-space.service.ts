@@ -1781,4 +1781,527 @@ export class PedagogicalSpaceService {
     );
     return updated[0];
   }
+
+  // ===========================================================================
+  // VALIDATION DIRECTION — Cahier Journal, Fiches, Registres, Évaluations
+  // ===========================================================================
+
+  /// Récupère tous les cahiers journal soumis (en attente de validation direction).
+  async getPendingCahierJournals(tenantId: string, academicYearId: string) {
+    return this.prisma.$queryRawUnsafe(
+      `SELECT cj.*, c."name" as "classNameResolved", t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+       FROM "cahier_journal_entries" cj
+       LEFT JOIN "classes" c ON c."id" = cj."classId"
+       LEFT JOIN "teachers" t ON t."id" = cj."teacherId"
+       WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2 AND cj."status" = 'SUBMITTED'
+       ORDER BY cj."submittedAt" DESC`,
+      tenantId, academicYearId,
+    );
+  }
+
+  /// Valide ou rejette un cahier journal.
+  async validateCahierJournal(
+    tenantId: string,
+    journalId: string,
+    action: 'VALIDATED' | 'REJECTED',
+    validatedBy: string,
+    rejectionReason?: string,
+  ) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1 AND "tenantId" = $2`,
+      journalId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Cahier journal non trouvé');
+    }
+    if (existing[0].status !== 'SUBMITTED') {
+      throw new BadRequestException('Cahier journal pas en attente de validation');
+    }
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "cahier_journal_entries"
+       SET "status" = $1, "validatedAt" = NOW(), "validatedBy" = $2,
+           "rejectionReason" = $3, "directorValidatedAt" = CASE WHEN $1 = 'VALIDATED' THEN NOW() ELSE NULL END,
+           "updatedAt" = NOW()
+       WHERE "id" = $4`,
+      action, validatedBy, action === 'REJECTED' ? (rejectionReason || null) : null, journalId,
+    );
+
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1`,
+      journalId,
+    );
+    this.logger.log(`✅ Cahier journal ${journalId} ${action} par ${validatedBy}`);
+    return updated[0];
+  }
+
+  /// Récupère toutes les fiches pédagogiques soumises (en attente de validation).
+  async getPendingPedagogicalFiches(tenantId: string, academicYearId: string) {
+    return this.prisma.$queryRawUnsafe(
+      `SELECT pf.*, c."name" as "classNameResolved", t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+       FROM "primary_pedagogical_fiches" pf
+       LEFT JOIN "classes" c ON c."id" = pf."classId"
+       LEFT JOIN "teachers" t ON t."id" = pf."teacherId"
+       WHERE pf."tenantId" = $1 AND pf."academicYearId" = $2 AND pf."status" = 'SUBMITTED'
+       ORDER BY pf."submittedAt" DESC`,
+      tenantId, academicYearId,
+    );
+  }
+
+  /// Valide ou rejette une fiche pédagogique.
+  async validatePedagogicalFiche(
+    tenantId: string,
+    ficheId: string,
+    action: 'VALIDATED' | 'REJECTED',
+    validatedBy: string,
+    rejectionReason?: string,
+  ) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "primary_pedagogical_fiches" WHERE "id" = $1 AND "tenantId" = $2`,
+      ficheId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Fiche pédagogique non trouvée');
+    }
+    if (existing[0].status !== 'SUBMITTED') {
+      throw new BadRequestException('Fiche pas en attente de validation');
+    }
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "primary_pedagogical_fiches"
+       SET "status" = $1, "validatedAt" = NOW(), "validatedBy" = $2,
+           "rejectionReason" = $3, "updatedAt" = NOW()
+       WHERE "id" = $4`,
+      action, validatedBy, action === 'REJECTED' ? (rejectionReason || null) : null, ficheId,
+    );
+
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "primary_pedagogical_fiches" WHERE "id" = $1`,
+      ficheId,
+    );
+    this.logger.log(`✅ Fiche pédagogique ${ficheId} ${action} par ${validatedBy}`);
+    return updated[0];
+  }
+
+  /// Récupère tous les registres d'appel soumis (en attente de validation).
+  async getPendingAttendanceRegisters(tenantId: string, academicYearId: string) {
+    return this.prisma.$queryRawUnsafe(
+      `SELECT ar.*, c."name" as "classNameResolved", t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+       FROM "attendance_registers" ar
+       LEFT JOIN "classes" c ON c."id" = ar."classId"
+       LEFT JOIN "teachers" t ON t."id" = ar."teacherId"
+       WHERE ar."tenantId" = $1 AND ar."academicYearId" = $2 AND ar."status" = 'SUBMITTED'
+       ORDER BY ar."submittedAt" DESC`,
+      tenantId, academicYearId,
+    );
+  }
+
+  /// Valide ou rejette un registre d'appel.
+  async validateAttendanceRegister(
+    tenantId: string,
+    registerId: string,
+    action: 'VALIDATED' | 'REJECTED',
+    validatedBy: string,
+    rejectionReason?: string,
+  ) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "attendance_registers" WHERE "id" = $1 AND "tenantId" = $2`,
+      registerId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Registre non trouvé');
+    }
+    if (existing[0].status !== 'SUBMITTED') {
+      throw new BadRequestException('Registre pas en attente de validation');
+    }
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "attendance_registers"
+       SET "status" = $1, "validatedAt" = NOW(), "validatedBy" = $2,
+           "rejectionReason" = $3, "updatedAt" = NOW()
+       WHERE "id" = $4`,
+      action, validatedBy, action === 'REJECTED' ? (rejectionReason || null) : null, registerId,
+    );
+
+    // Si validé, mettre à jour la date de signature du directeur
+    if (action === 'VALIDATED') {
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "attendance_registers"
+         SET "directeurSignatureDate" = NOW()
+         WHERE "id" = $1`,
+        registerId,
+      );
+    }
+
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "attendance_registers" WHERE "id" = $1`,
+      registerId,
+    );
+
+    // Si validé, rafraîchir le tableau de relevés mensuels
+    if (action === 'VALIDATED' && updated[0]) {
+      try {
+        await this.refreshMonthlySummary(tenantId, updated[0].academicYearId, updated[0].classId);
+      } catch (e) {
+        this.logger.warn(`⚠️ Impossible de rafraîchir le tableau de relevés: ${e.message}`);
+      }
+    }
+
+    this.logger.log(`✅ Registre d'appel ${registerId} ${action} par ${validatedBy}`);
+    return updated[0];
+  }
+
+  /// Récupère toutes les évaluations mensuelles soumises (en attente de validation).
+  async getPendingMonthlyEvaluations(tenantId: string, academicYearId: string) {
+    return this.prisma.$queryRawUnsafe(
+      `SELECT me.*, c."name" as "classNameResolved",
+              ar."month" as "registerMonth", ar."year" as "registerYear"
+       FROM "monthly_evaluations" me
+       LEFT JOIN "attendance_registers" ar ON ar."id" = me."attendanceRegisterId"
+       LEFT JOIN "classes" c ON c."id" = me."classId"
+       WHERE me."tenantId" = $1 AND me."academicYearId" = $2 AND me."status" = 'SUBMITTED'
+       ORDER BY me."submittedAt" DESC`,
+      tenantId, academicYearId,
+    );
+  }
+
+  /// Valide ou rejette une évaluation mensuelle.
+  async validateMonthlyEvaluation(
+    tenantId: string,
+    evaluationId: string,
+    action: 'VALIDATED' | 'REJECTED',
+    validatedBy: string,
+    rejectionReason?: string,
+  ) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "monthly_evaluations" WHERE "id" = $1 AND "tenantId" = $2`,
+      evaluationId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Évaluation non trouvée');
+    }
+    if (existing[0].status !== 'SUBMITTED') {
+      throw new BadRequestException('Évaluation pas en attente de validation');
+    }
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "monthly_evaluations"
+       SET "status" = $1, "validatedAt" = NOW(), "validatedBy" = $2,
+           "rejectionReason" = $3, "updatedAt" = NOW()
+       WHERE "id" = $4`,
+      action, validatedBy, action === 'REJECTED' ? (rejectionReason || null) : null, evaluationId,
+    );
+
+    if (action === 'VALIDATED') {
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "monthly_evaluations"
+         SET "directorSignatureDate" = NOW()
+         WHERE "id" = $1`,
+        evaluationId,
+      );
+    }
+
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "monthly_evaluations" WHERE "id" = $1`,
+      evaluationId,
+    );
+    this.logger.log(`✅ Évaluation mensuelle ${evaluationId} ${action} par ${validatedBy}`);
+    return updated[0];
+  }
+
+  /// Dashboard direction : synthèse des éléments en attente.
+  async getDirectorPedagogyDashboard(tenantId: string, academicYearId: string) {
+    const [
+      pendingCahierJournals,
+      pendingFiches,
+      pendingRegisters,
+      pendingEvaluations,
+      pendingWeeklyLogs,
+      pendingWeeklySummaries,
+    ] = await Promise.all([
+      this.prisma.$queryRawUnsafe(
+        `SELECT COUNT(*)::int as count FROM "cahier_journal_entries"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'`,
+        tenantId, academicYearId,
+      ),
+      this.prisma.$queryRawUnsafe(
+        `SELECT COUNT(*)::int as count, "sheetType" FROM "primary_pedagogical_fiches"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'
+         GROUP BY "sheetType"`,
+        tenantId, academicYearId,
+      ),
+      this.prisma.$queryRawUnsafe(
+        `SELECT COUNT(*)::int as count FROM "attendance_registers"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'`,
+        tenantId, academicYearId,
+      ),
+      this.prisma.$queryRawUnsafe(
+        `SELECT COUNT(*)::int as count FROM "monthly_evaluations"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'`,
+        tenantId, academicYearId,
+      ),
+      this.prisma.$queryRawUnsafe(
+        `SELECT COUNT(*)::int as count FROM "pedagogical_weekly_logs"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'`,
+        tenantId, academicYearId,
+      ),
+      this.prisma.$queryRawUnsafe(
+        `SELECT COUNT(*)::int as count FROM "weekly_log_summaries"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'`,
+        tenantId, academicYearId,
+      ),
+    ]);
+
+    const cahierCount = pendingCahierJournals[0]?.count || 0;
+    const fichesByType = (pendingFiches as any[]).reduce((acc, row) => {
+      acc[row.sheetType] = row.count;
+      return acc;
+    }, {} as Record<string, number>);
+    const fichesCount = Object.values(fichesByType).reduce((s, c) => s + (c as number), 0);
+    const registersCount = pendingRegisters[0]?.count || 0;
+    const evaluationsCount = pendingEvaluations[0]?.count || 0;
+    const weeklyLogsCount = pendingWeeklyLogs[0]?.count || 0;
+    const weeklySummariesCount = pendingWeeklySummaries[0]?.count || 0;
+
+    return {
+      pendingCahierJournals: cahierCount,
+      pendingFiches: fichesCount,
+      pendingFichesByType: fichesByType,
+      pendingAttendanceRegisters: registersCount,
+      pendingMonthlyEvaluations: evaluationsCount,
+      pendingWeeklyLogs: weeklyLogsCount,
+      pendingWeeklySummaries: weeklySummariesCount,
+      totalPending: cahierCount + fichesCount + registersCount + evaluationsCount + weeklyLogsCount + weeklySummariesCount,
+    };
+  }
+
+  // ===========================================================================
+  // CONFIGURATION DES MATIÈRES — Évaluation mensuelle
+  // ===========================================================================
+
+  /// Configure les matières d'une évaluation mensuelle.
+  /// subjectsConfig: [{ subjectId, subjectName, order, coefficient }]
+  async setMonthlyEvaluationSubjects(
+    tenantId: string,
+    evaluationId: string,
+    subjectsConfig: Array<{ subjectId?: string; subjectName: string; order?: number; coefficient?: number }>,
+  ) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "monthly_evaluations" WHERE "id" = $1 AND "tenantId" = $2`,
+      evaluationId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Évaluation non trouvée');
+    }
+
+    // Normaliser et valider
+    const normalizedSubjects = subjectsConfig.map((s, idx) => ({
+      subjectId: s.subjectId || null,
+      subjectName: s.subjectName,
+      order: s.order ?? idx + 1,
+      coefficient: s.coefficient ?? 1,
+    }));
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "monthly_evaluations"
+       SET "subjectsConfig" = $1::jsonb, "updatedAt" = NOW()
+       WHERE "id" = $2`,
+      JSON.stringify(normalizedSubjects), evaluationId,
+    );
+
+    // Initialiser/mettre à jour les scores des élèves
+    const evaluation = existing[0];
+    const existingScores = typeof evaluation.studentScores === 'string'
+      ? JSON.parse(evaluation.studentScores || '[]')
+      : (evaluation.studentScores || []);
+
+    // Récupérer la liste des élèves de la classe depuis le registre d'appel lié
+    const register: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "attendance_registers" WHERE "id" = $1 LIMIT 1`,
+      evaluation.attendanceRegisterId,
+    );
+
+    let studentsList: any[] = [];
+    if (register && register.length > 0) {
+      const studentsData = typeof register[0].studentsData === 'string'
+        ? JSON.parse(register[0].studentsData || '[]')
+        : (register[0].studentsData || []);
+      studentsList = studentsData;
+    }
+
+    // Initialiser les scores : pour chaque élève, créer un tableau avec une entrée par matière
+    const newScores = studentsList.map((student: any) => {
+      // Vérifier si l'élève existe déjà dans les scores
+      const existingStudent = existingScores.find((s: any) => s.studentId === student.studentId);
+      const scores = normalizedSubjects.map((subj) => {
+        // Préserver les scores existants si la matière correspond
+        const existingScore = existingStudent?.scores?.find((s: any) =>
+          s.subjectId === subj.subjectId || s.subjectName === subj.subjectName
+        );
+        return {
+          subjectId: subj.subjectId,
+          subjectName: subj.subjectName,
+          cm: existingScore?.cm || 0,
+          cp: existingScore?.cp || 0,
+          total: existingScore?.total || 0,
+        };
+      });
+      return {
+        studentId: student.studentId,
+        numero: student.numero,
+        nom: student.nom,
+        prenom: student.prenom,
+        sexe: student.sexe,
+        scores,
+        totalGeneral: scores.reduce((sum: number, s: any) => sum + (s.total || 0), 0),
+      };
+    });
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "monthly_evaluations"
+       SET "studentScores" = $1::jsonb, "updatedAt" = NOW()
+       WHERE "id" = $2`,
+      JSON.stringify(newScores), evaluationId,
+    );
+
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "monthly_evaluations" WHERE "id" = $1`,
+      evaluationId,
+    );
+
+    this.logger.log(`✅ Matières configurées pour l'évaluation ${evaluationId}: ${normalizedSubjects.length} matière(s)`);
+    return updated[0];
+  }
+
+  /// Récupère la liste des matières disponibles pour une classe (depuis ClassSubject).
+  async getAvailableSubjectsForClass(
+    tenantId: string,
+    academicYearId: string,
+    classId: string,
+  ) {
+    // Récupérer les matières assignées à cette classe via ClassSubject / TeacherClassAssignment
+    const subjects: any = await this.prisma.$queryRawUnsafe(
+      `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
+              cs."coefficient", cs."weeklyHours"
+       FROM "subjects" s
+       INNER JOIN "class_subjects" cs ON cs."subjectId" = s."id"
+       WHERE cs."tenantId" = $1 AND cs."academicYearId" = $2 AND cs."classId" = $3
+       ORDER BY s."name"`,
+      tenantId, academicYearId, classId,
+    );
+
+    // Si pas de matières trouvées via class_subjects, retourner les matières génériques du primaire
+    if (!subjects || subjects.length === 0) {
+      return [
+        { subjectId: null, subjectName: 'Communication orale', subjectCode: 'CO', coefficient: 1, weeklyHours: null },
+        { subjectId: null, subjectName: 'Production d\'écrits', subjectCode: 'PE', coefficient: 1, weeklyHours: null },
+        { subjectId: null, subjectName: 'Lecture / Compréhension écrite', subjectCode: 'LCE', coefficient: 1, weeklyHours: null },
+        { subjectId: null, subjectName: 'Mathématiques', subjectCode: 'MATH', coefficient: 1, weeklyHours: null },
+        { subjectId: null, subjectName: 'Éducation Scientifique et Technologique', subjectCode: 'EST', coefficient: 1, weeklyHours: null },
+        { subjectId: null, subjectName: 'Éducation Sociale', subjectCode: 'ES', coefficient: 1, weeklyHours: null },
+        { subjectId: null, subjectName: 'Éducation Artistique', subjectCode: 'EA', coefficient: 1, weeklyHours: null },
+        { subjectId: null, subjectName: 'Éducation Physique et Sportive', subjectCode: 'EPS', coefficient: 1, weeklyHours: null },
+      ];
+    }
+
+    return subjects;
+  }
+
+  /// Récupère le détail d'une évaluation avec ses matières et scores (vue direction).
+  async getMonthlyEvaluationDetail(tenantId: string, evaluationId: string) {
+    const evalResult: any = await this.prisma.$queryRawUnsafe(
+      `SELECT me.*, c."name" as "classNameResolved",
+              ar."month" as "registerMonth", ar."year" as "registerYear",
+              ar."id" as "registerId", ar."teacherId" as "registerTeacherId",
+              t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+       FROM "monthly_evaluations" me
+       LEFT JOIN "attendance_registers" ar ON ar."id" = me."attendanceRegisterId"
+       LEFT JOIN "classes" c ON c."id" = me."classId"
+       LEFT JOIN "teachers" t ON t."id" = ar."teacherId"
+       WHERE me."id" = $1 AND me."tenantId" = $2`,
+      evaluationId, tenantId,
+    );
+    if (!evalResult || evalResult.length === 0) {
+      throw new NotFoundException('Évaluation non trouvée');
+    }
+    return evalResult[0];
+  }
+
+  /// Récupère le détail d'un cahier journal (vue direction).
+  async getCahierJournalDetail(tenantId: string, journalId: string) {
+    const result: any = await this.prisma.$queryRawUnsafe(
+      `SELECT cj.*, c."name" as "classNameResolved",
+              t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+       FROM "cahier_journal_entries" cj
+       LEFT JOIN "classes" c ON c."id" = cj."classId"
+       LEFT JOIN "teachers" t ON t."id" = cj."teacherId"
+       WHERE cj."id" = $1 AND cj."tenantId" = $2`,
+      journalId, tenantId,
+    );
+    if (!result || result.length === 0) {
+      throw new NotFoundException('Cahier journal non trouvé');
+    }
+    return result[0];
+  }
+
+  /// Récupère le détail d'une fiche pédagogique (vue direction).
+  async getPedagogicalFicheDetail(tenantId: string, ficheId: string) {
+    const result: any = await this.prisma.$queryRawUnsafe(
+      `SELECT pf.*, c."name" as "classNameResolved",
+              t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+       FROM "primary_pedagogical_fiches" pf
+       LEFT JOIN "classes" c ON c."id" = pf."classId"
+       LEFT JOIN "teachers" t ON t."id" = pf."teacherId"
+       WHERE pf."id" = $1 AND pf."tenantId" = $2`,
+      ficheId, tenantId,
+    );
+    if (!result || result.length === 0) {
+      throw new NotFoundException('Fiche pédagogique non trouvée');
+    }
+    return result[0];
+  }
+
+  /// Récupère le détail d'un registre d'appel (vue direction).
+  async getAttendanceRegisterDetail(tenantId: string, registerId: string) {
+    const result: any = await this.prisma.$queryRawUnsafe(
+      `SELECT ar.*, c."name" as "classNameResolved",
+              t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+       FROM "attendance_registers" ar
+       LEFT JOIN "classes" c ON c."id" = ar."classId"
+       LEFT JOIN "teachers" t ON t."id" = ar."teacherId"
+       WHERE ar."id" = $1 AND ar."tenantId" = $2`,
+      registerId, tenantId,
+    );
+    if (!result || result.length === 0) {
+      throw new NotFoundException('Registre non trouvé');
+    }
+    return result[0];
+  }
+
+  /// Soumet une évaluation mensuelle au directeur.
+  async submitMonthlyEvaluation(tenantId: string, evaluationId: string) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "monthly_evaluations" WHERE "id" = $1 AND "tenantId" = $2`,
+      evaluationId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Évaluation non trouvée');
+    }
+    if (existing[0].status !== 'DRAFT') {
+      throw new BadRequestException('Évaluation déjà soumise');
+    }
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "monthly_evaluations"
+       SET "status" = 'SUBMITTED', "submittedAt" = NOW(), "updatedAt" = NOW()
+       WHERE "id" = $1`,
+      evaluationId,
+    );
+
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "monthly_evaluations" WHERE "id" = $1`,
+      evaluationId,
+    );
+    return updated[0];
+  }
 }

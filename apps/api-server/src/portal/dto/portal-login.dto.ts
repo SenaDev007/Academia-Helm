@@ -21,6 +21,10 @@ export class SchoolPortalLoginDto {
 
   @IsString()
   password: string;
+
+  @IsString()
+  @IsOptional()
+  portal_type?: string;
 }
 
 export class TeacherPortalLoginDto {
@@ -32,6 +36,10 @@ export class TeacherPortalLoginDto {
 
   @IsString()
   password: string;
+
+  @IsString()
+  @IsOptional()
+  portal_type?: string;
 }
 
 export class ParentPortalLoginDto {
@@ -44,5 +52,9 @@ export class ParentPortalLoginDto {
   @IsString()
   @IsOptional()
   otp?: string; // Code OTP si déjà envoyé
+
+  @IsString()
+  @IsOptional()
+  portal_type?: string;
 }
 

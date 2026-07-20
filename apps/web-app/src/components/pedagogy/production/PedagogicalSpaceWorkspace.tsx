@@ -60,7 +60,11 @@ export function PedagogicalSpaceWorkspace() {
   const [tab, setTab] = useState<TabId>('classes');
 
   // Résoudre le teacherId depuis le user (role TEACHER)
+  // Pour les rôles non-enseignant (PROMOTER, DIRECTOR, ADMIN), on utilise
+  // user.id comme teacherId pour pouvoir consulter l'espace pédagogique.
   const teacherId = user?.teacherId || user?.id || '';
+  const isNonTeacherRole = ['PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SUPER_DIRECTOR', 'director', 'admin']
+    .includes((user?.role || '').toUpperCase() || (user?.role || ''));
 
   if (!academicYear?.id) {
     return (
@@ -85,6 +89,16 @@ export function PedagogicalSpaceWorkspace() {
 
   return (
     <div className="flex flex-col gap-5">
+      {/* Info banner for non-teacher roles */}
+      {isNonTeacherRole && (
+        <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+          <Users className="h-4 w-4 flex-shrink-0" />
+          <span>
+            Vous consultez l'espace pédagogique en tant que <strong>{user?.role}</strong>.
+            Les données affichées dépendent des classes que l'administration a assignées à votre compte.
+          </span>
+        </div>
+      )}
       {/* Sous-onglets */}
       <div className="space-y-4">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">

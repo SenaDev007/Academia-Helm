@@ -9,7 +9,7 @@
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
 import { useAppSession } from '@/contexts/AppSessionContext';
-import ProductionWorkspace from '@/components/pedagogy/production/ProductionWorkspace';
+import { PedagogicalSpaceWorkspace } from '@/components/pedagogy/production/PedagogicalSpaceWorkspace';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
 export default function ProductionPage() {
@@ -21,10 +21,10 @@ export default function ProductionPage() {
   return (
     <ModuleContainer
       header={{
-        title: 'Production pédagogique',
+        title: 'Espace Pédagogique',
         description: academicYear
-          ? `Cahiers de textes et programmations — année ${academicYear.label}`
-          : 'Espace de travail enseignant : fiches, cahiers et suivi de progression',
+          ? `Espace enseignant — année ${academicYear.label}`
+          : 'Mes classes, cahier journal, devoirs et suivi pédagogique',
         icon: 'bookOpen'
       }}
       subModules={{
@@ -41,7 +41,7 @@ export default function ProductionPage() {
       }}
       content={{
         layout: 'custom',
-        children: <ProductionWorkspace />,
+        children: <PedagogicalSpaceWorkspace />,
       }}
     />
   );

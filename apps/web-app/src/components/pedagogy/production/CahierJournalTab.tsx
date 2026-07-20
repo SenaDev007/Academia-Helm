@@ -2,15 +2,13 @@
 
 /**
  * ============================================================================
- * CAHIER JOURNAL — Grille hebdomadaire (5 jours × 8 matières)
+ * CAHIER JOURNAL — Grille hebdomadaire (5 jours × matières dynamiques)
  * ============================================================================
  *
- * Template officiel du primaire (maternelle/primaire).
+ * Template officiel du primaire/maternelle.
  * Format paysage : 2 pages (recto + verso).
- *   Recto : JOURS | FRANÇAIS | Initiation à l'anglais | MATHÉMATIQUES | OBSERVATIONS
- *   Verso : EST | ÉDUCATION SOCIALE | EPS | ÉDUCATION ARTISTIQUE | PETIT PROJET
- * Pied de page : signature du Directeur
- * Une entrée par classe × semaine (tenue par le titulaire).
+ * Les matières sont récupérées DYNAMIQUEMENT depuis la base de données
+ * selon ce que l'école a configuré (table class_subjects / subjects).
  * Workflow: DRAFT → SUBMITTED → VALIDATED / REJECTED
  * ============================================================================
  */
@@ -37,24 +35,6 @@ const DAYS = [
   { id: 4, key: "jeudi", label: "JEUDI" },
   { id: 5, key: "vendredi", label: "VENDREDI" },
 ] as const;
-
-// Matières du recto (page 1)
-const RECTO_SUBJECTS = [
-  { key: "francais", label: "FRANÇAIS", subLabel: "Dictée - Grammaire - Exercices structuraux - Conjugaison - Communication orale - Orthographe - Lecture - Vocabulaire - Expression écrite - Graphisme / Écriture - Combinatoire" },
-  { key: "anglais", label: "Initiation à l'anglais", subLabel: "" },
-  { key: "mathematiques", label: "MATHÉMATIQUES", subLabel: "Arithmétique - Calcul mental - Mesures - Géométrie" },
-] as const;
-
-// Matières du verso (page 2)
-const VERSO_SUBJECTS = [
-  { key: "est", label: "ÉDUCATION SCIENTIFIQUE ET TECHNOLOGIQUE", subLabel: "Science d'observation - Économie familiale - Exercices sensoriels" },
-  { key: "es", label: "ÉDUCATION SOCIALE", subLabel: "Morale - Civisme - Histoire - Géographie" },
-  { key: "eps", label: "EPS", subLabel: "Endurance - Vitesse - Course - Lancer - Gymnastique - Saut - Grimpe" },
-  { key: "ea", label: "ÉDUCATION ARTISTIQUE", subLabel: "Chant - Poésie - Dessin - Coloriage - Atelier - Arts dramatiques" },
-  { key: "petit_projet", label: "PETIT PROJET", subLabel: "" },
-] as const;
-
-const ALL_SUBJECTS = [...RECTO_SUBJECTS, ...VERSO_SUBJECTS];
 
 const STATUS_CONFIG = {
   DRAFT: { label: "Brouillon", color: "bg-slate-100 text-slate-600", icon: Clock },
@@ -107,8 +87,10 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Matières dynamiques chargées depuis la base de données
+  const [dynamicSubjects, setDynamicSubjects] = useState<any[]>([]);
 
-  // === Chargement des classes ===
+  // === Chargement des classes + matières ===
   useEffect(() => {
     (async () => {
       try {
@@ -127,6 +109,27 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
       }
     })();
   }, [teacherId, academicYearId]);
+
+  // === Chargement des matières disponibles pour la classe sélectionnée ===
+  useEffect(() => {
+    if (!selectedClassId) return;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/pedagogy-space/subjects/available?academicYearId=${academicYearId}&classId=${selectedClassId}`,
+          { credentials: "include" }
+        );
+        const data = await res.json();
+        setDynamicSubjects(Array.isArray(data) ? data : []);
+      } catch {
+        setDynamicSubjects([]);
+      }
+    })();
+  }, [selectedClassId, academicYearId]);
+
+  // Répartir les matières en 2 pages (recto = première moitié, verso = seconde moitié)
+  const RECTO_SUBJECTS = dynamicSubjects.slice(0, Math.ceil(dynamicSubjects.length / 2));
+  const VERSO_SUBJECTS = dynamicSubjects.slice(Math.ceil(dynamicSubjects.length / 2));
 
   // === Chargement du cahier journal ===
   const loadJournal = useCallback(async () => {
@@ -316,6 +319,12 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
       {/* === En-tête du document === */}
       {!loading && journal && (
         <div className="bg-white border-2 border-slate-800 rounded-xl p-6 print:shadow-none">
+          {dynamicSubjects.length === 0 && (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+              <strong>Aucune matière configurée pour cette classe.</strong> L'administration de l'école
+              doit d'abord configurer les matières dans le module Matières (table class_subjects).
+            </div>
+          )}
           <div className="flex items-start justify-between mb-4">
             <div className="space-y-1">
               <h2 className="text-xl font-bold text-slate-900">CAHIER JOURNAL</h2>
@@ -346,13 +355,8 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
                     JOURS
                   </th>
                   {RECTO_SUBJECTS.map((s) => (
-                    <th key={s.key} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top" style={{ minWidth: "180px" }}>
-                      <div>{s.label}</div>
-                      {s.subLabel && (
-                        <div className="font-normal text-[10px] text-slate-500 mt-1 italic">
-                          {s.subLabel}
-                        </div>
-                      )}
+                    <th key={s.subjectName} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top" style={{ minWidth: "180px" }}>
+                      <div>{s.subjectName}</div>
                     </th>
                   ))}
                   <th className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top" style={{ minWidth: "160px" }}>
@@ -370,10 +374,10 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
                       </div>
                     </td>
                     {RECTO_SUBJECTS.map((s) => (
-                      <td key={s.key} className="border border-slate-300 p-0">
+                      <td key={s.subjectName} className="border border-slate-300 p-0">
                         <textarea
-                          value={getEntry(day.key, s.key)}
-                          onChange={(e) => updateEntry(day.key, s.key, e.target.value)}
+                          value={getEntry(day.key, s.subjectName)}
+                          onChange={(e) => updateEntry(day.key, s.subjectName, e.target.value)}
                           disabled={isReadOnly}
                           placeholder="—"
                           className="w-full h-24 px-2 py-1 text-xs text-slate-700 resize-none border-0 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:bg-blue-50/30 disabled:bg-slate-50"
@@ -405,13 +409,8 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
                     JOURS
                   </th>
                   {VERSO_SUBJECTS.map((s) => (
-                    <th key={s.key} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top" style={{ minWidth: "160px" }}>
-                      <div>{s.label}</div>
-                      {s.subLabel && (
-                        <div className="font-normal text-[10px] text-slate-500 mt-1 italic">
-                          {s.subLabel}
-                        </div>
-                      )}
+                    <th key={s.subjectName} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top" style={{ minWidth: "160px" }}>
+                      <div>{s.subjectName}</div>
                     </th>
                   ))}
                 </tr>
@@ -423,10 +422,10 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
                       {day.label}
                     </td>
                     {VERSO_SUBJECTS.map((s) => (
-                      <td key={s.key} className="border border-slate-300 p-0">
+                      <td key={s.subjectName} className="border border-slate-300 p-0">
                         <textarea
-                          value={getEntry(day.key, s.key)}
-                          onChange={(e) => updateEntry(day.key, s.key, e.target.value)}
+                          value={getEntry(day.key, s.subjectName)}
+                          onChange={(e) => updateEntry(day.key, s.subjectName, e.target.value)}
                           disabled={isReadOnly}
                           placeholder="—"
                           className="w-full h-24 px-2 py-1 text-xs text-slate-700 resize-none border-0 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:bg-blue-50/30 disabled:bg-slate-50"

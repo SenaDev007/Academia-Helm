@@ -365,7 +365,7 @@ class PedagogyService {
     return apiFetch(`/pedagogy/teacher/semainier/${semainierId}/submit`, { method: 'POST' });
   }
 
-  // --- Tests / Evaluations (Cahier de Test) ---
+  // --- Tests / Evaluations (Cahier de Texte) ---
   async getTests(classSubjectId: string): Promise<any> {
     if (!networkDetectionService.isConnected()) {
       return LocalSearchService.search("exams", { tenantId: getTenantId(), filters: { classSubjectId } });

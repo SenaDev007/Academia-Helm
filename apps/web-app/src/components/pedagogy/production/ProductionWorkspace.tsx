@@ -459,7 +459,7 @@ export default function ProductionWorkspace() {
             onClick={() => setActiveTab('tests')}
             className={cn("px-5 py-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all whitespace-nowrap", activeTab === 'tests' ? "border-blue-600 text-blue-600 bg-blue-50/30" : "border-transparent text-gray-400 hover:text-gray-600")}
           >
-            Cahier de Test
+            Cahier de Texte
           </button>
           <button
             onClick={() => setActiveTab('weekly')}
@@ -731,7 +731,7 @@ export default function ProductionWorkspace() {
            {activeTab === 'tests' && (
               <div className="max-w-4xl mx-auto space-y-6">
                  <div className="flex items-center justify-between mb-8">
-                    <h3 className="text-2xl font-black text-gray-900 tracking-tight">Cahier de Test & Devoirs</h3>
+                    <h3 className="text-2xl font-black text-gray-900 tracking-tight">Cahier de Texte & Devoirs</h3>
                     <p className="text-xs font-bold text-gray-400">Évaluations et contrôles</p>
                  </div>
 
@@ -1138,7 +1138,7 @@ export default function ProductionWorkspace() {
       <FormModal
         isOpen={modal === 'create-test'}
         onClose={() => setModal('none')}
-        title="Nouvelle Évaluation — Cahier de Test"
+        title="Nouvelle Évaluation — Cahier de Texte"
         onSave={handleCreateTest}
         fields={[
           {

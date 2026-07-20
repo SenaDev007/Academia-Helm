@@ -44,7 +44,7 @@ const TABS = [
   { id: "fiches", label: "Fiches Pédagogiques", icon: FileText },
   { id: "registres", label: "Registres d'Appel", icon: ClipboardList },
   { id: "evaluations", label: "Évaluations Mensuelles", icon: BookOpen },
-  { id: "cahier-tests", label: "Cahiers de Test", icon: Award },
+  { id: "cahier-textes", label: "Cahiers de Test", icon: Award },
 ] as const;
 
 type TabId = typeof TABS[number]["id"];
@@ -126,7 +126,7 @@ export function DirectorPedagogyControl({ tenantId, academicYearId, userId }: Di
         {tab === "evaluations" && (
           <PendingEvaluationsTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
         )}
-        {tab === "cahier-tests" && (
+        {tab === "cahier-textes" && (
           <PendingCahierTestsTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
         )}
       </div>
@@ -169,7 +169,7 @@ function DashboardTab({ tenantId, academicYearId, refreshKey, onNavigate }: {
     { label: "Fiches Pédagogiques", count: dashboard.pendingFiches, icon: FileText, color: "bg-emerald-50 text-emerald-700 border-emerald-200", tab: "fiches" as TabId },
     { label: "Registres d'Appel", count: dashboard.pendingAttendanceRegisters, icon: ClipboardList, color: "bg-amber-50 text-amber-700 border-amber-200", tab: "registres" as TabId },
     { label: "Évaluations Mensuelles", count: dashboard.pendingMonthlyEvaluations, icon: BookOpen, color: "bg-purple-50 text-purple-700 border-purple-200", tab: "evaluations" as TabId },
-    { label: "Cahiers de Test", count: dashboard.pendingCahierTests, icon: Award, color: "bg-rose-50 text-rose-700 border-rose-200", tab: "cahier-tests" as TabId },
+    { label: "Cahiers de Test", count: dashboard.pendingCahierTests, icon: Award, color: "bg-rose-50 text-rose-700 border-rose-200", tab: "cahier-textes" as TabId },
     { label: "Semainiers (anciens)", count: dashboard.pendingWeeklyLogs, icon: Clock, color: "bg-slate-50 text-slate-700 border-slate-200", tab: null },
     { label: "Rapports fin de semaine", count: dashboard.pendingWeeklySummaries, icon: Send, color: "bg-slate-50 text-slate-700 border-slate-200", tab: null },
   ];
@@ -1038,7 +1038,7 @@ function PendingCahierTestsTab({ tenantId, academicYearId, userId, refreshKey, o
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/pedagogy-space/director/pending-cahier-tests?academicYearId=${academicYearId}`, { credentials: "include" });
+      const res = await fetch(`/api/pedagogy-space/director/pending-cahier-textes?academicYearId=${academicYearId}`, { credentials: "include" });
       const data = await res.json();
       setItems(Array.isArray(data) ? data : []);
     } catch { setItems([]); }
@@ -1049,7 +1049,7 @@ function PendingCahierTestsTab({ tenantId, academicYearId, userId, refreshKey, o
 
   const handleValidate = async (action: "VALIDATED" | "REJECTED", reason?: string) => {
     if (!modalItem) return;
-    const res = await fetch(`/api/pedagogy-space/director/validate-cahier-test/${modalItem.id}`, {
+    const res = await fetch(`/api/pedagogy-space/director/validate-cahier-texte/${modalItem.id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -1063,7 +1063,7 @@ function PendingCahierTestsTab({ tenantId, academicYearId, userId, refreshKey, o
 
   const handleView = async (item: any) => {
     try {
-      const res = await fetch(`/api/pedagogy-space/director/cahier-test/${item.id}`, { credentials: "include" });
+      const res = await fetch(`/api/pedagogy-space/director/cahier-texte/${item.id}`, { credentials: "include" });
       const data = await res.json();
       setSelected(data);
     } catch { toast.error("Erreur"); }

@@ -2063,7 +2063,7 @@ export class PedagogicalSpaceService {
         tenantId, academicYearId,
       ),
       this.prisma.$queryRawUnsafe(
-        `SELECT COUNT(*)::int as count FROM "cahier_de_tests"
+        `SELECT COUNT(*)::int as count FROM "cahier_de_textes"
          WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'`,
         tenantId, academicYearId,
       ),
@@ -2357,7 +2357,7 @@ export class PedagogicalSpaceService {
   // ===========================================================================
 
   /// Liste les cahiers de test d'un enseignant.
-  async getCahierDeTests(
+  async getCahierDeTextes(
     tenantId: string,
     teacherId: string,
     academicYearId: string,
@@ -2366,7 +2366,7 @@ export class PedagogicalSpaceService {
     trimester?: number,
   ) {
     let query = `SELECT ct.*, c."name" as "classNameResolved", s."name" as "subjectName", s."code" as "subjectCode"
-                 FROM "cahier_de_tests" ct
+                 FROM "cahier_de_textes" ct
                  LEFT JOIN "classes" c ON c."id" = ct."classId"
                  LEFT JOIN "subjects" s ON s."id" = ct."subjectId"
                  WHERE ct."tenantId" = $1 AND ct."academicYearId" = $2 AND ct."teacherId" = $3`;
@@ -2389,10 +2389,10 @@ export class PedagogicalSpaceService {
   }
 
   /// Récupère un cahier de test par ID.
-  async getCahierDeTest(tenantId: string, testId: string) {
+  async getCahierDeTexte(tenantId: string, testId: string) {
     const result: any = await this.prisma.$queryRawUnsafe(
       `SELECT ct.*, c."name" as "classNameResolved", s."name" as "subjectName", s."code" as "subjectCode"
-       FROM "cahier_de_tests" ct
+       FROM "cahier_de_textes" ct
        LEFT JOIN "classes" c ON c."id" = ct."classId"
        LEFT JOIN "subjects" s ON s."id" = ct."subjectId"
        WHERE ct."id" = $1 AND ct."tenantId" = $2`,
@@ -2405,7 +2405,7 @@ export class PedagogicalSpaceService {
   }
 
   /// Crée un nouveau cahier de test.
-  async createCahierDeTest(
+  async createCahierDeTexte(
     tenantId: string,
     academicYearId: string,
     teacherId: string,
@@ -2466,21 +2466,21 @@ export class PedagogicalSpaceService {
     }
 
     await this.prisma.$executeRawUnsafe(
-      `INSERT INTO "cahier_de_tests" (${fields.join(', ')}) VALUES (${placeholders.join(', ')})`,
+      `INSERT INTO "cahier_de_textes" (${fields.join(', ')}) VALUES (${placeholders.join(', ')})`,
       ...params,
     );
 
-    return this.getCahierDeTest(tenantId, id);
+    return this.getCahierDeTexte(tenantId, id);
   }
 
   /// Met à jour un cahier de test.
-  async updateCahierDeTest(
+  async updateCahierDeTexte(
     tenantId: string,
     testId: string,
     data: any,
   ) {
     const existing: any = await this.prisma.$queryRawUnsafe(
-      `SELECT * FROM "cahier_de_tests" WHERE "id" = $1 AND "tenantId" = $2`,
+      `SELECT * FROM "cahier_de_textes" WHERE "id" = $1 AND "tenantId" = $2`,
       testId, tenantId,
     );
     if (!existing || existing.length === 0) {
@@ -2538,33 +2538,33 @@ export class PedagogicalSpaceService {
     params.push(testId, tenantId);
 
     await this.prisma.$executeRawUnsafe(
-      `UPDATE "cahier_de_tests" SET ${updates.join(', ')} WHERE "id" = $${paramIdx++} AND "tenantId" = $${paramIdx++}`,
+      `UPDATE "cahier_de_textes" SET ${updates.join(', ')} WHERE "id" = $${paramIdx++} AND "tenantId" = $${paramIdx++}`,
       ...params,
     );
 
-    return this.getCahierDeTest(tenantId, testId);
+    return this.getCahierDeTexte(tenantId, testId);
   }
 
   /// Supprime un cahier de test.
-  async deleteCahierDeTest(tenantId: string, testId: string) {
+  async deleteCahierDeTexte(tenantId: string, testId: string) {
     const existing: any = await this.prisma.$queryRawUnsafe(
-      `SELECT * FROM "cahier_de_tests" WHERE "id" = $1 AND "tenantId" = $2`,
+      `SELECT * FROM "cahier_de_textes" WHERE "id" = $1 AND "tenantId" = $2`,
       testId, tenantId,
     );
     if (!existing || existing.length === 0) {
       throw new NotFoundException('Cahier de test non trouvé');
     }
     await this.prisma.$executeRawUnsafe(
-      `DELETE FROM "cahier_de_tests" WHERE "id" = $1`,
+      `DELETE FROM "cahier_de_textes" WHERE "id" = $1`,
       testId,
     );
     return { success: true };
   }
 
   /// Soumet un cahier de test au directeur.
-  async submitCahierDeTest(tenantId: string, testId: string) {
+  async submitCahierDeTexte(tenantId: string, testId: string) {
     const existing: any = await this.prisma.$queryRawUnsafe(
-      `SELECT * FROM "cahier_de_tests" WHERE "id" = $1 AND "tenantId" = $2`,
+      `SELECT * FROM "cahier_de_textes" WHERE "id" = $1 AND "tenantId" = $2`,
       testId, tenantId,
     );
     if (!existing || existing.length === 0) {
@@ -2574,19 +2574,19 @@ export class PedagogicalSpaceService {
       throw new BadRequestException('Cahier de test déjà soumis');
     }
     await this.prisma.$executeRawUnsafe(
-      `UPDATE "cahier_de_tests"
+      `UPDATE "cahier_de_textes"
        SET "status" = 'SUBMITTED', "submittedAt" = NOW(), "updatedAt" = NOW()
        WHERE "id" = $1`,
       testId,
     );
-    return this.getCahierDeTest(tenantId, testId);
+    return this.getCahierDeTexte(tenantId, testId);
   }
 
   /// Initialise les scores des élèves d'un cahier de test à partir des
   /// élèves inscrits dans la classe (sans écraser les scores existants).
-  async initCahierDeTestStudents(tenantId: string, testId: string) {
+  async initCahierDeTexteStudents(tenantId: string, testId: string) {
     const test: any = await this.prisma.$queryRawUnsafe(
-      `SELECT * FROM "cahier_de_tests" WHERE "id" = $1 AND "tenantId" = $2`,
+      `SELECT * FROM "cahier_de_textes" WHERE "id" = $1 AND "tenantId" = $2`,
       testId, tenantId,
     );
     if (!test || test.length === 0) {
@@ -2627,15 +2627,15 @@ export class PedagogicalSpaceService {
     });
 
     await this.prisma.$executeRawUnsafe(
-      `UPDATE "cahier_de_tests" SET "studentScores" = $1::jsonb, "updatedAt" = NOW() WHERE "id" = $2`,
+      `UPDATE "cahier_de_textes" SET "studentScores" = $1::jsonb, "updatedAt" = NOW() WHERE "id" = $2`,
       JSON.stringify(newScores), testId,
     );
 
-    return this.getCahierDeTest(tenantId, testId);
+    return this.getCahierDeTexte(tenantId, testId);
   }
 
   /// Calcule les statistiques d'un cahier de test à partir des scores.
-  computeCahierDeTestStats(studentScores: any[], maxScore: number, passingScore: number) {
+  computeCahierDeTexteStats(studentScores: any[], maxScore: number, passingScore: number) {
     let total = 0, present = 0, absent = 0;
     let sumScores = 0;
     let highest = -Infinity, lowest = Infinity;
@@ -2697,11 +2697,11 @@ export class PedagogicalSpaceService {
   // === Validation direction pour les cahiers de test ===
 
   /// Récupère tous les cahiers de test soumis (en attente de validation).
-  async getPendingCahierDeTests(tenantId: string, academicYearId: string) {
+  async getPendingCahierDeTextes(tenantId: string, academicYearId: string) {
     return this.prisma.$queryRawUnsafe(
       `SELECT ct.*, c."name" as "classNameResolved", s."name" as "subjectName",
               t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
-       FROM "cahier_de_tests" ct
+       FROM "cahier_de_textes" ct
        LEFT JOIN "classes" c ON c."id" = ct."classId"
        LEFT JOIN "subjects" s ON s."id" = ct."subjectId"
        LEFT JOIN "teachers" t ON t."id" = ct."teacherId"
@@ -2712,7 +2712,7 @@ export class PedagogicalSpaceService {
   }
 
   /// Valide ou rejette un cahier de test.
-  async validateCahierDeTest(
+  async validateCahierDeTexte(
     tenantId: string,
     testId: string,
     action: 'VALIDATED' | 'REJECTED',
@@ -2720,7 +2720,7 @@ export class PedagogicalSpaceService {
     rejectionReason?: string,
   ) {
     const existing: any = await this.prisma.$queryRawUnsafe(
-      `SELECT * FROM "cahier_de_tests" WHERE "id" = $1 AND "tenantId" = $2`,
+      `SELECT * FROM "cahier_de_textes" WHERE "id" = $1 AND "tenantId" = $2`,
       testId, tenantId,
     );
     if (!existing || existing.length === 0) {
@@ -2731,7 +2731,7 @@ export class PedagogicalSpaceService {
     }
 
     await this.prisma.$executeRawUnsafe(
-      `UPDATE "cahier_de_tests"
+      `UPDATE "cahier_de_textes"
        SET "status" = $1, "validatedAt" = NOW(), "validatedBy" = $2,
            "rejectionReason" = $3, "updatedAt" = NOW()
        WHERE "id" = $4`,
@@ -2740,21 +2740,21 @@ export class PedagogicalSpaceService {
 
     if (action === 'VALIDATED') {
       await this.prisma.$executeRawUnsafe(
-        `UPDATE "cahier_de_tests" SET "directorSignature" = 'Validé par la direction' WHERE "id" = $1`,
+        `UPDATE "cahier_de_textes" SET "directorSignature" = 'Validé par la direction' WHERE "id" = $1`,
         testId,
       );
     }
 
     this.logger.log(`✅ Cahier de test ${testId} ${action} par ${validatedBy}`);
-    return this.getCahierDeTest(tenantId, testId);
+    return this.getCahierDeTexte(tenantId, testId);
   }
 
   /// Récupère le détail d'un cahier de test (vue direction).
-  async getCahierDeTestDetail(tenantId: string, testId: string) {
+  async getCahierDeTexteDetail(tenantId: string, testId: string) {
     const result: any = await this.prisma.$queryRawUnsafe(
       `SELECT ct.*, c."name" as "classNameResolved", s."name" as "subjectName",
               t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
-       FROM "cahier_de_tests" ct
+       FROM "cahier_de_textes" ct
        LEFT JOIN "classes" c ON c."id" = ct."classId"
        LEFT JOIN "subjects" s ON s."id" = ct."subjectId"
        LEFT JOIN "teachers" t ON t."id" = ct."teacherId"

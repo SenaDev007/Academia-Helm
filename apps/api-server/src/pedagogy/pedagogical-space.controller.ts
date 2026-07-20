@@ -758,8 +758,8 @@ export class PedagogicalSpaceController {
   // CAHIER DE TEST (SECONDAIRE) — Évaluations et compositions
   // ===========================================================================
 
-  @Get('cahier-tests')
-  async getCahierDeTests(
+  @Get('cahier-textes')
+  async getCahierDeTextes(
     @TenantId() tenantId: string,
     @Query('teacherId') teacherId: string,
     @Query('academicYearId') academicYearId: string,
@@ -770,87 +770,87 @@ export class PedagogicalSpaceController {
     if (!teacherId || !academicYearId) {
       throw new BadRequestException('teacherId et academicYearId sont requis');
     }
-    return this.service.getCahierDeTests(
+    return this.service.getCahierDeTextes(
       tenantId, teacherId, academicYearId,
       classId, testType, trimester ? parseInt(trimester) : undefined,
     );
   }
 
-  @Get('cahier-tests/:id')
-  async getCahierDeTest(
+  @Get('cahier-textes/:id')
+  async getCahierDeTexte(
     @TenantId() tenantId: string,
     @Param('id') id: string,
   ) {
-    return this.service.getCahierDeTest(tenantId, id);
+    return this.service.getCahierDeTexte(tenantId, id);
   }
 
-  @Post('cahier-tests')
-  async createCahierDeTest(
+  @Post('cahier-textes')
+  async createCahierDeTexte(
     @TenantId() tenantId: string,
     @Body() body: any,
   ) {
-    return this.service.createCahierDeTest(
+    return this.service.createCahierDeTexte(
       tenantId, body.academicYearId, body.teacherId, body,
     );
   }
 
-  @Put('cahier-tests/:id')
-  async updateCahierDeTest(
+  @Put('cahier-textes/:id')
+  async updateCahierDeTexte(
     @TenantId() tenantId: string,
     @Param('id') id: string,
     @Body() body: any,
   ) {
-    return this.service.updateCahierDeTest(tenantId, id, body);
+    return this.service.updateCahierDeTexte(tenantId, id, body);
   }
 
-  @Delete('cahier-tests/:id')
-  async deleteCahierDeTest(
+  @Delete('cahier-textes/:id')
+  async deleteCahierDeTexte(
     @TenantId() tenantId: string,
     @Param('id') id: string,
   ) {
-    return this.service.deleteCahierDeTest(tenantId, id);
+    return this.service.deleteCahierDeTexte(tenantId, id);
   }
 
-  @Post('cahier-tests/:id/submit')
+  @Post('cahier-textes/:id/submit')
   @HttpCode(HttpStatus.OK)
-  async submitCahierDeTest(
+  async submitCahierDeTexte(
     @TenantId() tenantId: string,
     @Param('id') id: string,
   ) {
-    return this.service.submitCahierDeTest(tenantId, id);
+    return this.service.submitCahierDeTexte(tenantId, id);
   }
 
-  @Post('cahier-tests/:id/init-students')
+  @Post('cahier-textes/:id/init-students')
   @HttpCode(HttpStatus.OK)
-  async initCahierDeTestStudents(
+  async initCahierDeTexteStudents(
     @TenantId() tenantId: string,
     @Param('id') id: string,
   ) {
-    return this.service.initCahierDeTestStudents(tenantId, id);
+    return this.service.initCahierDeTexteStudents(tenantId, id);
   }
 
   // === Validation direction pour les cahiers de test ===
 
-  @Get('director/pending-cahier-tests')
-  async getPendingCahierDeTests(
+  @Get('director/pending-cahier-textes')
+  async getPendingCahierDeTextes(
     @TenantId() tenantId: string,
     @Query('academicYearId') academicYearId: string,
   ) {
     if (!academicYearId) throw new BadRequestException('academicYearId est requis');
-    return this.service.getPendingCahierDeTests(tenantId, academicYearId);
+    return this.service.getPendingCahierDeTextes(tenantId, academicYearId);
   }
 
-  @Get('director/cahier-test/:id')
-  async getCahierDeTestDetail(
+  @Get('director/cahier-texte/:id')
+  async getCahierDeTexteDetail(
     @TenantId() tenantId: string,
     @Param('id') id: string,
   ) {
-    return this.service.getCahierDeTestDetail(tenantId, id);
+    return this.service.getCahierDeTexteDetail(tenantId, id);
   }
 
-  @Post('director/validate-cahier-test/:id')
+  @Post('director/validate-cahier-texte/:id')
   @HttpCode(HttpStatus.OK)
-  async validateCahierDeTest(
+  async validateCahierDeTexte(
     @TenantId() tenantId: string,
     @Param('id') id: string,
     @Body() body: {
@@ -859,7 +859,7 @@ export class PedagogicalSpaceController {
       rejectionReason?: string;
     },
   ) {
-    return this.service.validateCahierDeTest(
+    return this.service.validateCahierDeTexte(
       tenantId, id, body.action, body.validatedBy, body.rejectionReason,
     );
   }

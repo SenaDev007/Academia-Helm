@@ -169,7 +169,7 @@ export default function ControlWorkspace() {
           onClick={() => setActiveTab('cahier')}
           className={cn("px-6 py-4 text-sm font-black tracking-wide border-b-2 transition-all", activeTab === 'cahier' ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-400 hover:text-gray-600")}
         >
-          Cahier de Semaine
+          Validation Pédagogique
         </button>
       </div>
 

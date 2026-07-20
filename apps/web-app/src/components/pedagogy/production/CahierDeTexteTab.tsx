@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-interface CahierDeTestTabProps {
+interface CahierDeTexteTabProps {
   tenantId: string;
   academicYearId: string;
   teacherId: string;
@@ -57,7 +57,7 @@ function formatDateFR(dateStr: string): string {
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
-export function CahierDeTestTab({ tenantId, academicYearId, teacherId }: CahierDeTestTabProps) {
+export function CahierDeTexteTab({ tenantId, academicYearId, teacherId }: CahierDeTexteTabProps) {
   const [classes, setClasses] = useState<any[]>([]);
   const [tests, setTests] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -103,7 +103,7 @@ export function CahierDeTestTab({ tenantId, academicYearId, teacherId }: CahierD
       const params = new URLSearchParams({ teacherId, academicYearId });
       if (filterType) params.append("testType", filterType);
       if (filterTrimester) params.append("trimester", filterTrimester);
-      const res = await fetch(`/api/pedagogy-space/cahier-tests?${params.toString()}`, { credentials: "include" });
+      const res = await fetch(`/api/pedagogy-space/cahier-textes?${params.toString()}`, { credentials: "include" });
       const data = await res.json();
       setTests(Array.isArray(data) ? data : []);
     } catch { setTests([]); }
@@ -125,8 +125,8 @@ export function CahierDeTestTab({ tenantId, academicYearId, teacherId }: CahierD
     setSaving(true);
     try {
       const url = editingTest
-        ? `/api/pedagogy-space/cahier-tests/${editingTest.id}`
-        : "/api/pedagogy-space/cahier-tests";
+        ? `/api/pedagogy-space/cahier-textes/${editingTest.id}`
+        : "/api/pedagogy-space/cahier-textes";
       const method = editingTest ? "PUT" : "POST";
       const body = editingTest
         ? { ...form }
@@ -164,7 +164,7 @@ export function CahierDeTestTab({ tenantId, academicYearId, teacherId }: CahierD
   const handleDelete = async (test: any) => {
     if (!confirm(`Supprimer le cahier de test "${test.testTitle}" ?`)) return;
     try {
-      const res = await fetch(`/api/pedagogy-space/cahier-tests/${test.id}`, {
+      const res = await fetch(`/api/pedagogy-space/cahier-textes/${test.id}`, {
         method: "DELETE", credentials: "include",
       });
       if (!res.ok) throw new Error("Erreur");
@@ -178,7 +178,7 @@ export function CahierDeTestTab({ tenantId, academicYearId, teacherId }: CahierD
   const handleSubmit = async (test: any) => {
     if (!confirm("Soumettre ce cahier de test au directeur ?")) return;
     try {
-      const res = await fetch(`/api/pedagogy-space/cahier-tests/${test.id}/submit`, {
+      const res = await fetch(`/api/pedagogy-space/cahier-textes/${test.id}/submit`, {
         method: "POST", credentials: "include",
       });
       if (!res.ok) throw new Error("Erreur");
@@ -191,7 +191,7 @@ export function CahierDeTestTab({ tenantId, academicYearId, teacherId }: CahierD
 
   const handleView = async (test: any) => {
     try {
-      const res = await fetch(`/api/pedagogy-space/cahier-tests/${test.id}`, { credentials: "include" });
+      const res = await fetch(`/api/pedagogy-space/cahier-textes/${test.id}`, { credentials: "include" });
       const data = await res.json();
       setViewingTest(data);
     } catch (e: any) {
@@ -503,7 +503,7 @@ function TestScoreEditor({ test, onClose }: { test: any; onClose: () => void }) 
   const loadTest = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/pedagogy-space/cahier-tests/${test.id}`, { credentials: "include" });
+      const res = await fetch(`/api/pedagogy-space/cahier-textes/${test.id}`, { credentials: "include" });
       const data = await res.json();
       const sc = typeof data.studentScores === "string"
         ? JSON.parse(data.studentScores || "[]")
@@ -576,7 +576,7 @@ function TestScoreEditor({ test, onClose }: { test: any; onClose: () => void }) 
   const handleInitStudents = async () => {
     if (!confirm("Charger la liste des élèves de cette classe ?")) return;
     try {
-      const res = await fetch(`/api/pedagogy-space/cahier-tests/${test.id}/init-students`, {
+      const res = await fetch(`/api/pedagogy-space/cahier-textes/${test.id}/init-students`, {
         method: "POST", credentials: "include",
       });
       if (!res.ok) throw new Error("Erreur");
@@ -591,7 +591,7 @@ function TestScoreEditor({ test, onClose }: { test: any; onClose: () => void }) 
     setSaving(true);
     try {
       const sc = computeStats(scores, test.maxScore || 20, test.passingScore || 10);
-      const res = await fetch(`/api/pedagogy-space/cahier-tests/${test.id}`, {
+      const res = await fetch(`/api/pedagogy-space/cahier-textes/${test.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

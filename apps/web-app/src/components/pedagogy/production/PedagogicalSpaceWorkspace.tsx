@@ -38,7 +38,7 @@ import { CahierJournalTab } from "./CahierJournalTab";
 import { CahierSemaineTab } from "./CahierSemaineTab";
 import { PedagogicalSheetsTab } from "./PedagogicalSheetsTab";
 import { AttendanceRegisterTab } from "./AttendanceRegisterTab";
-import { CahierDeTestTab } from "./CahierDeTestTab";
+import { CahierDeTexteTab } from "./CahierDeTexteTab";
 import { HomeworkTab } from "./HomeworkTab";
 
 const TABS = [
@@ -49,7 +49,7 @@ const TABS = [
   { id: 'weekly', label: 'Cahier de Semaine', icon: CalendarDays, description: 'Monitoring institutionnel' },
   { id: 'fiches', label: 'Fiches Pédagogiques', icon: FileText, description: '5 types (MATH/FR/EST/ES/EA)' },
   { id: 'registre', label: 'Registre d\'Appel', icon: ClipboardList, description: 'Registre mensuel + évaluations' },
-  { id: 'cahier-test', label: 'Cahier de Test', icon: ClipboardCheck, description: 'Évaluations (secondaire)' },
+  { id: 'cahier-texte', label: 'Cahier de Texte', icon: ClipboardCheck, description: 'Évaluations (secondaire)' },
   { id: 'homework', label: 'Devoirs', icon: BookOpen, description: 'Exercices & suivi' },
 ] as const;
 
@@ -163,8 +163,8 @@ export function PedagogicalSpaceWorkspace() {
               teacherId={teacherId}
             />
           )}
-          {tab === 'cahier-test' && (
-            <CahierDeTestTab
+          {tab === 'cahier-texte' && (
+            <CahierDeTexteTab
               tenantId={tenant?.id || ''}
               academicYearId={academicYear.id}
               teacherId={teacherId}

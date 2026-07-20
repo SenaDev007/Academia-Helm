@@ -118,16 +118,16 @@ export class AuthService {
     // Vérifier si l'utilisateur est PLATFORM_OWNER
     const isOwner = this.isPlatformOwner(user);
 
-    // Si PLATFORM_OWNER → pas de tenant requis
+    // Si PLATFORM_OWNER → accès universel à TOUS les portails
     if (isOwner) {
-      if (loginDto.portal_type && loginDto.portal_type !== 'PLATFORM') {
-        throw new ForbiddenException('PLATFORM_OWNER must use PLATFORM portal type');
-      }
       // Update last login
       await this.usersService.updateLastLogin(user.id);
       
-      // Generate tokens SANS tenantId pour PLATFORM_OWNER
-      const tokens = this.generateTokens(user);
+      // Si un tenant_id est fourni, on l'utilise (pour accéder à une école spécifique)
+      const targetTenantId = loginDto.tenant_id || user.tenantId;
+      
+      // Generate tokens
+      const tokens = this.generateTokens(user, targetTenantId);
       const sessionRecord = await this.persistWebSession(user.id, tokens.refreshToken, meta);
 
       return {
@@ -138,7 +138,9 @@ export class AuthService {
           lastName: user.lastName,
           role: this.jwtRole(user),
           isPlatformOwner: true,
+          tenantId: targetTenantId,
         },
+        tenant: targetTenantId ? await this.loadTenantInfo(targetTenantId) : undefined,
         ...tokens,
         ...(sessionRecord ? { serverSessionId: sessionRecord.id } : {}),
       };
@@ -472,6 +474,22 @@ export class AuthService {
   private jwtRole(user: any): string {
     if (this.isPlatformOwner(user)) return 'PLATFORM_OWNER';
     return user?.role ?? 'USER';
+  }
+
+  /**
+   * Charge les infos d'un tenant pour la réponse de login.
+   * Utilisé par PLATFORM_OWNER quand il se connecte à une école spécifique.
+   */
+  private async loadTenantInfo(tenantId: string) {
+    try {
+      const tenant = await this.prisma.tenant.findFirst({
+        where: { id: tenantId },
+        select: { id: true, name: true, slug: true, subdomain: true },
+      });
+      return tenant || undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /**

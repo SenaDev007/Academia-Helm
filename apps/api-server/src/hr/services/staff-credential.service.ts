@@ -325,6 +325,22 @@ export class StaffCredentialService {
         ? (staff.tenantMatricule || staff.globalMatricule || staff.employeeNumber || normalizedEmail)
         : normalizedEmail;
 
+      // 4b. Vérifier si ce personnel a AUSSI un profil enseignant
+      // (même s'il est ADMIN/COMPTABLE/DIRECTOR, il peut être habilité à enseigner)
+      const teacherProfile = !isTeacher
+        ? await this.prisma.teacher.findFirst({
+            where: {
+              tenantId,
+              email: normalizedEmail,
+              status: 'active',
+            },
+          })
+        : null;
+      const hasTeacherProfile = !isTeacher && !!teacherProfile;
+      const teacherMatricule = isTeacher
+        ? (staff.tenantMatricule || staff.globalMatricule || staff.employeeNumber || '')
+        : (teacherProfile?.matricule || '');
+
       // 5. Générer un mot de passe temporaire sécurisé et le hasher
       const tempPassword = this.generateSecurePassword();
       const hashedPassword = await bcrypt.hash(tempPassword, 10);
@@ -422,23 +438,35 @@ export class StaffCredentialService {
           isRegeneration: action === 'updated',
           tenantId,
           staffId,
+          // ⭐ Si le personnel a aussi un profil enseignant, on inclut les
+          // identifiants du portail enseignant dans le même email.
+          hasTeacherProfile,
+          teacherMatricule,
+          teacherPortalUrl: hasTeacherProfile ? loginUrl.replace('/login', '/login?portal=teacher') : '',
         });
         emailSent = true;
-        this.logger.log(`📧 Credential ${action === 'updated' ? 'reset' : 'creation'} email sent to ${normalizedEmail}`);
+        this.logger.log(`📧 Credential ${action === 'updated' ? 'reset' : 'creation'} email sent to ${normalizedEmail}${hasTeacherProfile ? ' (includes teacher portal credentials)' : ''}`);
       } catch (emailErr: any) {
         this.logger.error(`Failed to send credential email to ${normalizedEmail}: ${emailErr?.message}`);
         // Non-blocking — les credentials sont créés/mis à jour même si l'email échoue
       }
 
+      const messageParts = [`Identifiants ${action === 'updated' ? 'régénérés' : 'générés'} et envoyés par email à ${normalizedEmail}`];
+      if (hasTeacherProfile) {
+        messageParts.push(`+ identifiants portail enseignant (matricule: ${teacherMatricule})`);
+      }
+
       return {
         success: true,
         message: emailSent
-          ? `Identifiants ${action === 'updated' ? 'régénérés' : 'générés'} et envoyés par email à ${normalizedEmail}`
+          ? messageParts.join(' ')
           : `Identifiants ${action === 'updated' ? 'régénérés' : 'générés'} (l'envoi email a échoué — vérifiez la configuration SMTP)`,
         userId,
         username,
         email: normalizedEmail,
         emailSent,
+        hasTeacherProfile,
+        teacherMatricule: hasTeacherProfile ? teacherMatricule : undefined,
       };
     } catch (error: any) {
       this.logger.error(`Error generating credentials for staff ${staffId}: ${error?.message}`);
@@ -493,6 +521,9 @@ export class StaffCredentialService {
     isRegeneration?: boolean;
     tenantId?: string;
     staffId?: string;
+    hasTeacherProfile?: boolean;
+    teacherMatricule?: string;
+    teacherPortalUrl?: string;
   }): Promise<void> {
     const {
       to,
@@ -509,6 +540,9 @@ export class StaffCredentialService {
       isRegeneration = false,
       tenantId,
       staffId,
+      hasTeacherProfile = false,
+      teacherMatricule = '',
+      teacherPortalUrl = '',
     } = params;
 
     const roleLabel = ROLE_LABELS[userRole] || userRole;
@@ -551,7 +585,23 @@ Portail : ${portalLabel}
 ${schoolLevel ? `Niveau scolaire : ${schoolLevel}` : ''}
 
 Connectez-vous : ${loginUrl}
+${hasTeacherProfile ? `
 
+═══════════════════════════════════════════
+PORTAIL ENSEIGNANT — Vos identifiants supplémentaires
+═══════════════════════════════════════════
+
+Vous êtes également habilité(e) à enseigner. Voici vos identifiants pour le portail enseignant :
+
+Matricule enseignant : ${teacherMatricule}
+Mot de passe : ${password} (identique à votre compte école)
+
+Connectez-vous au portail enseignant : ${teacherPortalUrl}
+
+IMPORTANT : Vous avez deux comptes avec le même mot de passe.
+- Portail École : connectez-vous avec votre adresse email (${username})
+- Portail Enseignant : connectez-vous avec votre matricule (${teacherMatricule})
+` : ''}
 IMPORTANT : Ce mot de passe est temporaire. Veuillez le modifier dès votre première connexion. Ne partagez jamais vos identifiants.
 
 — ${schoolName} — Academia Helm

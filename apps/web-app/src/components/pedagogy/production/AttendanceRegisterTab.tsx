@@ -1245,7 +1245,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                   <Loader2 className="h-5 w-5 animate-spin text-slate-400 mr-2" />
                   <span className="text-sm text-slate-500">Chargement des matières...</span>
                 </div>
-              ) : availableSubjects.length > 0 && (
+              ) : availableSubjects.length > 0 ? (
                 <div>
                   <h4 className="text-sm font-bold text-slate-700 uppercase mb-2">
                     Matières disponibles pour cette classe ({availableSubjects.length})
@@ -1274,6 +1274,23 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                         </button>
                       );
                     })}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm text-amber-700">
+                      <p className="font-semibold mb-1">Aucune matière configurée pour cette classe.</p>
+                      <p className="text-xs">
+                        L'administration de l'école doit d'abord configurer les matières dans le module
+                        <strong> Matières </strong> (table class_subjects). Une fois les matières assignées à cette classe,
+                        elles apparaîtront ici automatiquement.
+                      </p>
+                      <p className="text-xs mt-2">
+                        En attendant, vous pouvez ajouter manuellement des matières personnalisées dans la section ci-dessus.
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}

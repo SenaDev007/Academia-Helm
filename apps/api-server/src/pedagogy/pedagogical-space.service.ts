@@ -2173,13 +2173,17 @@ export class PedagogicalSpaceService {
     return updated[0];
   }
 
-  /// Récupère la liste des matières disponibles pour une classe (depuis ClassSubject).
+  /// Récupère la liste des matières disponibles pour une classe (depuis la
+  /// configuration de l'école). Ne JAMAIS coder en dur de matières : si aucune
+  /// matière n'est configurée pour cette classe, on retourne un tableau vide.
+  /// L'admin de l'école doit configurer ses matières dans le module
+  /// "Matières" (table class_subjects / subjects).
   async getAvailableSubjectsForClass(
     tenantId: string,
     academicYearId: string,
     classId: string,
   ) {
-    // Récupérer les matières assignées à cette classe via ClassSubject / TeacherClassAssignment
+    // 1) Source principale : les matières assignées à cette classe via ClassSubject
     const subjects: any = await this.prisma.$queryRawUnsafe(
       `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
               cs."coefficient", cs."weeklyHours"
@@ -2190,21 +2194,45 @@ export class PedagogicalSpaceService {
       tenantId, academicYearId, classId,
     );
 
-    // Si pas de matières trouvées via class_subjects, retourner les matières génériques du primaire
-    if (!subjects || subjects.length === 0) {
-      return [
-        { subjectId: null, subjectName: 'Communication orale', subjectCode: 'CO', coefficient: 1, weeklyHours: null },
-        { subjectId: null, subjectName: 'Production d\'écrits', subjectCode: 'PE', coefficient: 1, weeklyHours: null },
-        { subjectId: null, subjectName: 'Lecture / Compréhension écrite', subjectCode: 'LCE', coefficient: 1, weeklyHours: null },
-        { subjectId: null, subjectName: 'Mathématiques', subjectCode: 'MATH', coefficient: 1, weeklyHours: null },
-        { subjectId: null, subjectName: 'Éducation Scientifique et Technologique', subjectCode: 'EST', coefficient: 1, weeklyHours: null },
-        { subjectId: null, subjectName: 'Éducation Sociale', subjectCode: 'ES', coefficient: 1, weeklyHours: null },
-        { subjectId: null, subjectName: 'Éducation Artistique', subjectCode: 'EA', coefficient: 1, weeklyHours: null },
-        { subjectId: null, subjectName: 'Éducation Physique et Sportive', subjectCode: 'EPS', coefficient: 1, weeklyHours: null },
-      ];
+    if (subjects && subjects.length > 0) {
+      return subjects;
     }
 
-    return subjects;
+    // 2) Source secondaire : les matières des TeacherClassAssignment de cette classe
+    // (un enseignant a été affecté à la classe avec une matière via ClassSubject)
+    const fallbackSubjects: any = await this.prisma.$queryRawUnsafe(
+      `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
+              tca."classSubjectId"
+       FROM "subjects" s
+       INNER JOIN "teacher_class_assignments" tca ON tca."classSubjectId" IS NOT NULL
+       INNER JOIN "class_subjects" cs ON cs."id" = tca."classSubjectId" AND cs."subjectId" = s."id"
+       WHERE tca."tenantId" = $1 AND tca."academicYearId" = $2 AND tca."classId" = $3
+       ORDER BY s."name"`,
+      tenantId, academicYearId, classId,
+    );
+
+    if (fallbackSubjects && fallbackSubjects.length > 0) {
+      return fallbackSubjects.map((row: any) => ({
+        subjectId: row.subjectId,
+        subjectName: row.subjectName,
+        subjectCode: row.subjectCode,
+        coefficient: 1,
+        weeklyHours: null,
+      }));
+    }
+
+    // 3) Source tertiaire : toutes les matières du tenant (au niveau école)
+    // → permet à l'enseignant de choisir parmi toutes les matières déclarées
+    // par l'établissement, même si elles ne sont pas encore assignées à cette classe
+    const tenantSubjects: any = await this.prisma.$queryRawUnsafe(
+      `SELECT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode"
+       FROM "subjects" s
+       WHERE s."tenantId" = $1
+       ORDER BY s."name"`,
+      tenantId,
+    );
+
+    return tenantSubjects || [];
   }
 
   /// Récupère le détail d'une évaluation avec ses matières et scores (vue direction).

@@ -351,4 +351,214 @@ export class PedagogicalSpaceController {
       tenantId, id, body.action, body.validatedBy, body.rejectionReason,
     );
   }
+
+  // ===========================================================================
+  // CAHIER JOURNAL — Grille hebdomadaire (5 jours × 8 matières)
+  // ===========================================================================
+
+  @Get('cahier-journal')
+  async getCahierJournals(
+    @TenantId() tenantId: string,
+    @Query('teacherId') teacherId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('classId') classId?: string,
+  ) {
+    if (!teacherId || !academicYearId) {
+      throw new BadRequestException('teacherId et academicYearId sont requis');
+    }
+    return this.service.getCahierJournals(tenantId, teacherId, academicYearId, classId);
+  }
+
+  @Post('cahier-journal')
+  @HttpCode(HttpStatus.OK)
+  async getOrCreateCahierJournal(
+    @TenantId() tenantId: string,
+    @Body() body: {
+      academicYearId: string;
+      teacherId: string;
+      classId: string;
+      weekStartDate: string;
+      className?: string;
+    },
+  ) {
+    return this.service.getOrCreateCahierJournal(
+      tenantId, body.academicYearId, body.teacherId, body.classId,
+      body.weekStartDate, body.className,
+    );
+  }
+
+  @Put('cahier-journal/:id')
+  async updateCahierJournal(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    return this.service.updateCahierJournal(tenantId, id, body);
+  }
+
+  @Post('cahier-journal/:id/submit')
+  @HttpCode(HttpStatus.OK)
+  async submitCahierJournal(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.submitCahierJournal(tenantId, id);
+  }
+
+  // ===========================================================================
+  // FICHES PÉDAGOGIQUES PRIMAIRE (5 types: MATH/FRANCAIS/EST/ES/EA)
+  // ===========================================================================
+
+  @Get('fiches')
+  async getPedagogicalFiches(
+    @TenantId() tenantId: string,
+    @Query('teacherId') teacherId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('sheetType') sheetType?: string,
+    @Query('classId') classId?: string,
+  ) {
+    if (!teacherId || !academicYearId) {
+      throw new BadRequestException('teacherId et academicYearId sont requis');
+    }
+    return this.service.getPedagogicalFiches(tenantId, teacherId, academicYearId, sheetType, classId);
+  }
+
+  @Get('fiches/:id')
+  async getPedagogicalFiche(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.getPedagogicalFiche(tenantId, id);
+  }
+
+  @Post('fiches')
+  async createPedagogicalFiche(
+    @TenantId() tenantId: string,
+    @Body() body: any,
+  ) {
+    return this.service.createPedagogicalFiche(
+      tenantId, body.academicYearId, body.teacherId, body,
+    );
+  }
+
+  @Put('fiches/:id')
+  async updatePedagogicalFiche(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    return this.service.updatePedagogicalFiche(tenantId, id, body);
+  }
+
+  @Delete('fiches/:id')
+  async deletePedagogicalFiche(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.deletePedagogicalFiche(tenantId, id);
+  }
+
+  @Post('fiches/:id/submit')
+  @HttpCode(HttpStatus.OK)
+  async submitPedagogicalFiche(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.submitPedagogicalFiche(tenantId, id);
+  }
+
+  // ===========================================================================
+  // REGISTRE D'APPEL — Registre mensuel + Évaluation + Tableau annuel
+  // ===========================================================================
+
+  @Get('attendance-registers')
+  async getAttendanceRegisters(
+    @TenantId() tenantId: string,
+    @Query('teacherId') teacherId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('classId') classId?: string,
+  ) {
+    if (!teacherId || !academicYearId) {
+      throw new BadRequestException('teacherId et academicYearId sont requis');
+    }
+    return this.service.getAttendanceRegisters(tenantId, teacherId, academicYearId, classId);
+  }
+
+  @Post('attendance-registers')
+  @HttpCode(HttpStatus.OK)
+  async getOrCreateAttendanceRegister(
+    @TenantId() tenantId: string,
+    @Body() body: {
+      academicYearId: string;
+      teacherId: string;
+      classId: string;
+      month: number;
+      year: number;
+    },
+  ) {
+    return this.service.getOrCreateAttendanceRegister(
+      tenantId, body.academicYearId, body.teacherId,
+      body.classId, body.month, body.year,
+    );
+  }
+
+  @Put('attendance-registers/:id')
+  async updateAttendanceRegister(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    return this.service.updateAttendanceRegister(tenantId, id, body);
+  }
+
+  @Post('monthly-evaluations')
+  @HttpCode(HttpStatus.OK)
+  async getOrCreateMonthlyEvaluation(
+    @TenantId() tenantId: string,
+    @Body() body: {
+      academicYearId: string;
+      classId: string;
+      attendanceRegisterId: string;
+      month: number;
+      year: number;
+    },
+  ) {
+    return this.service.getOrCreateMonthlyEvaluation(
+      tenantId, body.academicYearId, body.classId,
+      body.attendanceRegisterId, body.month, body.year,
+    );
+  }
+
+  @Put('monthly-evaluations/:id')
+  async updateMonthlyEvaluation(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    return this.service.updateMonthlyEvaluation(tenantId, id, body);
+  }
+
+  @Get('monthly-summaries')
+  async getMonthlySummary(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('classId') classId: string,
+  ) {
+    if (!academicYearId || !classId) {
+      throw new BadRequestException('academicYearId et classId sont requis');
+    }
+    return this.service.getOrCreateMonthlySummary(tenantId, academicYearId, classId);
+  }
+
+  @Post('monthly-summaries/refresh')
+  @HttpCode(HttpStatus.OK)
+  async refreshMonthlySummary(
+    @TenantId() tenantId: string,
+    @Body() body: {
+      academicYearId: string;
+      classId: string;
+    },
+  ) {
+    return this.service.refreshMonthlySummary(tenantId, body.academicYearId, body.classId);
+  }
 }

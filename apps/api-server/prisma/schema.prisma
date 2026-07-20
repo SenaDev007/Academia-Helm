@@ -16045,3 +16045,279 @@ model WeeklyLogSummary {
   @@index([status])
   @@map("weekly_log_summaries")
 }
+
+// ============================================================================
+// CAHIER JOURNAL — Grille hebdomadaire (template officiel primaire)
+// ============================================================================
+
+/// Cahier journal hebdomadaire — grille 5 jours (Lundi-Vendredi) × 8 matières.
+/// Une entrée par classe × semaine, tenue par le titulaire.
+/// Le contenu de chaque case (day × subject) est stocké dans `entries` (JSON).
+/// Workflow: DRAFT → SUBMITTED → VALIDATED / REJECTED
+model CahierJournal {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  teacherId       String
+  classId         String
+  weekStartDate   DateTime @db.Date
+  weekEndDate     DateTime @db.Date
+
+  // En-tête
+  className       String?
+
+  // Grille hebdomadaire JSON:
+  // { lundi: { francais, anglais, mathematiques, est, es, eps, ea, petit_projet },
+  //   mardi: {...}, mercredi: {...}, jeudi: {...}, vendredi: {...} }
+  entries         Json     @default("{}")
+
+  // Section OBSERVATIONS (en bas du recto)
+  observations    String?
+
+  // Pied de page - signature directeur
+  directorName    String?
+  directorValidatedAt DateTime?
+
+  // Workflow
+  status          String   @default("DRAFT") // DRAFT | SUBMITTED | VALIDATED | REJECTED
+  submittedAt     DateTime?
+  validatedAt     DateTime?
+  validatedBy     String?
+  rejectionReason String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([tenantId, academicYearId, classId, weekStartDate])
+  @@index([tenantId, academicYearId, teacherId])
+  @@index([status])
+  @@map("cahier_journal_entries")
+}
+
+// ============================================================================
+// FICHES PÉDAGOGIQUES PRIMAIRE — 5 types (primaire uniquement)
+// ============================================================================
+
+/// Fiche pédagogique pour l'enseignement PRIMAIRE (maternelle/primaire).
+/// 5 types: MATH | FRANCAIS | EST (Éducation Scientifique et Technologique)
+///         | ES (Éducation Sociale) | EA (Éducation Artistique)
+/// Structure: en-tête + effectifs + ruban pédagogique + ruban administratif + signatures
+/// NB: Ne pas confondre avec le modèle `PedagogicalSheet` (secondaire) qui est
+/// une simple fiche titre/description/contenu. Le modèle ci-dessous suit le
+/// template officiel du primaire avec ruban pédagogique structuré.
+model PrimaryPedagogicalFiche {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  teacherId       String
+  classId         String
+  subjectId       String?
+  sheetType       String   // MATH | FRANCAIS | EST | ES | EA
+
+  // En-tête
+  schoolName         String?
+  className          String?
+  academicYearLabel  String?
+  trimester          Int?
+  weekNumber         Int?
+  lessonDate         DateTime? @db.Date
+  lessonTime         String?
+  durationMinutes    Int?
+  teacherName        String?
+
+  // Effectifs
+  boysCount          Int?
+  girlsCount         Int?
+  totalStudents      Int?
+  boysPresent        Int?
+  girlsPresent       Int?
+  totalPresent       Int?
+  boysAbsent         Int?
+  girlsAbsent        Int?
+  totalAbsent        Int?
+
+  // Ruban pédagogique
+  competence         String?
+  habilete           String?
+  prealable          String?
+  contenu            String?
+  methodes           String?
+  moyensDidactiques  String?
+  deroulement        Json?   // [{etape, duree, activiteEnseignant, activiteEleves}]
+  evaluation         String?
+  reference          String?
+
+  // Ruban administratif
+  adminDate          DateTime? @db.Date
+  adminWeek          Int?
+  adminHoraire       String?
+  adminDuree         Int?
+
+  // Signatures
+  teacherSignature   String?
+  directorSignature  String?
+
+  // Workflow
+  status             String   @default("DRAFT") // DRAFT | SUBMITTED | VALIDATED | REJECTED
+  submittedAt        DateTime?
+  validatedAt        DateTime?
+  validatedBy        String?
+  rejectionReason    String?
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([tenantId, academicYearId, teacherId])
+  @@index([sheetType])
+  @@index([status])
+  @@index([classId])
+  @@map("primary_pedagogical_fiches")
+}
+
+// ============================================================================
+// REGISTRE D'APPEL — Registre mensuel par classe
+// ============================================================================
+
+/// Registre d'appel mensuel pour une classe du primaire.
+/// Une entrée par classe × mois × année.
+/// Chaque élève occupe une ligne avec 25 cases (5 semaines × 5 jours).
+/// Inclut la section récapitulative + la phrase d'arrêt + signatures.
+model AttendanceRegister {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  classId         String
+  teacherId       String
+  month           Int      // 1-12
+  year            Int
+
+  // Données élèves (JSON):
+  // [{ studentId, numero, nom, prenom, sexe,
+  //    absences: [{ week: 1, day: 1, marked: "A"|"P"|"R"|null }],
+  //    motif, totalPresencesPossibles, totalAbsences, totalPresenceEffectif,
+  //    observation, nbDemiJournees }]
+  studentsData    Json     @default("[]")
+
+  // Section récapitulative (bas du registre)
+  demiJourneeMois          Int?
+  presencePossibleMois     Int?
+  totalAbsencesMois         Int?
+  totalPresencesEffectivesMois Int?
+  pourcentagePresences      Float?
+  pourcentageAbsences       Float?
+
+  // Phrase d'arrêt
+  arreteDate       DateTime?
+  arreteHeure      String?
+  effectifJourFilles Int?
+  effectifJourGarcons Int?
+
+  // Signatures
+  directeurSignatureDate DateTime?
+  titulaireSignatureDate DateTime?
+
+  // Workflow
+  status          String   @default("DRAFT") // DRAFT | SUBMITTED | VALIDATED | REJECTED
+  submittedAt     DateTime?
+  validatedAt     DateTime?
+  validatedBy     String?
+  rejectionReason String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([tenantId, academicYearId, classId, month, year])
+  @@index([tenantId, academicYearId])
+  @@index([teacherId])
+  @@map("attendance_registers")
+}
+
+/// Évaluation certificative mensuelle (page 2 du registre d'appel).
+/// Une entrée par AttendanceRegister (relation 1-1).
+/// Matières dynamiques + sous-colonnes CM (/18), CP (/2), Total.
+model MonthlyEvaluation {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  classId         String
+  attendanceRegisterId String
+  month           Int
+  year            Int
+
+  evaluationNumber Int?
+  etapeNumber     Int?
+
+  // Configuration des matières (JSON): [{ subjectId, subjectName }]
+  subjectsConfig  Json     @default("[]")
+
+  // Scores par élève (JSON):
+  // [{ studentId, nom, prenom, sexe,
+  //    scores: [{ subjectId, subjectName, cm: number(0-18), cp: number(0-2), total: number }],
+  //    totalGeneral, seuilAtteint: boolean }]
+  studentScores   Json     @default("[]")
+
+  // Seuil de réussite (par défaut 10/20 = 50%)
+  seuilReussite   Float    @default(10.0)
+
+  // Section récapitulative
+  effectifTotalGarcons Int?
+  effectifTotalFilles  Int?
+  effectifTotalClasse  Int?
+
+  ayantComposeG        Int?
+  ayantComposeF        Int?
+  ayantComposeTotal    Int?
+
+  ayantAtteintSeuilG   Int?
+  ayantAtteintSeuilF   Int?
+  ayantAtteintSeuilTotal Int?
+
+  nAyantPasAtteintG    Int?
+  nAyantPasAtteintF    Int?
+  nAyantPasAtteintTotal Int?
+
+  pourcentageReussiteG Float?
+  pourcentageReussiteF Float?
+  pourcentageReussiteTotal Float?
+
+  // Signatures
+  teacherSignatureDate  DateTime?
+  directorSignatureDate DateTime?
+
+  // Workflow
+  status          String   @default("DRAFT") // DRAFT | SUBMITTED | VALIDATED | REJECTED
+  submittedAt     DateTime?
+  validatedAt     DateTime?
+  validatedBy     String?
+  rejectionReason String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([attendanceRegisterId])
+  @@index([tenantId, academicYearId, classId])
+  @@map("monthly_evaluations")
+}
+
+/// Tableau de relevés mensuels pour l'année scolaire.
+/// Une entrée par classe × année académique.
+/// Données mensuelles regroupées en JSON pour affichage annuel.
+model MonthlySummary {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  classId         String
+
+  // Données mensuelles (JSON):
+  // [{ month: 9, demiJoursClasse, totalElevesFrequentes,
+  //    totalPresencesPossibles, totalAbsences, nombrePresences,
+  //    pourcentagePresences, nombreElevesJamaisManque,
+  //    nombreElevesManquePlusDe4, totalAbsencesImputables, observations }]
+  monthlyData     Json     @default("[]")
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([tenantId, academicYearId, classId])
+  @@map("monthly_summaries")
+}

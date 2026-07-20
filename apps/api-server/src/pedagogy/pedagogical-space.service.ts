@@ -953,4 +953,832 @@ export class PedagogicalSpaceService {
       },
     });
   }
+
+  // ===========================================================================
+  // CAHIER JOURNAL — Grille hebdomadaire (5 jours × 8 matières)
+  // Utilise des requêtes SQL brutes car les tables ont été créées via
+  // migration manuelle. Le client Prisma sera régénéré au prochain déploiement.
+  // ===========================================================================
+
+  /// Récupère ou crée une entrée du cahier journal pour une classe × semaine.
+  async getOrCreateCahierJournal(
+    tenantId: string,
+    academicYearId: string,
+    teacherId: string,
+    classId: string,
+    weekStartDate: string,
+    className?: string,
+  ) {
+    const startDate = new Date(weekStartDate);
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 4); // vendredi
+
+    // Vérifier si une entrée existe
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_journal_entries"
+       WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "classId" = $3 AND "weekStartDate" = $4
+       LIMIT 1`,
+      tenantId, academicYearId, classId, startDate,
+    );
+
+    if (existing && existing.length > 0) {
+      return existing[0];
+    }
+
+    // Créer une nouvelle entrée
+    const id = crypto.randomUUID();
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "cahier_journal_entries"
+       ("id", "tenantId", "academicYearId", "teacherId", "classId",
+        "weekStartDate", "weekEndDate", "className", "entries", "observations",
+        "status", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, 'DRAFT', NOW(), NOW())`,
+      id, tenantId, academicYearId, teacherId, classId,
+      startDate, endDate, className || null, JSON.stringify({}),
+    );
+
+    const created: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1`,
+      id,
+    );
+    return created[0];
+  }
+
+  /// Liste les cahiers journal d'un enseignant.
+  async getCahierJournals(
+    tenantId: string,
+    teacherId: string,
+    academicYearId: string,
+    classId?: string,
+  ) {
+    if (classId) {
+      return this.prisma.$queryRawUnsafe(
+        `SELECT * FROM "cahier_journal_entries"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3 AND "classId" = $4
+         ORDER BY "weekStartDate" DESC`,
+        tenantId, academicYearId, teacherId, classId,
+      );
+    }
+    return this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_journal_entries"
+       WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3
+       ORDER BY "weekStartDate" DESC`,
+      tenantId, academicYearId, teacherId,
+    );
+  }
+
+  /// Met à jour une entrée du cahier journal (grille, observations, etc.)
+  async updateCahierJournal(
+    tenantId: string,
+    journalId: string,
+    data: any,
+  ) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1 AND "tenantId" = $2`,
+      journalId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Cahier journal non trouvé');
+    }
+
+    const updates: string[] = [];
+    const params: any[] = [];
+    let paramIdx = 1;
+
+    if (data.entries !== undefined) {
+      updates.push(`"entries" = $${paramIdx++}`);
+      params.push(JSON.stringify(data.entries));
+    }
+    if (data.observations !== undefined) {
+      updates.push(`"observations" = $${paramIdx++}`);
+      params.push(data.observations || null);
+    }
+    if (data.className !== undefined) {
+      updates.push(`"className" = $${paramIdx++}`);
+      params.push(data.className || null);
+    }
+    if (data.directorName !== undefined) {
+      updates.push(`"directorName" = $${paramIdx++}`);
+      params.push(data.directorName || null);
+    }
+    if (data.directorValidatedAt !== undefined) {
+      updates.push(`"directorValidatedAt" = $${paramIdx++}`);
+      params.push(data.directorValidatedAt ? new Date(data.directorValidatedAt) : null);
+    }
+    if (data.status !== undefined) {
+      updates.push(`"status" = $${paramIdx++}`);
+      params.push(data.status);
+    }
+    if (data.submittedAt !== undefined) {
+      updates.push(`"submittedAt" = $${paramIdx++}`);
+      params.push(data.submittedAt ? new Date(data.submittedAt) : null);
+    }
+    if (data.validatedAt !== undefined) {
+      updates.push(`"validatedAt" = $${paramIdx++}`);
+      params.push(data.validatedAt ? new Date(data.validatedAt) : null);
+    }
+    if (data.validatedBy !== undefined) {
+      updates.push(`"validatedBy" = $${paramIdx++}`);
+      params.push(data.validatedBy || null);
+    }
+    if (data.rejectionReason !== undefined) {
+      updates.push(`"rejectionReason" = $${paramIdx++}`);
+      params.push(data.rejectionReason || null);
+    }
+
+    if (updates.length === 0) {
+      return existing[0];
+    }
+
+    updates.push(`"updatedAt" = NOW()`);
+    params.push(journalId, tenantId);
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "cahier_journal_entries" SET ${updates.join(', ')} WHERE "id" = $${paramIdx++} AND "tenantId" = $${paramIdx++}`,
+      ...params,
+    );
+
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1`,
+      journalId,
+    );
+    return updated[0];
+  }
+
+  /// Soumet le cahier journal au directeur.
+  async submitCahierJournal(tenantId: string, journalId: string) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1 AND "tenantId" = $2`,
+      journalId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Cahier journal non trouvé');
+    }
+    if (existing[0].status !== 'DRAFT') {
+      throw new BadRequestException('Cahier déjà soumis');
+    }
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "cahier_journal_entries" SET "status" = 'SUBMITTED', "submittedAt" = NOW(), "updatedAt" = NOW() WHERE "id" = $1`,
+      journalId,
+    );
+
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1`,
+      journalId,
+    );
+    return updated[0];
+  }
+
+  // ===========================================================================
+  // FICHES PÉDAGOGIQUES PRIMAIRE (5 types: MATH/FRANCAIS/EST/ES/EA)
+  // ===========================================================================
+
+  /// Liste les fiches pédagogiques d'un enseignant.
+  async getPedagogicalFiches(
+    tenantId: string,
+    teacherId: string,
+    academicYearId: string,
+    sheetType?: string,
+    classId?: string,
+  ) {
+    let query = `SELECT * FROM "primary_pedagogical_fiches"
+                 WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3`;
+    const params: any[] = [tenantId, academicYearId, teacherId];
+    let paramIdx = 4;
+    if (sheetType) {
+      query += ` AND "sheetType" = $${paramIdx++}`;
+      params.push(sheetType);
+    }
+    if (classId) {
+      query += ` AND "classId" = $${paramIdx++}`;
+      params.push(classId);
+    }
+    query += ` ORDER BY "lessonDate" DESC NULLS LAST, "createdAt" DESC`;
+    return this.prisma.$queryRawUnsafe(query, ...params);
+  }
+
+  /// Récupère une fiche par ID.
+  async getPedagogicalFiche(tenantId: string, ficheId: string) {
+    const result: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "primary_pedagogical_fiches" WHERE "id" = $1 AND "tenantId" = $2`,
+      ficheId, tenantId,
+    );
+    if (!result || result.length === 0) {
+      throw new NotFoundException('Fiche pédagogique non trouvée');
+    }
+    return result[0];
+  }
+
+  /// Crée une nouvelle fiche pédagogique.
+  async createPedagogicalFiche(
+    tenantId: string,
+    academicYearId: string,
+    teacherId: string,
+    data: any,
+  ) {
+    const id = crypto.randomUUID();
+    const fields: string[] = ['"id"', '"tenantId"', '"academicYearId"', '"teacherId"', '"createdAt"', '"updatedAt"'];
+    const placeholders: string[] = ['$1', '$2', '$3', '$4', 'NOW()', 'NOW()'];
+    const params: any[] = [id, tenantId, academicYearId, teacherId];
+    let paramIdx = 5;
+
+    const fieldMap: Record<string, string> = {
+      classId: 'classId',
+      subjectId: 'subjectId',
+      sheetType: 'sheetType',
+      schoolName: 'schoolName',
+      className: 'className',
+      academicYearLabel: 'academicYearLabel',
+      trimester: 'trimester',
+      weekNumber: 'weekNumber',
+      lessonDate: 'lessonDate',
+      lessonTime: 'lessonTime',
+      durationMinutes: 'durationMinutes',
+      teacherName: 'teacherName',
+      boysCount: 'boysCount',
+      girlsCount: 'girlsCount',
+      totalStudents: 'totalStudents',
+      boysPresent: 'boysPresent',
+      girlsPresent: 'girlsPresent',
+      totalPresent: 'totalPresent',
+      boysAbsent: 'boysAbsent',
+      girlsAbsent: 'girlsAbsent',
+      totalAbsent: 'totalAbsent',
+      competence: 'competence',
+      habilete: 'habilete',
+      prealable: 'prealable',
+      contenu: 'contenu',
+      methodes: 'methodes',
+      moyensDidactiques: 'moyensDidactiques',
+      deroulement: 'deroulement',
+      evaluation: 'evaluation',
+      reference: 'reference',
+      adminDate: 'adminDate',
+      adminWeek: 'adminWeek',
+      adminHoraire: 'adminHoraire',
+      adminDuree: 'adminDuree',
+      teacherSignature: 'teacherSignature',
+      directorSignature: 'directorSignature',
+    };
+
+    for (const [key, col] of Object.entries(fieldMap)) {
+      if (data[key] !== undefined && data[key] !== null) {
+        fields.push(`"${col}"`);
+        if (key === 'deroulement') {
+          placeholders.push(`$${paramIdx++}::jsonb`);
+          params.push(JSON.stringify(data[key]));
+        } else if (key === 'lessonDate' || key === 'adminDate') {
+          placeholders.push(`$${paramIdx++}::date`);
+          params.push(data[key]);
+        } else if (typeof data[key] === 'number') {
+          placeholders.push(`$${paramIdx++}::int`);
+          params.push(data[key]);
+        } else {
+          placeholders.push(`$${paramIdx++}`);
+          params.push(data[key]);
+        }
+      }
+    }
+
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "primary_pedagogical_fiches" (${fields.join(', ')}) VALUES (${placeholders.join(', ')})`,
+      ...params,
+    );
+
+    return this.getPedagogicalFiche(tenantId, id);
+  }
+
+  /// Met à jour une fiche pédagogique.
+  async updatePedagogicalFiche(tenantId: string, ficheId: string, data: any) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "primary_pedagogical_fiches" WHERE "id" = $1 AND "tenantId" = $2`,
+      ficheId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Fiche pédagogique non trouvée');
+    }
+
+    const updates: string[] = [];
+    const params: any[] = [];
+    let paramIdx = 1;
+
+    const allowedFields: Record<string, 'string' | 'int' | 'date' | 'jsonb'> = {
+      classId: 'string', subjectId: 'string', sheetType: 'string',
+      schoolName: 'string', className: 'string', academicYearLabel: 'string',
+      trimester: 'int', weekNumber: 'int',
+      lessonDate: 'date', lessonTime: 'string', durationMinutes: 'int', teacherName: 'string',
+      boysCount: 'int', girlsCount: 'int', totalStudents: 'int',
+      boysPresent: 'int', girlsPresent: 'int', totalPresent: 'int',
+      boysAbsent: 'int', girlsAbsent: 'int', totalAbsent: 'int',
+      competence: 'string', habilete: 'string', prealable: 'string', contenu: 'string',
+      methodes: 'string', moyensDidactiques: 'string',
+      deroulement: 'jsonb',
+      evaluation: 'string', reference: 'string',
+      adminDate: 'date', adminWeek: 'int', adminHoraire: 'string', adminDuree: 'int',
+      teacherSignature: 'string', directorSignature: 'string',
+      status: 'string', submittedAt: 'date', validatedAt: 'date',
+      validatedBy: 'string', rejectionReason: 'string',
+    };
+
+    for (const [key, type] of Object.entries(allowedFields)) {
+      if (data[key] !== undefined) {
+        const val = data[key];
+        updates.push(`"${key}" = $${paramIdx++}::${type}`);
+        if (type === 'jsonb') {
+          params.push(JSON.stringify(val));
+        } else if (type === 'date' && val) {
+          params.push(new Date(val));
+        } else {
+          params.push(val);
+        }
+      }
+    }
+
+    if (updates.length === 0) return existing[0];
+
+    updates.push(`"updatedAt" = NOW()`);
+    params.push(ficheId, tenantId);
+    const lastIdx = paramIdx;
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "primary_pedagogical_fiches" SET ${updates.join(', ')} WHERE "id" = $${lastIdx} AND "tenantId" = $${lastIdx + 1}`,
+      ...params,
+    );
+
+    return this.getPedagogicalFiche(tenantId, ficheId);
+  }
+
+  /// Supprime une fiche pédagogique.
+  async deletePedagogicalFiche(tenantId: string, ficheId: string) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "primary_pedagogical_fiches" WHERE "id" = $1 AND "tenantId" = $2`,
+      ficheId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Fiche pédagogique non trouvée');
+    }
+    await this.prisma.$executeRawUnsafe(
+      `DELETE FROM "primary_pedagogical_fiches" WHERE "id" = $1`,
+      ficheId,
+    );
+    return { success: true };
+  }
+
+  /// Soumet une fiche au directeur.
+  async submitPedagogicalFiche(tenantId: string, ficheId: string) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "primary_pedagogical_fiches" WHERE "id" = $1 AND "tenantId" = $2`,
+      ficheId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Fiche non trouvée');
+    }
+    if (existing[0].status !== 'DRAFT') {
+      throw new BadRequestException('Fiche déjà soumise');
+    }
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "primary_pedagogical_fiches" SET "status" = 'SUBMITTED', "submittedAt" = NOW(), "updatedAt" = NOW() WHERE "id" = $1`,
+      ficheId,
+    );
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "primary_pedagogical_fiches" WHERE "id" = $1`,
+      ficheId,
+    );
+    return updated[0];
+  }
+
+  // ===========================================================================
+  // REGISTRE D'APPEL — Registre mensuel + Évaluation + Tableau annuel
+  // ===========================================================================
+
+  /// Récupère ou crée un registre d'appel mensuel pour une classe.
+  async getOrCreateAttendanceRegister(
+    tenantId: string,
+    academicYearId: string,
+    teacherId: string,
+    classId: string,
+    month: number,
+    year: number,
+  ) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "attendance_registers"
+       WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "classId" = $3
+       AND "month" = $4 AND "year" = $5 LIMIT 1`,
+      tenantId, academicYearId, classId, month, year,
+    );
+
+    if (existing && existing.length > 0) {
+      return existing[0];
+    }
+
+    const id = crypto.randomUUID();
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "attendance_registers"
+       ("id", "tenantId", "academicYearId", "classId", "teacherId", "month", "year",
+        "studentsData", "status", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'DRAFT', NOW(), NOW())`,
+      id, tenantId, academicYearId, classId, teacherId, month, year, JSON.stringify([]),
+    );
+
+    const created: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "attendance_registers" WHERE "id" = $1`,
+      id,
+    );
+    return created[0];
+  }
+
+  /// Liste les registres d'appel d'un enseignant.
+  async getAttendanceRegisters(
+    tenantId: string,
+    teacherId: string,
+    academicYearId: string,
+    classId?: string,
+  ) {
+    if (classId) {
+      return this.prisma.$queryRawUnsafe(
+        `SELECT * FROM "attendance_registers"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3 AND "classId" = $4
+         ORDER BY "year" DESC, "month" DESC`,
+        tenantId, academicYearId, teacherId, classId,
+      );
+    }
+    return this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "attendance_registers"
+       WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3
+       ORDER BY "year" DESC, "month" DESC`,
+      tenantId, academicYearId, teacherId,
+    );
+  }
+
+  /// Met à jour un registre d'appel.
+  async updateAttendanceRegister(
+    tenantId: string,
+    registerId: string,
+    data: any,
+  ) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "attendance_registers" WHERE "id" = $1 AND "tenantId" = $2`,
+      registerId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Registre non trouvé');
+    }
+
+    const updates: string[] = [];
+    const params: any[] = [];
+    let paramIdx = 1;
+
+    const allowedFields: Record<string, 'string' | 'int' | 'float' | 'jsonb' | 'date'> = {
+      studentsData: 'jsonb',
+      demiJourneeMois: 'int',
+      presencePossibleMois: 'int',
+      totalAbsencesMois: 'int',
+      totalPresencesEffectivesMois: 'int',
+      pourcentagePresences: 'float',
+      pourcentageAbsences: 'float',
+      arreteDate: 'date',
+      arreteHeure: 'string',
+      effectifJourFilles: 'int',
+      effectifJourGarcons: 'int',
+      directeurSignatureDate: 'date',
+      titulaireSignatureDate: 'date',
+      status: 'string',
+      submittedAt: 'date',
+      validatedAt: 'date',
+      validatedBy: 'string',
+      rejectionReason: 'string',
+    };
+
+    for (const [key, type] of Object.entries(allowedFields)) {
+      if (data[key] !== undefined) {
+        const val = data[key];
+        if (type === 'jsonb') {
+          updates.push(`"${key}" = $${paramIdx++}::jsonb`);
+          params.push(JSON.stringify(val));
+        } else if (type === 'date' && val) {
+          updates.push(`"${key}" = $${paramIdx++}::timestamp`);
+          params.push(new Date(val));
+        } else if (type === 'int') {
+          updates.push(`"${key}" = $${paramIdx++}::int`);
+          params.push(val);
+        } else if (type === 'float') {
+          updates.push(`"${key}" = $${paramIdx++}::double precision`);
+          params.push(val);
+        } else {
+          updates.push(`"${key}" = $${paramIdx++}`);
+          params.push(val);
+        }
+      }
+    }
+
+    if (updates.length === 0) return existing[0];
+    updates.push(`"updatedAt" = NOW()`);
+    params.push(registerId, tenantId);
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "attendance_registers" SET ${updates.join(', ')} WHERE "id" = $${paramIdx++} AND "tenantId" = $${paramIdx++}`,
+      ...params,
+    );
+
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "attendance_registers" WHERE "id" = $1`,
+      registerId,
+    );
+    return updated[0];
+  }
+
+  /// Récupère ou crée l'évaluation mensuelle associée à un registre.
+  async getOrCreateMonthlyEvaluation(
+    tenantId: string,
+    academicYearId: string,
+    classId: string,
+    attendanceRegisterId: string,
+    month: number,
+    year: number,
+  ) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "monthly_evaluations"
+       WHERE "attendanceRegisterId" = $1 LIMIT 1`,
+      attendanceRegisterId,
+    );
+
+    if (existing && existing.length > 0) {
+      return existing[0];
+    }
+
+    const id = crypto.randomUUID();
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "monthly_evaluations"
+       ("id", "tenantId", "academicYearId", "classId", "attendanceRegisterId",
+        "month", "year", "subjectsConfig", "studentScores", "seuilReussite",
+        "status", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 10.0, 'DRAFT', NOW(), NOW())`,
+      id, tenantId, academicYearId, classId, attendanceRegisterId,
+      month, year, JSON.stringify([]), JSON.stringify([]),
+    );
+
+    const created: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "monthly_evaluations" WHERE "id" = $1`,
+      id,
+    );
+    return created[0];
+  }
+
+  /// Met à jour une évaluation mensuelle.
+  async updateMonthlyEvaluation(
+    tenantId: string,
+    evaluationId: string,
+    data: any,
+  ) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "monthly_evaluations" WHERE "id" = $1 AND "tenantId" = $2`,
+      evaluationId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Évaluation non trouvée');
+    }
+
+    const updates: string[] = [];
+    const params: any[] = [];
+    let paramIdx = 1;
+
+    const allowedFields: Record<string, 'string' | 'int' | 'float' | 'jsonb' | 'date'> = {
+      evaluationNumber: 'int',
+      etapeNumber: 'int',
+      subjectsConfig: 'jsonb',
+      studentScores: 'jsonb',
+      seuilReussite: 'float',
+      effectifTotalGarcons: 'int',
+      effectifTotalFilles: 'int',
+      effectifTotalClasse: 'int',
+      ayantComposeG: 'int',
+      ayantComposeF: 'int',
+      ayantComposeTotal: 'int',
+      ayantAtteintSeuilG: 'int',
+      ayantAtteintSeuilF: 'int',
+      ayantAtteintSeuilTotal: 'int',
+      nAyantPasAtteintG: 'int',
+      nAyantPasAtteintF: 'int',
+      nAyantPasAtteintTotal: 'int',
+      pourcentageReussiteG: 'float',
+      pourcentageReussiteF: 'float',
+      pourcentageReussiteTotal: 'float',
+      teacherSignatureDate: 'date',
+      directorSignatureDate: 'date',
+      status: 'string',
+      submittedAt: 'date',
+      validatedAt: 'date',
+      validatedBy: 'string',
+      rejectionReason: 'string',
+    };
+
+    for (const [key, type] of Object.entries(allowedFields)) {
+      if (data[key] !== undefined) {
+        const val = data[key];
+        if (type === 'jsonb') {
+          updates.push(`"${key}" = $${paramIdx++}::jsonb`);
+          params.push(JSON.stringify(val));
+        } else if (type === 'date' && val) {
+          updates.push(`"${key}" = $${paramIdx++}::timestamp`);
+          params.push(new Date(val));
+        } else if (type === 'int') {
+          updates.push(`"${key}" = $${paramIdx++}::int`);
+          params.push(val);
+        } else if (type === 'float') {
+          updates.push(`"${key}" = $${paramIdx++}::double precision`);
+          params.push(val);
+        } else {
+          updates.push(`"${key}" = $${paramIdx++}`);
+          params.push(val);
+        }
+      }
+    }
+
+    if (updates.length === 0) return existing[0];
+    updates.push(`"updatedAt" = NOW()`);
+    params.push(evaluationId, tenantId);
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "monthly_evaluations" SET ${updates.join(', ')} WHERE "id" = $${paramIdx++} AND "tenantId" = $${paramIdx++}`,
+      ...params,
+    );
+
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "monthly_evaluations" WHERE "id" = $1`,
+      evaluationId,
+    );
+    return updated[0];
+  }
+
+  /// Calcule les statistiques de récapitulation pour une évaluation mensuelle
+  /// à partir des studentScores. Retourne les compteurs G/F/Total.
+  computeEvaluationStats(studentScores: any[], seuilReussite: number) {
+    let totalG = 0, totalF = 0, totalC = 0;
+    let composeG = 0, composeF = 0, composeT = 0;
+    let atteintG = 0, atteintF = 0, atteintT = 0;
+
+    for (const student of studentScores) {
+      const sexe = (student.sexe || '').toUpperCase();
+      const totalGeneral = student.totalGeneral ?? 0;
+      const aCompose = totalGeneral > 0;
+      const aAtteint = totalGeneral >= seuilReussite;
+
+      if (sexe === 'M' || sexe === 'G') {
+        totalG++;
+        if (aCompose) composeG++;
+        if (aAtteint) atteintG++;
+      } else if (sexe === 'F') {
+        totalF++;
+        if (aCompose) composeF++;
+        if (aAtteint) atteintF++;
+      }
+      totalC++;
+      if (aCompose) composeT++;
+      if (aAtteint) atteintT++;
+    }
+
+    return {
+      effectifTotalGarcons: totalG,
+      effectifTotalFilles: totalF,
+      effectifTotalClasse: totalC,
+      ayantComposeG: composeG,
+      ayantComposeF: composeF,
+      ayantComposeTotal: composeT,
+      ayantAtteintSeuilG: atteintG,
+      ayantAtteintSeuilF: atteintF,
+      ayantAtteintSeuilTotal: atteintT,
+      nAyantPasAtteintG: totalG - atteintG,
+      nAyantPasAtteintF: totalF - atteintF,
+      nAyantPasAtteintTotal: totalC - atteintT,
+      pourcentageReussiteG: totalG > 0 ? Math.round((atteintG / totalG) * 10000) / 100 : 0,
+      pourcentageReussiteF: totalF > 0 ? Math.round((atteintF / totalF) * 10000) / 100 : 0,
+      pourcentageReussiteTotal: totalC > 0 ? Math.round((atteintT / totalC) * 10000) / 100 : 0,
+    };
+  }
+
+  /// Calcule les statistiques de récapitulation pour un registre d'appel mensuel.
+  computeAttendanceStats(studentsData: any[], demiJourneeMois: number) {
+    let totalAbsences = 0;
+    let totalPresencesPossibles = 0;
+    let elevesJamaisManque = 0;
+    let elevesManquePlusDe4 = 0;
+    let totalAbsencesImputables = 0;
+
+    for (const student of studentsData) {
+      const abs = (student.totalAbsences || 0);
+      const possibles = (student.totalPresencesPossibles || 0);
+      totalAbsences += abs;
+      totalPresencesPossibles += possibles;
+      if (abs === 0 || abs <= 4) {
+        elevesJamaisManque++;
+      } else {
+        elevesManquePlusDe4++;
+        totalAbsencesImputables += abs;
+      }
+    }
+
+    const totalPresencesEffectives = totalPresencesPossibles - totalAbsences;
+    const pourcentagePresences = totalPresencesPossibles > 0
+      ? Math.round((totalPresencesEffectives / totalPresencesPossibles) * 10000) / 100 : 0;
+    const pourcentageAbsences = totalPresencesPossibles > 0
+      ? Math.round((totalAbsences / totalPresencesPossibles) * 10000) / 100 : 0;
+
+    return {
+      demiJourneeMois,
+      presencePossibleMois: totalPresencesPossibles,
+      totalAbsencesMois: totalAbsences,
+      totalPresencesEffectivesMois: totalPresencesEffectives,
+      pourcentagePresences,
+      pourcentageAbsences,
+      nombreElevesJamaisManque: elevesJamaisManque,
+      nombreElevesManquePlusDe4: elevesManquePlusDe4,
+      totalAbsencesImputables,
+    };
+  }
+
+  /// Récupère ou crée le tableau de relevés mensuels annuel pour une classe.
+  async getOrCreateMonthlySummary(
+    tenantId: string,
+    academicYearId: string,
+    classId: string,
+  ) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "monthly_summaries"
+       WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "classId" = $3 LIMIT 1`,
+      tenantId, academicYearId, classId,
+    );
+
+    if (existing && existing.length > 0) {
+      return existing[0];
+    }
+
+    const id = crypto.randomUUID();
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "monthly_summaries"
+       ("id", "tenantId", "academicYearId", "classId", "monthlyData", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+      id, tenantId, academicYearId, classId, JSON.stringify([]),
+    );
+
+    const created: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "monthly_summaries" WHERE "id" = $1`,
+      id,
+    );
+    return created[0];
+  }
+
+  /// Régénère le tableau de relevés mensuels annuel à partir des registres
+  /// d'appel de tous les mois de l'année académique.
+  async refreshMonthlySummary(
+    tenantId: string,
+    academicYearId: string,
+    classId: string,
+  ) {
+    // Récupérer tous les registres d'appel validés (ou tous) pour cette classe
+    const registers: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "attendance_registers"
+       WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "classId" = $3
+       ORDER BY "year" ASC, "month" ASC`,
+      tenantId, academicYearId, classId,
+    );
+
+    const monthlyData: any[] = [];
+    for (const reg of registers) {
+      const studentsData = typeof reg.studentsData === 'string'
+        ? JSON.parse(reg.studentsData)
+        : (reg.studentsData || []);
+      const stats = this.computeAttendanceStats(studentsData, reg.demiJourneeMois || 0);
+
+      monthlyData.push({
+        month: reg.month,
+        year: reg.year,
+        demiJoursClasse: reg.demiJourneeMois,
+        totalElevesFrequentes: studentsData.length,
+        totalPresencesPossibles: stats.presencePossibleMois,
+        totalAbsences: stats.totalAbsencesMois,
+        nombrePresences: stats.totalPresencesEffectivesMois,
+        pourcentagePresences: stats.pourcentagePresences,
+        nombreElevesJamaisManque: stats.nombreElevesJamaisManque,
+        nombreElevesManquePlusDe4: stats.nombreElevesManquePlusDe4,
+        totalAbsencesImputables: stats.totalAbsencesImputables,
+        observations: reg.rejectionReason || null,
+      });
+    }
+
+    // Upsert dans monthly_summaries
+    const summary = await this.getOrCreateMonthlySummary(tenantId, academicYearId, classId);
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "monthly_summaries"
+       SET "monthlyData" = $1::jsonb, "updatedAt" = NOW()
+       WHERE "id" = $2`,
+      JSON.stringify(monthlyData), summary.id,
+    );
+
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "monthly_summaries" WHERE "id" = $1`,
+      summary.id,
+    );
+    return updated[0];
+  }
 }

@@ -10,8 +10,11 @@
  *   1. Mes Classes — vue d'ensemble + effectifs + accès classe
  *   2. Appel — appel journalier par classe
  *   3. Cahier Journal — saisie des séances quotidiennes
- *   4. Semainier — vue hebdomadaire + soumission au directeur
- *   5. Devoirs — création de devoirs + suivi par élève
+ *   4. Cahier Journal Hebdo — grille hebdomadaire 5 jours × 8 matières
+ *   5. Cahier de Semaine — monitoring institutionnel (semainier)
+ *   6. Fiches Pédagogiques — 5 types (MATH/FRANCAIS/EST/ES/EA) pour le primaire
+ *   7. Registre d'Appel — registre mensuel + évaluation certificative + relevés
+ *   8. Devoirs — création de devoirs + suivi par élève
  *
  * Design identique aux autres modules (cards, tables, boutons cohérents).
  * Isolation : chaque enseignant ne voit QUE ses classes.
@@ -24,21 +27,27 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   BookOpen, CalendarCheck, NotebookPen, CalendarDays, FileText,
-  Users, Loader2, ChevronRight, RefreshCw,
+  Users, Loader2, ChevronRight, RefreshCw, ClipboardList, FileSpreadsheet,
 } from "lucide-react";
 
 import { MyClassesTab } from "./MyClassesTab";
 import { AttendanceTab } from "./AttendanceTab";
 import { ClassLogTab } from "./ClassLogTab";
+import { CahierJournalTab } from "./CahierJournalTab";
 import { CahierSemaineTab } from "./CahierSemaineTab";
+import { PedagogicalSheetsTab } from "./PedagogicalSheetsTab";
+import { AttendanceRegisterTab } from "./AttendanceRegisterTab";
 import { HomeworkTab } from "./HomeworkTab";
 
 const TABS = [
   { id: 'classes', label: 'Mes Classes', icon: Users, description: 'Effectifs & élèves' },
   { id: 'attendance', label: 'Appel', icon: CalendarCheck, description: 'Présences journalières' },
   { id: 'classlog', label: 'Cahier Journal', icon: NotebookPen, description: 'Séances quotidiennes' },
+  { id: 'cahier-journal', label: 'Cahier Journal Hebdo', icon: FileSpreadsheet, description: 'Grille hebdomadaire 5j × 8 matières' },
   { id: 'weekly', label: 'Cahier de Semaine', icon: CalendarDays, description: 'Monitoring institutionnel' },
-  { id: 'homework', label: 'Devoirs', icon: FileText, description: 'Exercices & suivi' },
+  { id: 'fiches', label: 'Fiches Pédagogiques', icon: FileText, description: '5 types (MATH/FR/EST/ES/EA)' },
+  { id: 'registre', label: 'Registre d\'Appel', icon: ClipboardList, description: 'Registre mensuel + évaluations' },
+  { id: 'homework', label: 'Devoirs', icon: BookOpen, description: 'Exercices & suivi' },
 ] as const;
 
 type TabId = typeof TABS[number]['id'];
@@ -123,8 +132,29 @@ export function PedagogicalSpaceWorkspace() {
               teacherId={teacherId}
             />
           )}
+          {tab === 'cahier-journal' && (
+            <CahierJournalTab
+              tenantId={tenant?.id || ''}
+              academicYearId={academicYear.id}
+              teacherId={teacherId}
+            />
+          )}
           {tab === 'weekly' && (
             <CahierSemaineTab
+              tenantId={tenant?.id || ''}
+              academicYearId={academicYear.id}
+              teacherId={teacherId}
+            />
+          )}
+          {tab === 'fiches' && (
+            <PedagogicalSheetsTab
+              tenantId={tenant?.id || ''}
+              academicYearId={academicYear.id}
+              teacherId={teacherId}
+            />
+          )}
+          {tab === 'registre' && (
+            <AttendanceRegisterTab
               tenantId={tenant?.id || ''}
               academicYearId={academicYear.id}
               teacherId={teacherId}

@@ -1,0 +1,28 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "### (1) En-tête  \n**MOIS D __________ 20 __________**  \n**NOMBRE DE DEMI JOURS DE CLASSE __________**  \n\n\n### (2) Tableau principal  \n| Numéro | Nom et prénom | Sexe | Indication des absences pour chaque jour de classe (5 semaines × Lundi-Vendredi) | Motif des absences | Total Présences possibles | Total absences | Total présence effectif | Observation | Nombre de demi-journée de classe |  \n|--------|--------------|------|-----------------------------------------------------------------------------|-------------------|---------------------------|----------------|-------------------------|------------|----------------------------------|  \n|        |              |      | L M M J V L M M J V L M M J V L M M J V |                   |                           |                |                         |            |                                  |  \n\n\n### (3) Section récapitulative bas  \n| Demi-journée du mois | Présence possible | Total absences | Total présences effectives | % présences | % absences |  \n|---------------------|------------------|----------------|---------------------------|-------------|------------|  \n\n\n### (4) Arrêté  \n**Arrêté ce registre d'appel ce jour**  \n**Date : __________**  \n**Heure : __________**  \n**Effectif du jour : Filles ______ / Garçons ______**  \n\n\n### (5) Signatures  \n**Directeur : __________________________**  \n**Titulaire : __________________________**  \n\n\n---  \n\n\n### Page 2 : Évaluation certificative mensuelle  \n**EVALUATION CERTIFICATIVE MENSUELLE N° ______ (MOIS D' ________) ETAPE N° ______**  \n*NB : Pour chaque épreuve, l'élève évalué(e) n'aura de bonus de perfectionnement que lorsqu'il(elle) aura atteint la maîtrise minimale fixée.*  \n\n| Matières | CM (/18) | CP (/2) | Total |  \n|----------|----------|---------|-------|  \n| Comm. Orale |          |         |       |  \n| Product. d'Écrit |          |         |       |  \n| Lecture / Compréhension Écrit |          |         |       |  \n| MATH |          |         |       |  \n| Éducation Scientifique Technologie |          |         |       |  \n| Éducation Sociale |          |         |       |  \n| Éducation Artistique (Art plastique) |          |         |       |  \n| Éducation Physique (Art vivant et Sportive) |          |         |       |  \n| **TOTAL** |          |         |       |  \n| **SEUIL RÉUSSITE** |          |         |       |  \n| **ÉLÈVE ATEINT** | Non | Out |       |  \n\n\n### Section récap en dessous  \n| Effectif total | Garçons | Filles | Total |  \n|---------------|---------|--------|-------|  \n| **Ayant composé** |         |        |       |  \n| **Ayant atteint seuil réussite** |         |        |       |  \n| **N'ayant pas atteint seuil réussite** |         |        |       |  \n| **% réussite** |         |        |       |  \n\n\n### Signatures  \n**Directeur : __________________________**  \n**Titulaire : __________________________**",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 1784548994,
+  "id": "20260720200225e30d4767f0204f80",
+  "model": "glm-4.6v",
+  "object": "chat.completion",
+  "request_id": "20260720200225e30d4767f0204f80",
+  "usage": {
+    "completion_tokens": 720,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "prompt_tokens": 1744,
+    "prompt_tokens_details": {
+      "cached_tokens": 4
+    },
+    "total_tokens": 2464
+  }
+}

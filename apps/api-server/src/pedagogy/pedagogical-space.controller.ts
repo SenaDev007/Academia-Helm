@@ -25,8 +25,8 @@
  */
 
 import {
-  Controller, Get, Post, Put, Body, Param, Query, Headers,
-  HttpCode, HttpStatus, BadRequestException, NotFoundException, Logger,
+  Controller, Get, Post, Put, Delete, Body, Param, Query, Headers,
+  HttpCode, HttpStatus, BadRequestException, NotFoundException, Logger, Res,
 } from '@nestjs/common';
 import { Public } from '../auth/decorators/public.decorator';
 import { PedagogicalSpaceService } from './pedagogical-space.service';

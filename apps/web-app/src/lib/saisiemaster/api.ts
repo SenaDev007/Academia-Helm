@@ -331,7 +331,7 @@ export function classDataToSessionPayload(
     studentCount: cls.students.length,
     subjectCount: cls.subjects.length,
     // The full grades data — evaluations indexed by [evaluationType][studentId][subjectId]
-    // (4 types: EF1, ES1, ES2, ES3). On garde aussi `notes` pour rétro-compat.
+    // (4 types prédéfinis + types personnalisés). On garde aussi `notes` pour rétro-compat.
     gradesData: {
       sheetName: cls.sheetName,
       className: cls.className,
@@ -341,6 +341,7 @@ export function classDataToSessionPayload(
       students: cls.students,
       subjects: cls.subjects,
       evaluations: cls.evaluations,
+      customEvaluationTypes: cls.customEvaluationTypes,
       notes: cls.notes, // rétro-compat (équivalent à evaluations.EF1)
     },
   };
@@ -356,6 +357,7 @@ export function sessionToClassData(session: ProspectSession): ClassData | null {
     subjects?: ClassData["subjects"];
     notes?: ClassData["notes"];
     evaluations?: ClassData["evaluations"];
+    customEvaluationTypes?: ClassData["customEvaluationTypes"];
   };
   if (!data.students || !data.subjects) return null;
   return {
@@ -372,6 +374,7 @@ export function sessionToClassData(session: ProspectSession): ClassData | null {
       ES2: {},
       ES3: {},
     },
+    customEvaluationTypes: data.customEvaluationTypes ?? [],
     notes: data.notes ?? {},
     sourceFileName: data.sourceFileName ?? "(session restaurée)",
     importedAt: session.createdAt,

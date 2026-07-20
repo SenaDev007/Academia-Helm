@@ -5,18 +5,29 @@
  */
 
 /**
- * Type d'évaluation normalisé pour SaisieMaster.
+ * Type d'évaluation pour SaisieMaster.
  *
- * 4 types d'évaluations par année scolaire et par matière :
+ * 4 types d'évaluations prédéfinis par défaut :
  *   - EF1 : Évaluation Formative 1
  *   - ES1 : Évaluation Sommative 1
  *   - ES2 : Évaluation Sommative 2
  *   - ES3 : Évaluation Sommative 3
  *
- * Pour chaque classe × matière, l'enseignant peut saisir 4 jeux de notes
- * indépendants (un par type d'évaluation).
+ * L'utilisateur peut aussi créer des types d'évaluation personnalisés
+ * (ex: "Devoir Mensuel", "Interrogation surprise", etc.).
+ * Le type est donc un string libre, avec les 4 codes prédéfinis comme valeurs par défaut.
  */
-export type EvaluationType = "EF1" | "ES1" | "ES2" | "ES3";
+export type EvaluationType = string;
+
+/** Type d'évaluation personnalisé créé par l'utilisateur. */
+export interface CustomEvaluationType {
+  /** Code court unique (ex: "DM1", "INT1"). */
+  code: string;
+  /** Libellé complet (ex: "Devoir Mensuel 1"). */
+  label: string;
+  /** Description optionnelle. */
+  description?: string;
+}
 
 /** Matière scolaire (ex: Dictée, Math, EPS...). */
 export interface Subject {
@@ -77,14 +88,15 @@ export interface ClassData {
   /**
    * Notes indexées par [evaluationType][studentId][subjectId].
    *
-   * 4 types d'évaluations normalisés : EF1, ES1, ES2, ES3.
-   * Chaque type contient ses propres notes indépendantes pour la même
-   * liste d'élèves et de matières.
-   *
-   * Rétro-compatibilité : si `evaluations` est absent, on retombe sur
-   * l'ancien champ `notes` (équivalent à un seul type d'évaluation).
+   * 4 types d'évaluations prédéfinis : EF1, ES1, ES2, ES3.
+   * + types personnalisés créés par l'utilisateur (stockés dans customEvaluationTypes).
    */
   evaluations: Record<EvaluationType, EvaluationNotes>;
+  /**
+   * Types d'évaluations personnalisés créés par l'utilisateur pour cette classe.
+   * Les 4 types prédéfinis (EF1, ES1, ES2, ES3) ne sont PAS inclus ici.
+   */
+  customEvaluationTypes: CustomEvaluationType[];
   /** @deprecated Utiliser `evaluations`. Conservé pour rétro-compatibilité. */
   notes?: EvaluationNotes;
   /** Nom du fichier d'origine. */

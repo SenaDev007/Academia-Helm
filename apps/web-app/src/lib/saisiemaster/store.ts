@@ -22,7 +22,10 @@ import {
   migrateClassDataEvaluations,
   getEvaluationNotes,
   setEvaluationNotes,
+  addCustomEvaluationType as addCustomEvalType,
+  removeCustomEvaluationType as removeCustomEvalType,
 } from "./evaluation-utils";
+import type { CustomEvaluationType } from "./types";
 import {
   type Prospect,
   type ActivityType,
@@ -81,8 +84,12 @@ interface SaisieMasterState {
   setEditorView: (view: EditorView) => void;
   loadClasses: (classes: ClassData[]) => void;
   setActiveClass: (index: number) => void;
-  /** Change le type d'évaluation actif (EF1, ES1, ES2, ES3). */
+  /** Change le type d'évaluation actif (EF1, ES1, ES2, ES3, ou personnalisé). */
   setActiveEvalType: (evalType: EvaluationType) => void;
+  /** Ajoute un type d'évaluation personnalisé à la classe active. */
+  addCustomEvaluationType: (custom: CustomEvaluationType) => void;
+  /** Supprime un type d'évaluation personnalisé de la classe active. */
+  removeCustomEvaluationType: (code: string) => void;
   /** Remove a class locally + its backend session (best-effort). */
   deleteClass: (index: number) => Promise<void>;
   /** Replace a class in the store with a new ClassData (used to load a session). */
@@ -215,6 +222,32 @@ export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
 
   setActiveEvalType: (evalType) => {
     set({ activeEvalType: evalType });
+  },
+
+  addCustomEvaluationType: (custom) => {
+    const state = get();
+    const { classes, activeClassIndex } = state;
+    if (!classes[activeClassIndex]) return;
+    const newClassData = addCustomEvalType(classes[activeClassIndex], custom);
+    const newClasses = [...classes];
+    newClasses[activeClassIndex] = newClassData;
+    set({ classes: newClasses, activeEvalType: custom.code });
+    persistClassesToStorage(newClasses, activeClassIndex);
+    scheduleBackendSync(newClasses, activeClassIndex);
+  },
+
+  removeCustomEvaluationType: (code) => {
+    const state = get();
+    const { classes, activeClassIndex, activeEvalType } = state;
+    if (!classes[activeClassIndex]) return;
+    const newClassData = removeCustomEvalType(classes[activeClassIndex], code);
+    const newClasses = [...classes];
+    newClasses[activeClassIndex] = newClassData;
+    // Si on supprime le type actif, revenir à EF1
+    const newActiveEval = activeEvalType === code ? "EF1" : activeEvalType;
+    set({ classes: newClasses, activeEvalType: newActiveEval });
+    persistClassesToStorage(newClasses, activeClassIndex);
+    scheduleBackendSync(newClasses, activeClassIndex);
   },
 
   deleteClass: async (index) => {

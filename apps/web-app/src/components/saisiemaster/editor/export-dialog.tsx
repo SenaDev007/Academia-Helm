@@ -27,7 +27,10 @@ import {
 } from "@/lib/saisiemaster/excel-generator";
 import { trackActivity } from "@/lib/saisiemaster/api";
 import { EVALUATION_TYPES } from "@/lib/saisiemaster/constants";
-import { hasEvaluationNotes } from "@/lib/saisiemaster/evaluation-utils";
+import {
+  hasEvaluationNotes,
+  getAllEvaluationTypes,
+} from "@/lib/saisiemaster/evaluation-utils";
 import { toast } from "sonner";
 
 interface ExportDialogProps {
@@ -100,7 +103,9 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
   const isComplete = stats.completionRate === 100;
   const hasWarnings = stats.completionRate < 100;
-  const hasAnyNotes = EVALUATION_TYPES.some((t) =>
+  // Tous les types d'évaluations (4 prédéfinis + personnalisés)
+  const allTypes = getAllEvaluationTypes(classData);
+  const hasAnyNotes = allTypes.some((t) =>
     hasEvaluationNotes(classData, t.code),
   );
 
@@ -210,7 +215,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
               Export individuel (1 fichier par évaluation)
             </p>
             <div className="grid grid-cols-2 gap-2">
-              {EVALUATION_TYPES.map((t) => {
+              {allTypes.map((t) => {
                 const hasNotes = hasEvaluationNotes(classData, t.code);
                 return (
                   <Button
@@ -255,7 +260,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
               ) : (
                 <FileArchive className="h-4 w-4 mr-2" />
               )}
-              Télécharger le ZIP (4 fichiers)
+              Télécharger le ZIP ({allTypes.length} fichiers)
             </Button>
             {!hasAnyNotes && (
               <p className="text-[10px] text-muted-foreground mt-1.5 text-center">

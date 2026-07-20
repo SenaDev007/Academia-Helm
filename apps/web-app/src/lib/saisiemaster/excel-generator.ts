@@ -18,7 +18,10 @@ import * as XLSX from "xlsx";
 import JSZip from "jszip";
 import type { ClassData, EvaluationType, Note } from "./types";
 import { EVALUATION_TYPES } from "./constants";
-import { getEvaluationNotes } from "./evaluation-utils";
+import {
+  getEvaluationNotes,
+  getAllEvaluationTypes,
+} from "./evaluation-utils";
 
 /** Construit l'objet worksheet au format EducMaster pour une classe et un type d'évaluation donnés. */
 function buildSheet(data: ClassData, evalType: EvaluationType): XLSX.WorkSheet {
@@ -240,15 +243,18 @@ export async function exportAllEvaluationsZip(data: ClassData): Promise<{
 }> {
   const zip = new JSZip();
 
-  // Génère les 4 fichiers Excel (un par type d'évaluation)
-  for (const evalType of EVALUATION_TYPES.map((t) => t.code)) {
-    const { blob, fileName } = exportEducMasterFile(data, evalType);
+  // Récupère TOUS les types d'évaluations (4 prédéfinis + personnalisés)
+  const allTypes = getAllEvaluationTypes(data);
+
+  // Génère un fichier Excel par type d'évaluation
+  for (const evalType of allTypes) {
+    const { blob, fileName } = exportEducMasterFile(data, evalType.code);
     const arrayBuffer = await blob.arrayBuffer();
     zip.file(fileName, arrayBuffer);
   }
 
   // Ajoute aussi un fichier README expliquant la structure du ZIP
-  const readme = `SaisieMaster — Export groupé des 4 évaluations
+  const readme = `SaisieMaster — Export groupé des évaluations
 =================================================
 
 Classe : ${data.className}
@@ -256,9 +262,9 @@ Classe : ${data.className}
 Année scolaire : ${data.academicYear || "—"}
 Date d'export : ${new Date().toLocaleString("fr-FR")}
 
-Ce ZIP contient 4 fichiers Excel, un par type d'évaluation :
+Ce ZIP contient ${allTypes.length} fichier(s) Excel, un par type d'évaluation :
 
-${EVALUATION_TYPES.map((t) => `- ${t.code} : ${t.label} — ${t.description}`).join("\n")}
+${allTypes.map((t) => `- ${t.code} : ${t.label}${t.description ? ` — ${t.description}` : ""}`).join("\n")}
 
 Pour chaque type d'évaluation, le fichier .xlsx contient :
 - La liste des élèves (Matricule, Nom, Prénoms)
@@ -290,7 +296,7 @@ Généré par SaisieMaster (saissiemaster.academiahelm.com)
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  const fileName = `saisiemaster_4evaluations_${school}-${cls}.zip`;
+  const fileName = `saisiemaster_${allTypes.length}evaluations_${school}-${cls}.zip`;
 
   return { blob: zipBlob, fileName };
 }

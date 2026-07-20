@@ -351,6 +351,7 @@ function parseSheet(
       ES2: {},
       ES3: {},
     },
+    customEvaluationTypes: [], // pas de types personnalisés à l'import
     notes: ef1Notes, // rétro-compat
     sourceFileName: fileName,
     importedAt: new Date().toISOString(),

@@ -49,6 +49,14 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
   const { shouldReduceMotion } = useMotionBudget();
   const pageMotion = getPageSlideMotion(shouldReduceMotion);
 
+  // ⭐ Les routes /app/teacher et /app/parent ont leur PROPRE layout
+  // (TeacherLayout / ParentLayout). On ne doit PAS rendre la PilotageSidebar
+  // pour ces routes — on passe juste les children.
+  const isDedicatedPortal = pathname.startsWith('/app/teacher') || pathname.startsWith('/app/parent');
+  if (isDedicatedPortal) {
+    return <>{children}</>;
+  }
+
   // Stabilized callbacks
   const handleToggleMobileDrawer = useCallback(() => setMobileDrawerOpen(prev => !prev), []);
   const handleCloseMobileDrawer = useCallback(() => setMobileDrawerOpen(false), []);

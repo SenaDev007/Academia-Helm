@@ -28,7 +28,19 @@ export default async function AppPage() {
   const user = session.user as User;
   const tenantId = user.tenantId || '';
 
-  // Afficher le dashboard selon le rôle
+  // ⭐ Rediriger les enseignants vers leur portail dédié
+  const teacherRoles = ['teacher', 'TEACHER', 'TEACHER_RESP', 'ENSEIGNANT'];
+  if (teacherRoles.includes(user.role)) {
+    redirect('/app/teacher');
+  }
+
+  // ⭐ Rediriger les parents vers leur portail dédié
+  const parentRoles = ['PARENT', 'STUDENT', 'PARENT_PRIMARY', 'LEGAL_GUARDIAN', 'FINANCIAL_RESPONSIBLE'];
+  if (parentRoles.includes(user.role)) {
+    redirect('/app/parent');
+  }
+
+  // Afficher le dashboard selon le rôle (pour les rôles admin/direction)
   const renderDashboard = () => {
     switch (user.role) {
       case 'PLATFORM_OWNER':
@@ -39,17 +51,10 @@ export default async function AppPage() {
       case 'PROMOTER':
       case 'PROMOTEUR':
         return <PromoterDashboard tenantId={tenantId} />;
-      case 'teacher':
-      case 'TEACHER':
-      case 'TEACHER_RESP':
-        return <TeacherDashboard />;
       case 'accountant':
         return <AccountantDashboard />;
       case 'admin':
         return <AdminDashboard />;
-      case 'PARENT':
-      case 'STUDENT':
-        return <ParentDashboard />;
       default:
         return <AdminDashboard />;
     }

@@ -529,18 +529,36 @@ export function getVisibleModulesForRole(role: string): {
   const levelSpecificSecretaryRoles = ['SECRETAIRE_MATERNELLE', 'SECRETAIRE_PRIMAIRE', 'SECRETAIRE_SECONDAIRE', 'SECRETAIRE_MAT_PRI'];
   const levelSpecificComptableRoles = ['SECRETAIRE_COMPTABLE_MATERNELLE', 'SECRETAIRE_COMPTABLE_PRIMAIRE', 'SECRETAIRE_COMPTABLE_SECONDAIRE', 'SECRETAIRE_COMPTABLE_MAT_PRI'];
 
+  // ⭐ Rôles qui ont accès à TOUS les modules (y compris Settings)
+  // Le promoteur est propriétaire de l'école — il voit TOUT, sans exception.
+  const FULL_ACCESS_ROLES = [
+    'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
+    'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_ADMIN',
+    'SUPER_ADMIN', 'SUPER_DIRECTOR', 'admin',
+  ];
+  const isFullAccess = FULL_ACCESS_ROLES.includes(role) || hasAll;
+
+  // ⭐ Rôles qui ont accès aux Paramètres (Settings)
+  // SEULS le promoteur, l'admin, le platform owner et le responsable IT y ont accès.
+  const SETTINGS_ACCESS_ROLES = [
+    'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
+    'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_ADMIN',
+    'SUPER_ADMIN', 'SUPER_DIRECTOR', 'admin',
+    'IT_MANAGER', 'SETTINGS_MANAGER',
+  ];
+
   return {
     showPlatformModules: false,
-    showDirectionModules: hasAll || ['PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', ...levelSpecificDirectorRoles].includes(role),
-    showFinanceModules: hasAll || ['PROMOTER', 'CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER', ...levelSpecificComptableRoles].includes(role),
-    showPedagogyModules: hasAll || ['PROMOTER', 'PEDAGOGIC_DIRECTOR', 'CENSOR', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE', 'PEDAGOGIC_COORDINATOR', ...levelSpecificDirectorRoles].includes(role),
-    showHrModules: hasAll || ['PROMOTER', 'HR_MANAGER', 'PAYROLL_MANAGER'].includes(role),
-    showCommunicationModules: hasAll || ['PROMOTER', 'COMMUNICATION_MANAGER', 'COMMUNICATION_AGENT', 'SCHOOL_LIFE_MANAGER'].includes(role),
-    showStudentModules: hasAll || true, // La plupart des rôles école ont accès aux élèves
-    showExamModules: hasAll || ['PROMOTER', 'CENSOR', 'EXAM_MANAGER', 'RESP_SECONDAIRE', 'PEDAGOGIC_COORDINATOR'].includes(role),
+    showDirectionModules: isFullAccess || ['BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', ...levelSpecificDirectorRoles].includes(role),
+    showFinanceModules: isFullAccess || ['CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER', ...levelSpecificComptableRoles].includes(role),
+    showPedagogyModules: isFullAccess || ['PEDAGOGIC_DIRECTOR', 'CENSOR', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE', 'PEDAGOGIC_COORDINATOR', ...levelSpecificDirectorRoles].includes(role),
+    showHrModules: isFullAccess || ['HR_MANAGER', 'PAYROLL_MANAGER'].includes(role),
+    showCommunicationModules: isFullAccess || ['COMMUNICATION_MANAGER', 'COMMUNICATION_AGENT', 'SCHOOL_LIFE_MANAGER'].includes(role),
+    showStudentModules: true, // La plupart des rôles école ont accès aux élèves
+    showExamModules: isFullAccess || ['CENSOR', 'EXAM_MANAGER', 'RESP_SECONDAIRE', 'PEDAGOGIC_COORDINATOR', ...levelSpecificDirectorRoles].includes(role),
     showParentModules: false,
-    showSettingsModules: hasAll || ['PROMOTER', 'IT_MANAGER', 'SETTINGS_MANAGER', ...levelSpecificDirectorRoles].includes(role),
-    showSupplementaryModules: !!hasAll,
+    showSettingsModules: SETTINGS_ACCESS_ROLES.includes(role),
+    showSupplementaryModules: isFullAccess,
   };
 }
 

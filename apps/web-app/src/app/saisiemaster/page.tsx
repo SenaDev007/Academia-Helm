@@ -22,18 +22,12 @@ export default function SaisieMasterPage() {
   const hasRestoredRef = useRef(false);
 
   // ⭐ Délai minimum pour garantir que le loading page reste visible
-  // au moins 5 secondes (même durée que le loader Academia Helm).
+  // au moins 2.5 secondes (au lieu de 5s qui était trop long).
   // Sans cela, le loading disparaît trop vite car la page est 100%
   // client-side (pas de requête serveur à attendre).
-  //
-  // ⚠️ En Next.js App Router, le fichier loading.tsx ne s'affiche QUE
-  // pendant le suspense de la page. Comme cette page est "use client" et
-  // ne fait pas de requête serveur, loading.tsx est démonté presque
-  // immédiatement. Pour garder le loader visible 5s, on l'affiche
-  // DIRECTEMENT dans la page (au lieu de retourner null).
   const [minLoadElapsed, setMinLoadElapsed] = useState(false);
   useEffect(() => {
-    const timer = setTimeout(() => setMinLoadElapsed(true), 5000);
+    const timer = setTimeout(() => setMinLoadElapsed(true), 2500);
     return () => clearTimeout(timer);
   }, []);
 
@@ -116,6 +110,14 @@ export default function SaisieMasterPage() {
   //   - avec classes  → vue "notes" (saisie)
   //   - sans classes  → vue "classes" (import)
   if (view === "editor" && isAuthenticated) {
+    return <EditorPage onHome={() => setView("landing")} />;
+  }
+
+  // ⭐ Si l'utilisateur est authentifié mais sur la landing page, on l'envoie
+  // quand même vers l'éditeur (sauf s'il a explicitement cliqué sur "Home").
+  // Cela couvre le cas où l'utilisateur clique sur "Se connecter" alors qu'il
+  // est déjà authentifié (session expirée côté store mais pas côté localStorage).
+  if (isAuthenticated && view !== "landing") {
     return <EditorPage onHome={() => setView("landing")} />;
   }
 

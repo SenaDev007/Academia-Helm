@@ -15858,3 +15858,63 @@ model UserTenant {
   @@index([tenantId])
   @@map("user_tenants")
 }
+
+// ============================================================================
+// ESPACE PÉDAGOGIQUE — Modèles spécifiques (Phase 1)
+// ============================================================================
+
+/// Cahier du semainier — vue hebdomadaire de l'enseignant.
+/// L'enseignant consolide ses séances de la semaine (depuis ClassLog) et
+/// soumet au directeur pour validation.
+/// Workflow: DRAFT → SUBMITTED → VALIDATED / REJECTED
+model PedagogicalWeeklyLog {
+  id              String              @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  teacherId       String
+  classId         String?
+  weekStartDate   DateTime            @db.Date
+  weekEndDate     DateTime            @db.Date
+  status          String              @default("DRAFT") // DRAFT | SUBMITTED | VALIDATED | REJECTED
+  summary         String?
+  submittedAt     DateTime?
+  validatedAt     DateTime?
+  validatedBy     String?
+  rejectionReason String?
+  classLogIds     String[]            @default([]) // IDs des ClassLog de la semaine
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@unique([teacherId, classId, weekStartDate])
+  @@index([tenantId, academicYearId, teacherId])
+  @@index([status])
+  @@map("pedagogical_weekly_logs")
+}
+
+/// Suivi par élève des devoirs/activités pédagogiques.
+/// Pour chaque HomeworkEntry, on suit le statut de chaque élève :
+/// PENDING | DONE | NOT_DONE | INCOMPLETE | LATE | TO_REDO | RECITED | NOT_RECITED
+/// + note/appréciation + observation de l'enseignant.
+model PedagogicalTaskStudent {
+  id              String              @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  homeworkEntryId String
+  studentId       String
+  teacherId       String
+  status          String              @default("PENDING") // PENDING | DONE | NOT_DONE | INCOMPLETE | LATE | TO_REDO | RECITED | NOT_RECITED | PRESENTED | NOT_PRESENTED
+  score           Float?
+  appreciation    String?
+  observation     String?
+  submittedAt     DateTime?
+  evaluatedAt     DateTime?
+  parentNotified  Boolean             @default(false)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@unique([homeworkEntryId, studentId])
+  @@index([tenantId, academicYearId, studentId])
+  @@index([homeworkEntryId])
+  @@index([teacherId])
+  @@map("pedagogical_task_students")
+}

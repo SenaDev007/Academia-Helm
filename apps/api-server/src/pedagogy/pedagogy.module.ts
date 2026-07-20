@@ -72,6 +72,10 @@ import { PedagogyPdfDocumentService } from './pedagogy-pdf-document';
 
 import { StorageService } from '../common/services/storage.service';
 
+// Module 2 - Espace Pédagogique Enseignant + Contrôle Direction
+import { PedagogicalSpaceService } from './pedagogical-space.service';
+import { PedagogicalSpaceController } from './pedagogical-space.controller';
+
 @Module({
   imports: [DatabaseModule, CommunicationModule],
   controllers: [
@@ -104,9 +108,13 @@ import { StorageService } from '../common/services/storage.service';
     IaPrismaController,
     // Module 2 - Notifications email aux enseignants
     PedagogyNotificationController,
+    // Module 2 - Espace Pédagogique Enseignant + Contrôle Direction
+    PedagogicalSpaceController,
   ],
   providers: [
     StorageService,
+    // Module 2 - Espace Pédagogique Enseignant + Contrôle Direction
+    PedagogicalSpaceService,
     SubjectsPrismaService,
     TeachersPrismaService,
     PedagogyPrismaService,

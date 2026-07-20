@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import {
   BookOpen, CalendarCheck, NotebookPen, CalendarDays, FileText,
   Users, Loader2, ChevronRight, RefreshCw, ClipboardList, FileSpreadsheet,
+  ClipboardCheck,
 } from "lucide-react";
 
 import { MyClassesTab } from "./MyClassesTab";
@@ -37,6 +38,7 @@ import { CahierJournalTab } from "./CahierJournalTab";
 import { CahierSemaineTab } from "./CahierSemaineTab";
 import { PedagogicalSheetsTab } from "./PedagogicalSheetsTab";
 import { AttendanceRegisterTab } from "./AttendanceRegisterTab";
+import { CahierDeTestTab } from "./CahierDeTestTab";
 import { HomeworkTab } from "./HomeworkTab";
 
 const TABS = [
@@ -47,6 +49,7 @@ const TABS = [
   { id: 'weekly', label: 'Cahier de Semaine', icon: CalendarDays, description: 'Monitoring institutionnel' },
   { id: 'fiches', label: 'Fiches Pédagogiques', icon: FileText, description: '5 types (MATH/FR/EST/ES/EA)' },
   { id: 'registre', label: 'Registre d\'Appel', icon: ClipboardList, description: 'Registre mensuel + évaluations' },
+  { id: 'cahier-test', label: 'Cahier de Test', icon: ClipboardCheck, description: 'Évaluations (secondaire)' },
   { id: 'homework', label: 'Devoirs', icon: BookOpen, description: 'Exercices & suivi' },
 ] as const;
 
@@ -155,6 +158,13 @@ export function PedagogicalSpaceWorkspace() {
           )}
           {tab === 'registre' && (
             <AttendanceRegisterTab
+              tenantId={tenant?.id || ''}
+              academicYearId={academicYear.id}
+              teacherId={teacherId}
+            />
+          )}
+          {tab === 'cahier-test' && (
+            <CahierDeTestTab
               tenantId={tenant?.id || ''}
               academicYearId={academicYear.id}
               teacherId={teacherId}

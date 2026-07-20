@@ -642,12 +642,14 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         <div className="bg-white border-2 border-slate-800 rounded-xl p-6 space-y-4">
           {/* En-tête */}
           <div className="text-center border-b border-slate-300 pb-3">
-            <h2 className="text-lg font-bold text-slate-900">REGISTRE D'APPEL</h2>
+            <h2 className="text-lg font-bold text-slate-900">
+              REGISTRE D'APPEL{register.schoolLevelCode === "MATERNELLE" ? " MATERNELLE" : register.schoolLevelCode === "PRIMAIRE" ? "" : ` ${register.schoolLevelName || ""}`}
+            </h2>
             <div className="text-sm text-slate-600 mt-1">
               Mois de <strong>{MONTH_NAMES[selectedMonth]}</strong> {selectedYear}
             </div>
             <div className="text-sm text-slate-700 mt-1">
-              Classe : <strong>{selectedClass?.className || "—"}</strong> — Effectif : {selectedClass?.totalStudents || 0} élèves
+              Classe : <strong>{register.classNameResolved || selectedClass?.className || "—"}</strong> — Effectif : {selectedClass?.totalStudents || 0} élèves
               ({selectedClass?.boys || 0} G, {selectedClass?.girls || 0} F)
             </div>
           </div>

@@ -1353,6 +1353,8 @@ export class PedagogicalSpaceService {
   // ===========================================================================
 
   /// Récupère ou crée un registre d'appel mensuel pour une classe.
+  /// Inclut la détection du niveau (MATERNELLE/PRIMAIRE/SECONDAIRE) pour
+  /// adapter le titre et les libellés côté frontend.
   async getOrCreateAttendanceRegister(
     tenantId: string,
     academicYearId: string,
@@ -1362,9 +1364,13 @@ export class PedagogicalSpaceService {
     year: number,
   ) {
     const existing: any = await this.prisma.$queryRawUnsafe(
-      `SELECT * FROM "attendance_registers"
-       WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "classId" = $3
-       AND "month" = $4 AND "year" = $5 LIMIT 1`,
+      `SELECT ar.*, sl."code" as "schoolLevelCode", sl."name" as "schoolLevelName",
+              c."name" as "classNameResolved"
+       FROM "attendance_registers" ar
+       LEFT JOIN "classes" c ON c."id" = ar."classId"
+       LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
+       WHERE ar."tenantId" = $1 AND ar."academicYearId" = $2 AND ar."classId" = $3
+       AND ar."month" = $4 AND ar."year" = $5 LIMIT 1`,
       tenantId, academicYearId, classId, month, year,
     );
 
@@ -1382,7 +1388,12 @@ export class PedagogicalSpaceService {
     );
 
     const created: any = await this.prisma.$queryRawUnsafe(
-      `SELECT * FROM "attendance_registers" WHERE "id" = $1`,
+      `SELECT ar.*, sl."code" as "schoolLevelCode", sl."name" as "schoolLevelName",
+              c."name" as "classNameResolved"
+       FROM "attendance_registers" ar
+       LEFT JOIN "classes" c ON c."id" = ar."classId"
+       LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
+       WHERE ar."id" = $1`,
       id,
     );
     return created[0];
@@ -2018,6 +2029,7 @@ export class PedagogicalSpaceService {
       pendingEvaluations,
       pendingWeeklyLogs,
       pendingWeeklySummaries,
+      pendingCahierTests,
     ] = await Promise.all([
       this.prisma.$queryRawUnsafe(
         `SELECT COUNT(*)::int as count FROM "cahier_journal_entries"
@@ -2050,6 +2062,11 @@ export class PedagogicalSpaceService {
          WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'`,
         tenantId, academicYearId,
       ),
+      this.prisma.$queryRawUnsafe(
+        `SELECT COUNT(*)::int as count FROM "cahier_de_tests"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'`,
+        tenantId, academicYearId,
+      ),
     ]);
 
     const cahierCount = pendingCahierJournals[0]?.count || 0;
@@ -2062,6 +2079,7 @@ export class PedagogicalSpaceService {
     const evaluationsCount = pendingEvaluations[0]?.count || 0;
     const weeklyLogsCount = pendingWeeklyLogs[0]?.count || 0;
     const weeklySummariesCount = pendingWeeklySummaries[0]?.count || 0;
+    const cahierTestsCount = pendingCahierTests[0]?.count || 0;
 
     return {
       pendingCahierJournals: cahierCount,
@@ -2071,7 +2089,8 @@ export class PedagogicalSpaceService {
       pendingMonthlyEvaluations: evaluationsCount,
       pendingWeeklyLogs: weeklyLogsCount,
       pendingWeeklySummaries: weeklySummariesCount,
-      totalPending: cahierCount + fichesCount + registersCount + evaluationsCount + weeklyLogsCount + weeklySummariesCount,
+      pendingCahierTests: cahierTestsCount,
+      totalPending: cahierCount + fichesCount + registersCount + evaluationsCount + weeklyLogsCount + weeklySummariesCount + cahierTestsCount,
     };
   }
 
@@ -2331,5 +2350,420 @@ export class PedagogicalSpaceService {
       evaluationId,
     );
     return updated[0];
+  }
+
+  // ===========================================================================
+  // CAHIER DE TEST (SECONDAIRE) — Évaluations et compositions
+  // ===========================================================================
+
+  /// Liste les cahiers de test d'un enseignant.
+  async getCahierDeTests(
+    tenantId: string,
+    teacherId: string,
+    academicYearId: string,
+    classId?: string,
+    testType?: string,
+    trimester?: number,
+  ) {
+    let query = `SELECT ct.*, c."name" as "classNameResolved", s."name" as "subjectName", s."code" as "subjectCode"
+                 FROM "cahier_de_tests" ct
+                 LEFT JOIN "classes" c ON c."id" = ct."classId"
+                 LEFT JOIN "subjects" s ON s."id" = ct."subjectId"
+                 WHERE ct."tenantId" = $1 AND ct."academicYearId" = $2 AND ct."teacherId" = $3`;
+    const params: any[] = [tenantId, academicYearId, teacherId];
+    let paramIdx = 4;
+    if (classId) {
+      query += ` AND ct."classId" = $${paramIdx++}`;
+      params.push(classId);
+    }
+    if (testType) {
+      query += ` AND ct."testType" = $${paramIdx++}`;
+      params.push(testType);
+    }
+    if (trimester !== undefined && trimester !== null) {
+      query += ` AND ct."trimester" = $${paramIdx++}`;
+      params.push(trimester);
+    }
+    query += ` ORDER BY ct."testDate" DESC NULLS LAST, ct."createdAt" DESC`;
+    return this.prisma.$queryRawUnsafe(query, ...params);
+  }
+
+  /// Récupère un cahier de test par ID.
+  async getCahierDeTest(tenantId: string, testId: string) {
+    const result: any = await this.prisma.$queryRawUnsafe(
+      `SELECT ct.*, c."name" as "classNameResolved", s."name" as "subjectName", s."code" as "subjectCode"
+       FROM "cahier_de_tests" ct
+       LEFT JOIN "classes" c ON c."id" = ct."classId"
+       LEFT JOIN "subjects" s ON s."id" = ct."subjectId"
+       WHERE ct."id" = $1 AND ct."tenantId" = $2`,
+      testId, tenantId,
+    );
+    if (!result || result.length === 0) {
+      throw new NotFoundException('Cahier de test non trouvé');
+    }
+    return result[0];
+  }
+
+  /// Crée un nouveau cahier de test.
+  async createCahierDeTest(
+    tenantId: string,
+    academicYearId: string,
+    teacherId: string,
+    data: any,
+  ) {
+    if (!data.classId || !data.testType || !data.testTitle || !data.trimester) {
+      throw new BadRequestException('classId, testType, testTitle, trimester sont requis');
+    }
+
+    const id = crypto.randomUUID();
+    const fields: string[] = ['"id"', '"tenantId"', '"academicYearId"', '"teacherId"',
+                              '"createdAt"', '"updatedAt"',
+                              '"classId"', '"testType"', '"testTitle"', '"trimester"',
+                              '"studentScores"', '"maxScore"', '"passingScore"', '"coefficient"',
+                              '"status"', '"testNumber"'];
+    const placeholders: string[] = ['$1', '$2', '$3', '$4', 'NOW()', 'NOW()',
+                                    '$5', '$6', '$7', '$8',
+                                    "'[]'::jsonb", '$9', '$10', '$11',
+                                    "'DRAFT'", '$12'];
+    const params: any[] = [
+      id, tenantId, academicYearId, teacherId,
+      data.classId, data.testType, data.testTitle, data.trimester,
+      data.maxScore ?? 20.0, data.passingScore ?? 10.0, data.coefficient ?? 1.0,
+      data.testNumber ?? 1,
+    ];
+    let paramIdx = 13;
+
+    const optionalFields: Array<{ key: string; type: 'string' | 'int' | 'float' | 'date' }> = [
+      { key: 'subjectId', type: 'string' },
+      { key: 'schoolName', type: 'string' },
+      { key: 'className', type: 'string' },
+      { key: 'academicYearLabel', type: 'string' },
+      { key: 'testDate', type: 'date' },
+      { key: 'durationMinutes', type: 'int' },
+      { key: 'teacherName', type: 'string' },
+      { key: 'teacherSignature', type: 'string' },
+      { key: 'pedagogicalObservations', type: 'string' },
+      { key: 'recommandations', type: 'string' },
+    ];
+
+    for (const { key, type } of optionalFields) {
+      if (data[key] !== undefined && data[key] !== null) {
+        fields.push(`"${key}"`);
+        if (type === 'date') {
+          placeholders.push(`$${paramIdx++}::date`);
+          params.push(data[key]);
+        } else if (type === 'int') {
+          placeholders.push(`$${paramIdx++}::int`);
+          params.push(data[key]);
+        } else if (type === 'float') {
+          placeholders.push(`$${paramIdx++}::double precision`);
+          params.push(data[key]);
+        } else {
+          placeholders.push(`$${paramIdx++}`);
+          params.push(data[key]);
+        }
+      }
+    }
+
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "cahier_de_tests" (${fields.join(', ')}) VALUES (${placeholders.join(', ')})`,
+      ...params,
+    );
+
+    return this.getCahierDeTest(tenantId, id);
+  }
+
+  /// Met à jour un cahier de test.
+  async updateCahierDeTest(
+    tenantId: string,
+    testId: string,
+    data: any,
+  ) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_de_tests" WHERE "id" = $1 AND "tenantId" = $2`,
+      testId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Cahier de test non trouvé');
+    }
+
+    const updates: string[] = [];
+    const params: any[] = [];
+    let paramIdx = 1;
+
+    const allowedFields: Record<string, 'string' | 'int' | 'float' | 'jsonb' | 'date'> = {
+      subjectId: 'string',
+      schoolName: 'string', className: 'string', academicYearLabel: 'string',
+      trimester: 'int', testType: 'string', testNumber: 'int', testTitle: 'string',
+      testDate: 'date', durationMinutes: 'int', teacherName: 'string',
+      maxScore: 'float', passingScore: 'float', coefficient: 'float',
+      studentScores: 'jsonb',
+      totalStudents: 'int', totalPresent: 'int', totalAbsent: 'int',
+      averageScore: 'float', highestScore: 'float', lowestScore: 'float',
+      passedCount: 'int', failedCount: 'int', passRate: 'float',
+      boysCount: 'int', girlsCount: 'int',
+      boysAverage: 'float', girlsAverage: 'float',
+      boysPassed: 'int', girlsPassed: 'int',
+      pedagogicalObservations: 'string', recommandations: 'string',
+      teacherSignature: 'string', directorSignature: 'string',
+      status: 'string', submittedAt: 'date', validatedAt: 'date',
+      validatedBy: 'string', rejectionReason: 'string',
+    };
+
+    for (const [key, type] of Object.entries(allowedFields)) {
+      if (data[key] !== undefined) {
+        const val = data[key];
+        if (type === 'jsonb') {
+          updates.push(`"${key}" = $${paramIdx++}::jsonb`);
+          params.push(JSON.stringify(val));
+        } else if (type === 'date' && val) {
+          updates.push(`"${key}" = $${paramIdx++}::date`);
+          params.push(val);
+        } else if (type === 'int') {
+          updates.push(`"${key}" = $${paramIdx++}::int`);
+          params.push(val);
+        } else if (type === 'float') {
+          updates.push(`"${key}" = $${paramIdx++}::double precision`);
+          params.push(val);
+        } else {
+          updates.push(`"${key}" = $${paramIdx++}`);
+          params.push(val);
+        }
+      }
+    }
+
+    if (updates.length === 0) return existing[0];
+
+    updates.push(`"updatedAt" = NOW()`);
+    params.push(testId, tenantId);
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "cahier_de_tests" SET ${updates.join(', ')} WHERE "id" = $${paramIdx++} AND "tenantId" = $${paramIdx++}`,
+      ...params,
+    );
+
+    return this.getCahierDeTest(tenantId, testId);
+  }
+
+  /// Supprime un cahier de test.
+  async deleteCahierDeTest(tenantId: string, testId: string) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_de_tests" WHERE "id" = $1 AND "tenantId" = $2`,
+      testId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Cahier de test non trouvé');
+    }
+    await this.prisma.$executeRawUnsafe(
+      `DELETE FROM "cahier_de_tests" WHERE "id" = $1`,
+      testId,
+    );
+    return { success: true };
+  }
+
+  /// Soumet un cahier de test au directeur.
+  async submitCahierDeTest(tenantId: string, testId: string) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_de_tests" WHERE "id" = $1 AND "tenantId" = $2`,
+      testId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Cahier de test non trouvé');
+    }
+    if (existing[0].status !== 'DRAFT') {
+      throw new BadRequestException('Cahier de test déjà soumis');
+    }
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "cahier_de_tests"
+       SET "status" = 'SUBMITTED', "submittedAt" = NOW(), "updatedAt" = NOW()
+       WHERE "id" = $1`,
+      testId,
+    );
+    return this.getCahierDeTest(tenantId, testId);
+  }
+
+  /// Initialise les scores des élèves d'un cahier de test à partir des
+  /// élèves inscrits dans la classe (sans écraser les scores existants).
+  async initCahierDeTestStudents(tenantId: string, testId: string) {
+    const test: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_de_tests" WHERE "id" = $1 AND "tenantId" = $2`,
+      testId, tenantId,
+    );
+    if (!test || test.length === 0) {
+      throw new NotFoundException('Cahier de test non trouvé');
+    }
+    const test_ = test[0];
+    const maxScore = test_.maxScore ?? 20.0;
+    const passingScore = test_.passingScore ?? 10.0;
+
+    // Récupérer les élèves inscrits dans la classe
+    const enrollments: any = await this.prisma.$queryRawUnsafe(
+      `SELECT se."studentId", s."firstName", s."lastName", s."gender", s."matricule"
+       FROM "student_enrollments" se
+       INNER JOIN "students" s ON s."id" = se."studentId"
+       WHERE se."tenantId" = $1 AND se."academicYearId" = $2 AND se."classId" = $3
+       AND se."status" IN ('ACTIVE', 'ADMITTED', 'ENROLLED')
+       ORDER BY s."lastName", s."firstName"`,
+      tenantId, test_.academicYearId, test_.classId,
+    );
+
+    const existingScores = typeof test_.studentScores === 'string'
+      ? JSON.parse(test_.studentScores || '[]')
+      : (test_.studentScores || []);
+
+    const newScores = enrollments.map((enr: any, idx: number) => {
+      const existing = existingScores.find((s: any) => s.studentId === enr.studentId);
+      return {
+        studentId: enr.studentId,
+        numero: existing?.numero ?? idx + 1,
+        nom: enr.lastName || '',
+        prenom: enr.firstName || '',
+        sexe: (enr.gender || '').toUpperCase() === 'FEMALE' ? 'F' :
+              (enr.gender || '').toUpperCase() === 'MALE' ? 'M' : (enr.gender || 'M'),
+        score: existing?.score ?? null,
+        appreciation: existing?.appreciation || '',
+        absent: existing?.absent ?? false,
+      };
+    });
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "cahier_de_tests" SET "studentScores" = $1::jsonb, "updatedAt" = NOW() WHERE "id" = $2`,
+      JSON.stringify(newScores), testId,
+    );
+
+    return this.getCahierDeTest(tenantId, testId);
+  }
+
+  /// Calcule les statistiques d'un cahier de test à partir des scores.
+  computeCahierDeTestStats(studentScores: any[], maxScore: number, passingScore: number) {
+    let total = 0, present = 0, absent = 0;
+    let sumScores = 0;
+    let highest = -Infinity, lowest = Infinity;
+    let passed = 0, failed = 0;
+    let totalG = 0, totalF = 0;
+    let sumG = 0, sumF = 0;
+    let passedG = 0, passedF = 0;
+
+    for (const s of studentScores) {
+      total++;
+      const sexe = (s.sexe || '').toUpperCase();
+      if (sexe === 'M' || sexe === 'G') totalG++;
+      else if (sexe === 'F') totalF++;
+
+      if (s.absent) {
+        absent++;
+        failed++;
+        continue;
+      }
+      if (s.score === null || s.score === undefined) continue;
+
+      present++;
+      const score = Number(s.score);
+      sumScores += score;
+      if (score > highest) highest = score;
+      if (score < lowest) lowest = score;
+      const isPassed = score >= passingScore;
+      if (isPassed) {
+        passed++;
+        if (sexe === 'M' || sexe === 'G') passedG++;
+        else if (sexe === 'F') passedF++;
+      } else {
+        failed++;
+      }
+
+      if (sexe === 'M' || sexe === 'G') sumG += score;
+      else if (sexe === 'F') sumF += score;
+    }
+
+    return {
+      totalStudents: total,
+      totalPresent: present,
+      totalAbsent: absent,
+      averageScore: present > 0 ? Math.round((sumScores / present) * 100) / 100 : 0,
+      highestScore: highest === -Infinity ? 0 : highest,
+      lowestScore: lowest === Infinity ? 0 : lowest,
+      passedCount: passed,
+      failedCount: failed,
+      passRate: present > 0 ? Math.round((passed / present) * 10000) / 100 : 0,
+      boysCount: totalG,
+      girlsCount: totalF,
+      boysAverage: totalG > 0 ? Math.round((sumG / totalG) * 100) / 100 : 0,
+      girlsAverage: totalF > 0 ? Math.round((sumF / totalF) * 100) / 100 : 0,
+      boysPassed: passedG,
+      girlsPassed: passedF,
+    };
+  }
+
+  // === Validation direction pour les cahiers de test ===
+
+  /// Récupère tous les cahiers de test soumis (en attente de validation).
+  async getPendingCahierDeTests(tenantId: string, academicYearId: string) {
+    return this.prisma.$queryRawUnsafe(
+      `SELECT ct.*, c."name" as "classNameResolved", s."name" as "subjectName",
+              t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+       FROM "cahier_de_tests" ct
+       LEFT JOIN "classes" c ON c."id" = ct."classId"
+       LEFT JOIN "subjects" s ON s."id" = ct."subjectId"
+       LEFT JOIN "teachers" t ON t."id" = ct."teacherId"
+       WHERE ct."tenantId" = $1 AND ct."academicYearId" = $2 AND ct."status" = 'SUBMITTED'
+       ORDER BY ct."submittedAt" DESC`,
+      tenantId, academicYearId,
+    );
+  }
+
+  /// Valide ou rejette un cahier de test.
+  async validateCahierDeTest(
+    tenantId: string,
+    testId: string,
+    action: 'VALIDATED' | 'REJECTED',
+    validatedBy: string,
+    rejectionReason?: string,
+  ) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_de_tests" WHERE "id" = $1 AND "tenantId" = $2`,
+      testId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Cahier de test non trouvé');
+    }
+    if (existing[0].status !== 'SUBMITTED') {
+      throw new BadRequestException('Cahier de test pas en attente');
+    }
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "cahier_de_tests"
+       SET "status" = $1, "validatedAt" = NOW(), "validatedBy" = $2,
+           "rejectionReason" = $3, "updatedAt" = NOW()
+       WHERE "id" = $4`,
+      action, validatedBy, action === 'REJECTED' ? (rejectionReason || null) : null, testId,
+    );
+
+    if (action === 'VALIDATED') {
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "cahier_de_tests" SET "directorSignature" = 'Validé par la direction' WHERE "id" = $1`,
+        testId,
+      );
+    }
+
+    this.logger.log(`✅ Cahier de test ${testId} ${action} par ${validatedBy}`);
+    return this.getCahierDeTest(tenantId, testId);
+  }
+
+  /// Récupère le détail d'un cahier de test (vue direction).
+  async getCahierDeTestDetail(tenantId: string, testId: string) {
+    const result: any = await this.prisma.$queryRawUnsafe(
+      `SELECT ct.*, c."name" as "classNameResolved", s."name" as "subjectName",
+              t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+       FROM "cahier_de_tests" ct
+       LEFT JOIN "classes" c ON c."id" = ct."classId"
+       LEFT JOIN "subjects" s ON s."id" = ct."subjectId"
+       LEFT JOIN "teachers" t ON t."id" = ct."teacherId"
+       WHERE ct."id" = $1 AND ct."tenantId" = $2`,
+      testId, tenantId,
+    );
+    if (!result || result.length === 0) {
+      throw new NotFoundException('Cahier de test non trouvé');
+    }
+    return result[0];
   }
 }

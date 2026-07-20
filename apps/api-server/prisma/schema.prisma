@@ -16321,3 +16321,89 @@ model MonthlySummary {
   @@unique([tenantId, academicYearId, classId])
   @@map("monthly_summaries")
 }
+
+// ============================================================================
+// CAHIER DE TEST — Évaluations et compositions (SECONDAIRE)
+// ============================================================================
+
+/// Cahier de test pour l'enseignement secondaire.
+/// Permet à l'enseignant de saisir les notes des élèves pour chaque
+/// évaluation (devoir, composition, interrogation) par matière.
+/// Une entrée = un test (évaluation) pour une classe × matière × date.
+/// Workflow: DRAFT → SUBMITTED → VALIDATED / REJECTED (côté direction)
+model CahierDeTest {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  teacherId       String
+  classId         String
+  subjectId       String?
+
+  // En-tête
+  schoolName         String?
+  className          String?
+  academicYearLabel  String?
+  trimester          Int      // 1, 2 ou 3
+  testType           String   // DEVOIR | COMPOSITION | INTERROGATION | TEST
+  testNumber         Int      // N° du devoir/composition (1, 2, 3...)
+  testTitle          String   // Titre du test (ex: "Composition du 1er trimestre")
+  testDate           DateTime? @db.Date
+  durationMinutes    Int?
+  teacherName        String?
+
+  // Configuration des notes
+  maxScore           Float    @default(20.0)  // Note maximale (sur 20 par défaut)
+  passingScore       Float    @default(10.0)  // Seuil de réussite (moyenne)
+  coefficient        Float    @default(1.0)   // Coefficient du test
+
+  // Notes des élèves (JSON)
+  // [{ studentId, numero, nom, prenom, sexe,
+  //    score (number|null), appreciation (string), absent (boolean),
+  //    scoreOnMax (number), percentage (number), passed (boolean) }]
+  studentScores      Json     @default("[]")
+
+  // Statistiques calculées
+  totalStudents      Int?
+  totalPresent        Int?
+  totalAbsent         Int?
+  averageScore       Float?
+  highestScore        Float?
+  lowestScore         Float?
+  passedCount        Int?
+  failedCount        Int?
+  passRate            Float?  // Pourcentage de réussite
+
+  // Répartition par sexe
+  boysCount           Int?
+  girlsCount          Int?
+  boysAverage         Float?
+  girlsAverage        Float?
+  boysPassed          Int?
+  girlsPassed         Int?
+
+  // Observations pédagogiques
+  pedagogicalObservations String?
+  recommandations         String?
+
+  // Signatures
+  teacherSignature    String?
+  directorSignature   String?
+
+  // Workflow
+  status             String   @default("DRAFT") // DRAFT | SUBMITTED | VALIDATED | REJECTED
+  submittedAt        DateTime?
+  validatedAt        DateTime?
+  validatedBy        String?
+  rejectionReason    String?
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([tenantId, academicYearId, teacherId])
+  @@index([classId])
+  @@index([subjectId])
+  @@index([status])
+  @@index([trimester])
+  @@index([testType])
+  @@map("cahier_de_tests")
+}

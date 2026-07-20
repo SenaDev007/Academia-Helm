@@ -753,4 +753,114 @@ export class PedagogicalSpaceController {
   ) {
     return this.service.submitMonthlyEvaluation(tenantId, id);
   }
+
+  // ===========================================================================
+  // CAHIER DE TEST (SECONDAIRE) — Évaluations et compositions
+  // ===========================================================================
+
+  @Get('cahier-tests')
+  async getCahierDeTests(
+    @TenantId() tenantId: string,
+    @Query('teacherId') teacherId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('classId') classId?: string,
+    @Query('testType') testType?: string,
+    @Query('trimester') trimester?: string,
+  ) {
+    if (!teacherId || !academicYearId) {
+      throw new BadRequestException('teacherId et academicYearId sont requis');
+    }
+    return this.service.getCahierDeTests(
+      tenantId, teacherId, academicYearId,
+      classId, testType, trimester ? parseInt(trimester) : undefined,
+    );
+  }
+
+  @Get('cahier-tests/:id')
+  async getCahierDeTest(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.getCahierDeTest(tenantId, id);
+  }
+
+  @Post('cahier-tests')
+  async createCahierDeTest(
+    @TenantId() tenantId: string,
+    @Body() body: any,
+  ) {
+    return this.service.createCahierDeTest(
+      tenantId, body.academicYearId, body.teacherId, body,
+    );
+  }
+
+  @Put('cahier-tests/:id')
+  async updateCahierDeTest(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    return this.service.updateCahierDeTest(tenantId, id, body);
+  }
+
+  @Delete('cahier-tests/:id')
+  async deleteCahierDeTest(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.deleteCahierDeTest(tenantId, id);
+  }
+
+  @Post('cahier-tests/:id/submit')
+  @HttpCode(HttpStatus.OK)
+  async submitCahierDeTest(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.submitCahierDeTest(tenantId, id);
+  }
+
+  @Post('cahier-tests/:id/init-students')
+  @HttpCode(HttpStatus.OK)
+  async initCahierDeTestStudents(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.initCahierDeTestStudents(tenantId, id);
+  }
+
+  // === Validation direction pour les cahiers de test ===
+
+  @Get('director/pending-cahier-tests')
+  async getPendingCahierDeTests(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) throw new BadRequestException('academicYearId est requis');
+    return this.service.getPendingCahierDeTests(tenantId, academicYearId);
+  }
+
+  @Get('director/cahier-test/:id')
+  async getCahierDeTestDetail(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.getCahierDeTestDetail(tenantId, id);
+  }
+
+  @Post('director/validate-cahier-test/:id')
+  @HttpCode(HttpStatus.OK)
+  async validateCahierDeTest(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: {
+      action: 'VALIDATED' | 'REJECTED';
+      validatedBy: string;
+      rejectionReason?: string;
+    },
+  ) {
+    return this.service.validateCahierDeTest(
+      tenantId, id, body.action, body.validatedBy, body.rejectionReason,
+    );
+  }
 }

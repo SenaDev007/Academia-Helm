@@ -206,11 +206,36 @@ export class PortalAuthService {
       throw new UnauthorizedException('Utilisateur associé non trouvé');
     }
 
-    // Vérifier le rôle
-    if (user.role !== 'TEACHER') {
-      throw new UnauthorizedException(
-        'Accès refusé. Ce portail est réservé aux enseignants.',
-      );
+    // Vérifier que l'utilisateur a un profil enseignant (et non juste un rôle)
+    // On accepte plusieurs variantes de rôle : TEACHER, ENSEIGNANT, ou tout
+    // utilisateur lié à un enregistrement dans la table teachers.
+    // Cela permet aux membres de l'administration (COMPTABLE, DIRECTOR, etc.)
+    // qui sont aussi habilités à enseigner d'accéder au portail enseignant.
+    const allowedTeacherRoles = [
+      'TEACHER', 'ENSEIGNANT', 'TEACHER_RESP',
+      'COMPTABLE', 'DIRECTOR', 'ADMIN', 'PROMOTER',
+      'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
+      'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'SUPER_DIRECTOR',
+    ];
+    const isTeacherRole = allowedTeacherRoles.some(
+      (r) => user.role?.toUpperCase() === r,
+    );
+
+    // Si le rôle n'est pas dans la liste, on vérifie quand même si l'utilisateur
+    // a un profil teacher actif (son email correspond à un teacher actif).
+    if (!isTeacherRole) {
+      const hasTeacherProfile = await this.prisma.teacher.findFirst({
+        where: {
+          tenantId,
+          email: user.email,
+          status: 'active',
+        },
+      });
+      if (!hasTeacherProfile) {
+        throw new UnauthorizedException(
+          'Accès refusé. Ce portail est réservé aux enseignants.',
+        );
+      }
     }
 
     // Vérifier le mot de passe

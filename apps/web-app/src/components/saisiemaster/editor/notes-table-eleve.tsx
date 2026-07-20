@@ -8,6 +8,7 @@ import {
   computeSubjectTotal,
 } from "@/lib/saisiemaster/store";
 import { GRADING } from "@/lib/saisiemaster/constants";
+import { getEvaluationNotes } from "@/lib/saisiemaster/evaluation-utils";
 import type { ClassData, Note } from "@/lib/saisiemaster/types";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -85,7 +86,7 @@ export function NotesTableEleve({
   studentId,
   onStudentChange,
 }: NotesTableEleveProps) {
-  const { classes, activeClassIndex, updateNote } = useSaisieMasterStore();
+  const { classes, activeClassIndex, activeEvalType, updateNote } = useSaisieMasterStore();
   const classData: ClassData | undefined = classes[activeClassIndex];
   const isMobile = useIsMobile();
 
@@ -114,7 +115,9 @@ export function NotesTableEleve({
     onStudentChange(student.id);
   }
 
-  const studentNotes = classData.notes[student.id] || {};
+  // Récupère les notes du type d'évaluation actif (EF1, ES1, ES2, ES3)
+  const notesForEval = getEvaluationNotes(classData, activeEvalType);
+  const studentNotes = notesForEval[student.id] || {};
 
   // Totaux & moyenne
   const totals = classData.subjects.map((subject) => {

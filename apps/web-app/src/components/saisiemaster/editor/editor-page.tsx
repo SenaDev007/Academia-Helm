@@ -6,6 +6,7 @@ import { EditorSidebar, type EditorNavId } from "./editor-sidebar";
 import { StatsPanel } from "./stats-panel";
 import { NotesTable } from "./notes-table";
 import { NotesTableEleve } from "./notes-table-eleve";
+import { EvaluationTypeSelector } from "./evaluation-type-selector";
 import { ExportDialog } from "./export-dialog";
 import { ClassesView } from "./classes-view";
 import { FilesView } from "./files-view";
@@ -192,14 +193,32 @@ export function EditorPage({ onHome }: EditorPageProps) {
   const feedbackCheckDoneRef = useRef(false);
 
   const totalNotesEntered = useMemo(() => {
+    // Compte le nombre total de notes saisies (tous types d'évaluations confondus).
+    // Utilisé pour le seuil de feedback automatique.
     let count = 0;
     for (const cls of classes) {
-      for (const studentId of Object.keys(cls.notes)) {
-        const studentNotes = cls.notes[studentId];
-        for (const subjectId of Object.keys(studentNotes)) {
-          const note = studentNotes[subjectId];
-          if (note?.obtenue !== null && note?.obtenue !== undefined) count++;
-          if (note?.perfectionnement !== null && note?.perfectionnement !== undefined) count++;
+      // Nouveau format : evaluations[evalType][studentId][subjectId]
+      if (cls.evaluations) {
+        for (const evalType of ["EF1", "ES1", "ES2", "ES3"] as const) {
+          const evalNotes = cls.evaluations[evalType] || {};
+          for (const studentId of Object.keys(evalNotes)) {
+            const studentNotes = evalNotes[studentId];
+            for (const subjectId of Object.keys(studentNotes)) {
+              const note = studentNotes[subjectId];
+              if (note?.obtenue !== null && note?.obtenue !== undefined) count++;
+              if (note?.perfectionnement !== null && note?.perfectionnement !== undefined) count++;
+            }
+          }
+        }
+      } else if (cls.notes) {
+        // Rétro-compat : ancien format (un seul type d'évaluation)
+        for (const studentId of Object.keys(cls.notes)) {
+          const studentNotes = cls.notes[studentId];
+          for (const subjectId of Object.keys(studentNotes)) {
+            const note = studentNotes[subjectId];
+            if (note?.obtenue !== null && note?.obtenue !== undefined) count++;
+            if (note?.perfectionnement !== null && note?.perfectionnement !== undefined) count++;
+          }
         }
       }
     }
@@ -338,6 +357,9 @@ export function EditorPage({ onHome }: EditorPageProps) {
                       pour passer à la cellule suivante
                     </p>
                   </div>
+
+                  {/* Sélecteur de type d'évaluation (4 onglets : EF1, ES1, ES2, ES3) */}
+                  <EvaluationTypeSelector />
 
                   {/* Toggle "Par matière" / "Par élève" — caché sur mobile */}
                   {!isMobile && (

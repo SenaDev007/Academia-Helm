@@ -22,12 +22,12 @@ import { cn } from "@/lib/saisiemaster/utils";
  *  - Couleurs d'accent : vert #198754 (ok), orange #FD7E14 (moyen), rouge #DC3545 (faible)
  */
 export function StatsPanel() {
-  const { classes, activeClassIndex } = useSaisieMasterStore();
+  const { classes, activeClassIndex, activeEvalType } = useSaisieMasterStore();
   const classData = classes[activeClassIndex];
 
   const stats = useMemo(
-    () => (classData ? computeSaisieStats(classData) : null),
-    [classData],
+    () => (classData ? computeSaisieStats(classData, activeEvalType) : null),
+    [classData, activeEvalType],
   );
 
   if (!classData || !stats) return null;

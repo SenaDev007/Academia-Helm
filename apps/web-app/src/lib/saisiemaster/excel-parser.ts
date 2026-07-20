@@ -293,10 +293,12 @@ function parseSheet(
   const { schoolName, academicYear } = extractFileInfo(fileName);
   const className = extractClassName(sheetName);
 
-  // Construire le dictionnaire de notes (vide par défaut)
-  const notes: Record<string, Record<string, Note>> = {};
+  // Construire le dictionnaire de notes pour le type EF1
+  // (l'import initial charge les notes du fichier dans EF1 ;
+  //  les 3 autres types d'évaluations démarrent vides).
+  const ef1Notes: Record<string, Record<string, Note>> = {};
   for (const student of students) {
-    notes[student.id] = {};
+    ef1Notes[student.id] = {};
     for (const subject of subjects) {
       // Lecture des valeurs existantes dans le fichier (au cas où)
       const obtenueCell = sheet[XLSX.utils.encode_cell({
@@ -325,7 +327,7 @@ function parseSheet(
               : null
           : null;
 
-      notes[student.id][subject.id] = {
+      ef1Notes[student.id][subject.id] = {
         obtenue: Number.isFinite(obtenue as number) ? (obtenue as number) : null,
         perfectionnement: Number.isFinite(perfectionnement as number)
           ? (perfectionnement as number)
@@ -341,7 +343,15 @@ function parseSheet(
     academicYear,
     students,
     subjects,
-    notes,
+    // 4 types d'évaluations : EF1 (chargé depuis le fichier),
+    // ES1/ES2/ES3 démarrent vides (l'enseignant les saisira au fur et à mesure)
+    evaluations: {
+      EF1: ef1Notes,
+      ES1: {},
+      ES2: {},
+      ES3: {},
+    },
+    notes: ef1Notes, // rétro-compat
     sourceFileName: fileName,
     importedAt: new Date().toISOString(),
   };

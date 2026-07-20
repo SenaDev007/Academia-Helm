@@ -17,10 +17,17 @@ import {
   CheckCircle2,
   AlertTriangle,
   Loader2,
+  FileArchive,
 } from "lucide-react";
 import { useSaisieMasterStore, computeSaisieStats } from "@/lib/saisiemaster/store";
-import { exportEducMasterFile, downloadBlob } from "@/lib/saisiemaster/excel-generator";
+import {
+  exportEducMasterFile,
+  exportAllEvaluationsZip,
+  downloadBlob,
+} from "@/lib/saisiemaster/excel-generator";
 import { trackActivity } from "@/lib/saisiemaster/api";
+import { EVALUATION_TYPES } from "@/lib/saisiemaster/constants";
+import { hasEvaluationNotes } from "@/lib/saisiemaster/evaluation-utils";
 import { toast } from "sonner";
 
 interface ExportDialogProps {
@@ -29,31 +36,57 @@ interface ExportDialogProps {
 }
 
 export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
-  const { classes, activeClassIndex, setExporting, isExporting } =
+  const { classes, activeClassIndex, activeEvalType, setExporting, isExporting } =
     useSaisieMasterStore();
   const [exported, setExported] = useState(false);
+  const [exportingZip, setExportingZip] = useState(false);
+  const [exportingEval, setExportingEval] = useState<string | null>(null);
 
   const classData = classes[activeClassIndex];
-  const stats = classData ? computeSaisieStats(classData) : null;
+  // Stats pour le type d'évaluation actif
+  const stats = classData ? computeSaisieStats(classData, activeEvalType) : null;
 
-  const handleExport = () => {
+  /** Export individuel : 1 fichier Excel pour un type d'évaluation. */
+  const handleExportEval = (evalCode: string) => {
     if (!classData) return;
-    setExporting(true);
+    setExportingEval(evalCode);
     try {
-      const { blob, fileName } = exportEducMasterFile(classData);
+      const { blob, fileName } = exportEducMasterFile(
+        classData,
+        evalCode as "EF1" | "ES1" | "ES2" | "ES3",
+      );
       downloadBlob(blob, fileName);
       setExported(true);
-      toast.success("Fichier exporté avec succès", {
-        description: fileName,
-      });
-      // Track export activity for lead scoring (best-effort, non-blocking).
+      toast.success(`✅ ${evalCode} exporté`, { description: fileName });
       void trackActivity("export");
     } catch (err) {
       console.error(err);
-      toast.error("Erreur lors de l'export", {
+      toast.error(`Erreur export ${evalCode}`, {
         description: err instanceof Error ? err.message : "Erreur inconnue",
       });
     } finally {
+      setExportingEval(null);
+    }
+  };
+
+  /** Export groupé : ZIP contenant les 4 fichiers Excel. */
+  const handleExportZip = async () => {
+    if (!classData) return;
+    setExportingZip(true);
+    setExporting(true);
+    try {
+      const { blob, fileName } = await exportAllEvaluationsZip(classData);
+      downloadBlob(blob, fileName);
+      setExported(true);
+      toast.success("✅ ZIP téléchargé (4 fichiers)", { description: fileName });
+      void trackActivity("export");
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur export ZIP", {
+        description: err instanceof Error ? err.message : "Erreur inconnue",
+      });
+    } finally {
+      setExportingZip(false);
       setExporting(false);
     }
   };
@@ -67,6 +100,9 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
   const isComplete = stats.completionRate === 100;
   const hasWarnings = stats.completionRate < 100;
+  const hasAnyNotes = EVALUATION_TYPES.some((t) =>
+    hasEvaluationNotes(classData, t.code),
+  );
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -166,41 +202,68 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
           </div>
         )}
 
-        <DialogFooter className="gap-2">
-          {exported ? (
-            <>
-              <Button variant="outline" onClick={() => handleClose(false)}>
-                Fermer
-              </Button>
-              <Button onClick={handleExport} disabled={isExporting}>
-                {isExporting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="h-4 w-4" />
-                )}
-                Télécharger à nouveau
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button variant="outline" onClick={() => handleClose(false)}>
-                Annuler
-              </Button>
-              <Button
-                onClick={handleExport}
-                disabled={isExporting}
-                className="bg-[#008751] hover:bg-[#008751]/90"
-              >
-                {isExporting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="h-4 w-4" />
-                )}
-                Générer le fichier
-              </Button>
-            </>
-          )}
-        </DialogFooter>
+        {/* Section export : 4 boutons individuels + 1 bouton ZIP */}
+        <div className="space-y-3">
+          <div className="rounded-lg border border-border bg-muted/30 p-3">
+            <p className="text-xs font-semibold text-foreground mb-2 flex items-center gap-1.5">
+              <FileSpreadsheet className="h-3.5 w-3.5 text-[#008751]" />
+              Export individuel (1 fichier par évaluation)
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {EVALUATION_TYPES.map((t) => {
+                const hasNotes = hasEvaluationNotes(classData, t.code);
+                return (
+                  <Button
+                    key={t.code}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleExportEval(t.code)}
+                    disabled={exportingEval === t.code || exportingZip}
+                    className="justify-start text-xs h-auto py-2"
+                    title={hasNotes ? `${t.label} — notes saisies` : `${t.label} — vide`}
+                  >
+                    {exportingEval === t.code ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5 mr-2" />
+                    )}
+                    <span className="font-bold">{t.code}</span>
+                    <span
+                      className={`ml-1.5 inline-block h-1.5 w-1.5 rounded-full ${
+                        hasNotes ? "bg-emerald-500" : "bg-slate-300"
+                      }`}
+                    />
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-[#0D6EFD]/30 bg-[#0D6EFD]/5 p-3">
+            <p className="text-xs font-semibold text-foreground mb-2 flex items-center gap-1.5">
+              <FileArchive className="h-3.5 w-3.5 text-[#0D6EFD]" />
+              Export groupé (4 fichiers d'un coup)
+            </p>
+            <Button
+              onClick={handleExportZip}
+              disabled={exportingZip || !hasAnyNotes}
+              className="w-full bg-[#0D6EFD] hover:bg-[#0D6EFD]/90 text-white"
+              size="sm"
+            >
+              {exportingZip ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <FileArchive className="h-4 w-4 mr-2" />
+              )}
+              Télécharger le ZIP (4 fichiers)
+            </Button>
+            {!hasAnyNotes && (
+              <p className="text-[10px] text-muted-foreground mt-1.5 text-center">
+                Aucune note saisie pour le moment.
+              </p>
+            )}
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );

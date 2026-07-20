@@ -15,10 +15,13 @@
  */
 
 import * as XLSX from "xlsx";
-import type { ClassData, Note } from "./types";
+import JSZip from "jszip";
+import type { ClassData, EvaluationType, Note } from "./types";
+import { EVALUATION_TYPES } from "./constants";
+import { getEvaluationNotes } from "./evaluation-utils";
 
-/** Construit l'objet worksheet au format EducMaster pour une classe donnée. */
-function buildSheet(data: ClassData): XLSX.WorkSheet {
+/** Construit l'objet worksheet au format EducMaster pour une classe et un type d'évaluation donnés. */
+function buildSheet(data: ClassData, evalType: EvaluationType): XLSX.WorkSheet {
   const ws: XLSX.WorkSheet = {};
   const merges: XLSX.Range[] = [];
 
@@ -84,6 +87,9 @@ function buildSheet(data: ClassData): XLSX.WorkSheet {
     }
   });
 
+  // Récupère les notes du type d'évaluation demandé
+  const notesForEval = getEvaluationNotes(data, evalType);
+
   // 2. Données élèves à partir de la ligne 3 (index 2)
   data.students.forEach((student, studentIdx) => {
     const row = 2 + studentIdx;
@@ -105,7 +111,7 @@ function buildSheet(data: ClassData): XLSX.WorkSheet {
     // Notes par matière
     let col = 3;
     data.subjects.forEach((subject) => {
-      const note: Note | undefined = data.notes[student.id]?.[subject.id];
+      const note: Note | undefined = notesForEval[student.id]?.[subject.id];
       const obtenue = note?.obtenue;
       const perf = note?.perfectionnement;
 
@@ -162,8 +168,8 @@ function buildSheet(data: ClassData): XLSX.WorkSheet {
   return ws;
 }
 
-/** Génère le nom du fichier exporté. */
-function buildExportFileName(data: ClassData): string {
+/** Génère le nom du fichier exporté pour un type d'évaluation donné. */
+function buildExportFileName(data: ClassData, evalType: EvaluationType): string {
   const date = new Date();
   const pad = (n: number) => n.toString().padStart(2, "0");
   const stamp = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}${pad(date.getHours())}${pad(date.getMinutes())}`;
@@ -185,22 +191,27 @@ function buildExportFileName(data: ClassData): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 
-  return `saisiemaster_${stamp}_${year}-${school}-${cls}.xlsx`;
+  return `${evalType}_${year}-${school}-${cls}.xlsx`;
 }
 
 /**
- * Génère un fichier .xlsx à partir des données de classe et déclenche
- * le téléchargement côté navigateur.
+ * Génère un fichier .xlsx pour un type d'évaluation spécifique.
+ * Utilisé pour l'export individuel (1 fichier par type d'évaluation).
  */
-export function exportEducMasterFile(data: ClassData): {
+export function exportEducMasterFile(
+  data: ClassData,
+  evalType: EvaluationType = "EF1",
+): {
   blob: Blob;
   fileName: string;
 } {
+  // Nom de feuille incluant le type d'évaluation
+  const sheetName = `${data.sheetName} - ${evalType}`;
   const wb: XLSX.WorkBook = {
-    SheetNames: [data.sheetName],
-    Sheets: { [data.sheetName]: buildSheet(data) },
+    SheetNames: [sheetName],
+    Sheets: { [sheetName]: buildSheet(data, evalType) },
     Props: {
-      Title: `Notes ${data.className} — ${data.schoolName || "École"}`,
+      Title: `${evalType} — Notes ${data.className} — ${data.schoolName || "École"}`,
       Author: "SaisieMaster",
       CreatedDate: new Date(),
     },
@@ -216,7 +227,72 @@ export function exportEducMasterFile(data: ClassData): {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
 
-  return { blob, fileName: buildExportFileName(data) };
+  return { blob, fileName: buildExportFileName(data, evalType) };
+}
+
+/**
+ * Génère un fichier .zip contenant les 4 fichiers .xlsx (un par type d'évaluation).
+ * Utilisé pour l'export groupé (4 fichiers d'un seul coup pour une classe).
+ */
+export async function exportAllEvaluationsZip(data: ClassData): Promise<{
+  blob: Blob;
+  fileName: string;
+}> {
+  const zip = new JSZip();
+
+  // Génère les 4 fichiers Excel (un par type d'évaluation)
+  for (const evalType of EVALUATION_TYPES.map((t) => t.code)) {
+    const { blob, fileName } = exportEducMasterFile(data, evalType);
+    const arrayBuffer = await blob.arrayBuffer();
+    zip.file(fileName, arrayBuffer);
+  }
+
+  // Ajoute aussi un fichier README expliquant la structure du ZIP
+  const readme = `SaisieMaster — Export groupé des 4 évaluations
+=================================================
+
+Classe : ${data.className}
+École : ${data.schoolName || "—"}
+Année scolaire : ${data.academicYear || "—"}
+Date d'export : ${new Date().toLocaleString("fr-FR")}
+
+Ce ZIP contient 4 fichiers Excel, un par type d'évaluation :
+
+${EVALUATION_TYPES.map((t) => `- ${t.code} : ${t.label} — ${t.description}`).join("\n")}
+
+Pour chaque type d'évaluation, le fichier .xlsx contient :
+- La liste des élèves (Matricule, Nom, Prénoms)
+- Les matières avec leurs sous-colonnes (Note obtenue / Note perfectionnement)
+- Les notes saisies pour ce type d'évaluation spécifique
+
+Généré par SaisieMaster (saissiemaster.academiahelm.com)
+`;
+  zip.file("README.txt", readme);
+
+  const zipBlob = await zip.generateAsync({
+    type: "blob",
+    compression: "DEFLATE",
+    compressionOptions: { level: 6 },
+  });
+
+  // Nom du ZIP
+  const school = data.schoolName
+    ? data.schoolName
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+    : "ecole";
+  const cls = data.className
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const fileName = `saisiemaster_4evaluations_${school}-${cls}.zip`;
+
+  return { blob: zipBlob, fileName };
 }
 
 /** Télécharge un blob côté navigateur. */

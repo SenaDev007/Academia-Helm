@@ -197,7 +197,7 @@ export function ClassesView() {
               academicYear={cls.academicYear}
               schoolName={cls.schoolName}
               importedAt={cls.importedAt}
-              stats={computeSaisieStats(cls)}
+              stats={computeSaisieStats(cls, "EF1")}
               onOpen={() => handleOpen(idx)}
               onDelete={() => setDeleteIndex(idx)}
             />

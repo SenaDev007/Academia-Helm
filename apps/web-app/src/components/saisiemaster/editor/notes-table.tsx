@@ -4,7 +4,8 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/saisiemaster/utils";
 import { useSaisieMasterStore, validateNote, computeStudentAverage } from "@/lib/saisiemaster/store";
 import { GRADING } from "@/lib/saisiemaster/constants";
-import type { ClassData, Note } from "@/lib/saisiemaster/types";
+import { getEvaluationNotes } from "@/lib/saisiemaster/evaluation-utils";
+import type { ClassData, EvaluationType, Note } from "@/lib/saisiemaster/types";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { AlertTriangle, Minus } from "lucide-react";
 
@@ -68,7 +69,7 @@ function getNoteColor(value: number | null, isFocused: boolean) {
  *  - Navigation clavier : Tab (suivant), Shift+Tab (précédent), Entrée (ligne suivante)
  */
 export function NotesTable() {
-  const { classes, activeClassIndex, updateNote } = useSaisieMasterStore();
+  const { classes, activeClassIndex, activeEvalType, updateNote } = useSaisieMasterStore();
   const classData: ClassData | undefined = classes[activeClassIndex];
   const tableRef = useRef<HTMLTableElement>(null);
 
@@ -91,11 +92,12 @@ export function NotesTable() {
             ref={tableRef}
             className="w-full border-collapse text-sm"
             role="grid"
-            aria-label={`Notes — Classe ${classData.className}`}
+            aria-label={`Notes — Classe ${classData.className} — ${activeEvalType}`}
           >
             <NotesTableHeader classData={classData} />
             <NotesTableBody
               classData={classData}
+              evalType={activeEvalType}
               updateNote={updateNote}
             />
           </table>
@@ -217,6 +219,8 @@ function NotesTableHeader({ classData }: { classData: ClassData }) {
 
 interface NotesTableBodyProps {
   classData: ClassData;
+  /** Type d'évaluation actif (EF1, ES1, ES2, ES3). */
+  evalType: EvaluationType;
   updateNote: (
     studentId: string,
     subjectId: string,
@@ -225,11 +229,14 @@ interface NotesTableBodyProps {
   ) => void;
 }
 
-function NotesTableBody({ classData, updateNote }: NotesTableBodyProps) {
+function NotesTableBody({ classData, evalType, updateNote }: NotesTableBodyProps) {
+  // Récupère les notes du type d'évaluation actif
+  const notesForEval = getEvaluationNotes(classData, evalType);
+
   return (
     <tbody>
       {classData.students.map((student, idx) => {
-        const studentNotes = classData.notes[student.id] || {};
+        const studentNotes = notesForEval[student.id] || {};
         const avg = computeStudentAverage(
           studentNotes,
           classData.subjects.map((s) => ({

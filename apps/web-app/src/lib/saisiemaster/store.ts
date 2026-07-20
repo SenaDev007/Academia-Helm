@@ -13,10 +13,16 @@ import type {
   AppView,
   CellValidation,
   ClassData,
+  EvaluationType,
   Note,
   SaisieStats,
 } from "./types";
-import { GRADING, STORAGE_KEY } from "./constants";
+import { GRADING, STORAGE_KEY, DEFAULT_EVALUATION_TYPE } from "./constants";
+import {
+  migrateClassDataEvaluations,
+  getEvaluationNotes,
+  setEvaluationNotes,
+} from "./evaluation-utils";
 import {
   type Prospect,
   type ActivityType,
@@ -52,6 +58,11 @@ interface SaisieMasterState {
   classes: ClassData[];
   /** Index de la classe active (pour multi-classes). */
   activeClassIndex: number;
+  /**
+   * Type d'évaluation actif (EF1, ES1, ES2, ES3).
+   * Détermine quel jeu de notes est affiché/édité dans le tableau.
+   */
+  activeEvalType: EvaluationType;
   /** Erreur d'import courante. */
   importError: string | null;
   /** Indique si l'export est en cours. */
@@ -70,6 +81,8 @@ interface SaisieMasterState {
   setEditorView: (view: EditorView) => void;
   loadClasses: (classes: ClassData[]) => void;
   setActiveClass: (index: number) => void;
+  /** Change le type d'évaluation actif (EF1, ES1, ES2, ES3). */
+  setActiveEvalType: (evalType: EvaluationType) => void;
   /** Remove a class locally + its backend session (best-effort). */
   deleteClass: (index: number) => Promise<void>;
   /** Replace a class in the store with a new ClassData (used to load a session). */
@@ -150,6 +163,7 @@ export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
   editorView: "notes",
   classes: [],
   activeClassIndex: 0,
+  activeEvalType: DEFAULT_EVALUATION_TYPE,
   importError: null,
   isExporting: false,
   prospect: null,
@@ -163,35 +177,44 @@ export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
   setEditorView: (editorView) => set({ editorView }),
 
   loadClasses: (classes) => {
+    // Migration : s'assurer que chaque classe a le champ `evaluations` avec les 4 types
+    const migratedClasses = classes.map(migrateClassDataEvaluations);
     set({
-      classes,
+      classes: migratedClasses,
       activeClassIndex: 0,
+      activeEvalType: DEFAULT_EVALUATION_TYPE,
       importError: null,
       editorView: "notes",
-      view: classes.length > 0 ? "editor" : "landing",
+      view: migratedClasses.length > 0 ? "editor" : "landing",
     });
-    persistClassesToStorage(classes, 0);
+    persistClassesToStorage(migratedClasses, 0);
     // Track classes creation + trigger backend sync for the first class.
-    if (classes.length > 0 && getToken()) {
+    if (migratedClasses.length > 0 && getToken()) {
       void trackActivity("grade_entered");
-      scheduleBackendSync(classes, 0);
+      scheduleBackendSync(migratedClasses, 0);
     }
   },
 
   replaceClasses: (classes) => {
+    const migratedClasses = classes.map(migrateClassDataEvaluations);
     set({
-      classes,
+      classes: migratedClasses,
       activeClassIndex: 0,
+      activeEvalType: DEFAULT_EVALUATION_TYPE,
       editorView: "notes",
-      view: classes.length > 0 ? "editor" : "landing",
+      view: migratedClasses.length > 0 ? "editor" : "landing",
     });
-    persistClassesToStorage(classes, 0);
+    persistClassesToStorage(migratedClasses, 0);
   },
 
   setActiveClass: (index) => {
     set({ activeClassIndex: index });
     // Sync the newly-active class to the backend (debounced).
     scheduleBackendSync(get().classes, index);
+  },
+
+  setActiveEvalType: (evalType) => {
+    set({ activeEvalType: evalType });
   },
 
   deleteClass: async (index) => {
@@ -241,28 +264,31 @@ export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
 
   updateNote: (studentId, subjectId, field, value) => {
     const state = get();
-    const { classes, activeClassIndex } = state;
+    const { classes, activeClassIndex, activeEvalType } = state;
     if (classes.length === 0) return;
     const classData = classes[activeClassIndex];
     if (!classData) return;
 
-    const newClasses = [...classes];
-    const newClassData: ClassData = {
-      ...classData,
-      notes: {
-        ...classData.notes,
-        [studentId]: {
-          ...classData.notes[studentId],
-          [subjectId]: {
-            ...(classData.notes[studentId]?.[subjectId] || {
-              obtenue: null,
-              perfectionnement: null,
-            }),
-            [field]: value,
-          },
+    // Récupère les notes du type d'évaluation actif (EF1/ES1/ES2/ES3)
+    const currentNotes = getEvaluationNotes(classData, activeEvalType);
+    const updatedNotes: typeof currentNotes = {
+      ...currentNotes,
+      [studentId]: {
+        ...(currentNotes[studentId] || {}),
+        [subjectId]: {
+          ...(currentNotes[studentId]?.[subjectId] || {
+            obtenue: null,
+            perfectionnement: null,
+          }),
+          [field]: value,
         },
       },
     };
+
+    // Met à jour le type d'évaluation actif dans le ClassData
+    const newClassData = setEvaluationNotes(classData, activeEvalType, updatedNotes);
+
+    const newClasses = [...classes];
     newClasses[activeClassIndex] = newClassData;
 
     set({ classes: newClasses });
@@ -420,15 +446,24 @@ export function computeStudentAverage(
   return totals.reduce((a, b) => a + b, 0) / totals.length;
 }
 
-/** Calcule les statistiques de saisie d'une classe. */
-export function computeSaisieStats(data: ClassData): SaisieStats {
+/** Calcule les statistiques de saisie d'une classe pour un type d'évaluation donné. */
+export function computeSaisieStats(
+  data: ClassData,
+  evalType?: import("./types").EvaluationType,
+): SaisieStats {
   let totalCells = 0;
   let filledCells = 0;
   const studentAverages: number[] = [];
   let etudiantsComplets = 0;
 
+  // Si evalType est fourni, on calcule pour ce type précis.
+  // Sinon, on retombe sur l'ancien comportement (champ `notes` ou `evaluations.EF1`).
+  const notesForEval = evalType
+    ? getEvaluationNotes(data, evalType)
+    : (data.notes || getEvaluationNotes(data, "EF1"));
+
   for (const student of data.students) {
-    const studentNotes = data.notes[student.id] || {};
+    const studentNotes = notesForEval[student.id] || {};
     let studentComplete = true;
 
     for (const subject of data.subjects) {
@@ -486,6 +521,8 @@ export function restoreFromStorage(): {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed.classes || !Array.isArray(parsed.classes)) return null;
+    // Migration : s'assurer que les classes ont le champ `evaluations`
+    parsed.classes = parsed.classes.map(migrateClassDataEvaluations);
     return parsed;
   } catch {
     return null;

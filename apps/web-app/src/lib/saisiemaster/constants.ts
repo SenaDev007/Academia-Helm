@@ -47,6 +47,42 @@ export const STORAGE_KEY = "saisiemaster:autosave";
 /** Préfixe de nom de fichier exporté. */
 export const EXPORT_PREFIX = "saisiemaster";
 
+/**
+ * 4 types d'évaluations normalisés par année scolaire et par matière.
+ *
+ * Chaque type d'évaluation a son propre jeu de notes indépendant
+ * pour la même liste d'élèves et de matières.
+ */
+export const EVALUATION_TYPES = [
+  {
+    code: "EF1" as const,
+    label: "Évaluation Formative 1",
+    short: "EF1",
+    description: "Évaluation formative du début d'année",
+  },
+  {
+    code: "ES1" as const,
+    label: "Évaluation Sommative 1",
+    short: "ES1",
+    description: "Première évaluation sommative (fin 1er trimestre)",
+  },
+  {
+    code: "ES2" as const,
+    label: "Évaluation Sommative 2",
+    short: "ES2",
+    description: "Deuxième évaluation sommative (fin 2e trimestre)",
+  },
+  {
+    code: "ES3" as const,
+    label: "Évaluation Sommative 3",
+    short: "ES3",
+    description: "Troisième évaluation sommative (fin 3e trimestre)",
+  },
+] as const;
+
+/** Type d'évaluation par défaut (premier onglet affiché). */
+export const DEFAULT_EVALUATION_TYPE = "EF1" as const;
+
 /** Règles de détection des classes dans les noms de feuille. */
 export const CLASS_NAME_REGEX = /^Notes\s*-\s*(.+)$/i;
 

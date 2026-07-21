@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * Teacher Library — redirects to the library module.
+ * Teacher Library — redirige vers la bibliothèque pédagogique
+ * (global-library dans le module pédagogie, pas /app/library).
  */
 
 import { redirect } from "next/navigation";
@@ -10,7 +11,7 @@ import { Library } from "lucide-react";
 
 export default function TeacherLibraryPage() {
   useEffect(() => {
-    redirect("/app/library");
+    redirect("/app/pedagogy/global-library");
   }, []);
   return (
     <div className="space-y-4">
@@ -19,7 +20,7 @@ export default function TeacherLibraryPage() {
           <Library className="h-5 w-5 text-slate-600" />
           <h2 className="text-lg font-bold text-slate-900">Bibliothèque</h2>
         </div>
-        <p className="text-sm text-slate-500">Redirection vers la bibliothèque…</p>
+        <p className="text-sm text-slate-500">Redirection vers la bibliothèque pédagogique…</p>
       </div>
     </div>
   );

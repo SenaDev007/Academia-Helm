@@ -55,18 +55,26 @@ const TABS = [
 
 type TabId = typeof TABS[number]['id'];
 
-export function PedagogicalSpaceWorkspace() {
+export function PedagogicalSpaceWorkspace({
+  tenantId: propTenantId,
+  academicYearId: propAcademicYearId,
+  teacherId: propTeacherId,
+}: {
+  tenantId?: string;
+  academicYearId?: string;
+  teacherId?: string;
+} = {}) {
   const { tenant, user, academicYear, schoolLevel } = useModuleContext();
   const [tab, setTab] = useState<TabId>('classes');
 
-  // Résoudre le teacherId depuis le user (role TEACHER)
-  // Pour les rôles non-enseignant (PROMOTER, DIRECTOR, ADMIN), on utilise
-  // user.id comme teacherId pour pouvoir consulter l'espace pédagogique.
-  const teacherId = user?.teacherId || user?.id || '';
-  const isNonTeacherRole = ['PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SUPER_DIRECTOR', 'director', 'admin']
-    .includes((user?.role || '').toUpperCase() || (user?.role || ''));
+  // Résoudre le teacherId depuis le user ou les props
+  // Pour les enseignants, on utilise user.id (qui correspond au userId lié au teacher)
+  // Pour les rôles non-enseignant (PROMOTER, DIRECTOR, ADMIN), on utilise aussi user.id
+  const teacherId = propTeacherId || user?.teacherId || user?.id || '';
+  const resolvedTenantId = propTenantId || tenant?.id || '';
+  const resolvedAcademicYearId = propAcademicYearId || academicYear?.id || '';
 
-  if (!academicYear?.id) {
+  if (!resolvedAcademicYearId) {
     return (
       <div className="flex items-center justify-center py-20 text-muted-foreground">
         <Loader2 className="h-6 w-6 animate-spin mr-2" />
@@ -89,16 +97,6 @@ export function PedagogicalSpaceWorkspace() {
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Info banner for non-teacher roles */}
-      {isNonTeacherRole && (
-        <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
-          <Users className="h-4 w-4 flex-shrink-0" />
-          <span>
-            Vous consultez l'espace pédagogique en tant que <strong>{user?.role}</strong>.
-            Les données affichées dépendent des classes que l'administration a assignées à votre compte.
-          </span>
-        </div>
-      )}
       {/* Sous-onglets */}
       <div className="space-y-4">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -129,65 +127,65 @@ export function PedagogicalSpaceWorkspace() {
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6">
           {tab === 'classes' && (
             <MyClassesTab
-              tenantId={tenant?.id || ''}
-              academicYearId={academicYear.id}
+              tenantId={resolvedTenantId}
+              academicYearId={resolvedAcademicYearId}
               teacherId={teacherId}
             />
           )}
           {tab === 'attendance' && (
             <AttendanceTab
-              tenantId={tenant?.id || ''}
-              academicYearId={academicYear.id}
+              tenantId={resolvedTenantId}
+              academicYearId={resolvedAcademicYearId}
               schoolLevelId={schoolLevel?.schoolLevelId || schoolLevel?.id || ''}
               teacherId={teacherId}
             />
           )}
           {tab === 'classlog' && (
             <ClassLogTab
-              tenantId={tenant?.id || ''}
-              academicYearId={academicYear.id}
+              tenantId={resolvedTenantId}
+              academicYearId={resolvedAcademicYearId}
               teacherId={teacherId}
             />
           )}
           {tab === 'cahier-journal' && (
             <CahierJournalTab
-              tenantId={tenant?.id || ''}
-              academicYearId={academicYear.id}
+              tenantId={resolvedTenantId}
+              academicYearId={resolvedAcademicYearId}
               teacherId={teacherId}
             />
           )}
           {tab === 'weekly' && (
             <CahierSemaineTab
-              tenantId={tenant?.id || ''}
-              academicYearId={academicYear.id}
+              tenantId={resolvedTenantId}
+              academicYearId={resolvedAcademicYearId}
               teacherId={teacherId}
             />
           )}
           {tab === 'fiches' && (
             <PedagogicalSheetsTab
-              tenantId={tenant?.id || ''}
-              academicYearId={academicYear.id}
+              tenantId={resolvedTenantId}
+              academicYearId={resolvedAcademicYearId}
               teacherId={teacherId}
             />
           )}
           {tab === 'registre' && (
             <AttendanceRegisterTab
-              tenantId={tenant?.id || ''}
-              academicYearId={academicYear.id}
+              tenantId={resolvedTenantId}
+              academicYearId={resolvedAcademicYearId}
               teacherId={teacherId}
             />
           )}
           {tab === 'cahier-texte' && (
             <CahierDeTexteTab
-              tenantId={tenant?.id || ''}
-              academicYearId={academicYear.id}
+              tenantId={resolvedTenantId}
+              academicYearId={resolvedAcademicYearId}
               teacherId={teacherId}
             />
           )}
           {tab === 'homework' && (
             <HomeworkTab
-              tenantId={tenant?.id || ''}
-              academicYearId={academicYear.id}
+              tenantId={resolvedTenantId}
+              academicYearId={resolvedAcademicYearId}
               schoolLevelId={schoolLevel?.schoolLevelId || schoolLevel?.id || ''}
               teacherId={teacherId}
             />

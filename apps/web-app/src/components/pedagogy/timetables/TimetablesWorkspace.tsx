@@ -1,15 +1,15 @@
 /**
  * ============================================================================
- * TIMETABLES WORKSPACE — Smart Timetable Engine (STE) V2+
+ * TIMETABLES WORKSPACE — Moteur de génération d'emploi du temps
  * ============================================================================
  *
- * Interface 5-onglets V2+ :
+ * Interface 5-onglets :
  *   1. Configuration   — Jours d'école, créneaux horaires
  *   2. Disponibilités  — Grille enseignant × jour × créneau (3 états)
- *   3. Contraintes     — V2+ : contraintes hard/soft (6 types)
- *   4. Génération      — V2+ : mono-solution ou multi-solutions Pareto
- *   5. Emploi du temps — Solutions générées (Pareto) + édition manuelle
- *                        (toggle interne : passer du mode STE au mode manuel
+ *   3. Contraintes     — Contraintes obligatoires et préférées (6 types)
+ *   4. Génération      — Solution unique ou multi-solutions
+ *   5. Emploi du temps — Solutions générées + édition manuelle
+ *                        (toggle interne : passer du mode auto au mode manuel
  *                        sans changer d'onglet)
  * ============================================================================
  */
@@ -56,8 +56,8 @@ const TABS: { id: TabId; label: string; icon: any; description: string }[] = [
   // l'onglet « Enseignants & Affectations > Profils & Disponibilités »,
   // qui supporte maintenant 3 états (Disponible / Préféré / Indisponible).
   // Le moteur STE lit directement la table pedagogy_teacher_availabilities.
-  { id: 'constraints', label: 'Contraintes', icon: Shield, description: 'V2+ : hard/soft' },
-  { id: 'generate', label: 'Génération', icon: Zap, description: 'Mono ou multi-Pareto' },
+  { id: 'constraints', label: 'Contraintes', icon: Shield, description: 'Obligatoires & préférées' },
+  { id: 'generate', label: 'Génération', icon: Zap, description: 'Simple ou multi-solutions' },
   { id: 'timetable', label: 'Emploi du temps', icon: Calendar, description: 'Solutions + édition' },
 ];
 
@@ -678,7 +678,7 @@ function AvailabilityTab({ config, schoolLevelId }: { config: any; schoolLevelId
   );
 }
 
-// ═══ TAB 3: CONSTRAINTS V2+ ═══
+// ═══ ONGLET 3 : CONTRAINTES ═══
 
 const CONSTRAINT_TYPES = [
   { type: 'SUBJECT_TIME_WINDOW', label: 'Fenêtre horaire matière', desc: 'Une matière doit être enseignée dans une plage précise (ex: Maths le matin)', entityType: 'subject' },
@@ -686,7 +686,7 @@ const CONSTRAINT_TYPES = [
   { type: 'SUBJECT_DISTRIBUTION', label: 'Distribution matière', desc: 'Limite le nombre de séances d\'une matière par jour et par classe', entityType: 'subject' },
   { type: 'SUBJECT_NOT_CONSECUTIVE', label: 'Matières non consécutives', desc: 'Deux matières ne doivent pas se suivre immédiatement', entityType: 'subject' },
   { type: 'CLASS_FREE_SLOT', label: 'Créneau libre classe', desc: 'Une classe doit être libre sur un créneau précis', entityType: 'class' },
-  { type: 'TEACHER_PREFERRED_DAY', label: 'Jour préféré enseignant', desc: 'Un enseignant préfère un jour spécifique (soft bonus)', entityType: 'teacher' },
+  { type: 'TEACHER_PREFERRED_DAY', label: 'Jour préféré enseignant', desc: 'Un enseignant préfère un jour spécifique (préférence non bloquante)', entityType: 'teacher' },
 ];
 
 function ConstraintsTab({ schoolLevelId }: { schoolLevelId: string }) {
@@ -774,14 +774,14 @@ function ConstraintsTab({ schoolLevelId }: { schoolLevelId: string }) {
       <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
         <Shield className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
         <div className="text-xs text-blue-800">
-          <strong>Contraintes V2+ :</strong> <span className="font-bold text-red-700">HARD</span> = must satisfy (le moteur skip les slots violants).
-          <span className="font-bold text-amber-700"> SOFT</span> = pénalisée si violée (poids 1-10).
+          <strong>Types de contraintes :</strong> <span className="font-bold text-red-700">Obligatoire</span> = doit toujours être respectée (le moteur ignore les créneaux qui la violent).
+          <span className="font-bold text-amber-700"> Préférée</span> = pénalisée si non respectée (priorité 1 à 10).
         </div>
       </div>
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-base font-bold text-slate-800">{constraints.length} contrainte{constraints.length > 1 ? 's' : ''}</h3>
-          <p className="text-xs text-slate-500">{constraints.filter(c => c.severity === 'HARD' && c.isActive).length} HARD · {constraints.filter(c => c.severity === 'SOFT' && c.isActive).length} SOFT actives</p>
+          <p className="text-xs text-slate-500">{constraints.filter(c => c.severity === 'HARD' && c.isActive).length} obligatoires · {constraints.filter(c => c.severity === 'SOFT' && c.isActive).length} préférées actives</p>
         </div>
         <button onClick={() => { setEditing(null); setForm({ type: 'SUBJECT_TIME_WINDOW', severity: 'HARD', entityType: 'subject', entityId: '', params: {}, weight: 5, isActive: true }); setShowModal(true); }}
           className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold">
@@ -794,7 +794,7 @@ function ConstraintsTab({ schoolLevelId }: { schoolLevelId: string }) {
         <div className="bg-slate-50 rounded-xl border border-slate-200 p-10 text-center">
           <Shield className="w-10 h-10 text-slate-300 mx-auto mb-3" />
           <h3 className="text-sm font-bold text-slate-800 mb-1">Aucune contrainte</h3>
-          <p className="text-xs text-slate-500 max-w-md mx-auto">Créez des contraintes pour améliorer la qualité de la génération (Maths le matin, max 3/jour, etc.).</p>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">Créez des contraintes pour améliorer la qualité de l'emploi du temps (Maths le matin, max 3 séances/jour, etc.).</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -806,7 +806,7 @@ function ConstraintsTab({ schoolLevelId }: { schoolLevelId: string }) {
             return (
               <div key={c.id} className={cn('bg-white rounded-xl border p-4 shadow-sm flex items-start gap-3', c.isActive ? 'border-slate-200' : 'border-slate-100 opacity-60')}>
                 <div className={cn('px-2 py-0.5 rounded text-[10px] font-bold uppercase shrink-0', c.severity === 'HARD' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700')}>
-                  {c.severity}{c.severity === 'SOFT' && ` · W${c.weight}`}
+                  {c.severity === 'HARD' ? 'Obligatoire' : 'Préférée'}{c.severity === 'SOFT' && ` · P${c.weight}`}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
@@ -844,7 +844,7 @@ function ConstraintsTab({ schoolLevelId }: { schoolLevelId: string }) {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-slate-100 sticky top-0 bg-white">
-              <h3 className="font-bold text-slate-900">{editing ? 'Modifier la contrainte' : 'Nouvelle contrainte V2+'}</h3>
+              <h3 className="font-bold text-slate-900">{editing ? 'Modifier la contrainte' : 'Nouvelle contrainte'}</h3>
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-700"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-4 space-y-4">
@@ -856,15 +856,15 @@ function ConstraintsTab({ schoolLevelId }: { schoolLevelId: string }) {
                 {selectedTypeMeta && <p className="text-[11px] text-slate-500 mt-1">{selectedTypeMeta.desc}</p>}
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-700 uppercase mb-1.5 block">Sévérité</label>
+                <label className="text-xs font-bold text-slate-700 uppercase mb-1.5 block">Type de contrainte</label>
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => setForm({ ...form, severity: 'HARD' })} className={cn('flex-1 px-3 py-2 rounded-lg text-xs font-bold', form.severity === 'HARD' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>HARD (must satisfy)</button>
-                  <button type="button" onClick={() => setForm({ ...form, severity: 'SOFT' })} className={cn('flex-1 px-3 py-2 rounded-lg text-xs font-bold', form.severity === 'SOFT' ? 'bg-amber-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>SOFT (pénalisée)</button>
+                  <button type="button" onClick={() => setForm({ ...form, severity: 'HARD' })} className={cn('flex-1 px-3 py-2 rounded-lg text-xs font-bold', form.severity === 'HARD' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>Obligatoire</button>
+                  <button type="button" onClick={() => setForm({ ...form, severity: 'SOFT' })} className={cn('flex-1 px-3 py-2 rounded-lg text-xs font-bold', form.severity === 'SOFT' ? 'bg-amber-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')}>Préférée</button>
                 </div>
               </div>
               {form.severity === 'SOFT' && (
                 <div>
-                  <label className="text-xs font-bold text-slate-700 uppercase mb-1.5 block">Poids (1-10) : <span className="text-amber-700">{form.weight}</span></label>
+                  <label className="text-xs font-bold text-slate-700 uppercase mb-1.5 block">Priorité (1-10) : <span className="text-amber-700">{form.weight}</span></label>
                   <input type="range" min={1} max={10} value={form.weight} onChange={e => setForm({ ...form, weight: Number(e.target.value) })} className="w-full" />
                 </div>
               )}
@@ -920,7 +920,7 @@ function ParamsEditor({ form, onParamChange, subjects }: { form: any; onParamCha
   );
 }
 
-// ═══ TAB 4: GENERATE V2+ ═══
+// ═══ ONGLET 4 : GÉNÉRATION ═══
 
 function GenerateTab({ schoolLevelId, academicYearId, solutionsCount, onGenerated }: any) {
   const { toast } = useToast();
@@ -934,7 +934,7 @@ function GenerateTab({ schoolLevelId, academicYearId, solutionsCount, onGenerate
       if (mode === 'multi') {
         setProgress('Génération de 5 solutions…');
         const result = await steFetch<any>('/api/timetable-engine/generate-multi', { method: 'POST', body: { academicYearId, schoolLevelId } });
-        toast({ title: '✅ Multi-génération terminée', description: `${result.allSolutions?.length ?? 0} solutions, ${result.paretoFront?.length ?? 0} Pareto-optimales.` });
+        toast({ title: '✅ Multi-génération terminée', description: `${result.allSolutions?.length ?? 0} solutions générées, ${result.paretoFront?.length ?? 0} solutions optimales conservées.` });
       } else {
         setProgress('Génération…');
         const solution = await steFetch<any>('/api/timetable-engine/generate', { method: 'POST', body: { academicYearId, schoolLevelId } });
@@ -951,25 +951,25 @@ function GenerateTab({ schoolLevelId, academicYearId, solutionsCount, onGenerate
       <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl border border-amber-200 p-8 text-center">
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-amber-100 mb-4"><Zap className="w-8 h-8 text-amber-600" /></div>
         <h3 className="text-lg font-extrabold text-slate-900 mb-2">Lancer la génération</h3>
-        <p className="text-sm text-slate-600 mb-6 max-w-xl mx-auto">Le moteur CSP V2+ utilise le backtracking et vérifie les contraintes hard/soft. En multi-Pareto, 5 stratégies sont lancées puis filtrées.</p>
+        <p className="text-sm text-slate-600 mb-6 max-w-xl mx-auto">Le moteur de génération cherche la meilleure organisation possible. Il respecte les contraintes obligatoires et essaie de satisfaire les préférences. En mode multi-solutions, 5 stratégies sont testées puis seules les meilleures sont conservées.</p>
         <div className="inline-flex p-1 bg-white rounded-xl border border-amber-200 mb-6">
-          <button onClick={() => setMode('mono')} disabled={generating} className={cn('px-4 py-2 rounded-lg text-xs font-bold', mode === 'mono' ? 'bg-blue-600 text-white' : 'text-slate-600')}>Mono-solution</button>
-          <button onClick={() => setMode('multi')} disabled={generating} className={cn('px-4 py-2 rounded-lg text-xs font-bold inline-flex items-center gap-1.5', mode === 'multi' ? 'bg-blue-600 text-white' : 'text-slate-600')}><Sparkles className="w-3.5 h-3.5" /> Multi-Pareto V2+</button>
+          <button onClick={() => setMode('mono')} disabled={generating} className={cn('px-4 py-2 rounded-lg text-xs font-bold', mode === 'mono' ? 'bg-blue-600 text-white' : 'text-slate-600')}>Solution unique</button>
+          <button onClick={() => setMode('multi')} disabled={generating} className={cn('px-4 py-2 rounded-lg text-xs font-bold inline-flex items-center gap-1.5', mode === 'multi' ? 'bg-blue-600 text-white' : 'text-slate-600')}><Sparkles className="w-3.5 h-3.5" /> Multi-solutions</button>
         </div>
         <div className="mb-6">
-          {mode === 'mono' ? <p className="text-xs text-slate-500">1 solution stratégie préférence. Rapide.</p> :
-            <p className="text-xs text-slate-500"><strong>5 solutions</strong> (Faisabilité, Préférence, Pédagogie, Confort, Aléatoire) + backtracking + front de Pareto.</p>}
+          {mode === 'mono' ? <p className="text-xs text-slate-500">Une seule solution rapide, basée sur la stratégie préférence.</p> :
+            <p className="text-xs text-slate-500"><strong>5 solutions</strong> testées (Faisabilité, Préférence, Pédagogie, Confort, Aléatoire) puis seules les meilleures sont conservées.</p>}
         </div>
         <button onClick={handleGenerate} disabled={generating} className="inline-flex items-center gap-2 px-7 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold shadow-lg">
           {generating ? <Loader2 className="w-5 h-5 animate-spin" /> : (mode === 'multi' ? <Sparkles className="w-5 h-5" /> : <Zap className="w-5 h-5" />)}
-          {generating ? (progress || 'Génération…') : (mode === 'multi' ? 'Multi-génération Pareto' : 'Générer')}
+          {generating ? (progress || 'Génération…') : (mode === 'multi' ? 'Multi-génération' : 'Générer')}
         </button>
         {solutionsCount > 0 && <div className="mt-4 text-xs text-slate-500">{solutionsCount} solution(s) existante(s).</div>}
       </div>
       <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <h4 className="text-sm font-bold text-slate-800 mb-3">Pipeline V2+</h4>
+        <h4 className="text-sm font-bold text-slate-800 mb-3">Étapes de la génération</h4>
         <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
-          {[{ s:1,l:'Config + ressources',i:Settings },{ s:2,l:'Disponibilités + contraintes',i:Calendar },{ s:3,l:'Tri par stratégie',i:Users },{ s:4,l:'Backtracking + HARD',i:Zap },{ s:5,l:'SOFT (pénalités)',i:Shield },{ s:6,l:'Front de Pareto',i:GitCompare }].map(({s,l,i:Icon}) => (
+          {[{ s:1,l:'Config + ressources',i:Settings },{ s:2,l:'Disponibilités + contraintes',i:Calendar },{ s:3,l:'Tri par stratégie',i:Users },{ s:4,l:'Contraintes obligatoires',i:Zap },{ s:5,l:'Préférences (priorités)',i:Shield },{ s:6,l:'Sélection des meilleures',i:GitCompare }].map(({s,l,i:Icon}) => (
             <div key={s} className="bg-slate-50 rounded-lg p-3 text-center">
               <div className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 text-blue-600 mb-2"><Icon className="w-4 h-4" /></div>
               <div className="text-xs font-bold text-slate-700 leading-tight">{l}</div>
@@ -1054,7 +1054,7 @@ function SolutionsList({ solutions, onAccept, onView, onRegenerate }: any) {
                 <h4 className="font-bold text-slate-900">Solution #{idx + 1}</h4>
                 <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold uppercase',
                   sol.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-700' : sol.status === 'PROPOSED' ? 'bg-blue-100 text-blue-700' : sol.status === 'ARCHIVED' ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700')}>{sol.status}</span>
-                {sol.isParetoOptimal && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-violet-600 text-white"><Sparkles className="w-2.5 h-2.5" /> Pareto</span>}
+                {sol.isParetoOptimal && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-violet-600 text-white"><Sparkles className="w-2.5 h-2.5" /> Optimale</span>}
                 {sol.strategy && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-600">{sol.strategy}</span>}
               </div>
               <p className="text-xs text-slate-500">{sol.notes}</p>
@@ -1072,13 +1072,13 @@ function SolutionsList({ solutions, onAccept, onView, onRegenerate }: any) {
           </div>
           {Array.isArray(sol.violatedSoftConstraints) && sol.violatedSoftConstraints.length > 0 && (
             <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-              <p className="text-xs font-bold text-amber-700 mb-1 flex items-center gap-1.5"><Shield className="w-3.5 h-3.5" /> {sol.violatedSoftConstraints.length} contrainte(s) SOFT violée(s)</p>
+              <p className="text-xs font-bold text-amber-700 mb-1 flex items-center gap-1.5"><Shield className="w-3.5 h-3.5" /> {sol.violatedSoftConstraints.length} préférence(s) non respectée(s)</p>
               {sol.violatedSoftConstraints.slice(0, 3).map((v: any, i: number) => <p key={i} className="text-[11px] text-amber-700 ml-5">• {v.message} <span className="text-amber-500 font-bold">(-{v.penalty})</span></p>)}
             </div>
           )}
           {sol.conflictCount > 0 && (
             <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-xs font-bold text-red-700 mb-1 flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5" /> {sol.conflictCount} conflit(s) HARD</p>
+              <p className="text-xs font-bold text-red-700 mb-1 flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5" /> {sol.conflictCount} contrainte(s) obligatoire(s) non respectée(s)</p>
               {Array.isArray(sol.conflicts) && sol.conflicts.slice(0, 3).map((c: any, i: number) => <p key={i} className="text-[11px] text-red-700 ml-5">• {c.message}</p>)}
             </div>
           )}

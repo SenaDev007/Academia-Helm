@@ -23,6 +23,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useModuleContext } from "@/hooks/useModuleContext";
+import { useAppSession } from "@/contexts/AppSessionContext";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -64,14 +65,18 @@ export function PedagogicalSpaceWorkspace({
   academicYearId?: string;
   teacherId?: string;
 } = {}) {
-  const { tenant, user, academicYear, schoolLevel } = useModuleContext();
+  const { tenant, academicYear, schoolLevel } = useModuleContext();
+  const { user } = useAppSession();
   const [tab, setTab] = useState<TabId>('classes');
 
   // Résoudre le teacherId depuis le user ou les props
   // Pour les enseignants, on utilise user.id (qui correspond au userId lié au teacher)
   // Pour les rôles non-enseignant (PROMOTER, DIRECTOR, ADMIN), on utilise aussi user.id
+  // ⭐ Si pas de user.id ET pas de prop teacherId → message d'erreur.
+  // Le backend resolveTeacherFilter() gère ensuite le mode "vue direction" pour
+  // les rôles PROMOTER/SCHOOL_OWNER/DIRECTEUR_*/ADMIN qui n'ont pas de profil Teacher.
   const teacherId = propTeacherId || user?.teacherId || user?.id || '';
-  const resolvedTenantId = propTenantId || tenant?.id || '';
+  const resolvedTenantId = propTenantId || tenant?.id || user?.tenantId || '';
   const resolvedAcademicYearId = propAcademicYearId || academicYear?.id || '';
 
   if (!resolvedAcademicYearId) {

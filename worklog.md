@@ -213,3 +213,81 @@ Prochaines étapes recommandées:
 1. Redéployer le backend sur Fly.io : `cd apps/api-server && flyctl deploy -a academia-helm-api`
 2. Tester TOUS les sous-onglets en tant que promoteur
 3. Pour réactiver la contrainte plus tard : commenter le bloc `if (!resolvedTeacherId && userRole && PedagogicalSpaceService.DIRECTION_ROLES.has(userRole))` dans getMyClasses (~ligne 136) ET supprimer les helpers `resolveTeacherFilter` + remettre les `where: { teacherId }` directs dans les 7 méthodes modifiées.
+
+---
+Task ID: fix-espace-pedagogique-promoteur-v2
+Agent: Main (Super Z)
+Task: Diagnostic visuel via agent-browser + correctifs définitifs pour l'Espace Pédagogique du promoteur + suppression des termes anglais dans l'onglet Emploi du temps.
+
+Work Log:
+- Configuration agent-browser avec Chrome headless (mode CDP) — script `scripts/start-chrome-headless.sh` créé.
+- Connexion réussie au promoteur salumerhel2036@gmail.com sur https://academiahelm.com/login.
+- Navigation vers /app/pedagogy/production → snapshot révèle :
+  "Aucun profil enseignant trouvé - Votre compte n'est pas lié à un profil enseignant"
+- Navigation vers /app/pedagogy/timetables → snapshot révèle les termes anglais à supprimer :
+  * Description page : "Générateur d'emploi du temps — multi-solutions Pareto, contraintes dures/souples, backtracking"
+  * Onglet Contraintes : "V2+ : hard/soft", "HARD = must satisfy (le moteur skip les slots violants). SOFT = pénalisée si violée (poids 1-10)"
+  * Onglet Génération : "Mono ou multi-Pareto", "Mono-solution", "Multi-Pareto V2+", "Pipeline V2+", "Backtracking + HARD", "SOFT (pénalités)", "Front de Pareto"
+- ROOT CAUSE IDENTIFIED (bug critique) :
+  `PedagogicalSpaceWorkspace.tsx` ligne 67 faisait `const { tenant, user, academicYear, schoolLevel } = useModuleContext();`
+  MAIS `useModuleContext()` (défini dans `hooks/useModuleContext.ts`) n'expose PAS de champ `user` !
+  → `user` était toujours `undefined`
+  → `teacherId = propTeacherId || user?.teacherId || user?.id || ''` était toujours `''`
+  → Le message "Aucun profil enseignant trouvé" s'affichait pour TOUT LE MONDE, y compris le promoteur.
+
+- Fix appliqué dans `apps/web-app/src/components/pedagogy/production/PedagogicalSpaceWorkspace.tsx` :
+  * Ajout de l'import `useAppSession` depuis `@/contexts/AppSessionContext`
+  * Récupération de `user` via `useAppSession()` au lieu de `useModuleContext()`
+  * Fallback tenantId : ajout de `user?.tenantId` en plus de `tenant?.id`
+
+- Fix appliqué dans `apps/web-app/src/components/pedagogy/timetables/TimetablesWorkspace.tsx` :
+  * Sous-onglets (descriptions) :
+    - "V2+ : hard/soft" → "Obligatoires & préférées"
+    - "Mono ou multi-Pareto" → "Simple ou multi-solutions"
+  * Onglet Contraintes :
+    - "Contraintes V2+ : HARD = must satisfy... SOFT = pénalisée..." → "Types de contraintes : Obligatoire = doit toujours être respectée... Préférée = pénalisée si non respectée (priorité 1 à 10)"
+    - "X HARD · Y SOFT actives" → "X obligatoires · Y préférées actives"
+    - Tags HARD/SOFT → "Obligatoire" / "Préférée"
+    - "Poids (1-10)" → "Priorité (1-10)"
+    - "Sévérité" → "Type de contrainte"
+    - Boutons "HARD (must satisfy)" / "SOFT (pénalisée)" → "Obligatoire" / "Préférée"
+    - "Nouvelle contrainte V2+" → "Nouvelle contrainte"
+    - "Créez des contraintes pour améliorer la qualité de la génération" → "de l'emploi du temps"
+  * Onglet Génération :
+    - "Le moteur CSP V2+ utilise le backtracking et vérifie les contraintes hard/soft. En multi-Pareto, 5 stratégies sont lancées puis filtrées." → "Le moteur de génération cherche la meilleure organisation possible. Il respecte les contraintes obligatoires et essaie de satisfaire les préférences. En mode multi-solutions, 5 stratégies sont testées puis seules les meilleures sont conservées."
+    - "Mono-solution" → "Solution unique"
+    - "Multi-Pareto V2+" → "Multi-solutions"
+    - "1 solution stratégie préférence. Rapide." → "Une seule solution rapide, basée sur la stratégie préférence."
+    - "5 solutions (Faisabilité, Préférence, Pédagogie, Confort, Aléatoire) + backtracking + front de Pareto." → "5 solutions testées (Faisabilité, Préférence, Pédagogie, Confort, Aléatoire) puis seules les meilleures sont conservées."
+    - "Multi-génération Pareto" → "Multi-génération"
+    - "Pipeline V2+" → "Étapes de la génération"
+    - "Backtracking + HARD" → "Contraintes obligatoires"
+    - "SOFT (pénalités)" → "Préférences (priorités)"
+    - "Front de Pareto" → "Sélection des meilleures"
+    - Toast "X solutions, Y Pareto-optimales" → "X solutions générées, Y solutions optimales conservées"
+    - Badge "Pareto" sur solution → "Optimale"
+    - "X contrainte(s) SOFT violée(s)" → "X préférence(s) non respectée(s)"
+    - "Y conflit(s) HARD" → "Y contrainte(s) obligatoire(s) non respectée(s)"
+  * Header du fichier : "Smart Timetable Engine (STE) V2+" → "Moteur de génération d'emploi du temps"
+
+- Fix appliqué dans `apps/web-app/src/app/app/pedagogy/timetables/page.tsx` :
+  * Description du ModuleContainer :
+    - "Générateur d'emploi du temps — multi-solutions Pareto, contraintes dures/souples, backtracking" → "Générateur d'emploi du temps — multi-solutions, contraintes obligatoires et préférées"
+    - "Génération multi-solutions Pareto avec contraintes et backtracking" → "Génération automatique d'emploi du temps avec gestion des contraintes"
+
+- Vérification TypeScript : aucun erreur introduite (uniquement une apostrophe mal escapée corrigée).
+
+- Script helper créé : `scripts/start-chrome-headless.sh` pour démarrer Chrome headless avec CDP sur le port 9222, permettant l'utilisation d'agent-browser dans cet environnement.
+
+Stage Summary:
+- ✅ Cause racine identifiée : `useModuleContext()` ne renvoie pas `user`. Fix : `useAppSession()` pour récupérer user.
+- ✅ Tous les termes anglais du module Emploi du Temps (V2+, hard/soft, Pareto, mono/multi, backtracking, CSP) ont été remplacés par des termes français accessibles.
+- ✅ Fixes poussés sur origin/main (2 commits) — Vercel va redéployer automatiquement.
+- ✅ Le script `scripts/start-chrome-headless.sh` est réutilisable pour de futurs tests agent-browser.
+- ⚠️ EN ATTENTE : redéploiement Vercel (~1-2 min) pour que les fixes soient visibles en production.
+
+Prochaines étapes recommandées:
+1. Attendre le redéploiement Vercel (~1-2 min)
+2. Rafraîchir la page /app/pedagogy/production — l'Espace Pédagogique devrait maintenant afficher les classes (via le backend getAllClassesForTenant déjà déployé)
+3. Tester les sous-onglets (Mes Classes, Appel, Cahier Journal, Fiches, etc.) — devraient tous afficher les données du tenant
+4. Vérifier /app/pedagogy/timetables → onglets Contraintes et Génération → termes français accessibles

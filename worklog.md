@@ -540,3 +540,97 @@ Stage Summary:
   - L'enseignant Saliou verra ses 2 classes (CI + CE1) avec leurs matières
   - Le select matières affichera les 23 matières de la classe CI
   - L'auto-save de l'Appel fonctionnera (badge "Enregistré à HH:MM:SS")
+
+---
+Task ID: sync-appel-registre-modal-logout-suppression-classlog
+Agent: Main (Super Z)
+Task: 4 améliorations : (1) sync Appel→Registre, (2) modal logout personnalisé, (3) suppression onglet Cahier Journal, (4) mois/année auto dans Registre.
+
+Work Log:
+
+⭐ 1. SYNCHRONISATION APPEL → REGISTRE D'APPEL MENSUEL
+- Backend (pedagogical-space.service.ts) :
+  * Nouvelle méthode syncAttendanceToRegister() appelée automatiquement après
+    chaque saveDailyAttendance()
+  * Logique :
+    1. Calcule la structure des semaines du mois (lundi-vendredi, 5 sem max)
+       basée sur le vrai calendrier (ex: 1er juillet 2026 = mardi → semaine 1
+       commence mardi 1, mer 2, jeu 3, ven 4)
+    2. Charge tous les AttendanceRecord du mois pour la classe
+    3. Récupère/crée le AttendanceRegister mensuel correspondant
+    4. Reconstruit le studentsData JSON en mappant chaque record → (week, day)
+       - PRESENT → case vide (pas d'absence)
+       - ABSENT → 'A' (Absent)
+       - LATE → 'R' (Retard)
+       - EXCUSED → 'E' (Excusé)
+    5. Recalcule les totaux (présences possibles, absences, %)
+    6. Sauvegarde le registre avec tous les totaux mis à jour
+  * Erreur non-bloquante : si la synch échoue, l'appel reste enregistré
+
+⭐ 2. MODAL DE DÉCONNEXION PERSONNALISÉ
+- Nouveau composant LogoutModal.tsx (apps/web-app/src/components/auth/LogoutModal.tsx)
+- Remplace le confirm() natif du navigateur par un modal stylé Academia Helm
+- Header avec icône AlertTriangle + titre 'Déconnexion' + sous-titre 'Confirmation requise'
+- Bouton X en haut à droite pour fermer
+- Body avec message personnalisé (inclut le nom de l'utilisateur)
+- Encart bleu '💡 Toutes vos modifications non enregistrées seront perdues'
+- Footer avec boutons Annuler / Se déconnecter (rouge)
+- Animation fade-in + zoom-in
+- État loading avec spinner
+- Intégré dans TeacherLayout et ParentLayout
+
+⭐ 3. SUPPRESSION DE L'ONGLET 'CAHIER JOURNAL' (CLASSLOG)
+- PedagogicalSpaceWorkspace.tsx : onglet 'classlog' supprimé du tableau TABS
+- L'import de ClassLogTab et l'icône NotebookPen ont été retirés
+- Le rendu {tab === 'classlog' && <ClassLogTab />} a été supprimé
+- Le vrai cahier journal officiel (Cahier Journal Hebdo = grille 5j × 8 matières)
+  reste accessible via l'onglet 'Cahier Journal' (id='cahier-journal')
+- Note : le fichier ClassLogTab.tsx est conservé dans le code mais masqué de l'UI
+
+⭐ 4. REGISTRE D'APPEL — MOIS/ANNÉE AUTOMATIQUES
+- AttendanceRegisterTab.tsx :
+  * selectedMonth et selectedYear sont maintenant verrouillés sur le mois
+    courant (date du jour) — l'enseignant ne peut plus les modifier
+  * Select 'Mois' remplacé par un div read-only avec icône Calendar
+  * Input 'Année' remplacé par un div read-only
+  * Labels 'Mois' / 'Année' → 'Mois (auto)' / 'Année (auto)'
+  * MONTHS array : ajout de Juillet (value=7) et Août (value=8) — tous les
+    12 mois sont désormais disponibles (utile pour cours d'été/rattrapage)
+
+- TESTS AGENT-BROWSER (après redéploiement Vercel réussi) :
+  * Login enseignant → click "Se déconnecter" → MODAL personnalisé affiché ✅
+    - Titre "Déconnexion"
+    - Sous-titre "Confirmation requise"
+    - Bouton X (Fermer)
+    - Message : "Êtes-vous sûr de vouloir vous déconnecter de votre session ? Saliou AKPAKI, vous devrez vous reconnecter..."
+    - Encart bleu "💡 Toutes vos modifications non enregistrées seront perdues"
+    - Boutons "Annuler" / "Se déconnecter"
+  * Onglets Espace Pédagogique : "Cahier Journal" supprimé ✅
+    - Plus que 8 onglets (Mes Classes, Appel, Cahier Journal, Cahier de Semaine,
+      Fiches Pédagogiques, Registre d'Appel, Cahier de Texte, Devoirs)
+  * Registre d'Appel : "MOIS (AUTO) Juillet" + "ANNÉE (AUTO) 2026" ✅
+    - Plus de select/input pour le mois/année — affichage read-only
+    - Le mois courant (Juillet 2026) est automatiquement sélectionné
+
+Stage Summary:
+- ✅ Synchronisation Appel→Registre : quand l'enseignant fait l'appel journalier,
+  le registre mensuel est automatiquement mis à jour avec les bonnes cases
+  (semaine + jour) calculées depuis le vrai calendrier
+- ✅ Modal de déconnexion personnalisé (remplace confirm() natif)
+- ✅ Onglet 'Cahier Journal' (classlog) supprimé de l'UI
+- ✅ Mois/année auto-verrouillés sur le mois courant dans Registre d'Appel
+- ✅ Frontend redéployé sur Vercel — tous les changements visibles ✅
+- ⚠️ BACKEND NON DÉPLOYÉ sur Fly.io — nécessite intervention manuelle
+
+⚠️ ACTION REQUISE (utilisateur) :
+  Déployer manuellement le backend sur Fly.io :
+    cd /home/z/my-project/apps/api-server
+    npx prisma generate
+    npx prisma migrate deploy --schema=prisma/schema.prisma
+    flyctl deploy -a academia-helm-api --strategy rolling
+
+  Une fois le backend déployé :
+  - L'enseignant Saliou verra ses 2 classes (CI + CE1)
+  - L'appel journalier sauvegardé → registre mensuel auto-mis-à-jour
+  - Le select matières Cahier Journal affichera les 23 matières de la classe
+  - L'auto-save de l'Appel fonctionnera (badge "Enregistré à HH:MM:SS")

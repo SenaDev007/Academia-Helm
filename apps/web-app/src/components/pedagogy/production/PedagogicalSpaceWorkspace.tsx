@@ -27,14 +27,13 @@ import { useAppSession } from "@/contexts/AppSessionContext";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
-  BookOpen, CalendarCheck, NotebookPen, CalendarDays, FileText,
+  BookOpen, CalendarCheck, CalendarDays, FileText,
   Users, Loader2, ChevronRight, RefreshCw, ClipboardList, FileSpreadsheet,
   ClipboardCheck,
 } from "lucide-react";
 
 import { MyClassesTab } from "./MyClassesTab";
 import { AttendanceTab } from "./AttendanceTab";
-import { ClassLogTab } from "./ClassLogTab";
 import { CahierJournalTab } from "./CahierJournalTab";
 import { CahierSemaineTab } from "./CahierSemaineTab";
 import { PedagogicalSheetsTab } from "./PedagogicalSheetsTab";
@@ -45,8 +44,11 @@ import { HomeworkTab } from "./HomeworkTab";
 const TABS = [
   { id: 'classes', label: 'Mes Classes', icon: Users, description: 'Effectifs & élèves' },
   { id: 'attendance', label: 'Appel', icon: CalendarCheck, description: 'Présences journalières' },
-  { id: 'classlog', label: 'Cahier Journal', icon: NotebookPen, description: 'Séances quotidiennes' },
-  { id: 'cahier-journal', label: 'Cahier Journal Hebdo', icon: FileSpreadsheet, description: 'Grille hebdomadaire 5j × 8 matières' },
+  // ⭐ SUPPRIMÉ : onglet 'Cahier Journal' (classlog) — remplacé par 'Cahier Journal Hebdo'
+  // qui est le vrai cahier journal officiel (grille 5 jours × matières).
+  // L'ancien ClassLogTab était un simple journal de séances (topic, contenu, etc.)
+  // sans format officiel — il est conservé dans le code mais masqué de l'UI.
+  { id: 'cahier-journal', label: 'Cahier Journal', icon: FileSpreadsheet, description: 'Grille hebdomadaire 5j × 8 matières' },
   { id: 'weekly', label: 'Cahier de Semaine', icon: CalendarDays, description: 'Monitoring institutionnel' },
   { id: 'fiches', label: 'Fiches Pédagogiques', icon: FileText, description: '5 types (MATH/FR/EST/ES/EA)' },
   { id: 'registre', label: 'Registre d\'Appel', icon: ClipboardList, description: 'Registre mensuel + évaluations' },
@@ -142,13 +144,6 @@ export function PedagogicalSpaceWorkspace({
               tenantId={resolvedTenantId}
               academicYearId={resolvedAcademicYearId}
               schoolLevelId={schoolLevel?.schoolLevelId || schoolLevel?.id || ''}
-              teacherId={teacherId}
-            />
-          )}
-          {tab === 'classlog' && (
-            <ClassLogTab
-              tenantId={resolvedTenantId}
-              academicYearId={resolvedAcademicYearId}
               teacherId={teacherId}
             />
           )}

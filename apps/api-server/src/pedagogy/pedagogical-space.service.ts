@@ -706,7 +706,289 @@ export class PedagogicalSpaceService {
     }
 
     this.logger.log(`✅ Appel enregistré: ${records.length} élèves pour classe ${classId} le ${date}`);
+
+    // ⭐ SYNCHRONISATION : mettre à jour automatiquement le registre d'appel mensuel
+    // pour cette classe + ce mois. L'enseignant ne devrait pas avoir à double-saisir.
+    try {
+      await this.syncAttendanceToRegister(
+        tenantId,
+        academicYearId,
+        classId,
+        dateObj,
+        records,
+      );
+    } catch (syncErr) {
+      // Ne pas faire échouer l'enregistrement principal si la synch échoue
+      this.logger.warn(
+        `[syncAttendanceToRegister] Erreur non-bloquante: ${(syncErr as Error).message}`,
+      );
+    }
+
     return { saved: results.length, records: results };
+  }
+
+  // ===========================================================================
+  // SYNCHRONISATION APPEL → REGISTRE D'APPEL MENSUEL
+  // ===========================================================================
+
+  /**
+   * Synchronise les enregistrements d'appel journalier (AttendanceRecord) avec
+   * le registre d'appel mensuel (AttendanceRegister) de la même classe + mois.
+   *
+   * Cette fonction est appelée automatiquement après chaque saveDailyAttendance
+   * pour éviter la double-saisie côté enseignant.
+   *
+   * Logique :
+   *   1. Récupère (ou crée) le registre mensuel pour (tenantId, academicYearId,
+   *      classId, month, year)
+   *   2. Charge tous les AttendanceRecord du mois pour cette classe
+   *   3. Reconstruit le studentsData du registre en mappant chaque jour à sa
+   *      semaine (lundi-vendredi) dans le mois
+   *   4. Recalcule les totaux (présences possibles, absences, etc.)
+   *   5. Sauvegarde le registre
+   *
+   * Répartition des jours en semaines :
+   *   - Semaine 1 = jours 1 à 5 (lundi à vendredi) du mois — mais alignés sur
+   *     les vrais jours de la semaine calendaire (ex: si le 1er juillet est un
+   *     mardi, alors semaine 1 = [mardi 1, mer 2, jeu 3, ven 4])
+   *   - On parcourt tous les jours du mois (1er à dernier), on regroupe par
+   *     semaine ISO (lundi-vendredi).
+   *   - 5 semaines max (compatible avec le template officiel).
+   */
+  async syncAttendanceToRegister(
+    tenantId: string,
+    academicYearId: string,
+    classId: string,
+    dateObj: Date,
+    records: { studentId: string; status: string; notes?: string }[],
+  ) {
+    const month = dateObj.getMonth() + 1; // 1-12
+    const year = dateObj.getFullYear();
+
+    // ⭐ 1. Calculer la structure des semaines du mois
+    // Pour chaque jour du mois (1er à dernier), déterminer sa semaine (1-5)
+    // dans le mois. On groupe par "semaine du mois" : la première semaine
+    // commence au 1er du mois (même si c'est un mardi) et dure jusqu'au
+    // premier vendredi. Ensuite chaque lundi commence une nouvelle semaine.
+    const monthDays: { day: number; dateObj: Date; dow: number; weekInMonth: number; dayInWeek: number }[] = [];
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    let currentWeek = 1;
+    let lastDow = -1;
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(year, month - 1, day);
+      const dow = d.getDay(); // 0=dimanche, 1=lundi, ..., 6=samedi
+      // On ne traite que lundi-vendredi (dow 1-5)
+      if (dow < 1 || dow > 5) continue;
+      // Si on était sur un vendredi (5) et qu'on passe au lundi suivant (1),
+      // on incrémente la semaine
+      if (lastDow === 5 && dow === 1) {
+        currentWeek++;
+      }
+      // Limiter à 5 semaines max (template officiel)
+      if (currentWeek > 5) continue;
+      // dow 1=lundi → dayInWeek 1, 2=mardi → 2, ..., 5=vendredi → 5
+      monthDays.push({
+        day,
+        dateObj: d,
+        dow,
+        weekInMonth: currentWeek,
+        dayInWeek: dow, // 1=lun, 2=mar, 3=mer, 4=jeu, 5=ven
+      });
+      lastDow = dow;
+    }
+
+    // Construire un map (dateStr → { weekInMonth, dayInWeek }) pour lookup rapide
+    const dateToCell = new Map<string, { weekInMonth: number; dayInWeek: number }>();
+    for (const md of monthDays) {
+      const dateStr = `${md.dateObj.getFullYear()}-${String(month).padStart(2, '0')}-${String(md.day).padStart(2, '0')}`;
+      dateToCell.set(dateStr, { weekInMonth: md.weekInMonth, dayInWeek: md.dayInWeek });
+    }
+
+    // ⭐ 2. Charger tous les AttendanceRecord du mois pour cette classe
+    const monthStart = new Date(year, month - 1, 1);
+    const monthEnd = new Date(year, month, 0, 23, 59, 59);
+    const allRecords = await this.prisma.attendanceRecord.findMany({
+      where: {
+        tenantId,
+        classId,
+        date: { gte: monthStart, lte: monthEnd },
+      },
+      include: {
+        student: {
+          select: {
+            id: true, firstName: true, lastName: true, gender: true,
+          },
+        },
+      },
+    });
+
+    // ⭐ 3. Résoudre le teacherId : utiliser le premier record.recordedBy,
+    // sinon fallback sur le teacherId des assignments existants pour cette classe.
+    let teacherIdForRegister = '';
+    if (allRecords.length > 0 && allRecords[0].recordedBy) {
+      // recordedBy est un user.id — vérifier si un Teacher correspond
+      const teacherByUserId = await this.resolveTeacherId(tenantId, allRecords[0].recordedBy!);
+      if (teacherByUserId.teacherId) {
+        teacherIdForRegister = teacherByUserId.teacherId;
+      }
+    }
+    if (!teacherIdForRegister) {
+      // Fallback : premier teacher assigné à cette classe
+      const assignment = await this.prisma.teacherClassAssignment.findFirst({
+        where: { tenantId, academicYearId, classId },
+        select: { teacherId: true },
+      });
+      teacherIdForRegister = assignment?.teacherId || '';
+    }
+    if (!teacherIdForRegister) {
+      this.logger.warn(
+        `[syncAttendanceToRegister] Impossible de déterminer le teacherId pour le registre — ignoré.`,
+      );
+      return;
+    }
+
+    // ⭐ 4. Récupérer ou créer le registre mensuel
+    const register = await this.getOrCreateAttendanceRegister(
+      tenantId,
+      academicYearId,
+      teacherIdForRegister,
+      classId,
+      month,
+      year,
+    );
+    const registerId = register.id;
+
+    // ⭐ 5. Récupérer la liste des élèves de la classe (depuis studentsData
+    // existant ou depuis les inscriptions)
+    let studentsData: any[] = [];
+    if (register.studentsData) {
+      const raw = typeof register.studentsData === 'string'
+        ? JSON.parse(register.studentsData)
+        : register.studentsData;
+      if (Array.isArray(raw)) studentsData = raw;
+    }
+
+    // Si studentsData est vide, initialiser depuis les inscriptions
+    if (studentsData.length === 0) {
+      const enrollments = await this.prisma.studentEnrollment.findMany({
+        where: {
+          tenantId, academicYearId, classId,
+          status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED'] },
+        },
+        include: {
+          student: {
+            select: { id: true, firstName: true, lastName: true, gender: true },
+          },
+        },
+        orderBy: { student: { lastName: 'asc' } },
+      });
+      studentsData = enrollments.map((e, idx) => ({
+        studentId: e.student?.id,
+        numero: idx + 1,
+        nom: e.student?.lastName || '',
+        prenom: e.student?.firstName || '',
+        sexe: (e.student?.gender || '').toUpperCase() === 'FEMALE' ? 'F'
+          : (e.student?.gender || '').toUpperCase() === 'MALE' ? 'M' : 'M',
+        absences: [],
+        motif: '',
+        totalPresencesPossibles: 0,
+        totalAbsences: 0,
+        totalPresenceEffectif: 0,
+        observation: '',
+        nbDemiJournees: 0,
+      }));
+    }
+
+    // ⭐ 6. Reconstruire les absences pour chaque élève à partir de tous les
+    // AttendanceRecord du mois. On groupe par studentId puis on mappe chaque
+    // record vers (weekInMonth, dayInWeek) en utilisant dateToCell.
+    const recordsByStudent = new Map<string, typeof allRecords>();
+    for (const r of allRecords) {
+      const arr = recordsByStudent.get(r.studentId) || [];
+      arr.push(r);
+      recordsByStudent.set(r.studentId, arr);
+    }
+
+    for (const student of studentsData) {
+      const studentRecords = recordsByStudent.get(student.studentId) || [];
+      const newAbsences: any[] = [];
+
+      for (const r of studentRecords) {
+        const dateStr = r.date.toISOString().split('T')[0];
+        const cell = dateToCell.get(dateStr);
+        if (!cell) continue; // record hors lundi-vendredi ou hors mois → skip
+
+        // Mapper le status à un "marked" du registre
+        // PRESENT → "" (pas d'absence marquée — case vide)
+        // ABSENT → "A"
+        // LATE → "R" (retard)
+        // autres → "E" (excusé)
+        let marked = '';
+        if (r.status === 'ABSENT') marked = 'A';
+        else if (r.status === 'LATE') marked = 'R';
+        else if (r.status === 'EXCUSED') marked = 'E';
+        // PRESENT → "" (présent, pas de marqueur)
+
+        if (marked) {
+          newAbsences.push({
+            week: cell.weekInMonth,
+            day: cell.dayInWeek,
+            marked,
+          });
+        }
+      }
+
+      // Recalculer les totaux
+      const totalAbsences = newAbsences.filter(a => a.marked === 'A' || a.marked === 'E').length;
+      const totalRetards = newAbsences.filter(a => a.marked === 'R').length;
+      // nbDemiJournees = nombre de jours où l'appel a été fait pour CET élève
+      // (= nombre de records pour cet élève ce mois-ci)
+      const nbDemiJournees = studentRecords.length;
+      const totalPresencesPossibles = nbDemiJournees;
+      const totalPresenceEffectif = totalPresencesPossibles - totalAbsences;
+
+      student.absences = newAbsences;
+      student.totalAbsences = totalAbsences;
+      student.totalPresencesPossibles = totalPresencesPossibles;
+      student.totalPresenceEffectif = totalPresenceEffectif;
+      student.nbDemiJournees = nbDemiJournees;
+      student.observation = totalRetards > 0 ? `${totalRetards} retard(s)` : (student.observation || '');
+    }
+
+    // ⭐ 7. Recalculer les totaux globaux du mois
+    const totalAbs = studentsData.reduce((sum, s) => sum + (s.totalAbsences || 0), 0);
+    const totalPoss = studentsData.reduce((sum, s) => sum + (s.totalPresencesPossibles || 0), 0);
+    const totalEff = studentsData.reduce((sum, s) => sum + (s.totalPresenceEffectif || 0), 0);
+    const pctP = totalPoss > 0 ? Math.round((totalEff / totalPoss) * 10000) / 100 : 0;
+    const pctA = totalPoss > 0 ? Math.round((totalAbs / totalPoss) * 10000) / 100 : 0;
+
+    // ⭐ 8. Sauvegarder le registre
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "attendance_registers"
+       SET "studentsData" = $1,
+           "demiJourneeMois" = $2,
+           "presencePossibleMois" = $3,
+           "totalAbsencesMois" = $4,
+           "totalPresencesEffectivesMois" = $5,
+           "pourcentagePresences" = $6,
+           "pourcentageAbsences" = $7,
+           "updatedAt" = NOW()
+       WHERE "id" = $8`,
+      JSON.stringify(studentsData),
+      totalPoss,
+      totalPoss,
+      totalAbs,
+      totalEff,
+      pctP,
+      pctA,
+      registerId,
+    );
+
+    this.logger.log(
+      `✅ Registre d'appel synchronisé: ${registerId} — ${studentsData.length} élèves, ` +
+      `${monthDays.length} jours ouvrés, ${totalAbs} absences, ${pctP}% présences`,
+    );
   }
 
   // ===========================================================================

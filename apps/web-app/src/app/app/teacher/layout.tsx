@@ -25,13 +25,14 @@ import { useAppSession } from "@/contexts/AppSessionContext";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import { useSchoolIdentity } from "@/hooks/useSchoolIdentity";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, BookOpen, CalendarDays, Users, Library,
   Video, ClipboardList, MessageSquare, Loader2, GraduationCap,
   BarChart3, Settings, Building2, LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { LogoutModal } from "@/components/auth/LogoutModal";
 
 const TEACHER_MODULES = [
   { path: "/app/teacher", label: "Dashboard", icon: LayoutDashboard, desc: "Cours du jour, classes assignées" },
@@ -50,11 +51,10 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
   const { academicYear } = useModuleContext();
   const { identity: school } = useSchoolIdentity();
   const pathname = usePathname();
-  const router = useRouter();
+  const [logoutOpen, setLogoutOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
   const handleLogout = async () => {
-    if (!confirm("Voulez-vous vraiment vous déconnecter ?")) return;
     setLoggingOut(true);
     try {
       await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
@@ -141,19 +141,23 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
             <span>Portail École</span>
           </Link>
           <button
-            onClick={handleLogout}
-            disabled={loggingOut}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+            onClick={() => setLogoutOpen(true)}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
           >
-            {loggingOut ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <LogOut className="h-4 w-4" />
-            )}
-            <span>{loggingOut ? "Déconnexion…" : "Se déconnecter"}</span>
+            <LogOut className="h-4 w-4" />
+            <span>Se déconnecter</span>
           </button>
         </div>
       </aside>
+
+      {/* Modal de confirmation de déconnexion */}
+      <LogoutModal
+        open={logoutOpen}
+        onClose={() => setLogoutOpen(false)}
+        onConfirm={handleLogout}
+        loading={loggingOut}
+        userName={user ? `${user.firstName} ${user.lastName}`.trim() : undefined}
+      />
 
       {/* Contenu principal */}
       <div className="flex-1 ml-64 min-w-0">

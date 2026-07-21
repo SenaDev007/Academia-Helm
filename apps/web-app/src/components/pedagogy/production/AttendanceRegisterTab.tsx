@@ -47,12 +47,16 @@ interface AttendanceRegisterTabProps {
   teacherId: string;
 }
 
+// ⭐ TOUS les 12 mois sont désormais disponibles (y compris Juillet et Août)
+// pour permettre la saisie même pendant l'été (cours de rattrapage, etc.).
+// Le mois courant est auto-sélectionné et verrouillé (voir selectedMonth state).
 const MONTHS = [
-  { value: 9, label: "Septembre" }, { value: 10, label: "Octobre" },
-  { value: 11, label: "Novembre" }, { value: 12, label: "Décembre" },
   { value: 1, label: "Janvier" }, { value: 2, label: "Février" },
   { value: 3, label: "Mars" }, { value: 4, label: "Avril" },
   { value: 5, label: "Mai" }, { value: 6, label: "Juin" },
+  { value: 7, label: "Juillet" }, { value: 8, label: "Août" },
+  { value: 9, label: "Septembre" }, { value: 10, label: "Octobre" },
+  { value: 11, label: "Novembre" }, { value: 12, label: "Décembre" },
 ];
 
 const MONTH_NAMES = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
@@ -92,8 +96,14 @@ const ABSENCE_MARKS = [
 export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: AttendanceRegisterTabProps) {
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>("");
-  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  // ⭐ Mois et année VERROUILLÉS sur le mois courant (date du jour).
+  // L'enseignant ne peut plus modifier le mois/année — le système reconnaît
+  // automatiquement le mois en cours (ex: Juillet 2026) et charge le bon registre.
+  // Raisonnement : si on est en juillet 2026, on veut travailler sur le registre
+  // de juillet 2026, pas sur un mois passé ou futur.
+  const today = new Date();
+  const [selectedMonth] = useState<number>(today.getMonth() + 1); // 1-12, verrouillé
+  const [selectedYear] = useState<number>(today.getFullYear());    // verrouillé
 
   const [register, setRegister] = useState<any>(null);
   const [students, setStudents] = useState<any[]>([]);
@@ -577,19 +587,18 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Mois</label>
-          <select value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-            className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium min-w-[150px]">
-            {MONTHS.map(m => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
+          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Mois (auto)</label>
+          <div className="px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm font-bold min-w-[150px] text-slate-700 flex items-center gap-2">
+            <Calendar className="h-3.5 w-3.5 text-slate-400" />
+            {MONTH_NAMES[selectedMonth]}
+          </div>
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Année</label>
-          <input type="number" value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value) || new Date().getFullYear())}
-            className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium w-[100px]" />
+          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Année (auto)</label>
+          <div className="px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm font-bold w-[100px] text-slate-700">
+            {selectedYear}
+          </div>
         </div>
 
         <div className="flex-1" />

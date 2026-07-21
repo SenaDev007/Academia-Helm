@@ -607,16 +607,18 @@ export class PedagogicalSpaceService {
           },
         },
       });
-      return enrollments.map(e => ({
-        studentId: e.student?.id,
-        firstName: e.student?.firstName,
-        lastName: e.student?.lastName,
-        gender: e.student?.gender,
-        matricule: e.student?.matricule,
-        photoUrl: e.student?.photoUrl,
-        status: 'PRESENT', // par défaut
-        attendanceId: null,
-      }));
+      return enrollments
+        .filter(e => e.student?.id) // ⭐ Filtrer les inscriptions orphelines
+        .map(e => ({
+          studentId: e.student?.id,
+          firstName: e.student?.firstName,
+          lastName: e.student?.lastName,
+          gender: e.student?.gender,
+          matricule: e.student?.matricule,
+          photoUrl: e.student?.photoUrl,
+          status: 'PRESENT', // par défaut
+          attendanceId: null,
+        }));
     }
 
     return records.map(r => ({
@@ -675,6 +677,14 @@ export class PedagogicalSpaceService {
     }
 
     for (const record of records) {
+      // ⭐ Skip les records invalides (studentId null/undefined) pour éviter
+      // l'erreur P2003 "référence invalide" (Foreign key constraint).
+      if (!record.studentId || typeof record.studentId !== 'string') {
+        this.logger.warn(
+          `[saveDailyAttendance] Record ignoré : studentId invalide (null/undefined)`,
+        );
+        continue;
+      }
       // Vérifier si un enregistrement existe déjà
       const existing = await this.prisma.attendanceRecord.findFirst({
         where: { tenantId, classId, studentId: record.studentId, date: dateObj },

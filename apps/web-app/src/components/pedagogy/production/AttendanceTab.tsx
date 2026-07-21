@@ -93,7 +93,16 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
     setSaving(true);
     setSaveStatus("saving");
     try {
-      const records = studentsRef.current.map(s => ({ studentId: s.studentId, status: s.status }));
+      // ⭐ Filtrer les records invalides (studentId null/undefined)
+      // pour éviter l'erreur P2003 "référence invalide" si getDailyAttendance
+      // renvoie des élèves avec studentId=null (cas d'inscription orpheline).
+      const records = studentsRef.current
+        .filter(s => s && s.studentId && typeof s.studentId === 'string')
+        .map(s => ({ studentId: s.studentId, status: s.status || 'PRESENT' }));
+
+      if (records.length === 0) {
+        throw new Error('Aucun élève valide à enregistrer');
+      }
 
       // ⭐ Résoudre schoolLevelId depuis la classe sélectionnée (au cas où
       // schoolLevelId prop est vide — ex: "Tous les niveaux" sélectionné).

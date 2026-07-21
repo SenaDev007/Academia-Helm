@@ -28,7 +28,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, CreditCard, FileText,
   CalendarCheck, MessageSquare, Folder, Loader2, Heart,
-  Building2, Phone, Mail, MapPin, GraduationCap, LogOut,
+  Building2, Phone, Mail, MapPin, GraduationCap, LogOut, Menu, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LogoutModal } from "@/components/auth/LogoutModal";
@@ -50,6 +50,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
   const pathname = usePathname();
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -70,12 +71,26 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
   }
 
   const parentName = user ? `${user.firstName} ${user.lastName}`.trim() : "Parent";
+  const currentModuleLabel = PARENT_MODULES.find((m) => pathname === m.path || (m.path !== "/app/parent" && pathname.startsWith(m.path)))?.label || "Portail Parent";
 
   return (
-    <div className="min-h-screen bg-emerald-50/30 flex">
-      {/* Sidebar parent */}
-      <aside className="w-64 bg-white border-r border-slate-200 flex flex-col fixed inset-y-0 left-0 z-30">
-        {/* Logo + Nom école + Année scolaire */}
+    <div className="min-h-screen bg-emerald-50/30">
+      {/* ⭐ Overlay mobile */}
+      {mobileSidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar parent — responsive */}
+      <aside
+        className={cn(
+          "w-64 bg-white border-r border-slate-200 flex flex-col fixed inset-y-0 left-0 z-50 transition-transform duration-300",
+          mobileSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        )}
+      >
+        {/* Logo + Nom école + bouton fermer mobile */}
         <div className="h-20 flex items-center gap-3 px-4 border-b border-slate-200">
           {school?.logoUrl ? (
             <img src={school.logoUrl} alt={school.schoolName} className="h-10 w-10 rounded-lg object-cover" />
@@ -84,10 +99,17 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
               <Building2 className="h-5 w-5 text-emerald-600" />
             </div>
           )}
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-xs font-bold text-slate-900 truncate">{school?.schoolName || tenant?.name || "École"}</p>
             <p className="text-[10px] text-slate-400">{academicYear?.label || ""}</p>
           </div>
+          <button
+            onClick={() => setMobileSidebarOpen(false)}
+            className="lg:hidden p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg"
+            aria-label="Fermer le menu"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
         {/* Profil parent */}
@@ -136,6 +158,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
               <Link
                 key={mod.path}
                 href={mod.path}
+                onClick={() => setMobileSidebarOpen(false)}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
                   isActive
@@ -171,21 +194,33 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
         userName={user ? `${user.firstName} ${user.lastName}`.trim() : undefined}
       />
 
-      {/* Contenu principal */}
-      <div className="flex-1 ml-64">
-        {/* Top bar */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-20">
-          <h1 className="text-lg font-bold text-slate-900">
-            {PARENT_MODULES.find((m) => pathname.startsWith(m.path))?.label || "Portail Parent"}
-          </h1>
-          <div className="text-sm text-slate-500">
+      {/* Contenu principal — responsive */}
+      <div className="lg:ml-64 min-w-0">
+        {/* Top bar — responsive avec bouton hamburger mobile */}
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Bouton hamburger (mobile only) */}
+            <button
+              onClick={() => setMobileSidebarOpen(true)}
+              className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+              aria-label="Ouvrir le menu"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <h1 className="text-base sm:text-lg font-bold text-slate-900 truncate">
+              {currentModuleLabel}
+            </h1>
+          </div>
+          <div className="text-xs sm:text-sm text-slate-500 flex-shrink-0">
             {academicYear?.label || ""}
           </div>
         </header>
 
         {/* Contenu de la page */}
-        <main className="p-6">
-          {children}
+        <main className="p-3 sm:p-4 lg:p-6">
+          <div className="min-w-0">
+            {children}
+          </div>
         </main>
       </div>
     </div>

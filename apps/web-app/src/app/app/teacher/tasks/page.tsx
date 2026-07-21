@@ -4,7 +4,7 @@
  * Teacher Tasks — embeds the TeacherTasksWorkspace.
  */
 
-import { TeacherTasksWorkspace } from "@/components/pedagogy/tasks/TeacherTasksWorkspace";
+import TeacherTasksWorkspace from "@/components/pedagogy/tasks/TeacherTasksWorkspace";
 import { ClipboardList } from "lucide-react";
 
 export default function TeacherTasksPage() {

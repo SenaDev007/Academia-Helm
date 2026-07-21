@@ -14,6 +14,18 @@ bun.lock
 .env.development
 .env.staging
 
+# Scripts with sensitive DB credentials — NEVER commit
+scripts/*.py
+scripts/*.js
+scripts/*.ts
+!scripts/.gitkeep
+
+# Generated images/PDFs (from VLM analysis)
+scripts/pdf_images/
+scripts/pdf_images_small/
+scripts/pdf_images_tiny/
+scripts/vlm_*.json
+
 # Build outputs
 dist/
 build/

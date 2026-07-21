@@ -7,7 +7,7 @@
 
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { useModuleContext } from "@/hooks/useModuleContext";
-import { TimetablesWorkspace } from "@/components/pedagogy/timetables/TimetablesWorkspace";
+import TimetablesWorkspace from "@/components/pedagogy/timetables/TimetablesWorkspace";
 import { ModuleContainer } from "@/components/modules/blueprint";
 import { CalendarDays } from "lucide-react";
 

@@ -2,19 +2,21 @@
 
 /**
  * ============================================================================
- * PORTAIL ENSEIGNANT — Layout dédié (séparé du portail école)
+ * PORTAIL ENSEIGNANT — Layout dédié
  * ============================================================================
  *
- * Layout spécifique pour les enseignants avec sa propre sidebar.
- * N'affiche PAS la PilotageSidebar (réservée au portail école).
+ * Sidebar spécifique pour les enseignants avec accès à :
+ *   1. Dashboard
+ *   2. Espace Pédagogique (cahier journal, fiches, registre, cahier de texte, devoirs)
+ *   3. Emploi du Temps (le sien)
+ *   4. Mes Classes (élèves, suivi)
+ *   5. Bibliothèque
+ *   6. EduCast (vidéos pédagogiques)
+ *   7. Travaux & Suivi
+ *   8. Communication (chat)
+ *   9. ORION (alertes pédagogiques)
  *
- * Modules visibles :
- *   - Dashboard (cours du jour, classes assignées)
- *   - Espace Pédagogique (cahier journal, fiches, registre, cahier de texte, devoirs)
- *   - Mes Classes (liste des élèves par classe)
- *   - Bibliothèque
- *   - EduCast (vidéos pédagogiques)
- *   - Communication (chat)
+ * Pas d'accès aux : Finances, RH, Paramètres, Administration générale
  * ============================================================================
  */
 
@@ -23,18 +25,22 @@ import { useModuleContext } from "@/hooks/useModuleContext";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, BookOpen, Users, Library, Video,
-  MessageSquare, Loader2, GraduationCap, Settings,
+  LayoutDashboard, BookOpen, CalendarDays, Users, Library,
+  Video, ClipboardList, MessageSquare, Loader2, GraduationCap,
+  BarChart3, Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const TEACHER_MODULES = [
-  { path: "/app/teacher", label: "Tableau de bord", icon: LayoutDashboard },
-  { path: "/app/teacher/pedagogy", label: "Espace Pédagogique", icon: BookOpen },
-  { path: "/app/teacher/classes", label: "Mes Classes", icon: Users },
-  { path: "/app/teacher/library", label: "Bibliothèque", icon: Library },
-  { path: "/app/teacher/educast", label: "EduCast", icon: Video },
-  { path: "/app/teacher/communication", label: "Communication", icon: MessageSquare },
+  { path: "/app/teacher", label: "Dashboard", icon: LayoutDashboard, desc: "Cours du jour, classes assignées" },
+  { path: "/app/teacher/pedagogy", label: "Espace Pédagogique", icon: BookOpen, desc: "Cahier journal, fiches, registre d'appel, cahier de texte, devoirs" },
+  { path: "/app/teacher/timetable", label: "Emploi du Temps", icon: CalendarDays, desc: "Mon emploi du temps" },
+  { path: "/app/teacher/classes", label: "Mes Classes", icon: Users, desc: "Liste des élèves par classe" },
+  { path: "/app/teacher/tasks", label: "Travaux & Suivi", icon: ClipboardList, desc: "Tâches assignées et suivi" },
+  { path: "/app/teacher/library", label: "Bibliothèque", icon: Library, desc: "Ressources et documents" },
+  { path: "/app/teacher/educast", label: "EduCast", icon: Video, desc: "Vidéos et contenus pédagogiques" },
+  { path: "/app/teacher/orion", label: "ORION", icon: BarChart3, desc: "Alertes et analyses pédagogiques" },
+  { path: "/app/teacher/communication", label: "Communication", icon: MessageSquare, desc: "Messages et chats" },
 ];
 
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {
@@ -63,7 +69,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
           </div>
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900 truncate">{teacherName}</p>
-            <p className="text-xs text-slate-500">Enseignant</p>
+            <p className="text-xs text-slate-500">Portail Enseignant</p>
           </div>
         </div>
 
@@ -82,6 +88,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
                     ? "bg-blue-50 text-blue-700 border-l-4 border-blue-600"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-l-4 border-transparent"
                 )}
+                title={mod.desc}
               >
                 <Icon className="h-5 w-5 flex-shrink-0" />
                 <span className="truncate">{mod.label}</span>
@@ -97,7 +104,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-slate-500 hover:bg-slate-50 hover:text-slate-700"
           >
             <Settings className="h-4 w-4" />
-            <span>Retour au portail école</span>
+            <span>Portail École</span>
           </Link>
         </div>
       </aside>
@@ -107,7 +114,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
         {/* Top bar */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-20">
           <h1 className="text-lg font-bold text-slate-900">
-            {TEACHER_MODULES.find((m) => pathname.startsWith(m.path))?.label || "Portail Enseignant"}
+            {TEACHER_MODULES.find((m) => pathname === m.path || (m.path !== "/app/teacher" && pathname.startsWith(m.path)))?.label || "Portail Enseignant"}
           </h1>
           <div className="text-sm text-slate-500">
             {academicYear?.label || ""}
@@ -115,7 +122,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
         </header>
 
         {/* Contenu de la page */}
-        <main className="p-6">
+        <main className="p-4 sm:p-6">
           {children}
         </main>
       </div>

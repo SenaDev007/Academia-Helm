@@ -238,7 +238,11 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
               <th className="text-center px-4 py-2 font-semibold text-slate-700">Statut</th>
             </tr></thead>
             <tbody>
-              {students.map((s, idx) => (
+              {[...students].sort((a, b) => {
+                const aName = `${a.lastName || ''} ${a.firstName || ''}`.trim().toLowerCase();
+                const bName = `${b.lastName || ''} ${b.firstName || ''}`.trim().toLowerCase();
+                return aName.localeCompare(bName, 'fr');
+              }).map((s, idx) => (
                 <tr key={s.studentId} className="border-b border-slate-100">
                   <td className="px-4 py-2 text-slate-400">{idx + 1}</td>
                   <td className="px-4 py-2 font-medium text-slate-900">{s.lastName} {s.firstName}</td>

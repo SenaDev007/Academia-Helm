@@ -102,7 +102,11 @@ export function MyClassesTab({ tenantId, academicYearId, teacherId }: MyClassesT
               </tr>
             </thead>
             <tbody>
-              {selectedClass.students?.map((s: any, idx: number) => (
+              {selectedClass.students?.slice().sort((a: any, b: any) => {
+                const aName = `${a.lastName || ''} ${a.firstName || ''}`.trim().toLowerCase();
+                const bName = `${b.lastName || ''} ${b.firstName || ''}`.trim().toLowerCase();
+                return aName.localeCompare(bName, 'fr');
+              }).map((s: any, idx: number) => (
                 <tr key={s.studentId} className="border-b border-slate-100 hover:bg-slate-50">
                   <td className="px-4 py-2.5 text-slate-400">{idx + 1}</td>
                   <td className="px-4 py-2.5 font-medium text-slate-900">

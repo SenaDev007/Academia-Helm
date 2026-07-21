@@ -66,12 +66,24 @@ function getMondayOfWeek(date: Date): Date {
   return d;
 }
 
+// ⭐ Format LOCAL (YYYY-MM-DD) — évite le bug de timezone de toISOString()
+// qui convertit en UTC et décale la date d'un jour en arrière quand on est en
+// UTC+1 (ex: lundi 20 juillet 00:00 local → dimanche 19 juillet 23:00 UTC).
 function formatDate(date: Date): string {
-  return date.toISOString().split("T")[0];
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function formatDateFR(dateStr: string): string {
   if (!dateStr) return "";
+  // Parser comme date locale (YYYY-MM-DD) pour éviter le bug UTC
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  }
   const d = new Date(dateStr);
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }

@@ -113,8 +113,8 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
         credentials: "include",
         body: JSON.stringify({
           academicYearId, weekNumber, trimester,
-          weekStartDate: monday.toISOString().split("T")[0],
-          weekEndDate: friday.toISOString().split("T")[0],
+          weekStartDate: formatDateLocal(monday),
+          weekEndDate: formatDateLocal(friday),
           filledBy: teacherId,
         }),
       });
@@ -147,7 +147,7 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
           credentials: "include",
           body: JSON.stringify({
             academicYearId, weekNumber, trimester, dayOfWeek: day,
-            reportDate: reportDate.toISOString().split("T")[0],
+            reportDate: formatDateLocal(reportDate),
             filledBy: teacherId,
           }),
         });
@@ -740,3 +740,12 @@ function Checkbox({ label, checked, onChange }: { label: string; checked: boolea
 }
 
 function cn(...c: (string | boolean | undefined)[]) { return c.filter(Boolean).join(" "); }
+
+// ⭐ Format LOCAL (YYYY-MM-DD) — évite le bug de timezone de toISOString()
+// qui convertit en UTC et décale la date d'un jour en arrière (UTC+1 Benin).
+function formatDateLocal(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}

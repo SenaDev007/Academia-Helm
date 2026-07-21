@@ -690,7 +690,11 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                 </tr>
               </thead>
               <tbody>
-                {students.map((student, idx) => (
+                {[...students].sort((a, b) => {
+                  const aName = `${a.nom || ''} ${a.prenom || ''}`.trim().toLowerCase();
+                  const bName = `${b.nom || ''} ${b.prenom || ''}`.trim().toLowerCase();
+                  return aName.localeCompare(bName, 'fr');
+                }).map((student, idx) => (
                   <tr key={student.studentId || idx} className={cn("hover:bg-slate-50", idx % 2 === 1 && "bg-slate-50/50")}>
                     <td className="border border-slate-300 px-2 py-1 text-center font-semibold">{student.numero || idx + 1}</td>
                     <td className="border border-slate-300 px-2 py-1 font-medium">
@@ -934,7 +938,11 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                 </tr>
               </thead>
               <tbody>
-                {studentScores.map((student: any, sIdx: number) => (
+                {[...studentScores].sort((a: any, b: any) => {
+                  const aName = `${a.lastName || a.nom || ''} ${a.firstName || a.prenom || ''}`.trim().toLowerCase();
+                  const bName = `${b.lastName || b.nom || ''} ${b.firstName || b.prenom || ''}`.trim().toLowerCase();
+                  return aName.localeCompare(bName, 'fr');
+                }).map((student: any, sIdx: number) => (
                   <tr key={student.studentId || sIdx} className={cn("hover:bg-slate-50", sIdx % 2 === 1 && "bg-slate-50/50")}>
                     <td className="border border-slate-300 px-2 py-1 text-center font-semibold">{sIdx + 1}</td>
                     <td className="border border-slate-300 px-2 py-1 font-medium">{student.nom} {student.prenom}</td>

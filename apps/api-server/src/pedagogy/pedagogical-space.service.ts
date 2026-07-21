@@ -34,9 +34,22 @@ export class PedagogicalSpaceService {
   /**
    * Liste les classes assignées à un enseignant pour l'année courante.
    * Inclut les effectifs (garçons/filles/total).
+   *
+   * ⭐ Important : TeacherClassAssignment.classId pointe vers la classe
+   * PHYSIQUE (table classes). Mais dans certains cas, classId peut être NULL
+   * et l'affectation est faite via classSubjectId → ClassSubject →
+   * academicClassId → AcademicClass.
+   *
+   * On doit donc récupérer les classes des deux façons :
+   * 1. Via TeacherClassAssignment.classId (classe physique directe)
+   * 2. Via TeacherClassAssignment.classSubjectId → ClassSubject →
+   *    ClassSubject.academicClassId → AcademicClass, puis AcademicClass →
+   *    physicalClasses (Class[]) pour trouver les sections physiques.
+   *
+   * On fusionne ensuite les deux sources et déduplique.
    */
   async getMyClasses(tenantId: string, teacherId: string, academicYearId: string) {
-    // Récupérer les affectations teacher_class_assignments
+    // Récupérer les affectations teacher_class_assignments avec toutes les relations
     const assignments = await this.prisma.teacherClassAssignment.findMany({
       where: { tenantId, academicYearId, teacherId },
       include: {
@@ -56,50 +69,143 @@ export class PedagogicalSpaceService {
             subject: { select: { id: true, name: true, code: true } },
             weeklyHours: true,
             coefficient: true,
+            classId: true,
+            academicClassId: true,
+            academicClass: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+                schoolLevelId: true,
+                schoolLevel: { select: { id: true, name: true, code: true } },
+                physicalClasses: {
+                  select: {
+                    id: true,
+                    name: true,
+                    capacity: true,
+                    schoolLevelId: true,
+                    schoolLevel: { select: { id: true, name: true, code: true } },
+                  },
+                },
+              },
+            },
           },
         },
       },
     });
 
-    // Grouper par classe (un enseignant peut avoir plusieurs matières dans la même classe)
+    // Construire un map de classes (déduplication par classId)
+    // En priorité : la classe physique (a.class), sinon la classe via academicClass
     const classMap = new Map<string, any>();
+
     for (const a of assignments) {
-      if (!a.class) continue;
-      const existing = classMap.get(a.class.id);
-      if (existing) {
-        // Ajouter la matière à la classe existante
-        if (a.classSubject?.subject) {
-          existing.subjects.push({
-            subjectId: a.classSubject.subjectId,
-            subjectName: a.classSubject.subject.name,
-            subjectCode: a.classSubject.subject.code,
-            weeklyHours: a.classSubject.weeklyHours,
-            coefficient: a.classSubject.coefficient,
+      // Cas 1 : classe physique directement assignée (a.classId non null)
+      if (a.class) {
+        const classId = a.class.id;
+        const existing = classMap.get(classId);
+        const subjectInfo = a.classSubject?.subject
+          ? [{
+              subjectId: a.classSubject.subjectId,
+              subjectName: a.classSubject.subject.name,
+              subjectCode: a.classSubject.subject.code,
+              weeklyHours: a.classSubject.weeklyHours,
+              coefficient: a.classSubject.coefficient,
+            }]
+          : [];
+
+        if (existing) {
+          if (a.classSubject?.subject) {
+            existing.subjects.push({
+              subjectId: a.classSubject.subjectId,
+              subjectName: a.classSubject.subject.name,
+              subjectCode: a.classSubject.subject.code,
+              weeklyHours: a.classSubject.weeklyHours,
+              coefficient: a.classSubject.coefficient,
+            });
+          }
+        } else {
+          classMap.set(classId, {
+            classId: a.class.id,
+            className: a.class.name,
+            capacity: a.class.capacity,
+            schoolLevelId: a.class.schoolLevelId,
+            schoolLevelName: a.class.schoolLevel?.name || '',
+            schoolLevelCode: a.class.schoolLevel?.code || '',
+            subjects: [...subjectInfo],
           });
         }
-      } else {
-        classMap.set(a.class.id, {
-          classId: a.class.id,
-          className: a.class.name,
-          capacity: a.class.capacity,
-          schoolLevelId: a.class.schoolLevelId,
-          schoolLevelName: a.class.schoolLevel?.name || '',
-          schoolLevelCode: a.class.schoolLevel?.code || '',
-          subjects: a.classSubject?.subject
-            ? [{
-                subjectId: a.classSubject.subjectId,
-                subjectName: a.classSubject.subject.name,
-                subjectName: a.classSubject.subject.name,
-                subjectCode: a.classSubject.subject.code,
-                weeklyHours: a.classSubject.weeklyHours,
-                coefficient: a.classSubject.coefficient,
-              }]
-            : [],
-        });
+      }
+
+      // Cas 2 : pas de classe physique, mais une AcademicClass via classSubject
+      // On récupère les classes physiques (sections) liées à cette AcademicClass
+      if (!a.class && a.classSubject?.academicClass) {
+        const ac = a.classSubject.academicClass;
+        const physicalClasses = ac.physicalClasses || [];
+
+        if (physicalClasses.length === 0) {
+          // Si pas de sections physiques, utiliser l'AcademicClass directement
+          const classId = ac.id;
+          if (!classMap.has(classId)) {
+            classMap.set(classId, {
+              classId: ac.id,
+              className: ac.name,
+              capacity: ac.capacity,
+              schoolLevelId: ac.schoolLevelId,
+              schoolLevelName: ac.schoolLevel?.name || '',
+              schoolLevelCode: ac.schoolLevel?.code || '',
+              subjects: a.classSubject?.subject
+                ? [{
+                    subjectId: a.classSubject.subjectId,
+                    subjectName: a.classSubject.subject.name,
+                    subjectCode: a.classSubject.subject.code,
+                    weeklyHours: a.classSubject.weeklyHours,
+                    coefficient: a.classSubject.coefficient,
+                  }]
+                : [],
+            });
+          }
+        } else {
+          // Pour chaque section physique de l'AcademicClass
+          for (const pc of physicalClasses) {
+            const classId = pc.id;
+            const existing = classMap.get(classId);
+            const subjectInfo = a.classSubject?.subject
+              ? [{
+                  subjectId: a.classSubject.subjectId,
+                  subjectName: a.classSubject.subject.name,
+                  subjectCode: a.classSubject.subject.code,
+                  weeklyHours: a.classSubject.weeklyHours,
+                  coefficient: a.classSubject.coefficient,
+                }]
+              : [];
+
+            if (existing) {
+              if (a.classSubject?.subject) {
+                existing.subjects.push({
+                  subjectId: a.classSubject.subjectId,
+                  subjectName: a.classSubject.subject.name,
+                  subjectCode: a.classSubject.subject.code,
+                  weeklyHours: a.classSubject.weeklyHours,
+                  coefficient: a.classSubject.coefficient,
+                });
+              }
+            } else {
+              classMap.set(classId, {
+                classId: pc.id,
+                className: pc.name,
+                capacity: pc.capacity,
+                schoolLevelId: pc.schoolLevelId,
+                schoolLevelName: pc.schoolLevel?.name || '',
+                schoolLevelCode: pc.schoolLevel?.code || '',
+                subjects: [...subjectInfo],
+              });
+            }
+          }
+        }
       }
     }
 
-    // Pour chaque classe, calculer les effectifs
+    // Pour chaque classe, calculer les effectifs depuis les inscriptions
     const classes = Array.from(classMap.values());
     for (const cls of classes) {
       const enrollments = await this.prisma.studentEnrollment.findMany({
@@ -115,6 +221,62 @@ export class PedagogicalSpaceService {
           },
         },
       });
+
+      // Si pas d'inscriptions avec classId direct, essayer via academicClassId
+      if (enrollments.length === 0) {
+        // Vérifier si cette classe est une AcademicClass
+        const academicClass = await this.prisma.academicClass.findFirst({
+          where: { id: cls.classId },
+          include: {
+            physicalClasses: { select: { id: true } },
+            studentEnrollments: {
+              where: { status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED'] } },
+              include: {
+                student: {
+                  select: { id: true, gender: true, firstName: true, lastName: true, matricule: true, photoUrl: true },
+                },
+              },
+            },
+          },
+        });
+
+        if (academicClass) {
+          // Récupérer les élèves des sections physiques
+          const physicalClassIds = academicClass.physicalClasses?.map(pc => pc.id) || [];
+          const physicalEnrollments = physicalClassIds.length > 0
+            ? await this.prisma.studentEnrollment.findMany({
+                where: {
+                  tenantId,
+                  academicYearId,
+                  classId: { in: physicalClassIds },
+                  status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED'] },
+                },
+                include: {
+                  student: {
+                    select: { id: true, gender: true, firstName: true, lastName: true, matricule: true, photoUrl: true },
+                  },
+                },
+              })
+            : [];
+          // Ou directement via l'AcademicClass
+          const academicEnrollments = academicClass.studentEnrollments || [];
+          const allEnrollments = [...physicalEnrollments, ...academicEnrollments];
+
+          cls.totalStudents = allEnrollments.length;
+          cls.boys = allEnrollments.filter(e => e.student?.gender === 'M').length;
+          cls.girls = allEnrollments.filter(e => e.student?.gender === 'F').length;
+          cls.students = allEnrollments.map(e => ({
+            studentId: e.student?.id,
+            firstName: e.student?.firstName,
+            lastName: e.student?.lastName,
+            gender: e.student?.gender,
+            matricule: e.student?.matricule,
+            photoUrl: e.student?.photoUrl,
+          }));
+          continue;
+        }
+      }
+
       cls.totalStudents = enrollments.length;
       cls.boys = enrollments.filter(e => e.student?.gender === 'M').length;
       cls.girls = enrollments.filter(e => e.student?.gender === 'F').length;

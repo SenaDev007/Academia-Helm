@@ -458,3 +458,85 @@ Stage Summary:
   - L'enseignant Saliou verra ses classes assignées (2 classes)
   - L'auto-save de l'Appel fonctionnera réellement (badge "Enregistré à HH:MM:SS")
   - Le select matières du Cahier Journal affichera les matières
+
+---
+Task ID: fix-subjects-academicClassId-ui-calls-cahier-journal
+Agent: Main (Super Z)
+Task: Corriger 4 problèmes identifiés via tests DB + agent-browser : (1) enseignant voit 0 classe, (2) auto-save Appel erreurs, (3) select matières Cahier Journal vide, (4) UI Appel layout compressé.
+
+Work Log:
+- DB DIAGNOSTIC (avec nouveau password pg_Nio3WadxL0qb) :
+  * Script /home/z/my-project/scripts/check-teacher-assignments.js
+  * Teacher Saliou (9ed8201c) existe avec email dawesakpovi@gmail.com ✅
+  * User.id = dffe5ffb (different de teacher.id 9ed8201c) ✅
+  * 18 TeacherClassAssignments existants (9 CI + 9 CE1) ✅
+  * MAIS class_subjects.classId = NULL pour TOUTES les 20 entrées
+  * Les matières sont rattachées via academicClassId (table pedagogy_academic_classes)
+  * classes.officialClassId relie la classe physique à l'AcademicClass
+  * Test SQL : 23 matières trouvées pour CI via academicClassId ✅
+
+- BUG 1 (CRITIQUE) : Select matières Cahier Journal 'Nouvelle séance' vide
+  * Cause : ClassLogTab utilisait c.subjects de my-classes (vide car class_subjects.classId=null)
+  * Fix backend (getAvailableSubjectsForClass dans pedagogical-space.service.ts) :
+    - Étape 1 : résoudre academicClassId depuis classes.officialClassId
+    - Étape 2 : chercher class_subjects par academicClassId (source principale, 23 matières)
+    - Étape 3 : fallback par classId (si peuplé)
+    - Étape 4 : fallback via teacher_class_assignments
+    - Étape 5 : toutes les matières du tenant (dernier recours)
+  * Fix frontend (ClassLogTab.tsx) :
+    - Suppression du flatMap sur c.subjects (vide en pratique)
+    - Ajout useEffect qui appelle /subjects/available quand form.classId change
+    - State subjectsForClass + loadingSubjects
+    - Select matières désactivé tant que pas de classe sélectionnée
+    - Reset subjectId quand la classe change
+    - Affichage contextuel : 'Sélectionnez une classe' / 'Chargement…' / 'Aucune matière' / liste des matières
+
+- BUG 2 : UI Appel — section info auto-save + sélecteur classe compressé
+  * Fix AttendanceTab.tsx :
+    - Suppression de la section 'Enregistrement automatique : Vos modifications
+      sont sauvegardées automatiquement toutes les 5 secondes…' (à la demande utilisateur)
+    - Layout : flex-1 spacer entre titre et actions pour que le sélecteur
+      de classe ne soit plus compressé
+    - Ajout min-w-[200px] sur le select classe pour qu'il affiche son contenu
+  * Note : L'auto-save 5s reste actif (badge 'Auto-save actif (5s)' visible),
+    seule la section explicative a été supprimée.
+
+- BUG 3 : Auto-save Appel toujours en erreur
+  * Le fix précédent (résolution schoolLevelId depuis la classe) n'a pas encore
+    été déployé sur Fly.io — l'utilisateur doit déployer manuellement.
+  * À vérifier après déploiement backend.
+
+- BUG 4 : Enseignant voit 0 classe assignée
+  * Le fix précédent (relation physicalClass au lieu de class) n'a pas encore
+    été déployé sur Fly.io — l'utilisateur doit déployer manuellement.
+  * À vérifier après déploiement backend.
+
+- TESTS AGENT-BROWSER (après redéploiement Vercel réussi) :
+  * Login enseignant (dawesakpovi@gmail.com / NeufMont111) ✅
+  * Snapshot sidebar enseignant → bouton "Se déconnecter" visible ✅
+  * Onglet Cahier Journal → click "Nouvelle séance" ✅
+  * Select classe affiche "— Classe —" (vide car backend non déployé)
+  * Select matière affiche "— Sélectionnez une classe —" (désactivé) ✅
+    → Frontend fix appliqué : le select matière est bien DÉSACTIVÉ tant que
+    aucune classe n'est sélectionnée, avec un message contextuel.
+
+Stage Summary:
+- ✅ Cause racine identifiée et confirmée via DB : class_subjects.classId=NULL,
+  les matières sont rattachées via academicClassId (table pedagogy_academic_classes)
+- ✅ Fix backend getAvailableSubjectsForClass : résolution hybrid classId/academicClassId
+- ✅ Fix frontend ClassLogTab : chargement dynamique des matières par classe
+- ✅ Fix frontend AttendanceTab : UI nettoyée + layout corrigé
+- ✅ Frontend redéployé sur Vercel — select matière désactivé tant que pas de classe ✅
+- ⚠️ BACKEND NON DÉPLOYÉ sur Fly.io — nécessite intervention manuelle
+
+⚠️ ACTION REQUISE (utilisateur) :
+  Déployer manuellement le backend sur Fly.io :
+    cd /home/z/my-project/apps/api-server
+    npx prisma generate
+    npx prisma migrate deploy --schema=prisma/schema.prisma
+    flyctl deploy -a academia-helm-api --strategy rolling
+  
+  Une fois le backend déployé :
+  - L'enseignant Saliou verra ses 2 classes (CI + CE1) avec leurs matières
+  - Le select matières affichera les 23 matières de la classe CI
+  - L'auto-save de l'Appel fonctionnera (badge "Enregistré à HH:MM:SS")

@@ -28,6 +28,43 @@ export class PedagogicalSpaceService {
   constructor(private readonly prisma: PrismaService) {}
 
   // ===========================================================================
+  // HELPER: résoudre l'ID du Teacher depuis un userId ou teacherId
+  // ===========================================================================
+
+  /**
+   * Résout l'ID du Teacher depuis un ID qui peut être soit:
+   * - l'ID du Teacher directement (table teachers)
+   * - l'ID du User (table users) — dans ce cas, on cherche par email
+   *
+   * C'est nécessaire car teacher_class_assignments.teacherId référence
+   * la table teachers, pas users. Mais le frontend passe user.id.
+   */
+  private async resolveTeacherId(tenantId: string, id: string): Promise<string> {
+    // Vérifier si c'est déjà un Teacher
+    const directTeacher = await this.prisma.teacher.findFirst({
+      where: { id, tenantId },
+      select: { id: true },
+    });
+    if (directTeacher) return directTeacher.id;
+
+    // Sinon, chercher par email (User.email → Teacher.email)
+    const user = await this.prisma.user.findFirst({
+      where: { id, tenantId },
+      select: { email: true },
+    });
+    if (user?.email) {
+      const teacher = await this.prisma.teacher.findFirst({
+        where: { email: user.email, tenantId },
+        select: { id: true },
+      });
+      if (teacher) return teacher.id;
+    }
+
+    // Retourner l'ID tel quel (au cas où)
+    return id;
+  }
+
+  // ===========================================================================
   // MES CLASSES
   // ===========================================================================
 
@@ -35,23 +72,18 @@ export class PedagogicalSpaceService {
    * Liste les classes assignées à un enseignant pour l'année courante.
    * Inclut les effectifs (garçons/filles/total).
    *
-   * ⭐ Important : TeacherClassAssignment.classId pointe vers la classe
-   * PHYSIQUE (table classes). Mais dans certains cas, classId peut être NULL
-   * et l'affectation est faite via classSubjectId → ClassSubject →
-   * academicClassId → AcademicClass.
-   *
-   * On doit donc récupérer les classes des deux façons :
-   * 1. Via TeacherClassAssignment.classId (classe physique directe)
-   * 2. Via TeacherClassAssignment.classSubjectId → ClassSubject →
-   *    ClassSubject.academicClassId → AcademicClass, puis AcademicClass →
-   *    physicalClasses (Class[]) pour trouver les sections physiques.
-   *
-   * On fusionne ensuite les deux sources et déduplique.
+   * ⭐ Important : le teacherId passé peut être soit l'ID du Teacher
+   * (table teachers), soit l'ID du User (table users). On doit résoudre
+   * l'ID du Teacher car teacher_class_assignments.teacherId référence
+   * la table teachers, pas users.
    */
   async getMyClasses(tenantId: string, teacherId: string, academicYearId: string) {
+    // ⭐ Résoudre l'ID du Teacher (le frontend passe user.id, pas teacher.id)
+    const resolvedTeacherId = await this.resolveTeacherId(tenantId, teacherId);
+
     // Récupérer les affectations teacher_class_assignments avec toutes les relations
     const assignments = await this.prisma.teacherClassAssignment.findMany({
-      where: { tenantId, academicYearId, teacherId },
+      where: { tenantId, academicYearId, teacherId: resolvedTeacherId },
       include: {
         class: {
           select: {

@@ -129,7 +129,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
       </aside>
 
       {/* Contenu principal */}
-      <div className="flex-1 ml-64">
+      <div className="flex-1 ml-64 min-w-0">
         {/* Top bar */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-20">
           <h1 className="text-lg font-bold text-slate-900">
@@ -141,8 +141,10 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
         </header>
 
         {/* Contenu de la page */}
-        <main className="p-4 sm:p-6">
-          {children}
+        <main className="p-4 sm:p-6 overflow-x-auto">
+          <div className="min-w-0">
+            {children}
+          </div>
         </main>
       </div>
     </div>

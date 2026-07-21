@@ -28,6 +28,7 @@ import { CrispChat } from '@/components/CrispChat';
 import { SubscriptionBanner } from '@/components/billing/SubscriptionBanner';
 import { TenantThemeProvider } from '@/providers/TenantThemeProvider';
 import { usePushSubscription } from '@/hooks/usePushSubscription';
+import { Toaster } from '@/components/ui/sonner';
 
 export interface AppLayoutClientProps {
   children: React.ReactNode;
@@ -97,6 +98,9 @@ export default function AppLayoutClient({
       <SessionInactivityModal />
       <SessionLockScreen />
       <CrispChat />
+      {/* ⭐ Toaster (sonner) — affiche les toast.success/toast.error partout
+          dans l'app (sans lui, les notifications sont silencieuses) */}
+      <Toaster richColors position="top-right" closeButton />
     </SessionManagerProvider>
   );
 }

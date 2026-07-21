@@ -94,11 +94,25 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
     setSaveStatus("saving");
     try {
       const records = studentsRef.current.map(s => ({ studentId: s.studentId, status: s.status }));
+
+      // ⭐ Résoudre schoolLevelId depuis la classe sélectionnée (au cas où
+      // schoolLevelId prop est vide — ex: "Tous les niveaux" sélectionné).
+      // Le backend fait aussi cette résolution, mais on l'envoie quand même
+      // pour éviter les erreurs FK quand le backend n'est pas encore déployé.
+      const selectedClass = classes.find(c => c.classId === selectedClassId);
+      const resolvedSchoolLevelId = schoolLevelId || selectedClass?.schoolLevelId || '';
+
       const res = await fetch("/api/pedagogy-space/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ academicYearId, schoolLevelId, classId: selectedClassId, date, records }),
+        body: JSON.stringify({
+          academicYearId,
+          schoolLevelId: resolvedSchoolLevelId,
+          classId: selectedClassId,
+          date,
+          records,
+        }),
       });
       if (!res.ok) {
         const errText = await res.text();
@@ -112,7 +126,7 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
       setSaveStatus("error");
       if (!silent) toast.error("Erreur d'enregistrement", { description: e.message });
     } finally { setSaving(false); }
-  }, [academicYearId, schoolLevelId, selectedClassId, date]);
+  }, [academicYearId, schoolLevelId, selectedClassId, date, classes]);
 
   // ⭐ AUTO-SAVE toutes les 5 secondes si des changements sont détectés
   useEffect(() => {

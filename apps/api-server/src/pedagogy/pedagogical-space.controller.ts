@@ -77,7 +77,14 @@ export class PedagogicalSpaceController {
       schoolLevelId: string;
       classId: string;
       date: string;
-      records: { studentId: string; status: string; notes?: string }[];
+      records: {
+        studentId: string;
+        status: string;
+        morningStatus?: string;
+        afternoonStatus?: string;
+        late?: boolean;
+        notes?: string;
+      }[];
     },
     @CurrentUser() user: any,
   ) {

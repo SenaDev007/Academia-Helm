@@ -584,8 +584,16 @@ export class PedagogicalSpaceService {
     date: string, // YYYY-MM-DD
   ) {
     const dateObj = new Date(date);
-    const records = await this.prisma.attendanceRecord.findMany({
-      where: { tenantId, classId, date: dateObj },
+
+    // ⭐ TOUJOURS charger tous les élèves inscrits, puis merger avec les records existants.
+    // Avant : si des records existaient, on ne renvoyait QUE les élèves enregistrés
+    // → si 1 seul élève avait un record, on ne voyait que lui (bug : 1 au lieu de 9).
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: {
+        tenantId,
+        classId,
+        status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED'] },
+      },
       include: {
         student: {
           select: { id: true, firstName: true, lastName: true, gender: true, matricule: true, photoUrl: true },
@@ -593,45 +601,49 @@ export class PedagogicalSpaceService {
       },
     });
 
-    // Si pas d'enregistrements, retourner la liste des élèves avec statut par défaut
-    if (records.length === 0) {
-      const enrollments = await this.prisma.studentEnrollment.findMany({
-        where: {
-          tenantId,
-          classId,
-          status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED'] },
-        },
-        include: {
-          student: {
-            select: { id: true, firstName: true, lastName: true, gender: true, matricule: true, photoUrl: true },
-          },
-        },
-      });
-      return enrollments
-        .filter(e => e.student?.id) // ⭐ Filtrer les inscriptions orphelines
-        .map(e => ({
+    // Charger les records existants pour cette date
+    const records = await this.prisma.attendanceRecord.findMany({
+      where: { tenantId, classId, date: dateObj },
+    });
+
+    // Créer un map studentId → record pour lookup rapide
+    const recordMap = new Map<string, any>();
+    for (const r of records) {
+      recordMap.set(r.studentId, r);
+    }
+
+    // Merger : pour chaque élève inscrit, utiliser le record s'il existe, sinon défaut
+    return enrollments
+      .filter(e => e.student?.id) // Filtrer les inscriptions orphelines
+      .map(e => {
+        const record = recordMap.get(e.student!.id);
+        // Parser le notes JSON pour récupérer morningStatus / afternoonStatus / late
+        let morningStatus: string = 'PRESENT';
+        let afternoonStatus: string = 'PRESENT';
+        let late = false;
+        if (record?.notes) {
+          try {
+            const parsed = JSON.parse(record.notes);
+            morningStatus = parsed.morning || 'PRESENT';
+            afternoonStatus = parsed.afternoon || 'PRESENT';
+            late = !!parsed.late;
+          } catch { /* silent */ }
+        }
+        return {
           studentId: e.student?.id,
           firstName: e.student?.firstName,
           lastName: e.student?.lastName,
           gender: e.student?.gender,
           matricule: e.student?.matricule,
           photoUrl: e.student?.photoUrl,
-          status: 'PRESENT', // par défaut
-          attendanceId: null,
-        }));
-    }
-
-    return records.map(r => ({
-      studentId: r.student?.id,
-      firstName: r.student?.firstName,
-      lastName: r.student?.lastName,
-      gender: r.student?.gender,
-      matricule: r.student?.matricule,
-      photoUrl: r.student?.photoUrl,
-      status: r.status,
-      attendanceId: r.id,
-      notes: r.notes,
-    }));
+          // Compatibilité : status global dérivé de morning+afternoon
+          status: record?.status || 'PRESENT',
+          morningStatus,
+          afternoonStatus,
+          late,
+          attendanceId: record?.id || null,
+        };
+      });
   }
 
   /**
@@ -643,15 +655,20 @@ export class PedagogicalSpaceService {
     schoolLevelId: string,
     classId: string,
     date: string,
-    records: { studentId: string; status: string; notes?: string }[],
+    records: {
+      studentId: string;
+      status: string;
+      morningStatus?: string;
+      afternoonStatus?: string;
+      late?: boolean;
+      notes?: string;
+    }[],
     recordedBy: string,
   ) {
     const dateObj = new Date(date);
     const results = [];
 
-    // ⭐ Si schoolLevelId est vide ou invalide (par exemple quand "Tous les
-    // niveaux" est sélectionné côté frontend), on le résout depuis la classe.
-    // Évite l'erreur FK violation sur attendance_records_schoolLevelId_fkey.
+    // ⭐ Si schoolLevelId est vide, on le résout depuis la classe.
     let resolvedSchoolLevelId = schoolLevelId;
     if (!resolvedSchoolLevelId || resolvedSchoolLevelId.trim() === '') {
       const cls = await this.prisma.class.findFirst({
@@ -661,8 +678,6 @@ export class PedagogicalSpaceService {
       if (cls?.schoolLevelId) {
         resolvedSchoolLevelId = cls.schoolLevelId;
       } else {
-        // Dernier recours : chercher via AcademicClass (cas où classId est
-        // en réalité un AcademicClass.id)
         const ac = await this.prisma.academicClass.findFirst({
           where: { id: classId, tenantId },
           select: { schoolLevelId: true },
@@ -671,38 +686,58 @@ export class PedagogicalSpaceService {
       }
       if (!resolvedSchoolLevelId) {
         throw new BadRequestException(
-          `Impossible de résoudre le niveau scolaire pour la classe ${classId}. Sélectionnez un niveau scolaire dans le menu global.`,
+          `Impossible de résoudre le niveau scolaire pour la classe ${classId}.`,
         );
       }
     }
 
     for (const record of records) {
-      // ⭐ Skip les records invalides (studentId null/undefined) pour éviter
-      // l'erreur P2003 "référence invalide" (Foreign key constraint).
       if (!record.studentId || typeof record.studentId !== 'string') {
-        this.logger.warn(
-          `[saveDailyAttendance] Record ignoré : studentId invalide (null/undefined)`,
-        );
+        this.logger.warn(`[saveDailyAttendance] Record ignoré : studentId invalide`);
         continue;
       }
+
+      // ⭐ Stocker morningStatus/afternoonStatus/late dans notes (JSON)
+      // Pas besoin de migration — on utilise le champ notes existant.
+      const notesJson = JSON.stringify({
+        morning: record.morningStatus || 'PRESENT',
+        afternoon: record.afternoonStatus || 'PRESENT',
+        late: !!record.late,
+      });
+
+      // ⭐ Calculer le status global dérivé :
+      // PRESENT = présent matin ET après-midi
+      // ABSENT = absent matin ET après-midi (journée complète)
+      // ABSENT_HALF = absent matin OU après-midi (demi-journée)
+      // LATE = en retard (prioritaire si pas d'absence)
+      const morning = record.morningStatus || 'PRESENT';
+      const afternoon = record.afternoonStatus || 'PRESENT';
+      const isLate = !!record.late;
+      let globalStatus = 'PRESENT';
+      if (morning === 'ABSENT' && afternoon === 'ABSENT') {
+        globalStatus = 'ABSENT';
+      } else if (morning === 'ABSENT' || afternoon === 'ABSENT') {
+        globalStatus = 'ABSENT_HALF';
+      } else if (isLate) {
+        globalStatus = 'LATE';
+      }
+
       // Vérifier si un enregistrement existe déjà
       const existing = await this.prisma.attendanceRecord.findFirst({
         where: { tenantId, classId, studentId: record.studentId, date: dateObj },
       });
 
       if (existing) {
-        // Mettre à jour
         const updated = await this.prisma.attendanceRecord.update({
           where: { id: existing.id },
           data: {
-            status: record.status,
-            notes: record.notes || null,
+            status: globalStatus,
+            notes: notesJson,
             recordedBy,
           },
         });
         results.push(updated);
       } else {
-        // Créer
         const created = await this.prisma.attendanceRecord.create({
           data: {
             tenantId,
@@ -711,8 +746,8 @@ export class PedagogicalSpaceService {
             classId,
             studentId: record.studentId,
             date: dateObj,
-            status: record.status,
-            notes: record.notes || null,
+            status: globalStatus,
+            notes: notesJson,
             recordedBy,
           },
         });
@@ -918,11 +953,43 @@ export class PedagogicalSpaceService {
     // ⭐ 6. Reconstruire les absences pour chaque élève à partir de tous les
     // AttendanceRecord du mois. On groupe par studentId puis on mappe chaque
     // record vers (weekInMonth, dayInWeek) en utilisant dateToCell.
+    //
+    // ⭐ SYSTÈME DEMI-JOURS (explication utilisateur) :
+    //   - Lundi = 2 demi-jours, Mardi = 2, Mercredi = 1, Jeudi = 2, Vendredi = 2
+    //   - Total par semaine = 9 demi-jours
+    //   - Total Présence Possible (mois) = somme des demi-jours de tous les
+    //     jours ouvrés du mois (Lundi-Vendredi).
+    //   - Ce total est LE MÊME pour TOUS les élèves de la classe.
+    //
+    // ⭐ MARQUAGE DES ABSENCES (matin / après-midi) :
+    //   - Chaque record a morningStatus et afternoonStatus (stockés dans notes JSON)
+    //   - PRESENT matin + PRESENT après-midi → case vide (0 absence)
+    //   - ABSENT matin + PRESENT après-midi → "-" (1 absence = 1 demi-jour)
+    //   - PRESENT matin + ABSENT après-midi → "|" (1 absence = 1 demi-jour)
+    //   - ABSENT matin + ABSENT après-midi → "+" (2 absences = 2 demi-jours)
+    //
+    // ⭐ CALCULS :
+    //   - Total Absences (par élève) = somme des absences de chaque jour (0, 1, ou 2)
+    //   - Total Présence Effective = Total Présence Possible - Total Absences
     const recordsByStudent = new Map<string, typeof allRecords>();
     for (const r of allRecords) {
       const arr = recordsByStudent.get(r.studentId) || [];
       arr.push(r);
       recordsByStudent.set(r.studentId, arr);
+    }
+
+    // ⭐ Calculer le nombre total de demi-jours du mois (SAME for all students)
+    // Lundi=2, Mardi=2, Mercredi=1, Jeudi=2, Vendredi=2
+    const DEMI_JOURS_PAR_JOUR: Record<number, number> = {
+      1: 2, // Lundi
+      2: 2, // Mardi
+      3: 1, // Mercredi
+      4: 2, // Jeudi
+      5: 2, // Vendredi
+    };
+    let totalDemiJourneesMois = 0;
+    for (const md of monthDays) {
+      totalDemiJourneesMois += DEMI_JOURS_PAR_JOUR[md.dow] || 0;
     }
 
     for (const student of studentsData) {
@@ -932,49 +999,71 @@ export class PedagogicalSpaceService {
       for (const r of studentRecords) {
         const dateStr = r.date.toISOString().split('T')[0];
         const cell = dateToCell.get(dateStr);
-        if (!cell) continue; // record hors lundi-vendredi ou hors mois → skip
+        if (!cell) continue;
 
-        // Mapper le status à un "marked" du registre
-        // PRESENT → "" (pas d'absence marquée — case vide)
-        // ABSENT → "A"
-        // LATE → "R" (retard)
-        // autres → "E" (excusé)
+        // Parser le notes JSON pour récupérer morning/afternoon/late
+        let morning = 'PRESENT';
+        let afternoon = 'PRESENT';
+        let late = false;
+        if (r.notes) {
+          try {
+            const parsed = JSON.parse(r.notes);
+            morning = parsed.morning || 'PRESENT';
+            afternoon = parsed.afternoon || 'PRESENT';
+            late = !!parsed.late;
+          } catch { /* silent */ }
+        }
+
+        // Calculer le marquage et le nombre d'absences
         let marked = '';
-        if (r.status === 'ABSENT') marked = 'A';
-        else if (r.status === 'LATE') marked = 'R';
-        else if (r.status === 'EXCUSED') marked = 'E';
-        // PRESENT → "" (présent, pas de marqueur)
+        let absenceCount = 0;
+        if (morning === 'ABSENT' && afternoon === 'ABSENT') {
+          marked = '+'; // Croix (horizontal + vertical)
+          absenceCount = 2;
+        } else if (morning === 'ABSENT') {
+          marked = '-'; // Trait horizontal
+          absenceCount = 1;
+        } else if (afternoon === 'ABSENT') {
+          marked = '|'; // Trait vertical
+          absenceCount = 1;
+        }
+        // PRESENT + PRESENT → case vide (marked = '', absenceCount = 0)
 
         if (marked) {
           newAbsences.push({
             week: cell.weekInMonth,
             day: cell.dayInWeek,
             marked,
+            absenceCount,
           });
+        }
+
+        // Si en retard, ajouter une observation
+        if (late) {
+          student.observation = (student.observation || '') + (student.observation ? ' ' : '') + `Retard ${dateStr}`;
         }
       }
 
       // Recalculer les totaux
-      const totalAbsences = newAbsences.filter(a => a.marked === 'A' || a.marked === 'E').length;
-      const totalRetards = newAbsences.filter(a => a.marked === 'R').length;
-      // nbDemiJournees = nombre de jours où l'appel a été fait pour CET élève
-      // (= nombre de records pour cet élève ce mois-ci)
-      const nbDemiJournees = studentRecords.length;
-      const totalPresencesPossibles = nbDemiJournees;
+      const totalAbsences = newAbsences.reduce((sum, a) => sum + a.absenceCount, 0);
+      // ⭐ Total Présence Possible = nombre de demi-jours du mois (SAME for ALL students)
+      const totalPresencesPossibles = totalDemiJourneesMois;
       const totalPresenceEffectif = totalPresencesPossibles - totalAbsences;
 
       student.absences = newAbsences;
       student.totalAbsences = totalAbsences;
       student.totalPresencesPossibles = totalPresencesPossibles;
       student.totalPresenceEffectif = totalPresenceEffectif;
-      student.nbDemiJournees = nbDemiJournees;
-      student.observation = totalRetards > 0 ? `${totalRetards} retard(s)` : (student.observation || '');
+      student.nbDemiJournees = totalDemiJourneesMois;
     }
 
-    // ⭐ 7. Recalculer les totaux globaux du mois
+    // ⭐ 7. Recalculer les totaux globaux du mois (section récapitulative)
+    // Total Présence Possible = somme de la colonne (= demi-jours × nb élèves)
+    // Total Absences = somme de la colonne absences
+    // Total Présence Effective = Total Présence Possible - Total Absences
     const totalAbs = studentsData.reduce((sum, s) => sum + (s.totalAbsences || 0), 0);
     const totalPoss = studentsData.reduce((sum, s) => sum + (s.totalPresencesPossibles || 0), 0);
-    const totalEff = studentsData.reduce((sum, s) => sum + (s.totalPresenceEffectif || 0), 0);
+    const totalEff = totalPoss - totalAbs; // = somme de la colonne présence effective
     const pctP = totalPoss > 0 ? Math.round((totalEff / totalPoss) * 10000) / 100 : 0;
     const pctA = totalPoss > 0 ? Math.round((totalAbs / totalPoss) * 10000) / 100 : 0;
 

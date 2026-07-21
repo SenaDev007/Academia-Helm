@@ -197,12 +197,13 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
   return (
     <div className="space-y-4">
       {/* En-tête avec classe + date + actions + badge */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <h3 className="text-lg font-bold text-slate-900">Appel Journalier</h3>
+        <div className="flex-1" />
         <div className="flex items-center gap-2 flex-wrap">
           {renderSaveBadge()}
           <select value={selectedClassId} onChange={e => setSelectedClassId(e.target.value)}
-            className="h-9 px-3 rounded-lg border border-slate-200 text-sm">
+            className="h-9 min-w-[200px] px-3 rounded-lg border border-slate-200 text-sm">
             {classes.map(c => <option key={c.classId} value={c.classId}>{c.className}</option>)}
           </select>
           <input type="date" value={date} onChange={e => setDate(e.target.value)}
@@ -223,16 +224,6 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
           <span className="px-3 py-1 rounded-lg bg-amber-50 text-amber-700 text-xs font-bold">{late} Retards</span>
         </div>
       )}
-
-      {/* Info auto-save */}
-      <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
-        <Clock className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
-        <div className="text-xs text-blue-800">
-          <strong>Enregistrement automatique :</strong> Vos modifications sont sauvegardées automatiquement
-          toutes les <strong>5 secondes</strong>. Vous pouvez aussi cliquer sur « Enregistrer maintenant »
-          pour sauvegarder immédiatement. Les changements sont également sauvegardés quand vous quittez la page.
-        </div>
-      </div>
 
       {loading ? (
         <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>

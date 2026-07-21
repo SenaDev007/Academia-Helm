@@ -2747,50 +2747,104 @@ export class PedagogicalSpaceService {
   /// matière n'est configurée pour cette classe, on retourne un tableau vide.
   /// L'admin de l'école doit configurer ses matières dans le module
   /// "Matières" (table class_subjects / subjects).
+  ///
+  /// ⭐ RÉSOLUTION HYBRIDE classId/academicClassId :
+  ///   - Si le paramètre `classId` est un ID de `classes` (classe physique),
+  ///     on résout son `officialClassId` (qui pointe vers `AcademicClass`).
+  ///   - Si c'est déjà un `AcademicClass.id`, on l'utilise directement.
+  ///   - On cherche alors les `class_subjects` par `academicClassId` (cas normal)
+  ///     ou par `classId` (fallback si les données ont été saisies via la
+  ///     classe physique directement).
   async getAvailableSubjectsForClass(
     tenantId: string,
     academicYearId: string,
     classId: string,
   ) {
-    // 1) Source principale : les matières assignées à cette classe via ClassSubject
-    const subjects: any = await this.prisma.$queryRawUnsafe(
-      `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
-              cs."coefficient", cs."weeklyHours"
-       FROM "subjects" s
-       INNER JOIN "class_subjects" cs ON cs."subjectId" = s."id"
-       WHERE cs."tenantId" = $1 AND cs."academicYearId" = $2 AND cs."classId" = $3
-       ORDER BY s."name"`,
-      tenantId, academicYearId, classId,
-    );
+    // ─── Étape 1 : résoudre l'AcademicClass.id (officiel) depuis le classId
+    // passé par le frontend. Le frontend peut passer soit un physical class ID
+    // (table `classes`), soit directement un AcademicClass ID.
+    let academicClassId: string | null = null;
+    let physicalClassId: string | null = null;
 
-    if (subjects && subjects.length > 0) {
-      return subjects;
+    // Vérifier si classId est une classe physique (table classes)
+    const physicalClass: any = await this.prisma.$queryRawUnsafe(
+      `SELECT id, "officialClassId" FROM "classes" WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
+      classId, tenantId,
+    );
+    if (physicalClass && physicalClass.length > 0) {
+      physicalClassId = physicalClass[0].id;
+      academicClassId = physicalClass[0].officialClassId || null;
+    } else {
+      // Vérifier si classId est un AcademicClass (table pedagogy_academic_classes)
+      const ac: any = await this.prisma.$queryRawUnsafe(
+        `SELECT id FROM "pedagogy_academic_classes" WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
+        classId, tenantId,
+      );
+      if (ac && ac.length > 0) {
+        academicClassId = ac[0].id;
+      }
     }
 
-    // 2) Source secondaire : les matières des TeacherClassAssignment de cette classe
+    // ─── Étape 2 : chercher les matières via academicClassId (source principale)
+    // C'est le cas normal : les class_subjects sont rattachés à l'AcademicClass.
+    if (academicClassId) {
+      const subjects: any = await this.prisma.$queryRawUnsafe(
+        `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
+                cs."coefficient", cs."weeklyHours"
+         FROM "subjects" s
+         INNER JOIN "class_subjects" cs ON cs."subjectId" = s."id"
+         WHERE cs."tenantId" = $1 AND cs."academicYearId" = $2 AND cs."academicClassId" = $3
+         ORDER BY s."name"`,
+        tenantId, academicYearId, academicClassId,
+      );
+      if (subjects && subjects.length > 0) {
+        return subjects;
+      }
+    }
+
+    // ─── Étape 3 : chercher via classId (fallback, si class_subjects.classId est peuplé)
+    if (physicalClassId || classId) {
+      const cid = physicalClassId || classId;
+      const subjects: any = await this.prisma.$queryRawUnsafe(
+        `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
+                cs."coefficient", cs."weeklyHours"
+         FROM "subjects" s
+         INNER JOIN "class_subjects" cs ON cs."subjectId" = s."id"
+         WHERE cs."tenantId" = $1 AND cs."academicYearId" = $2 AND cs."classId" = $3
+         ORDER BY s."name"`,
+        tenantId, academicYearId, cid,
+      );
+      if (subjects && subjects.length > 0) {
+        return subjects;
+      }
+    }
+
+    // ─── Étape 4 : matières depuis les TeacherClassAssignment de cette classe
     // (un enseignant a été affecté à la classe avec une matière via ClassSubject)
-    const fallbackSubjects: any = await this.prisma.$queryRawUnsafe(
-      `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
-              tca."classSubjectId"
-       FROM "subjects" s
-       INNER JOIN "teacher_class_assignments" tca ON tca."classSubjectId" IS NOT NULL
-       INNER JOIN "class_subjects" cs ON cs."id" = tca."classSubjectId" AND cs."subjectId" = s."id"
-       WHERE tca."tenantId" = $1 AND tca."academicYearId" = $2 AND tca."classId" = $3
-       ORDER BY s."name"`,
-      tenantId, academicYearId, classId,
-    );
-
-    if (fallbackSubjects && fallbackSubjects.length > 0) {
-      return fallbackSubjects.map((row: any) => ({
-        subjectId: row.subjectId,
-        subjectName: row.subjectName,
-        subjectCode: row.subjectCode,
-        coefficient: 1,
-        weeklyHours: null,
-      }));
+    if (physicalClassId || classId) {
+      const cid = physicalClassId || classId;
+      const fallbackSubjects: any = await this.prisma.$queryRawUnsafe(
+        `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
+                tca."classSubjectId"
+         FROM "subjects" s
+         INNER JOIN "teacher_class_assignments" tca ON tca."classSubjectId" IS NOT NULL
+         INNER JOIN "class_subjects" cs ON cs."id" = tca."classSubjectId" AND cs."subjectId" = s."id"
+         WHERE tca."tenantId" = $1 AND tca."academicYearId" = $2 AND tca."classId" = $3
+         ORDER BY s."name"`,
+        tenantId, academicYearId, cid,
+      );
+      if (fallbackSubjects && fallbackSubjects.length > 0) {
+        return fallbackSubjects.map((row: any) => ({
+          subjectId: row.subjectId,
+          subjectName: row.subjectName,
+          subjectCode: row.subjectCode,
+          coefficient: 1,
+          weeklyHours: null,
+        }));
+      }
     }
 
-    // 3) Source tertiaire : toutes les matières du tenant (au niveau école)
+    // ─── Étape 5 : dernière source — toutes les matières du tenant (au niveau école)
     // → permet à l'enseignant de choisir parmi toutes les matières déclarées
     // par l'établissement, même si elles ne sont pas encore assignées à cette classe
     const tenantSubjects: any = await this.prisma.$queryRawUnsafe(

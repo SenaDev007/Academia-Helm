@@ -16,6 +16,9 @@ export function ClassLogTab({ tenantId, academicYearId, teacherId }: ClassLogTab
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ classId: "", subjectId: "", lessonDate: new Date().toISOString().split("T")[0], topic: "", durationHours: 1, homework: "", detailedContent: "", observations: "" });
   const [classes, setClasses] = useState<any[]>([]);
+  // ⭐ Matières filtrées dynamiquement par classe sélectionnée (appel API)
+  const [subjectsForClass, setSubjectsForClass] = useState<any[]>([]);
+  const [loadingSubjects, setLoadingSubjects] = useState(false);
 
   const loadLogs = useCallback(async () => {
     setLoading(true);
@@ -38,6 +41,38 @@ export function ClassLogTab({ tenantId, academicYearId, teacherId }: ClassLogTab
     })();
   }, [loadLogs, teacherId, academicYearId]);
 
+  // ⭐ Quand l'utilisateur sélectionne une classe dans le formulaire,
+  // charger dynamiquement les matières de CETTE classe via /subjects/available.
+  // On ne peut pas se fier à c.subjects (souvent vide car class_subjects.classId
+  // est null en base — les matières sont rattachées via academicClassId).
+  useEffect(() => {
+    if (!form.classId) {
+      setSubjectsForClass([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoadingSubjects(true);
+      try {
+        const res = await fetch(
+          `/api/pedagogy-space/subjects/available?academicYearId=${academicYearId}&classId=${form.classId}`,
+          { credentials: "include" }
+        );
+        const data = await res.json();
+        if (!cancelled) {
+          setSubjectsForClass(Array.isArray(data) ? data : []);
+        }
+      } catch {
+        if (!cancelled) setSubjectsForClass([]);
+      } finally {
+        if (!cancelled) setLoadingSubjects(false);
+      }
+    })();
+    // Reset subjectId when class changes
+    setForm(prev => ({ ...prev, subjectId: "" }));
+    return () => { cancelled = true; };
+  }, [form.classId, academicYearId]);
+
   const handleCreate = async () => {
     if (!form.classId || !form.subjectId || !form.topic) {
       toast.error("Veuillez remplir tous les champs obligatoires");
@@ -56,10 +91,6 @@ export function ClassLogTab({ tenantId, academicYearId, teacherId }: ClassLogTab
     } catch (e: any) { toast.error("Erreur", { description: e.message }); }
   };
 
-  // Collecter toutes les matières depuis les classes
-  const allSubjects = classes.flatMap(c => c.subjects || []);
-  const uniqueSubjects = Array.from(new Map(allSubjects.map((s: any) => [s.subjectId, s])).values());
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -77,9 +108,26 @@ export function ClassLogTab({ tenantId, academicYearId, teacherId }: ClassLogTab
               <option value="">— Classe —</option>
               {classes.map(c => <option key={c.classId} value={c.classId}>{c.className}</option>)}
             </select>
-            <select value={form.subjectId} onChange={e => setForm({ ...form, subjectId: e.target.value })} className="h-9 px-3 rounded-lg border border-slate-200 text-sm">
-              <option value="">— Matière —</option>
-              {uniqueSubjects.map((s: any) => <option key={s.subjectId} value={s.subjectId}>{s.subjectName}</option>)}
+            <select
+              value={form.subjectId}
+              onChange={e => setForm({ ...form, subjectId: e.target.value })}
+              disabled={!form.classId || loadingSubjects}
+              className="h-9 px-3 rounded-lg border border-slate-200 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+            >
+              <option value="">
+                {loadingSubjects
+                  ? "Chargement des matières…"
+                  : !form.classId
+                    ? "— Sélectionnez une classe —"
+                    : subjectsForClass.length === 0
+                      ? "— Aucune matière pour cette classe —"
+                      : "— Matière —"}
+              </option>
+              {subjectsForClass.map((s: any) => (
+                <option key={s.subjectId} value={s.subjectId}>
+                  {s.subjectName}{s.subjectCode ? ` (${s.subjectCode})` : ""}
+                </option>
+              ))}
             </select>
           </div>
           <input type="date" value={form.lessonDate} onChange={e => setForm({ ...form, lessonDate: e.target.value })} className="h-9 px-3 rounded-lg border border-slate-200 text-sm" />

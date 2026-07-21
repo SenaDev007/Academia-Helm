@@ -172,7 +172,7 @@ export class PedagogicalSpaceService {
     const assignments = await this.prisma.teacherClassAssignment.findMany({
       where: { tenantId, academicYearId, teacherId: resolvedTeacherId ?? undefined },
       include: {
-        class: {
+        physicalClass: {
           select: {
             id: true,
             name: true,
@@ -214,13 +214,13 @@ export class PedagogicalSpaceService {
     });
 
     // Construire un map de classes (déduplication par classId)
-    // En priorité : la classe physique (a.class), sinon la classe via academicClass
+    // En priorité : la classe physique (a.physicalClass), sinon la classe via academicClass
     const classMap = new Map<string, any>();
 
     for (const a of assignments) {
       // Cas 1 : classe physique directement assignée (a.classId non null)
-      if (a.class) {
-        const classId = a.class.id;
+      if (a.physicalClass) {
+        const classId = a.physicalClass.id;
         const existing = classMap.get(classId);
         const subjectInfo = a.classSubject?.subject
           ? [{
@@ -244,12 +244,12 @@ export class PedagogicalSpaceService {
           }
         } else {
           classMap.set(classId, {
-            classId: a.class.id,
-            className: a.class.name,
-            capacity: a.class.capacity,
-            schoolLevelId: a.class.schoolLevelId,
-            schoolLevelName: a.class.schoolLevel?.name || '',
-            schoolLevelCode: a.class.schoolLevel?.code || '',
+            classId: a.physicalClass.id,
+            className: a.physicalClass.name,
+            capacity: a.physicalClass.capacity,
+            schoolLevelId: a.physicalClass.schoolLevelId,
+            schoolLevelName: a.physicalClass.schoolLevel?.name || '',
+            schoolLevelCode: a.physicalClass.schoolLevel?.code || '',
             subjects: [...subjectInfo],
           });
         }
@@ -257,7 +257,7 @@ export class PedagogicalSpaceService {
 
       // Cas 2 : pas de classe physique, mais une AcademicClass via classSubject
       // On récupère les classes physiques (sections) liées à cette AcademicClass
-      if (!a.class && a.classSubject?.academicClass) {
+      if (!a.physicalClass && a.classSubject?.academicClass) {
         const ac = a.classSubject.academicClass;
         const physicalClasses = ac.physicalClasses || [];
 
@@ -642,6 +642,33 @@ export class PedagogicalSpaceService {
     const dateObj = new Date(date);
     const results = [];
 
+    // ⭐ Si schoolLevelId est vide ou invalide (par exemple quand "Tous les
+    // niveaux" est sélectionné côté frontend), on le résout depuis la classe.
+    // Évite l'erreur FK violation sur attendance_records_schoolLevelId_fkey.
+    let resolvedSchoolLevelId = schoolLevelId;
+    if (!resolvedSchoolLevelId || resolvedSchoolLevelId.trim() === '') {
+      const cls = await this.prisma.class.findFirst({
+        where: { id: classId, tenantId },
+        select: { schoolLevelId: true },
+      });
+      if (cls?.schoolLevelId) {
+        resolvedSchoolLevelId = cls.schoolLevelId;
+      } else {
+        // Dernier recours : chercher via AcademicClass (cas où classId est
+        // en réalité un AcademicClass.id)
+        const ac = await this.prisma.academicClass.findFirst({
+          where: { id: classId, tenantId },
+          select: { schoolLevelId: true },
+        });
+        resolvedSchoolLevelId = ac?.schoolLevelId || '';
+      }
+      if (!resolvedSchoolLevelId) {
+        throw new BadRequestException(
+          `Impossible de résoudre le niveau scolaire pour la classe ${classId}. Sélectionnez un niveau scolaire dans le menu global.`,
+        );
+      }
+    }
+
     for (const record of records) {
       // Vérifier si un enregistrement existe déjà
       const existing = await this.prisma.attendanceRecord.findFirst({
@@ -665,7 +692,7 @@ export class PedagogicalSpaceService {
           data: {
             tenantId,
             academicYearId,
-            schoolLevelId,
+            schoolLevelId: resolvedSchoolLevelId,
             classId,
             studentId: record.studentId,
             date: dateObj,

@@ -20,15 +20,16 @@
  * ============================================================================
  */
 
+import { useState } from "react";
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import { useSchoolIdentity } from "@/hooks/useSchoolIdentity";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, BookOpen, CalendarDays, Users, Library,
   Video, ClipboardList, MessageSquare, Loader2, GraduationCap,
-  BarChart3, Settings, Building2,
+  BarChart3, Settings, Building2, LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +50,20 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
   const { academicYear } = useModuleContext();
   const { identity: school } = useSchoolIdentity();
   const pathname = usePathname();
+  const router = useRouter();
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    if (!confirm("Voulez-vous vraiment vous déconnecter ?")) return;
+    setLoggingOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    } catch {
+      // silent — on redirige de toute façon
+    }
+    // Hard redirect to login to clear all client state
+    window.location.href = "/login";
+  };
 
   if (!academicYear?.id) {
     return (
@@ -117,7 +132,7 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
         </nav>
 
         {/* Footer */}
-        <div className="p-3 border-t border-slate-200">
+        <div className="p-3 border-t border-slate-200 space-y-1">
           <Link
             href="/app"
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-slate-500 hover:bg-slate-50 hover:text-slate-700"
@@ -125,6 +140,18 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
             <Settings className="h-4 w-4" />
             <span>Portail École</span>
           </Link>
+          <button
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+          >
+            {loggingOut ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <LogOut className="h-4 w-4" />
+            )}
+            <span>{loggingOut ? "Déconnexion…" : "Se déconnecter"}</span>
+          </button>
         </div>
       </aside>
 

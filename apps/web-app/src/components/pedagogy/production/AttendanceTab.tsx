@@ -1,7 +1,24 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { CalendarCheck, Loader2, Save, RefreshCw, Check, X, Clock } from "lucide-react";
+/**
+ * ============================================================================
+ * APPEL JOURNALIER — Avec auto-save toutes les 5 secondes
+ * ============================================================================
+ *
+ * Fonctionnement :
+ *   - L'enseignant sélectionne une classe + date
+ *   - Les élèves s'affichent avec 3 boutons (Présent / Absent / Retard)
+ *   - Auto-save toutes les 5 secondes (si des changements sont détectés)
+ *   - Bouton "Enregistrer maintenant" pour sauvegarder manuellement
+ *   - Indicateur visuel de l'état de sauvegarde (à jour / en cours / erreur)
+ * ============================================================================
+ */
+
+import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  CalendarCheck, Loader2, Save, RefreshCw, Check, X, Clock,
+  CheckCircle2, AlertCircle, Cloud, CloudOff,
+} from "lucide-react";
 import { toast } from "sonner";
 
 interface AttendanceTabProps {
@@ -11,6 +28,8 @@ interface AttendanceTabProps {
   teacherId: string;
 }
 
+type SaveStatus = "idle" | "saving" | "saved" | "error";
+
 export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacherId }: AttendanceTabProps) {
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>("");
@@ -18,6 +37,18 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
   const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+
+  // Suivi des modifications non sauvegardées
+  const isDirtyRef = useRef(false);
+  const studentsRef = useRef<any[]>(students);
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Synchroniser la ref avec le state
+  useEffect(() => {
+    studentsRef.current = students;
+  }, [students]);
 
   // Charger mes classes
   useEffect(() => {
@@ -25,8 +56,9 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
       try {
         const res = await fetch(`/api/pedagogy-space/my-classes?teacherId=${teacherId}&academicYearId=${academicYearId}`, { credentials: "include" });
         const data = await res.json();
-        setClasses(Array.isArray(data) ? data : []);
-        if (data.length > 0) setSelectedClassId(data[0].classId);
+        const list = Array.isArray(data) ? data : [];
+        setClasses(list);
+        if (list.length > 0) setSelectedClassId(list[0].classId);
       } catch { setClasses([]); }
     })();
   }, [teacherId, academicYearId]);
@@ -38,53 +70,147 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
     try {
       const res = await fetch(`/api/pedagogy-space/attendance/${selectedClassId}?date=${date}`, { credentials: "include" });
       const data = await res.json();
-      setStudents(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setStudents(list);
+      isDirtyRef.current = false;
+      setSaveStatus("idle");
     } catch { setStudents([]); }
     finally { setLoading(false); }
   }, [selectedClassId, date]);
 
   useEffect(() => { loadAttendance(); }, [loadAttendance]);
 
+  // Marquer "dirty" quand un statut change
   const setStatus = (studentId: string, status: string) => {
     setStudents(prev => prev.map(s => s.studentId === studentId ? { ...s, status } : s));
+    isDirtyRef.current = true;
+    setSaveStatus("idle");
   };
 
-  const handleSave = async () => {
+  // Sauvegarder (réutilisé par bouton ET auto-save)
+  const handleSave = useCallback(async (silent = false) => {
+    if (!isDirtyRef.current || studentsRef.current.length === 0) return;
     setSaving(true);
+    setSaveStatus("saving");
     try {
-      const records = students.map(s => ({ studentId: s.studentId, status: s.status }));
+      const records = studentsRef.current.map(s => ({ studentId: s.studentId, status: s.status }));
       const res = await fetch("/api/pedagogy-space/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ academicYearId, schoolLevelId, classId: selectedClassId, date, records }),
       });
-      if (!res.ok) throw new Error("Erreur");
-      toast.success("✅ Appel enregistré");
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText}`);
+      }
+      isDirtyRef.current = false;
+      setLastSavedAt(new Date());
+      setSaveStatus("saved");
+      if (!silent) toast.success("✅ Appel enregistré");
     } catch (e: any) {
-      toast.error("Erreur", { description: e.message });
+      setSaveStatus("error");
+      if (!silent) toast.error("Erreur d'enregistrement", { description: e.message });
     } finally { setSaving(false); }
-  };
+  }, [academicYearId, schoolLevelId, selectedClassId, date]);
+
+  // ⭐ AUTO-SAVE toutes les 5 secondes si des changements sont détectés
+  useEffect(() => {
+    // Nettoyer l'ancien timer
+    if (autoSaveTimerRef.current) {
+      clearInterval(autoSaveTimerRef.current);
+    }
+
+    // Nouveau timer : check toutes les 5 secondes
+    autoSaveTimerRef.current = setInterval(async () => {
+      if (isDirtyRef.current && !saving && studentsRef.current.length > 0) {
+        await handleSave(true); // silent = true pour auto-save
+      }
+    }, 5000);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearInterval(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, [handleSave, saving]);
+
+  // ⭐ Sauvegarde avant déchargement de la page / changement d'onglet
+  useEffect(() => {
+    const handler = async () => {
+      if (isDirtyRef.current && studentsRef.current.length > 0) {
+        // Utiliser sendBeacon pour ne pas bloquer la navigation
+        const records = studentsRef.current.map(s => ({ studentId: s.studentId, status: s.status }));
+        const payload = JSON.stringify({ academicYearId, schoolLevelId, classId: selectedClassId, date, records });
+        try {
+          navigator.sendBeacon(
+            "/api/pedagogy-space/attendance",
+            new Blob([payload], { type: "application/json" })
+          );
+        } catch { /* silent */ }
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [academicYearId, schoolLevelId, selectedClassId, date]);
 
   const present = students.filter(s => s.status === "PRESENT").length;
   const absent = students.filter(s => s.status === "ABSENT").length;
   const late = students.filter(s => s.status === "LATE").length;
 
+  // Badge d'état de sauvegarde
+  const renderSaveBadge = () => {
+    switch (saveStatus) {
+      case "saving":
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold">
+            <Cloud className="h-3.5 w-3.5 animate-pulse" /> Enregistrement…
+          </span>
+        );
+      case "saved":
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold">
+            <CheckCircle2 className="h-3.5 w-3.5" /> Enregistré
+            {lastSavedAt && (
+              <span className="font-normal opacity-70">
+                à {lastSavedAt.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              </span>
+            )}
+          </span>
+        );
+      case "error":
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-50 text-red-700 text-xs font-bold">
+            <CloudOff className="h-3.5 w-3.5" /> Erreur — réessayer
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-xs font-medium">
+            <Clock className="h-3.5 w-3.5" /> Auto-save actif (5s)
+          </span>
+        );
+    }
+  };
+
   return (
     <div className="space-y-4">
+      {/* En-tête avec classe + date + actions + badge */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-lg font-bold text-slate-900">Appel Journalier</h3>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {renderSaveBadge()}
           <select value={selectedClassId} onChange={e => setSelectedClassId(e.target.value)}
             className="h-9 px-3 rounded-lg border border-slate-200 text-sm">
             {classes.map(c => <option key={c.classId} value={c.classId}>{c.className}</option>)}
           </select>
           <input type="date" value={date} onChange={e => setDate(e.target.value)}
             className="h-9 px-3 rounded-lg border border-slate-200 text-sm" />
-          <button onClick={handleSave} disabled={saving || students.length === 0}
+          <button onClick={() => handleSave(false)} disabled={saving || students.length === 0}
             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Enregistrer
+            Enregistrer maintenant
           </button>
         </div>
       </div>
@@ -97,6 +223,16 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
           <span className="px-3 py-1 rounded-lg bg-amber-50 text-amber-700 text-xs font-bold">{late} Retards</span>
         </div>
       )}
+
+      {/* Info auto-save */}
+      <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <Clock className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+        <div className="text-xs text-blue-800">
+          <strong>Enregistrement automatique :</strong> Vos modifications sont sauvegardées automatiquement
+          toutes les <strong>5 secondes</strong>. Vous pouvez aussi cliquer sur « Enregistrer maintenant »
+          pour sauvegarder immédiatement. Les changements sont également sauvegardés quand vous quittez la page.
+        </div>
+      </div>
 
       {loading ? (
         <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>
@@ -120,14 +256,14 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
                       {["PRESENT", "ABSENT", "LATE"].map(st => (
                         <button key={st} onClick={() => setStatus(s.studentId, st)}
                           className={cn(
-                            "px-2 py-1 rounded text-xs font-bold transition-colors",
+                            "px-3 py-1.5 rounded text-xs font-bold transition-colors",
                             s.status === st
                               ? st === "PRESENT" ? "bg-emerald-500 text-white"
                                 : st === "ABSENT" ? "bg-red-500 text-white"
                                 : "bg-amber-500 text-white"
                               : "bg-slate-100 text-slate-500 hover:bg-slate-200"
                           )}>
-                          {st === "PRESENT" ? "P" : st === "ABSENT" ? "A" : "R"}
+                          {st === "PRESENT" ? "Présent" : st === "ABSENT" ? "Absent" : "Retard"}
                         </button>
                       ))}
                     </div>

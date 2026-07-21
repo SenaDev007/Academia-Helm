@@ -27,14 +27,16 @@
 import {
   Controller, Get, Post, Put, Delete, Body, Param, Query, Headers,
   HttpCode, HttpStatus, BadRequestException, NotFoundException, Logger, Res,
+  UseGuards,
 } from '@nestjs/common';
-import { Public } from '../auth/decorators/public.decorator';
 import { PedagogicalSpaceService } from './pedagogical-space.service';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { TenantGuard } from '../common/guards/tenant.guard';
 
 @Controller('pedagogy-space')
-@Public()
+@UseGuards(JwtAuthGuard, TenantGuard)
 export class PedagogicalSpaceController {
   private readonly logger = new Logger(PedagogicalSpaceController.name);
 

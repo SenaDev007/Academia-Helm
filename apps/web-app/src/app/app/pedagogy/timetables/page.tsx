@@ -21,8 +21,8 @@ export default function TimetablesPage() {
       header={{
         title: 'Emploi du Temps (EDT)',
         description: academicYear
-          ? `Générateur d'emploi du temps — multi-solutions Pareto, contraintes dures/souples, backtracking — année ${academicYear.label}`
-          : 'Génération multi-solutions Pareto avec contraintes et backtracking',
+          ? `Générateur d'emploi du temps — multi-solutions, contraintes obligatoires et préférées — année ${academicYear.label}`
+          : "Génération automatique d'emploi du temps avec gestion des contraintes",
         icon: 'calendar',
       }}
       subModules={{

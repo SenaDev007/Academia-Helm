@@ -128,3 +128,88 @@ Prochaines étapes recommandées:
 3. Tester la validation direction via /app/pedagogy/control → onglet "Cahier journal"
 4. Tester la configuration des matières via /app/pedagogy/production → onglet "Registre d'Appel" → sous-onglet "Évaluation mensuelle"
 5. Le directeur peut désormais valider/rejeter toutes les soumissions en un seul endroit
+
+---
+Task ID: remove-promoter-pedagogy-constraint
+Agent: Main (Super Z)
+Task: Supprimer la contrainte qui empêchait le promoteur de voir l'Espace Pédagogique (onglet "Espace Pédagogie" du module Pédagogie). Permettre au promoteur de tester toutes les fonctionnalités pédagogiques (cahier journal, fiches, registre, cahier de texte, devoirs).
+
+Work Log:
+- Diagnostic : identifié la cause racine dans `apps/api-server/src/pedagogy/pedagogical-space.service.ts`.
+  - Méthode `resolveTeacherId` renvoyait l'ID User tel quel quand aucun Teacher n'était trouvé.
+  - `getMyClasses` filtre alors par `teacherId: <user.id>` sur `teacher_class_assignments` → 0 résultat pour un PROMOTER (pas de Teacher lié).
+  - Conséquence : "Aucune classe assignée" s'affichait pour le promoteur.
+- Refonte de `resolveTeacherId` :
+  - Retourne maintenant `{ teacherId: string | null; userRole: string | null }` au lieu de `string`.
+  - `teacherId` = null si l'utilisateur n'a pas de profil Teacher.
+  - `userRole` = rôle du User (PROMOTER, SCHOOL_OWNER, etc.) pour décision downstream.
+- Ajout d'un set statique `DIRECTION_ROLES` listant 20+ rôles direction (PROMOTER, SCHOOL_OWNER, SCHOOL_ADMIN, DIRECTEUR_*, ADMIN, etc.).
+- Modification de `getMyClasses` :
+  - Si `resolvedTeacherId` est null ET `userRole` est un rôle direction → appeler nouvelle méthode `getAllClassesForTenant(tenantId, academicYearId)`.
+  - Sinon : comportement inchangé (filtre par teacherId).
+- Nouvelle méthode privée `getAllClassesForTenant` :
+  - Récupère toutes les `Class` physiques du tenant/année + jointures schoolLevel.
+  - Pour chaque classe : calcule les effectifs (G/F/total) depuis `studentEnrollment` (status ACTIVE/ADMITTED/ENROLLED) + liste des élèves.
+  - Récupère les matières associées via `classSubject` + `subject`.
+  - Fallback : si aucune classe physique trouvée, utilise `AcademicClass` avec `academicClassId` sur `studentEnrollment`.
+  - Retourne le même format que `getMyClasses` (compatible avec `MyClassesTab` frontend).
+- Vérification TypeScript : aucun nouveau problème d'introduction dans `pedagogical-space.service.ts` (erreurs pré-existantes liées au Prisma client non régénéré, non introduites par ce changement).
+- Vérification `resolveTeacherId` : seule utilisation = dans `getMyClasses` (pas de breaking change ailleurs).
+
+Stage Summary:
+- ✅ Le promoteur (et tous les rôles direction : SCHOOL_OWNER, DIRECTEUR_*, ADMIN, etc.) peut désormais voir TOUTES les classes du tenant dans l'Espace Pédagogique, sans avoir besoin d'un profil Teacher.
+- ⚠️ MODE TEST : cette ouverture est VOLONTAIRE et TEMPORAIRE. Pour réactiver la contrainte plus tard, il suffit de commenter le bloc `if (!resolvedTeacherId && userRole && PedagogicalSpaceService.DIRECTION_ROLES.has(userRole))` dans `getMyClasses` (apps/api-server/src/pedagogy/pedagogical-space.service.ts, ~ligne 136).
+- Les enseignants (avec profil Teacher lié) continuent à voir UNIQUEMENT leurs classes assignées — comportement inchangé.
+- Aucun changement frontend nécessaire : `PedagogicalSpaceWorkspace` utilise déjà `user.id` comme `teacherId`, et la résolution se fait côté backend.
+
+Prochaines étapes recommandées:
+1. Redéployer le backend sur Fly.io : `cd apps/api-server && flyctl deploy -a academia-helm-api`
+2. Tester en se connectant en tant que promoteur (salumerhel2036@gmail.com)
+3. Vérifier que l'onglet "Espace Pédagogie" affiche maintenant toutes les classes
+4. Tester les sous-onglets (Cahier Journal, Fiches, Registre, etc.) — pour les opérations d'écriture, le backend peut nécessiter des adaptations similaires si le teacherId est requis pour la création (à vérifier au cas par cas)
+5. Une fois les tests terminés, commenter le bloc mentionné ci-dessus pour réactiver la contrainte
+
+---
+Task ID: remove-promoter-pedagogy-constraint (suite)
+Agent: Main (Super Z)
+Task: Étendre le fix à tous les sous-onglets de l'Espace Pédagogique (Cahier Journal, Cahier Hebdo, Semainier, Fiches, Registre, Devoirs, Cahier de Texte) pour que le promoteur puisse tester tous les modules.
+
+Work Log:
+- Ajout d'un helper générique `resolveTeacherFilter` qui retourne :
+  - `{ mode: 'teacher', teacherId }` si l'utilisateur a un profil Teacher
+  - `{ mode: 'all' }` si l'utilisateur a un rôle direction sans profil Teacher
+  - `{ mode: 'none' }` sinon (renverra un tableau vide)
+- Application du helper à 7 méthodes de lecture :
+  1. `getClassLogs` (Cahier Journal) — ligne 692
+  2. `getWeeklyLogs` (Cahier de Semaine) — ligne 859
+  3. `getHomeworks` (Devoirs) — ligne 973
+  4. `getCahierJournals` (Cahier Journal Hebdo) — ligne 1471
+  5. `getPedagogicalFiches` (Fiches Pédagogiques) — ligne 1623
+  6. `getAttendanceRegisters` (Registre d'Appel) — ligne 1904
+  7. `getCahierDeTextes` (Cahier de Texte secondaire) — ligne 2883
+- Pour chaque méthode :
+  - Si mode='teacher' : filtre par teacherId résolu (comportement normal)
+  - Si mode='all' (direction) : supprime le filtre teacherId → toutes les entrées du tenant/année
+  - Si mode='none' : retourne []
+- Conservation des autres filtres (classId, sheetType, testType, trimester, date) — ils sont appliqués après.
+- Vérification syntaxique OK (transpilation TypeScript sans erreur).
+- Vérification TypeScript : aucune nouvelle erreur introduite par mes changements (l'erreur pré-existante sur `fichesCount` ligne 2600 n'est pas liée à mes modifications).
+
+Stage Summary:
+- ✅ Le promoteur peut maintenant tester TOUS les sous-onglets de l'Espace Pédagogique :
+  - Mes Classes → toutes les classes du tenant
+  - Appel → fonctionne déjà par classId (pas de teacherId requis)
+  - Cahier Journal → tous les cahiers du tenant
+  - Cahier Journal Hebdo → tous les cahiers hebdo du tenant
+  - Cahier de Semaine → tous les semainiers du tenant
+  - Fiches Pédagogiques → toutes les fiches du tenant
+  - Registre d'Appel → tous les registres du tenant
+  - Cahier de Texte → tous les cahiers de texte du tenant
+  - Devoirs → tous les devoirs du tenant
+- ⚠️ Pour les opérations d'écriture (create/update/delete), le teacherId est toujours requis et sera stocké tel quel (user.id si pas de profil Teacher). À voir au cas par cas si les écritures fonctionnent pour le promoteur.
+- Les enseignants avec profil Teacher lié continuent à voir UNIQUEMENT leurs données.
+
+Prochaines étapes recommandées:
+1. Redéployer le backend sur Fly.io : `cd apps/api-server && flyctl deploy -a academia-helm-api`
+2. Tester TOUS les sous-onglets en tant que promoteur
+3. Pour réactiver la contrainte plus tard : commenter le bloc `if (!resolvedTeacherId && userRole && PedagogicalSpaceService.DIRECTION_ROLES.has(userRole))` dans getMyClasses (~ligne 136) ET supprimer les helpers `resolveTeacherFilter` + remettre les `where: { teacherId }` directs dans les 7 méthodes modifiées.

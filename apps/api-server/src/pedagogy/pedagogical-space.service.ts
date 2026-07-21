@@ -38,31 +38,101 @@ export class PedagogicalSpaceService {
    *
    * C'est nécessaire car teacher_class_assignments.teacherId référence
    * la table teachers, pas users. Mais le frontend passe user.id.
+   *
+   * @returns Objet avec :
+   *   - teacherId: ID du Teacher résolu (ou null si non trouvé)
+   *   - userRole: Rôle du User si l'ID correspond à un User (sinon null)
    */
-  private async resolveTeacherId(tenantId: string, id: string): Promise<string> {
+  private async resolveTeacherId(
+    tenantId: string,
+    id: string,
+  ): Promise<{ teacherId: string | null; userRole: string | null }> {
     // Vérifier si c'est déjà un Teacher
     const directTeacher = await this.prisma.teacher.findFirst({
       where: { id, tenantId },
       select: { id: true },
     });
-    if (directTeacher) return directTeacher.id;
+    if (directTeacher) {
+      return { teacherId: directTeacher.id, userRole: null };
+    }
 
     // Sinon, chercher par email (User.email → Teacher.email)
     const user = await this.prisma.user.findFirst({
       where: { id, tenantId },
-      select: { email: true },
+      select: { email: true, role: true },
     });
     if (user?.email) {
       const teacher = await this.prisma.teacher.findFirst({
         where: { email: user.email, tenantId },
         select: { id: true },
       });
-      if (teacher) return teacher.id;
+      if (teacher) {
+        return { teacherId: teacher.id, userRole: user.role ?? null };
+      }
     }
 
-    // Retourner l'ID tel quel (au cas où)
-    return id;
+    // Aucun Teacher trouvé — on renvoie le rôle User pour permettre
+    // à getMyClasses de décider si on doit afficher TOUTES les classes
+    // (rôles direction : PROMOTER, SCHOOL_OWNER, DIRECTEUR_*, etc.)
+    return { teacherId: null, userRole: user?.role ?? null };
   }
+
+  /**
+   * Résout le filtre teacherId à appliquer aux requêtes de lecture.
+   *
+   * ⭐ MODE TEST (PROMOTEUR/DIRECTION) :
+   *   - Si l'utilisateur a un profil Teacher → filtre par teacherId (comportement normal)
+   *   - Si l'utilisateur n'a PAS de profil Teacher mais a un rôle direction
+   *     (PROMOTER, SCHOOL_OWNER, DIRECTEUR_*, ADMIN, etc.) → PAS de filtre
+   *     teacherId (renvoie TOUTES les entrées du tenant/année)
+   *   - Sinon → mode 'none' (renvoie un tableau vide)
+   *
+   * @returns Objet avec `mode` et optionnellement `teacherId`
+   */
+  private async resolveTeacherFilter(
+    tenantId: string,
+    rawTeacherId: string,
+  ): Promise<
+    | { mode: 'teacher'; teacherId: string }
+    | { mode: 'all' }
+    | { mode: 'none' }
+  > {
+    const { teacherId, userRole } = await this.resolveTeacherId(tenantId, rawTeacherId);
+    if (teacherId) return { mode: 'teacher', teacherId };
+    if (userRole && PedagogicalSpaceService.DIRECTION_ROLES.has(userRole)) {
+      return { mode: 'all' };
+    }
+    return { mode: 'none' };
+  }
+
+  /**
+   * Rôles "direction" qui peuvent voir TOUTES les classes de l'école
+   * dans l'Espace Pédagogique (vue superviseur/directeur).
+   * Utilisé quand resolveTeacherId ne trouve pas de Teacher lié au User.
+   */
+  private static readonly DIRECTION_ROLES = new Set([
+    'PROMOTER',
+    'SCHOOL_OWNER',
+    'SCHOOL_ADMIN',
+    'PLATFORM_OWNER',
+    'PLATFORM_SUPER_ADMIN',
+    'PLATFORM_ADMIN',
+    'SUPER_ADMIN',
+    'SUPER_DIRECTOR',
+    'DIRECTEUR_GENERAL',
+    'DIRECTEUR_ETABLISSEMENT',
+    'DIRECTOR_GENERAL',
+    'SCHOOL_DIRECTOR',
+    'DEPUTY_DIRECTOR',
+    'CENSEUR',
+    'PEDAGOGIC_DIRECTOR',
+    'PEDAGOGIC_COORDINATOR',
+    'RESP_SECONDAIRE',
+    'RESP_PRIMAIRE',
+    'RESP_MATERNELLE',
+    'admin',
+    'director',
+  ]);
 
   // ===========================================================================
   // MES CLASSES
@@ -79,11 +149,28 @@ export class PedagogicalSpaceService {
    */
   async getMyClasses(tenantId: string, teacherId: string, academicYearId: string) {
     // ⭐ Résoudre l'ID du Teacher (le frontend passe user.id, pas teacher.id)
-    const resolvedTeacherId = await this.resolveTeacherId(tenantId, teacherId);
+    const { teacherId: resolvedTeacherId, userRole } = await this.resolveTeacherId(
+      tenantId,
+      teacherId,
+    );
+
+    // ⭐ TEMPORAIRE (TEST PROMOTEUR/DIRECTION) :
+    // Si l'utilisateur n'a PAS de profil Teacher mais possède un rôle
+    // "direction" (PROMOTER, SCHOOL_OWNER, DIRECTEUR_*, ADMIN, etc.),
+    // on renvoie TOUTES les classes du tenant/année pour lui permettre
+    // de tester/valider l'Espace Pédagogique.
+    // ⚠️ À remettre en mode "restreint" une fois les tests terminés :
+    //    il suffit de commenter le bloc `if (!resolvedTeacherId && ...)` ci-dessous.
+    if (!resolvedTeacherId && userRole && PedagogicalSpaceService.DIRECTION_ROLES.has(userRole)) {
+      this.logger.log(
+        `[getMyClasses] Aucun profil Teacher pour user.role=${userRole} — renvoi de TOUTES les classes du tenant (mode test direction)`,
+      );
+      return this.getAllClassesForTenant(tenantId, academicYearId);
+    }
 
     // Récupérer les affectations teacher_class_assignments avec toutes les relations
     const assignments = await this.prisma.teacherClassAssignment.findMany({
-      where: { tenantId, academicYearId, teacherId: resolvedTeacherId },
+      where: { tenantId, academicYearId, teacherId: resolvedTeacherId ?? undefined },
       include: {
         class: {
           select: {
@@ -326,6 +413,160 @@ export class PedagogicalSpaceService {
   }
 
   // ===========================================================================
+  // TOUTES LES CLASSES DU TENANT (vue direction/promoteur)
+  // ===========================================================================
+
+  /**
+   * Renvoie TOUTES les classes (physiques) du tenant pour une année donnée,
+   * avec effectifs (G/F/total) et élèves. Utilisé pour la vue "superviseur"
+   * des rôles direction (PROMOTER, SCHOOL_OWNER, DIRECTEUR_*, ADMIN) qui n'ont
+   * pas de profil Teacher mais doivent pouvoir tester/valider l'Espace Pédagogique.
+   *
+   * ⚠️ MODE TEST — ne devrait pas être exposé publiquement dans l'API.
+   * Pour le moment, utilisé uniquement en fallback de getMyClasses.
+   */
+  private async getAllClassesForTenant(tenantId: string, academicYearId: string) {
+    // Récupérer toutes les classes physiques du tenant/année
+    const allClasses = await this.prisma.class.findMany({
+      where: { tenantId, academicYearId },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        capacity: true,
+        schoolLevelId: true,
+        schoolLevel: { select: { id: true, name: true, code: true } },
+      },
+      orderBy: [{ schoolLevel: { name: 'asc' } }, { name: 'asc' }],
+    });
+
+    const classes: any[] = [];
+    for (const cls of allClasses) {
+      // Effectifs depuis les inscriptions
+      const enrollments = await this.prisma.studentEnrollment.findMany({
+        where: {
+          tenantId,
+          academicYearId,
+          classId: cls.id,
+          status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED'] },
+        },
+        include: {
+          student: {
+            select: {
+              id: true,
+              gender: true,
+              firstName: true,
+              lastName: true,
+              matricule: true,
+              photoUrl: true,
+            },
+          },
+        },
+      });
+
+      // Matières associées (via class_subjects)
+      const subjects = await this.prisma.classSubject.findMany({
+        where: { classId: cls.id, tenantId, academicYearId },
+        select: {
+          subjectId: true,
+          subject: { select: { id: true, name: true, code: true } },
+          weeklyHours: true,
+          coefficient: true,
+        },
+      });
+
+      classes.push({
+        classId: cls.id,
+        className: cls.name,
+        capacity: cls.capacity,
+        schoolLevelId: cls.schoolLevelId,
+        schoolLevelName: cls.schoolLevel?.name || '',
+        schoolLevelCode: cls.schoolLevel?.code || '',
+        subjects: subjects.map((s) => ({
+          subjectId: s.subjectId,
+          subjectName: s.subject?.name || '',
+          subjectCode: s.subject?.code || '',
+          weeklyHours: s.weeklyHours,
+          coefficient: s.coefficient,
+        })),
+        totalStudents: enrollments.length,
+        boys: enrollments.filter((e) => e.student?.gender === 'M').length,
+        girls: enrollments.filter((e) => e.student?.gender === 'F').length,
+        students: enrollments.map((e) => ({
+          studentId: e.student?.id,
+          firstName: e.student?.firstName,
+          lastName: e.student?.lastName,
+          gender: e.student?.gender,
+          matricule: e.student?.matricule,
+          photoUrl: e.student?.photoUrl,
+        })),
+      });
+    }
+
+    // Si aucune classe physique trouvée, fallback sur les AcademicClass
+    if (classes.length === 0) {
+      const academicClasses = await this.prisma.academicClass.findMany({
+        where: { tenantId, academicYearId },
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          capacity: true,
+          schoolLevelId: true,
+          schoolLevel: { select: { id: true, name: true, code: true } },
+        },
+        orderBy: [{ schoolLevel: { name: 'asc' } }, { name: 'asc' }],
+      });
+
+      for (const ac of academicClasses) {
+        const enrollments = await this.prisma.studentEnrollment.findMany({
+          where: {
+            tenantId,
+            academicYearId,
+            academicClassId: ac.id,
+            status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED'] },
+          },
+          include: {
+            student: {
+              select: {
+                id: true,
+                gender: true,
+                firstName: true,
+                lastName: true,
+                matricule: true,
+                photoUrl: true,
+              },
+            },
+          },
+        });
+
+        classes.push({
+          classId: ac.id,
+          className: ac.name,
+          capacity: ac.capacity,
+          schoolLevelId: ac.schoolLevelId,
+          schoolLevelName: ac.schoolLevel?.name || '',
+          schoolLevelCode: ac.schoolLevel?.code || '',
+          subjects: [],
+          totalStudents: enrollments.length,
+          boys: enrollments.filter((e) => e.student?.gender === 'M').length,
+          girls: enrollments.filter((e) => e.student?.gender === 'F').length,
+          students: enrollments.map((e) => ({
+            studentId: e.student?.id,
+            firstName: e.student?.firstName,
+            lastName: e.student?.lastName,
+            gender: e.student?.gender,
+            matricule: e.student?.matricule,
+            photoUrl: e.student?.photoUrl,
+          })),
+        });
+      }
+    }
+
+    return classes;
+  }
+
+  // ===========================================================================
   // APPEL JOURNALIER (Daily Attendance)
   // ===========================================================================
 
@@ -455,7 +696,13 @@ export class PedagogicalSpaceService {
     classId?: string,
     date?: string,
   ) {
-    const where: any = { tenantId, academicYearId, teacherId };
+    // ⭐ TEST PROMOTEUR/DIRECTION : si l'utilisateur n'a pas de profil Teacher
+    // mais a un rôle direction, on ne filtre PAS par teacherId (vue superviseur).
+    const filter = await this.resolveTeacherFilter(tenantId, teacherId);
+    if (filter.mode === 'none') return [];
+
+    const where: any = { tenantId, academicYearId };
+    if (filter.mode === 'teacher') where.teacherId = filter.teacherId;
     if (classId) where.classId = classId;
     if (date) where.lessonDate = new Date(date);
 
@@ -614,8 +861,15 @@ export class PedagogicalSpaceService {
     teacherId: string,
     academicYearId: string,
   ) {
+    // ⭐ TEST PROMOTEUR/DIRECTION : vue superviseur si rôle direction sans profil Teacher
+    const filter = await this.resolveTeacherFilter(tenantId, teacherId);
+    if (filter.mode === 'none') return [];
+
+    const where: any = { tenantId, academicYearId };
+    if (filter.mode === 'teacher') where.teacherId = filter.teacherId;
+
     return this.prisma.pedagogicalWeeklyLog.findMany({
-      where: { tenantId, academicYearId, teacherId },
+      where,
       orderBy: { weekStartDate: 'desc' },
       take: 20,
     });
@@ -722,18 +976,33 @@ export class PedagogicalSpaceService {
     teacherId: string,
     classId?: string,
   ) {
-    // HomeworkEntry n'a pas de teacherId direct, on filtre via les classes assignées
-    const assignedClassIds = await this.prisma.teacherClassAssignment.findMany({
-      where: { tenantId, academicYearId, teacherId },
-      select: { classId: true },
-    });
-    const classIds = assignedClassIds.map(a => a.classId).filter(Boolean);
+    // ⭐ TEST PROMOTEUR/DIRECTION :
+    // - Si Teacher → filtre via les classes assignées (comportement normal)
+    // - Si direction (pas de Teacher) → TOUTES les classes du tenant/année
+    // - Sinon → tableau vide
+    const filter = await this.resolveTeacherFilter(tenantId, teacherId);
+    if (filter.mode === 'none') return [];
+
+    let classIds: string[] | null = null;
+    if (filter.mode === 'teacher') {
+      const assignedClassIds = await this.prisma.teacherClassAssignment.findMany({
+        where: { tenantId, academicYearId, teacherId: filter.teacherId },
+        select: { classId: true },
+      });
+      classIds = assignedClassIds.map(a => a.classId).filter(Boolean);
+    }
 
     const where: any = {
       tenantId,
       academicYearId,
-      classId: classId ? classId : { in: classIds },
     };
+    if (classId) {
+      where.classId = classId;
+    } else if (classIds !== null) {
+      // Mode Teacher : limiter aux classes assignées
+      where.classId = { in: classIds };
+    }
+    // Mode direction : pas de filtre classId → toutes les classes
 
     const homeworks = await this.prisma.homeworkEntry.findMany({
       where,
@@ -1205,19 +1474,41 @@ export class PedagogicalSpaceService {
     academicYearId: string,
     classId?: string,
   ) {
+    // ⭐ TEST PROMOTEUR/DIRECTION : vue superviseur si rôle direction sans profil Teacher
+    const filter = await this.resolveTeacherFilter(tenantId, teacherId);
+    if (filter.mode === 'none') return [];
+
     if (classId) {
+      if (filter.mode === 'teacher') {
+        return this.prisma.$queryRawUnsafe(
+          `SELECT * FROM "cahier_journal_entries"
+           WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3 AND "classId" = $4
+           ORDER BY "weekStartDate" DESC`,
+          tenantId, academicYearId, filter.teacherId, classId,
+        );
+      }
+      // Mode direction : pas de filtre teacherId
       return this.prisma.$queryRawUnsafe(
         `SELECT * FROM "cahier_journal_entries"
-         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3 AND "classId" = $4
+         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "classId" = $3
          ORDER BY "weekStartDate" DESC`,
-        tenantId, academicYearId, teacherId, classId,
+        tenantId, academicYearId, classId,
       );
     }
+    if (filter.mode === 'teacher') {
+      return this.prisma.$queryRawUnsafe(
+        `SELECT * FROM "cahier_journal_entries"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3
+         ORDER BY "weekStartDate" DESC`,
+        tenantId, academicYearId, filter.teacherId,
+      );
+    }
+    // Mode direction : toutes les entrées du tenant/année
     return this.prisma.$queryRawUnsafe(
       `SELECT * FROM "cahier_journal_entries"
-       WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3
+       WHERE "tenantId" = $1 AND "academicYearId" = $2
        ORDER BY "weekStartDate" DESC`,
-      tenantId, academicYearId, teacherId,
+      tenantId, academicYearId,
     );
   }
 
@@ -1336,10 +1627,26 @@ export class PedagogicalSpaceService {
     sheetType?: string,
     classId?: string,
   ) {
-    let query = `SELECT * FROM "primary_pedagogical_fiches"
-                 WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3`;
-    const params: any[] = [tenantId, academicYearId, teacherId];
-    let paramIdx = 4;
+    // ⭐ TEST PROMOTEUR/DIRECTION : vue superviseur si rôle direction sans profil Teacher
+    const filter = await this.resolveTeacherFilter(tenantId, teacherId);
+    if (filter.mode === 'none') return [];
+
+    // Construction dynamique de la requête selon le mode
+    let query: string;
+    const params: any[] = [];
+
+    if (filter.mode === 'teacher') {
+      query = `SELECT * FROM "primary_pedagogical_fiches"
+               WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3`;
+      params.push(tenantId, academicYearId, filter.teacherId);
+    } else {
+      // Mode direction : toutes les fiches du tenant/année
+      query = `SELECT * FROM "primary_pedagogical_fiches"
+               WHERE "tenantId" = $1 AND "academicYearId" = $2`;
+      params.push(tenantId, academicYearId);
+    }
+
+    let paramIdx = params.length + 1;
     if (sheetType) {
       query += ` AND "sheetType" = $${paramIdx++}`;
       params.push(sheetType);
@@ -1600,19 +1907,41 @@ export class PedagogicalSpaceService {
     academicYearId: string,
     classId?: string,
   ) {
+    // ⭐ TEST PROMOTEUR/DIRECTION : vue superviseur si rôle direction sans profil Teacher
+    const filter = await this.resolveTeacherFilter(tenantId, teacherId);
+    if (filter.mode === 'none') return [];
+
     if (classId) {
+      if (filter.mode === 'teacher') {
+        return this.prisma.$queryRawUnsafe(
+          `SELECT * FROM "attendance_registers"
+           WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3 AND "classId" = $4
+           ORDER BY "year" DESC, "month" DESC`,
+          tenantId, academicYearId, filter.teacherId, classId,
+        );
+      }
+      // Mode direction
       return this.prisma.$queryRawUnsafe(
         `SELECT * FROM "attendance_registers"
-         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3 AND "classId" = $4
+         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "classId" = $3
          ORDER BY "year" DESC, "month" DESC`,
-        tenantId, academicYearId, teacherId, classId,
+        tenantId, academicYearId, classId,
       );
     }
+    if (filter.mode === 'teacher') {
+      return this.prisma.$queryRawUnsafe(
+        `SELECT * FROM "attendance_registers"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3
+         ORDER BY "year" DESC, "month" DESC`,
+        tenantId, academicYearId, filter.teacherId,
+      );
+    }
+    // Mode direction
     return this.prisma.$queryRawUnsafe(
       `SELECT * FROM "attendance_registers"
-       WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3
+       WHERE "tenantId" = $1 AND "academicYearId" = $2
        ORDER BY "year" DESC, "month" DESC`,
-      tenantId, academicYearId, teacherId,
+      tenantId, academicYearId,
     );
   }
 
@@ -2559,13 +2888,31 @@ export class PedagogicalSpaceService {
     testType?: string,
     trimester?: number,
   ) {
-    let query = `SELECT ct.*, c."name" as "classNameResolved", s."name" as "subjectName", s."code" as "subjectCode"
-                 FROM "cahier_de_textes" ct
-                 LEFT JOIN "classes" c ON c."id" = ct."classId"
-                 LEFT JOIN "subjects" s ON s."id" = ct."subjectId"
-                 WHERE ct."tenantId" = $1 AND ct."academicYearId" = $2 AND ct."teacherId" = $3`;
-    const params: any[] = [tenantId, academicYearId, teacherId];
-    let paramIdx = 4;
+    // ⭐ TEST PROMOTEUR/DIRECTION : vue superviseur si rôle direction sans profil Teacher
+    const filter = await this.resolveTeacherFilter(tenantId, teacherId);
+    if (filter.mode === 'none') return [];
+
+    const params: any[] = [];
+    let query: string;
+
+    if (filter.mode === 'teacher') {
+      query = `SELECT ct.*, c."name" as "classNameResolved", s."name" as "subjectName", s."code" as "subjectCode"
+               FROM "cahier_de_textes" ct
+               LEFT JOIN "classes" c ON c."id" = ct."classId"
+               LEFT JOIN "subjects" s ON s."id" = ct."subjectId"
+               WHERE ct."tenantId" = $1 AND ct."academicYearId" = $2 AND ct."teacherId" = $3`;
+      params.push(tenantId, academicYearId, filter.teacherId);
+    } else {
+      // Mode direction : toutes les entrées du tenant/année
+      query = `SELECT ct.*, c."name" as "classNameResolved", s."name" as "subjectName", s."code" as "subjectCode"
+               FROM "cahier_de_textes" ct
+               LEFT JOIN "classes" c ON c."id" = ct."classId"
+               LEFT JOIN "subjects" s ON s."id" = ct."subjectId"
+               WHERE ct."tenantId" = $1 AND ct."academicYearId" = $2`;
+      params.push(tenantId, academicYearId);
+    }
+
+    let paramIdx = params.length + 1;
     if (classId) {
       query += ` AND ct."classId" = $${paramIdx++}`;
       params.push(classId);

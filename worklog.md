@@ -380,3 +380,81 @@ Prochaines étapes recommandées:
 2. Tester à nouveau en tant que promoteur → vérifier que l'Appel sauvegarde
 3. Tester en tant qu'enseignant (dawesakpovi@gmail.com) → vérifier que les classes s'affichent
 4. Tester Cahier Journal → vérifier que les matières s'affichent
+
+---
+Task ID: fix-teacher-classes-physicalClass-auto-save-fk-logout
+Agent: Main (Super Z)
+Task: Corriger 3 problèmes identifiés via tests agent-browser + logs Fly.io : (1) enseignant voyait 0 classe, (2) auto-save Appel échouait (FK violation), (3) pas de bouton déconnexion.
+
+Work Log:
+- Analyse des logs Fly.io fournis par l'utilisateur :
+  * `[getMyClasses] Aucun profil Teacher pour user.role=PROMOTER` (OK — promoteur en mode direction)
+  * `Foreign key constraint violated on the constraint: attendance_records_schoolLevelId_fkey`
+  * `Invalid prisma.attendanceRecord.create() invocation`
+  → Le backend était bien redéployé après le fix @Public(), mais deux nouveaux bugs sont apparus
+
+- BUG 1 (CRITIQUE) : Enseignant voyait '0 classe assignée' malgré des affectations
+  * Test login enseignant (dawesakpovi@gmail.com / NeufMont111) → OK, redirect /app/teacher
+  * Test API my-classes avec token enseignant → erreur Prisma sur `include: { class: ... }`
+  * ROOT CAUSE : Prisma schema TeacherClassAssignment nomme la relation `physicalClass`
+    (via `@relation("TeacherClassAssignmentPhysicalClass")`) mais le service utilisait
+    `include: { class: ... }` et `a.class.id` → Prisma ne reconnaît pas la relation
+  * Fix (apps/api-server/src/pedagogy/pedagogical-space.service.ts) :
+    - `include: { class: ... }` → `include: { physicalClass: ... }`
+    - Toutes les références `a.class.id`, `a.class.name`, etc. → `a.physicalClass.id`, `a.physicalClass.name`, etc.
+
+- BUG 2 : Auto-save Appel échouait avec FK violation sur schoolLevelId
+  * Cause : Quand 'Tous les niveaux' est sélectionné, `schoolLevelId` est vide côté frontend
+  * Prisma essaie d'insérer '' comme FK → violation
+  * Fix (saveDailyAttendance dans pedagogical-space.service.ts) :
+    - Si schoolLevelId est vide, résoudre depuis la classe (prisma.class.findFirst → schoolLevelId)
+    - Fallback : chercher via AcademicClass (cas où classId est un AcademicClass.id)
+    - Si toujours vide → BadRequestException avec message clair
+    - Utiliser `resolvedSchoolLevelId` dans le `prisma.attendanceRecord.create()`
+
+- BUG 3 : Pas de bouton déconnexion dans portails enseignant et parent
+  * Fix (apps/web-app/src/app/app/teacher/layout.tsx) :
+    - Ajout import useState, useRouter, LogOut
+    - Ajout handleLogout() : POST /api/auth/logout puis window.location.href = '/login'
+    - Ajout bouton "Se déconnecter" (rouge, icône LogOut) dans le footer de la sidebar
+    - Confirmation avant déconnexion + état "Déconnexion…" pendant l'appel
+  * Fix (apps/web-app/src/app/app/parent/layout.tsx) :
+    - Même pattern pour le portail parent
+
+- BONUS : Migration Prisma pour relation manquante ClassLog.class → Class
+  * La table `pedagogy_class_logs` avait `classId` mais pas de relation `class` déclarée
+  * Le service utilisait `include: { class: ... }` qui aurait échoué aussi pour ClassLog
+  * Fix schema.prisma :
+    - Ajout `class Class @relation(fields: [classId], references: [id])` dans ClassLog
+    - Ajout `classLogs ClassLog[]` dans Class (reverse relation)
+  * Migration 20260721180000_classlog_class_relation créée (SELECT 1 — pas d'action SQL)
+
+- TESTS AGENT-BROWSER (après redéploiement Vercel réussi) :
+  * Login enseignant (dawesakpovi@gmail.com) → /app/teacher ✅
+  * Snapshot sidebar enseignant → bouton "Se déconnecter" visible ✅
+  * Onglet Espace Pédagogique → tabs disponibles ✅
+  * Onglet Appel → "Auto-save actif (5s)", "Enregistrer maintenant", bannière info ✅
+  * ⚠️ Backend non encore redéployé sur Fly.io → "0 classe assignée" toujours affiché
+
+Stage Summary:
+- ✅ 3 bugs corrigés : teacher physicalClass, FK schoolLevelId, bouton déconnexion
+- ✅ Frontend redéployé sur Vercel — bouton "Se déconnecter" visible ✅
+- ✅ UI AttendanceTab avec auto-save confirmée fonctionnelle (badge, bannière)
+- ⚠️ BACKEND NON DÉPLOYÉ sur Fly.io — nécessite intervention manuelle
+
+⚠️ ACTION REQUISE (utilisateur) :
+  Déployer manuellement le backend sur Fly.io :
+    cd /home/z/my-project/apps/api-server
+    flyctl deploy -a academia-helm-api --strategy rolling
+  
+  Avant de déployer, il FAUT régénérer le client Prisma (pour prendre en compte
+  la nouvelle relation ClassLog.class) :
+    cd /home/z/my-project/apps/api-server
+    npx prisma generate
+    npx prisma migrate deploy --schema=prisma/schema.prisma
+    flyctl deploy -a academia-helm-api --strategy rolling
+  
+  Une fois le backend redéployé :
+  - L'enseignant Saliou verra ses classes assignées (2 classes)
+  - L'auto-save de l'Appel fonctionnera réellement (badge "Enregistré à HH:MM:SS")
+  - Le select matières du Cahier Journal affichera les matières

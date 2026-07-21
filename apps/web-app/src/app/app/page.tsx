@@ -40,21 +40,44 @@ export default async function AppPage() {
     redirect('/app/parent');
   }
 
-  // Afficher le dashboard selon le rôle (pour les rôles admin/direction)
+  // Afficher le dashboard selon le rôle (pour les rôles admin/direction/finance)
   const renderDashboard = () => {
     switch (user.role) {
       case 'PLATFORM_OWNER':
       case 'PLATFORM_ADMIN':
       case 'SUPER_DIRECTOR':
       case 'director':
+      case 'DIRECTEUR_GENERAL':
+      case 'DIRECTEUR_ETABLISSEMENT':
+      case 'DIRECTEUR':
+      case 'DIRECTOR_GENERAL':
+      case 'SCHOOL_DIRECTOR':
+      case 'DEPUTY_DIRECTOR':
         return <DirectorDashboard tenantId={tenantId} />;
       case 'PROMOTER':
       case 'PROMOTEUR':
         return <PromoterDashboard tenantId={tenantId} />;
+      case 'COMPTABLE':
+      case 'ACCOUNTANT':
+      case 'SECRETAIRE_COMPTABLE':
+      case 'CFO':
+      case 'FINANCE_MANAGER':
+      case 'CASHIER':
+      case 'CAISSIER':
+      case 'ECONOME':
+      case 'RECOVERY_MANAGER':
       case 'accountant':
         return <AccountantDashboard />;
+      // Les secrétaires, surveillants, et autres rôles voient le dashboard admin
+      case 'SECRETAIRE':
+      case 'SECRETAIRE_GENERAL':
+      case 'SURVEILLANT':
+      case 'SURVEILLANT_GENERAL':
+      case 'CENSEUR':
+      case 'SCHOOL_LIFE_MANAGER':
       case 'admin':
-        return <AdminDashboard />;
+      case 'SCHOOL_ADMIN':
+      case 'SCHOOL_OWNER':
       default:
         return <AdminDashboard />;
     }

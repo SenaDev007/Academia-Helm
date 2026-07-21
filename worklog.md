@@ -291,3 +291,92 @@ Prochaines étapes recommandées:
 2. Rafraîchir la page /app/pedagogy/production — l'Espace Pédagogique devrait maintenant afficher les classes (via le backend getAllClassesForTenant déjà déployé)
 3. Tester les sous-onglets (Mes Classes, Appel, Cahier Journal, Fiches, etc.) — devraient tous afficher les données du tenant
 4. Vérifier /app/pedagogy/timetables → onglets Contraintes et Génération → termes français accessibles
+
+---
+Task ID: fix-tenantId-resolution-auto-save-apnel-teacher-classes
+Agent: Main (Super Z)
+Task: Corriger 3 problèmes : (1) enseignant voit 0 classe malgré affectations, (2) bouton Enregistrer de l'Appel ne marche pas + auto-save 5s, (3) select matières vide dans Cahier Journal.
+
+Work Log:
+- Diagnostic via API directe (curl avec token promoteur) :
+  * Test avec teacherId = profile ID direct → erreur Prisma 'tenantId: undefined'
+  * Test avec teacherId = user ID (frontend) → même erreur
+  * Test avec x-tenant-id header explicite → même erreur
+- ROOT CAUSE IDENTIFIED (bug critique côté backend) :
+  PedagogicalSpaceController était décoré @Public() → JwtAuthGuard ET TenantGuard
+  n'étaient JAMAIS exécutés → request.user et request.tenantId restaient undefined
+  → @TenantId() decorator renvoyait undefined → Prisma plantait avec 'where: { tenantId: undefined }'.
+  
+  Note : Le promoteur voyait les classes par accident car resolveTeacherId passait
+  en mode 'all' (aucun Teacher trouvé pour son user.id), et getAllClassesForTenant
+  récupérait toutes les classes sans filtre tenantId. Mais saveDailyAttendance et
+  getAvailableSubjectsForClass plantaient silencieusement (tenantId: undefined
+  → 0 résultat en SQL).
+
+- FIX BACKEND : apps/api-server/src/pedagogy/pedagogical-space.controller.ts
+  * Remplacé `@Public()` par `@UseGuards(JwtAuthGuard, TenantGuard)`
+  * Ajouté imports : UseGuards (nestjs/common), JwtAuthGuard, TenantGuard
+  * Supprimé l'import de Public (non utilisé)
+  * Maintenant : request.user est peuplé depuis le JWT, request.tenantId est
+    extrait par TenantGuard → tous les @TenantId() renvoient la bonne valeur
+  * Impact : tous les endpoints /pedagogy-space/* fonctionnent correctement
+    (my-classes, attendance, subjects/available, cahier-journal, etc.)
+
+- FIX FRONTEND : apps/web-app/src/components/pedagogy/production/AttendanceTab.tsx
+  * ⭐ Auto-save toutes les 5 secondes :
+    - Ref isDirtyRef pour tracker les modifications
+    - useEffect avec setInterval(5000) qui appelle handleSave(silent=true)
+    - Si pas de changements ou déjà en train de sauvegarder → skip
+    - Sauvegarde silencieuse (pas de toast) pour l'auto-save
+  * ⭐ Sauvegarde avant déchargement :
+    - Event listener 'beforeunload' → navigator.sendBeacon avec le payload
+    - Sauvegarde les changements en cours même si l'utilisateur quitte la page
+  * ⭐ Badge visuel d'état (4 états) :
+    - idle : "Auto-save actif (5s)" avec icône Clock
+    - saving : "Enregistrement…" avec icône Cloud animée
+    - saved : "Enregistré à HH:MM:SS" avec icône CheckCircle2
+    - error : "Erreur — réessayer" avec icône CloudOff
+  * ⭐ Boutons statut clarifiés :
+    - "P" → "Présent", "A" → "Absent", "R" → "Retard"
+    - Plus large (px-3 py-1.5 au lieu de px-2 py-1)
+  * ⭐ Bannière info expliquant l'auto-save
+  * ⭐ Bouton renommé "Enregistrer" → "Enregistrer maintenant"
+  * Refactoring : useCallback pour handleSave (reused par bouton + auto-save),
+    studentsRef pour éviter stale closure
+
+- TESTS AGENT-BROWSER (après redéploiement Vercel réussi) :
+  * Login promoteur → /app/pedagogy/production → "13 classe(s) assignée(s)"
+  * Onglet Appel → badge "Auto-save actif (5s)" + bouton "Enregistrer maintenant"
+  * Boutons statut : "Présent / Absent / Retard" (au lieu de P/A/R)
+  * Bannière info "Enregistrement automatique : Vos modifications sont sauvegardées
+    automatiquement toutes les 5 secondes..."
+  * Clic sur "Absent" → compteur passe à 1 Absent
+  * Attente 6s → badge passe à "Enregistrement…" (auto-save déclenché)
+  * ⚠️ Backend non encore redéployé sur Fly.io → l'enregistrement timeout après 8s
+    (Le contrôleur a toujours @Public() côté production)
+
+Stage Summary:
+- ✅ Cause racine identifiée : @Public() bypassait JwtAuthGuard + TenantGuard
+- ✅ Fix backend appliqué : remplacé par @UseGuards(JwtAuthGuard, TenantGuard)
+- ✅ Fix frontend AttendanceTab : auto-save 5s + badge + UX clarifiée
+- ✅ Frontend redéployé sur Vercel avec succès (auto-deploy from git push)
+- ✅ Tests agent-browser confirment l'UI auto-save fonctionnelle
+- ⚠️ BACKEND NON DÉPLOYÉ sur Fly.io — nécessite intervention manuelle
+
+⚠️ ACTION REQUISE (utilisateur) :
+  Déployer manuellement le backend sur Fly.io avec flyctl :
+    cd /home/z/my-project/apps/api-server
+    flyctl deploy -a academia-helm-api --strategy rolling
+  
+  (Nécessite flyctl authentifié : `flyctl auth login`)
+  
+  Une fois déployé :
+  - L'onglet Appel pourra enfin sauvegarder (auto-save + bouton)
+  - L'onglet Cahier Journal affichera les matières (select non vide)
+  - Les enseignants verront leurs classes assignées (resolveTeacherId avec tenantId correct)
+
+Prochaines étapes recommandées:
+1. Déployer backend Fly.io ( commande ci-dessus )
+2. Tester à nouveau en tant que promoteur → vérifier que l'Appel sauvegarde
+3. Tester en tant qu'enseignant (dawesakpovi@gmail.com) → vérifier que les classes s'affichent
+4. Tester Cahier Journal → vérifier que les matières s'affichent

@@ -332,7 +332,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
     setLoadingSubjects(true);
     try {
       const res = await fetch(
-        `/api/pedagogy-space/subjects/available?academicYearId=${academicYearId}&classId=${selectedClassId}`,
+        `/api/pedagogy-space/subjects/available?academicYearId=${academicYearId}&classId=${selectedClassId}&teacherId=${teacherId}`,
         { credentials: "include" }
       );
       const data = await res.json();
@@ -342,7 +342,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
     } finally {
       setLoadingSubjects(false);
     }
-  }, [academicYearId, selectedClassId]);
+  }, [academicYearId, selectedClassId, teacherId]);
 
   // === Ouvrir la modale de config des matières ===
   const openSubjectConfig = () => {

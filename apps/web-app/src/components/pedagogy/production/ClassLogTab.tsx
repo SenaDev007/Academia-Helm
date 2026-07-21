@@ -55,7 +55,7 @@ export function ClassLogTab({ tenantId, academicYearId, teacherId }: ClassLogTab
       setLoadingSubjects(true);
       try {
         const res = await fetch(
-          `/api/pedagogy-space/subjects/available?academicYearId=${academicYearId}&classId=${form.classId}`,
+          `/api/pedagogy-space/subjects/available?academicYearId=${academicYearId}&classId=${form.classId}&teacherId=${teacherId}`,
           { credentials: "include" }
         );
         const data = await res.json();
@@ -71,7 +71,7 @@ export function ClassLogTab({ tenantId, academicYearId, teacherId }: ClassLogTab
     // Reset subjectId when class changes
     setForm(prev => ({ ...prev, subjectId: "" }));
     return () => { cancelled = true; };
-  }, [form.classId, academicYearId]);
+  }, [form.classId, academicYearId, teacherId]);
 
   const handleCreate = async () => {
     if (!form.classId || !form.subjectId || !form.topic) {

@@ -726,11 +726,12 @@ export class PedagogicalSpaceController {
     @TenantId() tenantId: string,
     @Query('academicYearId') academicYearId: string,
     @Query('classId') classId: string,
+    @Query('teacherId') teacherId: string,
   ) {
     if (!academicYearId || !classId) {
       throw new BadRequestException('academicYearId et classId sont requis');
     }
-    return this.service.getAvailableSubjectsForClass(tenantId, academicYearId, classId);
+    return this.service.getAvailableSubjectsForClass(tenantId, academicYearId, classId, teacherId);
   }
 
   @Put('monthly-evaluations/:id/subjects')

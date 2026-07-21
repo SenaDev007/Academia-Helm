@@ -41,22 +41,27 @@ import { AttendanceRegisterTab } from "./AttendanceRegisterTab";
 import { CahierDeTexteTab } from "./CahierDeTexteTab";
 import { HomeworkTab } from "./HomeworkTab";
 
-const TABS = [
-  { id: 'classes', label: 'Mes Classes', icon: Users, description: 'Effectifs & élèves' },
-  { id: 'attendance', label: 'Appel', icon: CalendarCheck, description: 'Présences journalières' },
-  // ⭐ SUPPRIMÉ : onglet 'Cahier Journal' (classlog) — remplacé par 'Cahier Journal Hebdo'
-  // qui est le vrai cahier journal officiel (grille 5 jours × matières).
-  // L'ancien ClassLogTab était un simple journal de séances (topic, contenu, etc.)
-  // sans format officiel — il est conservé dans le code mais masqué de l'UI.
-  { id: 'cahier-journal', label: 'Cahier Journal', icon: FileSpreadsheet, description: 'Grille hebdomadaire 5j × 8 matières' },
-  { id: 'weekly', label: 'Cahier de Semaine', icon: CalendarDays, description: 'Monitoring institutionnel' },
-  { id: 'fiches', label: 'Fiches Pédagogiques', icon: FileText, description: '5 types (MATH/FR/EST/ES/EA)' },
-  { id: 'registre', label: 'Registre d\'Appel', icon: ClipboardList, description: 'Registre mensuel + évaluations' },
-  { id: 'cahier-texte', label: 'Cahier de Texte', icon: ClipboardCheck, description: 'Évaluations (secondaire)' },
-  { id: 'homework', label: 'Devoirs', icon: BookOpen, description: 'Exercices & suivi' },
+// ⭐ Ordre des onglets demandé par l'utilisateur :
+//   1. Mes Classes
+//   2. Appel (présences journalières)
+//   3. Registre d'Appel (registre mensuel + évaluations)
+//   4. Cahier Journal (grille hebdo 5j × 8 matières)
+//   5. Fiches Pédagogiques
+//   6. Cahier de Semaine (monitoring institutionnel)
+//   7. Devoirs
+//   8. Cahier de Texte (secondaire uniquement — masqué pour primaire/maternelle)
+const ALL_TABS = [
+  { id: 'classes', label: 'Mes Classes', icon: Users, description: 'Effectifs & élèves', secondaryOnly: false },
+  { id: 'attendance', label: 'Appel', icon: CalendarCheck, description: 'Présences journalières', secondaryOnly: false },
+  { id: 'registre', label: 'Registre d\'Appel', icon: ClipboardList, description: 'Registre mensuel + évaluations', secondaryOnly: false },
+  { id: 'cahier-journal', label: 'Cahier Journal', icon: FileSpreadsheet, description: 'Grille hebdomadaire 5j × 8 matières', secondaryOnly: false },
+  { id: 'fiches', label: 'Fiches Pédagogiques', icon: FileText, description: '5 types (MATH/FR/EST/ES/EA)', secondaryOnly: false },
+  { id: 'weekly', label: 'Cahier de Semaine', icon: CalendarDays, description: 'Monitoring institutionnel', secondaryOnly: false },
+  { id: 'homework', label: 'Devoirs', icon: BookOpen, description: 'Exercices & suivi', secondaryOnly: false },
+  { id: 'cahier-texte', label: 'Cahier de Texte', icon: ClipboardCheck, description: 'Évaluations (secondaire)', secondaryOnly: true },
 ] as const;
 
-type TabId = typeof TABS[number]['id'];
+type TabId = typeof ALL_TABS[number]['id'];
 
 export function PedagogicalSpaceWorkspace({
   tenantId: propTenantId,
@@ -80,6 +85,18 @@ export function PedagogicalSpaceWorkspace({
   const teacherId = propTeacherId || user?.teacherId || user?.id || '';
   const resolvedTenantId = propTenantId || tenant?.id || user?.tenantId || '';
   const resolvedAcademicYearId = propAcademicYearId || academicYear?.id || '';
+
+  // ⭐ Déterminer si le niveau scolaire actif est "Secondaire"
+  // pour afficher/masquer l'onglet "Cahier de Texte" (secondaire uniquement).
+  // schoolLevel.code peut être 'MATERNELLE', 'PRIMAIRE', 'SECONDAIRE', 'COLLEGE', 'LYCEE'
+  const schoolLevelCode = (schoolLevel?.code || '').toUpperCase();
+  const isSecondaryLevel =
+    schoolLevelCode.includes('SECOND') ||
+    schoolLevelCode.includes('COLLEGE') ||
+    schoolLevelCode.includes('LYCEE');
+
+  // Filtrer les onglets visibles selon le niveau scolaire
+  const TABS = ALL_TABS.filter(t => !t.secondaryOnly || isSecondaryLevel);
 
   if (!resolvedAcademicYearId) {
     return (

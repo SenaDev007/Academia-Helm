@@ -195,8 +195,11 @@ export class PedagogicalSpaceService {
                 id: true,
                 name: true,
                 code: true,
-                schoolLevelId: true,
-                schoolLevel: { select: { id: true, name: true, code: true } },
+                // ⭐ AcademicClass utilise `levelId` (relation `level` vers AcademicLevel)
+                // et NON `schoolLevelId` (qui est sur le modèle Class physique).
+                levelId: true,
+                level: { select: { id: true, name: true } },
+                languageTrack: true,
                 physicalClasses: {
                   select: {
                     id: true,
@@ -269,9 +272,10 @@ export class PedagogicalSpaceService {
               classId: ac.id,
               className: ac.name,
               capacity: ac.capacity,
-              schoolLevelId: ac.schoolLevelId,
-              schoolLevelName: ac.schoolLevel?.name || '',
-              schoolLevelCode: ac.schoolLevel?.code || '',
+              // ⭐ AcademicClass utilise `levelId` (relation `level` vers AcademicLevel)
+              schoolLevelId: ac.levelId,
+              schoolLevelName: ac.level?.name || '',
+              schoolLevelCode: '',
               subjects: a.classSubject?.subject
                 ? [{
                     subjectId: a.classSubject.subjectId,
@@ -544,9 +548,10 @@ export class PedagogicalSpaceService {
           classId: ac.id,
           className: ac.name,
           capacity: ac.capacity,
-          schoolLevelId: ac.schoolLevelId,
-          schoolLevelName: ac.schoolLevel?.name || '',
-          schoolLevelCode: ac.schoolLevel?.code || '',
+          // ⭐ AcademicClass utilise `levelId` (relation `level` vers AcademicLevel)
+          schoolLevelId: ac.levelId,
+          schoolLevelName: ac.level?.name || '',
+          schoolLevelCode: '',
           subjects: [],
           totalStudents: enrollments.length,
           boys: enrollments.filter((e) => e.student?.gender === 'M').length,
@@ -3041,7 +3046,32 @@ export class PedagogicalSpaceService {
     tenantId: string,
     academicYearId: string,
     classId: string,
+    teacherId?: string,
   ) {
+    // ─── Étape 0 : résoudre la piste linguistique de l'enseignant
+    // (FR = français, EN = anglais). On ne doit afficher QUE les matières
+    // correspondant à la piste linguistique de l'enseignant connecté.
+    // Ex : un enseignant FR ne doit pas voir les matières "English Language" (EN).
+    let teacherLanguages: string[] = [];
+    if (teacherId) {
+      const { teacherId: resolvedTid } = await this.resolveTeacherId(tenantId, teacherId);
+      const tid = resolvedTid || teacherId;
+      const teacher: any = await this.prisma.$queryRawUnsafe(
+        `SELECT "assignedLanguages" FROM teachers WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
+        tid, tenantId,
+      );
+      if (teacher && teacher.length > 0 && teacher[0].assignedLanguages) {
+        const raw = teacher[0].assignedLanguages;
+        try {
+          teacherLanguages = typeof raw === 'string' ? JSON.parse(raw) : raw;
+          if (!Array.isArray(teacherLanguages)) teacherLanguages = [];
+        } catch { teacherLanguages = []; }
+      }
+    }
+    // Si on n'a pas pu résoudre les langues de l'enseignant, on ne filtre pas
+    // (fail-open : on affiche toutes les matières).
+    const langFilterActive = teacherLanguages.length > 0;
+
     // ─── Étape 1 : résoudre l'AcademicClass.id (officiel) depuis le classId
     // passé par le frontend. Le frontend peut passer soit un physical class ID
     // (table `classes`), soit directement un AcademicClass ID.
@@ -3070,15 +3100,31 @@ export class PedagogicalSpaceService {
     // ─── Étape 2 : chercher les matières via academicClassId (source principale)
     // C'est le cas normal : les class_subjects sont rattachés à l'AcademicClass.
     if (academicClassId) {
-      const subjects: any = await this.prisma.$queryRawUnsafe(
-        `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
-                cs."coefficient", cs."weeklyHours"
-         FROM "subjects" s
-         INNER JOIN "class_subjects" cs ON cs."subjectId" = s."id"
-         WHERE cs."tenantId" = $1 AND cs."academicYearId" = $2 AND cs."academicClassId" = $3
-         ORDER BY s."name"`,
-        tenantId, academicYearId, academicClassId,
-      );
+      let subjects: any;
+      if (langFilterActive) {
+        // ⭐ Filtre par piste linguistique de l'enseignant (FR ou EN)
+        // Subject.language contient 'FR' ou 'EN' (ou NULL = commun aux deux pistes)
+        subjects = await this.prisma.$queryRawUnsafe(
+          `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
+                  cs."coefficient", cs."weeklyHours"
+           FROM "subjects" s
+           INNER JOIN "class_subjects" cs ON cs."subjectId" = s."id"
+           WHERE cs."tenantId" = $1 AND cs."academicYearId" = $2 AND cs."academicClassId" = $3
+             AND (s."language" IS NULL OR s."language" = '' OR s."language" = ANY($4::text[]))
+           ORDER BY s."name"`,
+          tenantId, academicYearId, academicClassId, teacherLanguages,
+        );
+      } else {
+        subjects = await this.prisma.$queryRawUnsafe(
+          `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
+                  cs."coefficient", cs."weeklyHours"
+           FROM "subjects" s
+           INNER JOIN "class_subjects" cs ON cs."subjectId" = s."id"
+           WHERE cs."tenantId" = $1 AND cs."academicYearId" = $2 AND cs."academicClassId" = $3
+           ORDER BY s."name"`,
+          tenantId, academicYearId, academicClassId,
+        );
+      }
       if (subjects && subjects.length > 0) {
         return subjects;
       }
@@ -3087,15 +3133,29 @@ export class PedagogicalSpaceService {
     // ─── Étape 3 : chercher via classId (fallback, si class_subjects.classId est peuplé)
     if (physicalClassId || classId) {
       const cid = physicalClassId || classId;
-      const subjects: any = await this.prisma.$queryRawUnsafe(
-        `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
-                cs."coefficient", cs."weeklyHours"
-         FROM "subjects" s
-         INNER JOIN "class_subjects" cs ON cs."subjectId" = s."id"
-         WHERE cs."tenantId" = $1 AND cs."academicYearId" = $2 AND cs."classId" = $3
-         ORDER BY s."name"`,
-        tenantId, academicYearId, cid,
-      );
+      let subjects: any;
+      if (langFilterActive) {
+        subjects = await this.prisma.$queryRawUnsafe(
+          `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
+                  cs."coefficient", cs."weeklyHours"
+           FROM "subjects" s
+           INNER JOIN "class_subjects" cs ON cs."subjectId" = s."id"
+           WHERE cs."tenantId" = $1 AND cs."academicYearId" = $2 AND cs."classId" = $3
+             AND (s."language" IS NULL OR s."language" = '' OR s."language" = ANY($4::text[]))
+           ORDER BY s."name"`,
+          tenantId, academicYearId, cid, teacherLanguages,
+        );
+      } else {
+        subjects = await this.prisma.$queryRawUnsafe(
+          `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
+                  cs."coefficient", cs."weeklyHours"
+           FROM "subjects" s
+           INNER JOIN "class_subjects" cs ON cs."subjectId" = s."id"
+           WHERE cs."tenantId" = $1 AND cs."academicYearId" = $2 AND cs."classId" = $3
+           ORDER BY s."name"`,
+          tenantId, academicYearId, cid,
+        );
+      }
       if (subjects && subjects.length > 0) {
         return subjects;
       }
@@ -3105,16 +3165,31 @@ export class PedagogicalSpaceService {
     // (un enseignant a été affecté à la classe avec une matière via ClassSubject)
     if (physicalClassId || classId) {
       const cid = physicalClassId || classId;
-      const fallbackSubjects: any = await this.prisma.$queryRawUnsafe(
-        `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
-                tca."classSubjectId"
-         FROM "subjects" s
-         INNER JOIN "teacher_class_assignments" tca ON tca."classSubjectId" IS NOT NULL
-         INNER JOIN "class_subjects" cs ON cs."id" = tca."classSubjectId" AND cs."subjectId" = s."id"
-         WHERE tca."tenantId" = $1 AND tca."academicYearId" = $2 AND tca."classId" = $3
-         ORDER BY s."name"`,
-        tenantId, academicYearId, cid,
-      );
+      let fallbackSubjects: any;
+      if (langFilterActive) {
+        fallbackSubjects = await this.prisma.$queryRawUnsafe(
+          `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
+                  tca."classSubjectId"
+           FROM "subjects" s
+           INNER JOIN "teacher_class_assignments" tca ON tca."classSubjectId" IS NOT NULL
+           INNER JOIN "class_subjects" cs ON cs."id" = tca."classSubjectId" AND cs."subjectId" = s."id"
+           WHERE tca."tenantId" = $1 AND tca."academicYearId" = $2 AND tca."classId" = $3
+             AND (s."language" IS NULL OR s."language" = '' OR s."language" = ANY($4::text[]))
+           ORDER BY s."name"`,
+          tenantId, academicYearId, cid, teacherLanguages,
+        );
+      } else {
+        fallbackSubjects = await this.prisma.$queryRawUnsafe(
+          `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
+                  tca."classSubjectId"
+           FROM "subjects" s
+           INNER JOIN "teacher_class_assignments" tca ON tca."classSubjectId" IS NOT NULL
+           INNER JOIN "class_subjects" cs ON cs."id" = tca."classSubjectId" AND cs."subjectId" = s."id"
+           WHERE tca."tenantId" = $1 AND tca."academicYearId" = $2 AND tca."classId" = $3
+           ORDER BY s."name"`,
+          tenantId, academicYearId, cid,
+        );
+      }
       if (fallbackSubjects && fallbackSubjects.length > 0) {
         return fallbackSubjects.map((row: any) => ({
           subjectId: row.subjectId,
@@ -3129,13 +3204,25 @@ export class PedagogicalSpaceService {
     // ─── Étape 5 : dernière source — toutes les matières du tenant (au niveau école)
     // → permet à l'enseignant de choisir parmi toutes les matières déclarées
     // par l'établissement, même si elles ne sont pas encore assignées à cette classe
-    const tenantSubjects: any = await this.prisma.$queryRawUnsafe(
-      `SELECT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode"
-       FROM "subjects" s
-       WHERE s."tenantId" = $1
-       ORDER BY s."name"`,
-      tenantId,
-    );
+    let tenantSubjects: any;
+    if (langFilterActive) {
+      tenantSubjects = await this.prisma.$queryRawUnsafe(
+        `SELECT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode"
+         FROM "subjects" s
+         WHERE s."tenantId" = $1
+           AND (s."language" IS NULL OR s."language" = '' OR s."language" = ANY($2::text[]))
+         ORDER BY s."name"`,
+        tenantId, teacherLanguages,
+      );
+    } else {
+      tenantSubjects = await this.prisma.$queryRawUnsafe(
+        `SELECT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode"
+         FROM "subjects" s
+         WHERE s."tenantId" = $1
+         ORDER BY s."name"`,
+        tenantId,
+      );
+    }
 
     return tenantSubjects || [];
   }

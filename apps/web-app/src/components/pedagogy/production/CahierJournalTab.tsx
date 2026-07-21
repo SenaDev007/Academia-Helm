@@ -116,7 +116,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
     (async () => {
       try {
         const res = await fetch(
-          `/api/pedagogy-space/subjects/available?academicYearId=${academicYearId}&classId=${selectedClassId}`,
+          `/api/pedagogy-space/subjects/available?academicYearId=${academicYearId}&classId=${selectedClassId}&teacherId=${teacherId}`,
           { credentials: "include" }
         );
         const data = await res.json();
@@ -125,7 +125,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
         setDynamicSubjects([]);
       }
     })();
-  }, [selectedClassId, academicYearId]);
+  }, [selectedClassId, academicYearId, teacherId]);
 
   // Répartir les matières en 2 pages (recto = première moitié, verso = seconde moitié)
   const RECTO_SUBJECTS = dynamicSubjects.slice(0, Math.ceil(dynamicSubjects.length / 2));

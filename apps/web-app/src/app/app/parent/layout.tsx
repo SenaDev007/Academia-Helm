@@ -21,11 +21,13 @@
 
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { useModuleContext } from "@/hooks/useModuleContext";
+import { useSchoolIdentity } from "@/hooks/useSchoolIdentity";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, CreditCard, FileText,
   CalendarCheck, MessageSquare, Folder, Loader2, Heart,
+  Building2, Phone, Mail, MapPin, GraduationCap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -40,8 +42,9 @@ const PARENT_MODULES = [
 ];
 
 export default function ParentLayout({ children }: { children: React.ReactNode }) {
-  const { user } = useAppSession();
+  const { user, tenant } = useAppSession();
   const { academicYear } = useModuleContext();
+  const { identity: school } = useSchoolIdentity();
   const pathname = usePathname();
 
   if (!academicYear?.id) {
@@ -58,16 +61,57 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
     <div className="min-h-screen bg-emerald-50/30 flex">
       {/* Sidebar parent */}
       <aside className="w-64 bg-white border-r border-slate-200 flex flex-col fixed inset-y-0 left-0 z-30">
-        {/* Logo + Profil */}
-        <div className="h-16 flex items-center gap-3 px-4 border-b border-slate-200">
-          <div className="h-10 w-10 rounded-full bg-emerald-100 flex items-center justify-center">
-            <Heart className="h-5 w-5 text-emerald-600" />
-          </div>
+        {/* Logo + Nom école + Année scolaire */}
+        <div className="h-20 flex items-center gap-3 px-4 border-b border-slate-200">
+          {school?.logoUrl ? (
+            <img src={school.logoUrl} alt={school.schoolName} className="h-10 w-10 rounded-lg object-cover" />
+          ) : (
+            <div className="h-10 w-10 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+              <Building2 className="h-5 w-5 text-emerald-600" />
+            </div>
+          )}
           <div className="min-w-0">
-            <p className="text-sm font-bold text-slate-900 truncate">{parentName}</p>
-            <p className="text-xs text-slate-500">Parent / Tuteur</p>
+            <p className="text-xs font-bold text-slate-900 truncate">{school?.schoolName || tenant?.name || "École"}</p>
+            <p className="text-[10px] text-slate-400">{academicYear?.label || ""}</p>
           </div>
         </div>
+
+        {/* Profil parent */}
+        <div className="px-4 py-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+              <Heart className="h-4 w-4 text-emerald-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-900 truncate">{parentName}</p>
+              <p className="text-[10px] text-slate-400">Parent / Tuteur</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Coordonnées école */}
+        {school && (school.phone || school.email || school.address) && (
+          <div className="px-4 py-3 border-b border-slate-100 space-y-1">
+            {school.phone && (
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                <Phone className="h-3 w-3" />
+                <span>{school.phone}</span>
+              </div>
+            )}
+            {school.email && (
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                <Mail className="h-3 w-3" />
+                <span className="truncate">{school.email}</span>
+              </div>
+            )}
+            {school.address && (
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                <MapPin className="h-3 w-3" />
+                <span className="truncate">{school.address}</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-1">

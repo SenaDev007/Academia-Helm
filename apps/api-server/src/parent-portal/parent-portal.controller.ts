@@ -70,7 +70,7 @@ export class ParentPortalController {
 
   /**
    * GET /parent/children/:studentId?parentId=X&academicYearId=Y
-   * Détail d'un enfant : infos + effectifs classe + assiduité résumé.
+   * Détail d'un enfant : infos + effectifs classe + assiduité + enseignant titulaire.
    */
   @Get('children/:studentId')
   async getChildDetail(
@@ -102,7 +102,7 @@ export class ParentPortalController {
 
     const student = students[0];
 
-    // Effectifs de la classe (pour contexte)
+    // Effectifs de la classe
     let classStats: any = null;
     if (student.classId) {
       const stats: any = await this.prisma.$queryRawUnsafe(
@@ -117,6 +117,31 @@ export class ParentPortalController {
         student.classId, academicYearId,
       );
       classStats = stats[0] || null;
+    }
+
+    // Enseignant titulaire de la classe
+    let teacher: any = null;
+    if (student.classId) {
+      const teachers: any = await this.prisma.$queryRawUnsafe(
+        `SELECT t."id", t."firstName", t."lastName", t."email", t."phone",
+                t."matricule", u."email" as "userEmail"
+         FROM "teacher_class_assignments" tca
+         INNER JOIN "teachers" t ON t."id" = tca."teacherId"
+         LEFT JOIN "users" u ON u."email" = t."email" AND u."tenantId" = t."tenantId"
+         WHERE tca."tenantId" = $1 AND tca."academicYearId" = $2
+         AND tca."classId" = $3 AND tca."teacherId" IS NOT NULL
+         LIMIT 1`,
+        tenantId, academicYearId, student.classId,
+      );
+      if (teachers && teachers.length > 0) {
+        teacher = {
+          id: teachers[0].id,
+          name: `${teachers[0].firstName} ${teachers[0].lastName}`.trim(),
+          email: teachers[0].email || teachers[0].userEmail || null,
+          phone: teachers[0].phone || null,
+          matricule: teachers[0].matricule || null,
+        };
+      }
     }
 
     // Résumé assiduité (ce mois)
@@ -135,6 +160,7 @@ export class ParentPortalController {
     return {
       ...student,
       classStats,
+      teacher,
       attendance: attendance[0] || { totalDays: 0, present: 0, absent: 0, late: 0 },
     };
   }

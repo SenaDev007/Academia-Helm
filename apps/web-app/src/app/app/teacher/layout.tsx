@@ -22,12 +22,13 @@
 
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { useModuleContext } from "@/hooks/useModuleContext";
+import { useSchoolIdentity } from "@/hooks/useSchoolIdentity";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, BookOpen, CalendarDays, Users, Library,
   Video, ClipboardList, MessageSquare, Loader2, GraduationCap,
-  BarChart3, Settings,
+  BarChart3, Settings, Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -44,8 +45,9 @@ const TEACHER_MODULES = [
 ];
 
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {
-  const { user } = useAppSession();
+  const { user, tenant } = useAppSession();
   const { academicYear } = useModuleContext();
+  const { identity: school } = useSchoolIdentity();
   const pathname = usePathname();
 
   if (!academicYear?.id) {
@@ -62,14 +64,31 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
     <div className="min-h-screen bg-slate-50 flex">
       {/* Sidebar enseignant */}
       <aside className="w-64 bg-white border-r border-slate-200 flex flex-col fixed inset-y-0 left-0 z-30">
-        {/* Logo + Profil */}
-        <div className="h-16 flex items-center gap-3 px-4 border-b border-slate-200">
-          <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-            <GraduationCap className="h-5 w-5 text-blue-600" />
-          </div>
+        {/* Logo + Nom école + Profil */}
+        <div className="h-20 flex items-center gap-3 px-4 border-b border-slate-200">
+          {school?.logoUrl ? (
+            <img src={school.logoUrl} alt={school.schoolName} className="h-10 w-10 rounded-lg object-cover" />
+          ) : (
+            <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+              <Building2 className="h-5 w-5 text-blue-600" />
+            </div>
+          )}
           <div className="min-w-0">
-            <p className="text-sm font-bold text-slate-900 truncate">{teacherName}</p>
-            <p className="text-xs text-slate-500">Portail Enseignant</p>
+            <p className="text-xs font-bold text-slate-900 truncate">{school?.schoolName || tenant?.name || "École"}</p>
+            <p className="text-[10px] text-slate-400">{academicYear?.label || ""}</p>
+          </div>
+        </div>
+
+        {/* Profil enseignant */}
+        <div className="px-4 py-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+              <GraduationCap className="h-4 w-4 text-blue-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-900 truncate">{teacherName}</p>
+              <p className="text-[10px] text-slate-400">Enseignant</p>
+            </div>
           </div>
         </div>
 

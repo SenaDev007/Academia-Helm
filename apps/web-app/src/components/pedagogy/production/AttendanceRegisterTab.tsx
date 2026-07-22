@@ -332,6 +332,28 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
     })();
   }, []);
 
+  // ⭐ Quand les jours fériés changent, recalculer totalPresencesPossibles
+  // et totalPresenceEffectif pour TOUS les élèves.
+  // Le nombre de demi-jours du mois change quand on ajoute/retire des jours fériés,
+  // donc totalPresencesPossibles doit être mis à jour pour chaque élève.
+  useEffect(() => {
+    if (students.length === 0) return;
+    const newDemiJournees = calculateDemiJourneesMois(selectedMonth, selectedYear, holidays);
+    setStudents(prev => prev.map(s => {
+      const totalAbsences = (s.absences || []).reduce((sum: number, a: any) => {
+        if (a.marked === "+") return sum + 2;
+        if (a.marked === "-" || a.marked === "|") return sum + 1;
+        return sum;
+      }, 0);
+      return {
+        ...s,
+        nbDemiJournees: newDemiJournees,
+        totalPresencesPossibles: newDemiJournees,
+        totalPresenceEffectif: newDemiJournees - totalAbsences,
+      };
+    }));
+  }, [holidays, selectedMonth, selectedYear]);
+
   // === Mise à jour d'une case d'absence ===
   // ⭐ FIX CRITIQUE : utiliser studentId (pas idx) pour identifier l'élève.
   // Avant : on utilisait studentIdx (index du tableau TRIÉ) mais setStudents

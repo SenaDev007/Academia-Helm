@@ -25,7 +25,7 @@ export const institutionalExamsService = {
       return { totalEvaluations: 0, completed: 0, pending: 0, averageScore: 0 };
     }
     try {
-      const response = await apiClient.get(`/api/institutional-exams/dashboard/kpi`, {
+      const response = await apiClient.get(`/institutional-exams/dashboard/kpi`, {
         params: { schoolLevelId, academicYearId }
       });
       return response.data;
@@ -41,7 +41,7 @@ export const institutionalExamsService = {
   async getCompletionByClass(schoolLevelId: string, academicYearId: string) {
     if (!networkDetectionService.isConnected()) return [];
     try {
-      const response = await apiClient.get(`/api/institutional-exams/dashboard/completion-by-class`, {
+      const response = await apiClient.get(`/institutional-exams/dashboard/completion-by-class`, {
         params: { schoolLevelId, academicYearId }
       });
       return response.data;
@@ -57,7 +57,7 @@ export const institutionalExamsService = {
   async getAlerts(schoolLevelId: string, academicYearId: string) {
     if (!networkDetectionService.isConnected()) return [];
     try {
-      const response = await apiClient.get(`/api/institutional-exams/dashboard/alerts`, {
+      const response = await apiClient.get(`/institutional-exams/dashboard/alerts`, {
         params: { schoolLevelId, academicYearId }
       });
       return response.data;
@@ -75,7 +75,7 @@ export const institutionalExamsService = {
       return LocalSearchService.search("exams", { tenantId: getTenantId(), filters: params });
     }
     try {
-      const response = await apiClient.get(`/api/institutional-exams/evaluations`, { params });
+      const response = await apiClient.get(`/institutional-exams/evaluations`, { params });
       return response.data;
     } catch (error: any) {
       if (error.isOffline) return LocalSearchService.search("exams", { tenantId: getTenantId(), filters: params });
@@ -88,7 +88,7 @@ export const institutionalExamsService = {
     if (tenantId && !networkDetectionService.isConnected()) {
       return createEntityOffline(tenantId, 'EXAM', data);
     }
-    const response = await apiClient.post(`/api/institutional-exams/evaluations`, data);
+    const response = await apiClient.post(`/institutional-exams/evaluations`, data);
     return response.data;
   },
 
@@ -97,7 +97,7 @@ export const institutionalExamsService = {
     if (tenantId && !networkDetectionService.isConnected()) {
       return updateEntityOffline(tenantId, 'EXAM', id, { status: 'SUBMITTED' });
     }
-    const response = await apiClient.patch(`/api/institutional-exams/evaluations/${id}/submit`);
+    const response = await apiClient.patch(`/institutional-exams/evaluations/${id}/submit`);
     return response.data;
   },
 
@@ -109,7 +109,7 @@ export const institutionalExamsService = {
       return LocalSearchService.search("grades", { tenantId: getTenantId(), filters: { evaluationId } });
     }
     try {
-      const response = await apiClient.get(`/api/institutional-exams/grades/evaluation/${evaluationId}`);
+      const response = await apiClient.get(`/institutional-exams/grades/evaluation/${evaluationId}`);
       return response.data;
     } catch (error: any) {
       if (error.isOffline) return LocalSearchService.search("grades", { tenantId: getTenantId(), filters: { evaluationId } });
@@ -126,7 +126,7 @@ export const institutionalExamsService = {
       }
       return { saved: grades.length };
     }
-    const response = await apiClient.post(`/api/institutional-exams/grades/evaluation/${evaluationId}/bulk`, grades);
+    const response = await apiClient.post(`/institutional-exams/grades/evaluation/${evaluationId}/bulk`, grades);
     return response.data;
   },
 
@@ -136,7 +136,7 @@ export const institutionalExamsService = {
   async getPendingValidations(schoolLevelId: string, academicYearId: string, language?: 'FR' | 'EN') {
     if (!networkDetectionService.isConnected()) return [];
     try {
-      const response = await apiClient.get(`/api/institutional-exams/validation/pending`, {
+      const response = await apiClient.get(`/institutional-exams/validation/pending`, {
         params: { schoolLevelId, academicYearId, ...(language ? { language } : {}) }
       });
       return response.data;
@@ -147,12 +147,12 @@ export const institutionalExamsService = {
   },
 
   async approveBatch(batchId: string, comment?: string) {
-    const response = await apiClient.patch(`/api/institutional-exams/validation/batch/${batchId}/approve`, { comment });
+    const response = await apiClient.patch(`/institutional-exams/validation/batch/${batchId}/approve`, { comment });
     return response.data;
   },
 
   async rejectBatch(batchId: string, comment: string) {
-    const response = await apiClient.patch(`/api/institutional-exams/validation/batch/${batchId}/reject`, { comment });
+    const response = await apiClient.patch(`/institutional-exams/validation/batch/${batchId}/reject`, { comment });
     return response.data;
   },
 
@@ -162,7 +162,7 @@ export const institutionalExamsService = {
   async getClassBulletins(classId: string, periodId: string) {
     if (!networkDetectionService.isConnected()) return [];
     try {
-      const response = await apiClient.get(`/api/institutional-exams/bulletins/class/${classId}`, {
+      const response = await apiClient.get(`/institutional-exams/bulletins/class/${classId}`, {
         params: { periodId }
       });
       return response.data;
@@ -173,12 +173,12 @@ export const institutionalExamsService = {
   },
 
   async generateBulletins(classId: string, periodId: string) {
-    const response = await apiClient.post(`/api/institutional-exams/bulletins/class/${classId}/generate`, { periodId });
+    const response = await apiClient.post(`/institutional-exams/bulletins/class/${classId}/generate`, { periodId });
     return response.data;
   },
 
   async publishBulletins(classId: string, periodId: string) {
-    const response = await apiClient.patch(`/api/institutional-exams/bulletins/class/${classId}/publish`, { periodId });
+    const response = await apiClient.patch(`/institutional-exams/bulletins/class/${classId}/publish`, { periodId });
     return response.data;
   },
 
@@ -188,7 +188,7 @@ export const institutionalExamsService = {
   async getEvaluationTypes() {
     if (!networkDetectionService.isConnected()) return [];
     try {
-      const response = await apiClient.get(`/api/institutional-exams/config/evaluation-types`);
+      const response = await apiClient.get(`/institutional-exams/config/evaluation-types`);
       return response.data;
     } catch (error: any) {
       if (error.isOffline) return [];
@@ -197,14 +197,14 @@ export const institutionalExamsService = {
   },
 
   async createEvaluationType(data: any) {
-    const response = await apiClient.post(`/api/institutional-exams/config/evaluation-types`, data);
+    const response = await apiClient.post(`/institutional-exams/config/evaluation-types`, data);
     return response.data;
   },
 
   async getGradeScales() {
     if (!networkDetectionService.isConnected()) return [];
     try {
-      const response = await apiClient.get(`/api/institutional-exams/config/grade-scales`);
+      const response = await apiClient.get(`/institutional-exams/config/grade-scales`);
       return response.data;
     } catch (error: any) {
       if (error.isOffline) return [];
@@ -213,7 +213,7 @@ export const institutionalExamsService = {
   },
 
   async createGradeScale(data: any) {
-    const response = await apiClient.post(`/api/institutional-exams/config/grade-scales`, data);
+    const response = await apiClient.post(`/institutional-exams/config/grade-scales`, data);
     return response.data;
   },
 
@@ -223,7 +223,7 @@ export const institutionalExamsService = {
   async getCouncils(periodId: string) {
     if (!networkDetectionService.isConnected()) return [];
     try {
-      const response = await apiClient.get(`/api/institutional-exams/councils`, { params: { periodId } });
+      const response = await apiClient.get(`/institutional-exams/councils`, { params: { periodId } });
       return response.data;
     } catch (error: any) {
       if (error.isOffline) return [];
@@ -236,7 +236,7 @@ export const institutionalExamsService = {
     if (tenantId && !networkDetectionService.isConnected()) {
       return createEntityOffline(tenantId, 'EXAM', { ...data, type: 'COUNCIL' });
     }
-    const response = await apiClient.post(`/api/institutional-exams/councils`, data);
+    const response = await apiClient.post(`/institutional-exams/councils`, data);
     return response.data;
   },
 
@@ -245,12 +245,12 @@ export const institutionalExamsService = {
     if (tenantId && !networkDetectionService.isConnected()) {
       return createEntityOffline(tenantId, 'EXAM_RESULT', { ...data, councilId, studentId });
     }
-    const response = await apiClient.post(`/api/institutional-exams/councils/${councilId}/decisions/${studentId}`, data);
+    const response = await apiClient.post(`/institutional-exams/councils/${councilId}/decisions/${studentId}`, data);
     return response.data;
   },
 
   async downloadBulletin(studentId: string, periodId: string) {
-    const response = await apiClient.get(`/api/institutional-exams/bulletins/download/${studentId}`, {
+    const response = await apiClient.get(`/institutional-exams/bulletins/download/${studentId}`, {
       params: { periodId },
       responseType: 'blob'
     });
@@ -271,7 +271,7 @@ export const institutionalExamsService = {
   async getAuditLogs(filters: any) {
     if (!networkDetectionService.isConnected()) return [];
     try {
-      const response = await apiClient.get(`/api/institutional-exams/audit/logs`, { params: filters });
+      const response = await apiClient.get(`/institutional-exams/audit/logs`, { params: filters });
       return response.data;
     } catch (error: any) {
       if (error.isOffline) return [];
@@ -282,7 +282,7 @@ export const institutionalExamsService = {
   async getOrionInsights(schoolLevelId: string, academicYearId: string) {
     if (!networkDetectionService.isConnected()) return null;
     try {
-      const response = await apiClient.get(`/api/institutional-exams/dashboard/orion-insights?schoolLevelId=${schoolLevelId}&academicYearId=${academicYearId}`);
+      const response = await apiClient.get(`/institutional-exams/dashboard/orion-insights?schoolLevelId=${schoolLevelId}&academicYearId=${academicYearId}`);
       return response.data;
     } catch (error: any) {
       if (error.isOffline) return null;

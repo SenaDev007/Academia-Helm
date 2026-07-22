@@ -2062,9 +2062,13 @@ export class PedagogicalSpaceService {
     const params: any[] = [];
 
     if (filter.mode === 'teacher') {
+      // ⭐ Le teacherId stocké dans les fiches peut être soit le user.id
+      // (si créé via frontend) soit le teacher.id (si créé via backend).
+      // On cherche avec les DEUX pour ne rien manquer.
       query = `SELECT * FROM "primary_pedagogical_fiches"
-               WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3`;
-      params.push(tenantId, academicYearId, filter.teacherId);
+               WHERE "tenantId" = $1 AND "academicYearId" = $2
+               AND ("teacherId" = $3 OR "teacherId" = $4)`;
+      params.push(tenantId, academicYearId, filter.teacherId, teacherId);
     } else {
       // Mode direction : toutes les fiches du tenant/année
       query = `SELECT * FROM "primary_pedagogical_fiches"
@@ -4243,5 +4247,194 @@ h2{text-align:center;}table{width:100%;border-collapse:collapse;}th,td{border:1p
         await this.puppeteerPool.releasePage(page);
       }
     }
+  }
+}
+
+  // ===========================================================================
+  // CAHIER DU SEMAINIER — Service Methods
+  // ===========================================================================
+
+  async getSeminarConfigs(tenantId: string, academicYearId: string) {
+    const result: any = await this.prisma.$queryRawUnsafe(
+      `SELECT wsc.*, t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+       FROM "weekly_seminar_config" wsc
+       LEFT JOIN "teachers" t ON t."id" = wsc."teacherId"
+       WHERE wsc."tenantId" = $1 AND wsc."academicYearId" = $2
+       ORDER BY wsc."weekNumber" ASC`,
+      tenantId, academicYearId,
+    );
+    return result.map((r: any) => ({
+      ...r,
+      teacherName: r.teacherFirstName ? `${r.teacherFirstName} ${r.teacherLastName}` : null,
+      classIds: typeof r.classIds === 'string' ? JSON.parse(r.classIds) : (r.classIds || []),
+    }));
+  }
+
+  async autoGenerateSeminarConfigs(tenantId: string, academicYearId: string) {
+    // Récupérer l'année scolaire pour les dates de début
+    const academicYear: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "academic_years" WHERE "id" = $1 AND "tenantId" = $2`,
+      academicYearId, tenantId,
+    );
+    if (!academicYear || academicYear.length === 0) {
+      throw new NotFoundException('Année scolaire non trouvée');
+    }
+    const ay = academicYear[0];
+
+    // Récupérer les enseignants du tenant (maternelle + primaire)
+    const teachers: any = await this.prisma.$queryRawUnsafe(
+      `SELECT id, "firstName", "lastName" FROM "teachers"
+       WHERE "tenantId" = $1 AND "status" = 'active'
+       ORDER BY "lastName" ASC`,
+      tenantId,
+    );
+
+    if (teachers.length === 0) {
+      throw new BadRequestException('Aucun enseignant actif trouvé');
+    }
+
+    // Supprimer les configs existantes
+    await this.prisma.$executeRawUnsafe(
+      `DELETE FROM "weekly_seminar_config" WHERE "tenantId" = $1 AND "academicYearId" = $2`,
+      tenantId, academicYearId,
+    );
+
+    // Calculer 36 semaines à partir de la date de rentrée
+    const startDate = new Date(ay.startDate || ay.startDate || new Date(new Date().getFullYear(), 8, 1)); // 1er septembre par défaut
+    // Ajuster au lundi de la semaine
+    const day = startDate.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    startDate.setDate(startDate.getDate() + diff);
+
+    const configs = [];
+    for (let week = 1; week <= 36; week++) {
+      const weekStart = new Date(startDate);
+      weekStart.setDate(weekStart.getDate() + (week - 1) * 7);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 4); // Vendredi
+
+      // Déterminer le trimestre
+      let trimester = 1;
+      if (week > 12 && week <= 24) trimester = 2;
+      else if (week > 24) trimester = 3;
+
+      // Rotation des enseignants
+      const teacherIdx = (week - 1) % teachers.length;
+      const teacher = teachers[teacherIdx];
+
+      const id = crypto.randomUUID();
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO "weekly_seminar_config" ("id", "tenantId", "academicYearId", "weekNumber", "trimester", "weekStartDate", "weekEndDate", "teacherId", "classIds", "status", "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '[]', 'PENDING', NOW(), NOW())`,
+        id, tenantId, academicYearId, week, trimester, weekStart, weekEnd, teacher.id,
+      );
+      configs.push({ id, weekNumber: week, trimester, teacherId: teacher.id });
+    }
+
+    this.logger.log(`✅ ${configs.length} semainiers générés automatiquement`);
+    return { generated: configs.length };
+  }
+
+  async updateSeminarConfig(tenantId: string, configId: string, data: any) {
+    const updates: string[] = [];
+    const params: any[] = [];
+    let paramIdx = 1;
+
+    const allowedFields = ['teacherId', 'teacherSignature', 'status', 'classIds'];
+    for (const field of allowedFields) {
+      if (data[field] !== undefined) {
+        if (field === 'classIds') {
+          updates.push(`"${field}" = $${paramIdx++}::jsonb`);
+          params.push(JSON.stringify(data[field]));
+        } else {
+          updates.push(`"${field}" = $${paramIdx++}`);
+          params.push(data[field]);
+        }
+      }
+    }
+
+    if (updates.length === 0) return null;
+    updates.push(`"updatedAt" = NOW()`);
+    params.push(configId, tenantId);
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "weekly_seminar_config" SET ${updates.join(', ')} WHERE "id" = $${paramIdx++} AND "tenantId" = $${paramIdx++}`,
+      ...params,
+    );
+
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT wsc.*, t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+       FROM "weekly_seminar_config" wsc
+       LEFT JOIN "teachers" t ON t."id" = wsc."teacherId"
+       WHERE wsc."id" = $1`,
+      configId,
+    );
+    return updated[0];
+  }
+
+  async getOrCreateDailyReport(tenantId: string, configId: string, dayOfWeek: number) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "weekly_seminar_daily_report" WHERE "seminarConfigId" = $1 AND "dayOfWeek" = $2 AND "tenantId" = $3`,
+      configId, dayOfWeek, tenantId,
+    );
+    if (existing && existing.length > 0) return existing[0];
+
+    // Créer un rapport vide
+    const config: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "weekly_seminar_config" WHERE "id" = $1 AND "tenantId" = $2`,
+      configId, tenantId,
+    );
+    if (!config || config.length === 0) throw new NotFoundException('Config non trouvée');
+
+    const date = new Date(config[0].weekStartDate);
+    date.setDate(date.getDate() + (dayOfWeek - 1));
+
+    const id = crypto.randomUUID();
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "weekly_seminar_daily_report" ("id", "tenantId", "academicYearId", "seminarConfigId", "dayOfWeek", "date", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+      id, tenantId, config[0].academicYearId, configId, dayOfWeek, date,
+    );
+
+    const created: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "weekly_seminar_daily_report" WHERE "id" = $1`,
+      id,
+    );
+    return created[0];
+  }
+
+  async updateDailyReport(tenantId: string, reportId: string, data: any) {
+    const updates: string[] = [];
+    const params: any[] = [];
+    let paramIdx = 1;
+
+    const allowedFields = ['teacherAttendance', 'teacherAttendanceSynthesis', 'studentPresence', 'pedagogy', 'discipline', 'hygiene', 'visits', 'communication', 'dailySummary', 'filledBy'];
+    for (const field of allowedFields) {
+      if (data[field] !== undefined) {
+        if (['teacherAttendance', 'studentPresence', 'pedagogy', 'discipline', 'hygiene', 'visits', 'communication', 'dailySummary'].includes(field)) {
+          updates.push(`"${field}" = $${paramIdx++}::jsonb`);
+          const val = typeof data[field] === 'string' ? data[field] : JSON.stringify(data[field]);
+          params.push(val);
+        } else {
+          updates.push(`"${field}" = $${paramIdx++}`);
+          params.push(data[field]);
+        }
+      }
+    }
+
+    if (updates.length === 0) return null;
+    updates.push(`"updatedAt" = NOW()`);
+    params.push(reportId, tenantId);
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "weekly_seminar_daily_report" SET ${updates.join(', ')} WHERE "id" = $${paramIdx++} AND "tenantId" = $${paramIdx++}`,
+      ...params,
+    );
+
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "weekly_seminar_daily_report" WHERE "id" = $1`,
+      reportId,
+    );
+    return updated[0];
   }
 }

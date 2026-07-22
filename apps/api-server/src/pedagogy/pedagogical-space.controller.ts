@@ -924,3 +924,51 @@ export class PedagogicalSpaceController {
     res.send(buffer);
   }
 }
+
+  // ===========================================================================
+  // CAHIER DU SEMAINIER — Endpoints
+  // ===========================================================================
+
+  @Get('seminar-config')
+  async getSeminarConfigs(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.service.getSeminarConfigs(tenantId, academicYearId);
+  }
+
+  @Post('seminar-config/auto-generate')
+  async autoGenerateSeminarConfigs(
+    @TenantId() tenantId: string,
+    @Body() body: { academicYearId: string; tenantId: string },
+  ) {
+    return this.service.autoGenerateSeminarConfigs(tenantId, body.academicYearId);
+  }
+
+  @Put('seminar-config/:id')
+  async updateSeminarConfig(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    return this.service.updateSeminarConfig(tenantId, id, body);
+  }
+
+  @Get('seminar-daily-report')
+  async getDailyReport(
+    @TenantId() tenantId: string,
+    @Query('configId') configId: string,
+    @Query('dayOfWeek') dayOfWeek: string,
+  ) {
+    return this.service.getOrCreateDailyReport(tenantId, configId, parseInt(dayOfWeek));
+  }
+
+  @Put('seminar-daily-report/:id')
+  async updateDailyReport(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    return this.service.updateDailyReport(tenantId, id, body);
+  }
+}

@@ -192,7 +192,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<string | null>(null); // null | 'excel' | 'pdf'
   const [showAppelModal, setShowAppelModal] = useState(false);
   const [appelDate, setAppelDate] = useState(new Date().toISOString().split("T")[0]);
   const [appelSaving, setAppelSaving] = useState(false);
@@ -737,14 +737,17 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
 
   // ⭐ Export Excel / PDF
   const handleExport = async (format: "excel" | "pdf") => {
-    if (!register) return;
-    setExporting(true);
+    if (!register || exporting) return;
+    setExporting(format);
     try {
       const res = await fetch(
         `/api/pedagogy-space/attendance-registers/${register.id}/export?format=${format}`,
         { credentials: "include" }
       );
-      if (!res.ok) throw new Error("Erreur d'export");
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -757,7 +760,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
     } catch (e: any) {
       toast.error("Erreur d'export", { description: e.message });
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   };
 
@@ -824,14 +827,14 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
           {/* ⭐ Boutons Export Excel + PDF */}
           {register && (
             <>
-              <button onClick={() => handleExport("excel")} disabled={exporting}
+              <button onClick={() => handleExport("excel")} disabled={!!exporting}
                 className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50">
-                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                {exporting === "excel" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
                 Export Excel
               </button>
-              <button onClick={() => handleExport("pdf")} disabled={exporting}
+              <button onClick={() => handleExport("pdf")} disabled={!!exporting}
                 className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50">
-                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
                 Export PDF
             </button>
             </>
@@ -972,23 +975,16 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                       }
                       return (
                         <td key={`${w}-${d.num}`} className="border border-slate-300 p-0" style={{ minWidth: "45px", width: "45px" }}>
-                          <select
-                            value={marked}
-                            onChange={(e) => updateAbsence(student.studentId, w, d.num, e.target.value)}
-                            disabled={true}
-                            className={cn(
-                              "w-full h-9 text-center text-base font-bold border-0 focus:outline-none cursor-not-allowed",
-                              marked === "-" && "bg-amber-100 text-amber-700",
-                              marked === "|" && "bg-amber-100 text-amber-700",
-                              marked === "+" && "bg-red-100 text-red-700",
-                              !marked && "bg-transparent"
-                            )}
-                          >
-                            <option value="">·</option>
-                            <option value="-">− (Absent matin)</option>
-                            <option value="|">│ (Absent après-midi)</option>
-                            <option value="+">+ (Absent toute la journée)</option>
-                          </select>
+                          {/* ⭐ Affichage read-only : seul le symbole s'affiche, pas de select/flèche */}
+                          <div className={cn(
+                            "w-full h-9 flex items-center justify-center text-base font-bold",
+                            marked === "-" && "bg-amber-100 text-amber-700",
+                            marked === "|" && "bg-amber-100 text-amber-700",
+                            marked === "+" && "bg-red-100 text-red-700",
+                            !marked && "bg-transparent text-slate-300"
+                          )}>
+                            {marked === "-" ? "−" : marked === "|" ? "│" : marked === "+" ? "+" : "·"}
+                          </div>
                         </td>
                       );
                     }))}
@@ -1035,6 +1031,19 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
               </div>
             </div>
           )}
+
+          {/* === Légende des symboles === */}
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+            <div className="text-xs font-bold text-slate-600 uppercase mb-2">Légende</div>
+            <div className="flex flex-wrap gap-4 text-xs text-slate-600">
+              <span className="flex items-center gap-1"><span className="inline-flex items-center justify-center w-6 h-6 bg-transparent text-slate-400 font-bold rounded">·</span> Présent</span>
+              <span className="flex items-center gap-1"><span className="inline-flex items-center justify-center w-6 h-6 bg-amber-100 text-amber-700 font-bold rounded">−</span> Absent le matin (1 demi-jour)</span>
+              <span className="flex items-center gap-1"><span className="inline-flex items-center justify-center w-6 h-6 bg-amber-100 text-amber-700 font-bold rounded">│</span> Absent l'après-midi (1 demi-jour)</span>
+              <span className="flex items-center gap-1"><span className="inline-flex items-center justify-center w-6 h-6 bg-red-100 text-red-700 font-bold rounded">+</span> Absent toute la journée (2 demi-jours)</span>
+              <span className="flex items-center gap-1"><span className="inline-flex items-center justify-center w-6 h-6 bg-slate-100 text-slate-400 font-bold rounded">—</span> Hors mois</span>
+              <span className="flex items-center gap-1"><span className="text-base">🎉</span> Jour férié</span>
+            </div>
+          </div>
 
           {/* === Section récapitulative (bas du registre) === */}
           <div className="border-2 border-slate-300 rounded-lg p-4 bg-slate-50/50">

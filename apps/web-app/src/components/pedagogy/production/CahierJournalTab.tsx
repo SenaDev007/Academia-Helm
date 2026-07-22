@@ -106,7 +106,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
   const [directorNameState, setDirectorNameState] = useState("");
   const [teacherSignature, setTeacherSignature] = useState<string | null>(null);
   const [directorSignature, setDirectorSignature] = useState<string | null>(null);
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -289,14 +289,17 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
 
   // ⭐ Export Excel / PDF
   const handleExport = async (format: "excel" | "pdf") => {
-    if (!journal) return;
-    setExporting(true);
+    if (!journal || exporting) return;
+    setExporting(format);
     try {
       const res = await fetch(
         `/api/pedagogy-space/cahier-journal/${journal.id}/export?format=${format}`,
         { credentials: "include" }
       );
-      if (!res.ok) throw new Error("Erreur d'export");
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -309,7 +312,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
     } catch (e: any) {
       toast.error("Erreur d'export", { description: e.message });
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   };
 
@@ -461,14 +464,14 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
           {/* ⭐ Boutons Export */}
           {journal && (
             <>
-              <button onClick={() => handleExport("excel")} disabled={exporting}
+              <button onClick={() => handleExport("excel")} disabled={!!exporting}
                 className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50">
-                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                {exporting === "excel" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
                 Export Excel
               </button>
-              <button onClick={() => handleExport("pdf")} disabled={exporting}
+              <button onClick={() => handleExport("pdf")} disabled={!!exporting}
                 className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50">
-                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
                 Export PDF
               </button>
             </>

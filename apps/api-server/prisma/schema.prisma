@@ -16219,6 +16219,9 @@ model AttendanceRegister {
   // Signatures
   directeurSignatureDate DateTime?
   titulaireSignatureDate DateTime?
+  // ⭐ Signatures (images base64 — comme dans le module RH contrats)
+  teacherSignature    String?  // Signature de l'enseignant (titulaire)
+  directorSignature   String?  // Signature du directeur
 
   // Workflow
   status          String   @default("DRAFT") // DRAFT | SUBMITTED | VALIDATED | REJECTED

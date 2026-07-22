@@ -2390,6 +2390,9 @@ export class PedagogicalSpaceService {
       effectifJourGarcons: 'int',
       directeurSignatureDate: 'date',
       titulaireSignatureDate: 'date',
+      // ⭐ Signatures (images base64 — comme dans le module RH contrats)
+      teacherSignature: 'string',
+      directorSignature: 'string',
       status: 'string',
       submittedAt: 'date',
       validatedAt: 'date',

@@ -40,6 +40,7 @@ import {
   Plus, Trash2, X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
 
 interface AttendanceRegisterTabProps {
   tenantId: string;
@@ -110,6 +111,10 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
   const [evaluation, setEvaluation] = useState<any>(null);
   const [summary, setSummary] = useState<any>(null);
 
+  // ⭐ Signatures (comme dans le module RH — contrats)
+  const [teacherSignature, setTeacherSignature] = useState<string | null>(null);
+  const [directorSignature, setDirectorSignature] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"register" | "evaluation" | "summary">("register");
@@ -156,6 +161,9 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
       if (!res.ok) throw new Error("Erreur");
       const data = await res.json();
       setRegister(data);
+      // ⭐ Charger les signatures existantes depuis le registre
+      setTeacherSignature(data.teacherSignature || null);
+      setDirectorSignature(data.directorSignature || null);
       const studentsData = typeof data.studentsData === "string"
         ? JSON.parse(data.studentsData || "[]")
         : (data.studentsData || []);
@@ -269,6 +277,9 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
           totalPresencesEffectivesMois: totalEff,
           pourcentagePresences: pctP,
           pourcentageAbsences: pctA,
+          // ⭐ Signatures (comme dans le module RH — contrats)
+          teacherSignature: teacherSignature,
+          directorSignature: directorSignature,
         }),
       });
       if (!res.ok) throw new Error("Erreur");
@@ -665,28 +676,39 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
 
           {/* Tableau principal : 1 élève = 1 ligne */}
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-xs" style={{ minWidth: "1200px" }}>
+            <table className="w-full border-collapse text-xs" style={{ minWidth: "1600px" }}>
               <thead>
                 <tr className="bg-slate-100">
-                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">N°</th>
-                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "180px" }}>Nom et prénom</th>
-                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Sexe</th>
+                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">N°</th>
+                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "180px" }}>Nom et prénom</th>
+                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Sexe</th>
                   <th colSpan={25} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center">
                     Indication des absences pour chaque jour de classe (5 semaines × 5 jours)
                   </th>
-                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "120px" }}>Motif des absences</th>
-                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total présences possibles</th>
-                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total absences</th>
-                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total présence effectif</th>
-                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "100px" }}>Observation</th>
-                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Nb. demi-journées</th>
+                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "120px" }}>Motif des absences</th>
+                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "80px" }}>Total présences possibles</th>
+                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "80px" }}>Total absences</th>
+                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "80px" }}>Total présence effectif</th>
+                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "100px" }}>Observation</th>
+                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "80px" }}>Nb. demi-journées</th>
                 </tr>
                 <tr className="bg-slate-50">
+                  {/* ⭐ Élargir les sous-colonnes jours : de px-1 à px-2,
+                      minWidth 45px par cellule (au lieu de default ~28px).
+                      Permet de voir les marques (-, |, +) clairement. */}
                   {WEEKS.map(w => (
-                    <th key={w} colSpan={5} className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px] uppercase">
+                    <th key={w} colSpan={5} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[11px] uppercase" style={{ minWidth: "225px" }}>
                       Sem. {w}
                     </th>
                   ))}
+                </tr>
+                {/* ⭐ Ligne des initiales des jours (L M M J V) pour chaque semaine */}
+                <tr className="bg-slate-50">
+                  {WEEKS.map(w => DAYS.map(d => (
+                    <th key={`${w}-${d.num}`} className="border border-slate-300 px-1 py-1 font-bold text-slate-500 text-[10px] uppercase" style={{ minWidth: "45px", width: "45px" }}>
+                      {d.label}
+                    </th>
+                  )))}
                 </tr>
               </thead>
               <tbody>
@@ -705,13 +727,13 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                     {WEEKS.map(w => DAYS.map(d => {
                       const marked = getAbsence(student, w, d.num);
                       return (
-                        <td key={`${w}-${d.num}`} className="border border-slate-300 p-0">
+                        <td key={`${w}-${d.num}`} className="border border-slate-300 p-0" style={{ minWidth: "45px", width: "45px" }}>
                           <select
                             value={marked}
                             onChange={(e) => updateAbsence(idx, w, d.num, e.target.value)}
                             disabled={isReadOnly}
                             className={cn(
-                              "w-full h-7 text-center text-xs font-bold border-0 focus:outline-none focus:ring-1 focus:ring-blue-400",
+                              "w-full h-9 text-center text-sm font-bold border-0 focus:outline-none focus:ring-1 focus:ring-blue-400",
                               marked === "A" && "bg-red-100 text-red-700",
                               marked === "R" && "bg-amber-100 text-amber-700",
                               marked === "E" && "bg-blue-100 text-blue-700",
@@ -834,17 +856,80 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
             </div>
           </div>
 
-          {/* === Signatures === */}
-          <div className="grid grid-cols-2 gap-8 pt-6">
-            <div className="border-t-2 border-slate-400 pt-2">
-              <div className="text-xs font-semibold text-slate-500 uppercase">Le Directeur / La Directrice</div>
-              <div className="h-16" />
-              <div className="text-[10px] text-slate-400">Signature et cachet</div>
+          {/* === Signatures (comme dans le module RH — contrats) === */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6">
+            {/* Signature Directeur */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-bold text-slate-800">Le Directeur / La Directrice</div>
+                  <div className="text-xs text-slate-500">Signature et cachet</div>
+                </div>
+                {directorSignature && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
+                    <CheckCircle2 className="h-3 w-3" /> Signé
+                  </span>
+                )}
+              </div>
+              {directorSignature ? (
+                <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
+                  <img src={directorSignature} alt="Signature Directeur" className="max-h-32 mx-auto" />
+                </div>
+              ) : (
+                <SignatureCanvas
+                  width={400}
+                  height={140}
+                  disabled={isReadOnly}
+                  placeholder="Signature du Directeur"
+                  onSignatureChange={(data) => setDirectorSignature(data)}
+                />
+              )}
+              {directorSignature && !isReadOnly && (
+                <button
+                  type="button"
+                  onClick={() => setDirectorSignature(null)}
+                  className="text-xs text-red-500 hover:underline"
+                >
+                  Effacer la signature
+                </button>
+              )}
             </div>
-            <div className="border-t-2 border-slate-400 pt-2">
-              <div className="text-xs font-semibold text-slate-500 uppercase">Le Titulaire de la classe</div>
-              <div className="h-16" />
-              <div className="text-[10px] text-slate-400">Signature</div>
+
+            {/* Signature Titulaire */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-bold text-slate-800">Le Titulaire de la classe</div>
+                  <div className="text-xs text-slate-500">Signature</div>
+                </div>
+                {teacherSignature && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
+                    <CheckCircle2 className="h-3 w-3" /> Signé
+                  </span>
+                )}
+              </div>
+              {teacherSignature ? (
+                <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
+                  <img src={teacherSignature} alt="Signature Titulaire" className="max-h-32 mx-auto" />
+                </div>
+              ) : (
+                <SignatureCanvas
+                  width={400}
+                  height={140}
+                  disabled={isReadOnly}
+                  placeholder="Signature du Titulaire"
+                  onSignatureChange={(data) => setTeacherSignature(data)}
+                />
+              )}
+              {teacherSignature && !isReadOnly && (
+                <button
+                  type="button"
+                  onClick={() => setTeacherSignature(null)}
+                  className="text-xs text-red-500 hover:underline"
+                >
+                  Effacer la signature
+                </button>
+              )}
             </div>
           </div>
         </div>

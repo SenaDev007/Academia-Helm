@@ -139,9 +139,93 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
     })();
   }, [selectedClassId, academicYearId, teacherId]);
 
-  // Répartir les matières en 2 pages (recto = première moitié, verso = seconde moitié)
-  const RECTO_SUBJECTS = dynamicSubjects.slice(0, Math.ceil(dynamicSubjects.length / 2));
-  const VERSO_SUBJECTS = dynamicSubjects.slice(Math.ceil(dynamicSubjects.length / 2));
+  // ⭐ REGROUPEMENT DES MATIÈRES (cahier journal)
+  // Certaines matières sont regroupées sous un seul nom de colonne :
+  //   - FRANÇAIS : Dictée, Grammaire, Exercices structuraux, Conjugaison,
+  //     Communication orale, Orthographe, Lecture, Vocabulaire, Expression écrite,
+  //     Graphisme, Écriture, Combinatoire
+  //   - ÉDUCATION SOCIALE : Morale, Civisme, Histoire, Géographie
+  //   - ÉDUCATION ARTISTIQUE : Chant, Poésie, Dessin, Compte, Couture, Atelier,
+  //     Art dramatique, Éducation artistique plastique, Éducation artistique vivante
+  // Les matières non listées dans un groupe restent individuelles.
+  const SUBJECT_GROUPS: { groupName: string; subjects: string[] }[] = [
+    {
+      groupName: "Français",
+      subjects: [
+        "Dictée", "Grammaire", "Exercices structuraux", "Conjugaison",
+        "Communication orale", "Orthographe", "Lecture", "Vocabulaire",
+        "Expression écrite", "Graphisme", "Écriture", "Combinatoire",
+        "Dictee", "Exercices Structuraux", "Communication Orale",
+        "Expression Ecrite",
+      ],
+    },
+    {
+      groupName: "Éducation sociale",
+      subjects: [
+        "Morale", "Civisme", "Histoire", "Géographie", "Geographie",
+        "Education sociale", "Éducation sociale",
+      ],
+    },
+    {
+      groupName: "Éducation artistique",
+      subjects: [
+        "Chant", "Poésie", "Dessin", "Compte", "Couture", "Atelier",
+        "Art dramatique", "Éducation artistique plastique",
+        "Éducation artistique vivante", "Education artistique plastique",
+        "Education artistique vivante", "Poesie",
+      ],
+    },
+  ];
+
+  // Type pour une colonne du tableau (groupée ou individuelle)
+  type TableColumn =
+    | { type: "group"; groupName: string; subjects: any[] }
+    | { type: "single"; subject: any };
+
+  // Transformer la liste plate de matières en colonnes (groupées ou individuelles)
+  const groupedColumns: TableColumn[] = (() => {
+    const used = new Set<string>(); // subjectIds déjà placés dans un groupe
+    const result: TableColumn[] = [];
+
+    // 1. Parcourir les groupes définis
+    for (const group of SUBJECT_GROUPS) {
+      const matchingSubjects = dynamicSubjects.filter((s: any) => {
+        const name = (s.subjectName || "").trim().toLowerCase();
+        return group.subjects.some(g => g.trim().toLowerCase() === name);
+      });
+      if (matchingSubjects.length > 0) {
+        result.push({ type: "group", groupName: group.groupName, subjects: matchingSubjects });
+        matchingSubjects.forEach((s: any) => used.add(s.subjectId));
+      }
+    }
+
+    // 2. Ajouter les matières non groupées (individuelles)
+    for (const s of dynamicSubjects) {
+      if (!used.has(s.subjectId)) {
+        result.push({ type: "single", subject: s });
+      }
+    }
+
+    return result;
+  })();
+
+  // Répartir les colonnes en 2 pages (recto = première moitié, verso = seconde moitié)
+  const RECTO_COLUMNS = groupedColumns.slice(0, Math.ceil(groupedColumns.length / 2));
+  const VERSO_COLUMNS = groupedColumns.slice(Math.ceil(groupedColumns.length / 2));
+
+  // ⭐ Obtenir la clé d'entrée pour une colonne (nom du groupe ou nom de la matière)
+  const getColumnKey = (col: TableColumn): string => {
+    if (col.type === "group") return col.groupName;
+    return col.subject.subjectName;
+  };
+
+  // ⭐ Obtenir la liste des noms de matières pour l'affichage sous l'en-tête de groupe
+  const getColumnSubLabels = (col: TableColumn): string[] => {
+    if (col.type === "group") {
+      return col.subjects.map((s: any) => s.subjectName);
+    }
+    return [];
+  };
 
   // === Chargement du cahier journal ===
   const loadJournal = useCallback(async () => {
@@ -357,7 +441,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
             </div>
           </div>
 
-          {/* === PAGE 1 (RECTO) === JOURS | FRANÇAIS | ANGLAIS | MATH | OBSERVATIONS */}
+          {/* === PAGE 1 (RECTO) === JOURS | COLONNES GROUPÉES | OBSERVATIONS */}
           <div className="mb-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Page 1 — Recto</div>
           <div className="overflow-x-auto border border-slate-300 rounded-lg mb-6">
             <table className="w-full border-collapse min-w-[900px]">
@@ -366,11 +450,25 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
                   <th className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase w-16 sticky left-0 bg-slate-100 z-10">
                     JOURS
                   </th>
-                  {RECTO_SUBJECTS.map((s) => (
-                    <th key={s.subjectName} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top" style={{ minWidth: "180px" }}>
-                      <div>{s.subjectName}</div>
-                    </th>
-                  ))}
+                  {RECTO_COLUMNS.map((col) => {
+                    const key = getColumnKey(col);
+                    const subLabels = getColumnSubLabels(col);
+                    return (
+                      <th key={key} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top" style={{ minWidth: "180px" }}>
+                        <div className="font-bold">{key}</div>
+                        {subLabels.length > 0 && (
+                          <div className="mt-1 pt-1 border-t border-slate-300 text-[9px] font-normal text-slate-500 normal-case">
+                            {subLabels.map((label, i) => (
+                              <span key={i}>
+                                {i > 0 && <span className="text-slate-300"> · </span>}
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </th>
+                    );
+                  })}
                   <th className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top" style={{ minWidth: "160px" }}>
                     OBSERVATIONS
                   </th>
@@ -385,17 +483,20 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
                         {formatDateFR(formatDate(new Date(weekStart.getTime() + (day.id - 1) * 86400000)))}
                       </div>
                     </td>
-                    {RECTO_SUBJECTS.map((s) => (
-                      <td key={s.subjectName} className="border border-slate-300 p-0">
-                        <textarea
-                          value={getEntry(day.key, s.subjectName)}
-                          onChange={(e) => updateEntry(day.key, s.subjectName, e.target.value)}
-                          disabled={isReadOnly}
-                          placeholder="—"
-                          className="w-full h-24 px-2 py-1 text-xs text-slate-700 resize-none border-0 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:bg-blue-50/30 disabled:bg-slate-50"
-                        />
-                      </td>
-                    ))}
+                    {RECTO_COLUMNS.map((col) => {
+                      const key = getColumnKey(col);
+                      return (
+                        <td key={key} className="border border-slate-300 p-0">
+                          <textarea
+                            value={getEntry(day.key, key)}
+                            onChange={(e) => updateEntry(day.key, key, e.target.value)}
+                            disabled={isReadOnly}
+                            placeholder="—"
+                            className="w-full h-24 px-2 py-1 text-xs text-slate-700 resize-none border-0 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:bg-blue-50/30 disabled:bg-slate-50"
+                          />
+                        </td>
+                      );
+                    })}
                     <td className="border border-slate-300 p-0">
                       <textarea
                         value={getEntry(day.key, "observations")}
@@ -411,7 +512,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
             </table>
           </div>
 
-          {/* === PAGE 2 (VERSO) === EST | ES | EPS | EA | PETIT PROJET */}
+          {/* === PAGE 2 (VERSO) === COLONNES GROUPÉES (suite) */}
           <div className="mb-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Page 2 — Verso</div>
           <div className="overflow-x-auto border border-slate-300 rounded-lg mb-6">
             <table className="w-full border-collapse min-w-[900px]">
@@ -420,11 +521,25 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
                   <th className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase w-16 sticky left-0 bg-slate-100 z-10">
                     JOURS
                   </th>
-                  {VERSO_SUBJECTS.map((s) => (
-                    <th key={s.subjectName} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top" style={{ minWidth: "160px" }}>
-                      <div>{s.subjectName}</div>
-                    </th>
-                  ))}
+                  {VERSO_COLUMNS.map((col) => {
+                    const key = getColumnKey(col);
+                    const subLabels = getColumnSubLabels(col);
+                    return (
+                      <th key={key} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top" style={{ minWidth: "160px" }}>
+                        <div className="font-bold">{key}</div>
+                        {subLabels.length > 0 && (
+                          <div className="mt-1 pt-1 border-t border-slate-300 text-[9px] font-normal text-slate-500 normal-case">
+                            {subLabels.map((label, i) => (
+                              <span key={i}>
+                                {i > 0 && <span className="text-slate-300"> · </span>}
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -433,17 +548,20 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
                     <td className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase bg-slate-50 sticky left-0 z-10">
                       {day.label}
                     </td>
-                    {VERSO_SUBJECTS.map((s) => (
-                      <td key={s.subjectName} className="border border-slate-300 p-0">
-                        <textarea
-                          value={getEntry(day.key, s.subjectName)}
-                          onChange={(e) => updateEntry(day.key, s.subjectName, e.target.value)}
-                          disabled={isReadOnly}
-                          placeholder="—"
-                          className="w-full h-24 px-2 py-1 text-xs text-slate-700 resize-none border-0 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:bg-blue-50/30 disabled:bg-slate-50"
-                        />
-                      </td>
-                    ))}
+                    {VERSO_COLUMNS.map((col) => {
+                      const key = getColumnKey(col);
+                      return (
+                        <td key={key} className="border border-slate-300 p-0">
+                          <textarea
+                            value={getEntry(day.key, key)}
+                            onChange={(e) => updateEntry(day.key, key, e.target.value)}
+                            disabled={isReadOnly}
+                            placeholder="—"
+                            className="w-full h-24 px-2 py-1 text-xs text-slate-700 resize-none border-0 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:bg-blue-50/30 disabled:bg-slate-50"
+                          />
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>

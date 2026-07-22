@@ -120,12 +120,21 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
           </button>
         </div>
 
-        {/* Profil enseignant */}
+        {/* Profil enseignant — photo ou initiales (comme module RH) */}
         <div className="px-4 py-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-              <GraduationCap className="h-4 w-4 text-blue-600" />
-            </div>
+            {/* ⭐ Avatar : photo de l'enseignant ou initiales */}
+            {user?.photoUrl ? (
+              <img
+                src={user.photoUrl}
+                alt={teacherName}
+                className="h-8 w-8 rounded-full object-cover flex-shrink-0 border border-slate-200"
+              />
+            ) : (
+              <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0 text-white text-xs font-bold">
+                {(user?.firstName?.[0] || '')}{(user?.lastName?.[0] || '')}
+              </div>
+            )}
             <div className="min-w-0">
               <p className="text-sm font-semibold text-slate-900 truncate">{teacherName}</p>
               <p className="text-[10px] text-slate-400">Enseignant</p>

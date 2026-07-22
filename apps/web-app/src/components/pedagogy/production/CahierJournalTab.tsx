@@ -19,6 +19,7 @@ import {
   ChevronLeft, ChevronRight, CheckCircle2, XCircle, Clock,
 } from "lucide-react";
 import { toast } from "sonner";
+import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
 interface CahierJournalTabProps {
   tenantId: string;
@@ -487,23 +488,23 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
                       const key = getColumnKey(col);
                       return (
                         <td key={key} className="border border-slate-300 p-0">
-                          <textarea
+                          <RichTextEditor
                             value={getEntry(day.key, key)}
-                            onChange={(e) => updateEntry(day.key, key, e.target.value)}
+                            onChange={(html) => updateEntry(day.key, key, html)}
                             disabled={isReadOnly}
                             placeholder="—"
-                            className="w-full h-24 px-2 py-1 text-xs text-slate-700 resize-none border-0 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:bg-blue-50/30 disabled:bg-slate-50"
+                            minHeight="96px"
                           />
                         </td>
                       );
                     })}
                     <td className="border border-slate-300 p-0">
-                      <textarea
+                      <RichTextEditor
                         value={getEntry(day.key, "observations")}
-                        onChange={(e) => updateEntry(day.key, "observations", e.target.value)}
+                        onChange={(html) => updateEntry(day.key, "observations", html)}
                         disabled={isReadOnly}
                         placeholder="—"
-                        className="w-full h-24 px-2 py-1 text-xs text-slate-700 resize-none border-0 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:bg-blue-50/30 disabled:bg-slate-50"
+                        minHeight="96px"
                       />
                     </td>
                   </tr>
@@ -552,12 +553,12 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
                       const key = getColumnKey(col);
                       return (
                         <td key={key} className="border border-slate-300 p-0">
-                          <textarea
+                          <RichTextEditor
                             value={getEntry(day.key, key)}
-                            onChange={(e) => updateEntry(day.key, key, e.target.value)}
+                            onChange={(html) => updateEntry(day.key, key, html)}
                             disabled={isReadOnly}
                             placeholder="—"
-                            className="w-full h-24 px-2 py-1 text-xs text-slate-700 resize-none border-0 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:bg-blue-50/30 disabled:bg-slate-50"
+                            minHeight="96px"
                           />
                         </td>
                       );

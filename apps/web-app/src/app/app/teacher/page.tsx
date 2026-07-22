@@ -65,13 +65,20 @@ export default function TeacherDashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Welcome */}
+      {/* Welcome — photo de l'enseignant (ou initiales) au lieu du logo école */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl p-6 text-white">
         <div className="flex items-center gap-3 mb-2">
-          {school?.logoUrl ? (
-            <img src={school.logoUrl} alt="" className="h-10 w-10 rounded-lg object-cover bg-white/20" />
+          {/* ⭐ Avatar enseignant : photo ou initiales (comme module RH) */}
+          {user?.photoUrl ? (
+            <img
+              src={user.photoUrl}
+              alt={teacherName}
+              className="h-12 w-12 rounded-full object-cover border-2 border-white/30"
+            />
           ) : (
-            <GraduationCap className="h-8 w-8" />
+            <div className="h-12 w-12 rounded-full bg-white/20 flex items-center justify-center text-white text-lg font-bold border-2 border-white/30">
+              {(user?.firstName?.[0] || '')}{(user?.lastName?.[0] || '')}
+            </div>
           )}
           <div>
             <h2 className="text-2xl font-bold">Bienvenue, {teacherName}</h2>

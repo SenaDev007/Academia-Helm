@@ -275,7 +275,7 @@ export default function GradesPage() {
         formula: subjectFormula,
         submit,
       };
-      await fetch(`/api/exams/evaluations/${selectedEvaluation.id}/grades`, {
+      await fetch(`/api/exams/evaluations/${selectedEvaluation.id}/grading-sheet`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

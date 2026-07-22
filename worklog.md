@@ -894,3 +894,78 @@ Stage Summary:
 - 4 entrées supprimées de pedagogy-tabs.tsx (seminier, aggregation, materials, global-library)
 - 3 nouveaux sous-onglets ajoutés à PedagogicalSpaceWorkspace (cahier-test, biblio, materiel)
 - Module pédagogie maintenant plus cohérent : 10 onglets principaux + 11 sous-onglets Espace pédagogie
+
+---
+Task ID: module-examen-phases-1-6
+Agent: main
+Task: Module Examen — Phases 1 à 6 du plan d'action (audit MODULE_EXAMEN_AUDIT.md)
+
+Work Log:
+
+== PHASE 1 — URGENT (production cassée) ==
+- Migration 20260723100000_add_institutional_exams_layer3 (14 tables)
+  Tables créées : academic_periods, school_academic_settings, academic_settings_audit_logs,
+  evaluations, evaluation_types, grade_scales, exam_calculation_rules,
+  grade_validation_batches, grade_locks, student_period_averages,
+  student_subject_averages, student_council_decisions, academic_audit_logs,
+  grade_correction_requests
+  → 51 statements SQL exécutés sur Neon DB, 14/14 tables vérifiées
+- Correction route mismatch : @Controller('academic-settings') → @Controller('exams/settings')
+- Correction route inexistante : /api/exams/evaluations/:id/grades → /grading-sheet (frontend)
+- BulletinsService refactorisé :
+  * Injection AcademicRulesEngine + AcademicSettingsService
+  * evaluateSubjectAverage() remplace moyenne arithmétique simple
+  * getAppreciation() remplace getGradeAppreciation() hardcodé
+  * Coefficient vient du subject (plus de forçage PRIMAIRE=1)
+  * applyRanking() avec DENSE_RANK / COMPETITION_RANK configurable
+  * getActiveAcademicConfig() récupère formule + mentions + rankingRules
+- Seuils hardcodés supprimés :
+  * exams-dashboard.service.ts : getAlertThreshold() (lt:8) → configurable
+  * exams-prisma.service.ts : getPassScore() (gte:10) → configurable
+- ExamsModule importe ExamsGradesModule (pour DI AcademicSettingsService + AcademicRulesEngine)
+
+== PHASE 2 — Tables spec manquantes (onglets 2, 6, 7, 9) ==
+- Migration 20260723120000_add_exams_spec_tables (9 tables)
+  Tables créées : qualitative_scales, level_evaluation_policies,
+  bilingual_pedagogy_policies, bulletin_templates, bulletin_publication_policies,
+  exam_advanced_settings, academic_mention_rules, academic_decision_rules,
+  academic_analytics_snapshots
+- Nouveau contrôleur ExamsSpecConfigController (/api/exams/spec-config/*) :
+  * QualitativeScale : GET/POST/PUT/DELETE /qualitative-scales
+  * LevelEvaluationPolicy : GET/POST/PUT/DELETE /level-policies
+  * BilingualPedagogyPolicy : GET/POST /bilingual-policy (upsert)
+  * BulletinTemplate : GET/POST/PUT/DELETE /bulletin-templates + /set-default
+  * BulletinPublicationPolicy : GET/POST /publication-policy (upsert)
+  * ExamAdvancedSetting : GET/POST /advanced-settings (upsert)
+  * AcademicMentionRule : GET/POST/PUT/DELETE /mentions
+  * AcademicDecisionRule : GET/POST/PUT/DELETE /decision-rules
+  * AcademicAnalyticsSnapshot : GET/POST /analytics-snapshots
+
+== PHASE 3-5 — Tables spec onglets 3, 4, 6 ==
+- Migration 20260723140000_add_exams_phase3_5_tables (8 tables)
+  Tables créées : evaluation_sessions, evaluation_participants,
+  kindergarten_evaluation_domains, evaluation_competencies,
+  evaluation_results, result_correction_requests, result_import_batches, bulletins
+
+== PHASE 5 — Onglet 10 : Verrouillage manuel ==
+- Nouveau contrôleur ExamsLockController (/api/exams/locks/*) :
+  * GET / — liste verrous actifs (filtre year/period/class)
+  * POST / — crée verrou (PERIOD_FINAL / EVALUATION_FINAL / CLASS_PERIOD / SUBJECT_CLASS)
+  * DELETE /:id — déverrouillage TRACÉ dans academic_audit_logs (raison obligatoire)
+  * GET /audit — historique verrouillages/déverrouillages
+
+== PHASE 6 — Nettoyage legacy ==
+⚠️ NON EXÉCUTÉ — les modules legacy (exams/, grades/, grading-policies/) ont des
+dépendances actives :
+- exams/ExamsService utilisé par grades/grades.service.ts et modules/general/general.service.ts
+- grading-policies/GradingPoliciesService utilisé par onboarding/onboarding.service.ts
+Suppression nécessite refactor au cas par cas — reportée à une session dédiée.
+
+== BILAN ==
+- 3 migrations SQL appliquées sur Neon DB : 14 + 9 + 8 = 31 tables créées
+- 2 routes corrigées (settings mismatch + grades route)
+- AcademicRulesEngine branché dans bulletins (plus de moyenne arithmétique)
+- Code en dur supprimé : coef PRIMAIRE=1, mentions hardcodées, seuils <8 et >=10
+- 2 nouveaux contrôleurs : ExamsSpecConfigController + ExamsLockController
+- 7 endpoints spec-config + 4 endpoints locks ajoutés
+- Tous fichiers passent le check syntaxique TypeScript ✅

@@ -11,12 +11,47 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
+import { AcademicSettingsService } from '../../../exams-grades/academic-settings.service';
 
 @Injectable()
 export class ExamsDashboardService {
   private readonly logger = new Logger(ExamsDashboardService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly academicSettingsService: AcademicSettingsService,
+  ) {}
+
+  /**
+   * ⭐ Récupère le seuil de réussite configurable depuis la config académique active.
+   * Par défaut 10/20 si aucune config trouvée.
+   */
+  private async getPassScore(tenantId: string, academicYearId: string): Promise<number> {
+    try {
+      const settings = await this.academicSettingsService.findActive(tenantId, academicYearId);
+      const config = settings.config as any;
+      return config?.scoreScale?.passScore ?? 10;
+    } catch {
+      return 10; // Fallback par défaut
+    }
+  }
+
+  /**
+   * ⭐ Récupère le seuil d'alerte (élève en difficulté).
+   * Par défaut < 8/20 si aucune config trouvée.
+   */
+  private async getAlertThreshold(tenantId: string, academicYearId: string): Promise<number> {
+    try {
+      const settings = await this.academicSettingsService.findActive(tenantId, academicYearId);
+      const config = settings.config as any;
+      // Si une règle de promotion définit un seuil, l'utiliser ; sinon fallback 8
+      return config?.promotionRules?.rules?.[0]?.condition?.match(/(\d+(?:\.\d+)?)/)?.[1]
+        ? Number(RegExp.$1) - 2
+        : 8;
+    } catch {
+      return 8;
+    }
+  }
 
   /**
    * Récupère les KPI globaux du dashboard Examens
@@ -159,12 +194,15 @@ export class ExamsDashboardService {
   async getOrionInsights(tenantId: string, academicYearId: string, schoolLevelId: string) {
     const insights = [];
 
+    // ⭐ Seuil d'alerte configurable (défaut 8)
+    const alertThreshold = await this.getAlertThreshold(tenantId, academicYearId);
+
     // 1. Détection des chutes de performance (Mock logic for now, should compare with previous period)
     const lowAveragesCount = await this.prisma.studentPeriodAverage.count({
       where: {
         tenantId,
         academicYearId,
-        generalAverage: { lt: 8 },
+        generalAverage: { lt: alertThreshold },
       },
     });
 
@@ -173,7 +211,7 @@ export class ExamsDashboardService {
         type: 'PERFORMANCE_ALERT',
         priority: 'HIGH',
         title: 'Élèves en difficulté',
-        content: `${lowAveragesCount} élèves présentent une moyenne générale inférieure à 08/20.`,
+        content: `${lowAveragesCount} élèves présentent une moyenne générale inférieure à ${alertThreshold.toFixed(1)}/20.`,
       });
     }
 

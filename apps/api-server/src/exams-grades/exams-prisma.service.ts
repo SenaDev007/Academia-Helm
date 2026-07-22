@@ -11,6 +11,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AcademicRulesEngine } from './academic-rules-engine.service';
+import { AcademicSettingsService } from './academic-settings.service';
 import { ReportCardsPrismaService } from './report-cards-prisma.service';
 
 @Injectable()
@@ -18,8 +19,22 @@ export class ExamsPrismaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rulesEngine: AcademicRulesEngine,
+    private readonly academicSettingsService: AcademicSettingsService,
     private readonly reportCardsService: ReportCardsPrismaService,
   ) {}
+
+  /**
+   * ⭐ Récupère le seuil de réussite configurable (défaut 10).
+   */
+  private async getPassScore(tenantId: string, academicYearId: string): Promise<number> {
+    try {
+      const settings = await this.academicSettingsService.findActive(tenantId, academicYearId);
+      const config = settings.config as any;
+      return config?.scoreScale?.passScore ?? 10;
+    } catch {
+      return 10;
+    }
+  }
 
   /**
    * Crée un examen
@@ -298,6 +313,9 @@ export class ExamsPrismaService {
   async getDashboard(tenantId: string, academicYearId: string) {
     const where = { tenantId, academicYearId };
 
+    // ⭐ Seuil de réussite configurable (défaut 10)
+    const passScore = await this.getPassScore(tenantId, academicYearId);
+
     const [totalExams, totalScores, validatedScores, reportCards] =
       await Promise.all([
         // Total examens planifiés
@@ -331,7 +349,7 @@ export class ExamsPrismaService {
       validatedScores > 0
         ? Math.round(
             ((await this.prisma.examScore.count({
-              where: { ...where, isValidated: true, score: { gte: 10 } },
+              where: { ...where, isValidated: true, score: { gte: passScore } },
             })) /
               validatedScores) *
               100,

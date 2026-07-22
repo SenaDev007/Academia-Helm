@@ -2,24 +2,39 @@
  * ============================================================================
  * BULLETINS SERVICE - MODULE 3
  * ============================================================================
- * 
+ *
  * Moteur de calcul des moyennes, classements et génération de bulletins.
- * Supporte les pondérations par matière et les décisions de conseil.
- * 
+ *
+ * ⭐ Phase 1 refactor :
+ *   - Utilise désormais AcademicRulesEngine (moteur configurable) au lieu
+ *     d'une moyenne arithmétique hardcodée.
+ *   - Récupère la formule + l'échelle d'appréciation + les règles de promotion
+ *     depuis SchoolAcademicSettings (config active du tenant).
+ *   - Suppression du code en dur : coefficient PRIMAIRE=1, mentions
+ *     "Très Bien/Bien/Assez Bien/Passable/Insuffisant".
+ *
  * ============================================================================
  */
 
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
+import { AcademicRulesEngine, SubjectAverageRule, AppreciationScale, PromotionRule } from '../../../exams-grades/academic-rules-engine.service';
+import { AcademicSettingsService } from '../../../exams-grades/academic-settings.service';
 
 @Injectable()
 export class BulletinsService {
   private readonly logger = new Logger(BulletinsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly rulesEngine: AcademicRulesEngine,
+    private readonly academicSettingsService: AcademicSettingsService,
+  ) {}
 
   /**
-   * Génère les moyennes pour toute une classe pour une période donnée
+   * Génère les moyennes pour toute une classe pour une période donnée.
+   *
+   * ⭐ Utilise AcademicRulesEngine + SchoolAcademicSettings (config active).
    */
   async generateClassAverages(tenantId: string, academicYearId: string, periodId: string, classId: string) {
     this.logger.log(`Calcul des moyennes : Classe ${classId}, Période ${periodId}`);
@@ -41,29 +56,39 @@ export class BulletinsService {
         classId,
         status: 'VALIDATED',
       },
-      include: { subject: true },
+      include: { subject: true, evaluation: { include: { evaluationType: true } } },
     });
+
+    // 3. ⭐ Récupérer la config académique active du tenant (formule, mentions, etc.)
+    const academicConfig = await this.getActiveAcademicConfig(tenantId, academicYearId);
+    const subjectFormula = academicConfig?.calculationRules?.subjectAverage?.expression;
+    const subjectRule: SubjectAverageRule | undefined = subjectFormula
+      ? { type: 'WEIGHTED_AVERAGE', expression: subjectFormula }
+      : undefined;
+    const appreciationScale: AppreciationScale[] = academicConfig?.mentions || [];
 
     const results = [];
 
-    // 3. Calculer pour chaque élève
+    // 4. Calculer pour chaque élève
     for (const cs of classStudents) {
       const studentGrades = grades.filter(g => g.studentId === cs.studentId);
-      const studentResult = await this.calculateStudentPeriodPerformance(tenantId, academicYearId, periodId, cs.studentId, classId, studentGrades);
+      const studentResult = await this.calculateStudentPeriodPerformance(
+        tenantId, academicYearId, periodId,
+        cs.studentId, classId, studentGrades,
+        subjectRule, appreciationScale,
+      );
       results.push(studentResult);
     }
 
-    // 4. Calculer les rangs (Tri par moyenne générale décroissante)
+    // 5. Calculer les rangs (Tri par moyenne générale décroissante)
+    // ⭐ Utilise DENSE_RANK par défaut (configurable via rankingRules.tieMode)
+    const tieMode = academicConfig?.rankingRules?.tieMode || 'DENSE_RANK';
     const sortedResults = [...results].sort((a, b) => Number(b.generalAverage) - Number(a.generalAverage));
-    
-    const finalResults = sortedResults.map((res, index) => ({
-      ...res,
-      classRank: index + 1,
-    }));
+    const finalResults = this.applyRanking(sortedResults, tieMode);
 
-    // 5. Sauvegarder les résultats (StudentPeriodAverage)
+    // 6. Sauvegarder les résultats (StudentPeriodAverage)
     await this.prisma.$transaction(
-      finalResults.map(res => 
+      finalResults.map(res =>
         this.prisma.studentPeriodAverage.upsert({
           where: {
             tenantId_academicYearId_periodId_studentId: {
@@ -78,7 +103,7 @@ export class BulletinsService {
             calculatedAt: new Date(),
           },
           create: {
-            tenantId, academicYearId, periodId, 
+            tenantId, academicYearId, periodId,
             studentId: res.studentId,
             classId,
             totalWeighted: res.totalWeighted,
@@ -94,9 +119,105 @@ export class BulletinsService {
   }
 
   /**
-   * Calcule la performance d'un élève sur une période
+   * ⭐ Récupère la configuration académique active pour le tenant.
+   * Retourne un objet structuré : calculationRules, mentions, rankingRules, promotionRules.
+   * Si aucune config active → retourne un objet vide (fallback sur moyenne arithmétique).
    */
-  private async calculateStudentPeriodPerformance(tenantId: string, academicYearId: string, periodId: string, studentId: string, classId: string, grades: any[]) {
+  private async getActiveAcademicConfig(tenantId: string, academicYearId: string): Promise<{
+    calculationRules?: {
+      subjectAverage?: { expression: string };
+      generalAverage?: { method: string };
+    };
+    mentions?: AppreciationScale[];
+    rankingRules?: { tieMode?: string; scope?: string };
+    promotionRules?: PromotionRule[];
+    scoreScale?: { min: number; max: number; passScore: number };
+  } | null> {
+    try {
+      const settings = await this.academicSettingsService.findActive(tenantId, academicYearId);
+      const config = settings.config as any;
+      return {
+        calculationRules: config.calculationRules,
+        mentions: config.mentions || this.getDefaultMentions(),
+        rankingRules: config.rankingRules,
+        promotionRules: config.promotionRules?.rules || [],
+        scoreScale: config.scoreScale,
+      };
+    } catch {
+      // Aucune config active → fallback sur mentions par défaut
+      this.logger.warn(`⚠️ Aucune config académique active pour tenant ${tenantId} — utilisation des valeurs par défaut`);
+      return {
+        mentions: this.getDefaultMentions(),
+        rankingRules: { tieMode: 'DENSE_RANK' },
+      };
+    }
+  }
+
+  /**
+   * ⭐ Mentions par défaut (utilisées si aucune config active n'est trouvée).
+   * Cohérent avec le frontend useAcademicSettings.ts.
+   */
+  private getDefaultMentions(): AppreciationScale[] {
+    return [
+      { min: 16, max: 20, label: 'Très Bien', appreciation: 'Félicitations du jury' },
+      { min: 14, max: 15.99, label: 'Bien', appreciation: 'Encouragements' },
+      { min: 12, max: 13.99, label: 'Assez Bien', appreciation: "Tableau d'honneur" },
+      { min: 10, max: 11.99, label: 'Passable', appreciation: '' },
+      { min: 0, max: 9.99, label: 'Insuffisant', appreciation: 'Avertissement' },
+    ];
+  }
+
+  /**
+   * ⭐ Applique le classement selon le mode (DENSE_RANK / COMPETITION_RANK / UNIQUE).
+   */
+  private applyRanking(sortedResults: any[], tieMode: string): any[] {
+    if (tieMode === 'COMPETITION_RANK') {
+      // 1, 2, 2, 4 (saute les rangs)
+      let prevAvg: number | null = null;
+      let prevRank = 0;
+      let count = 0;
+      return sortedResults.map(res => {
+        count++;
+        if (prevAvg !== null && Number(res.generalAverage) === prevAvg) {
+          return { ...res, classRank: prevRank };
+        }
+        prevRank = count;
+        prevAvg = Number(res.generalAverage);
+        return { ...res, classRank: prevRank };
+      });
+    }
+    // DENSE_RANK (défaut) : 1, 2, 2, 3 (ne saute pas)
+    let prevAvg: number | null = null;
+    let currentRank = 0;
+    return sortedResults.map(res => {
+      if (prevAvg !== null && Number(res.generalAverage) === prevAvg) {
+        return { ...res, classRank: currentRank };
+      }
+      currentRank++;
+      prevAvg = Number(res.generalAverage);
+      return { ...res, classRank: currentRank };
+    });
+  }
+
+  /**
+   * Calcule la performance d'un élève sur une période.
+   *
+   * ⭐ Utilise AcademicRulesEngine.evaluateSubjectAverage() si une formule
+   * est configurée. Sinon fallback sur moyenne arithmétique simple.
+   * ⭐ Le coefficient vient du subject.coefficient (plus de forçage PRIMAIRE=1).
+   * ⭐ L'appréciation vient de AcademicRulesEngine.getAppreciation() avec
+   * l'échelle configurée.
+   */
+  private async calculateStudentPeriodPerformance(
+    tenantId: string,
+    academicYearId: string,
+    periodId: string,
+    studentId: string,
+    classId: string,
+    grades: any[],
+    subjectRule: SubjectAverageRule | undefined,
+    appreciationScale: AppreciationScale[],
+  ) {
     // Récupérer le niveau scolaire de la classe pour appliquer la bonne logique
     const classInfo = await this.prisma.class.findUnique({
       where: { id: classId },
@@ -108,15 +229,26 @@ export class BulletinsService {
     // Grouper par matière
     grades.forEach(g => {
       if (!subjectsMap.has(g.subjectId)) {
+        // ⭐ Coefficient vient du subject (plus de forçage PRIMAIRE=1 hardcodé)
+        const coefficient = Number(g.subject.coefficient || 1);
         subjectsMap.set(g.subjectId, {
           subject: g.subject,
+          grades: [],
           scores: [],
           qualitativeCodes: [],
-          coefficient: classInfo?.schoolLevel?.code === 'PRIMAIRE' ? 1 : Number(g.subject.coefficient || 1),
+          assessmentScores: {} as Record<string, number>,
+          coefficient,
         });
       }
-      if (g.score !== null) subjectsMap.get(g.subjectId).scores.push(Number(g.score));
-      if (g.qualitativeCode) subjectsMap.get(g.subjectId).qualitativeCodes.push(g.qualitativeCode);
+      const entry = subjectsMap.get(g.subjectId);
+      entry.grades.push(g);
+      if (g.score !== null) {
+        entry.scores.push(Number(g.score));
+        // ⭐ Mapping score → code du type d'évaluation pour la formule
+        const typeCode = g.evaluation?.evaluationType?.name?.toUpperCase().replace(/\s+/g, '_') || 'NOTE';
+        entry.assessmentScores[typeCode] = Number(g.score);
+      }
+      if (g.qualitativeCode) entry.qualitativeCodes.push(g.qualitativeCode);
     });
 
     let totalWeighted = 0;
@@ -128,18 +260,28 @@ export class BulletinsService {
       let appreciation = '';
 
       if (classInfo?.schoolLevel?.code === 'MATERNELLE') {
-        // Synthèse qualitative : Code majoritaire
+        // Synthèse qualitative : Code majoritaire (échelle TS/S/PS/NS)
         const counts = data.qualitativeCodes.reduce((acc: any, code: string) => {
           acc[code] = (acc[code] || 0) + 1;
           return acc;
         }, {});
         appreciation = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || 'N/A';
+        // Pas de moyenne numérique pour la maternelle
       } else {
-        average = data.scores.length > 0 
-          ? data.scores.reduce((a: number, b: number) => a + b, 0) / data.scores.length 
-          : 0;
+        // ⭐ Utiliser AcademicRulesEngine si une formule est configurée
+        if (subjectRule && Object.keys(data.assessmentScores).length > 0) {
+          average = this.rulesEngine.evaluateSubjectAverage(data.assessmentScores, subjectRule);
+        } else {
+          // Fallback : moyenne arithmétique simple
+          average = data.scores.length > 0
+            ? data.scores.reduce((a: number, b: number) => a + b, 0) / data.scores.length
+            : 0;
+        }
+
+        // ⭐ Appreciation via AcademicRulesEngine.getAppreciation()
+        appreciation = this.rulesEngine.getAppreciation(average, appreciationScale);
       }
-      
+
       const weightedAverage = average * data.coefficient;
       totalWeighted += weightedAverage;
       totalCoefficient += data.coefficient;
@@ -177,7 +319,10 @@ export class BulletinsService {
       });
     }
 
-    const generalAverage = totalCoefficient > 0 ? totalWeighted / totalCoefficient : 0;
+    // ⭐ Moyenne générale via AcademicRulesEngine.evaluateGeneralAverage()
+    const generalAverage = this.rulesEngine.evaluateGeneralAverage(
+      subjectDetails.map(s => ({ average: s.average, coefficient: s.coefficient })),
+    );
 
     return {
       studentId,
@@ -212,6 +357,7 @@ export class BulletinsService {
       },
     });
   }
+
   /**
    * Récupère toutes les données nécessaires pour générer le bulletin PDF
    */
@@ -219,12 +365,12 @@ export class BulletinsService {
     // 1. Infos École & Année
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
     const academicYear = await this.prisma.academicYear.findUnique({ where: { id: academicYearId } });
-    
+
     // 2. Infos Élève & Classe
-    const student = await this.prisma.student.findUnique({ 
+    const student = await this.prisma.student.findUnique({
       where: { id: studentId },
-      include: { 
-        studentEnrollments: { 
+      include: {
+        studentEnrollments: {
           where: { academicYearId, tenantId },
           include: { class: { include: { schoolLevel: true } } }
         }
@@ -255,7 +401,11 @@ export class BulletinsService {
       where: { classId, academicYearId, tenantId }
     });
 
-    // 6. Formater pour le template PDF
+    // 6. ⭐ Récupérer l'échelle d'appréciation configurée
+    const academicConfig = await this.getActiveAcademicConfig(tenantId, academicYearId);
+    const appreciationScale: AppreciationScale[] = academicConfig?.mentions || this.getDefaultMentions();
+
+    // 7. Formater pour le template PDF
     return {
       bulletinId: `BUL-${studentId.substring(0,8)}-${periodId}`,
       schoolName: tenant?.name || 'Academia Helm Institutional',
@@ -281,16 +431,10 @@ export class BulletinsService {
         average: sa.average,
         weightedAverage: sa.weightedAverage,
         rank: '-', // À calculer si besoin spécifique
-        appreciation: sa.appreciation || this.getGradeAppreciation(Number(sa.average)),
+        // ⭐ Utilise l'appréciation stockée OU fallback via AcademicRulesEngine
+        appreciation: sa.appreciation ||
+          this.rulesEngine.getAppreciation(Number(sa.average), appreciationScale),
       }))
     };
-  }
-
-  private getGradeAppreciation(average: number): string {
-    if (average >= 16) return 'Très Bien';
-    if (average >= 14) return 'Bien';
-    if (average >= 12) return 'Assez Bien';
-    if (average >= 10) return 'Passable';
-    return 'Insuffisant';
   }
 }

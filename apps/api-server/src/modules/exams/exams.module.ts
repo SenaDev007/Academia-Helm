@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { UsersModule } from '../../users/users.module';
 import { AuditLogsModule } from '../../audit-logs/audit-logs.module';
+import { ExamsGradesModule } from '../../exams-grades/exams-grades.module';
 import { ExamsDashboardController } from './exams-dashboard.controller';
 import { ExamsDashboardService } from './services/exams-dashboard.service';
 import { EvaluationsController } from './evaluations.controller';
@@ -19,9 +20,11 @@ import { CouncilsService } from './services/councils.service';
 import { AcademicAuditController } from './academic-audit.controller';
 import { AcademicAuditService } from './services/academic-audit.service';
 import { BulletinPdfService } from './services/bulletin-pdf.service';
+import { ExamsSpecConfigController } from './exams-spec-config.controller';
+import { ExamsLockController } from './exams-lock.controller';
 
 @Module({
-  imports: [DatabaseModule, UsersModule, AuditLogsModule],
+  imports: [DatabaseModule, UsersModule, AuditLogsModule, ExamsGradesModule],
   controllers: [
     ExamsDashboardController,
     EvaluationsController,
@@ -31,6 +34,8 @@ import { BulletinPdfService } from './services/bulletin-pdf.service';
     ExamsConfigController,
     CouncilsController,
     AcademicAuditController,
+    ExamsSpecConfigController,
+    ExamsLockController,
   ],
   providers: [
     ExamsDashboardService,

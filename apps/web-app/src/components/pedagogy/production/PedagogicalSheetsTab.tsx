@@ -80,7 +80,9 @@ function formatDateFR(dateStr: string): string {
 // et le déroulement.
 const SHEET_TYPE_CONFIG: Record<string, {
   ibisTitle: string;
-  ibisFields: { label: string; key: string; placeholder: string }[];
+  ibisFields: { label: string; key: string; placeholder: string; short?: boolean }[];
+  // ⭐ Phases spécifiques au français (Phase introductive, systématisation, application)
+  phases?: { label: string; key: string }[];
 }> = {
   MATH: {
     ibisTitle: "Phases préparatoires",
@@ -95,9 +97,16 @@ const SHEET_TYPE_CONFIG: Record<string, {
   FRANCAIS: {
     ibisTitle: "Exercice structural",
     ibisFields: [
-      { label: "Unité N°", key: "ibis_1", placeholder: "Ex: Unité 3" },
-      { label: "Structure", key: "ibis_2", placeholder: "Ex: Situation initiale → élément modificateur → déroulement → situation finale" },
-      { label: "Objectif", key: "ibis_3", placeholder: "Ex: Identifier les étapes d'un récit..." },
+      { label: "Unité N°", key: "ibis_1", placeholder: "Ex: Unité 3", short: true },
+      { label: "Structure", key: "ibis_2", placeholder: "Ex: Situation initiale → élément modificateur → déroulement → situation finale", short: true },
+      { label: "Objectif", key: "ibis_3", placeholder: "Ex: Identifier les étapes d'un récit...", short: true },
+      { label: "Fiche N°", key: "ibis_4", placeholder: "Ex: Fiche 1", short: true },
+      { label: "Durée (10 minutes)", key: "ibis_5", placeholder: "Ex: 10 min", short: true },
+    ],
+    phases: [
+      { label: "Phase introductive", key: "phase_introductive" },
+      { label: "Phase de systématisation", key: "phase_systematisation" },
+      { label: "Phase d'application", key: "phase_application" },
     ],
   },
   EST: {
@@ -142,6 +151,8 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
     methodes: "", moyensDidactiques: "", evaluation: "",
     // I.bis- Section spécifique (champs dynamiques ibis_1, ibis_2, etc.)
     ibis_1: "", ibis_2: "", ibis_3: "", ibis_4: "", ibis_5: "",
+    // ⭐ Phases spécifiques au français
+    phase_introductive: "", phase_systematisation: "", phase_application: "",
     // II- Déroulement (tableau d'étapes)
     deroulement: [] as Array<{ etape: string; consignes: string; resultats: string }>,
     // III- Retour et projection
@@ -333,14 +344,32 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
             <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-300 pb-2 mb-3">
               {typeConfig.ibisTitle} — {sheetType?.label}
             </h3>
-            <div className="space-y-3">
+            <div className={cn("space-y-3", typeConfig.ibisFields.some(f => f.short) ? "grid grid-cols-1 md:grid-cols-3 gap-3" : "")}>
               {typeConfig.ibisFields.map(f => (
                 <div key={f.key}>
                   <label className="block text-xs font-bold text-slate-700 mb-1">{f.label}</label>
-                  <RichTextEditor value={form[f.key] || ""} onChange={html => setForm({ ...form, [f.key]: html })} disabled={isReadOnly} minHeight="60px" />
+                  {f.short ? (
+                    /* ⭐ Champ court (input text) — pour Unité, Structure, Objectif, Fiche N°, Durée */
+                    <input type="text" value={form[f.key] || ""} onChange={e => setForm({ ...form, [f.key]: e.target.value })} disabled={isReadOnly}
+                      placeholder={f.placeholder} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+                  ) : (
+                    /* ⭐ Champ long (RichTextEditor) */
+                    <RichTextEditor value={form[f.key] || ""} onChange={html => setForm({ ...form, [f.key]: html })} disabled={isReadOnly} minHeight="60px" />
+                  )}
                 </div>
               ))}
             </div>
+            {/* ⭐ Phases spécifiques au français (Phase introductive, systématisation, application) */}
+            {typeConfig.phases && (
+              <div className="mt-4 space-y-3">
+                {typeConfig.phases.map(p => (
+                  <div key={p.key}>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">{p.label}</label>
+                    <RichTextEditor value={form[p.key] || ""} onChange={html => setForm({ ...form, [p.key]: html })} disabled={isReadOnly} minHeight="60px" />
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
 
           {/* II- Déroulement (tableau N° / Consignes / Résultats attendus) */}

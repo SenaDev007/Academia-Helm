@@ -2147,6 +2147,8 @@ export class PedagogicalSpaceService {
       san: 'san', sequence: 'sequence', cours: 'cours', titre: 'titre', duree: 'duree',
       ibis_1: 'ibis_1', ibis_2: 'ibis_2', ibis_3: 'ibis_3', ibis_4: 'ibis_4', ibis_5: 'ibis_5',
       objectivation: 'objectivation', evalRetour: 'evalRetour', projection: 'projection',
+      // ⭐ Phases spécifiques au français
+      phase_introductive: 'phase_introductive', phase_systematisation: 'phase_systematisation', phase_application: 'phase_application',
     };
 
     for (const [key, col] of Object.entries(fieldMap)) {
@@ -2208,6 +2210,7 @@ export class PedagogicalSpaceService {
       san: 'string', sequence: 'string', cours: 'string', titre: 'string', duree: 'string',
       ibis_1: 'string', ibis_2: 'string', ibis_3: 'string', ibis_4: 'string', ibis_5: 'string',
       objectivation: 'string', evalRetour: 'string', projection: 'string',
+      phase_introductive: 'string', phase_systematisation: 'string', phase_application: 'string',
       status: 'string', submittedAt: 'date', validatedAt: 'date',
       validatedBy: 'string', rejectionReason: 'string',
     };

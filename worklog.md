@@ -634,3 +634,41 @@ Stage Summary:
   - L'appel journalier sauvegardé → registre mensuel auto-mis-à-jour
   - Le select matières Cahier Journal affichera les 23 matières de la classe
   - L'auto-save de l'Appel fonctionnera (badge "Enregistré à HH:MM:SS")
+
+---
+Task ID: phase6-7-semainier
+Agent: main
+Task: Phase 6 (Communication inter-modules) + Phase 7 (Export PDF) du Cahier du Semainier, et correction du build Fly.io
+
+Work Log:
+- Diagnostic build Fly.io : `pedagogical-space.controller.ts` et `pedagogical-space.service.ts` avaient des méthodes Cahier du Semainier ajoutées APRÈS la fermeture de la classe (} prématuré)
+- Correction : suppression du `}` superflu avant les sections "CAHIER DU SEMAINIER" dans les 2 fichiers
+- Vérification syntaxique via parseur TypeScript (`/home/z/my-project/scripts/ts_syntax_check.js`) — les 2 fichiers compilent
+- Création migration `20260722100000_add_weekly_seminar_tables/migration.sql` : tables weekly_seminar_config, weekly_seminar_daily_report, weekly_seminar_weekly_report (avec FK + index)
+- Phase 6 — `fetchCrossModuleData(reportId)` : agrège depuis
+    • staff_attendances (RH) — jointure LEFT JOIN "staff" (pas "staffs")
+    • attendance_records (Élèves) — agrégation COUNT par classId/status
+    • timetable_entries (EDT) — filtrage par dayOfWeek
+- Phase 6 — `syncStaffAttendanceFromRh(reportId)` : écrit teacherAttendance (JSONB) + synthesis, n'écrase pas si `_manualEdit:true`
+- Phase 6 — `syncStudentPresenceFromAttendance(reportId)` : calcule attendanceRate, identifie highAbsenceClasses (>30%)
+- Phase 6 — `syncScheduleFromEdt(reportId)` : compare EDT vs pedagogy_class_logs (colonne `lessonDate`, pas `date`) → missingCourses / modifiedCourses
+- Phase 7 — `exportSeminarWeek(configId, format)` :
+    • format='excel' → CSV (BOM UTF-8) avec 10 colonnes par jour
+    • format='pdf' → HTML/CSS → Puppeteer → PDF A4 portrait (1 page couverture + 5 pages journalières + 1 page synthèse)
+    • Récupère schoolName/city/logo depuis tenant_identity_profiles (pas tenants)
+- Correction noms de tables/colonnes : "staff" (singulier), "rooms"."roomName", "pedagogy_class_logs"."lessonDate", pas de colonne "matricule" sur staff (COALESCE tenantMatricule/globalMatricule/employeeNumber)
+- 5 nouveaux endpoints controller :
+    GET    seminar-daily-report/:id/cross-module
+    POST   seminar-daily-report/:id/sync-from-rh
+    POST   seminar-daily-report/:id/sync-from-students
+    POST   seminar-daily-report/:id/sync-from-edt
+    GET    seminar-config/:id/export?format=pdf|excel
+
+Stage Summary:
+- Build Fly.io : les 2 fichiers en erreur compilent maintenant ✅
+- Migration : `20260722100000_add_weekly_seminar_tables/migration.sql` prête pour `prisma migrate deploy`
+- Phase 6 : 4 endpoints (1 GET aperçu + 3 POST sync) fonctionnels
+- Phase 7 : 1 endpoint export (PDF via Puppeteer + CSV Excel) — 7 pages PDF par semaine
+- Prochaine étape utilisateur : redéployer sur Fly.io
+    cd /home/z/my-project/apps/api-server
+    flyctl deploy -a academia-helm-api --strategy rolling

@@ -923,7 +923,6 @@ export class PedagogicalSpaceController {
     });
     res.send(buffer);
   }
-}
 
   // ===========================================================================
   // CAHIER DU SEMAINIER — Endpoints
@@ -970,5 +969,69 @@ export class PedagogicalSpaceController {
     @Body() body: any,
   ) {
     return this.service.updateDailyReport(tenantId, id, body);
+  }
+
+  // ===========================================================================
+  // CAHIER DU SEMAINIER — Phase 6 : Communication inter-modules
+  // Synchronisation automatique depuis RH (présences enseignants),
+  // Élèves (appel), et EDT (cours modifiés).
+  // ===========================================================================
+
+  @Get('seminar-daily-report/:id/cross-module')
+  async getCrossModuleData(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.fetchCrossModuleData(tenantId, id);
+  }
+
+  @Post('seminar-daily-report/:id/sync-from-rh')
+  async syncFromRh(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.syncStaffAttendanceFromRh(tenantId, id);
+  }
+
+  @Post('seminar-daily-report/:id/sync-from-students')
+  async syncFromStudents(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.syncStudentPresenceFromAttendance(tenantId, id);
+  }
+
+  @Post('seminar-daily-report/:id/sync-from-edt')
+  async syncFromEdt(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.syncScheduleFromEdt(tenantId, id);
+  }
+
+  // ===========================================================================
+  // CAHIER DU SEMAINIER — Phase 7 : Export PDF
+  // ===========================================================================
+
+  @Get('seminar-config/:id/export')
+  async exportSeminarConfig(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Query('format') format: string,
+    @Res() res: any,
+  ) {
+    if (!format || (format !== 'pdf' && format !== 'excel')) {
+      throw new BadRequestException('format doit être "pdf" ou "excel"');
+    }
+    const buffer = await this.service.exportSeminarWeek(tenantId, id, format);
+    const ext = format === 'excel' ? 'csv' : 'pdf';
+    const mimeType = format === 'excel'
+      ? 'text/csv; charset=utf-8'
+      : 'application/pdf';
+    res.set({
+      'Content-Type': mimeType,
+      'Content-Disposition': `attachment; filename="Cahier_Semainier_S${id}.${ext}"`,
+    });
+    res.send(buffer);
   }
 }

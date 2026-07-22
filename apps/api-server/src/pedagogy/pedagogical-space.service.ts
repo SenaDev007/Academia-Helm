@@ -4248,7 +4248,6 @@ h2{text-align:center;}table{width:100%;border-collapse:collapse;}th,td{border:1p
       }
     }
   }
-}
 
   // ===========================================================================
   // CAHIER DU SEMAINIER — Service Methods
@@ -4436,5 +4435,687 @@ h2{text-align:center;}table{width:100%;border-collapse:collapse;}th,td{border:1p
       reportId,
     );
     return updated[0];
+  }
+
+  // ===========================================================================
+  // CAHIER DU SEMAINIER — Phase 6 : Communication inter-modules
+  // ===========================================================================
+  //
+  // Le Cahier du Semainier agrège des données provenant de trois autres modules
+  // pour pré-remplir automatiquement les sections journalières :
+  //
+  //   • Module RH            → Section 1 (Présence enseignants)
+  //     Table source : staff_attendances (status, checkIn, checkOut, hoursWorked)
+  //
+  //   • Module Élèves        → Section 2 (Présence élèves)
+  //     Table source : attendance_records (status = ABSENT/LATE/PRESENT, notes)
+  //
+  //   • Module EDT           → Section 3 (Pédagogie / respect du programme)
+  //     Table source : timetable_entries (dayOfWeek, startTime, endTime, classId)
+  //     Permet d'identifier les cours non assurés / modifiés.
+  //
+  // Chaque méthode de sync peut être appelée individuellement, ou toutes ensemble
+  // via fetchCrossModuleData. Les données sont écrites dans les champs JSONB
+  // correspondants (teacherAttendance, studentPresence, pedagogy) du rapport
+  // journalier — sans écraser les saisies manuelles déjà effectuées.
+
+  /**
+   * Récupère, pour un rapport journalier donné :
+   *   - le rapport lui-même (avec sa date et sa config)
+   *   - les présences enseignants (RH) du même jour
+   *   - les appels élèves (Attendance) du même jour
+   *   - les créneaux EDT du jour de la semaine correspondant
+   *
+   * Ne modifie PAS le rapport — sert d'aperçu avant sync.
+   */
+  async fetchCrossModuleData(tenantId: string, reportId: string) {
+    const report: any = await this.prisma.$queryRawUnsafe(
+      `SELECT dr.*, sc."weekStartDate", sc."weekEndDate", sc."weekNumber",
+              sc."teacherId", sc."academicYearId"
+       FROM "weekly_seminar_daily_report" dr
+       JOIN "weekly_seminar_config" sc ON sc."id" = dr."seminarConfigId"
+       WHERE dr."id" = $1 AND dr."tenantId" = $2`,
+      reportId, tenantId,
+    );
+    if (!report || report.length === 0) {
+      throw new NotFoundException('Rapport journalier non trouvé');
+    }
+    const r = report[0];
+    const targetDate = r.date;
+
+    // ── RH : présences enseignants du jour ─────────────────────────────
+    const staffAttendances: any = await this.prisma.$queryRawUnsafe(
+      `SELECT sa.*, s."firstName", s."lastName",
+              COALESCE(s."tenantMatricule", s."globalMatricule", s."employeeNumber") AS "matricule"
+       FROM "staff_attendances" sa
+       LEFT JOIN "staff" s ON s."id" = sa."staffId"
+       WHERE sa."tenantId" = $1 AND sa."academicYearId" = $2
+         AND sa."date" = $3
+       ORDER BY s."lastName" ASC, s."firstName" ASC`,
+      tenantId, r.academicYearId, targetDate,
+    );
+
+    // ── Élèves : appels du jour (agrégés par classe) ───────────────────
+    const studentAttendances: any = await this.prisma.$queryRawUnsafe(
+      `SELECT ar."classId", ar."status", ar."notes",
+              COUNT(*)::int AS "count",
+              c."name" AS "className"
+       FROM "attendance_records" ar
+       LEFT JOIN "classes" c ON c."id" = ar."classId"
+       WHERE ar."tenantId" = $1 AND ar."academicYearId" = $2
+         AND DATE(ar."date") = DATE($3)
+       GROUP BY ar."classId", ar."status", ar."notes", c."name"
+       ORDER BY c."name" ASC`,
+      tenantId, r.academicYearId, targetDate,
+    );
+
+    // ── EDT : créneaux du jour de la semaine (Lun=1..Ven=5) ────────────
+    const timetableEntries: any = await this.prisma.$queryRawUnsafe(
+      `SELECT te.*, c."name" AS "className", s."name" AS "subjectName",
+              t."firstName" AS "teacherFirstName", t."lastName" AS "teacherLastName",
+              r."roomName"
+       FROM "timetable_entries" te
+       LEFT JOIN "classes" c ON c."id" = te."classId"
+       LEFT JOIN "subjects" s ON s."id" = te."subjectId"
+       LEFT JOIN "teachers" t ON t."id" = te."teacherId"
+       LEFT JOIN "rooms" r ON r."id" = te."roomId"
+       WHERE te."tenantId" = $1 AND te."academicYearId" = $2
+         AND te."dayOfWeek" = $3
+       ORDER BY te."startTime" ASC`,
+      tenantId, r.academicYearId, r.dayOfWeek,
+    );
+
+    return {
+      report: r,
+      rh: {
+        staffAttendances: staffAttendances.map((s: any) => ({
+          staffId: s.staffId,
+          name: s.firstName ? `${s.firstName} ${s.lastName}` : s.matricule,
+          status: s.status,
+          checkIn: s.checkIn,
+          checkOut: s.checkOut,
+          hoursWorked: s.hoursWorked,
+          notes: s.notes,
+        })),
+        summary: {
+          total: staffAttendances.length,
+          present: staffAttendances.filter((s: any) => s.status === 'PRESENT').length,
+          absent: staffAttendances.filter((s: any) => s.status === 'ABSENT').length,
+          late: staffAttendances.filter((s: any) => s.status === 'LATE').length,
+          leave: staffAttendances.filter((s: any) => s.status === 'LEAVE').length,
+        },
+      },
+      students: {
+        byClass: studentAttendances.map((sa: any) => ({
+          classId: sa.classId,
+          className: sa.className,
+          status: sa.status,
+          count: sa.count,
+          notes: sa.notes,
+        })),
+        summary: {
+          totalRecords: studentAttendances.reduce((acc: number, sa: any) => acc + sa.count, 0),
+          absent: studentAttendances
+            .filter((sa: any) => sa.status === 'ABSENT')
+            .reduce((acc: number, sa: any) => acc + sa.count, 0),
+          late: studentAttendances
+            .filter((sa: any) => sa.status === 'LATE')
+            .reduce((acc: number, sa: any) => acc + sa.count, 0),
+          present: studentAttendances
+            .filter((sa: any) => sa.status === 'PRESENT')
+            .reduce((acc: number, sa: any) => acc + sa.count, 0),
+        },
+      },
+      edt: {
+        entries: timetableEntries.map((te: any) => ({
+          id: te.id,
+          classId: te.classId,
+          className: te.className,
+          subjectName: te.subjectName,
+          teacher: te.teacherFirstName ? `${te.teacherFirstName} ${te.teacherLastName}` : null,
+          room: te.roomName,
+          startTime: te.startTime,
+          endTime: te.endTime,
+          duration: te.duration,
+        })),
+        total: timetableEntries.length,
+      },
+    };
+  }
+
+  /**
+   * Synchronise la Section 1 (Présence enseignants) depuis le module RH.
+   * Écrit dans teacherAttendance (JSONB) et teacherAttendanceSynthesis (TEXT).
+   * N'écrase pas les modifications manuelles si l'utilisateur a déjà édité
+   * (détecté via un flag `_manualEdit: true` dans le JSONB).
+   */
+  async syncStaffAttendanceFromRh(tenantId: string, reportId: string) {
+    const crossData = await this.fetchCrossModuleData(tenantId, reportId);
+    const report = crossData.report;
+
+    // Ne pas écraser si édition manuelle
+    const existingTa = typeof report.teacherAttendance === 'string'
+      ? JSON.parse(report.teacherAttendance)
+      : (report.teacherAttendance || null);
+    if (existingTa && existingTa._manualEdit === true) {
+      return {
+        skipped: true,
+        reason: 'Section déjà éditée manuellement — sync RH ignorée.',
+        existing: existingTa,
+      };
+    }
+
+    const summary = crossData.rh.summary;
+    const staffList = crossData.rh.staffAttendances;
+
+    const teacherAttendance = {
+      _source: 'RH',
+      _syncedAt: new Date().toISOString(),
+      _manualEdit: false,
+      summary,
+      staff: staffList,
+    };
+
+    const synthesis = `Sur ${summary.total} enseignants attendus : `
+      + `${summary.present} présents, ${summary.absent} absents, `
+      + `${summary.late} en retard, ${summary.leave} en congé.`;
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "weekly_seminar_daily_report"
+       SET "teacherAttendance" = $1::jsonb,
+           "teacherAttendanceSynthesis" = $2,
+           "updatedAt" = NOW()
+       WHERE "id" = $3 AND "tenantId" = $4`,
+      JSON.stringify(teacherAttendance), synthesis, reportId, tenantId,
+    );
+
+    this.logger.log(`✅ Sync RH → rapport ${reportId} (${summary.total} enseignants)`);
+    return { synced: true, teacherAttendance, synthesis };
+  }
+
+  /**
+   * Synchronise la Section 2 (Présence élèves) depuis le module Élèves (Attendance).
+   * Écrit dans studentPresence (JSONB).
+   * Calcule le taux de présence par classe et identifie les classes à forte absence.
+   */
+  async syncStudentPresenceFromAttendance(tenantId: string, reportId: string) {
+    const crossData = await this.fetchCrossModuleData(tenantId, reportId);
+    const report = crossData.report;
+
+    const existingSp = typeof report.studentPresence === 'string'
+      ? JSON.parse(report.studentPresence)
+      : (report.studentPresence || null);
+    if (existingSp && existingSp._manualEdit === true) {
+      return {
+        skipped: true,
+        reason: 'Section déjà éditée manuellement — sync Élèves ignorée.',
+        existing: existingSp,
+      };
+    }
+
+    const summary = crossData.students.summary;
+    const byClass = crossData.students.byClass;
+
+    // Identifier les classes à forte absence (>30% d'absents)
+    const highAbsenceClasses = byClass
+      .filter((c: any) => {
+        const total = byClass
+          .filter((x: any) => x.classId === c.classId)
+          .reduce((acc: number, x: any) => acc + x.count, 0);
+        const absent = byClass
+          .filter((x: any) => x.classId === c.classId && x.status === 'ABSENT')
+          .reduce((acc: number, x: any) => acc + x.count, 0);
+        return total > 0 && (absent / total) > 0.3;
+      })
+      .map((c: any) => c.className)
+      .filter((v: any, i: number, arr: any[]) => arr.indexOf(v) === i);
+
+    const totalRecords = summary.totalRecords || 0;
+    const present = summary.present || 0;
+    const rate = totalRecords > 0 ? (present / totalRecords) * 100 : 0;
+
+    const studentPresence = {
+      _source: 'STUDENTS',
+      _syncedAt: new Date().toISOString(),
+      _manualEdit: false,
+      attendanceRate: Number(rate.toFixed(2)),
+      summary,
+      byClass,
+      highAbsenceClasses,
+      parentNotifiedAbsences: '',  // à remplir manuellement
+      lateCount: summary.late,
+      specialCases: '',
+    };
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "weekly_seminar_daily_report"
+       SET "studentPresence" = $1::jsonb,
+           "updatedAt" = NOW()
+       WHERE "id" = $2 AND "tenantId" = $3`,
+      JSON.stringify(studentPresence), reportId, tenantId,
+    );
+
+    this.logger.log(`✅ Sync Élèves → rapport ${reportId} (taux=${rate.toFixed(1)}%)`);
+    return { synced: true, studentPresence };
+  }
+
+  /**
+   * Synchronise la Section 3 (Pédagogie / respect du programme) depuis l'EDT.
+   * Écrit dans pedagogy (JSONB).
+   * Compare les créneaux prévus avec les saisies pédagogiques existantes
+   * (class_logs / cahier journal) pour identifier les cours non assurés.
+   */
+  async syncScheduleFromEdt(tenantId: string, reportId: string) {
+    const crossData = await this.fetchCrossModuleData(tenantId, reportId);
+    const report = crossData.report;
+    const targetDate = report.date;
+
+    const existingPed = typeof report.pedagogy === 'string'
+      ? JSON.parse(report.pedagogy)
+      : (report.pedagogy || null);
+    if (existingPed && existingPed._manualEdit === true) {
+      return {
+        skipped: true,
+        reason: 'Section déjà éditée manuellement — sync EDT ignorée.',
+        existing: existingPed,
+      };
+    }
+
+    // Récupérer les saisies de cahier journal du jour (pedagogy_class_logs)
+    const classLogs: any = await this.prisma.$queryRawUnsafe(
+      `SELECT cl."classId", cl."subjectId", cl."topic", cl."homework",
+              cl."durationHours", c."name" AS "className",
+              s."name" AS "subjectName"
+       FROM "pedagogy_class_logs" cl
+       LEFT JOIN "classes" c ON c."id" = cl."classId"
+       LEFT JOIN "subjects" s ON s."id" = cl."subjectId"
+       WHERE cl."tenantId" = $1 AND DATE(cl."lessonDate") = DATE($2)`,
+      tenantId, targetDate,
+    );
+
+    const edtEntries = crossData.edt.entries;
+    const taughtKeys = new Set(
+      classLogs.map((cl: any) => `${cl.classId}|${cl.subjectId}`),
+    );
+
+    // Cours prévus mais non saisis dans le cahier journal
+    const missingCourses = edtEntries.filter((te: any) =>
+      te.classId && te.subjectId && !taughtKeys.has(`${te.classId}|${te.subjectId}`),
+    );
+
+    // Cours saisis mais non prévus à l'EDT (modifications)
+    const edtKeys = new Set(
+      edtEntries.map((te: any) => `${te.classId}|${te.subjectId}`),
+    );
+    const modifiedCourses = classLogs.filter((cl: any) =>
+      cl.classId && cl.subjectId && !edtKeys.has(`${cl.classId}|${cl.subjectId}`),
+    );
+
+    const pedagogy = {
+      _source: 'EDT',
+      _syncedAt: new Date().toISOString(),
+      _manualEdit: false,
+      scheduleRespected: missingCourses.length === 0 && modifiedCourses.length === 0,
+      scheduledCourses: edtEntries,
+      taughtCourses: classLogs.map((cl: any) => ({
+        classId: cl.classId,
+        className: cl.className,
+        subjectId: cl.subjectId,
+        subjectName: cl.subjectName,
+        topic: cl.topic,
+        homework: cl.homework,
+        durationHours: cl.durationHours,
+      })),
+      missingCourses: missingCourses.map((te: any) => ({
+        className: te.className,
+        subjectName: te.subjectName,
+        teacher: te.teacher,
+        startTime: te.startTime,
+        endTime: te.endTime,
+      })),
+      modifiedCourses: modifiedCourses.map((cl: any) => ({
+        className: cl.className,
+        subjectName: cl.subjectName,
+      })),
+      remarkableActivities: '',
+      classClimate: '',
+    };
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "weekly_seminar_daily_report"
+       SET "pedagogy" = $1::jsonb,
+           "updatedAt" = NOW()
+       WHERE "id" = $2 AND "tenantId" = $3`,
+      JSON.stringify(pedagogy), reportId, tenantId,
+    );
+
+    this.logger.log(`✅ Sync EDT → rapport ${reportId} `
+      + `(${missingCourses.length} manquants, ${modifiedCourses.length} modifiés)`);
+    return { synced: true, pedagogy };
+  }
+
+  // ===========================================================================
+  // CAHIER DU SEMAINIER — Phase 7 : Export PDF
+  // ===========================================================================
+  //
+  // Génère un PDF multi-pages du Cahier du Semainier pour une semaine donnée.
+  // Le PDF contient :
+  //   - Page 1 : Couverture (école, semaine, trimestre, enseignant, classe)
+  //   - Pages 2-6 : Un rapport journalier par jour (Lun..Ven) avec les 8 sections
+  //   - Page 7 : Synthèse hebdomadaire + signatures
+  //
+  // Utilise PuppeteerPoolService (comme l'export du cahier journal et de la
+  // finance) pour rendre un HTML/CSS en PDF A4 portrait.
+
+  /**
+   * Exporte la semaine complète d'un Cahier du Semainier en PDF ou CSV.
+   *
+   * @param tenantId   ID du tenant
+   * @param configId   ID de la weekly_seminar_config (semaine)
+   * @param format     'pdf' | 'excel' (excel = CSV avec BOM)
+   */
+  async exportSeminarWeek(tenantId: string, configId: string, format: string): Promise<Buffer> {
+    // Charger la config + l'année scolaire + l'école (avec profil d'identité)
+    const configRows: any = await this.prisma.$queryRawUnsafe(
+      `SELECT wsc.*, t."firstName" AS "teacherFirstName", t."lastName" AS "teacherLastName",
+              ay."label" AS "academicYearLabel", ay."startDate" AS "academicYearStart",
+              tip."schoolName", tip."city" AS "schoolCity", tip."logoUrl" AS "schoolLogo"
+       FROM "weekly_seminar_config" wsc
+       LEFT JOIN "teachers" t ON t."id" = wsc."teacherId"
+       LEFT JOIN "academic_years" ay ON ay."id" = wsc."academicYearId"
+       LEFT JOIN "tenant_identity_profiles" tip ON tip."tenantId" = wsc."tenantId" AND tip."isActive" = true
+       WHERE wsc."id" = $1 AND wsc."tenantId" = $2`,
+      configId, tenantId,
+    );
+    if (!configRows || configRows.length === 0) {
+      throw new NotFoundException('Config du semainier non trouvée');
+    }
+    const cfg = configRows[0];
+
+    // Charger les 5 rapports journaliers (Lun..Ven)
+    const dailyReports: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "weekly_seminar_daily_report"
+       WHERE "seminarConfigId" = $1 AND "tenantId" = $2
+       ORDER BY "dayOfWeek" ASC`,
+      configId, tenantId,
+    );
+
+    const teacherName = cfg.teacherFirstName
+      ? `${cfg.teacherFirstName} ${cfg.teacherLastName}`
+      : '—';
+    const weekLabel = `Semaine ${cfg.weekNumber} (S${cfg.weekNumber})`;
+    const trimesterLabel = `Trimestre ${cfg.trimester}`;
+
+    if (format === 'excel') {
+      // ── Export CSV (synthèse des 5 jours) ────────────────────────────
+      const rows: string[] = [];
+      rows.push('Jour,Date,Statut enseignants,Présence élèves (%),Cours non assurés,Discipline,Hygiène,Visites,Communication,Résumé');
+      const dayLabels = ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
+      for (const dr of dailyReports) {
+        const ta = typeof dr.teacherAttendance === 'string'
+          ? JSON.parse(dr.teacherAttendance) : (dr.teacherAttendance || {});
+        const sp = typeof dr.studentPresence === 'string'
+          ? JSON.parse(dr.studentPresence) : (dr.studentPresence || {});
+        const ped = typeof dr.pedagogy === 'string'
+          ? JSON.parse(dr.pedagogy) : (dr.pedagogy || {});
+        const disc = typeof dr.discipline === 'string'
+          ? JSON.parse(dr.discipline) : (dr.discipline || {});
+        const hyg = typeof dr.hygiene === 'string'
+          ? JSON.parse(dr.hygiene) : (dr.hygiene || {});
+        const vis = typeof dr.visits === 'string'
+          ? JSON.parse(dr.visits) : (dr.visits || {});
+        const com = typeof dr.communication === 'string'
+          ? JSON.parse(dr.communication) : (dr.communication || {});
+        const ds = typeof dr.dailySummary === 'string'
+          ? JSON.parse(dr.dailySummary) : (dr.dailySummary || {});
+
+        const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        rows.push([
+          esc(dayLabels[dr.dayOfWeek] || ''),
+          esc(dr.date ? new Date(dr.date).toLocaleDateString('fr-FR') : ''),
+          esc(ta.summary ? `${ta.summary.present}/${ta.summary.total} présents` : ''),
+          esc(sp.attendanceRate != null ? `${sp.attendanceRate}%` : ''),
+          esc(ped.missingCourses ? `${ped.missingCourses.length} cours` : ''),
+          esc(disc.positiveBehaviors || ''),
+          esc(hyg.roomCleanliness || ''),
+          esc(vis.adminVisit || vis.pedagoVisit || vis.parentVisit ? 'Oui' : 'Non'),
+          esc(com.directorInstructions || ''),
+          esc(ds.strengths || ''),
+        ].join(','));
+      }
+      // BOM UTF-8 pour Excel
+      return Buffer.from('\uFEFF' + rows.join('\n'), 'utf-8');
+    }
+
+    // ── Export PDF via Puppeteer ───────────────────────────────────────
+    const dayLabels = ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
+    const dayColors = ['', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444'];
+    const txt = (v: any) => String(v ?? '').replace(/<[^>]*>/g, '');
+
+    // Helper pour rendre une section journalière
+    const renderDailySection = (title: string, color: string, content: any): string => {
+      const txt = (v: any) => String(v ?? '').replace(/<[^>]*>/g, '');
+      if (!content) {
+        return `<div class="section" style="border-left-color:${color}">
+          <h3 style="background:${color}">${title}</h3>
+          <p class="empty"><em>Non renseigné</em></p>
+        </div>`;
+      }
+      const c = typeof content === 'string' ? JSON.parse(content) : content;
+      let body = '';
+      if (title === '1. Présence des enseignants') {
+        body = `
+          <p><strong>Synthèse:</strong> ${txt(c.summary
+            ? `${c.summary.present}/${c.summary.total} présents, ${c.summary.absent} absents, ${c.summary.late} en retard`
+            : c.teacherAttendanceSynthesis || '')}</p>`;
+        if (c.staff && c.staff.length > 0) {
+          body += '<table><thead><tr><th>Nom</th><th>Statut</th><th>Arrivée</th><th>Départ</th><th>Heures</th></tr></thead><tbody>';
+          for (const s of c.staff) {
+            body += `<tr><td>${txt(s.name)}</td><td>${txt(s.status)}</td>
+              <td>${s.checkIn ? new Date(s.checkIn).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+              <td>${s.checkOut ? new Date(s.checkOut).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+              <td>${s.hoursWorked ? s.hoursWorked.toFixed(1) + 'h' : '—'}</td></tr>`;
+          }
+          body += '</tbody></table>';
+        }
+      } else if (title === '2. Présence des élèves') {
+        body = `
+          <p><strong>Taux de présence:</strong> ${c.attendanceRate != null ? c.attendanceRate + '%' : '—'}</p>
+          <p><strong>Absents:</strong> ${c.summary?.absent ?? 0} &nbsp; <strong>Retards:</strong> ${c.summary?.late ?? 0}</p>`;
+        if (c.highAbsenceClasses && c.highAbsenceClasses.length > 0) {
+          body += `<p><strong>Classes à forte absence:</strong> ${c.highAbsenceClasses.join(', ')}</p>`;
+        }
+        if (c.byClass && c.byClass.length > 0) {
+          body += '<table><thead><tr><th>Classe</th><th>Statut</th><th>Effectif</th></tr></thead><tbody>';
+          for (const b of c.byClass) {
+            body += `<tr><td>${txt(b.className)}</td><td>${txt(b.status)}</td><td>${b.count}</td></tr>`;
+          }
+          body += '</tbody></table>';
+        }
+      } else if (title === '3. Pédagogie / Respect du programme') {
+        body = `<p><strong>Programme respecté:</strong> ${c.scheduleRespected ? 'Oui' : 'Non'}</p>`;
+        if (c.missingCourses && c.missingCourses.length > 0) {
+          body += '<p><strong>Cours non assurés:</strong></p><ul>';
+          for (const m of c.missingCourses) {
+            body += `<li>${txt(m.className)} — ${txt(m.subjectName)} (${m.startTime}-${m.endTime})</li>`;
+          }
+          body += '</ul>';
+        }
+        if (c.modifiedCourses && c.modifiedCourses.length > 0) {
+          body += '<p><strong>Cours modifiés:</strong></p><ul>';
+          for (const m of c.modifiedCourses) {
+            body += `<li>${txt(m.className)} — ${txt(m.subjectName)}</li>`;
+          }
+          body += '</ul>';
+        }
+        if (c.remarkableActivities) body += `<p><strong>Activités remarquables:</strong> ${txt(c.remarkableActivities)}</p>`;
+        if (c.classClimate) body += `<p><strong>Climat de classe:</strong> ${txt(c.classClimate)}</p>`;
+      } else if (title === '4. Discipline') {
+        body = `
+          <p><strong>Comportements positifs:</strong> ${txt(c.positiveBehaviors)}</p>
+          <p><strong>Comportements problématiques:</strong> ${txt(c.problematicBehaviors)}</p>
+          <p><strong>Mesures correctives:</strong> ${txt(c.correctiveMeasures)}</p>`;
+      } else if (title === '5. Hygiène') {
+        body = `
+          <p><strong>Propreté des locaux:</strong> ${txt(c.roomCleanliness)}</p>
+          <p><strong>État des toilettes:</strong> ${txt(c.toiletsCondition)}</p>
+          <p><strong>Eau:</strong> ${txt(c.waterStatus)}</p>
+          <p><strong>Électricité:</strong> ${txt(c.electricityStatus)}</p>
+          <p><strong>Réparations urgentes:</strong> ${txt(c.urgentRepairs)}</p>`;
+      } else if (title === '6. Visites') {
+        body = `
+          <p>• Visite administrative: ${c.adminVisit ? 'Oui' : 'Non'}</p>
+          <p>• Visite pédagogique: ${c.pedagoVisit ? 'Oui' : 'Non'}</p>
+          <p>• Visite de parents: ${c.parentVisit ? 'Oui' : 'Non'}</p>
+          <p><strong>Détails:</strong> ${txt(c.visitDetails)}</p>`;
+      } else if (title === '7. Communication') {
+        body = `
+          <p><strong>Instructions du directeur:</strong> ${txt(c.directorInstructions)}</p>
+          <p><strong>Besoins urgents:</strong> ${txt(c.urgentNeeds)}</p>`;
+      } else if (title === '8. Résumé journalier') {
+        body = `
+          <p><strong>Points forts:</strong> ${txt(c.strengths)}</p>
+          <p><strong>Améliorations:</strong> ${txt(c.improvements)}</p>
+          <p><strong>Recommandations:</strong> ${txt(c.recommendations)}</p>`;
+      }
+      return `<div class="section" style="border-left-color:${color}">
+        <h3 style="background:${color}">${title}</h3>
+        ${body}
+      </div>`;
+    };
+
+    // Construire le HTML complet
+    let html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Cahier du Semainier — ${weekLabel}</title>
+<style>
+  @page { size: A4 portrait; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1f2937; font-size: 11px; line-height: 1.5; }
+  .cover { text-align: center; padding: 40px 20px; page-break-after: always; }
+  .cover h1 { font-size: 26px; color: #1e3a8a; margin-bottom: 8px; }
+  .cover h2 { font-size: 18px; color: #475569; margin: 4px 0; }
+  .cover .meta { margin-top: 30px; font-size: 13px; }
+  .cover .meta div { margin: 6px 0; }
+  .cover .badge { display: inline-block; padding: 4px 14px; background: #1e3a8a; color: white;
+                  border-radius: 16px; font-weight: 600; margin-top: 20px; }
+  .day-page { page-break-after: always; }
+  .day-header { background: #f1f5f9; padding: 10px 14px; border-left: 4px solid #1e3a8a;
+                margin-bottom: 14px; }
+  .day-header h2 { margin: 0; font-size: 16px; color: #1e3a8a; }
+  .day-header .date { font-size: 11px; color: #64748b; }
+  .section { border: 1px solid #e5e7eb; border-left: 4px solid #1e3a8a;
+             border-radius: 4px; margin-bottom: 10px; overflow: hidden; }
+  .section h3 { margin: 0; padding: 6px 10px; color: white; font-size: 11px; font-weight: 600; }
+  .section .empty, .section p, .section ul, .section table { padding: 8px 10px; margin: 0; }
+  .section ul { padding-left: 26px; }
+  .section table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  .section table th { background: #f8fafc; text-align: left; padding: 4px 6px;
+                      border-bottom: 1px solid #e5e7eb; font-weight: 600; }
+  .section table td { padding: 4px 6px; border-bottom: 1px solid #f1f5f9; }
+  .signature-block { margin-top: 30px; display: flex; justify-content: space-between; gap: 40px; }
+  .signature-block > div { flex: 1; text-align: center; }
+  .signature-block .sig-label { font-weight: 600; color: #1e3a8a; margin-bottom: 50px; }
+  .signature-block .sig-line { border-top: 1px solid #64748b; padding-top: 6px; }
+</style>
+</head>
+<body>
+  <div class="cover">
+    <h1>CAHIER DU SEMAINIER</h1>
+    <h2>${txt(cfg.schoolName || '')}</h2>
+    ${cfg.schoolCity ? `<h2>${txt(cfg.schoolCity)}</h2>` : ''}
+    <div class="meta">
+      <div><strong>${txt(cfg.academicYearLabel || '')}</strong></div>
+      <div>${weekLabel}</div>
+      <div>${trimesterLabel}</div>
+      <div>Enseignant: <strong>${teacherName}</strong></div>
+      <div>Période: ${new Date(cfg.weekStartDate).toLocaleDateString('fr-FR')} — ${new Date(cfg.weekEndDate).toLocaleDateString('fr-FR')}</div>
+    </div>
+    <div class="badge">STATUT: ${txt(cfg.status || 'PENDING')}</div>
+  </div>`;
+
+    // Une page par jour
+    for (let dayIdx = 1; dayIdx <= 5; dayIdx++) {
+      const dr = dailyReports.find((d: any) => d.dayOfWeek === dayIdx);
+      const color = dayColors[dayIdx];
+      const dayDate = dr?.date
+        ? new Date(dr.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+        : new Date(new Date(cfg.weekStartDate).getTime() + (dayIdx - 1) * 86400000)
+            .toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+      html += `<div class="day-page">
+        <div class="day-header" style="border-left-color:${color}">
+          <h2 style="color:${color}">${dayLabels[dayIdx]}</h2>
+          <div class="date">${dayDate}</div>
+        </div>`;
+
+      if (!dr) {
+        html += '<p class="empty"><em>Aucun rapport enregistré pour ce jour.</em></p>';
+      } else {
+        html += renderDailySection('1. Présence des enseignants', '#3b82f6', dr.teacherAttendance);
+        html += renderDailySection('2. Présence des élèves', '#10b981', dr.studentPresence);
+        html += renderDailySection('3. Pédagogie / Respect du programme', '#f59e0b', dr.pedagogy);
+        html += renderDailySection('4. Discipline', '#8b5cf6', dr.discipline);
+        html += renderDailySection('5. Hygiène', '#06b6d4', dr.hygiene);
+        html += renderDailySection('6. Visites', '#ec4899', dr.visits);
+        html += renderDailySection('7. Communication', '#f97316', dr.communication);
+        html += renderDailySection('8. Résumé journalier', '#6366f1', dr.dailySummary);
+      }
+
+      html += `<div class="signature-block">
+        <div>
+          <div class="sig-label">Visa du Directeur</div>
+          <div class="sig-line">${txt(cfg.directorSignature || '')}</div>
+        </div>
+        <div>
+          <div class="sig-label">Visa de l'Enseignant</div>
+          <div class="sig-line">${txt(cfg.teacherSignature || teacherName)}</div>
+        </div>
+      </div>`;
+      html += '</div>';
+    }
+
+    // Page de synthèse hebdomadaire
+    html += `<div class="day-page">
+      <div class="day-header" style="border-left-color:#1e3a8a">
+        <h2 style="color:#1e3a8a">Synthèse de la semaine ${cfg.weekNumber}</h2>
+        <div class="date">Trimestre ${cfg.trimester}</div>
+      </div>
+      <p><strong>Enseignant:</strong> ${teacherName}</p>
+      <p><strong>Période:</strong> ${new Date(cfg.weekStartDate).toLocaleDateString('fr-FR')} — ${new Date(cfg.weekEndDate).toLocaleDateString('fr-FR')}</p>
+      <p><strong>Statut:</strong> ${txt(cfg.status || 'PENDING')}</p>
+      ${cfg.rejectionReason ? `<p><strong>Motif de rejet:</strong> ${txt(cfg.rejectionReason)}</p>` : ''}
+      <div class="signature-block">
+        <div>
+          <div class="sig-label">Visa du Directeur</div>
+          <div class="sig-line">${txt(cfg.directorSignature || '')}</div>
+        </div>
+        <div>
+          <div class="sig-label">Visa de l'Enseignant</div>
+          <div class="sig-line">${txt(cfg.teacherSignature || teacherName)}</div>
+        </div>
+      </div>
+    </div>`;
+
+    html += '</body></html>';
+
+    // ⭐ Puppeteer → real PDF
+    const { page } = await this.puppeteerPool.acquirePage();
+    try {
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      const pdfBuffer: Buffer = await page.pdf({
+        format: 'A4',
+        landscape: false,
+        printBackground: true,
+        margin: { top: '12mm', bottom: '12mm', left: '12mm', right: '12mm' },
+      });
+      const buf = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
+      this.logger.log(`✅ PDF Cahier du Semainier généré (${buf.length} octets, configId=${configId})`);
+      return buf;
+    } finally {
+      await this.puppeteerPool.releasePage(page);
+    }
   }
 }

@@ -37,7 +37,7 @@ import {
   ClipboardList, Loader2, Save, RefreshCw, Send, Lock,
   ChevronLeft, Calendar, FileText, BookOpen, BarChart3,
   CheckCircle2, XCircle, Clock, Printer, Settings, AlertCircle,
-  Plus, Trash2, X, FileSpreadsheet,
+  Plus, Trash2, X, FileSpreadsheet, CalendarCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
@@ -193,6 +193,9 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [showAppelModal, setShowAppelModal] = useState(false);
+  const [appelDate, setAppelDate] = useState(new Date().toISOString().split("T")[0]);
+  const [appelSaving, setAppelSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"register" | "evaluation" | "summary" | "settings">("register");
 
   // ⭐ Jours fériés du mois (paramétrables par l'enseignant)
@@ -800,6 +803,14 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         )}
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* ⭐ Bouton Appel — ouvre un modal pour marquer les présences/absences */}
+          {activeTab === "register" && register && (
+            <button onClick={() => setShowAppelModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-semibold hover:bg-amber-700">
+              <CalendarCheck className="h-4 w-4" />
+              Faire l'appel
+            </button>
+          )}
           <button onClick={handleSave} disabled={saving || loading || !register || isReadOnly || activeTab !== "register"}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -964,9 +975,9 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                           <select
                             value={marked}
                             onChange={(e) => updateAbsence(student.studentId, w, d.num, e.target.value)}
-                            disabled={isReadOnly}
+                            disabled={true}
                             className={cn(
-                              "w-full h-9 text-center text-base font-bold border-0 focus:outline-none focus:ring-1 focus:ring-blue-400",
+                              "w-full h-9 text-center text-base font-bold border-0 focus:outline-none cursor-not-allowed",
                               marked === "-" && "bg-amber-100 text-amber-700",
                               marked === "|" && "bg-amber-100 text-amber-700",
                               marked === "+" && "bg-red-100 text-red-700",
@@ -1624,6 +1635,21 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         </div>
       )}
 
+      {/* === MODAL APPEL (marquage présences/absences depuis le registre) === */}
+      {showAppelModal && register && (
+        <AppelModal
+          register={register}
+          selectedClassId={selectedClassId}
+          academicYearId={academicYearId}
+          schoolLevelId={selectedClass?.schoolLevelId || ''}
+          teacherId={teacherId}
+          appelDate={appelDate}
+          setAppelDate={setAppelDate}
+          onClose={() => setShowAppelModal(false)}
+          onSaved={() => { loadRegister(); }}
+        />
+      )}
+
       {/* === États === */}
       {loading && (
         <div className="flex items-center justify-center py-12 text-slate-500">
@@ -1824,6 +1850,167 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================================================
+// MODAL APPEL — Marquage des présences/absences depuis le registre d'appel
+// ============================================================================
+// Affiche la liste des élèves avec 4 boutons (PM/AM/PS/AS) + Retard.
+// Sauvegarde via /api/pedagogy-space/attendance → sync automatique vers le registre.
+
+function AppelModal({
+  register, selectedClassId, academicYearId, schoolLevelId, teacherId,
+  appelDate, setAppelDate, onClose, onSaved,
+}: {
+  register: any;
+  selectedClassId: string;
+  academicYearId: string;
+  schoolLevelId: string;
+  teacherId: string;
+  appelDate: string;
+  setAppelDate: (d: string) => void;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [students, setStudents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!selectedClassId || !appelDate) return;
+    setLoading(true);
+    (async () => {
+      try {
+        const res = await fetch(`/api/pedagogy-space/attendance/${selectedClassId}?date=${appelDate}`, { credentials: "include" });
+        const data = await res.json();
+        setStudents(Array.isArray(data) ? data : []);
+      } catch { setStudents([]); }
+      finally { setLoading(false); }
+    })();
+  }, [selectedClassId, appelDate]);
+
+  const setMorning = (studentId: string, status: string) => {
+    setStudents(prev => prev.map(s => s.studentId === studentId ? { ...s, morningStatus: status } : s));
+  };
+  const setAfternoon = (studentId: string, status: string) => {
+    setStudents(prev => prev.map(s => s.studentId === studentId ? { ...s, afternoonStatus: status } : s));
+  };
+  const toggleLate = (studentId: string) => {
+    setStudents(prev => prev.map(s => s.studentId === studentId ? { ...s, late: !s.late } : s));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const records = students
+        .filter(s => s && s.studentId)
+        .map(s => ({
+          studentId: s.studentId,
+          status: s.status || 'PRESENT',
+          morningStatus: s.morningStatus || 'PRESENT',
+          afternoonStatus: s.afternoonStatus || 'PRESENT',
+          late: !!s.late,
+        }));
+      const res = await fetch("/api/pedagogy-space/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ academicYearId, classId: selectedClassId, date: appelDate, records }),
+      });
+      if (!res.ok) throw new Error("Erreur d'enregistrement");
+      toast.success("✅ Appel enregistré — le registre est mis à jour");
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      toast.error("Erreur", { description: e.message });
+    } finally { setSaving(false); }
+  };
+
+  const cn = (...c: (string | boolean | undefined)[]) => c.filter(Boolean).join(" ");
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="sticky top-0 bg-white border-b border-slate-200 p-4 flex items-center justify-between z-10">
+          <div className="flex items-center gap-3">
+            <CalendarCheck className="h-6 w-6 text-amber-600" />
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">Faire l'appel</h3>
+              <p className="text-xs text-slate-500">Classe: {register.classNameResolved || '—'} — Les données s'enregistreront automatiquement dans le registre</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-100 rounded-lg"><X className="h-5 w-5" /></button>
+        </div>
+
+        {/* Date selector */}
+        <div className="p-4 bg-slate-50 border-b border-slate-200">
+          <label className="text-xs font-semibold text-slate-600 mr-2">Date de l'appel:</label>
+          <input type="date" value={appelDate} onChange={e => setAppelDate(e.target.value)} className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm" />
+        </div>
+
+        {/* Students list */}
+        <div className="p-4">
+          {loading ? (
+            <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>
+          ) : students.length === 0 ? (
+            <div className="text-center py-8 text-slate-400">Aucun élève dans cette classe.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="text-left px-3 py-2 font-semibold text-slate-700">N°</th>
+                    <th className="text-left px-3 py-2 font-semibold text-slate-700">Nom</th>
+                    <th className="text-center px-2 py-2 font-semibold text-slate-700" colSpan={2}>☀️ Matin</th>
+                    <th className="text-center px-2 py-2 font-semibold text-slate-700" colSpan={2}>🌙 Après-midi</th>
+                    <th className="text-center px-2 py-2 font-semibold text-slate-700">⏰</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...students].sort((a, b) => {
+                    const aName = `${a.lastName || ''} ${a.firstName || ''}`.trim().toLowerCase();
+                    const bName = `${b.lastName || ''} ${b.firstName || ''}`.trim().toLowerCase();
+                    return aName.localeCompare(bName, 'fr');
+                  }).map((s, idx) => (
+                    <tr key={s.studentId} className="border-b border-slate-100">
+                      <td className="px-3 py-2 text-slate-400">{idx + 1}</td>
+                      <td className="px-3 py-2 font-medium text-slate-900">{s.lastName} {s.firstName}</td>
+                      <td className="px-2 py-2 text-center">
+                        <button onClick={() => setMorning(s.studentId, 'PRESENT')} className={cn("px-3 py-1.5 rounded text-xs font-bold", s.morningStatus === 'PRESENT' ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>PM</button>
+                      </td>
+                      <td className="px-2 py-2 text-center">
+                        <button onClick={() => setMorning(s.studentId, 'ABSENT')} className={cn("px-3 py-1.5 rounded text-xs font-bold", s.morningStatus === 'ABSENT' ? "bg-red-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>AM</button>
+                      </td>
+                      <td className="px-2 py-2 text-center">
+                        <button onClick={() => setAfternoon(s.studentId, 'PRESENT')} className={cn("px-3 py-1.5 rounded text-xs font-bold", s.afternoonStatus === 'PRESENT' ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>PS</button>
+                      </td>
+                      <td className="px-2 py-2 text-center">
+                        <button onClick={() => setAfternoon(s.studentId, 'ABSENT')} className={cn("px-3 py-1.5 rounded text-xs font-bold", s.afternoonStatus === 'ABSENT' ? "bg-red-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>AS</button>
+                      </td>
+                      <td className="px-2 py-2 text-center">
+                        <button onClick={() => toggleLate(s.studentId)} className={cn("px-3 py-1.5 rounded text-xs font-bold", s.late ? "bg-amber-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}>Retard</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="sticky bottom-0 bg-white border-t border-slate-200 p-4 flex items-center justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Annuler</button>
+          <button onClick={handleSave} disabled={saving || students.length === 0}
+            className="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Enregistrer l'appel
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

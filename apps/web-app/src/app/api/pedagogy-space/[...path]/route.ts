@@ -31,6 +31,22 @@ async function proxy(request: NextRequest, method: string) {
       body,
     });
 
+    // ⭐ Handle binary responses (export Excel/PDF) — don't try to JSON.parse
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/pdf') ||
+        contentType.includes('spreadsheet') ||
+        contentType.includes('application/octet-stream') ||
+        contentType.includes('text/csv')) {
+      const buffer = await response.arrayBuffer();
+      return new NextResponse(buffer, {
+        status: response.status,
+        headers: {
+          'Content-Type': contentType,
+          'Content-Disposition': response.headers.get('content-disposition') || '',
+        },
+      });
+    }
+
     const raw = await response.text();
     let data: unknown = null;
     if (raw) {

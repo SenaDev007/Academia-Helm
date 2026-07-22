@@ -752,7 +752,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const ext = format === "excel" ? "xlsx" : "pdf";
+      const ext = format === "excel" ? "csv" : "pdf";
       a.download = `Registre_Appel_${MONTH_NAMES[selectedMonth]}_${selectedYear}.${ext}`;
       a.click();
       URL.revokeObjectURL(url);

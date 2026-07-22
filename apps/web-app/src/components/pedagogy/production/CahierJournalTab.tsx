@@ -304,7 +304,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const ext = format === "excel" ? "xlsx" : "pdf";
+      const ext = format === "excel" ? "csv" : "pdf";
       a.download = `Cahier_Journal_${formatDate(weekStart)}.${ext}`;
       a.click();
       URL.revokeObjectURL(url);

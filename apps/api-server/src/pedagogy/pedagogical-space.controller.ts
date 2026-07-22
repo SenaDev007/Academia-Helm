@@ -887,9 +887,10 @@ export class PedagogicalSpaceController {
       throw new BadRequestException('format doit être "excel" ou "pdf"');
     }
     const buffer = await this.service.exportAttendanceRegister(tenantId, id, format);
-    const ext = format === 'excel' ? 'xlsx' : 'pdf';
+    // ⭐ Excel = CSV (avec BOM), PDF = vrai PDF via Puppeteer
+    const ext = format === 'excel' ? 'csv' : 'pdf';
     const mimeType = format === 'excel'
-      ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      ? 'text/csv; charset=utf-8'
       : 'application/pdf';
     res.set({
       'Content-Type': mimeType,
@@ -911,9 +912,10 @@ export class PedagogicalSpaceController {
       throw new BadRequestException('format doit être "excel" ou "pdf"');
     }
     const buffer = await this.service.exportCahierJournal(tenantId, id, format);
-    const ext = format === 'excel' ? 'xlsx' : 'pdf';
+    // ⭐ Excel = CSV (avec BOM), PDF = vrai PDF via Puppeteer
+    const ext = format === 'excel' ? 'csv' : 'pdf';
     const mimeType = format === 'excel'
-      ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      ? 'text/csv; charset=utf-8'
       : 'application/pdf';
     res.set({
       'Content-Type': mimeType,

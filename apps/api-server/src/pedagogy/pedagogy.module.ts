@@ -7,6 +7,7 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module';
 import { CommunicationModule } from '../communication/communication.module';
+import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service';
 import { SubjectsPrismaService } from './subjects-prisma.service';
 import { SubjectsPrismaController } from './subjects-prisma.controller';
 import { TeachersPrismaService } from './teachers-prisma.service';
@@ -150,6 +151,8 @@ import { PedagogicalSpaceController } from './pedagogical-space.controller';
     // Module 2 - Notifications email aux enseignants
     PedagogyNotificationService,
     PedagogyPdfDocumentService,
+    // ⭐ PuppeteerPoolService pour les exports PDF (registre d'appel, cahier journal)
+    PuppeteerPoolService,
   ],
   exports: [
     StorageService,

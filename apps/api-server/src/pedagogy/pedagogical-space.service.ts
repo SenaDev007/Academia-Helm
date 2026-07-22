@@ -20,12 +20,16 @@
 
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service';
 
 @Injectable()
 export class PedagogicalSpaceService {
   private readonly logger = new Logger(PedagogicalSpaceService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly puppeteerPool: PuppeteerPoolService,
+  ) {}
 
   // ===========================================================================
   // HELPER: résoudre l'ID du Teacher depuis un userId ou teacherId
@@ -2149,6 +2153,7 @@ export class PedagogicalSpaceService {
       objectivation: 'objectivation', evalRetour: 'evalRetour', projection: 'projection',
       // ⭐ Phases spécifiques au français
       phase_introductive: 'phase_introductive', phase_systematisation: 'phase_systematisation', phase_application: 'phase_application',
+      app_col1: 'app_col1', app_col2: 'app_col2', app_col3: 'app_col3',
     };
 
     for (const [key, col] of Object.entries(fieldMap)) {
@@ -2211,6 +2216,7 @@ export class PedagogicalSpaceService {
       ibis_1: 'string', ibis_2: 'string', ibis_3: 'string', ibis_4: 'string', ibis_5: 'string',
       objectivation: 'string', evalRetour: 'string', projection: 'string',
       phase_introductive: 'string', phase_systematisation: 'string', phase_application: 'string',
+      app_col1: 'string', app_col2: 'string', app_col3: 'string',
       status: 'string', submittedAt: 'date', validatedAt: 'date',
       validatedBy: 'string', rejectionReason: 'string',
     };
@@ -4025,13 +4031,11 @@ export class PedagogicalSpaceService {
     return Buffer.from('\ufeff' + csv, 'utf-8');
   }
 
-  private generatePdfExport(
+  private async generatePdfExport(
     reg: any, students: any[], holidays: string[],
     month: number, year: number, totalDemiJournees: number,
     MONTH_NAMES: string[],
-  ): Buffer {
-    // Générer un HTML simple qui peut être converti en PDF par le navigateur
-    // ou par un service de rendu. Pour l'instant on génère du HTML formaté.
+  ): Promise<Buffer> {
     const WEEKS = [1, 2, 3, 4, 5];
     const DAYS = [
       { num: 1, label: 'L' }, { num: 2, label: 'M' }, { num: 3, label: 'M' },
@@ -4044,29 +4048,39 @@ export class PedagogicalSpaceService {
     const pctP = totalPoss > 0 ? Math.round((totalEff / totalPoss) * 10000) / 100 : 0;
     const pctA = totalPoss > 0 ? Math.round((totalAbs / totalPoss) * 10000) / 100 : 0;
 
-    let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Registre d'appel — ${MONTH_NAMES[month]} ${year}</title>
+    let html = `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Registre d'appel — ${MONTH_NAMES[month]} ${year}</title>
 <style>
-body{font-family:Arial,sans-serif;font-size:10px;margin:20px;}
-h2{text-align:center;}
-.header{text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:15px;}
-table{width:100%;border-collapse:collapse;}
-th,td{border:1px solid #333;padding:3px;text-align:center;}
-th{background:#e0e0e0;font-weight:bold;}
-.recap{margin-top:15px;border:2px solid #333;padding:10px;}
+body{font-family:Arial,sans-serif;font-size:9px;margin:15px;}
+h2{text-align:center;margin:0;}
+.header{text-align:center;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:10px;}
+.header-info{display:flex;justify-content:space-between;margin-top:5px;font-size:10px;}
+table{width:100%;border-collapse:collapse;margin-bottom:10px;}
+th,td{border:1px solid #333;padding:2px;text-align:center;}
+th{background:#e0e0e0;font-weight:bold;font-size:8px;}
+td.name{text-align:left;font-weight:bold;}
+.recap{margin-top:10px;border:2px solid #333;padding:8px;}
+.recap-table{width:100%;border-collapse:collapse;}
+.recap-table th,.recap-table td{border:1px solid #666;padding:4px;text-align:center;}
+.recap-table th{background:#f0f0f0;}
 .signature{margin-top:30px;display:flex;justify-content:space-between;}
-.holidays{margin-top:10px;background:#fff3f3;border:1px solid #f00;padding:5px;}
+.signature div{text-align:center;}
+.holidays{margin-top:8px;background:#fff3f3;border:1px solid #f99;padding:5px;font-size:9px;}
 </style></head><body>`;
 
     html += `<div class="header">
       <h2>REGISTRE D'APPEL — ${MONTH_NAMES[month]} ${year}</h2>
-      <p>Classe: <strong>${reg.classNameResolved || ''}</strong> | Nombre de demi-journées: <strong>${totalDemiJournees}</strong></p>
+      <div class="header-info">
+        <span>Classe: <strong>${reg.classNameResolved || ''}</strong></span>
+        <span>Nombre de demi-journées: <strong>${totalDemiJournees}</strong></span>
+        <span>Effectif: ${students.length} élèves</span>
+      </div>
     </div>`;
 
     html += '<table><thead><tr><th rowspan="2">N°</th><th rowspan="2">Nom et prénom</th><th rowspan="2">Sexe</th>';
     for (const w of WEEKS) {
       html += `<th colspan="5">S${w}</th>`;
     }
-    html += '<th rowspan="2">Motif</th><th rowspan="2">Total prés. poss.</th><th rowspan="2">Total absences</th><th rowspan="2">Total prés. effectif</th><th rowspan="2">Observation</th></tr><tr>';
+    html += '<th rowspan="2">Motif</th><th rowspan="2">Total prés. poss.</th><th rowspan="2">Total abs.</th><th rowspan="2">Total prés. eff.</th><th rowspan="2">Obs.</th></tr><tr>';
     for (const w of WEEKS) {
       for (const d of DAYS) {
         html += `<th>${d.label}</th>`;
@@ -4075,22 +4089,25 @@ th{background:#e0e0e0;font-weight:bold;}
     html += '</tr></thead><tbody>';
 
     for (const s of students) {
-      html += `<tr><td>${s.numero || ''}</td><td style="text-align:left">${s.nom || ''} ${s.prenom || ''}</td><td>${s.sexe || ''}</td>`;
+      html += `<tr><td>${s.numero || ''}</td><td class="name">${(s.nom || '')} ${(s.prenom || '')}</td><td>${s.sexe || ''}</td>`;
       for (const w of WEEKS) {
         for (const d of DAYS) {
           const a = (s.absences || []).find((x: any) => x.week === w && x.day === d.num);
-          html += `<td>${a?.marked || ''}</td>`;
+          const mark = a?.marked || '';
+          html += `<td>${mark === '-' ? '−' : mark === '|' ? '│' : mark === '+' ? '+' : mark ? mark : '·'}</td>`;
         }
       }
-      html += `<td>${s.motif || ''}</td><td>${s.totalPresencesPossibles || totalDemiJournees}</td><td>${s.totalAbsences || 0}</td><td>${s.totalPresenceEffectif || (totalDemiJournees - (s.totalAbsences || 0))}</td><td>${s.observation || ''}</td></tr>`;
+      html += `<td>${(s.motif || '').replace(/<[^>]*>/g, '')}</td><td>${s.totalPresencesPossibles || totalDemiJournees}</td><td>${s.totalAbsences || 0}</td><td>${s.totalPresenceEffectif || (totalDemiJournees - (s.totalAbsences || 0))}</td><td>${(s.observation || '').replace(/<[^>]*>/g, '')}</td></tr>`;
     }
     html += '</tbody></table>';
 
     // Récapitulatif
     html += `<div class="recap">
       <h3>Récapitulatif du mois</h3>
-      <p>Demi-journées du mois: <strong>${totalDemiJournees}</strong> | Présence possible: <strong>${totalPoss}</strong> | Total absences: <strong>${totalAbs}</strong> | Total présences effectives: <strong>${totalEff}</strong></p>
-      <p>% présences: <strong>${pctP}%</strong> | % absences: <strong>${pctA}%</strong></p>
+      <table class="recap-table">
+        <tr><th>Demi-journées du mois</th><th>Présence possible</th><th>Total absences</th><th>Total prés. effectives</th><th>% présences</th><th>% absences</th></tr>
+        <tr><td><strong>${totalDemiJournees}</strong></td><td>${totalPoss}</td><td>${totalAbs}</td><td>${totalEff}</td><td>${pctP}%</td><td>${pctA}%</td></tr>
+      </table>
     </div>`;
 
     // Jours fériés
@@ -4106,7 +4123,22 @@ th{background:#e0e0e0;font-weight:bold;}
 
     html += '</body></html>';
 
-    return Buffer.from(html, 'utf-8');
+    // ⭐ Utiliser Puppeteer pour générer un vrai PDF (comme le module finance)
+    const fullHtml = html;
+    const { page } = await this.puppeteerPool.acquirePage();
+    try {
+      await page.setContent(fullHtml, { waitUntil: 'networkidle0' });
+      const pdfBuffer: Buffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
+        landscape: true,
+      });
+      const buf = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
+      return buf;
+    } finally {
+      await this.puppeteerPool.releasePage(page);
+    }
   }
 
   // ===========================================================================
@@ -4170,11 +4202,12 @@ th{background:#e0e0e0;font-weight:bold;}
       const csv = rows.map(r => r.map(c => `"${(c || '').replace(/"/g, '""')}"`).join(',')).join('\n');
       return Buffer.from('\ufeff' + csv, 'utf-8');
     } else {
-      // HTML → PDF
-      let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cahier Journal</title>
-<style>body{font-family:Arial,sans-serif;font-size:10px;margin:20px;}
-h2{text-align:center;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #333;padding:3px;}th{background:#e0e0e0;}
-.signature{margin-top:30px;display:flex;justify-content:space-between;}</style></head><body>`;
+      // HTML → PDF via Puppeteer (comme le module finance)
+      let html = `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Cahier Journal</title>
+<style>body{font-family:Arial,sans-serif;font-size:10px;margin:15px;}
+h2{text-align:center;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #333;padding:3px;}th{background:#e0e0e0;font-weight:bold;}
+.signature{margin-top:30px;display:flex;justify-content:space-between;}
+.signature div{text-align:center;}</style></head><body>`;
       html += `<h2>CAHIER JOURNAL — ${j.className || ''}</h2>`;
       html += `<p style="text-align:center">Semaine du ${new Date(j.weekStartDate).toLocaleDateString('fr-FR')} au ${new Date(j.weekEndDate || j.weekStartDate).toLocaleDateString('fr-FR')}</p>`;
       html += '<table><thead><tr><th>JOURS</th>';
@@ -4185,7 +4218,6 @@ h2{text-align:center;}table{width:100%;border-collapse:collapse;}th,td{border:1p
         html += `<tr><td><strong>${day.label}</strong></td>`;
         for (const subj of subjects) {
           const val = dayEntries[subj] || '';
-          // Strip HTML tags for PDF
           html += `<td>${val.replace(/<[^>]*>/g, '')}</td>`;
         }
         html += `<td>${(dayEntries['observations'] || '').replace(/<[^>]*>/g, '')}</td></tr>`;
@@ -4194,7 +4226,22 @@ h2{text-align:center;}table{width:100%;border-collapse:collapse;}th,td{border:1p
       html += `<p><strong>Observations générales:</strong> ${(j.observations || '').replace(/<[^>]*>/g, '')}</p>`;
       html += `<div class="signature"><div><p>Visa du Directeur / de la Directrice</p><br><br><p>Signature et cachet</p></div><div><p>Visa du Titulaire</p><br><br><p>Signature</p></div></div>`;
       html += '</body></html>';
-      return Buffer.from(html, 'utf-8');
+
+      // ⭐ Puppeteer → real PDF
+      const { page } = await this.puppeteerPool.acquirePage();
+      try {
+        await page.setContent(html, { waitUntil: 'networkidle0' });
+        const pdfBuffer: Buffer = await page.pdf({
+          format: 'A4',
+          landscape: true,
+          printBackground: true,
+          margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
+        });
+        const buf = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
+        return buf;
+      } finally {
+        await this.puppeteerPool.releasePage(page);
+      }
     }
   }
 }

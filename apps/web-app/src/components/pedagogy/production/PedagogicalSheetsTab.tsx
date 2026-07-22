@@ -81,8 +81,8 @@ function formatDateFR(dateStr: string): string {
 const SHEET_TYPE_CONFIG: Record<string, {
   ibisTitle: string;
   ibisFields: { label: string; key: string; placeholder: string; short?: boolean }[];
-  // ⭐ Phases spécifiques au français (Phase introductive, systématisation, application)
   phases?: { label: string; key: string }[];
+  applicationTable?: { columns: string[]; keys: string[] };
 }> = {
   MATH: {
     ibisTitle: "Phases préparatoires",
@@ -106,8 +106,12 @@ const SHEET_TYPE_CONFIG: Record<string, {
     phases: [
       { label: "Phase introductive", key: "phase_introductive" },
       { label: "Phase de systématisation", key: "phase_systematisation" },
-      { label: "Phase d'application", key: "phase_application" },
     ],
+    // ⭐ Phase d'application = tableau 3 colonnes (conforme au PDF)
+    applicationTable: {
+      columns: ["Entrées Enseignant(e) ou élève", "Structure Élève 1", "Réduction Élève 2"],
+      keys: ["app_col1", "app_col2", "app_col3"],
+    },
   },
   EST: {
     ibisTitle: "Activités préliminaires",
@@ -152,7 +156,9 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
     // I.bis- Section spécifique (champs dynamiques ibis_1, ibis_2, etc.)
     ibis_1: "", ibis_2: "", ibis_3: "", ibis_4: "", ibis_5: "",
     // ⭐ Phases spécifiques au français
-    phase_introductive: "", phase_systematisation: "", phase_application: "",
+    phase_introductive: "", phase_systematisation: "",
+    // ⭐ Phase d'application (tableau 3 colonnes)
+    app_col1: "", app_col2: "", app_col3: "",
     // II- Déroulement (tableau d'étapes)
     deroulement: [] as Array<{ etape: string; consignes: string; resultats: string }>,
     // III- Retour et projection
@@ -317,8 +323,8 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
           </div>
 
           {/* I- Éléments de planification (7 champs RichTextEditor) */}
-          <section>
-            <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-300 pb-2 mb-3">
+          <section className="border-l-4 border-slate-300 pl-4">
+            <h3 className="text-sm font-bold text-slate-900 uppercase mb-3 bg-slate-100 px-3 py-2 rounded-lg">
               I- Éléments de planification
             </h3>
             <div className="space-y-3">
@@ -340,8 +346,8 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
           </section>
 
           {/* I.bis- Section spécifique au type */}
-          <section>
-            <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-300 pb-2 mb-3">
+          <section className="border-l-4 pl-4" style={{ borderColor: sheetType?.headerBg?.replace('bg-', '') || '#3b82f6' }}>
+            <h3 className={cn("text-sm font-bold text-white uppercase mb-3 px-3 py-2 rounded-lg", sheetType?.headerBg || "bg-slate-600")}>
               {typeConfig.ibisTitle} — {sheetType?.label}
             </h3>
             <div className={cn("space-y-3", typeConfig.ibisFields.some(f => f.short) ? "grid grid-cols-1 md:grid-cols-3 gap-3" : "")}>
@@ -359,7 +365,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
                 </div>
               ))}
             </div>
-            {/* ⭐ Phases spécifiques au français (Phase introductive, systématisation, application) */}
+            {/* ⭐ Phases spécifiques (Phase introductive, systématisation) */}
             {typeConfig.phases && (
               <div className="mt-4 space-y-3">
                 {typeConfig.phases.map(p => (
@@ -370,12 +376,38 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
                 ))}
               </div>
             )}
+            {/* ⭐ Phase d'application (tableau 3 colonnes — spécifique au français) */}
+            {typeConfig.applicationTable && (
+              <div className="mt-4">
+                <label className="block text-xs font-bold text-slate-700 mb-2">Phase d'application</label>
+                <div className="overflow-x-auto border border-slate-300 rounded-lg">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className={cn("text-white", sheetType?.headerBg || "bg-slate-600")}>
+                        {typeConfig.applicationTable.columns.map((col, i) => (
+                          <th key={i} className="border border-slate-300 px-3 py-2 text-xs font-bold uppercase text-center">{col}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        {typeConfig.applicationTable.keys.map((key, i) => (
+                          <td key={i} className="border border-slate-300 p-0 align-top" style={{ minWidth: "200px" }}>
+                            <RichTextEditor value={form[key] || ""} onChange={html => setForm({ ...form, [key]: html })} disabled={isReadOnly} minHeight="120px" />
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </section>
 
           {/* II- Déroulement (tableau N° / Consignes / Résultats attendus) */}
-          <section>
+          <section className="border-l-4 border-slate-300 pl-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-300 pb-2 flex-1">
+              <h3 className="text-sm font-bold text-slate-900 uppercase bg-slate-100 px-3 py-2 rounded-lg">
                 II- Déroulement
               </h3>
               {!isReadOnly && (
@@ -420,8 +452,8 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
           </section>
 
           {/* III- Retour et projection */}
-          <section>
-            <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-300 pb-2 mb-3">
+          <section className="border-l-4 border-slate-300 pl-4">
+            <h3 className="text-sm font-bold text-slate-900 uppercase mb-3 bg-slate-100 px-3 py-2 rounded-lg">
               III- Retour et projection
             </h3>
             <div className="space-y-3">

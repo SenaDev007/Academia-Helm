@@ -80,6 +80,21 @@ function cn(...classes: (string | false | undefined)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
+// ⭐ Calculer le nombre total de demi-jours d'un mois
+// Lundi=2, Mardi=2, Mercredi=1, Jeudi=2, Vendredi=2 (total/semaine=9)
+// On parcourt tous les jours du mois et on somme les demi-jours.
+function calculateDemiJourneesMois(month: number, year: number): number {
+  const daysInMonth = new Date(year, month, 0).getDate();
+  let total = 0;
+  const DEMI_JOURS: Record<number, number> = { 1: 2, 2: 2, 3: 1, 4: 2, 5: 2 };
+  for (let day = 1; day <= daysInMonth; day++) {
+    const d = new Date(year, month - 1, day);
+    const dow = d.getDay(); // 0=dim, 1=lun, ..., 5=ven, 6=sam
+    total += DEMI_JOURS[dow] || 0;
+  }
+  return total;
+}
+
 function formatDateFR(dateStr: string): string {
   if (!dateStr) return "";
   const d = new Date(dateStr);
@@ -170,6 +185,9 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
       // Si pas d'élèves, on charge depuis la classe
       if (studentsData.length === 0) {
         const cls = classes.find(c => c.classId === selectedClassId);
+        // ⭐ Calculer le nombre de demi-jours du mois (MÊME pour tous les élèves)
+        // Lundi=2, Mardi=2, Mercredi=1, Jeudi=2, Vendredi=2 (total/semaine=9)
+        const totalDemiJourneesMois = calculateDemiJourneesMois(selectedMonth, selectedYear);
         const initStudents = (cls?.students || []).map((s: any, idx: number) => ({
           studentId: s.studentId,
           numero: idx + 1,
@@ -177,17 +195,24 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
           prenom: s.firstName || "",
           sexe: (s.gender || "").toUpperCase() === "FEMALE" ? "F" :
                 (s.gender || "").toUpperCase() === "MALE" ? "M" : (s.gender || "M"),
-          absences: Array(25).fill(null).map(() => ({ week: 0, day: 0, marked: "" })),
+          absences: [],
           motif: "",
-          totalPresencesPossibles: 0,
+          totalPresencesPossibles: totalDemiJourneesMois,
           totalAbsences: 0,
-          totalPresenceEffectif: 0,
+          totalPresenceEffectif: totalDemiJourneesMois,
           observation: "",
-          nbDemiJournees: 0,
+          nbDemiJournees: totalDemiJourneesMois,
         }));
         setStudents(initStudents);
       } else {
-        setStudents(studentsData);
+        // ⭐ Mettre à jour le nbDemiJournees pour tous les élèves si vide
+        const totalDemiJourneesMois = calculateDemiJourneesMois(selectedMonth, selectedYear);
+        const updatedStudents = studentsData.map((s: any) => ({
+          ...s,
+          nbDemiJournees: s.nbDemiJournees || totalDemiJourneesMois,
+          totalPresencesPossibles: s.totalPresencesPossibles || totalDemiJourneesMois,
+        }));
+        setStudents(updatedStudents);
       }
       // Charger l'évaluation associée
       const evalRes = await fetch("/api/pedagogy-space/monthly-evaluations", {
@@ -226,14 +251,28 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
       const newAbsences = [...(s.absences || [])];
       // Trouver ou créer l'entrée pour (week, day)
       const existingIdx = newAbsences.findIndex(a => a.week === week && a.day === day);
-      if (existingIdx >= 0) {
+      if (marked === "") {
+        // Si on efface la marque, retirer l'entrée
+        if (existingIdx >= 0) newAbsences.splice(existingIdx, 1);
+      } else if (existingIdx >= 0) {
         newAbsences[existingIdx] = { week, day, marked };
       } else {
         newAbsences.push({ week, day, marked });
       }
-      // Recalculer les totaux
-      const totalAbsences = newAbsences.filter(a => a.marked === "A" || a.marked === "E").length;
-      const totalRetards = newAbsences.filter(a => a.marked === "R").length;
+
+      // ⭐ Recalculer les totaux selon le système demi-jours :
+      //   "-" = absent matin → 1 absence
+      //   "|" = absent après-midi → 1 absence
+      //   "+" = absent toute la journée → 2 absences
+      let totalAbsences = 0;
+      for (const a of newAbsences) {
+        if (a.marked === "+") totalAbsences += 2;
+        else if (a.marked === "-" || a.marked === "|") totalAbsences += 1;
+      }
+
+      // nbDemiJournees = nombre de demi-jours du mois (MÊME pour tous les élèves)
+      // = calculé par le backend syncAttendanceToRegister, mais pour l'affichage
+      // frontend on utilise la valeur stockée dans le registre ou un défaut.
       const demiJournees = s.nbDemiJournees || 0;
       const totalPresencesPossibles = demiJournees;
       const totalPresenceEffectif = totalPresencesPossibles - totalAbsences;
@@ -243,7 +282,6 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         totalAbsences,
         totalPresencesPossibles,
         totalPresenceEffectif,
-        observation: totalRetards > 0 ? `${totalRetards} retard(s)` : "",
       };
     }));
   };
@@ -723,7 +761,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                       {student.nom} {student.prenom}
                     </td>
                     <td className="border border-slate-300 px-2 py-1 text-center">{student.sexe}</td>
-                    {/* 25 cases d'absence */}
+                    {/* 25 cases d'absence — système demi-jours : -, |, + */}
                     {WEEKS.map(w => DAYS.map(d => {
                       const marked = getAbsence(student, w, d.num);
                       return (
@@ -733,17 +771,17 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                             onChange={(e) => updateAbsence(idx, w, d.num, e.target.value)}
                             disabled={isReadOnly}
                             className={cn(
-                              "w-full h-9 text-center text-sm font-bold border-0 focus:outline-none focus:ring-1 focus:ring-blue-400",
-                              marked === "A" && "bg-red-100 text-red-700",
-                              marked === "R" && "bg-amber-100 text-amber-700",
-                              marked === "E" && "bg-blue-100 text-blue-700",
+                              "w-full h-9 text-center text-base font-bold border-0 focus:outline-none focus:ring-1 focus:ring-blue-400",
+                              marked === "-" && "bg-amber-100 text-amber-700",
+                              marked === "|" && "bg-amber-100 text-amber-700",
+                              marked === "+" && "bg-red-100 text-red-700",
                               !marked && "bg-transparent"
                             )}
                           >
-                            <option value="">—</option>
-                            <option value="A">A</option>
-                            <option value="R">R</option>
-                            <option value="E">E</option>
+                            <option value="">·</option>
+                            <option value="-">− (Absent matin)</option>
+                            <option value="|">│ (Absent après-midi)</option>
+                            <option value="+">+ (Absent toute la journée)</option>
                           </select>
                         </td>
                       );

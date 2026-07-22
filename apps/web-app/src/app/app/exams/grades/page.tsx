@@ -51,6 +51,7 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAcademicSettings } from '@/hooks/useAcademicSettings';
 import { academicSettingsService } from '@/services/academic-settings.service';
 import { useBilingual } from '@/contexts/BilingualContext';
+import { BilingualTrackSelector } from '@/contexts/BilingualContext';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { cn } from '@/lib/utils';
@@ -60,19 +61,21 @@ import { cn } from '@/lib/utils';
 interface SchemaColumn {
   key: string;
   label: string;
-  type: string;
+  type: 'number' | 'text' | 'qualitative';
   max: number;
   required: boolean;
   weight: number;
   includedInAverage: boolean;
   visibleOnReportCard: boolean;
+  /** Pour le mode qualitatif (maternelle) : codes autorisés TS/S/PS */
+  qualitativeOptions?: string[];
 }
 
 interface GradingRow {
   studentId: string;
   studentName: string;
   matricule?: string;
-  scores: Record<string, number | null>; // key = column.key
+  scores: Record<string, number | string | null>; // key = column.key, value = number (quantitatif) | string (qualitatif TS/S/PS) | null
   computedAverage: number | null;
   isAbsent: boolean;
   comment: string;
@@ -191,7 +194,7 @@ export default function GradesPage() {
       ).then((r) => r.json()).catch(() => []);
 
       const students: GradingRow[] = (Array.isArray(sheetRes) ? sheetRes : []).map((row: any) => {
-        const scores: Record<string, number | null> = {};
+        const scores: Record<string, number | string | null> = {};
         schema.columns.forEach((col: SchemaColumn) => {
           scores[col.key] = row.scores?.[col.key] ?? null;
         });
@@ -223,9 +226,24 @@ export default function GradesPage() {
   function recomputeAverage(row: GradingRow, cols: SchemaColumn[], formula: string): GradingRow {
     if (row.isAbsent) return { ...row, computedAverage: null };
 
+    // ⭐ Mode qualitatif maternelle : pas de moyenne numérique, juste un code majoritaire
+    const hasQualitative = cols.some(c => c.type === 'qualitative');
+    if (hasQualitative) {
+      // Compter les codes qualitatifs (TS/S/PS) pour déterminer la synthèse
+      const codes: string[] = [];
+      cols.forEach(c => {
+        const val = row.scores[c.key];
+        if (typeof val === 'string' && val) codes.push(val);
+      });
+      // Pas de computedAverage numérique pour la maternelle
+      return { ...row, computedAverage: null };
+    }
+
+    // Mode quantitatif : calcul via formule
     const scores: Record<string, number> = {};
     cols.filter((c) => c.includedInAverage).forEach((c) => {
-      scores[c.key] = row.scores[c.key] ?? 0;
+      const val = row.scores[c.key];
+      scores[c.key] = typeof val === 'number' ? val : (typeof val === 'string' ? parseFloat(val) || 0 : 0);
     });
 
     const avg = academicSettingsService.computeAverage(scores, formula);
@@ -235,7 +253,16 @@ export default function GradesPage() {
   // ── Score change handler ────────────────────────────────────────────────────
 
   const handleScoreChange = (studentId: string, colKey: string, value: string) => {
-    const parsed = value === '' ? null : parseFloat(value);
+    // ⭐ Gère les 2 modes :
+    // - quantitatif : value = "12.5" → parse en number
+    // - qualitatif : value = "TS" / "S" / "PS" → garde en string
+    const col = schemaColumns.find(c => c.key === colKey);
+    let parsed: number | string | null;
+    if (col?.type === 'qualitative') {
+      parsed = value === '' ? null : value;
+    } else {
+      parsed = value === '' ? null : parseFloat(value);
+    }
     setGradingSheet((prev) =>
       prev.map((row) => {
         if (row.studentId !== studentId) return row;
@@ -471,27 +498,56 @@ export default function GradesPage() {
                               {/* Dynamic score inputs */}
                               {schemaColumns.map((col) => (
                                 <TableCell key={col.key} className="text-center py-2">
-                                  <Input
-                                    type="number"
-                                    step="0.25"
-                                    min="0"
-                                    max={col.max}
-                                    value={row.isAbsent ? '' : (row.scores[col.key] ?? '')}
-                                    onChange={(e) => handleScoreChange(row.studentId, col.key, e.target.value)}
-                                    disabled={isLocked || row.isAbsent}
-                                    placeholder="—"
-                                    className={cn(
-                                      'w-20 h-9 text-center font-bold text-sm border-gray-200',
-                                      'focus:border-blue-400 focus:ring-1 focus:ring-blue-200',
-                                      row.isAbsent && 'opacity-40 cursor-not-allowed',
-                                      !row.isAbsent && row.scores[col.key] !== null &&
-                                        (row.scores[col.key]! < col.max * 0.5
-                                          ? 'text-rose-600'
-                                          : row.scores[col.key]! >= col.max * 0.8
-                                            ? 'text-emerald-600'
-                                            : 'text-gray-900')
-                                    )}
-                                  />
+                                  {col.type === 'qualitative' && col.qualitativeOptions ? (
+                                    // ⭐ Mode qualitatif maternelle : boutons TS/S/PS
+                                    <div className="flex gap-1 justify-center">
+                                      {col.qualitativeOptions.map((opt) => (
+                                        <button
+                                          key={opt}
+                                          type="button"
+                                          onClick={() => !isLocked && !row.isAbsent && handleScoreChange(row.studentId, col.key, opt)}
+                                          disabled={isLocked || row.isAbsent}
+                                          title={
+                                            opt === 'TS' ? 'Très Satisfaisant' :
+                                            opt === 'S' ? 'Satisfaisant' :
+                                            opt === 'PS' ? 'Peu Satisfaisant' : opt
+                                          }
+                                          className={cn(
+                                            'px-2 py-1 rounded text-xs font-bold transition',
+                                            row.scores[col.key] === opt
+                                              ? 'bg-blue-600 text-white'
+                                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                                            (isLocked || row.isAbsent) && 'opacity-40 cursor-not-allowed'
+                                          )}
+                                        >
+                                          {opt}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    // Mode quantitatif : Input number
+                                    <Input
+                                      type="number"
+                                      step="0.25"
+                                      min="0"
+                                      max={col.max}
+                                      value={row.isAbsent ? '' : (row.scores[col.key] ?? '')}
+                                      onChange={(e) => handleScoreChange(row.studentId, col.key, e.target.value)}
+                                      disabled={isLocked || row.isAbsent}
+                                      placeholder="—"
+                                      className={cn(
+                                        'w-20 h-9 text-center font-bold text-sm border-gray-200',
+                                        'focus:border-blue-400 focus:ring-1 focus:ring-blue-200',
+                                        row.isAbsent && 'opacity-40 cursor-not-allowed',
+                                        !row.isAbsent && row.scores[col.key] !== null && typeof row.scores[col.key] === 'number' &&
+                                          (Number(row.scores[col.key]) < col.max * 0.5
+                                            ? 'text-rose-600'
+                                            : Number(row.scores[col.key]) >= col.max * 0.8
+                                              ? 'text-emerald-600'
+                                              : 'text-gray-900')
+                                      )}
+                                    />
+                                  )}
                                 </TableCell>
                               ))}
 
@@ -638,24 +694,7 @@ export default function GradesPage() {
         children: (
           <div className="space-y-4">
             {/* Bilingual track selector */}
-            {isBilingual && (
-              <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1 mb-4">
-                <button
-                  type="button"
-                  onClick={() => setCurrentTrack('FR')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'FR' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
-                >
-                  Français
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentTrack('EN')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'EN' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
-                >
-                  English
-                </button>
-              </div>
-            )}
+            <BilingualTrackSelector />
 
             {/* Config status */}
             {academicConfig && (

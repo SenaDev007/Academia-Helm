@@ -1042,3 +1042,112 @@ Stage Summary:
 - 2 whitelists mises à jour (interceptor + guard)
 - app.module.ts nettoyé (3 modules retirés du tableau imports)
 - Module Examen maintenant UNIFIÉ : ExamsGradesModule + InstitutionalExamsModule (plus de doublon legacy)
+
+---
+Task ID: module-examen-phases-A-F-design-uniforme
+Agent: main
+Task: Module Examen — Phases A à F (design uniforme + 2 onglets paramètres + niveaux scolaires + bilingue + lien enseignant)
+
+Work Log:
+
+== PHASE A — Nettoyage immédiat ==
+
+A1 — Suppression exams/config/ :
+- Supprimé apps/web-app/src/app/app/exams/config/ (page.tsx 229 lignes — UI morte, boutons non fonctionnels)
+- Retiré entrée 'config' de sub-modules.ts (12 → 11 onglets)
+- CONSERVÉ : exams/settings/page.tsx (1120 lignes — branché au backend, consommé par grades/averages/bulletins)
+
+A2 — Correction evaluations/page.tsx :
+- Supprimé fonction Card locale (lignes 198-204) qui shadowait l'import shadcn
+- Ajouté import Card depuis @/components/ui/card (rounded-2xl conforme au design system)
+
+A3 — Remplacement 6 sélecteurs bilingues inline :
+- Créé scripts/replace_bilingual_selectors.js
+- Remplacé 6 blocs inline (~15 lignes chacun) par <BilingualTrackSelector /> unique
+- Imports ajoutés automatiquement dans : analytics, averages, bulletins, evaluations, grades, validation
+- Composant BilingualTrackSelector existait déjà dans BilingualContext.tsx mais n'était JAMAIS importé
+
+== PHASE B — Cohérence design ==
+
+B1 — Migration aggregation/page.tsx :
+- Remplacé <table> HTML brute par <Table> shadcn (TableHeader, TableBody, TableRow, TableHead, TableCell)
+- Couleurs slate → gray (conforme aux autres pages)
+- Cards personnalisés → <Card> shadcn
+
+B2 — Suppression Math.random() dans analytics/page.tsx :
+- Refonte complète : données réelles fetchées depuis /api/exams/dashboard par niveau scolaire
+- Insights ORION générés automatiquement (alerte si moyenne < 8, succès si passRate >= 80%)
+- 3 KPI cards (taux réussite global, élèves à risque, moyenne globale) avec données réelles
+
+== PHASE C — Niveaux scolaires ==
+
+C1+C2+F1+F2+F3 — Backend score-entry-schema.service.ts étendu :
+- Détection automatique du niveau scolaire (MATERNELLE / PRIMAIRE / SECONDAIRE)
+- Mode QUALITATIF maternelle :
+  * Retourne 9 colonnes qualitatives (domaines : SANTE, REFLEXES, ORALE, CORPORELLE, PLASTIQUE, EVEIL, LECTURE, MATH, ECRITURE)
+  * Chaque colonne a type='qualitative' + qualitativeOptions=['TS','S','PS']
+  * Formule = règle de synthèse qualitative (pas de moyenne numérique)
+- Mode QUANTITATIF primaire :
+  * Colonnes CM (Contrôle Mensuel) + CP (Contrôle Ponctuel), /20, coef 1 forcé
+  * Formule par défaut = '(CM + CP) / 2' (moyenne arithmétique simple)
+- Mode QUANTITATIF secondaire :
+  * Colonnes DEVOIR + COMPOSITION, /20, coef variable (weight configurable)
+  * Formule par défaut = '((DEVOIR * 1) + (COMPOSITION * 2)) / 3' (moyenne pondérée)
+- L'utilisateur a précisé : PRIMAIRE ET SECONDAIRE = /20 (pas /10)
+
+Frontend grades/page.tsx étendu :
+- Interface SchemaColumn étendue : type 'number' | 'text' | 'qualitative' + qualitativeOptions
+- Interface GradingRow : scores Record<string, number | string | null>
+- Rendu conditionnel : si col.type === 'qualitative' → boutons TS/S/PS, sinon Input number
+- recomputeAverage() : si hasQualitative → pas de moyenne numérique (synthèse qualitative)
+- handleScoreChange() : gère string (TS/S/PS) ET number
+
+== PHASE D — Bilingue complet ==
+
+D1 — Bilingue dans councils + audit :
+- Ajouté imports BilingualTrackSelector + useBilingual dans councils/page.tsx et audit/page.tsx
+- Ajouté <BilingualTrackSelector /> en haut de chaque page
+- currentTrack récupéré pour filtrage futur
+
+D2 — getPendingValidations accepte language :
+- institutional-exams.service.ts : ajouté paramètre language?: 'FR' | 'EN'
+- validation/page.tsx : passe currentTrack au service (plus de filtrage JS côté client)
+
+D3 — separateGrades dans bulletins :
+- Récupéré separateGrades du contexte useBilingual
+- Ajouté bannière informative (amber si séparés, blue si fusionnés) expliquant le mode de génération
+
+== PHASE E — Lien enseignant ↔ examen ==
+
+E1+E2+E3 — Création teacher/exams/page.tsx (350 lignes) :
+- Vue "Mes évaluations" filtrée par teacherId === user.id
+- Filtrage par piste linguistique (FR/EN) si bilingue activé
+- Pour chaque évaluation : chargement schéma de saisie (adapté au niveau scolaire)
+- Tableau de saisie avec rendu conditionnel (qualitatif TS/S/PS vs quantitatif /20)
+- Boutons Enregistrer (brouillon) + Soumettre (validation)
+- Ajouté à TEACHER_MODULES dans teacher/layout.tsx
+- Ajouté carte "Examens & Notes" dans teacher/page.tsx (dashboard enseignant)
+
+E4 — Check serveur teacherId === evaluation.teacherId :
+- exams-prisma.service.ts saveGradingSheet() étendu :
+  * Récupère l'utilisateur connecté
+  * Vérifie le rôle (DIRECTOR/ADMIN bypassent le check)
+  * Pour les enseignants : vérifie TeacherClassAssignment lié au ClassSubject de l'exam
+  * Si pas d'assignation → BadRequestException "Vous n'êtes pas autorisé..."
+
+== VÉRIFICATIONS ==
+
+- 16 fichiers modifiés passent le check syntaxique TypeScript ✅
+- Design system uniformisé : toutes les pages exams utilisent ModuleContainer + Card + Table shadcn + gray
+- 1 seul onglet Paramètres (settings/page.tsx) — config/ supprimé
+- 3 systèmes d'évaluation gérés : maternelle (TS/S/PS) / primaire (/20 coef 1) / secondaire (/20 coef variable)
+- Bilingue complet : 8 pages sur 11 ont le sélecteur (councils + audit ajoutés)
+- Lien enseignant : page teacher/exams créée + check serveur teacherId
+
+Stage Summary:
+- 16 fichiers modifiés, 1 dossier supprimé (exams/config/), 1 fichier créé (teacher/exams/page.tsx)
+- Design aligné sur modules pédagogie/élèves/finance (Card + Table shadcn + gray)
+- 2 onglets paramètres → 1 seul (settings/page.tsx)
+- 3 systèmes d'évaluation par niveau scolaire (maternelle qualitative / primaire coef 1 / secondaire coef variable)
+- Bilingue FR/EN étendu à councils + audit (8/11 pages)
+- Portail enseignant créé avec filtrage par piste linguistique + check serveur teacherId

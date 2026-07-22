@@ -44,6 +44,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAcademicSettings } from '@/hooks/useAcademicSettings';
 import { useBilingual } from '@/contexts/BilingualContext';
+import { BilingualTrackSelector } from '@/contexts/BilingualContext';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { cn } from '@/lib/utils';
@@ -78,7 +79,7 @@ export default function BulletinsPage() {
     passingScore,
     decimals,
   } = useAcademicSettings();
-  const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
+  const { isEnabled: isBilingual, currentTrack, setCurrentTrack, separateGrades } = useBilingual();
 
   const [bulletins, setBulletins] = useState<BulletinEntry[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
@@ -272,22 +273,20 @@ export default function BulletinsPage() {
         children: (
           <div className="space-y-5">
             {/* Bilingual track selector */}
+            <BilingualTrackSelector />
+
+            {/* ⭐ Bannière separateGrades — indique le mode de génération des bulletins bilingues */}
             {isBilingual && (
-              <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1 mb-4">
-                <button
-                  type="button"
-                  onClick={() => setCurrentTrack('FR')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'FR' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
-                >
-                  Français
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentTrack('EN')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'EN' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
-                >
-                  English
-                </button>
+              <div className={`rounded-xl p-3 text-sm border ${
+                separateGrades
+                  ? 'bg-amber-50 border-amber-200 text-amber-900'
+                  : 'bg-blue-50 border-blue-200 text-blue-900'
+              }`}>
+                {separateGrades ? (
+                  <span><strong>📌 Mode bulletins séparés :</strong> Deux bulletins distincts seront générés (un pour les matières FR, un pour les matières EN).</span>
+                ) : (
+                  <span><strong>📌 Mode bulletins fusionnés :</strong> Les matières FR et EN apparaîtront côte à côte sur un seul bulletin bilingue.</span>
+                )}
               </div>
             )}
 

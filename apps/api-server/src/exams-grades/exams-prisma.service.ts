@@ -458,9 +458,35 @@ export class ExamsPrismaService {
   async saveGradingSheet(examId: string, tenantId: string, userId: string, body: any) {
     const exam = await this.prisma.exam.findFirst({
       where: { id: examId, tenantId },
+      include: {
+        classSubject: true,
+      },
     });
     if (!exam) {
       throw new NotFoundException(`Exam with ID ${examId} not found`);
+    }
+
+    // ⭐ Check serveur : seul l'enseignant assigné (ou un directeur/admin) peut saisir les notes
+    // Vérifie via TeacherClassAssignment si l'utilisateur est bien l'enseignant de la matière
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const isDirectorOrAdmin = user && ['DIRECTOR', 'ADMIN', 'SCHOOL_DIRECTOR', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR_GENERAL', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_ADMIN'].includes(user.role || '');
+
+    if (!isDirectorOrAdmin && exam.classSubject) {
+      // Vérifier que l'utilisateur est bien l'enseignant assigné à cette matière
+      const teacherAssignment = await this.prisma.teacherClassAssignment.findFirst({
+        where: {
+          tenantId,
+          classSubjectId: exam.classSubject.id,
+          teacher: { createdBy: userId },
+        },
+      });
+      // Si pas d'assignation trouvée → refuser
+      if (!teacherAssignment) {
+        throw new BadRequestException(
+          "Vous n'êtes pas autorisé à saisir des notes pour cette évaluation. " +
+          "Seul l'enseignant assigné à cette matière (ou un directeur/admin) peut le faire."
+        );
+      }
     }
 
     const { scores, submit } = body;

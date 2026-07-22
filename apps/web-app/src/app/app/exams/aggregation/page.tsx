@@ -6,6 +6,8 @@ import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { Loader2, BarChart3, FileText, CheckCircle2, AlertTriangle, TrendingUp } from 'lucide-react';
 import { AggregationPageShell } from '@/components/aggregation/AggregationPageShell';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
+import { Card } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 const LEVEL_LABELS: Record<string, string> = {
   MATERNELLE: 'Maternelle',
@@ -114,57 +116,91 @@ export default function ExamsAggregationPage() {
       {error && <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">⚠ {error}</div>}
 
       <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><div className="flex items-center justify-between mb-2"><p className="text-sm text-gray-600">Total Examens</p><FileText className="w-5 h-5 text-blue-600" /></div><p className="text-xl font-black text-gray-900">{totals.totalExams}</p></div>
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><div className="flex items-center justify-between mb-2"><p className="text-sm text-gray-600">Notes Saisies</p><TrendingUp className="w-5 h-5 text-amber-600" /></div><p className="text-xl font-black text-amber-700">{totals.gradesEntered}</p></div>
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><div className="flex items-center justify-between mb-2"><p className="text-sm text-gray-600">Notes Validées</p><CheckCircle2 className="w-5 h-5 text-emerald-600" /></div><p className="text-xl font-black text-emerald-700">{totals.gradesValidated}</p></div>
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><div className="flex items-center justify-between mb-2"><p className="text-sm text-gray-600">Bulletins</p><FileText className="w-5 h-5 text-violet-600" /></div><p className="text-xl font-black text-violet-700">{totals.bulletinsGenerated}</p></div>
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><div className="flex items-center justify-between mb-2"><p className="text-sm text-gray-600">Moyenne Globale</p><TrendingUp className="w-5 h-5 text-blue-600" /></div><p className="text-xl font-black text-blue-700">{globalAverage.toFixed(2)}/20</p></div>
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"><div className="flex items-center justify-between mb-2"><p className="text-sm text-gray-600">Taux Réussite</p><CheckCircle2 className="w-5 h-5 text-emerald-600" /></div><p className="text-xl font-black text-emerald-700">{globalPassRate.toFixed(1)}%</p></div>
+        <Card className="p-6 border-gray-200 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm text-gray-600">Total Examens</p>
+            <FileText className="w-5 h-5 text-blue-600" />
+          </div>
+          <p className="text-xl font-black text-gray-900">{totals.totalExams}</p>
+        </Card>
+        <Card className="p-6 border-gray-200 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm text-gray-600">Notes Saisies</p>
+            <TrendingUp className="w-5 h-5 text-amber-600" />
+          </div>
+          <p className="text-xl font-black text-amber-700">{totals.gradesEntered}</p>
+        </Card>
+        <Card className="p-6 border-gray-200 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm text-gray-600">Notes Validées</p>
+            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+          </div>
+          <p className="text-xl font-black text-emerald-700">{totals.gradesValidated}</p>
+        </Card>
+        <Card className="p-6 border-gray-200 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm text-gray-600">Bulletins</p>
+            <FileText className="w-5 h-5 text-violet-600" />
+          </div>
+          <p className="text-xl font-black text-violet-700">{totals.bulletinsGenerated}</p>
+        </Card>
+        <Card className="p-6 border-gray-200 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm text-gray-600">Moyenne Globale</p>
+            <TrendingUp className="w-5 h-5 text-blue-600" />
+          </div>
+          <p className="text-xl font-black text-blue-700">{globalAverage.toFixed(2)}/20</p>
+        </Card>
+        <Card className="p-6 border-gray-200 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm text-gray-600">Taux Réussite</p>
+            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+          </div>
+          <p className="text-xl font-black text-emerald-700">{globalPassRate.toFixed(1)}%</p>
+        </Card>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <h3 className="text-lg font-bold text-gray-900 p-6 border-b border-slate-100">Répartition par niveau scolaire</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="text-left px-6 py-3 text-xs font-black text-slate-500 uppercase tracking-widest">Niveau</th>
-                <th className="text-right px-6 py-3 text-xs font-black text-slate-500 uppercase tracking-widest">Examens</th>
-                <th className="text-right px-6 py-3 text-xs font-black text-slate-500 uppercase tracking-widest">Notes Saisies</th>
-                <th className="text-right px-6 py-3 text-xs font-black text-slate-500 uppercase tracking-widest">Notes Validées</th>
-                <th className="text-right px-6 py-3 text-xs font-black text-slate-500 uppercase tracking-widest">Bulletins</th>
-                <th className="text-right px-6 py-3 text-xs font-black text-slate-500 uppercase tracking-widest">Moyenne</th>
-                <th className="text-right px-6 py-3 text-xs font-black text-slate-500 uppercase tracking-widest">Taux Réussite</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stats.map((s) => (
-                <tr key={s.levelId} className="border-b border-slate-100 hover:bg-slate-50">
-                  <td className="px-6 py-4 text-sm font-bold text-gray-900">{s.levelLabel}</td>
-                  <td className="px-6 py-4 text-sm text-right text-gray-700">{s.totalExams}</td>
-                  <td className="px-6 py-4 text-sm text-right text-amber-700 font-medium">{s.gradesEntered}</td>
-                  <td className="px-6 py-4 text-sm text-right text-emerald-700 font-medium">{s.gradesValidated}</td>
-                  <td className="px-6 py-4 text-sm text-right text-violet-700 font-medium">{s.bulletinsGenerated}</td>
-                  <td className="px-6 py-4 text-sm text-right font-bold text-blue-700">{s.averageScore.toFixed(2)}/20</td>
-                  <td className="px-6 py-4 text-sm text-right font-bold text-emerald-700">{s.passRate.toFixed(1)}%</td>
-                </tr>
-              ))}
-              <tr className="bg-blue-50 border-t-2 border-blue-200">
-                <td className="px-6 py-4 text-sm font-black text-blue-900">TOTAL TOUS NIVEAUX</td>
-                <td className="px-6 py-4 text-sm text-right font-black text-gray-900">{totals.totalExams}</td>
-                <td className="px-6 py-4 text-sm text-right font-black text-amber-700">{totals.gradesEntered}</td>
-                <td className="px-6 py-4 text-sm text-right font-black text-emerald-700">{totals.gradesValidated}</td>
-                <td className="px-6 py-4 text-sm text-right font-black text-violet-700">{totals.bulletinsGenerated}</td>
-                <td className="px-6 py-4 text-sm text-right font-black text-blue-700">{globalAverage.toFixed(2)}/20</td>
-                <td className="px-6 py-4 text-sm text-right font-black text-emerald-700">{globalPassRate.toFixed(1)}%</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <Card className="border-gray-200 shadow-sm overflow-hidden">
+        <h3 className="text-lg font-bold text-gray-900 p-6 border-b border-gray-100">Répartition par niveau scolaire</h3>
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-gray-50 border-b border-gray-200">
+              <TableHead className="text-left px-6 py-3 text-xs font-black text-gray-500 uppercase tracking-widest">Niveau</TableHead>
+              <TableHead className="text-right px-6 py-3 text-xs font-black text-gray-500 uppercase tracking-widest">Examens</TableHead>
+              <TableHead className="text-right px-6 py-3 text-xs font-black text-gray-500 uppercase tracking-widest">Notes Saisies</TableHead>
+              <TableHead className="text-right px-6 py-3 text-xs font-black text-gray-500 uppercase tracking-widest">Notes Validées</TableHead>
+              <TableHead className="text-right px-6 py-3 text-xs font-black text-gray-500 uppercase tracking-widest">Bulletins</TableHead>
+              <TableHead className="text-right px-6 py-3 text-xs font-black text-gray-500 uppercase tracking-widest">Moyenne</TableHead>
+              <TableHead className="text-right px-6 py-3 text-xs font-black text-gray-500 uppercase tracking-widest">Taux Réussite</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {stats.map((s) => (
+              <TableRow key={s.levelId} className="border-b border-gray-100 hover:bg-gray-50">
+                <TableCell className="px-6 py-4 text-sm font-bold text-gray-900">{s.levelLabel}</TableCell>
+                <TableCell className="px-6 py-4 text-sm text-right text-gray-700">{s.totalExams}</TableCell>
+                <TableCell className="px-6 py-4 text-sm text-right text-amber-700 font-medium">{s.gradesEntered}</TableCell>
+                <TableCell className="px-6 py-4 text-sm text-right text-emerald-700 font-medium">{s.gradesValidated}</TableCell>
+                <TableCell className="px-6 py-4 text-sm text-right text-violet-700 font-medium">{s.bulletinsGenerated}</TableCell>
+                <TableCell className="px-6 py-4 text-sm text-right font-bold text-blue-700">{s.averageScore.toFixed(2)}/20</TableCell>
+                <TableCell className="px-6 py-4 text-sm text-right font-bold text-emerald-700">{s.passRate.toFixed(1)}%</TableCell>
+              </TableRow>
+            ))}
+            <TableRow className="bg-blue-50 border-t-2 border-blue-200">
+              <TableCell className="px-6 py-4 text-sm font-black text-blue-900">TOTAL TOUS NIVEAUX</TableCell>
+              <TableCell className="px-6 py-4 text-sm text-right font-black text-gray-900">{totals.totalExams}</TableCell>
+              <TableCell className="px-6 py-4 text-sm text-right font-black text-amber-700">{totals.gradesEntered}</TableCell>
+              <TableCell className="px-6 py-4 text-sm text-right font-black text-emerald-700">{totals.gradesValidated}</TableCell>
+              <TableCell className="px-6 py-4 text-sm text-right font-black text-violet-700">{totals.bulletinsGenerated}</TableCell>
+              <TableCell className="px-6 py-4 text-sm text-right font-black text-blue-700">{globalAverage.toFixed(2)}/20</TableCell>
+              <TableCell className="px-6 py-4 text-sm text-right font-black text-emerald-700">{globalPassRate.toFixed(1)}%</TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </Card>
 
       {stats.length === 0 && (
-        <div className="text-center py-12 text-gray-500 bg-white rounded-2xl border border-slate-200">
+        <div className="text-center py-12 text-gray-500 bg-white rounded-2xl border border-gray-200">
           Aucun niveau scolaire activé.
         </div>
       )}

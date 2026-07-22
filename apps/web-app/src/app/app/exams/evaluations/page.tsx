@@ -21,9 +21,11 @@ import {
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useBilingual } from '@/contexts/BilingualContext';
+import { BilingualTrackSelector } from '@/contexts/BilingualContext';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -73,24 +75,7 @@ export default function EvaluationsPage() {
         children: (
           <div className="space-y-4">
             {/* Bilingual track selector */}
-            {isBilingual && (
-              <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1 mb-4">
-                <button
-                  type="button"
-                  onClick={() => setCurrentTrack('FR')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'FR' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
-                >
-                  Français
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentTrack('EN')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'EN' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
-                >
-                  English
-                </button>
-              </div>
-            )}
+            <BilingualTrackSelector />
 
             <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-gray-100">
               <div className="flex items-center space-x-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 w-96">
@@ -192,13 +177,5 @@ function StatusBadge({ status }: { status: string }) {
     <Badge variant="outline" className={config.className}>
       {config.label}
     </Badge>
-  );
-}
-
-function Card({ children, className }: any) {
-  return (
-    <div className={`bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden ${className}`}>
-      {children}
-    </div>
   );
 }

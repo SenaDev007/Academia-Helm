@@ -29,6 +29,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, BookOpen, CalendarDays, Users, Library,
   Video, ClipboardList, MessageSquare, Loader2, GraduationCap,
+  FileEdit,
   BarChart3, Settings, Building2, LogOut, Menu, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,7 @@ import { LogoutModal } from "@/components/auth/LogoutModal";
 const TEACHER_MODULES = [
   { path: "/app/teacher", label: "Dashboard", icon: LayoutDashboard, desc: "Cours du jour, classes assignées" },
   { path: "/app/teacher/pedagogy", label: "Espace Pédagogique", icon: BookOpen, desc: "Cahier journal, fiches, registre d'appel, cahier de texte, devoirs" },
+  { path: "/app/teacher/exams", label: "Examens & Notes", icon: FileEdit, desc: "Mes évaluations et saisie de notes" },
   { path: "/app/teacher/timetable", label: "Emploi du Temps", icon: CalendarDays, desc: "Mon emploi du temps" },
   { path: "/app/teacher/classes", label: "Mes Classes", icon: Users, desc: "Liste des élèves par classe" },
   { path: "/app/teacher/tasks", label: "Travaux & Suivi", icon: ClipboardList, desc: "Tâches assignées et suivi" },

@@ -25,12 +25,14 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
+import { BilingualTrackSelector, useBilingual } from '@/contexts/BilingualContext';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 
 export default function CouncilsPage() {
   const { academicYear, schoolLevel } = useModuleContext();
+  const { currentTrack } = useBilingual();
   const [councils, setCouncils] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -68,6 +70,7 @@ export default function CouncilsPage() {
         layout: 'full',
         children: (
           <div className="space-y-6">
+            <BilingualTrackSelector />
             <div className="flex justify-between items-center">
                <h2 className="text-lg font-bold text-gray-900">Sessions de délibération</h2>
                <Button className="bg-blue-600">

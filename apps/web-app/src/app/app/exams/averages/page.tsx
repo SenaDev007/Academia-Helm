@@ -41,6 +41,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAcademicSettings } from '@/hooks/useAcademicSettings';
 import { useBilingual } from '@/contexts/BilingualContext';
+import { BilingualTrackSelector } from '@/contexts/BilingualContext';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { cn } from '@/lib/utils';
@@ -242,24 +243,7 @@ export default function AveragesPage() {
         children: (
           <div className="space-y-6 p-1">
             {/* Bilingual track selector */}
-            {isBilingual && (
-              <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1 mb-4">
-                <button
-                  type="button"
-                  onClick={() => setCurrentTrack('FR')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'FR' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
-                >
-                  Français
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentTrack('EN')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${currentTrack === 'EN' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
-                >
-                  English
-                </button>
-              </div>
-            )}
+            <BilingualTrackSelector />
 
             {/* No config banner */}
             {noConfig && (

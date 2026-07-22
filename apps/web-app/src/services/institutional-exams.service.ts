@@ -133,11 +133,11 @@ export const institutionalExamsService = {
   /**
    * VALIDATIONS — nécessite le serveur (actions officielles)
    */
-  async getPendingValidations(schoolLevelId: string, academicYearId: string) {
+  async getPendingValidations(schoolLevelId: string, academicYearId: string, language?: 'FR' | 'EN') {
     if (!networkDetectionService.isConnected()) return [];
     try {
       const response = await apiClient.get(`/api/institutional-exams/validation/pending`, {
-        params: { schoolLevelId, academicYearId }
+        params: { schoolLevelId, academicYearId, ...(language ? { language } : {}) }
       });
       return response.data;
     } catch (error: any) {

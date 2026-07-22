@@ -324,6 +324,49 @@ export class RecordAttendanceDto {
   @IsOptional() @IsString() tenantId?: string;
 }
 
+/**
+ * ⭐ Self-check-in : l'enseignant marque SA PROPRE présence depuis son téléphone/PC.
+ * Le backend vérifie la position GPS contre les coords école (rayon configurable).
+ */
+export class SelfCheckInDto {
+  @IsDateString() date: string;
+  /** Statut par défaut PRESENT, mais l'enseignant peut marquer LATE */
+  @IsOptional() @IsIn(['PRESENT', 'LATE']) status?: string;
+  /** Position GPS envoyée par le navigateur */
+  @IsNumber() @Type(() => Number) latitude: number;
+  @IsNumber() @Type(() => Number) longitude: number;
+  @IsOptional() @IsNumber() @Type(() => Number) accuracy?: number;
+  /** Infos device pour audit */
+  @IsOptional() @IsString() deviceInfo?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+/**
+ * ⭐ Semainier check-in : le semainier marque la présence d'un ENSEIGNANT.
+ * Pas de vérif géo (le semainier est lui-même dans l'école).
+ */
+export class SemainierCheckInDto {
+  @IsUUID() staffId: string;       // L'enseignant dont on marque la présence
+  @IsDateString() date: string;
+  @IsIn(['PRESENT', 'ABSENT', 'LATE', 'HALF_DAY', 'MISSION']) status: string;
+  @IsOptional() @IsDateString() checkIn?: string;
+  @IsOptional() @IsDateString() checkOut?: string;
+  @IsOptional() @IsNumber() @Type(() => Number) hoursWorked?: number;
+  @IsOptional() @IsString() notes?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+/**
+ * ⭐ Check-out : l'enseignant clique "Fin de journée" en partant.
+ */
+export class SelfCheckOutDto {
+  @IsDateString() date: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
 export class RecordOvertimeDto {
   @IsUUID() staffId: string;
   @IsDateString() date: string;

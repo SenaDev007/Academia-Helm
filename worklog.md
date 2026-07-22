@@ -752,3 +752,96 @@ Stage Summary:
 - Rapport hebdo : 6e onglet (purple) avec 4 stats cards + 7 sections + signatures
 - Module Agrégation & Décision supprimé définitivement (page + composant + sidebar + feature flag + i18n + types)
 - Tous fichiers modifiés passent le check syntaxique TypeScript
+
+---
+Task ID: pointage-geolocalise-phases-1-4
+Agent: main
+Task: Système de pointage présence enseignants géolocalisé (anti-fraude) — 4 phases
+
+Work Log:
+
+=== PHASE 1 — Migration BDD ===
+- Création migration 20260723080000_add_staff_attendance_geolocation/migration.sql
+- Ajout 10 colonnes sur staff_attendances :
+  latitude, longitude, geoAccuracy, geoVerified (NOT NULL DEFAULT FALSE),
+  geoDistance, markedBy, markedByRole (NOT NULL DEFAULT 'ADMIN'),
+  deviceInfo, ipAddress, checkOutMethod
+- Ajout 3 colonnes sur tenant_identity_profiles :
+  latitude, longitude, geoRadius (NOT NULL DEFAULT 100)
+- 4 indexes créés (geoVerified, markedByRole, date+geoVerified, lat+lng)
+- Migration appliquée sur Neon DB via scripts/run_geoloc_migration.mjs (✅ vérifié)
+
+=== PHASE 2 — Backend GeolocationService + endpoints ===
+- Nouveau fichier apps/api-server/src/hr/geolocation.service.ts (200 lignes) :
+  * getSchoolCoordinates(tenantId) — récupère coords école (active profile)
+  * updateSchoolCoordinates(tenantId, lat, lng, radius) — MAJ coords
+  * verifyPosition(tenantId, userPosition) — vérifie position via formule Haversine
+  * Anti-fraude : 100% côté serveur, le frontend ne peut PAS forcer geoVerified=true
+- AttendancePrismaService étendu (5 nouvelles méthodes) :
+  * resolveStaffByUserEmail(email, tenantId) — résout Staff via email (pas de FK User↔Staff)
+  * selfCheckIn(tenantId, email, userId, data) — auto-pointage avec vérif géo obligatoire
+  * semainierCheckIn(tenantId, semainierUserId, data) — pointage par le semainier (pas de géo)
+  * selfCheckOut(tenantId, email, userId, data) — fin de journée + calcul hoursWorked
+  * getMyAttendanceToday(tenantId, email, date) — présence du jour pour utilisateur connecté
+  * getDailyStaffAttendances(tenantId, date) — liste tous enseignants + présence pour une date
+- ⭐ MUTUAL EXCLUSION :
+  * Si présence markedByRole='SELF' → semainier ne peut PAS modifier
+  * Si présence markedByRole='SEMINARIER' → enseignant ne peut PAS se marquer
+  * Si markedByRole='ADMIN' (legacy) → override autorisé par SELF ou SEMINARIER
+- 5 nouveaux endpoints dans attendance-prisma.controller.ts :
+  POST /api/hr/attendance/self-check-in (avec @CurrentUser + @Req pour IP)
+  POST /api/hr/attendance/semainier-check-in
+  POST /api/hr/attendance/self-check-out
+  GET  /api/hr/attendance/my-today
+  GET  /api/hr/attendance/daily-staff
+- 3 nouveaux DTOs : SelfCheckInDto, SemainierCheckInDto, SelfCheckOutDto
+- GeolocationService enregistré dans hr.module.ts (providers + exports)
+
+=== PHASE 3 — Backend endpoint coords école ===
+- 2 nouveaux endpoints dans settings.controller.ts :
+  GET /api/settings/identity/geolocation — récupère coords école (ou null si non configurées)
+  PUT /api/settings/identity/geolocation — met à jour coords + rayon
+- GeolocationService injecté dans SettingsController
+- GeolocationService enregistré dans settings.module.ts (providers + exports)
+
+=== PHASE 4 — Frontend ===
+- Nouveau hook apps/web-app/src/hooks/useGeolocation.ts (115 lignes) :
+  * Wrappe navigator.geolocation.getCurrentPosition()
+  * Gestion permissions (PERMISSION_DENIED/POSITION_UNAVAILABLE/TIMEOUT)
+  * États loading/error/position + retry
+  * enableHighAccuracy=true, timeout=15s, maximumAge=0 (pas de cache)
+- Nouveau composant apps/web-app/src/components/hr/MyAttendanceCard.tsx (240 lignes) :
+  * Carte "Ma présence du jour" pour le dashboard enseignant
+  * Bouton "🎯 Pointer ma présence" → demande géoloc → envoie au backend
+  * Affiche 4 états : pas pointé / pointé (avec heure + distance) / pointé+checkout / marqué par semainier
+  * Gestion erreurs : hors rayon, coords école non configurées, mutual exclusion
+  * Bouton "🏁 Fin de journée" pour check-out (calcule hoursWorked)
+- Nouveau composant apps/web-app/src/components/hr/SemainierAttendancePanel.tsx (210 lignes) :
+  * Panneau de pointage pour le semainier (tous les enseignants du jour)
+  * 6 StatBox : total / présents / retards / absents / non marqués / auto-pointés
+  * Table avec 5 boutons par enseignant : PRESENT/LATE/ABSENT/HALF_DAY/MISSION
+  * ⭐ Si enseignant auto-pointé → badge "AUTO-POINTÉ" + ligne grisée + message "🔒 non modifiable"
+- Nouveau composant apps/web-app/src/components/settings/SchoolGeolocationSettings.tsx (220 lignes) :
+  * 3 modes de saisie : bouton "Utiliser ma position" / saisie manuelle / Google Maps (si API key)
+  * Validation lat (-90..90) / lng (-180..180) / rayon (10..1000m)
+  * Aperçu en temps réel des coords + rayon
+  * Si NEXT_PUBLIC_GOOGLE_MAPS_API_KEY non définie → message d'info (carte désactivée)
+- Intégrations :
+  * TeacherDashboardPage (apps/web-app/src/app/app/teacher/page.tsx) :
+    MyAttendanceCard insérée juste après les stats rapides
+  * CahierSemaineTab (DailyReportCard) :
+    SemainierAttendancePanel inséré en haut du rapport journalier (avant les 8 sections)
+    Date précise (YYYY-MM-DD) calculée à partir de weekStartDate + (selectedDay-1)
+  * SettingsPage (apps/web-app/src/app/app/settings/page.tsx) :
+    SchoolGeolocationSettings inséré en haut de l'onglet "Identité"
+
+Stage Summary:
+- Backend : 1 nouveau service (GeolocationService) + 5 nouvelles méthodes + 5 nouveaux endpoints + 3 DTOs
+- Frontend : 1 nouveau hook + 3 nouveaux composants + 3 intégrations (teacher dashboard, semainier, settings)
+- BDD : 13 colonnes ajoutées (10 sur staff_attendances + 3 sur tenant_identity_profiles) + 4 indexes
+- Migration appliquée sur Neon DB ✅
+- Anti-fraude : vérif géo 100% côté serveur (formule Haversine), frontend ne peut pas forcer geoVerified=true
+- Mutual exclusion : SELF bloque SEMINARIER et vice-versa
+- Audit : deviceInfo + ipAddress + markedBy + markedByRole stockés pour chaque pointage
+- Rayon tolérance : 100m par défaut, configurable par école (10-1000m)
+- Tous fichiers modifiés passent le check syntaxique TypeScript ✅

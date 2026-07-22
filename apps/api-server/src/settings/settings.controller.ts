@@ -41,6 +41,7 @@ import { RolesPermissionsBootstrapService } from './services/roles-permissions-b
 import { BillingSettingsService } from './services/billing-settings.service';
 import { IdentityProfileService } from './services/identity-profile.service';
 import { StampsSignaturesService } from './services/stamps-signatures.service';
+import { GeolocationService } from '../hr/geolocation.service';
 import { PrismaService } from '../database/prisma.service';
 import { createReadStream } from 'fs';
 import { existsSync } from 'fs';
@@ -76,6 +77,7 @@ export class SettingsController {
     private readonly billingSettingsService: BillingSettingsService,
     private readonly identityProfileService: IdentityProfileService,
     private readonly stampsSignaturesService: StampsSignaturesService,
+    private readonly geolocationService: GeolocationService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -326,6 +328,66 @@ export class SettingsController {
       },
     });
     return { success: true, updated: updated.count };
+  }
+
+  // ============================================================================
+  // ⭐ GÉOLOCALISATION ÉCOLE — pour pointage enseignants
+  // ============================================================================
+  //
+  // Permet au directeur de configurer les coordonnées GPS de l'école
+  // + le rayon de tolérance (par défaut 100m).
+  // Utilisé ensuite par AttendancePrismaService.selfCheckIn() pour vérifier
+  // la position de l'enseignant au moment du pointage.
+
+  @Get('identity/geolocation')
+  async getSchoolGeolocation(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    const tid = this.resolveTid(tenantId, user, req);
+    const coords = await this.geolocationService.getSchoolCoordinates(tid);
+    if (!coords) {
+      return {
+        configured: false,
+        latitude: null,
+        longitude: null,
+        geoRadius: 100,
+        message: 'Coordonnées GPS non configurées. Utilisez PUT /settings/identity/geolocation pour les définir.',
+      };
+    }
+    return {
+      configured: true,
+      ...coords,
+    };
+  }
+
+  @Put('identity/geolocation')
+  async updateSchoolGeolocation(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Body() data: {
+      latitude: number;
+      longitude: number;
+      geoRadius?: number;
+    },
+  ) {
+    const tid = this.resolveTid(tenantId, user, req);
+    if (typeof data.latitude !== 'number' || typeof data.longitude !== 'number') {
+      throw new BadRequestException('latitude et longitude (numbers) sont requis');
+    }
+    const result = await this.geolocationService.updateSchoolCoordinates(
+      tid,
+      data.latitude,
+      data.longitude,
+      data.geoRadius,
+    );
+    return {
+      success: true,
+      configured: true,
+      ...result,
+    };
   }
 
   // ============================================================================

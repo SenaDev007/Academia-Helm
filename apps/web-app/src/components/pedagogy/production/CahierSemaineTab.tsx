@@ -29,6 +29,7 @@ import { toast } from "sonner";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { useAppSession } from "@/contexts/AppSessionContext";
+import { SemainierAttendancePanel } from "@/components/hr/SemainierAttendancePanel";
 
 interface CahierSemaineTabProps {
   tenantId: string;
@@ -795,6 +796,13 @@ function CahierSemainierContent({ configs, currentUserId, academicYearId, tenant
 function DailyReportCard({ config, selectedDay, dailyReport, setDailyReport }: any) {
   const dayLabel = formatDayWithDate(selectedDay, config.weekStartDate);
 
+  // ⭐ Calculer la date précise du jour sélectionné (YYYY-MM-DD)
+  const dayDate = (() => {
+    const base = new Date(config.weekStartDate);
+    base.setDate(base.getDate() + (selectedDay - 1));
+    return base.toISOString().split('T')[0];
+  })();
+
   return (
     <div className="bg-white rounded-xl border-2 border-slate-800 p-4">
       {/* En-tête avec DATE PRÉCISE */}
@@ -806,6 +814,11 @@ function DailyReportCard({ config, selectedDay, dailyReport, setDailyReport }: a
         <p className="text-xs text-slate-500 mt-0.5">
           Période : {formatDateShort(config.weekStartDate)} → {formatDateShort(config.weekEndDate)}
         </p>
+      </div>
+
+      {/* ⭐ Panneau de pointage des enseignants par le semainier */}
+      <div className="mb-6">
+        <SemainierAttendancePanel date={dayDate} />
       </div>
 
       {/* 1. PRÉSENCE DES ENSEIGNANTS */}

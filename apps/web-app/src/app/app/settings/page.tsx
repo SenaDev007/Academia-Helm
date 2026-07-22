@@ -46,6 +46,7 @@ import {
 import { formatGradeLabel, formatCurrency } from '@/lib/utils';
 import { compressImageFileToDataUrl } from '@/lib/media';
 import { PlatformImage } from '@/components/media/PlatformImage';
+import { SchoolGeolocationSettings } from '@/components/settings/SchoolGeolocationSettings';
 
 /** Format d’affichage des dates d’année scolaire (conforme calendrier officiel, évite décalage timezone) */
 function toInputDate(date: Date | string | null | undefined): string {
@@ -2213,6 +2214,9 @@ export default function SettingsPage() {
       case 'identity':
         return (
           <div className="space-y-4">
+            {/* ⭐ Localisation GPS école — pour pointage géolocalisé des enseignants */}
+            <SchoolGeolocationSettings />
+
             {/* Header avec version actuelle */}
             <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg p-4 text-white">
               <div className="flex justify-between items-center">

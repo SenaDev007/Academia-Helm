@@ -9,12 +9,15 @@
  * ============================================================================
  */
 
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, BadRequestException, Req } from '@nestjs/common';
 import { AttendancePrismaService } from './attendance-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
-import { RecordAttendanceDto, RecordOvertimeDto, UpdateAttendanceDto } from './dto/index';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RecordAttendanceDto, RecordOvertimeDto, UpdateAttendanceDto,
+         SelfCheckInDto, SemainierCheckInDto, SelfCheckOutDto } from './dto/index';
+import { Request } from 'express';
 
 @Controller('hr/attendance')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -166,5 +169,117 @@ export class AttendancePrismaController {
       endDate: endDate ? new Date(endDate) : undefined,
       validated: validated !== undefined ? validated === 'true' : undefined,
     });
+  }
+
+  // ============================================================================
+  // ⭐ GÉOLOCALISATION — Self-check-in / Semainier check-in / Self check-out
+  // ============================================================================
+
+  /**
+   * ⭐ Self-check-in : l'enseignant connecté marque SA présence.
+   * Le backend vérifie OBLIGATOIREMENT la position GPS contre les coords école.
+   */
+  @Post('self-check-in')
+  async selfCheckIn(
+    @GetTenant() tenant: any,
+    @CurrentUser() user: any,
+    @Req() req: Request,
+    @Body() data: SelfCheckInDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback ?? user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    if (!user?.email) throw new BadRequestException('Utilisateur non authentifié');
+
+    return this.attendanceService.selfCheckIn(tid, user.email, user.id, {
+      date: data.date,
+      status: data.status,
+      latitude: data.latitude,
+      longitude: data.longitude,
+      accuracy: data.accuracy,
+      deviceInfo: data.deviceInfo,
+      ipAddress: req.ip || req.socket?.remoteAddress,
+    });
+  }
+
+  /**
+   * ⭐ Semainier check-in : le semainier connecté marque la présence d'un staff.
+   * Pas de vérif géo (le semainier est déjà dans l'école).
+   */
+  @Post('semainier-check-in')
+  async semainierCheckIn(
+    @GetTenant() tenant: any,
+    @CurrentUser() user: any,
+    @Body() data: SemainierCheckInDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback ?? user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    if (!user?.id) throw new BadRequestException('Utilisateur non authentifié');
+
+    return this.attendanceService.semainierCheckIn(tid, user.id, {
+      staffId: data.staffId,
+      date: data.date,
+      status: data.status,
+      checkIn: data.checkIn,
+      checkOut: data.checkOut,
+      hoursWorked: data.hoursWorked,
+      notes: data.notes,
+    });
+  }
+
+  /**
+   * ⭐ Self check-out : l'enseignant connecté clique "Fin de journée".
+   * Calcule hoursWorked = checkOut - checkIn.
+   */
+  @Post('self-check-out')
+  async selfCheckOut(
+    @GetTenant() tenant: any,
+    @CurrentUser() user: any,
+    @Body() data: SelfCheckOutDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback ?? user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    if (!user?.email) throw new BadRequestException('Utilisateur non authentifié');
+
+    return this.attendanceService.selfCheckOut(tid, user.email, user.id, {
+      date: data.date,
+    });
+  }
+
+  /**
+   * ⭐ Récupère la présence DU JOUR pour l'utilisateur connecté.
+   * Utilisé par le dashboard enseignant (carte "Ma présence du jour").
+   */
+  @Get('my-today')
+  async getMyAttendanceToday(
+    @GetTenant() tenant: any,
+    @CurrentUser() user: any,
+    @Query('date') dateParam?: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback ?? user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    if (!user?.email) throw new BadRequestException('Utilisateur non authentifié');
+
+    const date = dateParam ? new Date(dateParam) : new Date();
+    return this.attendanceService.getMyAttendanceToday(tid, user.email, date);
+  }
+
+  /**
+   * ⭐ Liste de TOUS les enseignants + leur présence pour une date donnée.
+   * Utilisé par le semainier pour voir/marquer tous les enseignants du jour.
+   */
+  @Get('daily-staff')
+  async getDailyStaffAttendances(
+    @GetTenant() tenant: any,
+    @Query('date') dateParam?: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    const date = dateParam ? new Date(dateParam) : new Date();
+    return this.attendanceService.getDailyStaffAttendances(tid, date);
   }
 }

@@ -15,6 +15,7 @@ import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/pris
 import { EmailService } from '../communication/services/email.service';
 import { RecruitmentNotificationService } from './recruitment-notification.service';
 import { renderOvertimeDecisionEmail } from './hr-email-templates';
+import { GeolocationService } from './geolocation.service';
 
 @Injectable()
 export class AttendancePrismaService {
@@ -24,6 +25,7 @@ export class AttendancePrismaService {
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
     private readonly notificationService: RecruitmentNotificationService,
+    private readonly geolocationService: GeolocationService,
   ) {}
 
   // ============================================================================
@@ -443,6 +445,424 @@ export class AttendancePrismaService {
       throw new NotFoundException(`Overtime record ${id} not found`);
     }
     return this.prisma.overtimeRecord.delete({ where: { id } });
+  }
+
+  // ============================================================================
+  // ⭐ SELF-CHECK-IN & SEMAINIER CHECK-IN (Géolocalisé)
+  // ============================================================================
+  //
+  // Deux modes de pointage pour la présence des enseignants :
+  //
+  // 1. SELF-CHECK-IN : l'enseignant marque SA présence depuis son téléphone/PC.
+  //    Le backend vérifie OBLIGATOIREMENT la position GPS contre les coords école
+  //    (rayon configurable, par défaut 100m). Si coords école non configurées →
+  //    refus avec message explicite.
+  //
+  // 2. SEMAINIER-CHECK-IN : le semainier marque la présence d'un enseignant.
+  //    Pas de vérif géo (le semainier est déjà validé dans l'école).
+  //
+  // ⭐ MUTUAL EXCLUSION :
+  //   - Si une présence existe déjà avec markedByRole='SELF' → le semainier ne
+  //     PEUT PAS la modifier.
+  //   - Si une présence existe avec markedByRole='SEMINARIER' → l'enseignant ne
+  //     PEUT PAS se marquer lui-même (le semainier a déjà tout géré).
+  //   - Si marquée par ADMIN (cas legacy) → l'enseignant ou le semainier peut
+  //     override (passage au nouveau système).
+
+  /**
+   * Résout un Staff à partir de l'email utilisateur connecté.
+   * Le Staff est identifié par son email (pas de FK directe User ↔ Staff).
+   */
+  async resolveStaffByUserEmail(email: string, tenantId: string) {
+    const staff: any = await this.prisma.$queryRawUnsafe(
+      `SELECT id, "firstName", "lastName", email, "roleType", "schoolLevelId"
+       FROM "staff"
+       WHERE email = $1 AND "tenantId" = $2 AND status = 'ACTIVE'
+       LIMIT 1`,
+      email, tenantId,
+    );
+    if (!staff || staff.length === 0) return null;
+    return staff[0];
+  }
+
+  /**
+   * ⭐ Self-check-in : l'enseignant marque SA présence depuis son téléphone/PC.
+   * Vérifie la géolocalisation côté serveur (anti-fraude).
+   */
+  async selfCheckIn(
+    tenantId: string,
+    userEmail: string,
+    userId: string,
+    data: {
+      date: string | Date;
+      status?: string;
+      latitude: number;
+      longitude: number;
+      accuracy?: number;
+      deviceInfo?: string;
+      ipAddress?: string;
+    },
+  ) {
+    // 1. Résoudre le Staff connecté
+    const staff = await this.resolveStaffByUserEmail(userEmail, tenantId);
+    if (!staff) {
+      throw new BadRequestException(
+        `Aucun staff actif trouvé pour l'email ${userEmail}. ` +
+        `Contactez l'administrateur RH pour vérifier votre rattachement.`
+      );
+    }
+
+    const date = data.date instanceof Date ? data.date : new Date(data.date);
+
+    // 2. Vérifier qu'il n'y a pas déjà une présence pour cette date
+    const existing = await this.prisma.$queryRawUnsafe(
+      `SELECT id, "markedByRole", "markedBy", status, "checkIn"
+       FROM "staff_attendances"
+       WHERE "staffId" = $1 AND date = $2 AND "tenantId" = $3
+       LIMIT 1`,
+      staff.id, date, tenantId,
+    ) as any[];
+
+    if (existing && existing.length > 0) {
+      const ex = existing[0];
+      // ⭐ Mutual exclusion : si déjà marqué SELF ou SEMINARIER → refus
+      if (ex.markedByRole === 'SELF') {
+        throw new BadRequestException(
+          `Vous avez déjà pointé votre présence aujourd'hui à ` +
+          `${ex.checkIn ? new Date(ex.checkIn).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : 'heure inconnue'} ` +
+          `(statut: ${ex.status}). Vous ne pouvez pas pointer deux fois.`
+        );
+      }
+      if (ex.markedByRole === 'SEMINARIER') {
+        throw new BadRequestException(
+          `Votre présence a déjà été marquée par le semainier (statut: ${ex.status}). ` +
+          `Vous ne pouvez pas la modifier vous-même.`
+        );
+      }
+      // Si marquée ADMIN (legacy) → on override avec SELF
+    }
+
+    // 3. ⭐ Vérification géo CÔTÉ SERVEUR (anti-fraude)
+    const geoResult = await this.geolocationService.verifyPosition(tenantId, {
+      latitude: data.latitude,
+      longitude: data.longitude,
+      accuracy: data.accuracy,
+    });
+
+    if (!geoResult.verified) {
+      const reason = geoResult.reason === 'COORDS_ECOLE_NON_CONFIGUREES'
+        ? 'Les coordonnées GPS de l\'école ne sont pas encore configurées. ' +
+          'Demandez au directeur de paramétrer la localisation dans Paramètres → Établissement.'
+        : `Vous êtes à ${geoResult.distance.toFixed(0)}m de l'école (rayon autorisé: ${geoResult.allowedRadius}m). ` +
+          `Rapprochez-vous de l'établissement pour pointer votre présence.`;
+
+      this.logger.warn(
+        `🚫 Self-check-in refusé pour ${staff.firstName} ${staff.lastName} — ` +
+        `reason=${geoResult.reason} distance=${geoResult.distance}m`
+      );
+      throw new BadRequestException({
+        message: 'Pointage refusé — position GPS invalide',
+        reason: geoResult.reason,
+        distance: geoResult.distance,
+        allowedRadius: geoResult.allowedRadius,
+        details: reason,
+      });
+    }
+
+    // 4. Supprimer l'ancien enregistrement si marqué ADMIN (override)
+    if (existing && existing.length > 0 && existing[0].markedByRole === 'ADMIN') {
+      await this.prisma.$executeRawUnsafe(
+        `DELETE FROM "staff_attendances" WHERE id = $1`,
+        existing[0].id,
+      );
+    }
+
+    // 5. Résoudre l'année académique
+    const academicYearId = await this.resolveAcademicYear(tenantId);
+
+    // 6. Créer l'enregistrement avec coords + audit
+    const id = crypto.randomUUID();
+    const checkIn = new Date(); // maintenant
+    const status = data.status || 'PRESENT';
+
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "staff_attendances"
+         ("id", "tenantId", "academicYearId", "schoolLevelId", "staffId", "date",
+          "checkIn", "status", "latitude", "longitude", "geoAccuracy",
+          "geoVerified", "geoDistance", "markedBy", "markedByRole",
+          "deviceInfo", "ipAddress", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'SELF', $15, $16, NOW(), NOW())`,
+      id, tenantId, academicYearId, staff.schoolLevelId, staff.id, date,
+      checkIn, status, data.latitude, data.longitude, data.accuracy || null,
+      true, geoResult.distance, userId, data.deviceInfo || null, data.ipAddress || null,
+    );
+
+    this.logger.log(
+      `✅ Self-check-in — ${staff.firstName} ${staff.lastName} (staffId=${staff.id}) ` +
+      `distance=${geoResult.distance.toFixed(0)}m statut=${status}`
+    );
+
+    return {
+      id,
+      staffId: staff.id,
+      staffName: `${staff.firstName} ${staff.lastName}`,
+      date,
+      checkIn,
+      status,
+      markedByRole: 'SELF',
+      geoVerified: true,
+      geoDistance: geoResult.distance,
+      allowedRadius: geoResult.allowedRadius,
+    };
+  }
+
+  /**
+   * ⭐ Semainier check-in : le semainier marque la présence d'un enseignant.
+   * Pas de vérif géo (le semainier est déjà dans l'école).
+   */
+  async semainierCheckIn(
+    tenantId: string,
+    semainierUserId: string,
+    data: {
+      staffId: string;
+      date: string | Date;
+      status: string;
+      checkIn?: string | Date;
+      checkOut?: string | Date;
+      hoursWorked?: number;
+      notes?: string;
+    },
+  ) {
+    const date = data.date instanceof Date ? data.date : new Date(data.date);
+
+    // 1. Vérifier qu'il n'y a pas déjà une présence marquée SELF pour cette date
+    const existing = await this.prisma.$queryRawUnsafe(
+      `SELECT id, "markedByRole", "markedBy", status, "checkIn"
+       FROM "staff_attendances"
+       WHERE "staffId" = $1 AND date = $2 AND "tenantId" = $3
+       LIMIT 1`,
+      data.staffId, date, tenantId,
+    ) as any[];
+
+    if (existing && existing.length > 0) {
+      const ex = existing[0];
+      // ⭐ Mutual exclusion : si déjà marqué SELF → le semainier ne peut PAS modifier
+      if (ex.markedByRole === 'SELF') {
+        throw new BadRequestException(
+          `L'enseignant a déjà auto-pointé sa présence aujourd'hui ` +
+          `à ${ex.checkIn ? new Date(ex.checkIn).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : 'heure inconnue'} ` +
+          `(statut: ${ex.status}). Vous ne pouvez pas modifier un auto-pointage.`
+        );
+      }
+      // Si marqué SEMINARIER ou ADMIN → update
+    }
+
+    // 2. Résoudre l'année académique
+    const academicYearId = await this.resolveAcademicYear(tenantId);
+
+    // 3. Récupérer le schoolLevelId du staff
+    const staffInfo: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "schoolLevelId", "firstName", "lastName" FROM "staff" WHERE id = $1`,
+      data.staffId,
+    );
+    const staffName = staffInfo?.[0]
+      ? `${staffInfo[0].firstName} ${staffInfo[0].lastName}`
+      : '—';
+    const schoolLevelId = staffInfo?.[0]?.schoolLevelId || null;
+
+    // 4. Si existant SEMINARIER ou ADMIN → update ; sinon → create
+    if (existing && existing.length > 0) {
+      const ex = existing[0];
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "staff_attendances"
+         SET status = $1,
+             "checkIn" = COALESCE($2, "checkIn"),
+             "checkOut" = COALESCE($3, "checkOut"),
+             "hoursWorked" = COALESCE($4, "hoursWorked"),
+             notes = COALESCE($5, notes),
+             "markedBy" = $6,
+             "markedByRole" = 'SEMINARIER',
+             "updatedAt" = NOW()
+         WHERE id = $7`,
+        data.status,
+        data.checkIn ? new Date(data.checkIn) : null,
+        data.checkOut ? new Date(data.checkOut) : null,
+        data.hoursWorked || null,
+        data.notes || null,
+        semainierUserId,
+        ex.id,
+      );
+      return {
+        id: ex.id,
+        staffId: data.staffId,
+        staffName,
+        date,
+        status: data.status,
+        markedByRole: 'SEMINARIER',
+        updated: true,
+      };
+    }
+
+    // 5. Create new
+    const id = crypto.randomUUID();
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "staff_attendances"
+         ("id", "tenantId", "academicYearId", "schoolLevelId", "staffId", "date",
+          "checkIn", "checkOut", "status", "hoursWorked", notes,
+          "markedBy", "markedByRole", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'SEMINARIER', NOW(), NOW())`,
+      id, tenantId, academicYearId, schoolLevelId, data.staffId, date,
+      data.checkIn ? new Date(data.checkIn) : new Date(),
+      data.checkOut ? new Date(data.checkOut) : null,
+      data.status, data.hoursWorked || null, data.notes || null,
+      semainierUserId,
+    );
+
+    this.logger.log(
+      `✅ Semainier check-in — ${staffName} (staffId=${data.staffId}) statut=${data.status} par userId=${semainierUserId}`
+    );
+
+    return {
+      id,
+      staffId: data.staffId,
+      staffName,
+      date,
+      checkIn: data.checkIn ? new Date(data.checkIn) : new Date(),
+      status: data.status,
+      markedByRole: 'SEMINARIER',
+    };
+  }
+
+  /**
+   * ⭐ Self check-out : l'enseignant clique "Fin de journée" en partant.
+   * Calcule hoursWorked = checkOut - checkIn.
+   * Si pas de checkIn → refus.
+   */
+  async selfCheckOut(
+    tenantId: string,
+    userEmail: string,
+    userId: string,
+    data: { date: string | Date },
+  ) {
+    const staff = await this.resolveStaffByUserEmail(userEmail, tenantId);
+    if (!staff) {
+      throw new BadRequestException(`Aucun staff trouvé pour ${userEmail}`);
+    }
+
+    const date = data.date instanceof Date ? data.date : new Date(data.date);
+
+    const existing = await this.prisma.$queryRawUnsafe(
+      `SELECT id, "checkIn", "markedByRole", status
+       FROM "staff_attendances"
+       WHERE "staffId" = $1 AND date = $2 AND "tenantId" = $3
+       LIMIT 1`,
+      staff.id, date, tenantId,
+    ) as any[];
+
+    if (!existing || existing.length === 0) {
+      throw new BadRequestException(
+        `Vous n'avez pas pointé votre présence aujourd'hui. ` +
+        `Faites d'abord un check-in avant de partir.`
+      );
+    }
+
+    const ex = existing[0];
+    if (!ex.checkIn) {
+      throw new BadRequestException(
+        `Aucun check-in trouvé pour aujourd'hui. Impossible de calculer les heures travaillées.`
+      );
+    }
+
+    const checkOut = new Date();
+    const checkIn = new Date(ex.checkIn);
+    const hoursWorked = Number(((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60)).toFixed(2));
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "staff_attendances"
+       SET "checkOut" = $1,
+           "hoursWorked" = $2,
+           "checkOutMethod" = 'MANUAL',
+           "updatedAt" = NOW()
+       WHERE id = $3`,
+      checkOut, hoursWorked, ex.id,
+    );
+
+    this.logger.log(
+      `✅ Self check-out — ${staff.firstName} ${staff.lastName} ` +
+      `heures travaillées=${hoursWorked}h`
+    );
+
+    return {
+      id: ex.id,
+      staffId: staff.id,
+      staffName: `${staff.firstName} ${staff.lastName}`,
+      date,
+      checkIn,
+      checkOut,
+      hoursWorked,
+      checkOutMethod: 'MANUAL',
+      status: ex.status,
+    };
+  }
+
+  /**
+   * ⭐ Récupère la présence du jour pour l'utilisateur connecté.
+   * Utilisé par le dashboard enseignant pour afficher "Vous êtes pointé à HH:MM".
+   */
+  async getMyAttendanceToday(tenantId: string, userEmail: string, date?: Date) {
+    const staff = await this.resolveStaffByUserEmail(userEmail, tenantId);
+    if (!staff) return null;
+
+    const targetDate = date || new Date();
+    const records = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "staff_attendances"
+       WHERE "staffId" = $1 AND date = $2 AND "tenantId" = $3
+       LIMIT 1`,
+      staff.id, targetDate, tenantId,
+    ) as any[];
+
+    if (!records || records.length === 0) return null;
+    return {
+      ...records[0],
+      staffName: `${staff.firstName} ${staff.lastName}`,
+    };
+  }
+
+  /**
+   * ⭐ Récupère la liste des présences staff pour une date donnée.
+   * Utilisé par le semainier pour voir/marquer tous les enseignants du jour.
+   */
+  async getDailyStaffAttendances(tenantId: string, date: Date) {
+    const records = await this.prisma.$queryRawUnsafe(
+      `SELECT sa.*, s."firstName", s."lastName",
+              COALESCE(s."tenantMatricule", s."globalMatricule", s."employeeNumber") AS matricule,
+              s."roleType", sl.code AS "schoolLevelCode"
+       FROM "staff_attendances" sa
+       RIGHT JOIN "staff" s ON s.id = sa."staffId" AND sa.date = $2 AND sa."tenantId" = $1
+       LEFT JOIN "school_levels" sl ON sl.id = s."schoolLevelId"
+       WHERE s."tenantId" = $1 AND s.status = 'ACTIVE'
+         AND (s."roleType" = 'TEACHER' OR s."roleType" LIKE '%TEACHER%')
+       ORDER BY s."lastName" ASC, s."firstName" ASC`,
+      tenantId, date,
+    ) as any[];
+
+    return records.map(r => ({
+      id: r.id,
+      staffId: r.staffId,
+      staffName: `${r.firstName} ${r.lastName}`,
+      matricule: r.matricule,
+      roleType: r.roleType,
+      schoolLevelCode: r.schoolLevelCode,
+      date: r.date,
+      checkIn: r.checkIn,
+      checkOut: r.checkOut,
+      status: r.status,
+      hoursWorked: r.hoursWorked,
+      markedByRole: r.markedByRole || 'NONE',
+      geoVerified: r.geoVerified || false,
+      geoDistance: r.geoDistance,
+      notes: r.notes,
+    }));
   }
 }
 

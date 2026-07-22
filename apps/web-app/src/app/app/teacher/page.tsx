@@ -16,6 +16,7 @@ import {
   Library, MessageSquare, BarChart3, GraduationCap,
   Clock, FileText, CheckCircle2, Building2, Loader2,
 } from "lucide-react";
+import { MyAttendanceCard } from "@/components/hr/MyAttendanceCard";
 
 export default function TeacherDashboardPage() {
   const { user, tenant } = useAppSession();
@@ -120,6 +121,9 @@ export default function TeacherDashboardPage() {
           <p className="text-2xl font-bold text-emerald-600">{loading ? "…" : totalStudents}</p>
         </div>
       </div>
+
+      {/* ⭐ Carte présence du jour — auto-pointage géolocalisé */}
+      <MyAttendanceCard />
 
       {/* Liste des classes */}
       {!loading && classes.length > 0 && (

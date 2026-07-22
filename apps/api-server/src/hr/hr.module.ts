@@ -12,6 +12,7 @@ import { StaffMatriculeService } from './staff-matricule.service';
 import { StorageService } from '../common/services/storage.service';
 import { ContractsPrismaService } from './contracts-prisma.service';
 import { AttendancePrismaService } from './attendance-prisma.service';
+import { GeolocationService } from './geolocation.service';
 import { LeavesPrismaService } from './leaves-prisma.service';
 import { AllowancesPrismaService } from './allowances-prisma.service';
 import { EvaluationsPrismaService } from './evaluations-prisma.service';
@@ -69,6 +70,7 @@ import { BillingModule } from '../billing/billing.module';
     StorageService,
     ContractsPrismaService,
     AttendancePrismaService,
+    GeolocationService,
     LeavesPrismaService,
     AllowancesPrismaService,
     EvaluationsPrismaService,

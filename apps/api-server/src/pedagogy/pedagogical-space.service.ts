@@ -2143,6 +2143,10 @@ export class PedagogicalSpaceService {
       adminDuree: 'adminDuree',
       teacherSignature: 'teacherSignature',
       directorSignature: 'directorSignature',
+      // ⭐ Nouveaux champs (structure conforme aux PDFs)
+      san: 'san', sequence: 'sequence', cours: 'cours', titre: 'titre', duree: 'duree',
+      ibis_1: 'ibis_1', ibis_2: 'ibis_2', ibis_3: 'ibis_3', ibis_4: 'ibis_4', ibis_5: 'ibis_5',
+      objectivation: 'objectivation', evalRetour: 'evalRetour', projection: 'projection',
     };
 
     for (const [key, col] of Object.entries(fieldMap)) {
@@ -2200,6 +2204,10 @@ export class PedagogicalSpaceService {
       evaluation: 'string', reference: 'string',
       adminDate: 'date', adminWeek: 'int', adminHoraire: 'string', adminDuree: 'int',
       teacherSignature: 'string', directorSignature: 'string',
+      // ⭐ Nouveaux champs (structure conforme aux PDFs)
+      san: 'string', sequence: 'string', cours: 'string', titre: 'string', duree: 'string',
+      ibis_1: 'string', ibis_2: 'string', ibis_3: 'string', ibis_4: 'string', ibis_5: 'string',
+      objectivation: 'string', evalRetour: 'string', projection: 'string',
       status: 'string', submittedAt: 'date', validatedAt: 'date',
       validatedBy: 'string', rejectionReason: 'string',
     };

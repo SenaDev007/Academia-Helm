@@ -35,7 +35,7 @@ import {
   DuplicateSettingsDto,
 } from './academic-settings.dto';
 
-@Controller('exams/settings')
+@Controller('academic-settings')
 @UseGuards(JwtAuthGuard)
 export class AcademicSettingsController {
   constructor(

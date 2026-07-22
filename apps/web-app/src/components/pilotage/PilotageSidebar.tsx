@@ -171,7 +171,6 @@ const MODULE_ROOTS_WITH_SUBTABS = [
   '/app/finance',
   '/app/communication',
   '/app/exams',
-  '/app/aggregation',
   '/app/meetings',
   '/app/general',
 ];
@@ -248,7 +247,7 @@ function filterModuleByVisibility(
   if (path.startsWith('/app/orion') || path.startsWith('/app/meetings') || path.startsWith('/app/general'))
     return visibility.showDirectionModules;
   if (path.startsWith('/app/finance')) return visibility.showFinanceModules;
-  if (path.startsWith('/app/pedagogy') || path.startsWith('/app/aggregation'))
+  if (path.startsWith('/app/pedagogy'))
     return visibility.showPedagogyModules;
   if (path.startsWith('/app/hr')) return visibility.showHrModules;
   if (path.startsWith('/app/communication')) return visibility.showCommunicationModules;
@@ -282,7 +281,6 @@ const MAIN_MODULES = [
   { path: '/app/students', label: 'Élèves & Scolarité', icon: Users, featureCode: 'STUDENTS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'SCOLARITE', 'SECRETAIRE', 'SECRETAIRE_GENERAL', 'SECRETAIRE_COMPTABLE', 'COMPTABLE', 'CENSEUR', 'SURVEILLANT', 'SURVEILLANT_GENERAL', 'admin'] },
   { path: '/app/finance', label: 'Finances & Économat', icon: Calculator, featureCode: 'FINANCE', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_BILLING', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'CAISSIER', 'COMPTABLE', 'SECRETAIRE_COMPTABLE', 'ECONOME', 'DIRECTEUR_GENERAL', 'CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER', 'accountant', 'admin'] },
   { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: BookOpen, featureCode: 'EXAMS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'CENSEUR', 'TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE', 'PEDAGOGIC_COORDINATOR', 'admin'] },
-  { path: '/app/aggregation', label: 'Agrégation & Décision', icon: BarChart3, featureCode: 'AGGREGATION', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'director', 'admin'] },
   { path: '/app/pedagogy', label: 'Organisation Pédagogique', icon: Building, featureCode: 'PEDAGOGY' },
   { path: '/app/hr', label: 'Personnel, RH & Paie', icon: UserCheck, featureCode: 'HR_PAYROLL', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'HR_MANAGER', 'PAYROLL_MANAGER', 'SCOLARITE', 'admin'] },
   { path: '/app/communication', label: 'Communication', icon: MessageSquare, featureCode: 'COMMUNICATION' },

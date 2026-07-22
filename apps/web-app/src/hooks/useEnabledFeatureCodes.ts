@@ -26,7 +26,6 @@ const DEFAULT_ENABLED_CODES = new Set([
   'PEDAGOGY',
   'HR_PAYROLL',
   'COMMUNICATION',
-  'AGGREGATION',
 ]);
 
 const MAX_RETRIES = 2;

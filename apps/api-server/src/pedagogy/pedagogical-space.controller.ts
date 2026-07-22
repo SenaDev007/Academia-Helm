@@ -944,6 +944,59 @@ export class PedagogicalSpaceController {
     return this.service.autoGenerateSeminarConfigs(tenantId, body.academicYearId);
   }
 
+  // ⭐ Configuration MANUELLE — créer un semainier pour une semaine spécifique
+  @Post('seminar-config/manual')
+  async createSeminarConfigManual(
+    @TenantId() tenantId: string,
+    @Body() body: {
+      academicYearId: string;
+      weekNumber: number;
+      trimester: number;
+      weekStartDate: string;
+      weekEndDate: string;
+      teacherId: string;
+      classIds?: string[];
+    },
+  ) {
+    return this.service.createSeminarConfigManual(tenantId, body);
+  }
+
+  // ⭐ Enseignants éligibles (FR only, maternelle + primaire) + leurs classes
+  @Get('seminar-config/eligible-teachers')
+  async getEligibleSeminarTeachers(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.service.getEligibleSeminarTeachers(tenantId, academicYearId);
+  }
+
+  // ⭐ Suppression manuelle d'un semainier (uniquement si PENDING)
+  @Delete('seminar-config/:id')
+  async deleteSeminarConfig(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.deleteSeminarConfig(tenantId, id);
+  }
+
+  // ⭐ RAPPORT HEBDOMADAIRE (synthèse de fin de semaine — page 8 du document)
+  @Get('seminar-weekly-report')
+  async getWeeklyReport(
+    @TenantId() tenantId: string,
+    @Query('configId') configId: string,
+  ) {
+    return this.service.getOrCreateWeeklyReport(tenantId, configId);
+  }
+
+  @Put('seminar-weekly-report/:id')
+  async updateWeeklyReport(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    return this.service.updateWeeklyReport(tenantId, id, body);
+  }
+
   @Put('seminar-config/:id')
   async updateSeminarConfig(
     @TenantId() tenantId: string,

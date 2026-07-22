@@ -4262,11 +4262,33 @@ h2{text-align:center;}table{width:100%;border-collapse:collapse;}th,td{border:1p
        ORDER BY wsc."weekNumber" ASC`,
       tenantId, academicYearId,
     );
-    return result.map((r: any) => ({
-      ...r,
-      teacherName: r.teacherFirstName ? `${r.teacherFirstName} ${r.teacherLastName}` : null,
-      classIds: typeof r.classIds === 'string' ? JSON.parse(r.classIds) : (r.classIds || []),
-    }));
+
+    // ⭐ Enrichir avec les noms de classes (récupérées depuis la table classes)
+    const allClassIds = new Set<string>();
+    for (const r of result) {
+      const ids: string[] = typeof r.classIds === 'string'
+        ? JSON.parse(r.classIds) : (r.classIds || []);
+      for (const id of ids) allClassIds.add(id);
+    }
+    let classMap = new Map<string, string>();
+    if (allClassIds.size > 0) {
+      const classes: any = await this.prisma.$queryRawUnsafe(
+        `SELECT id, name FROM "classes" WHERE id = ANY($1::text[])`,
+        Array.from(allClassIds),
+      );
+      for (const c of classes) classMap.set(c.id, c.name);
+    }
+
+    return result.map((r: any) => {
+      const classIds: string[] = typeof r.classIds === 'string'
+        ? JSON.parse(r.classIds) : (r.classIds || []);
+      return {
+        ...r,
+        teacherName: r.teacherFirstName ? `${r.teacherFirstName} ${r.teacherLastName}` : null,
+        classIds,
+        classNames: classIds.map((id: string) => classMap.get(id) || id),
+      };
+    });
   }
 
   async autoGenerateSeminarConfigs(tenantId: string, academicYearId: string) {
@@ -4280,16 +4302,73 @@ h2{text-align:center;}table{width:100%;border-collapse:collapse;}th,td{border:1p
     }
     const ay = academicYear[0];
 
-    // Récupérer les enseignants du tenant (maternelle + primaire)
+    // ⭐ Récupérer les enseignants du tenant — piste FR UNIQUEMENT
+    // Critères :
+    //   - status = 'active'
+    //   - assignedLanguages contient 'FR' (et seulement 'FR' — pas EN ni FR+EN)
+    //     → on exclut les enseignants bilingues qui ont aussi l'anglais
+    //   - schoolLevel.code IN ('MATERNELLE', 'PRIMAIRE') — exclut SECONDAIRE
+    //   - tri par lastName ASC, firstName ASC pour rotation stable
+    //
+    // assignedLanguages est stocké en JSONB. On utilise jsonb_array_elements_text
+    // pour vérifier qu'il contient exactement 'FR' (et pas EN).
     const teachers: any = await this.prisma.$queryRawUnsafe(
-      `SELECT id, "firstName", "lastName" FROM "teachers"
-       WHERE "tenantId" = $1 AND "status" = 'active'
-       ORDER BY "lastName" ASC`,
+      `SELECT t.id, t."firstName", t."lastName", t."schoolLevelId",
+              sl.code AS "schoolLevelCode",
+              t."assignedLanguages"
+       FROM "teachers" t
+       LEFT JOIN "school_levels" sl ON sl.id = t."schoolLevelId"
+       WHERE t."tenantId" = $1
+         AND t.status = 'active'
+         AND sl.code IN ('MATERNELLE', 'PRIMAIRE')
+         AND (
+           -- Cas 1 : assignedLanguages est null → on suppose FR par défaut
+           t."assignedLanguages" IS NULL
+           OR
+           -- Cas 2 : assignedLanguages est un tableau JSON contenant exactement 'FR'
+           -- (et pas 'EN') — on exclut donc les bilingues FR+EN
+           (
+             jsonb_array_elements_text(t."assignedLanguages"::jsonb) = 'FR'
+             AND NOT jsonb_array_elements_text(t."assignedLanguages"::jsonb) = 'EN'
+           )
+         )
+       ORDER BY t."lastName" ASC, t."firstName" ASC`,
       tenantId,
     );
 
     if (teachers.length === 0) {
-      throw new BadRequestException('Aucun enseignant actif trouvé');
+      throw new BadRequestException(
+        'Aucun enseignant actif trouvé sur la piste linguistique FR (maternelle + primaire). ' +
+        'Vérifiez que les enseignants ont assignedLanguages=["FR"] dans leur profil.'
+      );
+    }
+
+    // ⭐ Récupérer les classes de chaque enseignant via TeacherClassAssignment
+    // (relation enseignant → classe physique CI/A, CP/B, etc.)
+    // On exclut les classes dont la piste linguistique est "EN" (english only).
+    const teacherClasses: any = await this.prisma.$queryRawUnsafe(
+      `SELECT tca."teacherId",
+              tca."classId",
+              c.name AS "className",
+              c.code AS "classCode",
+              c.language AS "classLanguage"
+       FROM "teacher_class_assignments" tca
+       LEFT JOIN "classes" c ON c.id = tca."classId"
+       WHERE tca."tenantId" = $1
+         AND tca."academicYearId" = $2
+         AND tca."classId" IS NOT NULL
+         AND (c.language IS NULL OR c.language = 'FR' OR c.language != 'EN')
+       ORDER BY c.name ASC`,
+      tenantId, academicYearId,
+    );
+
+    // Construire un map teacherId → [classIds]
+    const teacherClassMap = new Map<string, { id: string; name: string }[]>();
+    for (const tc of teacherClasses) {
+      if (!teacherClassMap.has(tc.teacherId)) {
+        teacherClassMap.set(tc.teacherId, []);
+      }
+      teacherClassMap.get(tc.teacherId)!.push({ id: tc.classId, name: tc.className });
     }
 
     // Supprimer les configs existantes
@@ -4299,7 +4378,7 @@ h2{text-align:center;}table{width:100%;border-collapse:collapse;}th,td{border:1p
     );
 
     // Calculer 36 semaines à partir de la date de rentrée
-    const startDate = new Date(ay.startDate || ay.startDate || new Date(new Date().getFullYear(), 8, 1)); // 1er septembre par défaut
+    const startDate = new Date(ay.startDate || new Date(new Date().getFullYear(), 8, 1));
     // Ajuster au lundi de la semaine
     const day = startDate.getDay();
     const diff = day === 0 ? -6 : 1 - day;
@@ -4321,17 +4400,219 @@ h2{text-align:center;}table{width:100%;border-collapse:collapse;}th,td{border:1p
       const teacherIdx = (week - 1) % teachers.length;
       const teacher = teachers[teacherIdx];
 
+      // Récupérer les classes de cet enseignant
+      const teacherClassesList = teacherClassMap.get(teacher.id) || [];
+      const classIds = teacherClassesList.map(c => c.id);
+      const classNames = teacherClassesList.map(c => c.name);
+
       const id = crypto.randomUUID();
       await this.prisma.$executeRawUnsafe(
-        `INSERT INTO "weekly_seminar_config" ("id", "tenantId", "academicYearId", "weekNumber", "trimester", "weekStartDate", "weekEndDate", "teacherId", "classIds", "status", "createdAt", "updatedAt")
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '[]', 'PENDING', NOW(), NOW())`,
-        id, tenantId, academicYearId, week, trimester, weekStart, weekEnd, teacher.id,
+        `INSERT INTO "weekly_seminar_config"
+           ("id", "tenantId", "academicYearId", "weekNumber", "trimester",
+            "weekStartDate", "weekEndDate", "teacherId", "classIds", "status",
+            "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, 'PENDING', NOW(), NOW())`,
+        id, tenantId, academicYearId, week, trimester,
+        weekStart, weekEnd, teacher.id,
+        JSON.stringify(classIds),
       );
-      configs.push({ id, weekNumber: week, trimester, teacherId: teacher.id });
+      configs.push({
+        id,
+        weekNumber: week,
+        trimester,
+        teacherId: teacher.id,
+        teacherName: `${teacher.firstName} ${teacher.lastName}`,
+        classIds,
+        classNames,
+      });
     }
 
-    this.logger.log(`✅ ${configs.length} semainiers générés automatiquement`);
-    return { generated: configs.length };
+    this.logger.log(
+      `✅ ${configs.length} semainiers générés — ${teachers.length} enseignants FR ` +
+      `(maternelle+primaire), classes assignées récupérées pour chacun`,
+    );
+    return {
+      generated: configs.length,
+      teachersCount: teachers.length,
+      teachers: teachers.map((t: any) => ({
+        id: t.id,
+        name: `${t.firstName} ${t.lastName}`,
+        schoolLevelCode: t.schoolLevelCode,
+        classesCount: teacherClassMap.get(t.id)?.length || 0,
+      })),
+    };
+  }
+
+  /**
+   * ⭐ Création MANUELLE d'un semainier (Configuration manuelle)
+   * Permet à la direction de créer un semainier pour une semaine spécifique
+   * en choisissant manuellement l'enseignant et les classes.
+   */
+  async createSeminarConfigManual(tenantId: string, data: {
+    academicYearId: string;
+    weekNumber: number;
+    trimester: number;
+    weekStartDate: string;
+    weekEndDate: string;
+    teacherId: string;
+    classIds?: string[];
+  }) {
+    // Vérifier que la semaine n'existe pas déjà
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT id FROM "weekly_seminar_config"
+       WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "weekNumber" = $3`,
+      tenantId, data.academicYearId, data.weekNumber,
+    );
+    if (existing && existing.length > 0) {
+      throw new BadRequestException(
+        `Un semainier existe déjà pour la semaine ${data.weekNumber}. ` +
+        `Utilisez la modification ou supprimez-le d'abord.`
+      );
+    }
+
+    // Vérifier que l'enseignant existe et est sur la piste FR
+    const teacher: any = await this.prisma.$queryRawUnsafe(
+      `SELECT t.id, t."firstName", t."lastName", sl.code AS "schoolLevelCode"
+       FROM "teachers" t
+       LEFT JOIN "school_levels" sl ON sl.id = t."schoolLevelId"
+       WHERE t.id = $1 AND t."tenantId" = $2 AND t.status = 'active'`,
+      data.teacherId, tenantId,
+    );
+    if (!teacher || teacher.length === 0) {
+      throw new NotFoundException('Enseignant introuvable ou inactif');
+    }
+
+    const id = crypto.randomUUID();
+    const classIds = data.classIds || [];
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "weekly_seminar_config"
+         ("id", "tenantId", "academicYearId", "weekNumber", "trimester",
+          "weekStartDate", "weekEndDate", "teacherId", "classIds", "status",
+          "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, 'PENDING', NOW(), NOW())`,
+      id, tenantId, data.academicYearId, data.weekNumber, data.trimester,
+      new Date(data.weekStartDate), new Date(data.weekEndDate),
+      data.teacherId, JSON.stringify(classIds),
+    );
+
+    this.logger.log(`✅ Semainier S${data.weekNumber} créé manuellement (teacherId=${data.teacherId})`);
+
+    // Recharger avec jointures pour retourner l'objet complet
+    const created: any = await this.prisma.$queryRawUnsafe(
+      `SELECT wsc.*, t."firstName" AS "teacherFirstName", t."lastName" AS "teacherLastName"
+       FROM "weekly_seminar_config" wsc
+       LEFT JOIN "teachers" t ON t.id = wsc."teacherId"
+       WHERE wsc.id = $1`,
+      id,
+    );
+    if (created && created.length > 0) {
+      const r = created[0];
+      return {
+        ...r,
+        teacherName: r.teacherFirstName ? `${r.teacherFirstName} ${r.teacherLastName}` : null,
+        classIds: typeof r.classIds === 'string' ? JSON.parse(r.classIds) : (r.classIds || []),
+      };
+    }
+    return { id };
+  }
+
+  /**
+   * ⭐ Suppression manuelle d'un semainier (uniquement si PENDING — non signé)
+   */
+  async deleteSeminarConfig(tenantId: string, configId: string) {
+    const config: any = await this.prisma.$queryRawUnsafe(
+      `SELECT id, status, "teacherSignature" FROM "weekly_seminar_config"
+       WHERE id = $1 AND "tenantId" = $2`,
+      configId, tenantId,
+    );
+    if (!config || config.length === 0) {
+      throw new NotFoundException('Semainier introuvable');
+    }
+    if (config[0].status === 'SIGNED' || config[0].status === 'VALIDATED') {
+      throw new BadRequestException(
+        'Impossible de supprimer un semainier déjà signé ou validé. ' +
+        'Archivez-le ou créez une nouvelle version.'
+      );
+    }
+
+    // Supprimer d'abord les rapports journaliers liés (cascade FK)
+    await this.prisma.$executeRawUnsafe(
+      `DELETE FROM "weekly_seminar_daily_report" WHERE "seminarConfigId" = $1`,
+      configId,
+    );
+    await this.prisma.$executeRawUnsafe(
+      `DELETE FROM "weekly_seminar_weekly_report" WHERE "seminarConfigId" = $1`,
+      configId,
+    );
+    await this.prisma.$executeRawUnsafe(
+      `DELETE FROM "weekly_seminar_config" WHERE id = $1 AND "tenantId" = $2`,
+      configId, tenantId,
+    );
+
+    this.logger.log(`🗑️ Semainier ${configId} supprimé manuellement`);
+    return { deleted: true, id: configId };
+  }
+
+  /**
+   * ⭐ Récupère les enseignants éligibles au semainier (FR only, maternelle + primaire)
+   * Utilisé par le frontend pour le mode "Configuration manuelle".
+   */
+  async getEligibleSeminarTeachers(tenantId: string, academicYearId: string) {
+    const teachers: any = await this.prisma.$queryRawUnsafe(
+      `SELECT t.id, t."firstName", t."lastName", t."matricule",
+              sl.code AS "schoolLevelCode", sl.name AS "schoolLevelName",
+              t."assignedLanguages"
+       FROM "teachers" t
+       LEFT JOIN "school_levels" sl ON sl.id = t."schoolLevelId"
+       WHERE t."tenantId" = $1
+         AND t.status = 'active'
+         AND sl.code IN ('MATERNELLE', 'PRIMAIRE')
+         AND (
+           t."assignedLanguages" IS NULL
+           OR (
+             jsonb_array_elements_text(t."assignedLanguages"::jsonb) = 'FR'
+             AND NOT jsonb_array_elements_text(t."assignedLanguages"::jsonb) = 'EN'
+           )
+         )
+       ORDER BY sl.code ASC, t."lastName" ASC, t."firstName" ASC`,
+      tenantId,
+    );
+
+    // Récupérer les classes de chaque enseignant
+    const teacherIds = teachers.map((t: any) => t.id);
+    let teacherClasses: any[] = [];
+    if (teacherIds.length > 0) {
+      teacherClasses = await this.prisma.$queryRawUnsafe(
+        `SELECT tca."teacherId",
+                tca."classId",
+                c.name AS "className",
+                c.code AS "classCode"
+         FROM "teacher_class_assignments" tca
+         LEFT JOIN "classes" c ON c.id = tca."classId"
+         WHERE tca."tenantId" = $1
+           AND tca."academicYearId" = $2
+           AND tca."classId" IS NOT NULL
+           AND (c.language IS NULL OR c.language != 'EN')
+         ORDER BY c.name ASC`,
+        tenantId, academicYearId,
+      );
+    }
+
+    const classMap = new Map<string, { id: string; name: string }[]>();
+    for (const tc of teacherClasses) {
+      if (!classMap.has(tc.teacherId)) classMap.set(tc.teacherId, []);
+      classMap.get(tc.teacherId)!.push({ id: tc.classId, name: tc.className });
+    }
+
+    return teachers.map((t: any) => ({
+      id: t.id,
+      name: `${t.firstName} ${t.lastName}`,
+      matricule: t.matricule,
+      schoolLevelCode: t.schoolLevelCode,
+      schoolLevelName: t.schoolLevelName,
+      classes: classMap.get(t.id) || [],
+      classesCount: classMap.get(t.id)?.length || 0,
+    }));
   }
 
   async updateSeminarConfig(tenantId: string, configId: string, data: any) {
@@ -4435,6 +4716,251 @@ h2{text-align:center;}table{width:100%;border-collapse:collapse;}th,td{border:1p
       reportId,
     );
     return updated[0];
+  }
+
+  // ===========================================================================
+  // RAPPORT HEBDOMADAIRE — Synthèse de fin de semaine (page 8 du document)
+  // ===========================================================================
+  //
+  // Le rapport hebdomadaire agrège les 5 rapports journaliers (Lun-Ven) et
+  // présente une synthèse selon la structure officielle du document "Cahier du
+  // Semainier" page 8 :
+  //
+  //   1. Synthèse présence enseignants (statistiques agrégées)
+  //   2. Synthèse présence élèves (taux moyen, absences cumulées)
+  //   3. Bilan pédagogique (cours assurés vs manqués, activités remarquables)
+  //   4. Bilan discipline (incidents, mesures correctives)
+  //   5. Bilan hygiène (problèmes récurrents, réparations)
+  //   6. Visites et communications de la semaine
+  //   7. Recommandations générales pour la direction
+  //   + Statistiques (taux moyen présence, moyenne hebdo, etc.)
+  //   + Signatures (Semainier + Directeur)
+
+  async getOrCreateWeeklyReport(tenantId: string, configId: string) {
+    // Vérifier qu'une entrée existe déjà
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT wr.*, wsc."weekNumber", wsc."trimester",
+              wsc."weekStartDate", wsc."weekEndDate"
+       FROM "weekly_seminar_weekly_report" wr
+       JOIN "weekly_seminar_config" wsc ON wsc.id = wr."seminarConfigId"
+       WHERE wr."seminarConfigId" = $1 AND wr."tenantId" = $2`,
+      configId, tenantId,
+    );
+    if (existing && existing.length > 0) return existing[0];
+
+    // Sinon, créer un rapport hebdo vide avec agrégation initiale des 5 rapports journaliers
+    const config: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "weekly_seminar_config" WHERE id = $1 AND "tenantId" = $2`,
+      configId, tenantId,
+    );
+    if (!config || config.length === 0) {
+      throw new NotFoundException('Config non trouvée');
+    }
+    const cfg = config[0];
+
+    // ⭐ Agréger automatiquement les 5 rapports journaliers pour pré-remplir les stats
+    const dailyReports: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "weekly_seminar_daily_report"
+       WHERE "seminarConfigId" = $1 AND "tenantId" = $2
+       ORDER BY "dayOfWeek" ASC`,
+      configId, tenantId,
+    );
+
+    const stats = this.aggregateWeeklyStats(dailyReports);
+
+    const id = crypto.randomUUID();
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "weekly_seminar_weekly_report"
+         ("id", "tenantId", "academicYearId", "seminarConfigId", "weekNumber",
+          "staffAttendanceStats", "studentAttendanceStats",
+          "pedagogySummary", "disciplineSummary", "hygieneSummary",
+          "visitsAndCommsSummary", "recommendations",
+          "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb,
+               $8, $9, $10, $11, $12, NOW(), NOW())`,
+      id, tenantId, cfg.academicYearId, configId, cfg.weekNumber,
+      JSON.stringify(stats.staffAttendance),
+      JSON.stringify(stats.studentAttendance),
+      stats.pedagogySummary || '',
+      stats.disciplineSummary || '',
+      stats.hygieneSummary || '',
+      stats.visitsAndCommsSummary || '',
+      stats.recommendations || '',
+    );
+
+    const created: any = await this.prisma.$queryRawUnsafe(
+      `SELECT wr.*, wsc."weekNumber", wsc."trimester",
+              wsc."weekStartDate", wsc."weekEndDate"
+       FROM "weekly_seminar_weekly_report" wr
+       JOIN "weekly_seminar_config" wsc ON wsc.id = wr."seminarConfigId"
+       WHERE wr.id = $1`,
+      id,
+    );
+    return created[0];
+  }
+
+  async updateWeeklyReport(tenantId: string, reportId: string, data: any) {
+    const updates: string[] = [];
+    const params: any[] = [];
+    let paramIdx = 1;
+
+    const allowedFields = [
+      'staffAttendanceStats', 'studentAttendanceStats',
+      'pedagogySummary', 'disciplineSummary', 'hygieneSummary',
+      'visitsAndCommsSummary', 'recommendations',
+      'teacherSignature', 'directorSignature', 'filledBy',
+    ];
+    for (const field of allowedFields) {
+      if (data[field] !== undefined) {
+        if (['staffAttendanceStats', 'studentAttendanceStats'].includes(field)) {
+          updates.push(`"${field}" = $${paramIdx++}::jsonb`);
+          const val = typeof data[field] === 'string' ? data[field] : JSON.stringify(data[field]);
+          params.push(val);
+        } else {
+          updates.push(`"${field}" = $${paramIdx++}`);
+          params.push(data[field]);
+        }
+      }
+    }
+
+    if (updates.length === 0) return null;
+    updates.push(`"updatedAt" = NOW()`);
+    params.push(reportId, tenantId);
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "weekly_seminar_weekly_report" SET ${updates.join(', ')} WHERE "id" = $${paramIdx++} AND "tenantId" = $${paramIdx++}`,
+      ...params,
+    );
+
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT wr.*, wsc."weekNumber", wsc."trimester",
+              wsc."weekStartDate", wsc."weekEndDate"
+       FROM "weekly_seminar_weekly_report" wr
+       JOIN "weekly_seminar_config" wsc ON wsc.id = wr."seminarConfigId"
+       WHERE wr.id = $1`,
+      reportId,
+    );
+    return updated[0];
+  }
+
+  /**
+   * ⭐ Calcule les statistiques agrégées de la semaine à partir des 5 rapports journaliers.
+   * Utilisé pour pré-remplir le rapport hebdo (modifiable manuellement ensuite).
+   */
+  private aggregateWeeklyStats(dailyReports: any[]) {
+    // 1. Stats présence enseignants
+    let totalStaffRecords = 0;
+    let totalStaffPresent = 0;
+    let totalStaffAbsent = 0;
+    let totalStaffLate = 0;
+    for (const dr of dailyReports) {
+      const ta = typeof dr.teacherAttendance === 'string'
+        ? JSON.parse(dr.teacherAttendance) : (dr.teacherAttendance || null);
+      if (ta?.summary) {
+        totalStaffRecords += ta.summary.total || 0;
+        totalStaffPresent += ta.summary.present || 0;
+        totalStaffAbsent += ta.summary.absent || 0;
+        totalStaffLate += ta.summary.late || 0;
+      }
+    }
+
+    // 2. Stats présence élèves
+    let totalStudentRecords = 0;
+    let totalStudentAbsent = 0;
+    let totalStudentLate = 0;
+    let totalStudentPresent = 0;
+    let avgAttendanceRate = 0;
+    let rateCount = 0;
+    const allHighAbsenceClasses = new Set<string>();
+    for (const dr of dailyReports) {
+      const sp = typeof dr.studentPresence === 'string'
+        ? JSON.parse(dr.studentPresence) : (dr.studentPresence || null);
+      if (sp?.summary) {
+        totalStudentRecords += sp.summary.totalRecords || 0;
+        totalStudentAbsent += sp.summary.absent || 0;
+        totalStudentLate += sp.summary.late || 0;
+        totalStudentPresent += sp.summary.present || 0;
+      }
+      if (sp?.attendanceRate != null) {
+        avgAttendanceRate += sp.attendanceRate;
+        rateCount++;
+      }
+      if (sp?.highAbsenceClasses) {
+        for (const c of sp.highAbsenceClasses) allHighAbsenceClasses.add(c);
+      }
+    }
+
+    // 3. Synthèse pédagogique (cours manqués)
+    let totalMissingCourses = 0;
+    let totalModifiedCourses = 0;
+    let scheduleRespectedDays = 0;
+    for (const dr of dailyReports) {
+      const ped = typeof dr.pedagogy === 'string'
+        ? JSON.parse(dr.pedagogy) : (dr.pedagogy || null);
+      if (ped?.missingCourses) totalMissingCourses += ped.missingCourses.length;
+      if (ped?.modifiedCourses) totalModifiedCourses += ped.modifiedCourses.length;
+      if (ped?.scheduleRespected) scheduleRespectedDays++;
+    }
+
+    // 4. Synthèse discipline, hygiène, visites — extraire texte synthétisé
+    const extractText = (dr: any, field: string, subfield: string) => {
+      const obj = typeof dr[field] === 'string' ? JSON.parse(dr[field]) : (dr[field] || null);
+      return obj?.[subfield] || '';
+    };
+
+    const disciplineSummaries = dailyReports
+      .map(dr => extractText(dr, 'discipline', 'problemBehaviors'))
+      .filter(t => t && t.trim().length > 0);
+
+    const hygieneIssues = dailyReports
+      .map(dr => extractText(dr, 'hygiene', 'urgentRepairs'))
+      .filter(t => t && t.trim().length > 0);
+
+    const visitSummaries = dailyReports
+      .map(dr => extractText(dr, 'visits', 'visitDetails'))
+      .filter(t => t && t.trim().length > 0);
+
+    const communicationSummaries = dailyReports
+      .map(dr => extractText(dr, 'communication', 'directionInstructions'))
+      .filter(t => t && t.trim().length > 0);
+
+    return {
+      staffAttendance: {
+        totalRecords: totalStaffRecords,
+        totalPresent: totalStaffPresent,
+        totalAbsent: totalStaffAbsent,
+        totalLate: totalStaffLate,
+        averagePresenceRate: totalStaffRecords > 0
+          ? Number(((totalStaffPresent / totalStaffRecords) * 100).toFixed(2))
+          : 0,
+        daysCovered: dailyReports.length,
+      },
+      studentAttendance: {
+        totalRecords: totalStudentRecords,
+        totalPresent: totalStudentPresent,
+        totalAbsent: totalStudentAbsent,
+        totalLate: totalStudentLate,
+        averageAttendanceRate: rateCount > 0
+          ? Number((avgAttendanceRate / rateCount).toFixed(2))
+          : 0,
+        highAbsenceClasses: Array.from(allHighAbsenceClasses),
+        daysCovered: dailyReports.length,
+      },
+      pedagogySummary: `Semaine couvrant ${dailyReports.length} jour(s) sur 5. `
+        + `${scheduleRespectedDays} jour(s) avec emploi du temps respecté. `
+        + `${totalMissingCourses} cours non assurés, ${totalModifiedCourses} cours modifiés.`,
+      disciplineSummary: disciplineSummaries.length > 0
+        ? 'Incidents observés : ' + disciplineSummaries.join(' | ')
+        : '',
+      hygieneSummary: hygieneIssues.length > 0
+        ? 'Réparations urgentes signalées : ' + hygieneIssues.join(' | ')
+        : '',
+      visitsAndCommsSummary: (visitSummaries.length > 0 || communicationSummaries.length > 0)
+        ? (visitSummaries.length > 0 ? 'Visites : ' + visitSummaries.join(' | ') : '')
+          + (communicationSummaries.length > 0 ? ' Communications direction : ' + communicationSummaries.join(' | ') : '')
+        : '',
+      recommendations: '',
+    };
   }
 
   // ===========================================================================

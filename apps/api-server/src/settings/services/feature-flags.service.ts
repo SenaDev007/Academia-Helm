@@ -14,7 +14,6 @@ export enum FeatureCode {
   FINANCE = 'FINANCE',
   HR_PAYROLL = 'HR_PAYROLL',
   COMMUNICATION = 'COMMUNICATION',
-  AGGREGATION = 'AGGREGATION',
   QHSE = 'QHSE',
   CANTEEN = 'CANTEEN',
   TRANSPORT = 'TRANSPORT',
@@ -32,7 +31,6 @@ export const FEATURE_KEYS: string[] = [
   FeatureCode.STUDENTS,       // Élèves & Scolarité
   FeatureCode.FINANCE,        // Finances & Économat
   FeatureCode.EXAMS,          // Examens, Notes & Bulletins
-  FeatureCode.AGGREGATION,    // Agrégation & Décision
   FeatureCode.PEDAGOGY,       // Organisation Pédagogique
   FeatureCode.HR_PAYROLL,     // Personnel, RH & Paie
   FeatureCode.COMMUNICATION,  // Communication
@@ -53,7 +51,6 @@ export const DEFAULT_ENABLED_FEATURES = new Set<string>([
   FeatureCode.STUDENTS,
   FeatureCode.FINANCE,
   FeatureCode.EXAMS,
-  FeatureCode.AGGREGATION,
   FeatureCode.PEDAGOGY,
   FeatureCode.HR_PAYROLL,
   FeatureCode.COMMUNICATION,

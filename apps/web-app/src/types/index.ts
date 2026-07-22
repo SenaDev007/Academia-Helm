@@ -411,10 +411,6 @@ export type SyncEntityType =
   | 'COMMUNICATION_CHANNEL'
   | 'NOTIFICATION'
   | 'ALERT'
-  // ─── Agrégation & Décision ───
-  | 'AGGREGATION_RESULT'
-  | 'AGGREGATION_SESSION'
-  | 'AGGREGATION_DECISION'
   | 'RANKING'
   | 'HONOR_ROLL'
   // ─── ORION (Pilotage Direction) ───

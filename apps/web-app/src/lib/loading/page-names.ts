@@ -68,7 +68,6 @@ export const PAGE_NAMES: Record<string, string> = {
   '/app/orion': 'ORION — Pilotage Direction',
   '/app/library': 'Bibliothèque',
   '/app/infirmary': 'Infirmerie',
-  '/app/aggregation': 'Agrégation',
   '/app/shop': 'Boutique',
   '/app/qhse': 'QHSE',
   '/app/canteen': 'Cantine',

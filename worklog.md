@@ -672,3 +672,83 @@ Stage Summary:
 - Prochaine étape utilisateur : redéployer sur Fly.io
     cd /home/z/my-project/apps/api-server
     flyctl deploy -a academia-helm-api --strategy rolling
+
+---
+Task ID: cahier-semainier-finalisation + suppression-agregation
+Agent: main
+Task: Finaliser Cahier du Semainier (mode manuel + correction auto-génération + dates précises + rapport hebdo) et supprimer module Agrégation & Décision
+
+Work Log:
+
+=== PARTIE 1 — CAHIER DU SEMAINIER ===
+
+Backend (apps/api-server/src/pedagogy/pedagogical-space.service.ts) :
+- autoGenerateSeminarConfigs corrigé :
+  • Filtre enseignants FR only (assignedLanguages contient 'FR' ET PAS 'EN')
+  • Filtre schoolLevel.code IN ('MATERNELLE', 'PRIMAIRE') — exclut SECONDAIRE
+  • Récupère les classes de chaque enseignant via TeacherClassAssignment
+  • Stocke classIds (JSONB) dans weekly_seminar_config
+  • Retourne statistiques détaillées (teachersCount + détails par enseignant)
+- Nouvelle méthode createSeminarConfigManual : crée 1 semainier à la fois
+- Nouvelle méthode deleteSeminarConfig : supprime (uniquement si PENDING)
+- Nouvelle méthode getEligibleSeminarTeachers : liste enseignants FR + leurs classes
+- Nouvelle méthode getOrCreateWeeklyReport : création auto avec agrégation des 5 rapports journaliers
+- Nouvelle méthode updateWeeklyReport : MAJ des 7 sections + signatures
+- Nouvelle méthode private aggregateWeeklyStats : stats agrégées (présence enseignants/élèves, bilan pédagogique, discipline, hygiène, visites)
+- getSeminarConfigs enrichi : récupère classNames depuis la table classes (affichageFriendly)
+
+Backend (apps/api-server/src/pedagogy/pedagogical-space.controller.ts) :
+- POST /api/pedagogy-space/seminar-config/manual (création manuelle)
+- GET /api/pedagogy-space/seminar-config/eligible-teachers (liste enseignants éligibles)
+- DELETE /api/pedagogy-space/seminar-config/:id (suppression manuelle)
+- GET /api/pedagogy-space/seminar-weekly-report?configId=... (récup/création auto)
+- PUT /api/pedagogy-space/seminar-weekly-report/:id (MAJ rapport hebdo)
+
+Frontend (apps/web-app/src/components/pedagogy/production/CahierSemaineTab.tsx) :
+- Refonte complète (593 → ~900 lignes)
+- Paramétrage : ajout bouton "Configuration manuelle" (bleu) à côté de "Générer automatiquement" (ambre)
+- Paramétrage : ajout colonne "Action" avec bouton suppression (si PENDING)
+- Paramétrage : affichage classNames au lieu de classIds
+- Nouveau modal ManualConfigModal : choix semaine (1-36) + trimestre auto + dates auto-calculées + select enseignant éligible + checkboxes classes
+- CahierSemainierContent : 6e bouton "Rapport hebdo" (icône CalendarRange, couleur purple)
+- DailyReportCard : affiche "Lundi 23/07/2026" au lieu de "Lundi 23" (helper formatDayWithDate)
+- Nouveau WeeklyReportCard :
+  • En-tête purple "RAPPORT DE FIN DE SEMAINE"
+  • 4 StatCard agrégées (présence enseignants / élèves / jours couverts / classes à risque)
+  • 7 sections conformes page 8 du document :
+    1. Synthèse présence enseignants (stats + observations)
+    2. Synthèse présence élèves (stats + analyse + classes à risque)
+    3. Bilan pédagogique (synthèse auto + analyse)
+    4. Bilan discipline (incidents auto + mesures)
+    5. Bilan hygiène (réparations auto + actions entreprises)
+    6. Visites & communications (synthèse auto + détails)
+    7. Recommandations générales (RichTextEditor)
+  • Signatures bas de page (Semainier + Direction)
+
+=== PARTIE 2 — SUPPRESSION MODULE AGRÉGATION & DÉCISION ===
+
+Frontend :
+- Supprimé apps/web-app/src/app/app/aggregation/ (page.tsx + loading.tsx)
+- Supprimé apps/web-app/src/components/aggregation/AggregationWorkspace.tsx
+- Conservé apps/web-app/src/components/aggregation/AggregationPageShell.tsx (utilisé par aggregation pages des modules Finance/Pedagogy/Students/Exams)
+- PilotageSidebar.tsx : retiré entrée '/app/aggregation' du MAIN_MODULES + MODULE_ROOTS_WITH_SUBTABS + condition visibilité
+- page-names.ts : retiré mappage '/app/aggregation' → 'Agrégation'
+- i18n/messages/fr.json + en.json : retiré clé "nav.aggregation"
+- types/index.ts : retiré types notification 'AGGREGATION_RESULT', 'AGGREGATION_SESSION', 'AGGREGATION_DECISION'
+
+Backend :
+- feature-flags.service.ts : retiré FeatureCode.AGGREGATION + de FEATURE_KEYS + de DEFAULT_ENABLED_FEATURES
+- useEnabledFeatureCodes.ts : retiré 'AGGREGATION' du DEFAULT_ENABLED_CODES
+
+⚠️ CONSERVÉ (modules distincts à ne pas supprimer) :
+- /platform/aggregation (multi-tenant back-office, super admin) — module PlatformAggregationWorkspace.tsx
+- Pages aggregation par module : /app/{finance,pedagogy,students,exams}/aggregation — ce sont des sous-onglets des modules respectifs, pas le module standalone "Agrégation & Décision"
+
+Stage Summary:
+- Cahier du Semainier : 5 nouvelles méthodes backend + 5 nouveaux endpoints + refonte frontend complète
+- Auto-génération : filtre FR only + récupération classes enseignants + classNames affichés
+- Mode manuel : bouton bleu + modal complet avec sélection enseignant + checkboxes classes
+- Dates précises : "Lundi 23/07/2026" dans tous les rapports journaliers
+- Rapport hebdo : 6e onglet (purple) avec 4 stats cards + 7 sections + signatures
+- Module Agrégation & Décision supprimé définitivement (page + composant + sidebar + feature flag + i18n + types)
+- Tous fichiers modifiés passent le check syntaxique TypeScript

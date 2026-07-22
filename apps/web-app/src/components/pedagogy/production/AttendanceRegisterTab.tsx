@@ -1308,9 +1308,9 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                 <tbody>
                   <tr>
                     <td className="border border-slate-300 px-3 py-2 font-semibold">Effectif total de la classe</td>
-                    <td className="border border-slate-300 px-3 py-2 text-center">{evaluation.effectifTotalGarcons ?? "—"}</td>
-                    <td className="border border-slate-300 px-3 py-2 text-center">{evaluation.effectifTotalFilles ?? "—"}</td>
-                    <td className="border border-slate-300 px-3 py-2 text-center font-bold">{evaluation.effectifTotalClasse ?? "—"}</td>
+                    <td className="border border-slate-300 px-3 py-2 text-center">{selectedClass?.boys ?? 0}</td>
+                    <td className="border border-slate-300 px-3 py-2 text-center">{selectedClass?.girls ?? 0}</td>
+                    <td className="border border-slate-300 px-3 py-2 text-center font-bold">{selectedClass?.totalStudents ?? 0}</td>
                   </tr>
                   <tr>
                     <td className="border border-slate-300 px-3 py-2 font-semibold">Nombre d'élèves ayant composé</td>
@@ -1341,17 +1341,72 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
             </div>
           </div>
 
-          {/* === Signatures === */}
-          <div className="grid grid-cols-2 gap-8 pt-6">
-            <div className="border-t-2 border-slate-400 pt-2">
-              <div className="text-xs font-semibold text-slate-500 uppercase">Le Titulaire de la classe</div>
-              <div className="h-16" />
-              <div className="text-[10px] text-slate-400">Signature</div>
+          {/* === Signatures (comme dans le registre d'appel) === */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6">
+            {/* Signature Titulaire */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-bold text-slate-800">Le Titulaire de la classe</div>
+                  <div className="text-xs text-slate-500">{teacherName || 'Nom du titulaire'} — Signature</div>
+                </div>
+                {teacherSignature && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
+                    <CheckCircle2 className="h-3 w-3" /> Signé
+                  </span>
+                )}
+              </div>
+              {teacherSignature ? (
+                <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
+                  <img src={teacherSignature} alt="Signature Titulaire" className="max-h-24 mx-auto" />
+                </div>
+              ) : (
+                <SignatureCanvas
+                  width={400}
+                  height={120}
+                  disabled={isReadOnly}
+                  placeholder="Signature du Titulaire"
+                  onSignatureChange={(data) => setTeacherSignature(data)}
+                />
+              )}
+              {teacherSignature && !isReadOnly && (
+                <button type="button" onClick={() => setTeacherSignature(null)} className="text-xs text-red-500 hover:underline">
+                  Effacer la signature
+                </button>
+              )}
             </div>
-            <div className="border-t-2 border-slate-400 pt-2">
-              <div className="text-xs font-semibold text-slate-500 uppercase">Le Directeur / La Directrice</div>
-              <div className="h-16" />
-              <div className="text-[10px] text-slate-400">Signature et cachet</div>
+
+            {/* Signature Directeur */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-bold text-slate-800">Le Directeur / La Directrice</div>
+                  <div className="text-xs text-slate-500">{directorName || 'Nom du directeur'} — Signature et cachet</div>
+                </div>
+                {directorSignature && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
+                    <CheckCircle2 className="h-3 w-3" /> Signé
+                  </span>
+                )}
+              </div>
+              {directorSignature ? (
+                <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
+                  <img src={directorSignature} alt="Signature Directeur" className="max-h-24 mx-auto" />
+                </div>
+              ) : (
+                <SignatureCanvas
+                  width={400}
+                  height={120}
+                  disabled={isReadOnly}
+                  placeholder="Signature du Directeur"
+                  onSignatureChange={(data) => setDirectorSignature(data)}
+                />
+              )}
+              {directorSignature && !isReadOnly && (
+                <button type="button" onClick={() => setDirectorSignature(null)} className="text-xs text-red-500 hover:underline">
+                  Effacer la signature
+                </button>
+              )}
             </div>
           </div>
         </div>

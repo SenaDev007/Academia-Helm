@@ -78,8 +78,38 @@ const SHEET_TYPES = [
 ] as const;
 
 // ⭐ Configuration des champs spécifiques par type de fiche
-// Chaque type de fiche a des labels et des placeholders différents
-// pour le ruban pédagogique, conformément aux templates officiels.
+// Conforme aux templates officiels extraits des PDFs fournis :
+//   - Fiche mathématiques.pdf
+//   - Fiche français.pdf
+//   - Fiche EST.pdf
+//   - Fiche Éducation Sociale.pdf
+//   - Fiche EA.pdf
+//
+// Structure commune (toutes les fiches) :
+//   En-tête : SAN°, Séquence N°, Date, Cours, Titre, Durée
+//   I- Éléments de planification :
+//     - Compétences disciplinaires
+//     - Compétences transversales
+//     - Compétences transdisciplinaires
+//     - Connaissances et techniques
+//     - Stratégie objet d'apprentissage
+//     - Stratégie d'enseignement/apprentissage/évaluation
+//     - Matériel
+//   II- Déroulement (tableau N° / Consignes / Résultats attendus)
+//   III- Retour et projection (Objectivation, Évaluation, Projection)
+//
+// Spécificités par type :
+//   MATH : Phases préparatoires (Calcule à brûle pourpoint, Comptage/Décomptage,
+//          Cadran opératoire, Calcul mental, 2 problèmes à résoudre mentalement)
+//          + Démonstration (Règle à dégager, exercices d'application)
+//   FRANCAIS : Exercice structural (Unité, Structure, Objectif) + Phase introductive
+//              + Phase de systématisation + Phase d'application
+//   EST : Activités préliminaires + Situation problème + Réalisation
+//         (Hypothèse, Expérimentation, Synthèse) + Retour et projection
+//   ES : Activités préliminaires + Mise en situation + Réalisation
+//        (Situation départ, Exploration, Traitement) + Synthèse + Retour et projection
+//   EA : Proposition de nouvelles acquisitions + Réalisation (exécution, techniques)
+//        + Retour et projection (Objectivation, Évaluation, Projection, Réinvestissement)
 const SHEET_TYPE_FIELDS: Record<string, {
   competenceLabel: string;
   competencePlaceholder: string;
@@ -98,101 +128,135 @@ const SHEET_TYPE_FIELDS: Record<string, {
   referenceLabel: string;
   referencePlaceholder: string;
   deroulementLabel: string;
+  // ⭐ Sections spécifiques au type de fiche
+  specialSectionTitle?: string;
+  specialSectionFields?: { label: string; key: string; placeholder: string }[];
 }> = {
   MATH: {
-    competenceLabel: "Compétence visée",
+    competenceLabel: "Compétences disciplinaires",
     competencePlaceholder: "Ex: Résoudre des problèmes de proportionnalité...",
-    habileteLabel: "Habilité à développer",
+    habileteLabel: "Compétences transversales",
     habiletePlaceholder: "Ex: Calculer, raisonner, démontrer...",
-    prealableLabel: "Prérequis",
-    prealablePlaceholder: "Ex: Tables de multiplication, fractions...",
-    contenuLabel: "Contenu de la leçon",
+    prealableLabel: "Compétences transdisciplinaires",
+    prealablePlaceholder: "Ex: Esprit critique, autonomie...",
+    contenuLabel: "Connaissances et techniques",
     contenuPlaceholder: "Ex: La proportionnalité — échelles et pourcentages...",
-    methodesLabel: "Méthodes pédagogiques",
-    methodesPlaceholder: "Ex: Méthode active, résolution de problèmes...",
-    moyensLabel: "Moyens didactiques",
-    moyensPlaceholder: "Ex: Tableau, ardoise, manuel, calculatrice...",
-    evaluationLabel: "Évaluation",
-    evaluationPlaceholder: "Ex: Exercices d'application, problème à résoudre...",
-    referenceLabel: "Référence (manuel, page)",
-    referencePlaceholder: "Ex: Manuel de mathématiques page 45...",
-    deroulementLabel: "Déroulement de la leçon",
+    methodesLabel: "Stratégie objet d'apprentissage",
+    methodesPlaceholder: "Ex: Situations-problèmes, manipulation...",
+    moyensLabel: "Stratégie d'enseignement/apprentissage/évaluation",
+    moyensPlaceholder: "Ex: Méthode active, résolution de problèmes, évaluation formative...",
+    evaluationLabel: "Matériel",
+    evaluationPlaceholder: "Ex: Tableau, ardoise, manuel, calculatrice, matériel manipulable...",
+    referenceLabel: "Phases préparatoires (Calcule à brûle pourpoint, Comptage/Décomptage, Cadran opératoire, Calcul mental, 2 problèmes à résoudre mentalement)",
+    referencePlaceholder: "Ex: Table de multiplication par 7, calcul mental: 7×8=?, problème: Un vendeur a 35 oranges...",
+    deroulementLabel: "Déroulement (Démonstration: Règle à dégager + exercices d'application)",
+    specialSectionTitle: "Démonstration",
+    specialSectionFields: [
+      { label: "Règle à dégager ou à rappeler", key: "regleDegager", placeholder: "Ex: Pour calculer un pourcentage, on multiplie par le taux et on divise par 100..." },
+      { label: "Exercices d'application de la règle dégagée", key: "exercicesApplication", placeholder: "Ex: Calculer 15% de 200, 20% de 350..." },
+    ],
   },
   FRANCAIS: {
-    competenceLabel: "Compétence visée",
+    competenceLabel: "Compétences disciplinaires",
     competencePlaceholder: "Ex: Lire et comprendre un texte narratif...",
-    habileteLabel: "Habilité à développer",
+    habileteLabel: "Compétences transversales",
     habiletePlaceholder: "Ex: Lire, écrire, parler, écouter...",
-    prealableLabel: "Prérequis",
-    prealablePlaceholder: "Ex: Sons, syllabes, mots de vocabulaire...",
-    contenuLabel: "Contenu de la leçon",
-    contenuPlaceholder: "Ex: Le conte — structure et personnages...",
-    methodesLabel: "Méthodes pédagogiques",
+    prealableLabel: "Compétences transdisciplinaires",
+    prealablePlaceholder: "Ex: Esprit d'analyse, créativité...",
+    contenuLabel: "Connaissances et techniques",
+    contenuPlaceholder: "Ex: Le conte — structure et personnages, vocabulaire...",
+    methodesLabel: "Stratégie objet d'apprentissage",
     methodesPlaceholder: "Ex: Lecture silencieuse, lecture à haute voix, questions...",
-    moyensLabel: "Moyens didactiques",
-    moyensPlaceholder: "Ex: Manuel de lecture, tableau, cahier d'exercices...",
-    evaluationLabel: "Évaluation",
-    evaluationPlaceholder: "Ex: Questions de compréhension, exercice d'écriture...",
-    referenceLabel: "Référence (manuel, page)",
-    referencePlaceholder: "Ex: Manuel de français page 32...",
-    deroulementLabel: "Déroulement de la leçon",
+    moyensLabel: "Stratégie d'enseignement/apprentissage/évaluation",
+    moyensPlaceholder: "Ex: Méthode interrogative, lecture dirigée, évaluation orale...",
+    evaluationLabel: "Matériel",
+    evaluationPlaceholder: "Ex: Manuel de lecture, tableau, cahier d'exercices, ardoise...",
+    referenceLabel: "Exercice structural (Unité, Structure, Objectif)",
+    referencePlaceholder: "Ex: Unité: Le conte — Structure: Situation initiale, déroulement, situation finale — Objectif: Identifier la structure d'un conte...",
+    deroulementLabel: "Déroulement (Phase introductive, Phase de systématisation, Phase d'application)",
+    specialSectionTitle: "Exercice structural",
+    specialSectionFields: [
+      { label: "Unité N°", key: "uniteNumero", placeholder: "Ex: Unité 3" },
+      { label: "Structure", key: "structureFiche", placeholder: "Ex: Situation initiale → élément modificateur → déroulement → situation finale" },
+      { label: "Objectif", key: "objectifFiche", placeholder: "Ex: Identifier les étapes d'un récit..." },
+    ],
   },
   EST: {
-    competenceLabel: "Compétence scientifique visée",
+    competenceLabel: "Compétences disciplinaires",
     competencePlaceholder: "Ex: Observer et décrire un phénomène naturel...",
-    habileteLabel: "Habilité scientifique à développer",
+    habileteLabel: "Compétences transversales",
     habiletePlaceholder: "Ex: Observer, expérimenter, hypothéser, conclure...",
-    prealableLabel: "Prérequis scientifiques",
-    prealablePlaceholder: "Ex: Notions de base sur le sujet...",
-    contenuLabel: "Contenu scientifique/technologique",
+    prealableLabel: "Compétences transdisciplinaires",
+    prealablePlaceholder: "Ex: Esprit scientifique, rigueur, coopération...",
+    contenuLabel: "Connaissances et techniques",
     contenuPlaceholder: "Ex: Les états de la matière — solide, liquide, gazeux...",
-    methodesLabel: "Démarche scientifique",
-    methodesPlaceholder: "Ex: Observation, manipulation, expérimentation...",
-    moyensLabel: "Matériel didactique et expérimental",
-    moyensPlaceholder: "Ex: Béchers, eau, glaçons, loupe, balance...",
-    evaluationLabel: "Évaluation des acquis",
-    evaluationPlaceholder: "Ex: Schéma à compléter, questions de synthèse...",
-    referenceLabel: "Référence (manuel, page)",
-    referencePlaceholder: "Ex: Manuel d'EST page 28...",
-    deroulementLabel: "Déroulement de la séance expérimentale",
+    methodesLabel: "Stratégie objet d'apprentissage",
+    methodesPlaceholder: "Ex: Situation problème, expérimentation guidée...",
+    moyensLabel: "Stratégie d'enseignement/apprentissage/évaluation",
+    moyensPlaceholder: "Ex: Démarche scientifique — observation, manipulation, expérimentation, synthèse...",
+    evaluationLabel: "Matériel",
+    evaluationPlaceholder: "Ex: Béchers, eau, glaçons, loupe, balance, manuel d'EST...",
+    referenceLabel: "Activités préliminaires (Rappel de la leçon précédente)",
+    referencePlaceholder: "Ex: Questions orales, réponses écrites, récitation de la leçon précédente...",
+    deroulementLabel: "Déroulement (Situation problème → Réalisation: Hypothèse, Expérimentation, Synthèse → Retour et projection)",
+    specialSectionTitle: "Réalisation scientifique",
+    specialSectionFields: [
+      { label: "Hypothèse individuelle", key: "hypotheIndividuelle", placeholder: "Ex: Les élèves proposent des explications..." },
+      { label: "Hypothèse du groupe", key: "hypotheGroupe", placeholder: "Ex: Le groupe consolide les hypothèses..." },
+      { label: "Expérimentation", key: "experimentation", placeholder: "Ex: Manipulation avec du matériel, observation des changements..." },
+      { label: "Synthèse", key: "syntheseEST", placeholder: "Ex: Conclusions tirées de l'expérimentation..." },
+    ],
   },
   ES: {
-    competenceLabel: "Compétence sociale visée",
+    competenceLabel: "Compétences disciplinaires",
     competencePlaceholder: "Ex: Identifier les règles de vie en société...",
-    habileteLabel: "Habilité sociale à développer",
+    habileteLabel: "Compétences transversales",
     habiletePlaceholder: "Ex: Observer, analyser, respecter, coopérer...",
-    prealableLabel: "Prérequis sociaux",
-    prealablePlaceholder: "Ex: Notions de famille, école, communauté...",
-    contenuLabel: "Contenu de la leçon d'éducation sociale",
+    prealableLabel: "Compétences transdisciplinaires",
+    prealablePlaceholder: "Ex: Esprit civique, sens de la responsabilité...",
+    contenuLabel: "Connaissances et techniques",
     contenuPlaceholder: "Ex: Les règles de vie en société — droits et devoirs...",
-    methodesLabel: "Méthodes pédagogiques",
+    methodesLabel: "Stratégie objet d'apprentissage",
     methodesPlaceholder: "Ex: Discussion, jeu de rôle, étude de cas...",
-    moyensLabel: "Moyens didactiques",
-    moyensPlaceholder: "Ex: Images, affiches, récits, tableau...",
-    evaluationLabel: "Évaluation",
-    evaluationPlaceholder: "Ex: Questions orales, exercice de réflexion...",
-    referenceLabel: "Référence (manuel, page)",
-    referencePlaceholder: "Ex: Manuel d'éducation sociale page 15...",
-    deroulementLabel: "Déroulement de la leçon",
+    moyensLabel: "Stratégie d'enseignement/apprentissage/évaluation",
+    moyensPlaceholder: "Ex: Méthode active, discussion dirigée, évaluation formative...",
+    evaluationLabel: "Matériel",
+    evaluationPlaceholder: "Ex: Images, affiches, récits, tableau, manuel d'éducation sociale...",
+    referenceLabel: "Activités préliminaires (Rappel de la leçon précédente)",
+    referencePlaceholder: "Ex: Questions orales, réponses orales, questions écrites (PLM), récitation et appréciation du cahier...",
+    deroulementLabel: "Déroulement (Mise en situation → Réalisation: Situation départ, Exploration, Traitement → Synthèse → Retour et projection)",
+    specialSectionTitle: "Réalisation sociale",
+    specialSectionFields: [
+      { label: "Situation départ", key: "situationDepart", placeholder: "Ex: Présentation d'une situation de la vie quotidienne..." },
+      { label: "Exploration/Exploitation de la situation problème", key: "exploration", placeholder: "Ex: Questions d'exploration, références..." },
+      { label: "Traitement de l'information et analyse", key: "traitementInfo", placeholder: "Ex: Analyse des informations, comparaison..." },
+      { label: "Synthèse", key: "syntheseES", placeholder: "Ex: Résumé des apprentissages..." },
+    ],
   },
   EA: {
-    competenceLabel: "Compétence artistique visée",
-    competencePlaceholder: "Ex: Produire une création plastique personnelle...",
-    habileteLabel: "Habilité artistique à développer",
-    habiletePlaceholder: "Ex: Dessiner, peindre, modeler, créer, imaginer...",
-    prealableLabel: "Prérequis artistiques",
-    prealablePlaceholder: "Ex: Techniques de base (dessin, couleur, forme)...",
-    contenuLabel: "Contenu de l'activité artistique",
-    contenuPlaceholder: "Ex: Le dessin d'observation — techniques de tracé...",
-    methodesLabel: "Démarche artistique",
+    competenceLabel: "Compétences disciplinaires",
+    competencePlaceholder: "Ex: Produire une création artistique personnelle...",
+    habileteLabel: "Compétences transversales",
+    habiletePlaceholder: "Ex: Dessiner, peindre, modeler, créer, imaginer, chanter...",
+    prealableLabel: "Compétences transdisciplinaires",
+    prealablePlaceholder: "Ex: Sensibilité artistique, créativité, expression...",
+    contenuLabel: "Connaissances et techniques",
+    contenuPlaceholder: "Ex: Le dessin d'observation / Le chant — techniques et expression...",
+    methodesLabel: "Stratégie objet d'apprentissage",
     methodesPlaceholder: "Ex: Démonstration, expérimentation, création libre...",
-    moyensLabel: "Matériel artistique",
-    moyensPlaceholder: "Ex: Crayons, feutres, peinture, pinceaux, papier...",
-    evaluationLabel: "Évaluation de la production",
-    evaluationPlaceholder: "Ex: Appréciation de la création, respect des consignes...",
-    referenceLabel: "Référence (manuel, page)",
-    referencePlaceholder: "Ex: Manuel d'éducation artistique page 20...",
-    deroulementLabel: "Déroulement de l'activité artistique",
+    moyensLabel: "Stratégie d'enseignement/apprentissage/évaluation",
+    moyensPlaceholder: "Ex: Démarche artistique — écouter, reproduire, créer, apprécier...",
+    evaluationLabel: "Matériel",
+    evaluationPlaceholder: "Ex: Crayons, feutres, peinture, pinceaux, papier, instrument de musique...",
+    referenceLabel: "Proposition de nouvelles acquisitions (Annoncer l'objet d'apprentissage, Pré-conception)",
+    referencePlaceholder: "Ex: Annoncer le titre du chant/dessin, demander aux enfants s'ils connaissent...",
+    deroulementLabel: "Déroulement (Réalisation: Première exécution, Techniques d'enseignement → Retour et projection: Objectivation, Évaluation, Projection, Réinvestissement)",
+    specialSectionTitle: "Réalisation artistique",
+    specialSectionFields: [
+      { label: "Première exécution / Présentation", key: "premiereExecution", placeholder: "Ex: Présenter le chant, faire écouter, démontrer la technique..." },
+      { label: "Techniques d'enseignement/apprentissage", key: "techniquesEA", placeholder: "Ex: Répétition guidée, pratique individuelle, correction..." },
+      { label: "Réinvestissement", key: "reinvestissement", placeholder: "Ex: Faire chanter le morceau comme intermède des séquences de classe..." },
+    ],
   },
 };
 
@@ -697,6 +761,33 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
               );
             })()}
           </section>
+
+          {/* 3b. Section spécifique au type de fiche */}
+          {(() => {
+            const tf = SHEET_TYPE_FIELDS[form.sheetType] || SHEET_TYPE_FIELDS.MATH;
+            if (!tf.specialSectionTitle || !tf.specialSectionFields) return null;
+            return (
+              <section>
+                <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2 mb-3">
+                  {tf.specialSectionTitle} — {sheetType?.label}
+                </h3>
+                <div className="space-y-3">
+                  {tf.specialSectionFields.map((sf) => (
+                    <div key={sf.key}>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">{sf.label}</label>
+                      <textarea
+                        value={form[sf.key] || ""}
+                        onChange={(e) => setForm({ ...form, [sf.key]: e.target.value })}
+                        rows={2}
+                        placeholder={sf.placeholder}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            );
+          })()}
 
           {/* 4. Ruban administratif */}
           <section>

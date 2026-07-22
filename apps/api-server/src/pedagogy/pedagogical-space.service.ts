@@ -3861,4 +3861,231 @@ export class PedagogicalSpaceService {
     }
     return result[0];
   }
+
+  // ===========================================================================
+  // EXPORT REGISTRE D'APPEL (Excel / PDF)
+  // ===========================================================================
+
+  async exportAttendanceRegister(
+    tenantId: string,
+    registerId: string,
+    format: string,
+  ): Promise<Buffer> {
+    // Charger le registre avec tous les détails
+    const register: any = await this.prisma.$queryRawUnsafe(
+      `SELECT ar.*, c."name" as "classNameResolved",
+              sl."code" as "schoolLevelCode", sl."name" as "schoolLevelName"
+       FROM "attendance_registers" ar
+       LEFT JOIN "classes" c ON c."id" = ar."classId"
+       LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
+       WHERE ar."id" = $1 AND ar."tenantId" = $2`,
+      registerId, tenantId,
+    );
+    if (!register || register.length === 0) {
+      throw new NotFoundException('Registre non trouvé');
+    }
+    const reg = register[0];
+
+    const studentsData = typeof reg.studentsData === 'string'
+      ? JSON.parse(reg.studentsData || '[]')
+      : (reg.studentsData || []);
+
+    const holidays = typeof reg.holidays === 'string'
+      ? JSON.parse(reg.holidays || '[]')
+      : (reg.holidays || []);
+
+    const month = reg.month;
+    const year = reg.year;
+    const MONTH_NAMES = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+                         'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+
+    // Calculer les demi-jours du mois
+    const daysInMonth = new Date(year, month, 0).getDate();
+    let totalDemiJournees = 0;
+    const DEMI_JOURS: Record<number, number> = { 1: 2, 2: 2, 3: 1, 4: 2, 5: 2 };
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(year, month - 1, day);
+      const dow = d.getDay();
+      if (dow < 1 || dow > 5) continue;
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      if (holidays.includes(dateStr)) continue;
+      totalDemiJournees += DEMI_JOURS[dow] || 0;
+    }
+
+    if (format === 'excel') {
+      return this.generateExcelExport(reg, studentsData, holidays, month, year, totalDemiJournees, MONTH_NAMES);
+    } else {
+      return this.generatePdfExport(reg, studentsData, holidays, month, year, totalDemiJournees, MONTH_NAMES);
+    }
+  }
+
+  private generateExcelExport(
+    reg: any, students: any[], holidays: string[],
+    month: number, year: number, totalDemiJournees: number,
+    MONTH_NAMES: string[],
+  ): Buffer {
+    // Format CSV (ouvert par Excel)
+    const WEEKS = [1, 2, 3, 4, 5];
+    const DAYS = [
+      { num: 1, label: 'L' }, { num: 2, label: 'M' }, { num: 3, label: 'M' },
+      { num: 4, label: 'J' }, { num: 5, label: 'V' },
+    ];
+
+    const rows: string[][] = [];
+
+    // En-tête
+    rows.push([`REGISTRE D'APPEL — ${MONTH_NAMES[month]} ${year}`]);
+    rows.push([`Classe: ${reg.classNameResolved || ''}`, `Nombre de demi-journées: ${totalDemiJournees}`]);
+    rows.push([]);
+
+    // En-tête du tableau
+    const header1 = ['N°', 'Nom et prénom', 'Sexe'];
+    for (const w of WEEKS) {
+      for (const d of DAYS) {
+        header1.push(`S${w}-${d.label}`);
+      }
+    }
+    header1.push('Motif', 'Total présences possibles', 'Total absences', 'Total présence effectif', 'Observation');
+    rows.push(header1);
+
+    // Données élèves
+    for (const s of students) {
+      const row = [
+        String(s.numero || ''),
+        `${s.nom || ''} ${s.prenom || ''}`,
+        s.sexe || '',
+      ];
+      for (const w of WEEKS) {
+        for (const d of DAYS) {
+          const a = (s.absences || []).find((x: any) => x.week === w && x.day === d.num);
+          row.push(a?.marked || '');
+        }
+      }
+      row.push(s.motif || '');
+      row.push(String(s.totalPresencesPossibles || totalDemiJournees));
+      row.push(String(s.totalAbsences || 0));
+      row.push(String(s.totalPresenceEffectif || (totalDemiJournees - (s.totalAbsences || 0))));
+      row.push(s.observation || '');
+      rows.push(row);
+    }
+
+    // Récapitulatif
+    rows.push([]);
+    const totalAbs = students.reduce((sum, s) => sum + (s.totalAbsences || 0), 0);
+    const totalPoss = students.reduce((sum, s) => sum + (s.totalPresencesPossibles || totalDemiJournees), 0);
+    const totalEff = totalPoss - totalAbs;
+    const pctP = totalPoss > 0 ? Math.round((totalEff / totalPoss) * 10000) / 100 : 0;
+    const pctA = totalPoss > 0 ? Math.round((totalAbs / totalPoss) * 10000) / 100 : 0;
+
+    rows.push(['RÉCAPITULATIF']);
+    rows.push(['Demi-journées du mois', String(totalDemiJournees)]);
+    rows.push(['Présence possible', String(totalPoss)]);
+    rows.push(['Total absences', String(totalAbs)]);
+    rows.push(['Total présences effectives', String(totalEff)]);
+    rows.push(['% présences', `${pctP}%`]);
+    rows.push(['% absences', `${pctA}%`]);
+
+    // Jours fériés
+    if (holidays.length > 0) {
+      rows.push([]);
+      rows.push(['JOURS FÉRIÉS']);
+      for (const h of holidays) {
+        rows.push([h]);
+      }
+    }
+
+    // Signatures
+    rows.push([]);
+    rows.push(['SIGNATURES']);
+    rows.push([`Le Directeur / La Directrice`, `Le Titulaire de la classe`]);
+
+    // Convertir en CSV
+    const csv = rows.map(r => r.map(c => `"${(c || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    // BOM pour Excel
+    return Buffer.from('\ufeff' + csv, 'utf-8');
+  }
+
+  private generatePdfExport(
+    reg: any, students: any[], holidays: string[],
+    month: number, year: number, totalDemiJournees: number,
+    MONTH_NAMES: string[],
+  ): Buffer {
+    // Générer un HTML simple qui peut être converti en PDF par le navigateur
+    // ou par un service de rendu. Pour l'instant on génère du HTML formaté.
+    const WEEKS = [1, 2, 3, 4, 5];
+    const DAYS = [
+      { num: 1, label: 'L' }, { num: 2, label: 'M' }, { num: 3, label: 'M' },
+      { num: 4, label: 'J' }, { num: 5, label: 'V' },
+    ];
+
+    const totalAbs = students.reduce((sum, s) => sum + (s.totalAbsences || 0), 0);
+    const totalPoss = students.reduce((sum, s) => sum + (s.totalPresencesPossibles || totalDemiJournees), 0);
+    const totalEff = totalPoss - totalAbs;
+    const pctP = totalPoss > 0 ? Math.round((totalEff / totalPoss) * 10000) / 100 : 0;
+    const pctA = totalPoss > 0 ? Math.round((totalAbs / totalPoss) * 10000) / 100 : 0;
+
+    let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Registre d'appel — ${MONTH_NAMES[month]} ${year}</title>
+<style>
+body{font-family:Arial,sans-serif;font-size:10px;margin:20px;}
+h2{text-align:center;}
+.header{text-align:center;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:15px;}
+table{width:100%;border-collapse:collapse;}
+th,td{border:1px solid #333;padding:3px;text-align:center;}
+th{background:#e0e0e0;font-weight:bold;}
+.recap{margin-top:15px;border:2px solid #333;padding:10px;}
+.signature{margin-top:30px;display:flex;justify-content:space-between;}
+.holidays{margin-top:10px;background:#fff3f3;border:1px solid #f00;padding:5px;}
+</style></head><body>`;
+
+    html += `<div class="header">
+      <h2>REGISTRE D'APPEL — ${MONTH_NAMES[month]} ${year}</h2>
+      <p>Classe: <strong>${reg.classNameResolved || ''}</strong> | Nombre de demi-journées: <strong>${totalDemiJournees}</strong></p>
+    </div>`;
+
+    html += '<table><thead><tr><th rowspan="2">N°</th><th rowspan="2">Nom et prénom</th><th rowspan="2">Sexe</th>';
+    for (const w of WEEKS) {
+      html += `<th colspan="5">S${w}</th>`;
+    }
+    html += '<th rowspan="2">Motif</th><th rowspan="2">Total prés. poss.</th><th rowspan="2">Total absences</th><th rowspan="2">Total prés. effectif</th><th rowspan="2">Observation</th></tr><tr>';
+    for (const w of WEEKS) {
+      for (const d of DAYS) {
+        html += `<th>${d.label}</th>`;
+      }
+    }
+    html += '</tr></thead><tbody>';
+
+    for (const s of students) {
+      html += `<tr><td>${s.numero || ''}</td><td style="text-align:left">${s.nom || ''} ${s.prenom || ''}</td><td>${s.sexe || ''}</td>`;
+      for (const w of WEEKS) {
+        for (const d of DAYS) {
+          const a = (s.absences || []).find((x: any) => x.week === w && x.day === d.num);
+          html += `<td>${a?.marked || ''}</td>`;
+        }
+      }
+      html += `<td>${s.motif || ''}</td><td>${s.totalPresencesPossibles || totalDemiJournees}</td><td>${s.totalAbsences || 0}</td><td>${s.totalPresenceEffectif || (totalDemiJournees - (s.totalAbsences || 0))}</td><td>${s.observation || ''}</td></tr>`;
+    }
+    html += '</tbody></table>';
+
+    // Récapitulatif
+    html += `<div class="recap">
+      <h3>Récapitulatif du mois</h3>
+      <p>Demi-journées du mois: <strong>${totalDemiJournees}</strong> | Présence possible: <strong>${totalPoss}</strong> | Total absences: <strong>${totalAbs}</strong> | Total présences effectives: <strong>${totalEff}</strong></p>
+      <p>% présences: <strong>${pctP}%</strong> | % absences: <strong>${pctA}%</strong></p>
+    </div>`;
+
+    // Jours fériés
+    if (holidays.length > 0) {
+      html += `<div class="holidays"><strong>🎉 Jours fériés:</strong> ${holidays.join(', ')}</div>`;
+    }
+
+    // Signatures
+    html += `<div class="signature">
+      <div><p>Le Directeur / La Directrice</p><br><br><p>Signature et cachet</p></div>
+      <div><p>Le Titulaire de la classe</p><br><br><p>Signature</p></div>
+    </div>`;
+
+    html += '</body></html>';
+
+    return Buffer.from(html, 'utf-8');
+  }
 }

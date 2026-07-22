@@ -37,7 +37,7 @@ import {
   ClipboardList, Loader2, Save, RefreshCw, Send, Lock,
   ChevronLeft, Calendar, FileText, BookOpen, BarChart3,
   CheckCircle2, XCircle, Clock, Printer, Settings, AlertCircle,
-  Plus, Trash2, X,
+  Plus, Trash2, X, FileSpreadsheet,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
@@ -192,6 +192,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [activeTab, setActiveTab] = useState<"register" | "evaluation" | "summary" | "settings">("register");
 
   // ⭐ Jours fériés du mois (paramétrables par l'enseignant)
@@ -709,6 +710,32 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
   // ⭐ demi-jours du mois = valeur individuelle (pas × nb élèves)
   const demiJourneeMois = calculateDemiJourneesMois(selectedMonth, selectedYear, holidays);
 
+  // ⭐ Export Excel / PDF
+  const handleExport = async (format: "excel" | "pdf") => {
+    if (!register) return;
+    setExporting(true);
+    try {
+      const res = await fetch(
+        `/api/pedagogy-space/attendance-registers/${register.id}/export?format=${format}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) throw new Error("Erreur d'export");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const ext = format === "excel" ? "xlsx" : "pdf";
+      a.download = `Registre_Appel_${MONTH_NAMES[selectedMonth]}_${selectedYear}.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`✅ ${format === "excel" ? "Excel" : "PDF"} exporté`);
+    } catch (e: any) {
+      toast.error("Erreur d'export", { description: e.message });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* === En-tête : classe + mois + actions === */}
@@ -750,7 +777,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
           </div>
         )}
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button onClick={handleSave} disabled={saving || loading || !register || isReadOnly || activeTab !== "register"}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -761,6 +788,21 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
             <Send className="h-4 w-4" />
             Soumettre
           </button>
+          {/* ⭐ Boutons Export Excel + PDF */}
+          {register && (
+            <>
+              <button onClick={() => handleExport("excel")} disabled={exporting}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50">
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                Export Excel
+              </button>
+              <button onClick={() => handleExport("pdf")} disabled={exporting}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50">
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                Export PDF
+            </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -800,14 +842,16 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
             <h2 className="text-lg font-bold text-slate-900">
               REGISTRE D'APPEL{register.schoolLevelCode === "MATERNELLE" ? " MATERNELLE" : register.schoolLevelCode === "PRIMAIRE" ? "" : ` ${register.schoolLevelName || ""}`}
             </h2>
-            <div className="text-sm text-slate-600 mt-1 flex items-center gap-3">
-              <span>Mois de <strong>{MONTH_NAMES[selectedMonth]}</strong> {selectedYear}</span>
-              <span className="text-slate-300">|</span>
-              <span>Nombre de demi-journées : <strong className="text-blue-600">{demiJourneeMois}</strong></span>
-            </div>
-            <div className="text-sm text-slate-700 mt-1">
-              Classe : <strong>{register.classNameResolved || selectedClass?.className || "—"}</strong> — Effectif : {selectedClass?.totalStudents || 0} élèves
-              ({selectedClass?.boys || 0} G, {selectedClass?.girls || 0} F)
+            <div className="text-sm text-slate-600 mt-1 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span>Mois de <strong>{MONTH_NAMES[selectedMonth]}</strong> {selectedYear}</span>
+                <span className="text-slate-300">|</span>
+                <span>Nombre de demi-journées : <strong className="text-blue-600">{demiJourneeMois}</strong></span>
+              </div>
+              <div className="text-slate-700">
+                Classe : <strong>{register.classNameResolved || selectedClass?.className || "—"}</strong> — Effectif : {selectedClass?.totalStudents || 0} élèves
+                ({selectedClass?.boys || 0} G, {selectedClass?.girls || 0} F)
+              </div>
             </div>
           </div>
 
@@ -884,6 +928,15 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                           </td>
                         );
                       }
+                      // ⭐ Si jour férié → emoji 🎉 en lecture seule
+                      const isHoliday = holidays.includes(cell.dateStr);
+                      if (isHoliday) {
+                        return (
+                          <td key={`${w}-${d.num}`} className="border border-slate-300 p-0 bg-red-50" style={{ minWidth: "45px", width: "45px" }}>
+                            <div className="w-full h-9 flex items-center justify-center text-base" title="Jour férié">🎉</div>
+                          </td>
+                        );
+                      }
                       return (
                         <td key={`${w}-${d.num}`} className="border border-slate-300 p-0" style={{ minWidth: "45px", width: "45px" }}>
                           <select
@@ -933,6 +986,22 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
               </tbody>
             </table>
           </div>
+
+          {/* ⭐ Section jours fériés (dynamique sous le tableau) */}
+          {holidays.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-1">
+              <div className="text-xs font-bold text-red-700 uppercase flex items-center gap-1">
+                <span>🎉</span> Jours fériés du mois
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {holidays.map(h => (
+                  <span key={h} className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-red-200 rounded text-xs text-red-700">
+                    🎉 {formatDateFR(h)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* === Section récapitulative (bas du registre) === */}
           <div className="border-2 border-slate-300 rounded-lg p-4 bg-slate-50/50">

@@ -24,12 +24,14 @@ import { ScoreEntrySchemaService } from './score-entry-schema.service';
 @Module({
   imports: [DatabaseModule],
   controllers: [
+    // ⭐ AcademicSettingsController DOIT être avant ExamsPrismaController
+    // pour éviter que GET /exams/settings soit intercepté par GET /exams/:id
+    AcademicSettingsController,
     ExamsPrismaController,
     ExamScoresPrismaController,
     ReportCardsPrismaController,
     HonorRollsPrismaController,
     CouncilDecisionsPrismaController,
-    AcademicSettingsController,
   ],
   providers: [
     ExamsPrismaService,

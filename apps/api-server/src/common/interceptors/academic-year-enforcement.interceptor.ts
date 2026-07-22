@@ -190,7 +190,7 @@ export class AcademicYearEnforcementInterceptor implements NestInterceptor {
       '/educmaster',
       '/salary-policies',
       '/fee-configurations',
-      '/grading-policies',
+      // /grading-policies removed (Phase 6 — module legacy supprimé)
       '/context',
       '/settings/school-calendar-config',
       '/settings/general',

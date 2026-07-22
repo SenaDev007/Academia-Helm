@@ -1,98 +1,55 @@
-import {
-  Entity,
-  Column,
-  PrimaryGeneratedColumn,
-  CreateDateColumn,
-  UpdateDateColumn,
-  ManyToOne,
-  JoinColumn,
-  BeforeInsert,
-  BeforeUpdate,
-  AfterLoad,
-} from 'typeorm';
-import { Tenant } from '../../tenants/entities/tenant.entity';
-import { User } from '../../users/entities/user.entity';
-import { AcademicYear } from '../../academic-years/entities/academic-year.entity';
-// ✅ Import de type uniquement pour éviter la référence circulaire
-import type { SchoolLevel } from '../../school-levels/entities/school-level.entity';
-import { AcademicTrack } from '../../academic-tracks/entities/academic-track.entity';
+/**
+ * ============================================================================
+ * SUBJECT ENTITY (STUB) — Preserve TypeORM compatibility
+ * ============================================================================
+ *
+ * ⚠️ Phase 6 — Le module SubjectsModule legacy a été supprimé (remplacé par
+ * SubjectsPrismaController dans PedagogyModule). Cette entité TypeORM est
+ * conservée comme stub pour préserver la compatibilité des relations
+ * @ManyToOne dans teacher.entity.ts et school-level.entity.ts.
+ *
+ * La source de vérité pour les matières est désormais le modèle Prisma
+ * `Subject` (voir prisma/schema.prisma ligne 2452).
+ * ============================================================================
+ */
+
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 
 @Entity('subjects')
 export class Subject {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
+  @Column({ type: 'text' })
   tenantId: string;
 
-  @ManyToOne(() => Tenant)
-  @JoinColumn({ name: 'tenantId' })
-  tenant: Tenant;
-
-  @Column()
-  name: string;
-
-  @Column({ nullable: true })
-  abbreviation: string;
-
-  @Column()
-  code: string;
-
-  @Column({ name: 'schoolLevelId', type: 'uuid', nullable: false })
-  schoolLevelId: string;
-
-  @ManyToOne(() => {
-    // ✅ Lazy import pour éviter la référence circulaire
-    const { SchoolLevel } = require('../../school-levels/entities/school-level.entity');
-    return SchoolLevel;
-  }, { nullable: false, onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'schoolLevelId' })
-  schoolLevel: SchoolLevel;
-
-  // Ancien champ level conservé pour compatibilité (déprécié) - virtuel
-  level: string;
-
-  @Column({ type: 'decimal', precision: 3, scale: 2, default: 1.0 })
-  coefficient: number;
-
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   academicYearId: string;
 
-  @ManyToOne(() => AcademicYear, { nullable: true })
-  @JoinColumn({ name: 'academicYearId' })
-  academicYear: AcademicYear;
+  @Column({ type: 'text' })
+  schoolLevelId: string;
 
-  /**
-   * Academic Track (FR/EN) - NULLABLE pour compatibilité
-   * NULL = track par défaut (FR)
-   */
-  @Column({ type: 'uuid', nullable: true })
-  academicTrackId: string | null;
+  @Column({ type: 'text', nullable: true })
+  academicTrackId: string;
 
-  @ManyToOne(() => AcademicTrack, { nullable: true, onDelete: 'SET NULL' })
-  @JoinColumn({ name: 'academicTrackId' })
-  academicTrack: AcademicTrack | null;
+  @Column({ type: 'text' })
+  name: string;
 
-  @BeforeInsert()
-  @BeforeUpdate()
-  syncFields() {
-    if (this.level && !this.schoolLevelId) {
-      this.schoolLevelId = this.level;
-    } else if (this.schoolLevelId && !this.level) {
-      this.level = this.schoolLevelId;
-    }
-  }
+  @Column({ type: 'text', nullable: true })
+  abbreviation: string;
 
-  @AfterLoad()
-  populateVirtualFields() {
-    this.level = this.schoolLevelId;
-  }
+  @Column({ type: 'text' })
+  code: string;
 
-  @CreateDateColumn()
-  createdAt: Date;
+  @Column({ type: 'float', default: 1.0 })
+  coefficient: number;
 
-  @UpdateDateColumn()
-  updatedAt: Date;
+  @Column({ type: 'text', nullable: true })
+  language: string;
+
+  @Column({ type: 'int', nullable: true, default: 0 })
+  weeklyHours: number;
+
+  @Column({ type: 'text', nullable: true })
+  description: string;
 }
-
-

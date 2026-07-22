@@ -214,7 +214,7 @@ export class AcademicYearEnforcementGuard implements CanActivate {
       // Politiques et configurations
       '/salary-policies',
       '/fee-configurations',
-      '/grading-policies',
+      // /grading-policies removed (Phase 6 — module legacy supprimé)
       // Context
       '/context',
       // Settings tenant-level

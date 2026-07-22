@@ -19,12 +19,11 @@ import { Injectable } from '@nestjs/common';
 import { StudentsService } from '../../students/students.service';
 import { PaymentsService } from '../../payments/payments.service';
 import { ExpensesService } from '../../expenses/expenses.service';
-import { ExamsService } from '../../exams/exams.service';
-import { GradesService } from '../../grades/grades.service';
 import { AbsencesService } from '../../absences/absences.service';
 import { SchoolLevelsService } from '../../school-levels/school-levels.service';
 import { AuditLogsService } from '../../audit-logs/audit-logs.service';
 import { PaginationDto } from '../../common/dto/pagination.dto';
+import { PrismaService } from '../../database/prisma.service';
 
 export interface LevelAggregation {
   levelId: string;
@@ -49,11 +48,10 @@ export class GeneralService {
     private readonly studentsService: StudentsService,
     private readonly paymentsService: PaymentsService,
     private readonly expensesService: ExpensesService,
-    private readonly examsService: ExamsService,
-    private readonly gradesService: GradesService,
     private readonly absencesService: AbsencesService,
     private readonly schoolLevelsService: SchoolLevelsService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
@@ -223,17 +221,17 @@ export class GeneralService {
     const weights: Record<string, number> = {};
 
     for (const level of activeLevels) {
-      // Calculer moyenne par niveau pour l'année scolaire donnée
-      // Note: gradesService.findAll ne prend pas academicYearId directement
-      // Il faut filtrer après ou utiliser une autre méthode
-      const grades = await this.gradesService.findAll(
-        tenantId,
-        undefined, // studentId
-        undefined, // subjectId
-        undefined, // classId
-        undefined, // quarterId
-        undefined, // academicTrackId
-      );
+      // ⭐ Refactoré : utilisation directe de prisma.grade.findMany (suppression legacy GradesService)
+      // Filtre par tenant + academicYearId + schoolLevelId (via relation class.schoolLevelId)
+      const grades = await this.prisma.grade.findMany({
+        where: {
+          tenantId,
+          academicYearId,
+          class: { schoolLevelId: level.id },
+        },
+        select: { score: true },
+      });
+
       // ✅ Créer PaginationDto pour la requête
       const pagination = new PaginationDto();
       pagination.page = 1;

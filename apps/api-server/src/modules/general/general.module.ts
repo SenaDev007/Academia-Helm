@@ -23,22 +23,20 @@ import { GeneralController } from './general.controller';
 import { StudentsModule } from '../../students/students.module';
 import { PaymentsModule } from '../../payments/payments.module';
 import { ExpensesModule } from '../../expenses/expenses.module';
-import { ExamsModule } from '../../exams/exams.module';
-import { GradesModule } from '../../grades/grades.module';
 import { AbsencesModule } from '../../absences/absences.module';
 import { SchoolLevelsModule } from '../../school-levels/school-levels.module';
 import { AuditLogsModule } from '../../audit-logs/audit-logs.module';
+import { DatabaseModule } from '../../database/database.module';
 
 @Module({
   imports: [
     StudentsModule,
     PaymentsModule,
     ExpensesModule,
-    ExamsModule,
-    GradesModule,
     AbsencesModule,
     SchoolLevelsModule,
     AuditLogsModule,
+    DatabaseModule,
   ],
   controllers: [GeneralController],
   providers: [GeneralService],

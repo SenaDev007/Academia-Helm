@@ -969,3 +969,76 @@ Suppression nécessite refactor au cas par cas — reportée à une session déd
 - 2 nouveaux contrôleurs : ExamsSpecConfigController + ExamsLockController
 - 7 endpoints spec-config + 4 endpoints locks ajoutés
 - Tous fichiers passent le check syntaxique TypeScript ✅
+
+---
+Task ID: module-examen-phase6-nettoyage-legacy
+Agent: main
+Task: Phase 6 — Suppression des modules legacy (exams/, grades/, grading-policies/, subjects/)
+
+Work Log:
+
+== ANALYSE PRÉALABLE ==
+- Audit complet des dépendances via agent Explore
+- exams/ : ExamsService utilisé par grades.service.ts (héritage academicTrackId) + general.service.ts (injecté mais JAMAIS appelé = code mort)
+- grades/ : GradesService.findAll utilisé par general.service.ts (calcul moyenne pondérée)
+- grading-policies/ : module ISOLÉ, aucun consommateur externe de service
+- subjects/ : SubjectsModule déjà commenté dans app.module.ts, utilisé seulement par grades/
+- Frontend : aucune utilisation de /api/grades ou /api/grading-policies (vérifié)
+
+== REFACTORS ==
+
+1. general.service.ts :
+   - Supprimé imports ExamsService + GradesService (legacy)
+   - Supprimé injections examsService + gradesService du constructeur
+   - Ajouté injection PrismaService
+   - Refactoré getWeightedAverage() : prisma.grade.findMany direct (filtre tenantId + academicYearId + class.schoolLevelId) au lieu de gradesService.findAll
+
+2. general.module.ts :
+   - Supprimé imports ExamsModule + GradesModule
+   - Ajouté DatabaseModule (pour PrismaService)
+
+== SUPPRESSIONS ==
+
+4 modules legacy supprimés (rm -rf) :
+- apps/api-server/src/exams/ (legacy TypeORM — 6 fichiers)
+  Remplaçant : ExamsPrismaService dans exams-grades/ (déjà actif)
+- apps/api-server/src/grades/ (legacy TypeORM — 6 fichiers)
+  Remplaçant : GradesController dans modules/exams/ (déjà actif)
+- apps/api-server/src/grading-policies/ (legacy TypeORM — 6 fichiers)
+  Remplaçant : AUCUN (module isolé, route /grading-policies supprimée)
+- apps/api-server/src/subjects/ (legacy TypeORM — 5 fichiers)
+  Remplaçant : SubjectsPrismaController dans pedagogy/ (déjà actif)
+
+== STUB CONSERVÉ ==
+
+subjects/entities/subject.entity.ts recréé comme stub minimal :
+- Préserve la compatibilité TypeORM des relations @ManyToOne dans
+  teacher.entity.ts (ligne 86) et school-level.entity.ts (ligne 96, 106)
+- Source de vérité : modèle Prisma Subject (schema.prisma ligne 2452)
+- Commentaire explicatif du statut "stub"
+
+== MISES À JOUR APP.MODULE.TS ==
+
+- Ligne 29-31 : commentaires mis à jour (3 modules supprimés en Phase 6)
+- Ligne 174 : GradesModule retiré du tableau imports
+- Ligne 189 : GradingPoliciesModule retiré du tableau imports
+
+== WHITELISTS ACADEMIC-YEAR-ENFORCEMENT ==
+
+- common/interceptors/academic-year-enforcement.interceptor.ts:193 — '/grading-policies' retiré
+- common/guards/academic-year-enforcement.guard.ts:217 — '/grading-policies' retiré
+
+== VÉRIFICATIONS ==
+
+- 0 référence cassée aux modules supprimés (grep vérifié)
+- 0 utilisation des services legacy ExamsService/GradesService/GradingPoliciesService/SubjectsService
+- Syntaxe TypeScript OK sur 8 fichiers modifiés ✅
+- Frontend : aucun appel à /api/grades ou /api/grading-policies (BFF exams seul restant)
+
+Stage Summary:
+- 4 modules legacy supprimés (exams/, grades/, grading-policies/, subjects/) — 23 fichiers supprimés
+- 1 stub créé (subjects/entities/subject.entity.ts) pour compatibilité TypeORM
+- 2 fichiers refactorés (general.service.ts + general.module.ts)
+- 2 whitelists mises à jour (interceptor + guard)
+- app.module.ts nettoyé (3 modules retirés du tableau imports)
+- Module Examen maintenant UNIFIÉ : ExamsGradesModule + InstitutionalExamsModule (plus de doublon legacy)

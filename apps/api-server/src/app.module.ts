@@ -26,8 +26,9 @@ import { DepartmentsModule } from './departments/departments.module';
 // RoomsModule removed — replaced by RoomsPrismaController in PedagogyModule
 import { AbsencesModule } from './absences/absences.module';
 import { DisciplineModule } from './discipline/discipline.module';
-// ExamsModule removed — collides with ExamsPrismaController (ExamsGradesModule)
-import { GradesModule } from './grades/grades.module';
+// ExamsModule removed — replaced by ExamsPrismaController (ExamsGradesModule)
+// GradesModule removed — replaced by GradesController (InstitutionalExamsModule)
+// GradingPoliciesModule removed — module isolé sans alternative Prisma (supprimé en Phase 6)
 import { FeeConfigurationsModule } from './fee-configurations/fee-configurations.module';
 import { PaymentsModule } from './payments/payments.module';
 import { ExpensesModule } from './expenses/expenses.module';
@@ -35,7 +36,6 @@ import { RolesModule } from './roles/roles.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { CountriesModule } from './countries/countries.module';
-import { GradingPoliciesModule } from './grading-policies/grading-policies.module';
 import { SalaryPoliciesModule } from './salary-policies/salary-policies.module';
 import { ComplianceModule } from './compliance/compliance.module';
 import { SchoolLevelsModule } from './school-levels/school-levels.module';
@@ -171,8 +171,7 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     DisciplineModule,
     
     // Evaluation modules
-    // ExamsModule removed — collides with ExamsPrismaController (ExamsGradesModule)
-    GradesModule,
+    // ExamsModule, GradesModule, GradingPoliciesModule removed — remplacés par ExamsGradesModule + InstitutionalExamsModule (Phase 6)
     
     // Finance modules
     FeeConfigurationsModule,
@@ -186,7 +185,6 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     
     // Country & Policies modules
     CountriesModule,
-    GradingPoliciesModule,
     SalaryPoliciesModule,
     
     // Compliance module

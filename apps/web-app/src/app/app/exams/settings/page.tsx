@@ -57,6 +57,7 @@ import { cn } from '@/lib/utils';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { academicSettingsService } from '@/services/academic-settings.service';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useBilingual } from '@/contexts/BilingualContext';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -264,7 +265,18 @@ function StatusBanner({ settings }: { settings: AcademicSettingConfig[] }) {
 
 export default function AcademicSettingsPage() {
   const { academicYear, schoolLevel } = useModuleContext();
+  const { availableLevels } = useSchoolLevel();
   const { isEnabled: isBilingual, currentTrack } = useBilingual();
+
+  // ⭐ Niveaux scolaires actifs (récupérés depuis le backend — PAS codés en dur)
+  // Filtrer pour exclure l'option virtuelle 'ALL'
+  const activeSchoolLevels = (availableLevels || []).filter(
+    (l: any) => l.id !== 'ALL' && l.isActive
+  );
+  // Vérifier si le niveau SECONDAIRE est activé par l'école
+  const hasSecondary = activeSchoolLevels.some((l: any) =>
+    (l.code || '').toUpperCase().includes('SECOND')
+  );
 
   const [settings, setSettings] = useState<AcademicSettingConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -499,19 +511,32 @@ export default function AcademicSettingsPage() {
             {/* ⭐ Scope dimensionnel : sélecteurs niveau scolaire + piste linguistique + cycle secondaire */}
             <div className="flex items-center gap-3 flex-wrap bg-blue-50 border border-blue-200 rounded-xl p-3">
               <span className="text-xs font-bold text-blue-900 uppercase">🎯 Scope du paramétrage :</span>
-              {/* Sélecteur niveau scolaire */}
+              {/* Sélecteur niveau scolaire — DYNAMIQUE depuis le backend */}
               <select
                 value={selectedLevelCode}
                 onChange={(e) => setSelectedLevelCode(e.target.value)}
                 className="px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-sm font-semibold text-gray-700"
               >
                 <option value="">Global (tous niveaux)</option>
-                <option value="MATERNELLE">🧒 Maternelle (qualitatif TS/S/PS)</option>
-                <option value="PRIMAIRE">👦 Primaire (quantitatif /20, coef 1)</option>
-                <option value="SECONDAIRE">👨‍🎓 Secondaire (quantitatif /20, coef variable)</option>
+                {activeSchoolLevels.map((level: any) => {
+                  const code = (level.code || '').toUpperCase();
+                  const emoji = code.includes('MATERN') ? '🧒'
+                    : code.includes('PRIM') ? '👦'
+                    : code.includes('SECOND') ? '👨‍🎓' : '📚';
+                  const desc = code.includes('MATERN') ? ' (qualitatif TS/S/PS)'
+                    : code.includes('PRIM') ? ' (quantitatif /20, coef 1)'
+                    : code.includes('SECOND') ? ' (quantitatif /20, coef variable)'
+                    : '';
+                  return (
+                    <option key={level.id} value={code}>
+                      {emoji} {level.label}{desc}
+                    </option>
+                  );
+                })}
               </select>
-              {/* Sélecteur cycle secondaire (visible seulement si SECONDAIRE) */}
-              {selectedLevelCode === 'SECONDAIRE' && (
+              {/* Sélecteur cycle secondaire — visible SEULEMENT si le niveau SECONDAIRE
+                  est activé par l'école ET sélectionné par l'utilisateur */}
+              {hasSecondary && selectedLevelCode === 'SECONDAIRE' && (
                 <select
                   value={selectedSecondaryCycle}
                   onChange={(e) => setSelectedSecondaryCycle(e.target.value)}

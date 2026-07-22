@@ -41,6 +41,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
+import { useAppSession } from "@/contexts/AppSessionContext";
 
 interface AttendanceRegisterTabProps {
   tenantId: string;
@@ -101,6 +102,53 @@ function calculateDemiJourneesMois(month: number, year: number, holidays: string
   return total;
 }
 
+// ⭐ Calculer la date réelle pour une cellule (semaine, jour) du registre
+// Retourne { date: Date | null, inMonth: boolean, dateStr: string }
+// inMonth = false si le jour est hors du mois (à griser)
+function getCellDate(week: number, dayNum: number, month: number, year: number): { date: Date | null; inMonth: boolean; dateStr: string } {
+  // dayNum: 1=lundi, 2=mardi, 3=mercredi, 4=jeudi, 5=vendredi
+  // Semaine 1 = commence au 1er du mois (même si c'est un mercredi)
+  // On parcourt les jours du mois en groupes lundi-vendredi
+  const daysInMonth = new Date(year, month, 0).getDate();
+  let currentWeek = 1;
+  let lastDow = -1;
+  for (let day = 1; day <= daysInMonth; day++) {
+    const d = new Date(year, month - 1, day);
+    const dow = d.getDay();
+    if (dow < 1 || dow > 5) continue; // Skip weekends
+    if (lastDow === 5 && dow === 1) currentWeek++;
+    if (currentWeek > 5) continue;
+    if (currentWeek === week && dow === dayNum) {
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      return { date: d, inMonth: true, dateStr };
+    }
+    lastDow = dow;
+  }
+  // Si on n'a pas trouvé, c'est que cette cellule est hors du mois
+  return { date: null, inMonth: false, dateStr: '' };
+}
+
+// ⭐ Calculer la plage de dates d'une semaine (pour l'en-tête)
+function getWeekDateRange(week: number, month: number, year: number): string {
+  const days: number[] = [];
+  const daysInMonth = new Date(year, month, 0).getDate();
+  let currentWeek = 1;
+  let lastDow = -1;
+  for (let day = 1; day <= daysInMonth; day++) {
+    const d = new Date(year, month - 1, day);
+    const dow = d.getDay();
+    if (dow < 1 || dow > 5) continue;
+    if (lastDow === 5 && dow === 1) currentWeek++;
+    if (currentWeek > 5) continue;
+    if (currentWeek === week) days.push(day);
+    lastDow = dow;
+  }
+  if (days.length === 0) return '';
+  const first = days[0];
+  const last = days[days.length - 1];
+  return `${first}/${String(month).padStart(2, '0')} → ${last}/${String(month).padStart(2, '0')}`;
+}
+
 function formatDateFR(dateStr: string): string {
   if (!dateStr) return "";
   const d = new Date(dateStr);
@@ -116,6 +164,12 @@ const ABSENCE_MARKS = [
 ];
 
 export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: AttendanceRegisterTabProps) {
+  const { user } = useAppSession();
+  // ⭐ Noms pour les signatures (auto-récupérés depuis la session)
+  const teacherName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : '';
+  // Le nom du directeur sera récupéré depuis le tenant/settings
+  const [directorName, setDirectorName] = useState<string>('');
+
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   // ⭐ Mois et année VERROUILLÉS sur le mois courant (date du jour).
@@ -263,6 +317,19 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
   useEffect(() => {
     if (selectedClassId) loadRegister();
   }, [loadRegister, selectedClassId]);
+
+  // ⭐ Charger le nom du directeur depuis les settings/identity de l'école
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/settings/identity', { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          setDirectorName(data.directorName || data.director_name || '');
+        }
+      } catch { /* silent */ }
+    })();
+  }, []);
 
   // === Mise à jour d'une case d'absence ===
   // ⭐ FIX CRITIQUE : utiliser studentId (pas idx) pour identifier l'élève.
@@ -629,12 +696,18 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         : (summary.monthlyData || []))
     : [];
 
-  // Calculer les totaux pour l'affichage
+  // ⭐ Calculs pour l'affichage du récapitulatif
+  // totalAbs = somme des absences de TOUS les élèves (colonne absences)
+  // totalPoss = somme des présences possibles de TOUS les élèves (colonne) = demi-jours × nb élèves
+  // totalEff = totalPoss - totalAbs (somme de la colonne présence effective)
+  // ⭐ demiJourneeMois = nombre de demi-jours du mois (SANS multiplication par élèves)
   const totalAbs = students.reduce((sum, s) => sum + (s.totalAbsences || 0), 0);
   const totalPoss = students.reduce((sum, s) => sum + (s.totalPresencesPossibles || 0), 0);
-  const totalEff = students.reduce((sum, s) => sum + (s.totalPresenceEffectif || 0), 0);
+  const totalEff = totalPoss - totalAbs;
   const pctP = totalPoss > 0 ? Math.round((totalEff / totalPoss) * 10000) / 100 : 0;
   const pctA = totalPoss > 0 ? Math.round((totalAbs / totalPoss) * 10000) / 100 : 0;
+  // ⭐ demi-jours du mois = valeur individuelle (pas × nb élèves)
+  const demiJourneeMois = calculateDemiJourneesMois(selectedMonth, selectedYear, holidays);
 
   return (
     <div className="space-y-4">
@@ -758,19 +831,31 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                   {/* ⭐ Élargir les sous-colonnes jours : de px-1 à px-2,
                       minWidth 45px par cellule (au lieu de default ~28px).
                       Permet de voir les marques (-, |, +) clairement. */}
-                  {WEEKS.map(w => (
-                    <th key={w} colSpan={5} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[11px] uppercase" style={{ minWidth: "225px" }}>
-                      Sem. {w}
-                    </th>
-                  ))}
+                  {WEEKS.map(w => {
+                    const range = getWeekDateRange(w, selectedMonth, selectedYear);
+                    return (
+                      <th key={w} colSpan={5} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[11px] uppercase" style={{ minWidth: "225px" }}>
+                        S{w} {range && <span className="font-normal text-slate-400 normal-case text-[9px] block">{range}</span>}
+                      </th>
+                    );
+                  })}
                 </tr>
-                {/* ⭐ Ligne des initiales des jours (L M M J V) pour chaque semaine */}
+                {/* ⭐ Ligne des initiales des jours (L M M J V) avec dates pour chaque semaine */}
                 <tr className="bg-slate-50">
-                  {WEEKS.map(w => DAYS.map(d => (
-                    <th key={`${w}-${d.num}`} className="border border-slate-300 px-1 py-1 font-bold text-slate-500 text-[10px] uppercase" style={{ minWidth: "45px", width: "45px" }}>
-                      {d.label}
-                    </th>
-                  )))}
+                  {WEEKS.map(w => DAYS.map(d => {
+                    const cell = getCellDate(w, d.num, selectedMonth, selectedYear);
+                    return (
+                      <th key={`${w}-${d.num}`} className={cn(
+                        "border border-slate-300 px-1 py-1 font-bold text-[10px] uppercase",
+                        cell.inMonth ? "text-slate-500" : "text-slate-300 bg-slate-100"
+                      )} style={{ minWidth: "45px", width: "45px" }}>
+                        {d.label}
+                        {cell.inMonth && cell.date && (
+                          <div className="text-[8px] font-normal text-slate-400">{cell.date.getDate()}</div>
+                        )}
+                      </th>
+                    );
+                  }))}
                 </tr>
               </thead>
               <tbody>
@@ -789,6 +874,15 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                     {/* 25 cases d'absence — système demi-jours : -, |, + */}
                     {WEEKS.map(w => DAYS.map(d => {
                       const marked = getAbsence(student, w, d.num);
+                      const cell = getCellDate(w, d.num, selectedMonth, selectedYear);
+                      // ⭐ Griser les cellules hors mois
+                      if (!cell.inMonth) {
+                        return (
+                          <td key={`${w}-${d.num}`} className="border border-slate-300 p-0 bg-slate-100" style={{ minWidth: "45px", width: "45px" }}>
+                            <div className="w-full h-9 flex items-center justify-center text-slate-300 text-xs">—</div>
+                          </td>
+                        );
+                      }
                       return (
                         <td key={`${w}-${d.num}`} className="border border-slate-300 p-0" style={{ minWidth: "45px", width: "45px" }}>
                           <select
@@ -848,11 +942,8 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
             <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Demi-journées du mois</label>
-                <input type="number" min={0}
-                  value={register.demiJourneeMois || 0}
-                  onChange={(e) => updateRegisterField("demiJourneeMois", parseInt(e.target.value) || 0)}
-                  disabled={isReadOnly}
-                  className="w-full px-2 py-1 border border-slate-200 rounded text-sm font-bold" />
+                {/* ⭐ Auto-calculé (read-only) : nombre de demi-jours du mois, SANS × nb élèves */}
+                <div className="px-2 py-1 border border-slate-200 rounded text-sm font-bold bg-slate-100 text-slate-700">{demiJourneeMois}</div>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Présence possible</label>
@@ -921,7 +1012,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-bold text-slate-800">Le Directeur / La Directrice</div>
-                  <div className="text-xs text-slate-500">Signature et cachet</div>
+                  <div className="text-xs text-slate-500">{directorName || 'Nom du directeur'} — Signature et cachet</div>
                 </div>
                 {directorSignature && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
@@ -958,7 +1049,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-bold text-slate-800">Le Titulaire de la classe</div>
-                  <div className="text-xs text-slate-500">Signature</div>
+                  <div className="text-xs text-slate-500">{teacherName || 'Nom du titulaire'} — Signature</div>
                 </div>
                 {teacherSignature && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">

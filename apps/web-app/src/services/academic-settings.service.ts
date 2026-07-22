@@ -113,9 +113,19 @@ class AcademicSettingsService {
    * Récupère le paramétrage ACTIF pour une année scolaire.
    * Fallback: IndexedDB si réseau indisponible.
    */
-  async getActive(schoolYearId: string): Promise<any> {
+  async getActive(schoolYearId: string, scope?: {
+    levelCode?: string;
+    language?: string;
+    secondaryCycle?: string;
+    classId?: string;
+  }): Promise<any> {
     try {
-      const result = await fetchApi(`${BASE_URL}/active?schoolYearId=${encodeURIComponent(schoolYearId)}`);
+      const params = new URLSearchParams({ schoolYearId: encodeURIComponent(schoolYearId) });
+      if (scope?.levelCode) params.append('levelCode', scope.levelCode);
+      if (scope?.language) params.append('language', scope.language);
+      if (scope?.secondaryCycle) params.append('secondaryCycle', scope.secondaryCycle);
+      if (scope?.classId) params.append('classId', scope.classId);
+      const result = await fetchApi(`${BASE_URL}/active?${params.toString()}`);
       if (result?.id) await cacheOneSetting(result);
       return result;
     } catch {
@@ -150,6 +160,9 @@ class AcademicSettingsService {
     classId?: string;
     subjectId?: string;
     periodId?: string;
+    /** ⭐ Piste linguistique */
+    language?: string;
+    secondaryCycle?: string;
   }): Promise<{
     columns: Array<{
       key: string;
@@ -160,6 +173,7 @@ class AcademicSettingsService {
       weight: number;
       includedInAverage: boolean;
       visibleOnReportCard: boolean;
+      qualitativeOptions?: string[];
     }>;
     formula: string;
     generalAverageFormula: string;
@@ -174,6 +188,8 @@ class AcademicSettingsService {
     if (params.levelCode) qs.set('levelCode', params.levelCode);
     if (params.classId) qs.set('classId', params.classId);
     if (params.subjectId) qs.set('subjectId', params.subjectId);
+    if (params.language) qs.set('language', params.language);
+    if (params.secondaryCycle) qs.set('secondaryCycle', params.secondaryCycle);
     if (params.periodId) qs.set('periodId', params.periodId);
 
     try {

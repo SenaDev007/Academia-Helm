@@ -71,8 +71,18 @@ export class AcademicSettingsController {
   async findActive(
     @TenantId() tenantId: string,
     @Query('schoolYearId') schoolYearId: string,
+    // ⭐ Paramètres de scope pour le filtrage multi-dimensionnel
+    @Query('levelCode') levelCode?: string,
+    @Query('language') language?: string,
+    @Query('secondaryCycle') secondaryCycle?: string,
+    @Query('classId') classId?: string,
   ) {
-    return this.academicSettingsService.findActive(tenantId, schoolYearId);
+    return this.academicSettingsService.findActive(tenantId, schoolYearId, {
+      levelCode,
+      language,
+      secondaryCycle,
+      classId,
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -95,6 +105,9 @@ export class AcademicSettingsController {
     @Query('classId') classId?: string,
     @Query('subjectId') subjectId?: string,
     @Query('periodId') periodId?: string,
+    // ⭐ Piste linguistique pour le scoping
+    @Query('language') language?: string,
+    @Query('secondaryCycle') secondaryCycle?: string,
   ) {
     return this.scoreEntrySchemaService.getSchema(tenantId, {
       schoolYearId,
@@ -103,6 +116,8 @@ export class AcademicSettingsController {
       classId,
       subjectId,
       periodId,
+      language,
+      secondaryCycle,
     });
   }
 

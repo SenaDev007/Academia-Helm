@@ -52,6 +52,10 @@ export interface GetSchemaParams {
   classId?: string;
   subjectId?: string;
   periodId?: string;
+  /** ⭐ Piste linguistique : 'FR' ou 'EN' */
+  language?: string;
+  /** ⭐ Cycle secondaire : 'CYCLE_I' ou 'CYCLE_II' */
+  secondaryCycle?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,7 +83,7 @@ export class ScoreEntrySchemaService {
     tenantId: string,
     params: GetSchemaParams,
   ): Promise<ScoreEntrySchema> {
-    const { schoolYearId, cycleCode, levelCode, classId, periodId } = params;
+    const { schoolYearId, cycleCode, levelCode, classId, periodId, language, secondaryCycle } = params;
 
     // Build a where clause that progressively narrows to the most specific
     // settings record available. Order: classId > levelCode > cycleCode > global.
@@ -98,13 +102,39 @@ export class ScoreEntrySchemaService {
       );
     }
 
-    // Pick the most specific settings: prefer class-scoped, then level-scoped,
-    // then cycle-scoped, then global (classId === null).
+    // Pick the most specific settings: prefer class-scoped, then level+language,
+    // then level-scoped, then language-scoped, then global.
     const settings =
+      // 1. classId + levelCode + language (most specific)
+      (classId && language && candidates.find((s: any) =>
+        s.classId === classId && s.language === language
+      )) ||
+      // 2. classId only (no language filter)
       (classId && candidates.find((s: any) => s.classId === classId)) ||
-      (levelCode && candidates.find((s: any) => s.levelCode === levelCode && !s.classId)) ||
-      (cycleCode && candidates.find((s: any) => s.cycleCode === cycleCode && !s.levelCode && !s.classId)) ||
-      candidates.find((s: any) => !s.classId && !s.levelCode && !s.cycleCode) ||
+      // 3. levelCode + language + secondaryCycle
+      (levelCode && language && secondaryCycle && candidates.find((s: any) =>
+        s.levelCode === levelCode && s.language === language &&
+        s.secondaryCycle === secondaryCycle && !s.classId
+      )) ||
+      // 4. levelCode + language
+      (levelCode && language && candidates.find((s: any) =>
+        s.levelCode === levelCode && s.language === language && !s.classId
+      )) ||
+      // 5. levelCode only (commun aux deux pistes)
+      (levelCode && candidates.find((s: any) =>
+        s.levelCode === levelCode && !s.language && !s.classId
+      )) ||
+      // 6. language only
+      (language && candidates.find((s: any) =>
+        !s.levelCode && s.language === language && !s.classId
+      )) ||
+      // 7. cycleCode only
+      (cycleCode && candidates.find((s: any) =>
+        s.cycleCode === cycleCode && !s.levelCode && !s.classId && !s.language
+      )) ||
+      // 8. Global
+      candidates.find((s: any) => !s.classId && !s.levelCode && !s.cycleCode && !s.language) ||
+      // 9. Fallback
       candidates[0];
 
     const config = settings.config as Record<string, any>;

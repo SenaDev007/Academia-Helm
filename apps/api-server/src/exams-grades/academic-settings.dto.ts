@@ -46,7 +46,7 @@ export class CreateAcademicSettingsDto {
   @IsOptional()
   cycleCode?: string;
 
-  /** School level code (e.g. 'FORM1', 'CLASS6') */
+  /** School level code (e.g. 'MATERNELLE', 'PRIMAIRE', 'SECONDAIRE') */
   @IsString()
   @IsOptional()
   levelCode?: string;
@@ -55,6 +55,16 @@ export class CreateAcademicSettingsDto {
   @IsString()
   @IsOptional()
   classId?: string;
+
+  /** ⭐ Piste linguistique : 'FR', 'EN', ou null (commun aux deux pistes) */
+  @IsString()
+  @IsOptional()
+  language?: string;
+
+  /** ⭐ Cycle secondaire : 'CYCLE_I' (6ème→3ème), 'CYCLE_II' (2nde→Terminale) */
+  @IsString()
+  @IsOptional()
+  secondaryCycle?: string;
 
   /** School year this settings profile belongs to */
   @IsString()
@@ -112,6 +122,16 @@ export class UpdateAcademicSettingsDto {
   @IsString()
   @IsOptional()
   classId?: string;
+
+  /** ⭐ Piste linguistique : 'FR', 'EN', ou null */
+  @IsString()
+  @IsOptional()
+  language?: string;
+
+  /** ⭐ Cycle secondaire : 'CYCLE_I', 'CYCLE_II' */
+  @IsString()
+  @IsOptional()
+  secondaryCycle?: string;
 
   @IsString()
   @IsOptional()

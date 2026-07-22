@@ -130,7 +130,12 @@ const BG_MAP: Record<string, string> = {
 
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
-export function useAcademicSettings(): UseAcademicSettingsReturn {
+export function useAcademicSettings(scope?: {
+  levelCode?: string;
+  language?: string;
+  secondaryCycle?: string;
+  classId?: string;
+}): UseAcademicSettingsReturn {
   const { academicYear } = useModuleContext();
   const [config, setConfig] = useState<AcademicConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -146,7 +151,7 @@ export function useAcademicSettings(): UseAcademicSettingsReturn {
     setError(null);
 
     try {
-      const active = await academicSettingsService.getActive(academicYear.id);
+      const active = await academicSettingsService.getActive(academicYear.id, scope);
 
       if (active && active.config) {
         const cfg = typeof active.config === 'string'
@@ -179,7 +184,7 @@ export function useAcademicSettings(): UseAcademicSettingsReturn {
     } finally {
       setLoading(false);
     }
-  }, [academicYear?.id]);
+  }, [academicYear?.id, scope?.levelCode, scope?.language, scope?.secondaryCycle, scope?.classId]);
 
   useEffect(() => {
     load();

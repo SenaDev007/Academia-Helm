@@ -57,6 +57,7 @@ import { cn } from '@/lib/utils';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { academicSettingsService } from '@/services/academic-settings.service';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { useBilingual } from '@/contexts/BilingualContext';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -262,7 +263,8 @@ function StatusBanner({ settings }: { settings: AcademicSettingConfig[] }) {
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function AcademicSettingsPage() {
-  const { academicYear } = useModuleContext();
+  const { academicYear, schoolLevel } = useModuleContext();
+  const { isEnabled: isBilingual, currentTrack } = useBilingual();
 
   const [settings, setSettings] = useState<AcademicSettingConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -271,6 +273,11 @@ export default function AcademicSettingsPage() {
   const [expertMode, setExpertMode] = useState(false);
   const [simulationRunning, setSimulationRunning] = useState(false);
   const [simulationResults, setSimulationResults] = useState<typeof DEMO_STUDENTS | null>(null);
+
+  // ⭐ Scope dimensionnel : niveau scolaire + piste linguistique + cycle secondaire
+  const [selectedLevelCode, setSelectedLevelCode] = useState<string>(schoolLevel?.code || '');
+  const [selectedLanguage, setSelectedLanguage] = useState<string>(isBilingual ? (currentTrack || 'FR') : '');
+  const [selectedSecondaryCycle, setSelectedSecondaryCycle] = useState<string>('');
 
   // Form state
   const [country, setCountry] = useState('Bénin');
@@ -299,7 +306,21 @@ export default function AcademicSettingsPage() {
       const result = await academicSettingsService.getAll(academicYear?.id);
       const list = Array.isArray(result) ? result : [];
       setSettings(list);
-      const active = list.find((s: AcademicSettingConfig) => s.status === 'ACTIVE') ?? list[0];
+
+      // ⭐ Filtrer par scope dimensionnel (niveau scolaire + piste linguistique)
+      const scopedList = list.filter((s: any) => {
+        // Filtrer par levelCode
+        if (selectedLevelCode && s.levelCode && s.levelCode !== selectedLevelCode) return false;
+        if (selectedLevelCode && !s.levelCode) return true; // global = commun à tous
+        if (!selectedLevelCode && s.levelCode) return false;
+        // Filtrer par language
+        if (selectedLanguage && s.language && s.language !== selectedLanguage) return false;
+        if (selectedLanguage && !s.language) return true; // null = commun
+        if (!selectedLanguage && s.language) return false;
+        return true;
+      });
+
+      const active = scopedList.find((s: AcademicSettingConfig) => s.status === 'ACTIVE') ?? scopedList[0];
       if (active) {
         setCountry(active.country || 'Bénin');
         setEducationSystem(active.educationSystem || 'National');
@@ -334,7 +355,7 @@ export default function AcademicSettingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [academicYear?.id]);
+  }, [academicYear?.id, selectedLevelCode, selectedLanguage]);
 
   useEffect(() => { loadSettings(); }, [loadSettings]);
 
@@ -343,11 +364,24 @@ export default function AcademicSettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
+      // ⭐ Construire le payload avec les champs requis par le DTO backend
+      const levelLabel = selectedLevelCode === 'MATERNELLE' ? 'Maternelle'
+        : selectedLevelCode === 'PRIMAIRE' ? 'Primaire'
+        : selectedLevelCode === 'SECONDAIRE' ? 'Secondaire' : 'Global';
+      const langLabel = selectedLanguage === 'FR' ? ' FR' : selectedLanguage === 'EN' ? ' EN' : '';
+      const cycleLabel = selectedSecondaryCycle ? ` ${selectedSecondaryCycle}` : '';
+      const configName = `Paramétrage ${levelLabel}${langLabel}${cycleLabel} — ${academicYear?.label || ''}`;
+
       const config = {
+        name: configName,
+        countryCode: country === 'Bénin' ? 'BJ' : country === 'Togo' ? 'TG' : country === "Côte d'Ivoire" ? 'CI' : country === 'Cameroun' ? 'CM' : country === 'Sénégal' ? 'SN' : 'XX',
+        levelCode: selectedLevelCode || null,
+        language: selectedLanguage || null,
+        secondaryCycle: selectedSecondaryCycle || null,
         country, educationSystem, gradingMode, periodType,
         scoreMin: Number(scoreMin), scoreMax: Number(scoreMax), scoreDecimals: Number(scoreDecimals),
-        assessmentTypes, 
-        mentions, 
+        assessmentTypes,
+        mentions,
         rankingRules: [{ scope: rankingScope, allowTies: true, excludeAbsentees: true }],
         calculationRules: {
           subjectAverage: { expression: subjectFormula, type: 'FORMULA' },
@@ -359,7 +393,13 @@ export default function AcademicSettingsPage() {
         },
         schoolYearId: academicYear?.id,
       };
-      const draft = settings.find((s) => s.status === 'DRAFT');
+      // ⭐ Chercher un DRAFT dans le MÊME scope (même levelCode + language)
+      const draft = settings.find((s: any) =>
+        s.status === 'DRAFT' &&
+        (s.levelCode || null) === (selectedLevelCode || null) &&
+        (s.language || null) === (selectedLanguage || null) &&
+        (s.secondaryCycle || null) === (selectedSecondaryCycle || null)
+      );
       if (draft) {
         await academicSettingsService.update(draft.id, config);
       } else {
@@ -456,6 +496,50 @@ export default function AcademicSettingsPage() {
         layout: 'full',
         children: (
           <div className="space-y-5 p-1">
+            {/* ⭐ Scope dimensionnel : sélecteurs niveau scolaire + piste linguistique + cycle secondaire */}
+            <div className="flex items-center gap-3 flex-wrap bg-blue-50 border border-blue-200 rounded-xl p-3">
+              <span className="text-xs font-bold text-blue-900 uppercase">🎯 Scope du paramétrage :</span>
+              {/* Sélecteur niveau scolaire */}
+              <select
+                value={selectedLevelCode}
+                onChange={(e) => setSelectedLevelCode(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-sm font-semibold text-gray-700"
+              >
+                <option value="">Global (tous niveaux)</option>
+                <option value="MATERNELLE">🧒 Maternelle (qualitatif TS/S/PS)</option>
+                <option value="PRIMAIRE">👦 Primaire (quantitatif /20, coef 1)</option>
+                <option value="SECONDAIRE">👨‍🎓 Secondaire (quantitatif /20, coef variable)</option>
+              </select>
+              {/* Sélecteur cycle secondaire (visible seulement si SECONDAIRE) */}
+              {selectedLevelCode === 'SECONDAIRE' && (
+                <select
+                  value={selectedSecondaryCycle}
+                  onChange={(e) => setSelectedSecondaryCycle(e.target.value)}
+                  className="px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-sm font-semibold text-gray-700"
+                >
+                  <option value="">Tous cycles</option>
+                  <option value="CYCLE_I">1er Cycle (6ème → 3ème)</option>
+                  <option value="CYCLE_II">2nd Cycle (2nde → Terminale)</option>
+                </select>
+              )}
+              {/* Sélecteur piste linguistique (visible seulement si bilingue) */}
+              {isBilingual && (
+                <select
+                  value={selectedLanguage}
+                  onChange={(e) => setSelectedLanguage(e.target.value)}
+                  className="px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-sm font-semibold text-gray-700"
+                >
+                  <option value="">Commun (FR + EN)</option>
+                  <option value="FR">🇫🇷 Piste francophone</option>
+                  <option value="EN">🇬🇧 Piste anglophone</option>
+                </select>
+              )}
+              {/* Info badge */}
+              <span className="text-xs text-blue-600 ml-auto">
+                {selectedLevelCode || 'Global'}{selectedLanguage ? ` · ${selectedLanguage}` : ''}{selectedSecondaryCycle ? ` · ${selectedSecondaryCycle}` : ''}
+              </span>
+            </div>
+
             {/* Top Action Bar */}
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div className="flex items-center gap-2">

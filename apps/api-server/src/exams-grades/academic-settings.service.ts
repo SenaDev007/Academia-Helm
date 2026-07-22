@@ -75,23 +75,83 @@ export class AcademicSettingsService {
   // -------------------------------------------------------------------------
 
   /**
-   * Returns the single ACTIVE settings record for a tenant + school year.
-   * Throws NotFoundException if none exists.
+   * ⭐ Returns the ACTIVE settings record for a tenant + school year, scoped by
+   * level/cycle/language. Uses a cascade to find the most specific config:
+   *   1. Exact match on (levelCode + language + secondaryCycle)
+   *   2. Match on (levelCode + language)
+   *   3. Match on (levelCode only)
+   *   4. Match on (language only)
+   *   5. Global (no levelCode, no language)
+   *   6. First ACTIVE found
+   *
+   * @throws NotFoundException if no ACTIVE settings exist for the tenant+year.
    */
-  async findActive(tenantId: string, schoolYearId: string) {
-    const settings = await this.prisma.schoolAcademicSettings.findFirst({
+  async findActive(
+    tenantId: string,
+    schoolYearId: string,
+    scope?: {
+      levelCode?: string;
+      cycleCode?: string;
+      language?: string;
+      secondaryCycle?: string;
+      classId?: string;
+    },
+  ) {
+    const { levelCode, language, secondaryCycle, classId } = scope || {};
+
+    // Récupérer tous les ACTIVE pour ce tenant + year
+    const candidates = await this.prisma.schoolAcademicSettings.findMany({
       where: {
         tenantId,
         schoolYearId,
         status: 'ACTIVE',
       },
+      orderBy: { createdAt: 'desc' },
     });
 
-    if (!settings) {
+    if (!candidates || candidates.length === 0) {
       throw new NotFoundException(
         `No active academic settings found for school year ${schoolYearId}`,
       );
     }
+
+    // ⭐ Cascade de sélection par spécificité décroissante
+    const settings =
+      // 1. classId + levelCode + language + secondaryCycle (le plus spécifique)
+      (classId && candidates.find(s =>
+        s.classId === classId &&
+        s.levelCode === levelCode &&
+        s.language === language
+      )) ||
+      // 2. levelCode + language + secondaryCycle
+      (levelCode && language && secondaryCycle && candidates.find(s =>
+        s.levelCode === levelCode &&
+        s.language === language &&
+        s.secondaryCycle === secondaryCycle &&
+        !s.classId
+      )) ||
+      // 3. levelCode + language
+      (levelCode && language && candidates.find(s =>
+        s.levelCode === levelCode &&
+        s.language === language &&
+        !s.classId
+      )) ||
+      // 4. levelCode only (commun aux deux pistes)
+      (levelCode && candidates.find(s =>
+        s.levelCode === levelCode &&
+        !s.language &&
+        !s.classId
+      )) ||
+      // 5. language only (commun à tous les niveaux de cette piste)
+      (language && candidates.find(s =>
+        !s.levelCode &&
+        s.language === language &&
+        !s.classId
+      )) ||
+      // 6. Global (ni levelCode ni language)
+      candidates.find(s => !s.levelCode && !s.language && !s.classId) ||
+      // 7. Fallback: premier trouvé
+      candidates[0];
 
     return settings;
   }
@@ -139,6 +199,9 @@ export class AcademicSettingsService {
         cycleCode: dto.cycleCode ?? null,
         levelCode: dto.levelCode ?? null,
         classId: dto.classId ?? null,
+        // ⭐ Nouveaux champs pour le scoping multi-dimensionnel
+        language: dto.language ?? null,
+        secondaryCycle: dto.secondaryCycle ?? null,
         schoolYearId: dto.schoolYearId,
         config: dto.config,
         status: 'DRAFT' as SettingsStatus,
@@ -183,6 +246,9 @@ export class AcademicSettingsService {
     if (dto.cycleCode !== undefined) data.cycleCode = dto.cycleCode;
     if (dto.levelCode !== undefined) data.levelCode = dto.levelCode;
     if (dto.classId !== undefined) data.classId = dto.classId;
+    // ⭐ Nouveaux champs de scoping
+    if (dto.language !== undefined) data.language = dto.language;
+    if (dto.secondaryCycle !== undefined) data.secondaryCycle = dto.secondaryCycle;
     if (dto.schoolYearId !== undefined) data.schoolYearId = dto.schoolYearId;
     if (dto.config !== undefined) data.config = dto.config;
 
@@ -216,13 +282,20 @@ export class AcademicSettingsService {
       );
     }
 
-    // Deactivate all currently ACTIVE settings for the same tenant + school year
+    // ⭐ Désactiver uniquement les configs ACTIVE du MÊME scope dimensionnel
+    // (même levelCode + même language + même secondaryCycle + même classId)
+    // pour permettre la coexistence de configs par niveau scolaire et par piste linguistique
     await this.prisma.schoolAcademicSettings.updateMany({
       where: {
         tenantId,
         schoolYearId: settings.schoolYearId,
         status: 'ACTIVE',
         id: { not: id },
+        // ⭐ Scope strict : même niveau + même piste linguistique + même cycle secondaire
+        levelCode: settings.levelCode,
+        language: settings.language,
+        secondaryCycle: settings.secondaryCycle,
+        classId: settings.classId,
       },
       data: { status: 'DRAFT' },
     });

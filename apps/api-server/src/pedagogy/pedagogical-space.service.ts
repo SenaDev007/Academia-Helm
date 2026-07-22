@@ -2393,6 +2393,8 @@ export class PedagogicalSpaceService {
       // ⭐ Signatures (images base64 — comme dans le module RH contrats)
       teacherSignature: 'string',
       directorSignature: 'string',
+      // ⭐ Jours fériés du mois (JSON array de dates ISO)
+      holidays: 'jsonb',
       status: 'string',
       submittedAt: 'date',
       validatedAt: 'date',

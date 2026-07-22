@@ -16222,6 +16222,8 @@ model AttendanceRegister {
   // ⭐ Signatures (images base64 — comme dans le module RH contrats)
   teacherSignature    String?  // Signature de l'enseignant (titulaire)
   directorSignature   String?  // Signature du directeur
+  // ⭐ Jours fériés du mois (JSON array de dates ISO YYYY-MM-DD)
+  holidays            Json?    @default("[]")
 
   // Workflow
   status          String   @default("DRAFT") // DRAFT | SUBMITTED | VALIDATED | REJECTED

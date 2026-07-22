@@ -83,13 +83,19 @@ function cn(...classes: (string | false | undefined)[]) {
 // ⭐ Calculer le nombre total de demi-jours d'un mois
 // Lundi=2, Mardi=2, Mercredi=1, Jeudi=2, Vendredi=2 (total/semaine=9)
 // On parcourt tous les jours du mois et on somme les demi-jours.
-function calculateDemiJourneesMois(month: number, year: number): number {
+// ⭐ Si des jours fériés sont spécifiés, on déduit leurs demi-jours du total.
+function calculateDemiJourneesMois(month: number, year: number, holidays: string[] = []): number {
   const daysInMonth = new Date(year, month, 0).getDate();
   let total = 0;
   const DEMI_JOURS: Record<number, number> = { 1: 2, 2: 2, 3: 1, 4: 2, 5: 2 };
   for (let day = 1; day <= daysInMonth; day++) {
     const d = new Date(year, month - 1, day);
     const dow = d.getDay(); // 0=dim, 1=lun, ..., 5=ven, 6=sam
+    // Skip weekends (not counted)
+    if (dow < 1 || dow > 5) continue;
+    // ⭐ Vérifier si ce jour est un jour férié
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    if (holidays.includes(dateStr)) continue; // Skip holiday
     total += DEMI_JOURS[dow] || 0;
   }
   return total;
@@ -132,7 +138,11 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<"register" | "evaluation" | "summary">("register");
+  const [activeTab, setActiveTab] = useState<"register" | "evaluation" | "summary" | "settings">("register");
+
+  // ⭐ Jours fériés du mois (paramétrables par l'enseignant)
+  // Stockés sous forme de dates ISO (YYYY-MM-DD)
+  const [holidays, setHolidays] = useState<string[]>([]);
 
   // États pour la configuration des matières
   const [showSubjectConfig, setShowSubjectConfig] = useState(false);
@@ -176,9 +186,19 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
       if (!res.ok) throw new Error("Erreur");
       const data = await res.json();
       setRegister(data);
-      // ⭐ Charger les signatures existantes depuis le registre
+      // ⭐ Charger les signatures + jours fériés existants depuis le registre
       setTeacherSignature(data.teacherSignature || null);
       setDirectorSignature(data.directorSignature || null);
+      // holidays sont stockés dans le registre (champ JSON ou séparé)
+      // Pour l'instant on les stocke dans un champ `holidays` du registre
+      let loadedHolidays: string[] = [];
+      if (data.holidays) {
+        try {
+          loadedHolidays = typeof data.holidays === 'string' ? JSON.parse(data.holidays) : data.holidays;
+          if (!Array.isArray(loadedHolidays)) loadedHolidays = [];
+        } catch { loadedHolidays = []; }
+      }
+      setHolidays(loadedHolidays);
       const studentsData = typeof data.studentsData === "string"
         ? JSON.parse(data.studentsData || "[]")
         : (data.studentsData || []);
@@ -187,7 +207,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         const cls = classes.find(c => c.classId === selectedClassId);
         // ⭐ Calculer le nombre de demi-jours du mois (MÊME pour tous les élèves)
         // Lundi=2, Mardi=2, Mercredi=1, Jeudi=2, Vendredi=2 (total/semaine=9)
-        const totalDemiJourneesMois = calculateDemiJourneesMois(selectedMonth, selectedYear);
+        const totalDemiJourneesMois = calculateDemiJourneesMois(selectedMonth, selectedYear, holidays);
         const initStudents = (cls?.students || []).map((s: any, idx: number) => ({
           studentId: s.studentId,
           numero: idx + 1,
@@ -206,7 +226,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         setStudents(initStudents);
       } else {
         // ⭐ Mettre à jour le nbDemiJournees pour tous les élèves si vide
-        const totalDemiJourneesMois = calculateDemiJourneesMois(selectedMonth, selectedYear);
+        const totalDemiJourneesMois = calculateDemiJourneesMois(selectedMonth, selectedYear, holidays);
         const updatedStudents = studentsData.map((s: any) => ({
           ...s,
           nbDemiJournees: s.nbDemiJournees || totalDemiJourneesMois,
@@ -245,9 +265,12 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
   }, [loadRegister, selectedClassId]);
 
   // === Mise à jour d'une case d'absence ===
-  const updateAbsence = (studentIdx: number, week: number, day: number, marked: string) => {
-    setStudents(prev => prev.map((s, i) => {
-      if (i !== studentIdx) return s;
+  // ⭐ FIX CRITIQUE : utiliser studentId (pas idx) pour identifier l'élève.
+  // Avant : on utilisait studentIdx (index du tableau TRIÉ) mais setStudents
+  // utilisait l'index du tableau ORIGINAL → mauvais élève mis à jour !
+  const updateAbsence = (studentId: string, week: number, day: number, marked: string) => {
+    setStudents(prev => prev.map((s) => {
+      if (s.studentId !== studentId) return s;
       const newAbsences = [...(s.absences || [])];
       // Trouver ou créer l'entrée pour (week, day)
       const existingIdx = newAbsences.findIndex(a => a.week === week && a.day === day);
@@ -271,8 +294,6 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
       }
 
       // nbDemiJournees = nombre de demi-jours du mois (MÊME pour tous les élèves)
-      // = calculé par le backend syncAttendanceToRegister, mais pour l'affichage
-      // frontend on utilise la valeur stockée dans le registre ou un défaut.
       const demiJournees = s.nbDemiJournees || 0;
       const totalPresencesPossibles = demiJournees;
       const totalPresenceEffectif = totalPresencesPossibles - totalAbsences;
@@ -318,6 +339,8 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
           // ⭐ Signatures (comme dans le module RH — contrats)
           teacherSignature: teacherSignature,
           directorSignature: directorSignature,
+          // ⭐ Jours fériés du mois (stockés dans le registre)
+          holidays: holidays,
         }),
       });
       if (!res.ok) throw new Error("Erreur");
@@ -554,17 +577,12 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
     }
   };
 
-  // === Maj du registre : demi-journées, motif, observation ===
-  const updateStudentField = (studentIdx: number, field: string, value: any) => {
-    setStudents(prev => prev.map((s, i) => {
-      if (i !== studentIdx) return s;
+  // === Maj du registre : motif, observation ===
+  // ⭐ FIX : utiliser studentId (pas idx) — même raison que updateAbsence
+  const updateStudentField = (studentId: string, field: string, value: any) => {
+    setStudents(prev => prev.map((s) => {
+      if (s.studentId !== studentId) return s;
       const updated = { ...s, [field]: value };
-      // Recalculer si nbDemiJournees change
-      if (field === "nbDemiJournees") {
-        const demiJournees = parseInt(value) || 0;
-        updated.totalPresencesPossibles = demiJournees;
-        updated.totalPresenceEffectif = demiJournees - (s.totalAbsences || 0);
-      }
       return updated;
     }));
   };
@@ -673,8 +691,8 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         </div>
       </div>
 
-      {/* === Sous-onglets : Registre / Évaluation / Relevés === */}
-      <div className="flex gap-1 bg-white rounded-xl border border-slate-200 p-1">
+      {/* === Sous-onglets : Registre / Évaluation / Relevés / Paramètres === */}
+      <div className="flex gap-1 bg-white rounded-xl border border-slate-200 p-1 flex-wrap">
         <button onClick={() => setActiveTab("register")}
           className={cn("flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold",
             activeTab === "register" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100")}>
@@ -692,6 +710,12 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
             activeTab === "summary" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100")}>
           <BarChart3 className="h-4 w-4" />
           Tableau de relevés annuel
+        </button>
+        <button onClick={() => setActiveTab("settings")}
+          className={cn("flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold",
+            activeTab === "settings" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100")}>
+          <Settings className="h-4 w-4" />
+          Paramètres
         </button>
       </div>
 
@@ -756,7 +780,8 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                   return aName.localeCompare(bName, 'fr');
                 }).map((student, idx) => (
                   <tr key={student.studentId || idx} className={cn("hover:bg-slate-50", idx % 2 === 1 && "bg-slate-50/50")}>
-                    <td className="border border-slate-300 px-2 py-1 text-center font-semibold">{student.numero || idx + 1}</td>
+                    {/* ⭐ N° séquentiel après tri alphabétique (1, 2, 3...) */}
+                    <td className="border border-slate-300 px-2 py-1 text-center font-semibold">{idx + 1}</td>
                     <td className="border border-slate-300 px-2 py-1 font-medium">
                       {student.nom} {student.prenom}
                     </td>
@@ -768,7 +793,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                         <td key={`${w}-${d.num}`} className="border border-slate-300 p-0" style={{ minWidth: "45px", width: "45px" }}>
                           <select
                             value={marked}
-                            onChange={(e) => updateAbsence(idx, w, d.num, e.target.value)}
+                            onChange={(e) => updateAbsence(student.studentId, w, d.num, e.target.value)}
                             disabled={isReadOnly}
                             className={cn(
                               "w-full h-9 text-center text-base font-bold border-0 focus:outline-none focus:ring-1 focus:ring-blue-400",
@@ -788,7 +813,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                     }))}
                     <td className="border border-slate-300 p-0">
                       <input type="text" value={student.motif || ""}
-                        onChange={(e) => updateStudentField(idx, "motif", e.target.value)}
+                        onChange={(e) => updateStudentField(student.studentId, "motif", e.target.value)}
                         disabled={isReadOnly}
                         className="w-full px-1 py-1 text-[10px] border-0 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-transparent" />
                     </td>
@@ -797,16 +822,11 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                     <td className="border border-slate-300 px-2 py-1 text-center font-bold text-emerald-600">{student.totalPresenceEffectif || 0}</td>
                     <td className="border border-slate-300 p-0">
                       <input type="text" value={student.observation || ""}
-                        onChange={(e) => updateStudentField(idx, "observation", e.target.value)}
+                        onChange={(e) => updateStudentField(student.studentId, "observation", e.target.value)}
                         disabled={isReadOnly}
                         className="w-full px-1 py-1 text-[10px] border-0 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-transparent" />
                     </td>
-                    <td className="border border-slate-300 p-0">
-                      <input type="number" min={0} value={student.nbDemiJournees || 0}
-                        onChange={(e) => updateStudentField(idx, "nbDemiJournees", e.target.value)}
-                        disabled={isReadOnly}
-                        className="w-full px-1 py-1 text-xs text-center border-0 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-transparent" />
-                    </td>
+                    <td className="border border-slate-300 px-2 py-1 text-center font-semibold bg-slate-100 text-slate-700">{student.nbDemiJournees || 0}</td>
                   </tr>
                 ))}
                 {students.length === 0 && (
@@ -1265,6 +1285,105 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
               Aucune donnée mensuelle disponible. Cliquez sur "Actualiser" pour recalculer à partir des registres d'appel existants.
             </div>
           )}
+        </div>
+      )}
+
+      {/* === PAGE 4 — Paramètres (jours fériés) === */}
+      {activeTab === "settings" && register && (
+        <div className="bg-white border-2 border-slate-200 rounded-xl p-6 space-y-6">
+          <div className="border-b border-slate-200 pb-3">
+            <h2 className="text-xl font-bold text-slate-900">Paramètres du mois</h2>
+            <p className="text-sm text-slate-500">
+              {MONTH_NAMES[selectedMonth]} {selectedYear} — Configuration des jours fériés
+            </p>
+          </div>
+
+          {/* === Jours fériés === */}
+          <div className="space-y-4">
+            <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <Settings className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+              <div className="text-xs text-blue-800">
+                <strong>Jours fériés :</strong> Spécifiez les jours fériés du mois.
+                Chaque jour férié déduit ses demi-jours du total (Lundi/Mardi/Jeudi/Vendredi = 2 demi-jours,
+                Mercredi = 1 demi-jour). Le total des demi-jours est mis à jour automatiquement.
+              </div>
+            </div>
+
+            {/* Liste des jours du mois (lundi-vendredi seulement) */}
+            <div className="space-y-2">
+              <h3 className="text-sm font-bold text-slate-700">Jours ouvrés du mois :</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                {(() => {
+                  const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+                  const dayNames = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
+                  const items = [];
+                  for (let day = 1; day <= daysInMonth; day++) {
+                    const d = new Date(selectedYear, selectedMonth - 1, day);
+                    const dow = d.getDay();
+                    if (dow < 1 || dow > 5) continue; // Skip weekends
+                    const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    const isHoliday = holidays.includes(dateStr);
+                    items.push(
+                      <button
+                        key={dateStr}
+                        onClick={() => {
+                          if (isHoliday) {
+                            setHolidays(holidays.filter(h => h !== dateStr));
+                          } else {
+                            setHolidays([...holidays, dateStr]);
+                          }
+                        }}
+                        className={cn(
+                          "p-2 rounded-lg border text-xs font-medium transition-all",
+                          isHoliday
+                            ? "bg-red-50 border-red-300 text-red-700"
+                            : "bg-white border-slate-200 text-slate-600 hover:border-blue-300"
+                        )}
+                      >
+                        <div className="font-bold">{dayNames[dow]} {day}</div>
+                        <div className="text-[10px]">
+                          {isHoliday ? "🎉 Férié" : `${dow === 3 ? 1 : 2} dj`}
+                        </div>
+                      </button>
+                    );
+                  }
+                  return items;
+                })()}
+              </div>
+            </div>
+
+            {/* Récapitulatif des demi-jours */}
+            <div className="bg-slate-50 rounded-xl p-4 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">Demi-jours bruts (tous jours ouvrés) :</span>
+                <span className="font-bold text-slate-900">{calculateDemiJourneesMois(selectedMonth, selectedYear, [])}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">Jours fériés déclarés :</span>
+                <span className="font-bold text-red-600">{holidays.length}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">Demi-jours déduits (jours fériés) :</span>
+                <span className="font-bold text-red-600">
+                  {calculateDemiJourneesMois(selectedMonth, selectedYear, []) - calculateDemiJourneesMois(selectedMonth, selectedYear, holidays)}
+                </span>
+              </div>
+              <div className="border-t border-slate-300 pt-2 flex items-center justify-between">
+                <span className="text-sm font-bold text-slate-700">Total demi-jours du mois :</span>
+                <span className="text-lg font-bold text-blue-600">{calculateDemiJourneesMois(selectedMonth, selectedYear, holidays)}</span>
+              </div>
+            </div>
+
+            {/* Bouton sauvegarder */}
+            <button
+              onClick={handleSave}
+              disabled={saving || isReadOnly}
+              className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Enregistrer les paramètres
+            </button>
+          </div>
         </div>
       )}
 

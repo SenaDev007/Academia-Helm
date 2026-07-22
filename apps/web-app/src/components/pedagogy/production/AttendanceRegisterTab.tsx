@@ -800,8 +800,10 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
             <h2 className="text-lg font-bold text-slate-900">
               REGISTRE D'APPEL{register.schoolLevelCode === "MATERNELLE" ? " MATERNELLE" : register.schoolLevelCode === "PRIMAIRE" ? "" : ` ${register.schoolLevelName || ""}`}
             </h2>
-            <div className="text-sm text-slate-600 mt-1">
-              Mois de <strong>{MONTH_NAMES[selectedMonth]}</strong> {selectedYear}
+            <div className="text-sm text-slate-600 mt-1 flex items-center gap-3">
+              <span>Mois de <strong>{MONTH_NAMES[selectedMonth]}</strong> {selectedYear}</span>
+              <span className="text-slate-300">|</span>
+              <span>Nombre de demi-journées : <strong className="text-blue-600">{demiJourneeMois}</strong></span>
             </div>
             <div className="text-sm text-slate-700 mt-1">
               Classe : <strong>{register.classNameResolved || selectedClass?.className || "—"}</strong> — Effectif : {selectedClass?.totalStudents || 0} élèves
@@ -825,7 +827,6 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                   <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "80px" }}>Total absences</th>
                   <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "80px" }}>Total présence effectif</th>
                   <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "100px" }}>Observation</th>
-                  <th rowSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "80px" }}>Nb. demi-journées</th>
                 </tr>
                 <tr className="bg-slate-50">
                   {/* ⭐ Élargir les sous-colonnes jours : de px-1 à px-2,
@@ -920,7 +921,6 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
                         disabled={isReadOnly}
                         className="w-full px-1 py-1 text-[10px] border-0 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-transparent" />
                     </td>
-                    <td className="border border-slate-300 px-2 py-1 text-center font-semibold bg-slate-100 text-slate-700">{student.nbDemiJournees || 0}</td>
                   </tr>
                 ))}
                 {students.length === 0 && (

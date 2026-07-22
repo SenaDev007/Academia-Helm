@@ -153,3 +153,7 @@ export function RichTextEditor({
     </div>
   );
 }
+
+// ⭐ Default export pour compatibilité avec le module RH (RecruitmentWorkspace)
+// qui utilise `import RichTextEditor from '...'` (default import)
+export default RichTextEditor;

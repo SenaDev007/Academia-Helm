@@ -74,7 +74,7 @@ export class PedagogicalSpaceController {
     @TenantId() tenantId: string,
     @Body() body: {
       academicYearId: string;
-      schoolLevelId: string;
+      schoolLevelId?: string;
       classId: string;
       date: string;
       records: {

@@ -122,19 +122,25 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
       if (records.length === 0) throw new Error('Aucun élève valide à enregistrer');
 
       const selectedClass = classes.find(c => c.classId === selectedClassId);
+      // ⭐ Ne PAS envoyer schoolLevelId si vide — le backend le résoudra
+      // depuis la classe. Envoyer un schoolLevelId invalide cause P2003.
+      const bodyPayload: any = {
+        academicYearId,
+        classId: selectedClassId,
+        date,
+        records,
+      };
+      // N'envoyer schoolLevelId que si on est sûr qu'il est valide
       const resolvedSchoolLevelId = schoolLevelId || selectedClass?.schoolLevelId || '';
+      if (resolvedSchoolLevelId && resolvedSchoolLevelId.length > 10) {
+        bodyPayload.schoolLevelId = resolvedSchoolLevelId;
+      }
 
       const res = await fetch("/api/pedagogy-space/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          academicYearId,
-          schoolLevelId: resolvedSchoolLevelId,
-          classId: selectedClassId,
-          date,
-          records,
-        }),
+        body: JSON.stringify(bodyPayload),
       });
       if (!res.ok) {
         const errText = await res.text();

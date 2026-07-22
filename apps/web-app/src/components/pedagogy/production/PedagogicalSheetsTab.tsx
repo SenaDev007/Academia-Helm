@@ -46,11 +46,11 @@ interface PedagogicalSheetsTabProps {
 }
 
 const SHEET_TYPES = [
-  { type: "MATH", label: "Mathématiques", icon: Sigma, color: "bg-blue-100 text-blue-700 border-blue-200" },
-  { type: "FRANCAIS", label: "Français", icon: BookOpen, color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-  { type: "EST", label: "Éducation Scientifique et Technologique", icon: FlaskConical, color: "bg-purple-100 text-purple-700 border-purple-200" },
-  { type: "ES", label: "Éducation Sociale", icon: Users, color: "bg-amber-100 text-amber-700 border-amber-200" },
-  { type: "EA", label: "Éducation Artistique", icon: Palette, color: "bg-pink-100 text-pink-700 border-pink-200" },
+  { type: "MATH", label: "Mathématiques", icon: Sigma, color: "bg-blue-100 text-blue-700 border-blue-200", headerBg: "bg-blue-600", sectionBorder: "border-blue-300" },
+  { type: "FRANCAIS", label: "Français", icon: BookOpen, color: "bg-emerald-100 text-emerald-700 border-emerald-200", headerBg: "bg-emerald-600", sectionBorder: "border-emerald-300" },
+  { type: "EST", label: "Éducation Scientifique et Technologique", icon: FlaskConical, color: "bg-purple-100 text-purple-700 border-purple-200", headerBg: "bg-purple-600", sectionBorder: "border-purple-300" },
+  { type: "ES", label: "Éducation Sociale", icon: Users, color: "bg-amber-100 text-amber-700 border-amber-200", headerBg: "bg-amber-600", sectionBorder: "border-amber-300" },
+  { type: "EA", label: "Éducation Artistique", icon: Palette, color: "bg-pink-100 text-pink-700 border-pink-200", headerBg: "bg-pink-600", sectionBorder: "border-pink-300" },
 ] as const;
 
 const STATUS_CONFIG = {
@@ -124,6 +124,7 @@ const SHEET_TYPE_CONFIG: Record<string, {
 export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: PedagogicalSheetsTabProps) {
   const { user } = useAppSession();
   const [classes, setClasses] = useState<any[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [fiches, setFiches] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -162,20 +163,25 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
   const loadClasses = useCallback(async () => {
     try {
       const res = await fetch(`/api/pedagogy-space/my-classes?teacherId=${teacherId}&academicYearId=${academicYearId}`, { credentials: "include" });
-      setClasses(Array.isArray(await res.json()) ? await res.json() : []);
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : [];
+      setClasses(list);
+      // ⭐ Auto-sélectionner si une seule classe
+      if (list.length === 1) setSelectedClassId(list[0].classId);
     } catch { setClasses([]); }
   }, [teacherId, academicYearId]);
 
   const loadFiches = useCallback(async () => {
+    if (!selectedClassId) { setFiches([]); return; }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ teacherId, academicYearId });
+      const params = new URLSearchParams({ teacherId, academicYearId, classId: selectedClassId });
       if (filterType) params.append("sheetType", filterType);
       const res = await fetch(`/api/pedagogy-space/fiches?${params.toString()}`, { credentials: "include" });
       setFiches(Array.isArray(await res.json()) ? await res.json() : []);
     } catch { setFiches([]); }
     finally { setLoading(false); }
-  }, [teacherId, academicYearId, filterType]);
+  }, [teacherId, academicYearId, filterType, selectedClassId]);
 
   useEffect(() => { loadClasses(); }, [loadClasses]);
   useEffect(() => { loadFiches(); }, [loadFiches]);
@@ -271,10 +277,10 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
         </div>
 
         {/* === Document — Structure conforme au PDF === */}
-        <div className="bg-white rounded-xl border-2 border-slate-800 p-6 space-y-6">
-          {/* En-tête */}
-          <div className="text-center border-b-2 border-slate-800 pb-3">
-            <h2 className="text-lg font-bold text-slate-900 uppercase">
+        <div className={cn("bg-white rounded-xl border-2 p-6 space-y-6", sheetType?.sectionBorder || "border-slate-800")}>
+          {/* En-tête avec couleur spécifique au type */}
+          <div className={cn("text-center border-b-2 pb-3 rounded-t-lg -mx-6 -mt-6 px-6 py-3", sheetType?.headerBg || "bg-slate-800")}>
+            <h2 className="text-lg font-bold text-white uppercase">
               FICHE DE {form.sheetType === "MATH" ? "MATHÉMATIQUE" : form.sheetType === "FRANCAIS" ? "FRANÇAIS" : sheetType?.label.toUpperCase()}
             </h2>
           </div>
@@ -292,11 +298,10 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
             ))}
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Classe</label>
-              <select value={form.classId} onChange={e => onClassChange(e.target.value)} disabled={isReadOnly}
-                className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm">
-                <option value="">—</option>
-                {classes.map(c => <option key={c.classId} value={c.classId}>{c.className}</option>)}
-              </select>
+              {/* ⭐ Classe pré-remplie depuis la sélection (read-only) */}
+              <div className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm font-medium bg-slate-50">
+                {form.className || classes.find(c => c.classId === form.classId)?.className || "—"}
+              </div>
             </div>
           </div>
 
@@ -451,6 +456,15 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+        {/* ⭐ Sélecteur de classe (obligatoire avant "Nouvelle fiche") */}
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-semibold text-slate-500 uppercase">Classe</label>
+          <select value={selectedClassId} onChange={e => setSelectedClassId(e.target.value)}
+            className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm min-w-[200px]">
+            <option value="">— Sélectionner une classe —</option>
+            {classes.map(c => <option key={c.classId} value={c.classId}>{c.className}</option>)}
+          </select>
+        </div>
         <div className="flex flex-col gap-1">
           <label className="text-xs font-semibold text-slate-500 uppercase">Type de fiche</label>
           <select value={filterType} onChange={e => setFilterType(e.target.value)} className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm min-w-[200px]">
@@ -459,16 +473,42 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
           </select>
         </div>
         <div className="flex-1" />
-        <button onClick={() => loadFiches()} className="p-2 hover:bg-slate-200 rounded-lg"><RefreshCw className="h-4 w-4" /></button>
-        <button onClick={() => { setForm(emptyForm); setEditingFiche(null); setShowForm(true); }}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700">
+        <button onClick={() => loadFiches()} disabled={!selectedClassId} className="p-2 hover:bg-slate-200 rounded-lg disabled:opacity-30"><RefreshCw className="h-4 w-4" /></button>
+        {/* ⭐ Bouton "Nouvelle fiche" désactivé tant qu'aucune classe n'est sélectionnée */}
+        <button
+          onClick={() => {
+            const cls = classes.find(c => c.classId === selectedClassId);
+            setForm({
+              ...emptyForm,
+              classId: selectedClassId,
+              className: cls?.className || "",
+              boysCount: cls?.boys || 0,
+              girlsCount: cls?.girls || 0,
+              totalStudents: cls?.totalStudents || 0,
+              boysPresent: cls?.boys || 0,
+              girlsPresent: cls?.girls || 0,
+              totalPresent: cls?.totalStudents || 0,
+            });
+            setEditingFiche(null);
+            setShowForm(true);
+          }}
+          disabled={!selectedClassId}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">
           <Plus className="h-4 w-4" /> Nouvelle fiche
         </button>
       </div>
 
       {loading && <div className="flex items-center justify-center py-12 text-slate-500"><Loader2 className="h-6 w-6 animate-spin mr-2" />Chargement…</div>}
 
-      {!loading && fiches.length === 0 && (
+      {!loading && !selectedClassId && (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <FileText className="h-12 w-12 text-slate-300 mb-3" />
+          <p className="font-medium text-slate-600">Sélectionnez une classe</p>
+          <p className="text-sm text-slate-500 mt-1">Choisissez une classe pour voir et créer des fiches pédagogiques.</p>
+        </div>
+      )}
+
+      {!loading && selectedClassId && fiches.length === 0 && (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <FileText className="h-12 w-12 text-slate-300 mb-3" />
           <p className="font-medium text-slate-600">Aucune fiche pédagogique</p>

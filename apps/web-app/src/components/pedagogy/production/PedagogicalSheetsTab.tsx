@@ -30,6 +30,8 @@ import {
   FlaskConical, Users, Palette,
 } from "lucide-react";
 import { toast } from "sonner";
+import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
+import { useAppSession } from "@/contexts/AppSessionContext";
 
 interface PedagogicalSheetsTabProps {
   tenantId: string;
@@ -75,6 +77,125 @@ const SHEET_TYPES = [
   },
 ] as const;
 
+// ⭐ Configuration des champs spécifiques par type de fiche
+// Chaque type de fiche a des labels et des placeholders différents
+// pour le ruban pédagogique, conformément aux templates officiels.
+const SHEET_TYPE_FIELDS: Record<string, {
+  competenceLabel: string;
+  competencePlaceholder: string;
+  habileteLabel: string;
+  habiletePlaceholder: string;
+  prealableLabel: string;
+  prealablePlaceholder: string;
+  contenuLabel: string;
+  contenuPlaceholder: string;
+  methodesLabel: string;
+  methodesPlaceholder: string;
+  moyensLabel: string;
+  moyensPlaceholder: string;
+  evaluationLabel: string;
+  evaluationPlaceholder: string;
+  referenceLabel: string;
+  referencePlaceholder: string;
+  deroulementLabel: string;
+}> = {
+  MATH: {
+    competenceLabel: "Compétence visée",
+    competencePlaceholder: "Ex: Résoudre des problèmes de proportionnalité...",
+    habileteLabel: "Habilité à développer",
+    habiletePlaceholder: "Ex: Calculer, raisonner, démontrer...",
+    prealableLabel: "Prérequis",
+    prealablePlaceholder: "Ex: Tables de multiplication, fractions...",
+    contenuLabel: "Contenu de la leçon",
+    contenuPlaceholder: "Ex: La proportionnalité — échelles et pourcentages...",
+    methodesLabel: "Méthodes pédagogiques",
+    methodesPlaceholder: "Ex: Méthode active, résolution de problèmes...",
+    moyensLabel: "Moyens didactiques",
+    moyensPlaceholder: "Ex: Tableau, ardoise, manuel, calculatrice...",
+    evaluationLabel: "Évaluation",
+    evaluationPlaceholder: "Ex: Exercices d'application, problème à résoudre...",
+    referenceLabel: "Référence (manuel, page)",
+    referencePlaceholder: "Ex: Manuel de mathématiques page 45...",
+    deroulementLabel: "Déroulement de la leçon",
+  },
+  FRANCAIS: {
+    competenceLabel: "Compétence visée",
+    competencePlaceholder: "Ex: Lire et comprendre un texte narratif...",
+    habileteLabel: "Habilité à développer",
+    habiletePlaceholder: "Ex: Lire, écrire, parler, écouter...",
+    prealableLabel: "Prérequis",
+    prealablePlaceholder: "Ex: Sons, syllabes, mots de vocabulaire...",
+    contenuLabel: "Contenu de la leçon",
+    contenuPlaceholder: "Ex: Le conte — structure et personnages...",
+    methodesLabel: "Méthodes pédagogiques",
+    methodesPlaceholder: "Ex: Lecture silencieuse, lecture à haute voix, questions...",
+    moyensLabel: "Moyens didactiques",
+    moyensPlaceholder: "Ex: Manuel de lecture, tableau, cahier d'exercices...",
+    evaluationLabel: "Évaluation",
+    evaluationPlaceholder: "Ex: Questions de compréhension, exercice d'écriture...",
+    referenceLabel: "Référence (manuel, page)",
+    referencePlaceholder: "Ex: Manuel de français page 32...",
+    deroulementLabel: "Déroulement de la leçon",
+  },
+  EST: {
+    competenceLabel: "Compétence scientifique visée",
+    competencePlaceholder: "Ex: Observer et décrire un phénomène naturel...",
+    habileteLabel: "Habilité scientifique à développer",
+    habiletePlaceholder: "Ex: Observer, expérimenter, hypothéser, conclure...",
+    prealableLabel: "Prérequis scientifiques",
+    prealablePlaceholder: "Ex: Notions de base sur le sujet...",
+    contenuLabel: "Contenu scientifique/technologique",
+    contenuPlaceholder: "Ex: Les états de la matière — solide, liquide, gazeux...",
+    methodesLabel: "Démarche scientifique",
+    methodesPlaceholder: "Ex: Observation, manipulation, expérimentation...",
+    moyensLabel: "Matériel didactique et expérimental",
+    moyensPlaceholder: "Ex: Béchers, eau, glaçons, loupe, balance...",
+    evaluationLabel: "Évaluation des acquis",
+    evaluationPlaceholder: "Ex: Schéma à compléter, questions de synthèse...",
+    referenceLabel: "Référence (manuel, page)",
+    referencePlaceholder: "Ex: Manuel d'EST page 28...",
+    deroulementLabel: "Déroulement de la séance expérimentale",
+  },
+  ES: {
+    competenceLabel: "Compétence sociale visée",
+    competencePlaceholder: "Ex: Identifier les règles de vie en société...",
+    habileteLabel: "Habilité sociale à développer",
+    habiletePlaceholder: "Ex: Observer, analyser, respecter, coopérer...",
+    prealableLabel: "Prérequis sociaux",
+    prealablePlaceholder: "Ex: Notions de famille, école, communauté...",
+    contenuLabel: "Contenu de la leçon d'éducation sociale",
+    contenuPlaceholder: "Ex: Les règles de vie en société — droits et devoirs...",
+    methodesLabel: "Méthodes pédagogiques",
+    methodesPlaceholder: "Ex: Discussion, jeu de rôle, étude de cas...",
+    moyensLabel: "Moyens didactiques",
+    moyensPlaceholder: "Ex: Images, affiches, récits, tableau...",
+    evaluationLabel: "Évaluation",
+    evaluationPlaceholder: "Ex: Questions orales, exercice de réflexion...",
+    referenceLabel: "Référence (manuel, page)",
+    referencePlaceholder: "Ex: Manuel d'éducation sociale page 15...",
+    deroulementLabel: "Déroulement de la leçon",
+  },
+  EA: {
+    competenceLabel: "Compétence artistique visée",
+    competencePlaceholder: "Ex: Produire une création plastique personnelle...",
+    habileteLabel: "Habilité artistique à développer",
+    habiletePlaceholder: "Ex: Dessiner, peindre, modeler, créer, imaginer...",
+    prealableLabel: "Prérequis artistiques",
+    prealablePlaceholder: "Ex: Techniques de base (dessin, couleur, forme)...",
+    contenuLabel: "Contenu de l'activité artistique",
+    contenuPlaceholder: "Ex: Le dessin d'observation — techniques de tracé...",
+    methodesLabel: "Démarche artistique",
+    methodesPlaceholder: "Ex: Démonstration, expérimentation, création libre...",
+    moyensLabel: "Matériel artistique",
+    moyensPlaceholder: "Ex: Crayons, feutres, peinture, pinceaux, papier...",
+    evaluationLabel: "Évaluation de la production",
+    evaluationPlaceholder: "Ex: Appréciation de la création, respect des consignes...",
+    referenceLabel: "Référence (manuel, page)",
+    referencePlaceholder: "Ex: Manuel d'éducation artistique page 20...",
+    deroulementLabel: "Déroulement de l'activité artistique",
+  },
+};
+
 const STATUS_CONFIG = {
   DRAFT: { label: "Brouillon", color: "bg-slate-100 text-slate-600", icon: Clock },
   SUBMITTED: { label: "Soumis", color: "bg-blue-100 text-blue-700", icon: Send },
@@ -99,6 +220,7 @@ function formatDateFR(dateStr: string): string {
 }
 
 export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: PedagogicalSheetsTabProps) {
+  const { user } = useAppSession();
   const [classes, setClasses] = useState<any[]>([]);
   const [fiches, setFiches] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -473,44 +595,50 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
             </div>
           </section>
 
-          {/* 3. Ruban pédagogique */}
+          {/* 3. Ruban pédagogique — champs spécifiques au type de fiche */}
           <section>
             <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2 mb-3">
               Ruban pédagogique — {sheetType?.label}
             </h3>
+            {(() => {
+              const tf = SHEET_TYPE_FIELDS[form.sheetType] || SHEET_TYPE_FIELDS.MATH;
+              return (
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Compétence visée</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">{tf.competenceLabel}</label>
                 <textarea value={form.competence} onChange={(e) => setForm({ ...form, competence: e.target.value })} rows={2}
-                  placeholder="Compétence à développer chez l'élève..."
+                  placeholder={tf.competencePlaceholder}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Habilité à développer</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">{tf.habileteLabel}</label>
                 <textarea value={form.habilete} onChange={(e) => setForm({ ...form, habilete: e.target.value })} rows={2}
+                  placeholder={tf.habiletePlaceholder}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Prérequis</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">{tf.prealableLabel}</label>
                 <textarea value={form.prealable} onChange={(e) => setForm({ ...form, prealable: e.target.value })} rows={2}
+                  placeholder={tf.prealablePlaceholder}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Contenu de la leçon</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">{tf.contenuLabel}</label>
                 <textarea value={form.contenu} onChange={(e) => setForm({ ...form, contenu: e.target.value })} rows={3}
+                  placeholder={tf.contenuPlaceholder}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Méthodes pédagogiques</label>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">{tf.methodesLabel}</label>
                   <textarea value={form.methodes} onChange={(e) => setForm({ ...form, methodes: e.target.value })} rows={2}
-                    placeholder="Méthode active, démonstrative, interrogative..."
+                    placeholder={tf.methodesPlaceholder}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Moyens didactiques</label>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">{tf.moyensLabel}</label>
                   <textarea value={form.moyensDidactiques} onChange={(e) => setForm({ ...form, moyensDidactiques: e.target.value })} rows={2}
-                    placeholder="Tableau, craie, manuel, ardoise..."
+                    placeholder={tf.moyensPlaceholder}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
                 </div>
               </div>
@@ -518,7 +646,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
               {/* Déroulement (étapes) */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-slate-600">Déroulement de la leçon</label>
+                  <label className="text-xs font-semibold text-slate-600">{tf.deroulementLabel}</label>
                   <button type="button" onClick={addDeroulementStep}
                     className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100">
                     <Plus className="h-3 w-3" /> Ajouter une étape
@@ -553,18 +681,21 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Évaluation</label>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">{tf.evaluationLabel}</label>
                   <textarea value={form.evaluation} onChange={(e) => setForm({ ...form, evaluation: e.target.value })} rows={2}
-                    placeholder="Modalités d'évaluation..."
+                    placeholder={tf.evaluationPlaceholder}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Référence (manuel, page)</label>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">{tf.referenceLabel}</label>
                   <textarea value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} rows={2}
+                    placeholder={tf.referencePlaceholder}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
                 </div>
               </div>
             </div>
+              );
+            })()}
           </section>
 
           {/* 4. Ruban administratif */}
@@ -599,25 +730,74 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
             </div>
           </section>
 
-          {/* 5. Signatures */}
+          {/* 5. Signatures (SignatureCanvas comme registre d'appel) */}
           <section>
             <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2 mb-3">
               Signatures
             </h3>
-            <div className="grid grid-cols-2 gap-6">
-              <div className="border-t border-slate-300 pt-2">
-                <div className="text-xs text-slate-500">Le Maître / La Maîtresse</div>
-                <input type="text" value={form.teacherSignature || ""}
-                  onChange={(e) => setForm({ ...form, teacherSignature: e.target.value })}
-                  placeholder="Nom et signature"
-                  className="w-full mt-2 px-2 py-1 border-0 border-b border-slate-200 bg-transparent text-sm" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              {/* Signature Enseignant */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-bold text-slate-800">Le Maître / La Maîtresse</div>
+                    <div className="text-xs text-slate-500">{user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'Nom du titulaire'} — Signature</div>
+                  </div>
+                  {form.teacherSignature && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
+                      <CheckCircle2 className="h-3 w-3" /> Signé
+                    </span>
+                  )}
+                </div>
+                {form.teacherSignature ? (
+                  <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
+                    <img src={form.teacherSignature} alt="Signature Maître" className="max-h-24 mx-auto" />
+                  </div>
+                ) : (
+                  <SignatureCanvas
+                    width={400}
+                    height={120}
+                    placeholder="Signature du Maître / de la Maîtresse"
+                    onSignatureChange={(data) => setForm({ ...form, teacherSignature: data })}
+                  />
+                )}
+                {form.teacherSignature && (
+                  <button type="button" onClick={() => setForm({ ...form, teacherSignature: null })} className="text-xs text-red-500 hover:underline">
+                    Effacer la signature
+                  </button>
+                )}
               </div>
-              <div className="border-t border-slate-300 pt-2">
-                <div className="text-xs text-slate-500">Le Directeur / La Directrice</div>
-                <input type="text" value={form.directorSignature || ""}
-                  onChange={(e) => setForm({ ...form, directorSignature: e.target.value })}
-                  placeholder="Nom et signature"
-                  className="w-full mt-2 px-2 py-1 border-0 border-b border-slate-200 bg-transparent text-sm" />
+
+              {/* Signature Directeur */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-bold text-slate-800">Le Directeur / La Directrice</div>
+                    <div className="text-xs text-slate-500">Signature et cachet</div>
+                  </div>
+                  {form.directorSignature && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
+                      <CheckCircle2 className="h-3 w-3" /> Signé
+                    </span>
+                  )}
+                </div>
+                {form.directorSignature ? (
+                  <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
+                    <img src={form.directorSignature} alt="Signature Directeur" className="max-h-24 mx-auto" />
+                  </div>
+                ) : (
+                  <SignatureCanvas
+                    width={400}
+                    height={120}
+                    placeholder="Signature du Directeur"
+                    onSignatureChange={(data) => setForm({ ...form, directorSignature: data })}
+                  />
+                )}
+                {form.directorSignature && (
+                  <button type="button" onClick={() => setForm({ ...form, directorSignature: null })} className="text-xs text-red-500 hover:underline">
+                    Effacer la signature
+                  </button>
+                )}
               </div>
             </div>
           </section>

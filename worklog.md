@@ -845,3 +845,52 @@ Stage Summary:
 - Audit : deviceInfo + ipAddress + markedBy + markedByRole stockés pour chaque pointage
 - Rayon tolérance : 100m par défaut, configurable par école (10-1000m)
 - Tous fichiers modifiés passent le check syntaxique TypeScript ✅
+
+---
+Task ID: reorganisation-pedagogie-onglets
+Agent: main
+Task: Réorganisation module pédagogie — suppression cahier du semainier + agrégation, repositionnement de 3 onglets en sous-onglets de Espace pédagogie
+
+Work Log:
+
+== SUPPRESSIONS ==
+
+1. Onglet "Cahier du semainier" :
+   - Supprimé apps/web-app/src/app/app/pedagogy/semainier/page.tsx (405 lignes — OLD impl)
+   - Supprimé apps/web-app/src/app/app/pedagogy/semainier/loading.tsx
+   - Supprimé entrée `seminier` de pedagogy-tabs.tsx (lignes 337-351)
+   - Supprimé entrée '/app/pedagogy/semainier' de page-names.ts
+   - CONSERVÉ : CahierSemaineTab.tsx (NEW impl) — reste accessible comme sous-onglet
+     "Cahier de Semaine" dans PedagogicalSpaceWorkspace (label différent)
+
+2. Onglet "Agrégation & Bilan Global" :
+   - Supprimé apps/web-app/src/app/app/pedagogy/aggregation/page.tsx (187 lignes)
+   - Supprimé entrée `aggregation` de pedagogy-tabs.tsx (lignes 284-297)
+   - CONSERVÉ : aggregation pages des autres modules (students/exams/finance) — sous-onglets respectifs
+
+== REPOSITIONNEMENT (en sous-onglets de Espace pédagogie) ==
+
+PedagogicalSpaceWorkspace.tsx étendu avec 3 nouveaux sous-onglets :
+   9. Cahier de Test (secondaire uniquement) → CahierDeTestTab.tsx
+  10. Bibliothèque → GlobalLibraryHub
+  11. Matériel → MaterialsWorkspace
+
+Entrées supprimées de pedagogy-tabs.tsx :
+   - `materials` (Matériel pédagogique)
+   - `global-library` (Bibliothèque virtuelle)
+
+Imports lucide-react nettoyés (Package, Book, CalendarClock supprimés car non utilisés)
+
+== CONSÉQUENCES ==
+
+- Les pages standalone /app/pedagogy/global-library et /app/pedagogy/pedagogical-materials
+  restent accessibles via URL directe (non supprimées — juste hors navigation)
+- Les pages /app/pedagogy/semainier et /app/pedagogy/aggregation sont complètement supprimées
+- Aucun lien href cassé (vérifié via grep)
+- Syntaxe TypeScript vérifiée ✅
+
+Stage Summary:
+- 5 fichiers modifiés, 3 fichiers supprimés
+- 4 entrées supprimées de pedagogy-tabs.tsx (seminier, aggregation, materials, global-library)
+- 3 nouveaux sous-onglets ajoutés à PedagogicalSpaceWorkspace (cahier-test, biblio, materiel)
+- Module pédagogie maintenant plus cohérent : 10 onglets principaux + 11 sous-onglets Espace pédagogie

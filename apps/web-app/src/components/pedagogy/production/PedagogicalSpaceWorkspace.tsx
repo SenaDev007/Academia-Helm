@@ -15,6 +15,10 @@
  *   6. Fiches Pédagogiques — 5 types (MATH/FRANCAIS/EST/ES/EA) pour le primaire
  *   7. Registre d'Appel — registre mensuel + évaluation certificative + relevés
  *   8. Devoirs — création de devoirs + suivi par élève
+ *   9. Cahier de Texte (secondaire uniquement)
+ *  10. Cahier de Test (secondaire uniquement) — évaluations et compositions
+ *  11. Bibliothèque virtuelle — ressources pédagogiques
+ *  12. Matériel pédagogique — inventaire et ressources
  *
  * Design identique aux autres modules (cards, tables, boutons cohérents).
  * Isolation : chaque enseignant ne voit QUE ses classes.
@@ -29,7 +33,7 @@ import { toast } from "sonner";
 import {
   BookOpen, CalendarCheck, CalendarDays, FileText,
   Users, Loader2, ChevronRight, RefreshCw, ClipboardList, FileSpreadsheet,
-  ClipboardCheck,
+  ClipboardCheck, Book, Package,
 } from "lucide-react";
 
 import { MyClassesTab } from "./MyClassesTab";
@@ -39,7 +43,10 @@ import { CahierSemaineTab } from "./CahierSemaineTab";
 import { PedagogicalSheetsTab } from "./PedagogicalSheetsTab";
 import { AttendanceRegisterTab } from "./AttendanceRegisterTab";
 import { CahierDeTexteTab } from "./CahierDeTexteTab";
+import { CahierDeTestTab } from "./CahierDeTestTab";
 import { HomeworkTab } from "./HomeworkTab";
+import { GlobalLibraryHub } from "@/components/pedagogy/library/GlobalLibraryHub";
+import MaterialsWorkspace from "@/components/pedagogy/materials/MaterialsWorkspace";
 
 // ⭐ Ordre des onglets demandé par l'utilisateur :
 //   1. Mes Classes
@@ -50,6 +57,9 @@ import { HomeworkTab } from "./HomeworkTab";
 //   6. Cahier de Semaine (monitoring institutionnel)
 //   7. Devoirs
 //   8. Cahier de Texte (secondaire uniquement — masqué pour primaire/maternelle)
+//   9. Cahier de Test (secondaire uniquement)
+//  10. Bibliothèque virtuelle
+//  11. Matériel pédagogique
 const ALL_TABS = [
   { id: 'classes', label: 'Mes Classes', icon: Users, description: 'Effectifs & élèves', secondaryOnly: false },
   { id: 'attendance', label: 'Appel', icon: CalendarCheck, description: 'Présences journalières', secondaryOnly: false },
@@ -59,6 +69,9 @@ const ALL_TABS = [
   { id: 'weekly', label: 'Cahier de Semaine', icon: CalendarDays, description: 'Monitoring institutionnel', secondaryOnly: false },
   { id: 'homework', label: 'Devoirs', icon: BookOpen, description: 'Exercices & suivi', secondaryOnly: false },
   { id: 'cahier-texte', label: 'Cahier de Texte', icon: ClipboardCheck, description: 'Évaluations (secondaire)', secondaryOnly: true },
+  { id: 'cahier-test', label: 'Cahier de Test', icon: FileText, description: 'Évaluations & compositions', secondaryOnly: true },
+  { id: 'biblio', label: 'Bibliothèque', icon: Book, description: 'Ressources pédagogiques', secondaryOnly: false },
+  { id: 'materiel', label: 'Matériel', icon: Package, description: 'Inventaire & ressources', secondaryOnly: false },
 ] as const;
 
 type TabId = typeof ALL_TABS[number]['id'];
@@ -198,6 +211,19 @@ export function PedagogicalSpaceWorkspace({
               academicYearId={resolvedAcademicYearId}
               teacherId={teacherId}
             />
+          )}
+          {tab === 'cahier-test' && (
+            <CahierDeTestTab
+              tenantId={resolvedTenantId}
+              academicYearId={resolvedAcademicYearId}
+              teacherId={teacherId}
+            />
+          )}
+          {tab === 'biblio' && (
+            <GlobalLibraryHub />
+          )}
+          {tab === 'materiel' && (
+            <MaterialsWorkspace />
           )}
           {tab === 'homework' && (
             <HomeworkTab

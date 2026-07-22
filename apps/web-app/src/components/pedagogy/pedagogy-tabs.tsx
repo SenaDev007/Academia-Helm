@@ -10,12 +10,9 @@ import {
   FileText,
   ShieldCheck,
   BarChart3,
-  Package,
-  Book,
   CalendarDays,
   NotebookPen,
   Sparkles,
-  CalendarClock,
   BookMarked,
 } from 'lucide-react';
 
@@ -242,19 +239,6 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
     ],
   },
   {
-    id: 'materials',
-    label: 'Matériel pédagogique',
-    path: '/app/pedagogy/pedagogical-materials',
-    icon: Package,
-    roles: [
-      'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
-      'director', 'admin', 'TEACHER', 'TEACHER_RESP',
-      'PROMOTER', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
-      'CENSEUR', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE',
-      'PEDAGOGIC_DIRECTOR', 'PEDAGOGIC_COORDINATOR',
-    ],
-  },
-  {
     id: 'director-space',
     label: 'Validation Direction',
     path: '/app/pedagogy/control',
@@ -282,33 +266,6 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
     ],
   },
   {
-    id: 'aggregation',
-    label: 'Agrégation & Bilan Global',
-    path: '/app/pedagogy/aggregation',
-    icon: BarChart3,
-    roles: [
-      'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
-      'PROMOTER', 'director', 'admin',
-      'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
-      'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR',
-      'CENSEUR', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE',
-      'PEDAGOGIC_DIRECTOR', 'PEDAGOGIC_COORDINATOR',
-    ],
-  },
-  {
-    id: 'global-library',
-    label: 'Bibliothèque virtuelle',
-    path: '/app/pedagogy/global-library',
-    icon: Book,
-    roles: [
-      'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
-      'director', 'admin', 'TEACHER', 'TEACHER_RESP', 'PARENT', 'STUDENT',
-      'PROMOTER', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
-      'CENSEUR', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE',
-      'PEDAGOGIC_DIRECTOR', 'PEDAGOGIC_COORDINATOR', 'GUARDIAN',
-    ],
-  },
-  {
     id: 'teacher-tasks',
     label: 'Travaux & Suivi',
     path: '/app/pedagogy/tasks',
@@ -332,21 +289,6 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
       'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
       'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
       'CENSEUR', 'PEDAGOGIC_DIRECTOR', 'PEDAGOGIC_COORDINATOR',
-    ],
-  },
-  {
-    id: 'semainier',
-    label: 'Cahier du semainier',
-    path: '/app/pedagogy/semainier',
-    icon: CalendarClock,
-    roles: [
-      'TEACHER', 'TEACHER_RESP',
-      'SUPER_DIRECTOR', 'director', 'admin',
-      'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
-      'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
-      'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR',
-      'CENSEUR', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE',
-      'PEDAGOGIC_DIRECTOR', 'PEDAGOGIC_COORDINATOR',
     ],
   },
   {

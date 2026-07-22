@@ -156,7 +156,6 @@ export const PAGE_NAMES: Record<string, string> = {
   '/app/pedagogy/pedagogical-materials': 'Matériel pédagogique',
   '/app/pedagogy/sara-compose': 'Sara Compose (IA)',
   '/app/pedagogy/timetables': 'Emploi du temps',
-  '/app/pedagogy/semainier': 'Semainier',
   '/app/pedagogy/global-library': 'Bibliothèque virtuelle',
   '/app/pedagogy/orion': 'Analytique ORION',
   '/app/pedagogy/production': 'Espace Pédagogie',

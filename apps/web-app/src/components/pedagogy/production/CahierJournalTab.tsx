@@ -17,9 +17,13 @@ import { useState, useEffect, useCallback } from "react";
 import {
   NotebookPen, Loader2, Save, RefreshCw, Send, Lock, Calendar,
   ChevronLeft, ChevronRight, CheckCircle2, XCircle, Clock,
+  FileSpreadsheet, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
+import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
+import { useModuleContext } from "@/hooks/useModuleContext";
+import { useAppSession } from "@/contexts/AppSessionContext";
 
 interface CahierJournalTabProps {
   tenantId: string;
@@ -90,6 +94,8 @@ function formatDateFR(dateStr: string): string {
 }
 
 export function CahierJournalTab({ tenantId, academicYearId, teacherId }: CahierJournalTabProps) {
+  const { academicYear } = useModuleContext();
+  const { user } = useAppSession();
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [weekStart, setWeekStart] = useState<Date>(getMondayOfWeek(new Date()));
@@ -97,6 +103,10 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
   const [entries, setEntries] = useState<Record<string, Record<string, string>>>({});
   const [observations, setObservations] = useState("");
   const [directorName, setDirectorName] = useState("");
+  const [directorNameState, setDirectorNameState] = useState("");
+  const [teacherSignature, setTeacherSignature] = useState<string | null>(null);
+  const [directorSignature, setDirectorSignature] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -249,6 +259,9 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
       setEntries(parseEntries(data.entries));
       setObservations(data.observations || "");
       setDirectorName(data.directorName || "");
+      // ⭐ Charger les signatures existantes
+      setTeacherSignature(data.teacherSignature || null);
+      setDirectorSignature(data.directorSignature || null);
     } catch (e: any) {
       toast.error("Erreur lors du chargement", { description: e.message });
       setJournal(null);
@@ -260,6 +273,45 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
   useEffect(() => {
     if (selectedClassId) loadJournal();
   }, [loadJournal, selectedClassId]);
+
+  // ⭐ Charger le nom du directeur depuis les settings
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/settings/identity', { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          setDirectorNameState(data.directorName || data.director_name || '');
+        }
+      } catch { /* silent */ }
+    })();
+  }, []);
+
+  // ⭐ Export Excel / PDF
+  const handleExport = async (format: "excel" | "pdf") => {
+    if (!journal) return;
+    setExporting(true);
+    try {
+      const res = await fetch(
+        `/api/pedagogy-space/cahier-journal/${journal.id}/export?format=${format}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) throw new Error("Erreur d'export");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const ext = format === "excel" ? "xlsx" : "pdf";
+      a.download = `Cahier_Journal_${formatDate(weekStart)}.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`✅ ${format === "excel" ? "Excel" : "PDF"} exporté`);
+    } catch (e: any) {
+      toast.error("Erreur d'export", { description: e.message });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // === Sauvegarde ===
   const handleSave = async () => {
@@ -274,6 +326,8 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
           entries,
           observations,
           directorName,
+          teacherSignature,
+          directorSignature,
         }),
       });
       if (!res.ok) throw new Error("Erreur de sauvegarde");
@@ -404,6 +458,21 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             Soumettre
           </button>
+          {/* ⭐ Boutons Export */}
+          {journal && (
+            <>
+              <button onClick={() => handleExport("excel")} disabled={exporting}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50">
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                Export Excel
+              </button>
+              <button onClick={() => handleExport("pdf")} disabled={exporting}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50">
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                Export PDF
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -437,7 +506,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
               <div>Semaine du <span className="font-semibold">{formatDateFR(formatDate(weekStart))}</span></div>
               <div>au <span className="font-semibold">{formatDateFR(formatDate(weekEnd))}</span></div>
               <div className="text-xs text-slate-400 mt-1">
-                Année académique {academicYearId.slice(0, 8)}
+                Année académique {academicYear?.label || academicYear?.name || ""}
               </div>
             </div>
           </div>
@@ -584,28 +653,71 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
             />
           </div>
 
-          {/* === PIED DE PAGE — Signature Directeur === */}
-          <div className="border-t-2 border-slate-300 pt-4 mt-6 flex justify-between items-end gap-8">
-            <div className="flex-1">
-              <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Directeur/Directrice</div>
-              <input
-                type="text"
-                value={directorName}
-                onChange={(e) => setDirectorName(e.target.value)}
-                disabled={isReadOnly}
-                placeholder="Nom et signature"
-                className="w-full px-3 py-2 text-sm border-b-2 border-slate-300 focus:outline-none focus:border-blue-500 bg-transparent"
-              />
-              <div className="text-[10px] text-slate-400 mt-1">D _______ DIRECT _______</div>
-            </div>
-            <div className="flex-1 text-right">
-              {journal.directorValidatedAt && (
-                <div className="text-xs text-emerald-600 font-semibold">
-                  Validé le {formatDateFR(journal.directorValidatedAt)}
+          {/* === PIED DE PAGE — Signatures (comme Registre d'appel) === */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6 border-t-2 border-slate-300">
+            {/* Signature Directeur */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-bold text-slate-800">Visa du Directeur / de la Directrice</div>
+                  <div className="text-xs text-slate-500">{directorNameState || 'Nom du directeur'} — Signature et cachet</div>
                 </div>
+                {directorSignature && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
+                    <CheckCircle2 className="h-3 w-3" /> Signé
+                  </span>
+                )}
+              </div>
+              {directorSignature ? (
+                <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
+                  <img src={directorSignature} alt="Signature Directeur" className="max-h-24 mx-auto" />
+                </div>
+              ) : (
+                <SignatureCanvas
+                  width={400}
+                  height={120}
+                  disabled={isReadOnly}
+                  placeholder="Signature du Directeur"
+                  onSignatureChange={(data) => setDirectorSignature(data)}
+                />
               )}
-              {journal.validatedBy && (
-                <div className="text-[10px] text-slate-500 mt-1">Par: {journal.validatedBy}</div>
+              {directorSignature && !isReadOnly && (
+                <button type="button" onClick={() => setDirectorSignature(null)} className="text-xs text-red-500 hover:underline">
+                  Effacer la signature
+                </button>
+              )}
+            </div>
+
+            {/* Signature Titulaire */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-bold text-slate-800">Visa du Titulaire</div>
+                  <div className="text-xs text-slate-500">{user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'Nom du titulaire'} — Signature</div>
+                </div>
+                {teacherSignature && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
+                    <CheckCircle2 className="h-3 w-3" /> Signé
+                  </span>
+                )}
+              </div>
+              {teacherSignature ? (
+                <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
+                  <img src={teacherSignature} alt="Signature Titulaire" className="max-h-24 mx-auto" />
+                </div>
+              ) : (
+                <SignatureCanvas
+                  width={400}
+                  height={120}
+                  disabled={isReadOnly}
+                  placeholder="Signature du Titulaire"
+                  onSignatureChange={(data) => setTeacherSignature(data)}
+                />
+              )}
+              {teacherSignature && !isReadOnly && (
+                <button type="button" onClick={() => setTeacherSignature(null)} className="text-xs text-red-500 hover:underline">
+                  Effacer la signature
+                </button>
               )}
             </div>
           </div>

@@ -1959,6 +1959,15 @@ export class PedagogicalSpaceService {
       updates.push(`"directorName" = $${paramIdx++}`);
       params.push(data.directorName || null);
     }
+    // ⭐ Signatures (comme dans le module RH et le registre d'appel)
+    if (data.teacherSignature !== undefined) {
+      updates.push(`"teacherSignature" = $${paramIdx++}`);
+      params.push(data.teacherSignature || null);
+    }
+    if (data.directorSignature !== undefined) {
+      updates.push(`"directorSignature" = $${paramIdx++}`);
+      params.push(data.directorSignature || null);
+    }
     if (data.directorValidatedAt !== undefined) {
       updates.push(`"directorValidatedAt" = $${paramIdx++}`);
       params.push(data.directorValidatedAt ? new Date(data.directorValidatedAt) : null);
@@ -4087,5 +4096,94 @@ th{background:#e0e0e0;font-weight:bold;}
     html += '</body></html>';
 
     return Buffer.from(html, 'utf-8');
+  }
+
+  // ===========================================================================
+  // EXPORT CAHIER JOURNAL (Excel / PDF)
+  // ===========================================================================
+
+  async exportCahierJournal(
+    tenantId: string,
+    journalId: string,
+    format: string,
+  ): Promise<Buffer> {
+    const journal: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1 AND "tenantId" = $2`,
+      journalId, tenantId,
+    );
+    if (!journal || journal.length === 0) {
+      throw new NotFoundException('Cahier journal non trouvé');
+    }
+    const j = journal[0];
+    const entries = typeof j.entries === 'string' ? JSON.parse(j.entries || '{}') : (j.entries || {});
+    const DAYS = [
+      { id: 1, key: 'lundi', label: 'LUNDI' },
+      { id: 2, key: 'mardi', label: 'MARDI' },
+      { id: 3, key: 'mercredi', label: 'MERCREDI' },
+      { id: 4, key: 'jeudi', label: 'JEUDI' },
+      { id: 5, key: 'vendredi', label: 'VENDREDI' },
+    ];
+
+    // Get all unique subject keys from entries
+    const subjectKeys = new Set<string>();
+    for (const day of DAYS) {
+      const dayEntries = entries[day.key] || {};
+      for (const key of Object.keys(dayEntries)) {
+        if (key !== 'observations') subjectKeys.add(key);
+      }
+    }
+    const subjects = Array.from(subjectKeys);
+
+    if (format === 'excel') {
+      // CSV
+      const rows: string[][] = [];
+      rows.push([`CAHIER JOURNAL — ${j.className || ''}`]);
+      rows.push([`Semaine du ${new Date(j.weekStartDate).toLocaleDateString('fr-FR')} au ${new Date(j.weekEndDate || j.weekStartDate).toLocaleDateString('fr-FR')}`]);
+      rows.push([]);
+      const header = ['JOURS', ...subjects, 'OBSERVATIONS'];
+      rows.push(header);
+      for (const day of DAYS) {
+        const dayEntries = entries[day.key] || {};
+        const row = [day.label];
+        for (const subj of subjects) {
+          row.push(dayEntries[subj] || '');
+        }
+        row.push(dayEntries['observations'] || '');
+        rows.push(row);
+      }
+      rows.push([]);
+      rows.push(['Observations générales:', j.observations || '']);
+      rows.push([]);
+      rows.push(['SIGNATURES']);
+      rows.push(['Visa du Directeur / de la Directrice', 'Visa du Titulaire']);
+      const csv = rows.map(r => r.map(c => `"${(c || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+      return Buffer.from('\ufeff' + csv, 'utf-8');
+    } else {
+      // HTML → PDF
+      let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cahier Journal</title>
+<style>body{font-family:Arial,sans-serif;font-size:10px;margin:20px;}
+h2{text-align:center;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #333;padding:3px;}th{background:#e0e0e0;}
+.signature{margin-top:30px;display:flex;justify-content:space-between;}</style></head><body>`;
+      html += `<h2>CAHIER JOURNAL — ${j.className || ''}</h2>`;
+      html += `<p style="text-align:center">Semaine du ${new Date(j.weekStartDate).toLocaleDateString('fr-FR')} au ${new Date(j.weekEndDate || j.weekStartDate).toLocaleDateString('fr-FR')}</p>`;
+      html += '<table><thead><tr><th>JOURS</th>';
+      for (const subj of subjects) { html += `<th>${subj}</th>`; }
+      html += '<th>OBSERVATIONS</th></tr></thead><tbody>';
+      for (const day of DAYS) {
+        const dayEntries = entries[day.key] || {};
+        html += `<tr><td><strong>${day.label}</strong></td>`;
+        for (const subj of subjects) {
+          const val = dayEntries[subj] || '';
+          // Strip HTML tags for PDF
+          html += `<td>${val.replace(/<[^>]*>/g, '')}</td>`;
+        }
+        html += `<td>${(dayEntries['observations'] || '').replace(/<[^>]*>/g, '')}</td></tr>`;
+      }
+      html += '</tbody></table>';
+      html += `<p><strong>Observations générales:</strong> ${(j.observations || '').replace(/<[^>]*>/g, '')}</p>`;
+      html += `<div class="signature"><div><p>Visa du Directeur / de la Directrice</p><br><br><p>Signature et cachet</p></div><div><p>Visa du Titulaire</p><br><br><p>Signature</p></div></div>`;
+      html += '</body></html>';
+      return Buffer.from(html, 'utf-8');
+    }
   }
 }

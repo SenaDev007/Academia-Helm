@@ -897,4 +897,28 @@ export class PedagogicalSpaceController {
     });
     res.send(buffer);
   }
+
+  // ─── EXPORT CAHIER JOURNAL (Excel / PDF) ────────────────────────────────
+
+  @Get('cahier-journal/:id/export')
+  async exportCahierJournal(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Query('format') format: string,
+    @Res() res: any,
+  ) {
+    if (!format || (format !== 'excel' && format !== 'pdf')) {
+      throw new BadRequestException('format doit être "excel" ou "pdf"');
+    }
+    const buffer = await this.service.exportCahierJournal(tenantId, id, format);
+    const ext = format === 'excel' ? 'xlsx' : 'pdf';
+    const mimeType = format === 'excel'
+      ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      : 'application/pdf';
+    res.set({
+      'Content-Type': mimeType,
+      'Content-Disposition': `attachment; filename="Cahier_Journal.${ext}"`,
+    });
+    res.send(buffer);
+  }
 }

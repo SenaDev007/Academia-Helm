@@ -154,6 +154,9 @@ const QUALITATIVE_SCALE = [
   { code: 'PS', label: 'Peu Satisfaisant', value: 1 },
 ];
 
+// ⭐ État modifiable pour les annotations qualitatives (l'école peut personnaliser les libellés)
+// Les valeurs (3/2/1) sont fixes, seuls les libellés sont modifiables
+
 // ─── Composant principal ─────────────────────────────────────────────────────
 
 function SettingsContent() {
@@ -185,6 +188,12 @@ function SettingsContent() {
   const [scoreMax, setScoreMax] = useState(20);
   const [passScore, setPassScore] = useState(10);
   const [qualitativeThreshold, setQualitativeThreshold] = useState(6);
+  // ⭐ Libellés des annotations qualitatives (modifiables par l'école, valeurs fixes)
+  const [qualitativeLabels, setQualitativeLabels] = useState({
+    TS: 'Très Satisfaisant',
+    S: 'Satisfaisant',
+    PS: 'Peu Satisfaisant',
+  });
   const [mentions, setMentions] = useState<MentionRule[]>(DEFAULT_MENTIONS);
 
   // Form state — Règles de classement
@@ -568,11 +577,12 @@ function SettingsContent() {
             </CardContent>
           </Card>
 
-          {/* Politique d'absence + Arrondi */}
+          {/* Politique d'absence + Arrondi — PAS pour la maternelle FR (pas de notes numériques) */}
+          {!isMaternelleFR && (
           <Card>
             <CardHeader><CardTitle className="text-md">Politique d'absence & Arrondi</CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="text-xs font-bold text-gray-600 block mb-1">Politique d'absence</label>
                   <select value={absencePolicy} onChange={e => setAbsencePolicy(e.target.value as any)}
@@ -586,9 +596,9 @@ function SettingsContent() {
                   <label className="text-xs font-bold text-gray-600 block mb-1">Mode d'arrondi</label>
                   <select value={roundingMode} onChange={e => setRoundingMode(e.target.value as any)}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                    <option value="HALF_UP">Demi vers le haut (HALF_UP)</option>
-                    <option value="FLOOR">Toujours vers le bas (FLOOR)</option>
-                    <option value="CEIL">Toujours vers le haut (CEIL)</option>
+                    <option value="HALF_UP">Demi vers le haut</option>
+                    <option value="FLOOR">Toujours vers le bas</option>
+                    <option value="CEIL">Toujours vers le haut</option>
                   </select>
                 </div>
                 <div>
@@ -600,6 +610,7 @@ function SettingsContent() {
               </div>
             </CardContent>
           </Card>
+          )}
         </div>
       )}
 
@@ -608,18 +619,26 @@ function SettingsContent() {
         <div className="space-y-4">
           {/* Barème de notation */}
           {isMaternelleFR ? (
-            // ⭐ Maternelle FR : barème qualitatif (TS=3, S=2, PS=1)
+            // ⭐ Maternelle FR : échelle qualitative avec libellés modifiables
             <Card className="border-pink-200">
               <CardHeader>
-                <CardTitle className="text-md">Barème qualitatif (Maternelle FR)</CardTitle>
+                <CardTitle className="text-md">Échelle qualitative (Maternelle FR)</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
                   {QUALITATIVE_SCALE.map(qs => (
                     <div key={qs.code} className="flex items-center gap-3 bg-pink-50 rounded-lg p-2">
                       <span className="px-3 py-1 bg-pink-200 text-pink-800 rounded font-bold text-sm w-12 text-center">{qs.code}</span>
-                      <span className="flex-1 text-sm">{qs.label}</span>
-                      <span className="text-xs text-gray-500">Valeur : {qs.value}</span>
+                      <Input
+                        value={qualitativeLabels[qs.code as keyof typeof qualitativeLabels]}
+                        onChange={e => setQualitativeLabels({
+                          ...qualitativeLabels,
+                          [qs.code]: e.target.value,
+                        })}
+                        className="flex-1 text-sm"
+                        placeholder={qs.label}
+                      />
+                      <span className="text-xs text-gray-500 flex-shrink-0">Valeur : {qs.value} (fixe)</span>
                     </div>
                   ))}
                 </div>
@@ -646,13 +665,16 @@ function SettingsContent() {
                     className="w-20 text-center" />
                   <p className="text-xs text-pink-600 mt-1">
                     Ex : Si 9 domaines et seuil = 6, l'élève réussit s'il a au moins 6 domaines en TS ou S sur 9.
-                    Soit l'équivalent d'une moyenne ≥ 2 (Satisfaisant).
                   </p>
                 </div>
+                <p className="text-xs text-gray-400 mt-3 italic">
+                  ℹ️ Les annotations TS, S et PS sont personnalisables ci-dessus. Les valeurs (3, 2, 1) sont fixes et utilisées pour le calcul en arrière-plan.
+                </p>
               </CardContent>
             </Card>
           ) : (
-            // ⭐ Primaire/Secondaire/Maternelle EN : barème quantitatif
+            // ⭐ Primaire/Secondaire/Maternelle EN : barème quantitatif + mentions
+            <>
             <Card>
               <CardHeader><CardTitle className="text-md">Barème de notation</CardTitle></CardHeader>
               <CardContent>
@@ -672,9 +694,8 @@ function SettingsContent() {
                 </div>
               </CardContent>
             </Card>
-          )}
 
-          {/* Mentions */}
+          {/* Mentions — PAS pour la maternelle FR */}
           <Card>
             <CardHeader>
               <CardTitle className="text-md flex items-center justify-between">
@@ -709,6 +730,8 @@ function SettingsContent() {
               </div>
             </CardContent>
           </Card>
+            </>
+          )}
         </div>
       )}
 
@@ -732,9 +755,9 @@ function SettingsContent() {
                 <label className="text-xs font-bold text-gray-600 block mb-1">Gestion des ex aequo</label>
                 <select value={tieMode} onChange={e => setTieMode(e.target.value as any)}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                  <option value="DENSE_RANK">DENSE_RANK — 1, 2, 2, 3 (pas de saut)</option>
-                  <option value="COMPETITION_RANK">COMPETITION — 1, 2, 2, 4 (saut)</option>
-                  <option value="UNIQUE">UNIQUE — pas d'ex aequo (départage)</option>
+                  <option value="DENSE_RANK">Sans saut — 1er, 2e, 2e, 3e (ex aequo conservés)</option>
+                  <option value="COMPETITION_RANK">Avec saut — 1er, 2e, 2e, 4e (ex aequo avec saut)</option>
+                  <option value="UNIQUE">Départage — pas d'ex aequo (chaque élève a un rang unique)</option>
                 </select>
               </div>
 

@@ -498,6 +498,14 @@ function SettingsContent() {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {/* En-têtes de colonnes */}
+              <div className="flex items-center gap-2 mb-2 px-2 text-xs font-bold text-gray-500 uppercase">
+                <span className="w-24 flex-shrink-0">Code</span>
+                <span className="flex-1">Nom de l'évaluation</span>
+                {!isMaternelleFR && <span className="w-20 text-center flex-shrink-0">Barème max</span>}
+                {!isMaternelleFR && <span className="w-20 text-center flex-shrink-0">Coefficient</span>}
+                <span className="w-10"></span>
+              </div>
               <div className="space-y-2">
                 {assessmentTypes.map((at, i) => (
                   <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
@@ -507,13 +515,18 @@ function SettingsContent() {
                     <Input placeholder="Nom de l'évaluation" value={at.label}
                       onChange={e => updateAssessmentType(i, 'label', e.target.value)}
                       className="flex-1 min-w-0 text-sm" />
-                    <Input type="number" placeholder="Max" value={at.maxScore}
-                      onChange={e => updateAssessmentType(i, 'maxScore', Number(e.target.value))}
-                      className="w-20 text-center text-sm flex-shrink-0" />
-                    <Input type="number" placeholder="Coef" value={at.weight}
-                      onChange={e => updateAssessmentType(i, 'weight', Number(e.target.value))}
-                      className="w-20 text-center text-sm flex-shrink-0" disabled={isPrimaire}
-                      title={isPrimaire ? 'Primaire : coefficient toujours 1' : ''} />
+                    {/* Max et Coef masqués pour la maternelle FR (pas de notes numériques) */}
+                    {!isMaternelleFR && (
+                      <Input type="number" placeholder="Max" value={at.maxScore}
+                        onChange={e => updateAssessmentType(i, 'maxScore', Number(e.target.value))}
+                        className="w-20 text-center text-sm flex-shrink-0" />
+                    )}
+                    {!isMaternelleFR && (
+                      <Input type="number" placeholder="Coef" value={at.weight}
+                        onChange={e => updateAssessmentType(i, 'weight', Number(e.target.value))}
+                        className="w-20 text-center text-sm flex-shrink-0" disabled={isPrimaire}
+                        title={isPrimaire ? 'Primaire : coefficient toujours 1' : ''} />
+                    )}
                     <Button size="sm" variant="ghost" onClick={() => removeAssessmentType(i)} className="flex-shrink-0">
                       <Trash2 className="w-4 h-4 text-rose-500" />
                     </Button>

@@ -14191,16 +14191,20 @@ model StudentTransferStatusHistory {
 /// Configuration académique d'évaluation pour un établissement, une année scolaire et un profil.
 /// Contient toutes les règles : types d'évaluations, formules de calcul, bulletins, passage, classements.
 model SchoolAcademicSettings {
-  id            String                     @id @default(uuid())
-  tenantId      String
-  schoolYearId  String
+  id             String                     @id @default(uuid())
+  tenantId       String
+  schoolYearId   String
   /// Profil pays/système (ex: BENIN_NATIONAL, CAMEROUN_FRANCOPHONE, CUSTOM)
-  countryCode   String
-  systemCode    String?
-  cycleCode     String?
-  levelCode     String?
-  classId       String?
-  name          String
+  countryCode    String
+  systemCode     String?
+  cycleCode      String?
+  levelCode      String?
+  classId        String?
+  /// Piste linguistique : FR, EN, ou null (commun aux deux pistes)
+  language       String?
+  /// Cycle secondaire : CYCLE_I (6eme->3eme), CYCLE_II (2nde->Terminale)
+  secondaryCycle String?
+  name           String
   description   String?
   status        AcademicSettingsStatus     @default(DRAFT)
   version       Int                        @default(1)
@@ -14229,6 +14233,8 @@ model SchoolAcademicSettings {
   @@index([countryCode])
   @@index([status])
   @@index([isActive])
+  @@index([levelCode])
+  @@index([language])
   @@map("school_academic_settings")
 }
 

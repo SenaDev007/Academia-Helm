@@ -54,11 +54,10 @@ export default function TeacherDashboardPage() {
   const totalGirls = classes.reduce((sum, c) => sum + (c.girls || 0), 0);
 
   const modules = [
-    { href: "/app/teacher/pedagogy", label: "Espace Pédagogique", icon: BookOpen, desc: "Cahier journal, fiches pédagogiques, registre d'appel, cahier de texte, devoirs", color: "bg-blue-50 text-blue-700 border-blue-200" },
-    { href: "/app/teacher/exams", label: "Examens & Notes", icon: FileEdit, desc: "Mes évaluations, saisie des notes, bulletins", color: "bg-rose-50 text-rose-700 border-rose-200" },
     { href: "/app/teacher/timetable", label: "Emploi du Temps", icon: CalendarDays, desc: "Consulter votre emploi du temps", color: "bg-purple-50 text-purple-700 border-purple-200" },
-    { href: "/app/teacher/classes", label: "Mes Classes", icon: Users, desc: "Liste des élèves, effectifs, suivi par classe", color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+    { href: "/app/teacher/pedagogy", label: "Espace Pédagogique", icon: BookOpen, desc: "Cahier journal, fiches pédagogiques, registre d'appel, cahier de texte, devoirs", color: "bg-blue-50 text-blue-700 border-blue-200" },
     { href: "/app/teacher/tasks", label: "Travaux & Suivi", icon: ClipboardList, desc: "Tâches assignées, suivi pédagogique", color: "bg-amber-50 text-amber-700 border-amber-200" },
+    { href: "/app/teacher/exams", label: "Examens & Notes", icon: FileEdit, desc: "Mes évaluations, saisie des notes, bulletins", color: "bg-rose-50 text-rose-700 border-rose-200" },
     { href: "/app/teacher/educast", label: "EduCast", icon: Video, desc: "Vidéos pédagogiques, podcasts", color: "bg-pink-50 text-pink-700 border-pink-200" },
     { href: "/app/teacher/library", label: "Bibliothèque", icon: Library, desc: "Ressources pédagogiques", color: "bg-slate-50 text-slate-700 border-slate-200" },
     { href: "/app/teacher/orion", label: "ORION", icon: BarChart3, desc: "Alertes pédagogiques", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },

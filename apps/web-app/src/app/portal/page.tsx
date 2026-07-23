@@ -19,29 +19,8 @@
  * ============================================================================
  */
 
-// ⚠️ FORCE-DYNAMIC : cette page utilise React Query (usePublicSchools via
-// SchoolSearch + BeninMap). Le prerendering statique échoue car QueryClient
-// n'est pas disponible hors d'un Provider React. Force-dynamic désactive le
-// prerender et laisse la page s'hydrider côté client uniquement.
-export const dynamic = 'force-dynamic';
-
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-
-// ⭐ QueryClient LOCAL pour la page /portal.
-// Raison : la page /portal n'est PAS dans le layout /app/* qui fournit
-// QueryProvider. Sans ce wrapper local, usePublicSchools() (utilisé par
-// SchoolSearch et BeninMap via useSchoolsMap) crashe avec "No QueryClient set".
-const portalQueryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 5 * 60 * 1000, // 5 min — la liste des écoles change rarement
-      gcTime: 30 * 60 * 1000,
-      retry: 1,
-      refetchOnWindowFocus: false,
-    },
-  },
-});
 import {
   Building2,
   GraduationCap,
@@ -67,6 +46,27 @@ import { persistClientSession, markFreshLogin } from '@/lib/auth/client-access-t
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getModalMotion, getMotionDuration } from '@/lib/motion/presets';
 import { useFetchWithTimeout } from '@/lib/hooks/use-fetch-with-timeout';
+
+// ⚠️ FORCE-DYNAMIC : cette page utilise React Query (usePublicSchools via
+// SchoolSearch + BeninMap). Le prerendering statique échoue car QueryClient
+// n'est pas disponible hors d'un Provider React. Force-dynamic désactive le
+// prerender et laisse la page s'hydrider côté client uniquement.
+export const dynamic = 'force-dynamic';
+
+// ⭐ QueryClient LOCAL pour la page /portal.
+// Raison : la page /portal n'est PAS dans le layout /app/* qui fournit
+// QueryProvider. Sans ce wrapper local, usePublicSchools() (utilisé par
+// SchoolSearch et BeninMap via useSchoolsMap) crashe avec "No QueryClient set".
+const portalQueryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 min — la liste des écoles change rarement
+      gcTime: 30 * 60 * 1000,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 type PortalType = 'PLATFORM' | 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC' | null;
 

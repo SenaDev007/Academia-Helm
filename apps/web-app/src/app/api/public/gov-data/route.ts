@@ -124,7 +124,19 @@ const DEPT_CODE_MAP: Record<string, string> = {
   ZOU: 'ZO',
 };
 
-/* ── Cache en mémoire avec TTL ──────────────────────────────────────── */
+/* ── Cache Redis (Upstash) avec fallback in-memory ──────────────────── */
+/*
+ * ⚠️ PERFORMANCE — Avant : cache in-memory `let cachedData` uniquement.
+ * Problème : sur Vercel, chaque cold start de serverless function perdait
+ * le cache → le premier visiteur payait 15-30s d'appels aux APIs gov.
+ *
+ * Maintenant : cache Upstash Redis (persistant, partagé entre instances)
+ * + fallback in-memory si Upstash n'est pas configuré.
+ *
+ * Variables d'env requises (déjà utilisées par /api/leads et rank-tracker) :
+ *   - UPSTASH_REDIS_REST_URL
+ *   - UPSTASH_REDIS_REST_TOKEN
+ */
 
 interface CachedData {
   primaire: EmpApiResponse | null;
@@ -134,8 +146,53 @@ interface CachedData {
   secondaireGeneratedAt: string | null;
 }
 
+// Fallback in-memory (si Upstash indisponible)
 let cachedData: CachedData | null = null;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 heures
+const REDIS_KEY = 'gov-data:cache';
+const REDIS_TTL_SECONDS = 6 * 60 * 60; // 6h
+
+// ─── Helpers Upstash Redis (REST API, pas de SDK requis) ────────────────
+async function redisGet<T>(): Promise<T | null> {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  try {
+    const res = await fetch(`${url}/get/${REDIS_KEY}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      // Pas de cache Next.js pour cette requête interne
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!json?.result) return null;
+    return JSON.parse(json.result) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function redisSet<T>(value: T): Promise<void> {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return;
+  try {
+    await fetch(`${url}/set/${REDIS_KEY}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        value: JSON.stringify(value),
+        expire: REDIS_TTL_SECONDS,
+      }),
+      cache: 'no-store',
+    });
+  } catch {
+    // Silencieux — fallback in-memory reste actif
+  }
+}
 
 /* ── Fonctions utilitaires ──────────────────────────────────────────── */
 
@@ -164,21 +221,34 @@ async function fetchWithTimeout(url: string, timeoutMs = 15000): Promise<Respons
   }
 }
 
+/* ─── Construit la réponse JSON à partir d'un CachedData ──────────────── */
+function buildCacheResponse(cached: CachedData, source: 'cache' | 'cache-fallback', warning?: string) {
+  const body: any = {
+    source,
+    fetchedAt: new Date(cached.fetchedAt).toISOString(),
+    primaireGeneratedAt: cached.primaireGeneratedAt,
+    secondaireGeneratedAt: cached.secondaireGeneratedAt,
+    primaire: cached.primaire?.data ?? null,
+    secondaire: cached.secondaire?.data ?? null,
+  };
+  if (warning) body.warning = warning;
+  return NextResponse.json(body);
+}
+
 /* ── Handler GET ────────────────────────────────────────────────────── */
 
 export async function GET() {
   const now = Date.now();
 
-  // Vérifier le cache
+  // 1. Vérifier le cache Upstash Redis (persistant entre cold starts)
+  const redisCached = await redisGet<CachedData>();
+  if (redisCached && (now - redisCached.fetchedAt) < CACHE_TTL_MS) {
+    return buildCacheResponse(redisCached, 'cache');
+  }
+
+  // 2. Fallback : vérifier le cache in-memory (en cas d'Upstash indispo)
   if (cachedData && (now - cachedData.fetchedAt) < CACHE_TTL_MS) {
-    return NextResponse.json({
-      source: 'cache',
-      fetchedAt: new Date(cachedData.fetchedAt).toISOString(),
-      primaireGeneratedAt: cachedData.primaireGeneratedAt,
-      secondaireGeneratedAt: cachedData.secondaireGeneratedAt,
-      primaire: cachedData.primaire?.data ?? null,
-      secondaire: cachedData.secondaire?.data ?? null,
-    });
+    return buildCacheResponse(cachedData, 'cache');
   }
 
   // Fetch les deux APIs en parallèle
@@ -192,30 +262,31 @@ export async function GET() {
   const primaire = primaireResult.status === 'fulfilled' ? primaireResult.value : null;
   const secondaire = secondaireResult.status === 'fulfilled' ? secondaireResult.value : null;
 
-  // Si les deux ont échoué, servir le cache si disponible
-  if (!primaire && !secondaire && cachedData) {
-    return NextResponse.json({
-      source: 'cache-fallback',
-      warning: 'APIs gouvernementales indisponibles — données en cache',
-      fetchedAt: new Date(cachedData.fetchedAt).toISOString(),
-      primaireGeneratedAt: cachedData.primaireGeneratedAt,
-      secondaireGeneratedAt: cachedData.secondaireGeneratedAt,
-      primaire: cachedData.primaire?.data ?? null,
-      secondaire: cachedData.secondaire?.data ?? null,
-    });
+  // Si les deux ont échoué, servir le cache si disponible (Redis puis in-memory)
+  if (!primaire && !secondaire) {
+    if (redisCached) {
+      return buildCacheResponse(redisCached, 'cache-fallback', 'APIs gouvernementales indisponibles — données en cache');
+    }
+    if (cachedData) {
+      return buildCacheResponse(cachedData, 'cache-fallback', 'APIs gouvernementales indisponibles — données en cache');
+    }
   }
 
-  // Mettre à jour le cache
+  // Mettre à jour les caches (Redis + in-memory)
   const primaireGeneratedAt = primaire?.data?.generated_at ?? null;
   const secondaireGeneratedAt = secondaire?.data?.meta?.generated_at ?? null;
 
-  cachedData = {
+  const newCache: CachedData = {
     primaire,
     secondaire,
     fetchedAt: now,
     primaireGeneratedAt,
     secondaireGeneratedAt,
   };
+
+  // Écrire dans Redis (fire-and-forget) + in-memory
+  void redisSet(newCache);
+  cachedData = newCache;
 
   return NextResponse.json({
     source: 'live',

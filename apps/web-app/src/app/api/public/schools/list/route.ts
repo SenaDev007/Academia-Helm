@@ -71,9 +71,27 @@ export async function GET(_request: NextRequest) {
     }
 
     const data = await response.json();
+
+    // ⚠️ PERFORMANCE — Strip les logos base64 de la liste publique.
+    // Les logos peuvent faire 1-2MB chacun en base64. Pour 2 écoles, ça fait
+    // 3-4MB de JSON juste pour la liste — Vercel peut tronquer la réponse
+    // ou mettre trop de temps à la transmettre.
+    // Le frontend n'a PAS besoin du logo dans la liste : il peut le charger
+    // séparément via <img src="..."> avec lazy-loading quand l'école est
+    // sélectionnée (route /api/public/schools/by-subdomain/:slug).
+    const rawList = Array.isArray(data) ? data
+      : (data?.schools ?? data?.tenants ?? []);
+    const strippedList = rawList.map((school: any) => {
+      if (!school) return school;
+      // Conserver toutes les méta-données sauf le logo base64
+      // (on garde logoUrl: null pour que le frontend sache qu'il faut
+      // charger le logo séparément si nécessaire)
+      return { ...school, logoUrl: school.logoUrl ? undefined : null };
+    });
+
     // ⚠️ Forcer les headers de cache côté client aussi (10s) pour éviter
     // que le navigateur ne refasse la même requête immédiatement.
-    return NextResponse.json(data, {
+    return NextResponse.json(strippedList, {
       headers: {
         'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=30',
       },

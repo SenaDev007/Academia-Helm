@@ -18,6 +18,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { Search, Building2, MapPin, GraduationCap, Loader, CheckCircle, X, RefreshCw, AlertCircle } from 'lucide-react';
 import Image from 'next/image';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { usePublicSchools } from '@/lib/query/use-public-schools';
 
 interface School {
   id: string;
@@ -48,80 +49,21 @@ export default function SchoolSearch({
 }: SchoolSearchProps) {
   const reduceMotion = useReducedMotion();
   const [searchQuery, setSearchQuery] = useState('');
-  const [allSchools, setAllSchools] = useState<School[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Liste des établissements : route App Router → BFF qui appelle Nest
-  // ⚠️ PERFORMANCE : Timeout réduit de 35s à 8s pour matcher le timeout BFF.
-  // Si le BFF timeout (8s), il renvoie déjà une liste vide — pas besoin
-  // d'attendre 35s côté client. Plus de fallback /search non plus : c'est le
-  // même backend, si /list tombe /search tombe aussi, ça ajoute juste 10s
-  // de spinner inutile. L'UI affiche un bouton "Réessayer" à la place.
-  const loadAllSchools = async () => {
-    const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 8000);
+  // ⭐ Hook React Query partagé — cache 5 min, partagé avec useSchoolsMap
+  // et useSchoolBranding. Plus qu'UN SEUL fetch pour toute l'app.
+  const { schools: allSchools, isLoading, error: queryError, refetch } = usePublicSchools();
 
-    setIsLoading(true);
-    setFetchError(null);
-    try {
-      const response = await fetch('/api/public/schools/list', {
-        signal: abortController.signal,
-      });
-      clearTimeout(timeoutId);
-      if (response.ok) {
-        const data = await response.json();
-        // ⚠️ Le BFF peut renvoyer { schools: [], error: 'timeout' } en cas
-        // de timeout backend — traiter ce cas comme une liste vide.
-        if (data?.error === 'timeout' || data?.error === 'backend_timeout') {
-          console.warn('[SchoolSearch] BFF returned timeout, showing empty list');
-          setAllSchools([]);
-          setFetchError('Le serveur met trop de temps à répondre. Cliquez sur Réessayer.');
-          return;
-        }
-        if (Array.isArray(data)) {
-          setAllSchools(data);
-        } else if (data && Array.isArray(data.schools)) {
-          setAllSchools(data.schools);
-        } else if (data && Array.isArray(data.tenants)) {
-          setAllSchools(data.tenants);
-        } else {
-          console.warn('[SchoolSearch] Unexpected response format:', data);
-          setAllSchools([]);
-        }
-      } else {
-        const errorBody = await response.json().catch(() => null);
-        console.error('[SchoolSearch] /list failed:', response.status, errorBody);
+  // Dériver un message d'erreur lisible
+  const fetchError: string | null = queryError
+    ? 'Erreur de connexion au serveur. Cliquez sur Réessayer.'
+    : (allSchools.length === 0 && !isLoading ? 'Aucune école trouvée.' : null);
 
-        const hint = errorBody?._debug?.hint || '';
-        const errorMsg = response.status === 403
-          ? 'Accès refusé par le serveur. Réessayez dans quelques instants.'
-          : response.status === 504
-            ? 'Le serveur met trop de temps à répondre. Réessayez dans quelques instants.'
-            : `Erreur ${response.status}: impossible de charger les établissements`;
-        setFetchError(hint ? `${errorMsg} ${hint}` : errorMsg);
-      }
-    } catch (error: any) {
-      clearTimeout(timeoutId);
-      if (error.name === 'AbortError') {
-        console.warn('[SchoolSearch] Schools list fetch timed out (8s)');
-        setFetchError('Le serveur met trop de temps à répondre. Cliquez sur Réessayer.');
-      } else {
-        console.error('[SchoolSearch] Error loading schools list:', error);
-        setFetchError('Erreur de connexion au serveur.');
-      }
-    } finally {
-      setIsLoading(false);
-    }
+  const loadAllSchools = () => {
+    refetch();
   };
-
-  /** Fallback supprimé — voir commentaire dans loadAllSchools. */
-
-  useEffect(() => {
-    loadAllSchools();
-  }, []);
 
   // Recherche intelligente avec debounce
   useEffect(() => {
@@ -137,11 +79,11 @@ export default function SchoolSearch({
   // Filtrer les écoles selon la recherche
   const filteredSchools = useMemo(() => {
     if (!searchQuery || searchQuery.trim().length === 0) {
-      return allSchools;
+      return allSchools as School[];
     }
 
     const query = searchQuery.toLowerCase().trim();
-    return allSchools.filter((school) => {
+    return (allSchools as School[]).filter((school) => {
       const nameMatch = school.name?.toLowerCase().includes(query);
       const cityMatch = school.city?.toLowerCase().includes(query);
       const slugMatch = school.slug?.toLowerCase().includes(query);

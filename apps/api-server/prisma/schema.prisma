@@ -833,6 +833,7 @@ model AcademicPeriod {
   updatedAt      DateTime           @updatedAt
   academicYear   AcademicYear       @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   tenant         Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  evaluations    Evaluation[]
 
   @@unique([academicYearId, periodOrder])
   @@index([tenantId, academicYearId])
@@ -14591,10 +14592,13 @@ enum AcademicSettingsStatus {
 }
 
 enum EvaluationStatus {
+  DRAFT
   PLANNED
   OPEN_FOR_GRADING
   SUBMITTED
   VALIDATED
+  LOCKED
+  CANCELLED
 }
 
 enum GradeInstitutionalStatus {
@@ -14973,9 +14977,12 @@ model Evaluation {
   periodId         String
   evaluationTypeId String
   title            String?
+  description      String?
   evaluationDate   DateTime              @default(now())
   maxScore         Float                 @default(20.0)
   coefficient      Float                 @default(1.0)
+  teacherId        String?
+  gradeScaleId     String?
   status           EvaluationStatus      @default(PLANNED)
   createdBy        String?
   validatedById    String?
@@ -14985,8 +14992,9 @@ model Evaluation {
   academicYear     AcademicYear          @relation(fields: [academicYearId], references: [id])
   class            Class                 @relation(fields: [classId], references: [id])
   evaluationType   EvaluationType        @relation(fields: [evaluationTypeId], references: [id])
-  period           Quarter               @relation(fields: [periodId], references: [id])
+  period           AcademicPeriod        @relation(fields: [periodId], references: [id])
   subject          Subject               @relation(fields: [subjectId], references: [id])
+  gradeScale       GradeScale?           @relation(fields: [gradeScaleId], references: [id], onDelete: SetNull)
   tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   grades           Grade[]
   validationBatch  GradeValidationBatch?
@@ -14998,6 +15006,7 @@ model Evaluation {
   @@index([subjectId])
   @@index([periodId])
   @@index([status])
+  @@index([teacherId])
   @@map("evaluations")
 }
 
@@ -15005,6 +15014,9 @@ model EvaluationType {
   id                 String       @id @default(uuid())
   tenantId           String
   name               String
+  code               String?
+  schoolLevelId      String?
+  isSystem           Boolean      @default(false)
   defaultMaxScore    Float        @default(20.0)
   defaultCoefficient Float        @default(1.0)
   createdAt          DateTime     @default(now())
@@ -15012,19 +15024,23 @@ model EvaluationType {
   tenant             Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   evaluations        Evaluation[]
 
-  @@unique([tenantId, name])
+  // Unique par (tenantId, code, schoolLevelId) — permet d'avoir "Devoir" pour
+  // PRIMAIRE et SECONDAIRE sans conflit (mêmes codes, niveaux différents).
+  @@unique([tenantId, code, schoolLevelId])
+  @@index([schoolLevelId])
   @@map("evaluation_types")
 }
 
 model GradeScale {
-  id        String   @id @default(uuid())
-  tenantId  String
-  minGrade  Float
-  maxGrade  Float?
-  mention   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id         String       @id @default(uuid())
+  tenantId   String
+  minGrade   Float
+  maxGrade   Float?
+  mention    String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  evaluations Evaluation[]
 
   @@index([tenantId])
   @@map("grade_scales")

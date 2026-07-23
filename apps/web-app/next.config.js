@@ -36,8 +36,13 @@ const nextConfig = {
   
   // ✅ Optimisation des images — PageSpeed-optimized
   images: {
-    // ✅ Vercel gère l'optimisation via son CDN — pas besoin de double traitement
-    unoptimized: isVercel ? true : false,
+    // ⚠️ PERFORMANCE — Activer next/image MÊME sur Vercel.
+    // Avant : unoptimized=true sur Vercel → next/image devenait un <img> plain,
+    // pas d'optimisation AVIF/WebP, pas de lazy-loading natif, pas de resizing.
+    // Vercel Image Optimization est le service correct pour ça — l'activer.
+    // L'optimisation CDN de Vercel se fait DEHORS de next/image, c'est
+    // complémentaire, pas redondant.
+    unoptimized: false,
     formats: ['image/avif', 'image/webp'],
     // Tailles optimisées pour réduire le poids sans sacrifier la qualité
     deviceSizes: [640, 828, 1080, 1200, 1920],

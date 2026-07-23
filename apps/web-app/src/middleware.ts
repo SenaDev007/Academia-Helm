@@ -710,10 +710,14 @@ export async function middleware(request: NextRequest) {
         tenantResponse.headers.set('X-Portal-Type', user.portalType);
       }
 
-      // Cache the resolved tenant info in cookies for future requests (2 hours)
-      // Étendu de 30min à 2h pour réduire les appels API et éviter les boucles
-      // de redirection quand l'API est temporairement down.
-      const maxAge = 2 * 60 * 60; // 2 hours
+      // Cache the resolved tenant info in cookies for future requests (7 days).
+      // ⚠️ PERFORMANCE — Étendu de 2h à 7j pour réduire les appels API.
+      // Raison : le tenant change TRÈS rarement en cours de session (un utilisateur
+      // ne change pas d'école en cours de journée). 7j correspond à la TTL du
+      // cookie de session, donc tant que l'utilisateur est connecté, le tenant
+      // reste caché → plus aucun appel API /tenants/by-subdomain en middleware.
+      // Économie : ~1 appel API par navigation /app/* (au premier chargement).
+      const maxAge = 7 * 24 * 60 * 60; // 7 days
       tenantResponse.cookies.set('x-resolved-tenant-id', tenant.id, { path: '/', maxAge, sameSite: 'lax' });
       tenantResponse.cookies.set('x-resolved-tenant-slug', tenant.slug, { path: '/', maxAge, sameSite: 'lax' });
       tenantResponse.cookies.set('x-resolved-tenant-subdomain', tenantIdentifier, { path: '/', maxAge, sameSite: 'lax' });

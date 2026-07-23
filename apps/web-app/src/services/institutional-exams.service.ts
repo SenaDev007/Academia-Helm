@@ -101,6 +101,37 @@ export const institutionalExamsService = {
     return response.data;
   },
 
+  // ─── Méthodes CRUD complètes (Module Examen — Onglet Évaluations) ───────
+  async getEvaluation(id: string) {
+    const response = await apiClient.get(`/institutional-exams/evaluations/${id}`);
+    return response.data;
+  },
+
+  async updateEvaluation(id: string, data: any) {
+    const response = await apiClient.patch(`/institutional-exams/evaluations/${id}`, data);
+    return response.data;
+  },
+
+  async deleteEvaluation(id: string) {
+    const response = await apiClient.delete(`/institutional-exams/evaluations/${id}`);
+    return response.data;
+  },
+
+  async openEvaluation(id: string) {
+    const response = await apiClient.post(`/institutional-exams/evaluations/${id}/open`);
+    return response.data;
+  },
+
+  async validateEvaluation(id: string) {
+    const response = await apiClient.patch(`/institutional-exams/evaluations/${id}/validate`);
+    return response.data;
+  },
+
+  async cancelEvaluation(id: string, reason?: string) {
+    const response = await apiClient.post(`/institutional-exams/evaluations/${id}/cancel`, { reason });
+    return response.data;
+  },
+
   /**
    * GRADES — avec fallback offline
    */

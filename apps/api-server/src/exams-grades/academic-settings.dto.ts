@@ -71,6 +71,16 @@ export class CreateAcademicSettingsDto {
   @IsNotEmpty()
   schoolYearId: string;
 
+  /** ⭐ Injecté par AcademicYearEnforcementInterceptor — accepté mais ignoré */
+  @IsString()
+  @IsOptional()
+  academicYearId?: string;
+
+  /** ⭐ Injecté par le frontend (legacy) — accepté mais ignoré */
+  @IsString()
+  @IsOptional()
+  status?: string;
+
   /**
    * Full academic config object.
    * Expected shape:
@@ -136,6 +146,16 @@ export class UpdateAcademicSettingsDto {
   @IsString()
   @IsOptional()
   schoolYearId?: string;
+
+  /** ⭐ Injecté par AcademicYearEnforcementInterceptor — accepté mais ignoré */
+  @IsString()
+  @IsOptional()
+  academicYearId?: string;
+
+  /** ⭐ Injecté par le frontend (legacy) — accepté mais ignoré */
+  @IsString()
+  @IsOptional()
+  status?: string;
 
   @IsObject()
   @IsOptional()

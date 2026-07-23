@@ -340,7 +340,7 @@ function SettingsContent() {
       if (settingsId) {
         await academicSettingsService.update(settingsId, payload);
       } else {
-        const result = await academicSettingsService.create({ ...payload, status: 'DRAFT' });
+        const result = await academicSettingsService.create(payload);
         if (result?.id) setSettingsId(result.id);
       }
       toast.success('✅ Paramètres enregistrés');

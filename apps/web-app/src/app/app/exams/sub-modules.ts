@@ -2,6 +2,11 @@
  * ============================================================================
  * EXAMS MODULE - SUB-MODULES CONFIGURATION
  * ============================================================================
+ *
+ * Les onglets sont affichés APRÈS sélection du niveau scolaire + piste linguistique.
+ * L'onglet "Agrégation & Stats Globales" a été supprimé.
+ * L'onglet "Paramétrage" a été renommé en "Paramètres" et refondu.
+ * ============================================================================
  */
 
 import {
@@ -59,12 +64,6 @@ export const EXAMS_SUB_MODULES = [
     label: 'Bulletins',
     href: '/app/exams/bulletins',
     icon: FileText
-  },
-  {
-    id: 'aggregation',
-    label: 'Agrégation & Stats Globales',
-    href: '/app/exams/aggregation',
-    icon: BarChart3
   },
   {
     id: 'analytics',

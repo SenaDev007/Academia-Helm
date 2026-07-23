@@ -36,6 +36,7 @@ import { institutionalExamsService } from '@/services/institutional-exams.servic
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { EXAMS_SUB_MODULES } from './sub-modules';
+import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
@@ -88,6 +89,7 @@ export default function ExamsDashboardPage() {
       content={{
         layout: 'full',
         children: (
+          <ExamModuleEntry>
           <div className="space-y-6 p-1">
             {/* KPI Section */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -290,6 +292,7 @@ export default function ExamsDashboardPage() {
               </div>
             </div>
           </div>
+          </ExamModuleEntry>
         ),
       }}
     />

@@ -1,71 +1,45 @@
+'use client';
+
 /**
  * ============================================================================
- * MODULE EXAMENS : PARAMÉTRAGE ACADÉMIQUE
+ * MODULE EXAMEN — ONGLET PARAMÈTRES (Refonte complète)
+ * ============================================================================
+ *
+ * 4 sous-onglets :
+ *   1. Règles de calcul — Types d'évaluation + formules + politique d'absence + arrondi
+ *   2. Barèmes & Mentions — Barème + mentions configurables + échelle qualitative maternelle
+ *   3. Règles de classement — Portée + ex aequo + exclusion absents + visibilité rang
+ *   4. Options du Bulletin — Moyenne/classe/mention/rang/absences/signatures/cachet/logo/QR
+ *
+ * Scope strict : tenant × année × niveau scolaire × piste linguistique
+ * Le niveau scolaire et la piste linguistique viennent de l'URL (?level=PRIMAIRE&lang=FR)
  * ============================================================================
  */
 
-'use client';
-
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
-  Settings,
-  Globe,
-  BookOpen,
-  Calculator,
-  FileText,
-  Plus,
-  Trash2,
-  Edit,
-  CheckCircle,
-  XCircle,
-  Lock,
-  Archive,
-  Copy,
-  Play,
-  BarChart3,
-  Award,
-  Shield,
-  ChevronRight,
-  AlertTriangle,
-  Loader2,
-  Save,
-  Zap,
-  Star,
-  GraduationCap,
-  Check,
-  Info,
-  Users,
-  RefreshCw,
+  Settings, Save, Loader2, RefreshCw, Zap, Plus, Trash2, Calculator,
+  Award, Trophy, FileText, ChevronRight, AlertCircle, CheckCircle2,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { ModuleContainer } from '@/components/modules/blueprint';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import { EXAMS_SUB_MODULES } from '../sub-modules';
-import { academicSettingsService } from '@/services/academic-settings.service';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useBilingual } from '@/contexts/BilingualContext';
+import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
+import { academicSettingsService } from '@/services/academic-settings.service';
+import { EXAMS_SUB_MODULES } from '../sub-modules';
+import { toast } from 'sonner';
 
-// ─── Types ─────────────────────────────────────────────────────────────────
-
-type SettingStatus = 'DRAFT' | 'ACTIVE' | 'LOCKED' | 'ARCHIVED';
+// ─── Types d'évaluation par défaut selon le niveau ─────────────────────────
 
 interface AssessmentType {
-  id: string;
   code: string;
   label: string;
   maxScore: number;
@@ -84,421 +58,690 @@ interface MentionRule {
   appreciation: string;
 }
 
-interface RankingRule {
-  id: string;
-  scope: 'CLASS' | 'LEVEL' | 'SCHOOL';
-  allowTies: boolean;
-  excludeAbsentees: boolean;
-}
+const DEFAULT_ASSESSMENT_TYPES: Record<string, AssessmentType[]> = {
+  MATERNELLE: [
+    { code: 'EM1', label: 'Évaluation mensuelle 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+    { code: 'EM2', label: 'Évaluation mensuelle 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+    { code: 'EC', label: 'Évaluation certificative', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+  ],
+  PRIMAIRE: [
+    { code: 'EM1', label: 'Évaluation mensuelle 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+    { code: 'EM2', label: 'Évaluation mensuelle 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+    { code: 'EC', label: 'Évaluation certificative', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+  ],
+  SECONDAIRE: [
+    { code: 'INT1', label: 'Interrogation 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+    { code: 'INT2', label: 'Interrogation 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+    { code: 'DS1', label: 'Devoir surveillé 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+    { code: 'DS2', label: 'Devoir surveillé 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+  ],
+};
 
-interface AcademicSettingConfig {
-  id: string;
-  status: SettingStatus;
-  schoolYearId?: string;
-  country: string;
-  educationSystem: string;
-  gradingMode: string;
-  periodType: string;
-  scoreMin: number;
-  scoreMax: number;
-  scoreDecimals: number;
-  assessmentTypes: AssessmentType[];
-  subjectAverageFormula: string;
-  generalAverageFormula: string;
-  mentions: MentionRule[];
-  rankingRules: RankingRule[];
-  calculationRules?: {
-    subjectAverage: { expression: string; type?: string };
-    generalAverage: { expression?: string; type?: string };
-    promotionRules: Array<{ condition: string; decision: string; threshold: number }>;
-    appreciationScale: any[];
-  };
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-// ─── Default mock data ──────────────────────────────────────────────────────
-
-const DEFAULT_ASSESSMENT_TYPES: AssessmentType[] = [
-  { id: '1', code: 'DEV', label: 'Devoir surveillé', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-  { id: '2', code: 'COMP', label: 'Composition', maxScore: 20, weight: 2, required: true, includedInAverage: true, visibleOnReportCard: true },
-  { id: '3', code: 'INT', label: 'Interrogation', maxScore: 10, weight: 0.5, required: false, includedInAverage: true, visibleOnReportCard: false },
-];
+const DEFAULT_FORMULAS: Record<string, { subject: string; general: string; description: string }> = {
+  MATERNELLE: {
+    subject: 'Synthèse qualitative : TS=3, S=2, PS=1 — seuil de réussite (TS+S) ≥ seuil',
+    general: 'Somme qualitative par domaine',
+    description: 'Maternelle : évaluation qualitative TS/S/PS. Pas de moyenne numérique. Réussite si (TS+S) ≥ seuil fixé.',
+  },
+  PRIMAIRE: {
+    subject: 'CM(max 18) + CP(max 2) = /20',
+    general: 'SUM(moyenne_matière) / COUNT(matières)',
+    description: 'Primaire : CM (Critère Maximal, sur 18) + CP (Critère de Perfectionnement, sur 2) = note /20. CP obtenu seulement si CM ≥ 10. Moyenne générale = moyenne arithmétique (coefficient 1 partout).',
+  },
+  SECONDAIRE: {
+    subject: '((INT1 + INT2) / 2 + DS1 + DS2) / 3',
+    general: 'SUM(moyenne_matière × coefficient) / SUM(coefficients)',
+    description: 'Secondaire : Moyenne interros = (INT1 + INT2) / 2, puis note = (Moy_interros + DS1 + DS2) / 3. Avec coefficient : note × coef. Moyenne générale = somme pondérée / somme coefficients.',
+  },
+};
 
 const DEFAULT_MENTIONS: MentionRule[] = [
   { id: '1', minScore: 16, maxScore: 20, label: 'Très Bien', color: 'emerald', appreciation: 'Félicitations du jury' },
   { id: '2', minScore: 14, maxScore: 15.99, label: 'Bien', color: 'blue', appreciation: 'Encouragements' },
-  { id: '3', minScore: 12, maxScore: 13.99, label: 'Assez Bien', color: 'blue', appreciation: 'Tableau d\'honneur' },
+  { id: '3', minScore: 12, maxScore: 13.99, label: 'Assez Bien', color: 'cyan', appreciation: "Tableau d'honneur" },
   { id: '4', minScore: 10, maxScore: 11.99, label: 'Passable', color: 'amber', appreciation: '' },
   { id: '5', minScore: 0, maxScore: 9.99, label: 'Insuffisant', color: 'rose', appreciation: 'Avertissement' },
 ];
 
-const DEMO_STUDENTS = [
-  { name: 'Adjobi Kofi Messan', scores: { DEV: 14.5, COMP: 16, INT: 8 }, average: 15.1, rank: 1, mention: 'Très Bien' },
-  { name: 'Gnansounou Émilie', scores: { DEV: 12, COMP: 11.5, INT: 7 }, average: 11.8, rank: 2, mention: 'Passable' },
-  { name: 'Ahouangan Pierre', scores: { DEV: 9, COMP: 8.5, INT: 6 }, average: 8.8, rank: 3, mention: 'Insuffisant' },
+const QUALITATIVE_SCALE = [
+  { code: 'TS', label: 'Très Satisfaisant', value: 3 },
+  { code: 'S', label: 'Satisfaisant', value: 2 },
+  { code: 'PS', label: 'Peu Satisfaisant', value: 1 },
 ];
 
-// ─── Status helpers ─────────────────────────────────────────────────────────
+// ─── Composant principal ─────────────────────────────────────────────────────
 
-function statusConfig(status: SettingStatus) {
-  const map: Record<SettingStatus, { label: string; color: string; icon: React.ElementType; bg: string; border: string; text: string }> = {
-    ACTIVE: { label: 'Actif', color: 'emerald', icon: CheckCircle, bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700' },
-    DRAFT: { label: 'Brouillon', color: 'amber', icon: FileText, bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700' },
-    LOCKED: { label: 'Verrouillé', color: 'slate', icon: Lock, bg: 'bg-slate-50', border: 'border-slate-200', text: 'text-slate-700' },
-    ARCHIVED: { label: 'Archivé', color: 'gray', icon: Archive, bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-600' },
-  };
-  return map[status] ?? map.DRAFT;
-}
-
-// ─── Reusable section wrapper ────────────────────────────────────────────────
-
-function SectionCard({ title, description, icon: Icon, accent, children }: {
-  title: string;
-  description?: string;
-  icon?: React.ElementType;
-  accent?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card className="border-none shadow-sm bg-white/70 backdrop-blur-md overflow-hidden relative">
-      <div className={cn('absolute top-0 left-0 w-1 h-full', accent || 'bg-blue-500')} />
-      <CardHeader className="pl-6">
-        <CardTitle className="text-base font-bold flex items-center gap-2">
-          {Icon && <Icon className="w-4 h-4 text-blue-600" />}
-          {title}
-        </CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
-      </CardHeader>
-      <CardContent className="pl-6">{children}</CardContent>
-    </Card>
-  );
-}
-
-// ─── Formula Validator ───────────────────────────────────────────────────────
-
-function FormulaEditor({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  const isValid = value.trim().length > 5 && (value.includes('*') || value.includes('/') || value.includes('+'));
-  return (
-    <div className="space-y-2">
-      <Label className="text-xs font-bold text-gray-600 uppercase tracking-wider">{label}</Label>
-      <div className="flex items-center gap-2">
-        <div className={cn('flex-1 relative rounded-lg border overflow-hidden', isValid ? 'border-emerald-300' : 'border-gray-200')}>
-          <Input
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="font-mono text-sm border-0 focus-visible:ring-0 bg-gray-50/80"
-            placeholder="Ex: (Σ(score * weight)) / Σ(weight)"
-          />
-        </div>
-        <div className={cn('p-2 rounded-lg', isValid ? 'bg-emerald-50' : 'bg-red-50')}>
-          {isValid ? <Check className="w-4 h-4 text-emerald-600" /> : <XCircle className="w-4 h-4 text-red-400" />}
-        </div>
-      </div>
-      {isValid && (
-        <p className="text-xs text-emerald-600 flex items-center gap-1">
-          <CheckCircle className="w-3 h-3" /> Formule valide — résultat exemple : 14.25
-        </p>
-      )}
-    </div>
-  );
-}
-
-// ─── Status Banner ───────────────────────────────────────────────────────────
-
-function StatusBanner({ settings }: { settings: AcademicSettingConfig[] }) {
-  const active = settings.find((s) => s.status === 'ACTIVE');
-  const draft = settings.find((s) => s.status === 'DRAFT');
-
-  if (active) {
-    const cfg = statusConfig('ACTIVE');
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={cn('flex items-center gap-3 px-4 py-3 rounded-xl border', cfg.bg, cfg.border)}
-      >
-        <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-        <div className="flex-1">
-          <p className="text-sm font-bold text-emerald-800">Paramétrage actif en cours</p>
-          <p className="text-xs text-emerald-600">Configuration {active.country} · {active.periodType} · Barème {active.scoreMax} pts</p>
-        </div>
-        <Badge className="bg-emerald-500 text-white border-none">ACTIF</Badge>
-      </motion.div>
-    );
-  }
-
-  if (draft) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center gap-3 px-4 py-3 rounded-xl border bg-amber-50 border-amber-200"
-      >
-        <FileText className="w-5 h-5 text-amber-600 flex-shrink-0" />
-        <div className="flex-1">
-          <p className="text-sm font-bold text-amber-800">Brouillon non activé</p>
-          <p className="text-xs text-amber-600">Votre paramétrage est en cours d'édition. Validez-le pour l'appliquer.</p>
-        </div>
-        <Badge className="bg-amber-500 text-white border-none">BROUILLON</Badge>
-      </motion.div>
-    );
-  }
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="flex items-center gap-3 px-4 py-3 rounded-xl border bg-rose-50 border-rose-200"
-    >
-      <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0" />
-      <div className="flex-1">
-        <p className="text-sm font-bold text-rose-800">Aucun paramétrage configuré</p>
-        <p className="text-xs text-rose-600">Définissez vos règles académiques avant de saisir des notes.</p>
-      </div>
-      <Badge className="bg-rose-500 text-white border-none">REQUIS</Badge>
-    </motion.div>
-  );
-}
-
-// ─── Main Page ───────────────────────────────────────────────────────────────
-
-export default function AcademicSettingsPage() {
-  const { academicYear, schoolLevel } = useModuleContext();
+function SettingsContent() {
+  const searchParams = useSearchParams();
+  const { academicYear } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
-  const { isEnabled: isBilingual, currentTrack } = useBilingual();
+  const { isEnabled: isBilingual } = useBilingual();
 
-  // ⭐ Niveaux scolaires actifs (récupérés depuis le backend — PAS codés en dur)
-  // Filtrer pour exclure l'option virtuelle 'ALL'
-  const activeSchoolLevels = (availableLevels || []).filter(
-    (l: any) => l.id !== 'ALL' && l.isActive
-  );
-  // Vérifier si le niveau SECONDAIRE est activé par l'école
-  const hasSecondary = activeSchoolLevels.some((l: any) =>
-    (l.code || '').toUpperCase().includes('SECOND')
-  );
+  const levelCode = searchParams.get('level') || '';
+  const language = searchParams.get('lang') || (isBilingual ? '' : 'FR');
 
-  const [settings, setSettings] = useState<AcademicSettingConfig[]>([]);
+  const [activeSubTab, setActiveSubTab] = useState<'calculation' | 'mentions' | 'ranking' | 'bulletin'>('calculation');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [expertMode, setExpertMode] = useState(false);
-  const [simulationRunning, setSimulationRunning] = useState(false);
-  const [simulationResults, setSimulationResults] = useState<typeof DEMO_STUDENTS | null>(null);
+  const [settingsId, setSettingsId] = useState<string | null>(null);
+  const [status, setStatus] = useState<string>('DRAFT');
 
-  // ⭐ Scope dimensionnel : niveau scolaire + piste linguistique + cycle secondaire
-  const [selectedLevelCode, setSelectedLevelCode] = useState<string>(schoolLevel?.code || '');
-  const [selectedLanguage, setSelectedLanguage] = useState<string>(isBilingual ? (currentTrack || 'FR') : '');
-  const [selectedSecondaryCycle, setSelectedSecondaryCycle] = useState<string>('');
+  // Form state — Règles de calcul
+  const [assessmentTypes, setAssessmentTypes] = useState<AssessmentType[]>([]);
+  const [subjectFormula, setSubjectFormula] = useState('');
+  const [generalFormula, setGeneralFormula] = useState('');
+  const [formulaDescription, setFormulaDescription] = useState('');
+  const [absencePolicy, setAbsencePolicy] = useState<'ZERO' | 'EXCLUDE' | 'NOT_CLASSIFIED'>('EXCLUDE');
+  const [roundingDecimals, setRoundingDecimals] = useState(2);
+  const [roundingMode, setRoundingMode] = useState<'HALF_UP' | 'FLOOR' | 'CEIL'>('HALF_UP');
 
-  // Form state
-  const [country, setCountry] = useState('Bénin');
-  const [educationSystem, setEducationSystem] = useState('National');
-  const [gradingMode, setGradingMode] = useState('Numérique');
-  const [periodType, setPeriodType] = useState('Trimestre');
-  const [scoreMin, setScoreMin] = useState('0');
-  const [scoreMax, setScoreMax] = useState('20');
-  const [scoreDecimals, setScoreDecimals] = useState('2');
-  const [assessmentTypes, setAssessmentTypes] = useState<AssessmentType[]>(DEFAULT_ASSESSMENT_TYPES);
+  // Form state — Barèmes & Mentions
+  const [scoreMin, setScoreMin] = useState(0);
+  const [scoreMax, setScoreMax] = useState(20);
+  const [passScore, setPassScore] = useState(10);
+  const [qualitativeThreshold, setQualitativeThreshold] = useState(6);
   const [mentions, setMentions] = useState<MentionRule[]>(DEFAULT_MENTIONS);
-  const [subjectFormula, setSubjectFormula] = useState('(DEV*1 + COMP*2)/3');
-  const [generalFormula, setGeneralFormula] = useState('SUM(Moyenne*Coef)/SUM(Coef)');
-  const [promotionThreshold, setPromotionThreshold] = useState('10');
-  const [rankingScope, setRankingScope] = useState('CLASS');
-  const [newTypeForm, setNewTypeForm] = useState({ code: '', label: '', maxScore: '20', weight: '1' });
-  const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('profile');
 
-  // ── Load ────────────────────────────────────────────────────────────────────
+  // Form state — Règles de classement
+  const [rankingScope, setRankingScope] = useState<'CLASS' | 'LEVEL' | 'SCHOOL'>('CLASS');
+  const [tieMode, setTieMode] = useState<'DENSE_RANK' | 'COMPETITION_RANK' | 'UNIQUE'>('DENSE_RANK');
+  const [excludeAbsentees, setExcludeAbsentees] = useState(true);
+  const [showRankOnBulletin, setShowRankOnBulletin] = useState(true);
+  const [showClassAverage, setShowClassAverage] = useState(true);
+  const [showHighestAverage, setShowHighestAverage] = useState(false);
+  const [showLowestAverage, setShowLowestAverage] = useState(false);
 
+  // Form state — Options du Bulletin
+  const [showStudentAverage, setShowStudentAverage] = useState(true);
+  const [showMention, setShowMention] = useState(true);
+  const [showAbsences, setShowAbsences] = useState(true);
+  const [showTeacherAppreciations, setShowTeacherAppreciations] = useState(true);
+  const [showDirectorSignature, setShowDirectorSignature] = useState(true);
+  const [showSchoolStamp, setShowSchoolStamp] = useState(true);
+  const [showSchoolLogo, setShowSchoolLogo] = useState(true);
+  const [showCoefficients, setShowCoefficients] = useState(true);
+  const [showQRCode, setShowQRCode] = useState(true);
+
+  const isMaternelle = levelCode === 'MATERNELLE';
+  const isPrimaire = levelCode === 'PRIMAIRE';
+  const isSecondaire = levelCode === 'SECONDAIRE';
+
+  // ── Charger la config existante ──────────────────────────────────────────
   const loadSettings = useCallback(async () => {
+    if (!academicYear?.id || !levelCode) return;
     setLoading(true);
-    setError(null);
     try {
-      const result = await academicSettingsService.getAll(academicYear?.id);
-      const list = Array.isArray(result) ? result : [];
-      setSettings(list);
+      const all = await academicSettingsService.getAll(academicYear.id);
+      const list = Array.isArray(all) ? all : [];
+      // Filtrer par scope
+      const scoped = list.filter((s: any) =>
+        (s.levelCode || null) === levelCode &&
+        (s.language || null) === (language || null)
+      );
+      const active = scoped.find((s: any) => s.status === 'ACTIVE') || scoped[0];
 
-      // ⭐ Filtrer par scope dimensionnel (niveau scolaire + piste linguistique)
-      const scopedList = list.filter((s: any) => {
-        // Filtrer par levelCode
-        if (selectedLevelCode && s.levelCode && s.levelCode !== selectedLevelCode) return false;
-        if (selectedLevelCode && !s.levelCode) return true; // global = commun à tous
-        if (!selectedLevelCode && s.levelCode) return false;
-        // Filtrer par language
-        if (selectedLanguage && s.language && s.language !== selectedLanguage) return false;
-        if (selectedLanguage && !s.language) return true; // null = commun
-        if (!selectedLanguage && s.language) return false;
-        return true;
-      });
-
-      const active = scopedList.find((s: AcademicSettingConfig) => s.status === 'ACTIVE') ?? scopedList[0];
       if (active) {
-        setCountry(active.country || 'Bénin');
-        setEducationSystem(active.educationSystem || 'National');
-        setGradingMode(active.gradingMode || 'Numérique');
-        setPeriodType(active.periodType || 'Trimestre');
-        setScoreMin(String(active.scoreMin ?? 0));
-        setScoreMax(String(active.scoreMax ?? 20));
-        setScoreDecimals(String(active.scoreDecimals ?? 2));
-        if (active.assessmentTypes?.length) setAssessmentTypes(active.assessmentTypes);
-        if (active.mentions?.length) setMentions(active.mentions);
-        
-        // Load Calculation Rules
-        if (active.calculationRules) {
-          setSubjectFormula(active.calculationRules.subjectAverage?.expression || '');
-          setGeneralFormula(active.calculationRules.generalAverage?.expression || '');
-          const promoRule = active.calculationRules.promotionRules?.[0];
-          if (promoRule) setPromotionThreshold(String(promoRule.threshold ?? 10));
-        } else {
-          // Fallback to legacy flat fields if any
-          if (active.subjectAverageFormula) setSubjectFormula(active.subjectAverageFormula);
-          if (active.generalAverageFormula) setGeneralFormula(active.generalAverageFormula);
+        setSettingsId(active.id);
+        setStatus(active.status || 'DRAFT');
+        const cfg = active.config || {};
+        if (cfg.assessmentTypes?.length) setAssessmentTypes(cfg.assessmentTypes);
+        if (cfg.calculationRules?.subjectAverage?.expression) setSubjectFormula(cfg.calculationRules.subjectAverage.expression);
+        if (cfg.calculationRules?.generalAverage?.expression) setGeneralFormula(cfg.calculationRules.generalAverage.expression);
+        if (cfg.absencePolicy) setAbsencePolicy(cfg.absencePolicy);
+        if (cfg.roundingDecimals != null) setRoundingDecimals(cfg.roundingDecimals);
+        if (cfg.roundingMode) setRoundingMode(cfg.roundingMode);
+        if (cfg.scoreMax) setScoreMax(cfg.scoreMax);
+        if (cfg.passScore) setPassScore(cfg.passScore);
+        if (cfg.qualitativeThreshold) setQualitativeThreshold(cfg.qualitativeThreshold);
+        if (cfg.mentions?.length) setMentions(cfg.mentions);
+        if (cfg.rankingScope) setRankingScope(cfg.rankingScope);
+        if (cfg.tieMode) setTieMode(cfg.tieMode);
+        if (cfg.excludeAbsentees != null) setExcludeAbsentees(cfg.excludeAbsentees);
+        if (cfg.bulletinOptions) {
+          const bo = cfg.bulletinOptions;
+          setShowStudentAverage(bo.showStudentAverage !== false);
+          setShowClassAverage(bo.showClassAverage !== false);
+          setShowMention(bo.showMention !== false);
+          setShowRankOnBulletin(bo.showRank !== false);
+          setShowAbsences(bo.showAbsences !== false);
+          setShowTeacherAppreciations(bo.showTeacherAppreciations !== false);
+          setShowDirectorSignature(bo.showDirectorSignature !== false);
+          setShowSchoolStamp(bo.showSchoolStamp !== false);
+          setShowSchoolLogo(bo.showSchoolLogo !== false);
+          setShowCoefficients(bo.showCoefficients !== false);
+          setShowQRCode(bo.showQRCode !== false);
+          setShowHighestAverage(bo.showHighestAverage || false);
+          setShowLowestAverage(bo.showLowestAverage || false);
         }
-        
-        // Load Ranking Rules
-        if (active.rankingRules?.length) {
-          setRankingScope(active.rankingRules[0].scope || 'CLASS');
-        }
+      } else {
+        // Pas de config existante → utiliser les valeurs par défaut selon le niveau
+        const defaults = DEFAULT_ASSESSMENT_TYPES[levelCode] || DEFAULT_ASSESSMENT_TYPES.PRIMAIRE;
+        const formulas = DEFAULT_FORMULAS[levelCode] || DEFAULT_FORMULAS.PRIMAIRE;
+        setAssessmentTypes(defaults);
+        setSubjectFormula(formulas.subject);
+        setGeneralFormula(formulas.general);
+        setFormulaDescription(formulas.description);
       }
     } catch {
-      // Fail gracefully — API may not exist yet
-      setSettings([]);
+      // Config inexistante → valeurs par défaut
+      const defaults = DEFAULT_ASSESSMENT_TYPES[levelCode] || DEFAULT_ASSESSMENT_TYPES.PRIMAIRE;
+      const formulas = DEFAULT_FORMULAS[levelCode] || DEFAULT_FORMULAS.PRIMAIRE;
+      setAssessmentTypes(defaults);
+      setSubjectFormula(formulas.subject);
+      setGeneralFormula(formulas.general);
+      setFormulaDescription(formulas.description);
     } finally {
       setLoading(false);
     }
-  }, [academicYear?.id, selectedLevelCode, selectedLanguage]);
+  }, [academicYear?.id, levelCode, language]);
 
   useEffect(() => { loadSettings(); }, [loadSettings]);
 
-  // ── Save / Activate ──────────────────────────────────────────────────────────
-
+  // ── Sauvegarder ────────────────────────────────────────────────────────────
   const handleSave = async () => {
+    if (!academicYear?.id || !levelCode) return;
     setSaving(true);
     try {
-      // ⭐ Construire le payload avec les champs requis par le DTO backend
-      const levelLabel = selectedLevelCode === 'MATERNELLE' ? 'Maternelle'
-        : selectedLevelCode === 'PRIMAIRE' ? 'Primaire'
-        : selectedLevelCode === 'SECONDAIRE' ? 'Secondaire' : 'Global';
-      const langLabel = selectedLanguage === 'FR' ? ' FR' : selectedLanguage === 'EN' ? ' EN' : '';
-      const cycleLabel = selectedSecondaryCycle ? ` ${selectedSecondaryCycle}` : '';
-      const configName = `Paramétrage ${levelLabel}${langLabel}${cycleLabel} — ${academicYear?.label || ''}`;
+      const levelLabel = levelCode === 'MATERNELLE' ? 'Maternelle'
+        : levelCode === 'PRIMAIRE' ? 'Primaire' : 'Secondaire';
+      const langLabel = language ? ` ${language}` : '';
+      const name = `Paramétrage ${levelLabel}${langLabel} — ${academicYear?.label || ''}`;
 
       const config = {
-        name: configName,
-        countryCode: country === 'Bénin' ? 'BJ' : country === 'Togo' ? 'TG' : country === "Côte d'Ivoire" ? 'CI' : country === 'Cameroun' ? 'CM' : country === 'Sénégal' ? 'SN' : 'XX',
-        levelCode: selectedLevelCode || null,
-        language: selectedLanguage || null,
-        secondaryCycle: selectedSecondaryCycle || null,
-        country, educationSystem, gradingMode, periodType,
-        scoreMin: Number(scoreMin), scoreMax: Number(scoreMax), scoreDecimals: Number(scoreDecimals),
         assessmentTypes,
-        mentions,
-        rankingRules: [{ scope: rankingScope, allowTies: true, excludeAbsentees: true }],
         calculationRules: {
           subjectAverage: { expression: subjectFormula, type: 'FORMULA' },
-          generalAverage: { expression: generalFormula, type: 'WEIGHTED_SUM' },
-          promotionRules: [
-            { condition: `average >= ${promotionThreshold}`, decision: 'ADMITTED', threshold: Number(promotionThreshold) }
-          ],
-          appreciationScale: mentions
+          generalAverage: { expression: generalFormula, type: isSecondaire ? 'WEIGHTED_SUM' : 'SIMPLE_AVERAGE' },
         },
-        schoolYearId: academicYear?.id,
+        absencePolicy,
+        roundingDecimals,
+        roundingMode,
+        scoreMin, scoreMax, passScore,
+        qualitativeThreshold,
+        mentions,
+        rankingScope,
+        tieMode,
+        excludeAbsentees,
+        bulletinOptions: {
+          showStudentAverage, showClassAverage, showMention,
+          showRank: showRankOnBulletin, showAbsences,
+          showTeacherAppreciations, showDirectorSignature,
+          showSchoolStamp, showSchoolLogo, showCoefficients,
+          showQRCode, showHighestAverage, showLowestAverage,
+        },
       };
-      // ⭐ Chercher un DRAFT dans le MÊME scope (même levelCode + language)
-      const draft = settings.find((s: any) =>
-        s.status === 'DRAFT' &&
-        (s.levelCode || null) === (selectedLevelCode || null) &&
-        (s.language || null) === (selectedLanguage || null) &&
-        (s.secondaryCycle || null) === (selectedSecondaryCycle || null)
-      );
-      if (draft) {
-        await academicSettingsService.update(draft.id, config);
+
+      const payload = {
+        name,
+        countryCode: 'BJ',
+        levelCode,
+        language: language || null,
+        schoolYearId: academicYear.id,
+        config,
+      };
+
+      if (settingsId) {
+        await academicSettingsService.update(settingsId, payload);
       } else {
-        await academicSettingsService.create({ ...config, status: 'DRAFT' });
+        const result = await academicSettingsService.create({ ...payload, status: 'DRAFT' });
+        if (result?.id) setSettingsId(result.id);
       }
+      toast.success('✅ Paramètres enregistrés');
       await loadSettings();
     } catch (err: any) {
-      setError(err.message);
+      toast.error('Erreur lors de la sauvegarde', { description: err.message });
     } finally {
       setSaving(false);
     }
   };
 
   const handleActivate = async () => {
+    if (!settingsId) return;
     setSaving(true);
     try {
-      const draft = settings.find((s) => s.status === 'DRAFT');
-      if (draft) {
-        await academicSettingsService.activate(draft.id);
-        await loadSettings();
-      }
+      await academicSettingsService.activate(settingsId);
+      toast.success('✅ Paramètres activés');
+      await loadSettings();
     } catch (err: any) {
-      setError(err.message);
+      toast.error('Erreur activation', { description: err.message });
     } finally {
       setSaving(false);
     }
   };
 
-  const handleStatusAction = async (id: string, action: 'activate' | 'lock' | 'archive' | 'duplicate') => {
-    try {
-      await academicSettingsService[action](id);
-      await loadSettings();
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
-
-  // ── Assessment Types CRUD ────────────────────────────────────────────────────
-
+  // ── Ajouter/Supprimer un type d'évaluation ────────────────────────────────
   const addAssessmentType = () => {
-    if (!newTypeForm.code || !newTypeForm.label) return;
-    const newItem: AssessmentType = {
-      id: Date.now().toString(),
-      code: newTypeForm.code.toUpperCase(),
-      label: newTypeForm.label,
-      maxScore: Number(newTypeForm.maxScore),
-      weight: Number(newTypeForm.weight),
-      required: false,
-      includedInAverage: true,
-      visibleOnReportCard: true,
-    };
-    setAssessmentTypes((prev) => [...prev, newItem]);
-    setNewTypeForm({ code: '', label: '', maxScore: '20', weight: '1' });
+    setAssessmentTypes([...assessmentTypes, {
+      code: '', label: '', maxScore: 20, weight: 1, required: true,
+      includedInAverage: true, visibleOnReportCard: true,
+    }]);
   };
 
-  const removeAssessmentType = (id: string) => {
-    setAssessmentTypes((prev) => prev.filter((t) => t.id !== id));
+  const removeAssessmentType = (index: number) => {
+    setAssessmentTypes(assessmentTypes.filter((_, i) => i !== index));
   };
 
-  const toggleAssessmentFlag = (id: string, key: keyof Pick<AssessmentType, 'required' | 'includedInAverage' | 'visibleOnReportCard'>) => {
-    setAssessmentTypes((prev) => prev.map((t) => t.id === id ? { ...t, [key]: !t[key] } : t));
+  const updateAssessmentType = (index: number, field: keyof AssessmentType, value: any) => {
+    setAssessmentTypes(assessmentTypes.map((at, i) =>
+      i === index ? { ...at, [field]: value } : at
+    ));
   };
 
-  // ── Simulation ───────────────────────────────────────────────────────────────
-
-  const handleSimulate = async () => {
-    setSimulationRunning(true);
-    setSimulationResults(null);
-    try {
-      await academicSettingsService.simulate({ assessmentTypes, subjectAverageFormula: subjectFormula, scoreMax: Number(scoreMax) });
-      await new Promise((r) => setTimeout(r, 800));
-      setSimulationResults(DEMO_STUDENTS);
-    } catch {
-      setSimulationResults(DEMO_STUDENTS);
-    } finally {
-      setSimulationRunning(false);
-    }
+  // ── Ajouter/Supprimer une mention ─────────────────────────────────────────
+  const addMention = () => {
+    setMentions([...mentions, {
+      id: crypto.randomUUID(),
+      minScore: 0, maxScore: 20, label: 'Nouvelle mention',
+      color: 'gray', appreciation: '',
+    }]);
   };
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  const removeMention = (id: string) => {
+    setMentions(mentions.filter(m => m.id !== id));
+  };
 
+  const updateMention = (id: string, field: keyof MentionRule, value: any) => {
+    setMentions(mentions.map(m => m.id === id ? { ...m, [field]: value } : m));
+  };
+
+  // ─── Render ───────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-600">Chargement des paramètres...</span>
+      </div>
+    );
+  }
+
+  const levelLabel = (availableLevels || []).find((l: any) =>
+    (l.code || '').toUpperCase() === levelCode
+  )?.label || levelCode;
+
+  const SUB_TABS = [
+    { id: 'calculation' as const, label: 'Règles de calcul', icon: Calculator },
+    { id: 'mentions' as const, label: 'Barèmes & Mentions', icon: Award },
+    { id: 'ranking' as const, label: 'Règles de classement', icon: Trophy },
+    { id: 'bulletin' as const, label: 'Options du Bulletin', icon: FileText },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Top action bar */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="border-blue-200 text-blue-700 font-bold text-xs">
+            {levelLabel} {language ? `· ${language}` : ''}
+          </Badge>
+          <Badge className={cn(
+            "text-xs",
+            status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' :
+            status === 'LOCKED' ? 'bg-amber-100 text-amber-700' :
+            'bg-gray-100 text-gray-600'
+          )}>
+            {status === 'ACTIVE' ? '✅ Active' : status === 'LOCKED' ? '🔒 Verrouillée' : '✏️ Brouillon'}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={loadSettings} disabled={loading}>
+            <RefreshCw className={cn('w-4 h-4 mr-1', loading && 'animate-spin')} /> Actualiser
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
+            Sauvegarder
+          </Button>
+          <Button size="sm" onClick={handleActivate} disabled={saving || !settingsId || status === 'ACTIVE'}>
+            <Zap className="w-4 h-4 mr-1" /> Activer
+          </Button>
+        </div>
+      </div>
+
+      {/* Sous-onglets */}
+      <div className="flex gap-1 bg-white rounded-xl border border-gray-200 p-1 flex-wrap">
+        {SUB_TABS.map(tab => {
+          const Icon = tab.icon;
+          return (
+            <button key={tab.id} onClick={() => setActiveSubTab(tab.id)}
+              className={cn("flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold",
+                activeSubTab === tab.id ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-100")}>
+              <Icon className="h-4 w-4" /> {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* === SOUS-ONGLET 1 : RÈGLES DE CALCUL === */}
+      {activeSubTab === 'calculation' && (
+        <div className="space-y-4">
+          {/* Description du système de calcul selon le niveau */}
+          <Card className="border-blue-200 bg-blue-50/30">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h3 className="text-sm font-bold text-blue-900">Système de calcul — {levelLabel}</h3>
+                  <p className="text-xs text-blue-700 mt-1">
+                    {DEFAULT_FORMULAS[levelCode]?.description || 'Configurez les règles de calcul ci-dessous.'}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Types d'évaluation */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-md flex items-center justify-between">
+                <span>Types d'évaluation</span>
+                <Button size="sm" variant="outline" onClick={addAssessmentType}>
+                  <Plus className="w-4 h-4 mr-1" /> Ajouter
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {assessmentTypes.map((at, i) => (
+                  <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                    <Input placeholder="Code (ex: EM1)" value={at.code} maxLength={10}
+                      onChange={e => updateAssessmentType(i, 'code', e.target.value.toUpperCase())}
+                      className="w-20 text-xs font-mono" />
+                    <Input placeholder="Nom de l'évaluation" value={at.label}
+                      onChange={e => updateAssessmentType(i, 'label', e.target.value)}
+                      className="flex-1 text-sm" />
+                    <Input type="number" placeholder="Max" value={at.maxScore}
+                      onChange={e => updateAssessmentType(i, 'maxScore', Number(e.target.value))}
+                      className="w-16 text-center text-sm" />
+                    <Input type="number" placeholder="Coef" value={at.weight}
+                      onChange={e => updateAssessmentType(i, 'weight', Number(e.target.value))}
+                      className="w-16 text-center text-sm" disabled={isPrimaire}
+                      title={isPrimaire ? 'Primaire : coefficient toujours 1' : ''} />
+                    <Button size="sm" variant="ghost" onClick={() => removeAssessmentType(i)}>
+                      <Trash2 className="w-4 h-4 text-rose-500" />
+                    </Button>
+                  </div>
+                ))}
+                {assessmentTypes.length === 0 && (
+                  <p className="text-sm text-gray-400 text-center py-4">Aucun type d'évaluation. Cliquez sur "Ajouter".</p>
+                )}
+              </div>
+              {/* Boutons de sélection rapide */}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="text-xs text-gray-500">Sélection rapide :</span>
+                {Object.entries(DEFAULT_ASSESSMENT_TYPES).map(([level, types]) => (
+                  <button key={level} onClick={() => setAssessmentTypes([...types])}
+                    className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded font-semibold">
+                    {level === 'MATERNELLE' ? '🧒 Maternelle' : level === 'PRIMAIRE' ? '👦 Primaire' : '👨‍🎓 Secondaire'}
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Formules de calcul */}
+          <Card>
+            <CardHeader><CardTitle className="text-md">Formules de calcul</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-gray-600 block mb-1">Formule moyenne par matière</label>
+                <Input value={subjectFormula} onChange={e => setSubjectFormula(e.target.value)}
+                  placeholder="Ex: (CM + CP) / 2 ou ((INT1 + INT2) / 2 + DS1 + DS2) / 3"
+                  className="font-mono text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-600 block mb-1">Formule moyenne générale</label>
+                <Input value={generalFormula} onChange={e => setGeneralFormula(e.target.value)}
+                  placeholder="Ex: SUM(moyenne_matière) / COUNT(matières) ou SUM(moyenne × coef) / SUM(coef)"
+                  className="font-mono text-sm" />
+              </div>
+              {isMaternelle && (
+                <div className="bg-pink-50 border border-pink-200 rounded-lg p-3 text-xs text-pink-800">
+                  <strong>📌 Maternelle :</strong> Système qualitatif TS/S/PS.
+                  TS = Très Satisfaisant (valeur 3), S = Satisfaisant (valeur 2), PS = Peu Satisfaisant (valeur 1).
+                  Le système calcule en arrière-plan avec ces valeurs mais affiche TS/S/PS côté interface.
+                  Seuil de réussite : (TS + S) ≥ seuil fixé dans l'onglet Barèmes & Mentions.
+                </div>
+              )}
+              {isPrimaire && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800">
+                  <strong>📌 Primaire :</strong> CM (Critère Maximal, sur 18) + CP (Critère de Perfectionnement, sur 2) = note /20.
+                  L'élève n'obtient le CP que s'il a au moins 10/18 au CM.
+                  Le CP peut être 0, 1 ou 2 (jamais plus de 2).
+                  Toutes les matières ont le coefficient 1 — la moyenne générale est arithmétique simple.
+                </div>
+              )}
+              {isSecondaire && (
+                <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 text-xs text-violet-800">
+                  <strong>📌 Secondaire :</strong> Moyenne interros = (INT1 + INT2) / 2.
+                  Note matière = (Moy_interros + DS1 + DS2) / 3.
+                  Avec coefficients : Note × coefficient = Moyenne coefficientée.
+                  Moyenne générale = Somme(Moyenne_coef) / Somme(coefficients).
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Politique d'absence + Arrondi */}
+          <Card>
+            <CardHeader><CardTitle className="text-md">Politique d'absence & Arrondi</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-600 block mb-1">Politique d'absence</label>
+                  <select value={absencePolicy} onChange={e => setAbsencePolicy(e.target.value as any)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                    <option value="EXCLUDE">Exclure de la moyenne</option>
+                    <option value="ZERO">Note zéro</option>
+                    <option value="NOT_CLASSIFIED">Non classé</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-600 block mb-1">Mode d'arrondi</label>
+                  <select value={roundingMode} onChange={e => setRoundingMode(e.target.value as any)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                    <option value="HALF_UP">Demi vers le haut (HALF_UP)</option>
+                    <option value="FLOOR">Toujours vers le bas (FLOOR)</option>
+                    <option value="CEIL">Toujours vers le haut (CEIL)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-600 block mb-1">Nombre de décimales</label>
+                  <Input type="number" min={0} max={4} value={roundingDecimals}
+                    onChange={e => setRoundingDecimals(Number(e.target.value))}
+                    className="text-center" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* === SOUS-ONGLET 2 : BARÈMES & MENTIONS === */}
+      {activeSubTab === 'mentions' && (
+        <div className="space-y-4">
+          {/* Barème de notation */}
+          <Card>
+            <CardHeader><CardTitle className="text-md">Barème de notation</CardTitle></CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-600 block mb-1">Note minimale</label>
+                  <Input type="number" value={scoreMin} onChange={e => setScoreMin(Number(e.target.value))} className="text-center" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-600 block mb-1">Note maximale</label>
+                  <Input type="number" value={scoreMax} onChange={e => setScoreMax(Number(e.target.value))} className="text-center" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-600 block mb-1">Seuil de réussite</label>
+                  <Input type="number" value={passScore} onChange={e => setPassScore(Number(e.target.value))} className="text-center" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Échelle qualitative (maternelle uniquement) */}
+          {isMaternelle && (
+            <Card className="border-pink-200">
+              <CardHeader>
+                <CardTitle className="text-md">Échelle qualitative (Maternelle)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {QUALITATIVE_SCALE.map(qs => (
+                    <div key={qs.code} className="flex items-center gap-3 bg-pink-50 rounded-lg p-2">
+                      <span className="px-3 py-1 bg-pink-200 text-pink-800 rounded font-bold text-sm">{qs.code}</span>
+                      <span className="flex-1 text-sm">{qs.label}</span>
+                      <span className="text-xs text-gray-500">Valeur calcul : {qs.value}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3">
+                  <label className="text-xs font-bold text-gray-600 block mb-1">
+                    Seuil de réussite (nombre minimum de TS + S sur le total de domaines)
+                  </label>
+                  <Input type="number" value={qualitativeThreshold} onChange={e => setQualitativeThreshold(Number(e.target.value))}
+                    className="w-24 text-center" />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Ex: Si 9 domaines et seuil = 6, l'élève réussit s'il a au moins 6 (TS + S) sur 9.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Mentions */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-md flex items-center justify-between">
+                <span>Mentions & Appréciations</span>
+                <Button size="sm" variant="outline" onClick={addMention}>
+                  <Plus className="w-4 h-4 mr-1" /> Ajouter
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {mentions.map(m => (
+                  <div key={m.id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                    <Input type="number" placeholder="Min" value={m.minScore}
+                      onChange={e => updateMention(m.id, 'minScore', Number(e.target.value))}
+                      className="w-16 text-center text-sm" />
+                    <span className="text-gray-400">→</span>
+                    <Input type="number" placeholder="Max" value={m.maxScore}
+                      onChange={e => updateMention(m.id, 'maxScore', Number(e.target.value))}
+                      className="w-16 text-center text-sm" />
+                    <Input placeholder="Mention" value={m.label}
+                      onChange={e => updateMention(m.id, 'label', e.target.value)}
+                      className="w-32 text-sm font-semibold" />
+                    <Input placeholder="Appréciation (optionnel)" value={m.appreciation}
+                      onChange={e => updateMention(m.id, 'appreciation', e.target.value)}
+                      className="flex-1 text-sm" />
+                    <Button size="sm" variant="ghost" onClick={() => removeMention(m.id)}>
+                      <Trash2 className="w-4 h-4 text-rose-500" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* === SOUS-ONGLET 3 : RÈGLES DE CLASSEMENT === */}
+      {activeSubTab === 'ranking' && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader><CardTitle className="text-md">Configuration du classement</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-gray-600 block mb-1">Portée du classement</label>
+                <select value={rankingScope} onChange={e => setRankingScope(e.target.value as any)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                  <option value="CLASS">Par classe</option>
+                  <option value="LEVEL">Par niveau scolaire</option>
+                  <option value="SCHOOL">Toute l'école</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-600 block mb-1">Gestion des ex aequo</label>
+                <select value={tieMode} onChange={e => setTieMode(e.target.value as any)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                  <option value="DENSE_RANK">DENSE_RANK — 1, 2, 2, 3 (pas de saut)</option>
+                  <option value="COMPETITION_RANK">COMPETITION — 1, 2, 2, 4 (saut)</option>
+                  <option value="UNIQUE">UNIQUE — pas d'ex aequo (départage)</option>
+                </select>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <ToggleRow label="Exclure les absents du classement" checked={excludeAbsentees} onChange={setExcludeAbsentees} />
+                <ToggleRow label="Afficher le rang sur le bulletin" checked={showRankOnBulletin} onChange={setShowRankOnBulletin} />
+                <ToggleRow label="Afficher la moyenne de classe sur le bulletin" checked={showClassAverage} onChange={setShowClassAverage} />
+                <ToggleRow label="Afficher la plus forte moyenne" checked={showHighestAverage} onChange={setShowHighestAverage} />
+                <ToggleRow label="Afficher la plus faible moyenne" checked={showLowestAverage} onChange={setShowLowestAverage} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* === SOUS-ONGLET 4 : OPTIONS DU BULLETIN === */}
+      {activeSubTab === 'bulletin' && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader><CardTitle className="text-md">Options d'affichage du bulletin</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <ToggleRow label="Afficher la moyenne de l'élève" checked={showStudentAverage} onChange={setShowStudentAverage} />
+              <ToggleRow label="Afficher la moyenne de la classe" checked={showClassAverage} onChange={setShowClassAverage} />
+              <ToggleRow label="Afficher la mention de l'élève" checked={showMention} onChange={setShowMention} />
+              <ToggleRow label="Afficher le rang" checked={showRankOnBulletin} onChange={setShowRankOnBulletin} />
+              <ToggleRow label="Afficher les absences" checked={showAbsences} onChange={setShowAbsences} />
+              <ToggleRow label="Afficher les appréciations des enseignants" checked={showTeacherAppreciations} onChange={setShowTeacherAppreciations} />
+              <ToggleRow label="Afficher les coefficients" checked={showCoefficients} onChange={setShowCoefficients} />
+              <ToggleRow label="Afficher la plus forte moyenne" checked={showHighestAverage} onChange={setShowHighestAverage} />
+              <ToggleRow label="Afficher la plus faible moyenne" checked={showLowestAverage} onChange={setShowLowestAverage} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-md">Signatures & Éléments visuels</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <ToggleRow label="Afficher la signature du directeur" checked={showDirectorSignature} onChange={setShowDirectorSignature} />
+              <ToggleRow label="Afficher le cachet de l'établissement" checked={showSchoolStamp} onChange={setShowSchoolStamp} />
+              <ToggleRow label="Inclure le logo/photo de l'école" checked={showSchoolLogo} onChange={setShowSchoolLogo} />
+              <ToggleRow label="Inclure le QR code de vérification" checked={showQRCode} onChange={setShowQRCode} />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Composant ToggleRow ─────────────────────────────────────────────────────
+
+function ToggleRow({ label, checked, onChange }: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+      <span className="text-sm text-gray-700">{label}</span>
+      <Switch checked={checked} onCheckedChange={onChange} />
+    </div>
+  );
+}
+
+// ─── Page export avec Suspense (useSearchParams nécessite Suspense) ──────────
+
+export default function AcademicSettingsPage() {
   return (
     <ModuleContainer
       header={{
-        title: 'Paramétrage académique',
-        description: 'Configurez les règles de notation, barèmes, mentions et formules de calcul pour votre établissement.',
-        icon: 'settings',
+        title: 'Paramètres',
+        description: 'Configuration du système d\'évaluation par niveau scolaire et piste linguistique.',
+        icon: 'slidersHorizontal',
       }}
       subModules={{
         modules: EXAMS_SUB_MODULES,
@@ -507,720 +750,11 @@ export default function AcademicSettingsPage() {
       content={{
         layout: 'full',
         children: (
-          <div className="space-y-5 p-1">
-            {/* ⭐ Scope dimensionnel : sélecteurs niveau scolaire + piste linguistique + cycle secondaire */}
-            <div className="flex items-center gap-3 flex-wrap bg-blue-50 border border-blue-200 rounded-xl p-3">
-              <span className="text-xs font-bold text-blue-900 uppercase">🎯 Scope du paramétrage :</span>
-              {/* Sélecteur niveau scolaire — DYNAMIQUE depuis le backend */}
-              <select
-                value={selectedLevelCode}
-                onChange={(e) => setSelectedLevelCode(e.target.value)}
-                className="px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-sm font-semibold text-gray-700"
-              >
-                <option value="">Global (tous niveaux)</option>
-                {activeSchoolLevels.map((level: any) => {
-                  const code = (level.code || '').toUpperCase();
-                  const emoji = code.includes('MATERN') ? '🧒'
-                    : code.includes('PRIM') ? '👦'
-                    : code.includes('SECOND') ? '👨‍🎓' : '📚';
-                  const desc = code.includes('MATERN') ? ' (qualitatif TS/S/PS)'
-                    : code.includes('PRIM') ? ' (quantitatif /20, coef 1)'
-                    : code.includes('SECOND') ? ' (quantitatif /20, coef variable)'
-                    : '';
-                  return (
-                    <option key={level.id} value={code}>
-                      {emoji} {level.label}{desc}
-                    </option>
-                  );
-                })}
-              </select>
-              {/* Sélecteur cycle secondaire — visible SEULEMENT si le niveau SECONDAIRE
-                  est activé par l'école ET sélectionné par l'utilisateur */}
-              {hasSecondary && selectedLevelCode === 'SECONDAIRE' && (
-                <select
-                  value={selectedSecondaryCycle}
-                  onChange={(e) => setSelectedSecondaryCycle(e.target.value)}
-                  className="px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-sm font-semibold text-gray-700"
-                >
-                  <option value="">Tous cycles</option>
-                  <option value="CYCLE_I">1er Cycle (6ème → 3ème)</option>
-                  <option value="CYCLE_II">2nd Cycle (2nde → Terminale)</option>
-                </select>
-              )}
-              {/* Sélecteur piste linguistique (visible seulement si bilingue) */}
-              {isBilingual && (
-                <select
-                  value={selectedLanguage}
-                  onChange={(e) => setSelectedLanguage(e.target.value)}
-                  className="px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-sm font-semibold text-gray-700"
-                >
-                  <option value="">Commun (FR + EN)</option>
-                  <option value="FR">🇫🇷 Piste francophone</option>
-                  <option value="EN">🇬🇧 Piste anglophone</option>
-                </select>
-              )}
-              {/* Info badge */}
-              <span className="text-xs text-blue-600 ml-auto">
-                {selectedLevelCode || 'Global'}{selectedLanguage ? ` · ${selectedLanguage}` : ''}{selectedSecondaryCycle ? ` · ${selectedSecondaryCycle}` : ''}
-              </span>
-            </div>
-
-            {/* Top Action Bar */}
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div className="flex items-center gap-2">
-                <Settings className="w-5 h-5 text-blue-600" />
-                <span className="text-sm font-semibold text-gray-700">Configuration académique</span>
-                <Badge variant="outline" className="border-blue-200 text-blue-700 font-bold text-xs">
-                  {academicYear?.name ?? 'Année courante'}
-                </Badge>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={loadSettings} disabled={loading} className="border-gray-200">
-                  <RefreshCw className={cn('w-4 h-4 mr-1', loading && 'animate-spin')} />
-                  Actualiser
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleSave} disabled={saving} className="border-blue-200 text-blue-700 hover:bg-blue-50">
-                  {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
-                  Sauvegarder
-                </Button>
-                <Button size="sm" onClick={handleActivate} disabled={saving || !settings.some((s) => s.status === 'DRAFT')} className="bg-blue-600 hover:bg-blue-700">
-                  <Zap className="w-4 h-4 mr-1" />
-                  Valider et Activer
-                </Button>
-              </div>
-            </div>
-
-            {/* Status Banner */}
-            {!loading && <StatusBanner settings={settings} />}
-
-            {/* Error */}
-            <AnimatePresence>
-              {error && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                  className="flex items-center gap-3 px-4 py-3 rounded-xl border bg-red-50 border-red-200">
-                  <XCircle className="w-4 h-4 text-red-600" />
-                  <p className="text-sm text-red-700">{error}</p>
-                  <button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-600">✕</button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Loading Skeleton */}
-            {loading && (
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-24 rounded-xl bg-gray-100 animate-pulse" />
-                ))}
-              </div>
-            )}
-
-            {/* Main Tabs */}
-            {!loading && (
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
-                <TabsList className="bg-white p-1 border border-gray-100 shadow-sm rounded-xl flex-wrap h-auto gap-1">
-                  {[
-                    { value: 'profile', label: 'Profil académique', icon: Globe },
-                    { value: 'assessments', label: "Types d'évaluations", icon: BookOpen },
-                    { value: 'formulas', label: 'Règles de calcul', icon: Calculator },
-                    { value: 'mentions', label: 'Mentions', icon: Award },
-                    { value: 'rankings', label: 'Classements', icon: BarChart3 },
-                    { value: 'bulletin', label: 'Bulletin', icon: FileText },
-                    { value: 'simulation', label: 'Simulation', icon: Play },
-                    { value: 'history', label: 'Historique', icon: Shield },
-                  ].map(({ value, label, icon: Icon }) => (
-                    <TabsTrigger
-                      key={value}
-                      value={value}
-                      className="px-4 py-2 rounded-lg text-xs font-semibold data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm flex items-center gap-1.5"
-                    >
-                      <Icon className="w-3.5 h-3.5" />
-                      {label}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-
-                {/* ─── TAB 1: Profil académique ──────────────────────────────── */}
-                <TabsContent value="profile">
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
-                    {/* Mode toggle */}
-                    <div className="flex items-center justify-between p-4 rounded-xl bg-blue-50/60 border border-blue-100">
-                      <div>
-                        <p className="text-sm font-bold text-blue-900">Mode d'édition</p>
-                        <p className="text-xs text-blue-600">Le mode expert déverrouille les paramètres avancés</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className={cn('text-xs font-bold', !expertMode ? 'text-blue-700' : 'text-gray-400')}>Simple</span>
-                        <Switch checked={expertMode} onCheckedChange={setExpertMode} />
-                        <span className={cn('text-xs font-bold', expertMode ? 'text-blue-700' : 'text-gray-400')}>Expert</span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                      <SectionCard title="Système éducatif" icon={Globe} accent="bg-blue-500">
-                        <div className="space-y-4">
-                          <div className="space-y-2">
-                            <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Pays</Label>
-                            <Select value={country} onValueChange={setCountry}>
-                              <SelectTrigger className="border-gray-200">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {['Bénin', 'Togo', "Côte d'Ivoire", 'Cameroun', 'Sénégal', 'Autre'].map((c) => (
-                                  <SelectItem key={c} value={c}>{c}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-2">
-                            <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Système éducatif</Label>
-                            <Select value={educationSystem} onValueChange={setEducationSystem}>
-                              <SelectTrigger className="border-gray-200">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="National">National</SelectItem>
-                                <SelectItem value="Personnalisé">Personnalisé</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                      </SectionCard>
-
-                      <SectionCard title="Notation" icon={Calculator} accent="bg-violet-500">
-                        <div className="space-y-4">
-                          <div className="space-y-2">
-                            <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Mode de notation</Label>
-                            <Select value={gradingMode} onValueChange={setGradingMode}>
-                              <SelectTrigger className="border-gray-200">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="Numérique">Numérique</SelectItem>
-                                <SelectItem value="Qualitatif">Qualitatif</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-2">
-                            <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Type de période</Label>
-                            <Select value={periodType} onValueChange={setPeriodType}>
-                              <SelectTrigger className="border-gray-200">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="Trimestre">Trimestre</SelectItem>
-                                <SelectItem value="Semestre">Semestre</SelectItem>
-                                <SelectItem value="Séquence">Séquence</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                      </SectionCard>
-                    </div>
-
-                    <SectionCard title="Échelle de notation" icon={BarChart3} accent="bg-emerald-500"
-                      description="Définissez la plage de notes valides et la précision décimale">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                        <div className="space-y-2">
-                          <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Note minimale</Label>
-                          <Input type="number" value={scoreMin} onChange={(e) => setScoreMin(e.target.value)} className="border-gray-200" />
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Note maximale</Label>
-                          <Input type="number" value={scoreMax} onChange={(e) => setScoreMax(e.target.value)} className="border-gray-200" />
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Décimales</Label>
-                          <Input type="number" min="0" max="4" value={scoreDecimals} onChange={(e) => setScoreDecimals(e.target.value)} className="border-gray-200" />
-                        </div>
-                      </div>
-                      <div className="mt-4 p-3 rounded-lg bg-emerald-50 border border-emerald-100">
-                        <p className="text-xs text-emerald-700 font-semibold flex items-center gap-1.5">
-                          <Info className="w-3.5 h-3.5" />
-                          Exemple de note valide : {Number(scoreMin).toFixed(Number(scoreDecimals))} à {Number(scoreMax).toFixed(Number(scoreDecimals))}
-                        </p>
-                      </div>
-                    </SectionCard>
-                  </motion.div>
-                </TabsContent>
-
-                {/* ─── TAB 2: Types d'évaluations ───────────────────────────── */}
-                <TabsContent value="assessments">
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
-                    <SectionCard title="Types d'évaluations" icon={BookOpen} accent="bg-blue-500"
-                      description="Définissez les catégories de devoirs et leur poids dans le calcul des moyennes">
-                      {/* Table */}
-                      <div className="rounded-xl border border-gray-100 overflow-hidden">
-                        <div className="grid grid-cols-7 gap-0 bg-gray-50/80 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-gray-500">
-                          <div className="col-span-1">Code</div>
-                          <div className="col-span-2">Libellé</div>
-                          <div>Barème</div>
-                          <div>Poids</div>
-                          <div className="col-span-1">Options</div>
-                          <div className="text-right">Actions</div>
-                        </div>
-                        <div className="divide-y divide-gray-50">
-                          <AnimatePresence>
-                            {assessmentTypes.map((type) => (
-                              <motion.div
-                                key={type.id}
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                className="grid grid-cols-7 gap-0 px-4 py-3 items-center hover:bg-gray-50/60 transition-colors"
-                              >
-                                <div className="col-span-1">
-                                  <Badge variant="outline" className="border-blue-200 text-blue-700 font-bold text-xs">
-                                    {type.code}
-                                  </Badge>
-                                </div>
-                                <div className="col-span-2">
-                                  <p className="text-sm font-semibold text-gray-800">{type.label}</p>
-                                </div>
-                                <div className="text-sm font-bold text-gray-700">/{type.maxScore}</div>
-                                <div>
-                                  <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
-                                    ×{type.weight}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    title="Inclus dans la moyenne"
-                                    onClick={() => toggleAssessmentFlag(type.id, 'includedInAverage')}
-                                    className={cn('w-5 h-5 rounded border-2 flex items-center justify-center transition-colors',
-                                      type.includedInAverage ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300')}
-                                  >
-                                    {type.includedInAverage && <Check className="w-3 h-3 text-white" />}
-                                  </button>
-                                  <button
-                                    title="Visible sur le bulletin"
-                                    onClick={() => toggleAssessmentFlag(type.id, 'visibleOnReportCard')}
-                                    className={cn('w-5 h-5 rounded border-2 flex items-center justify-center transition-colors',
-                                      type.visibleOnReportCard ? 'bg-blue-500 border-blue-500' : 'border-gray-300')}
-                                  >
-                                    {type.visibleOnReportCard && <Check className="w-3 h-3 text-white" />}
-                                  </button>
-                                </div>
-                                <div className="flex items-center justify-end gap-1">
-                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-blue-600 hover:bg-blue-50"
-                                    onClick={() => setEditingTypeId(editingTypeId === type.id ? null : type.id)}>
-                                    <Edit className="w-3.5 h-3.5" />
-                                  </Button>
-                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-400 hover:text-red-600 hover:bg-red-50"
-                                    onClick={() => removeAssessmentType(type.id)}>
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </Button>
-                                </div>
-                              </motion.div>
-                            ))}
-                          </AnimatePresence>
-                        </div>
-                      </div>
-
-                      {/* Legend */}
-                      <div className="flex items-center gap-4 text-[10px] text-gray-500 font-medium mt-2">
-                        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded border-2 bg-emerald-500 border-emerald-500 inline-block" /> Inclus dans la moyenne</span>
-                        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded border-2 bg-blue-500 border-blue-500 inline-block" /> Visible sur bulletin</span>
-                      </div>
-
-                      {/* Add new type form */}
-                      <div className="mt-5 p-4 rounded-xl border border-dashed border-blue-200 bg-blue-50/30 space-y-3">
-                        <p className="text-xs font-bold text-blue-700 flex items-center gap-1.5">
-                          <Plus className="w-3.5 h-3.5" /> Ajouter un type d'évaluation
-                        </p>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                          <div className="space-y-1">
-                            <Label className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Code</Label>
-                            <Input value={newTypeForm.code} onChange={(e) => setNewTypeForm((p) => ({ ...p, code: e.target.value }))}
-                              placeholder="Ex: DEV" className="h-8 text-sm border-gray-200" />
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Libellé</Label>
-                            <Input value={newTypeForm.label} onChange={(e) => setNewTypeForm((p) => ({ ...p, label: e.target.value }))}
-                              placeholder="Ex: Devoir surveillé" className="h-8 text-sm border-gray-200" />
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Barème max</Label>
-                            <Input type="number" value={newTypeForm.maxScore} onChange={(e) => setNewTypeForm((p) => ({ ...p, maxScore: e.target.value }))}
-                              className="h-8 text-sm border-gray-200" />
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Poids</Label>
-                            <Input type="number" step="0.5" value={newTypeForm.weight} onChange={(e) => setNewTypeForm((p) => ({ ...p, weight: e.target.value }))}
-                              className="h-8 text-sm border-gray-200" />
-                          </div>
-                        </div>
-                        <Button size="sm" onClick={addAssessmentType}
-                          disabled={!newTypeForm.code || !newTypeForm.label}
-                          className="bg-blue-600 hover:bg-blue-700 h-8">
-                          <Plus className="w-3.5 h-3.5 mr-1" /> Ajouter
-                        </Button>
-                      </div>
-                    </SectionCard>
-                  </motion.div>
-                </TabsContent>
-
-                {/* ─── TAB 3: Règles de calcul ───────────────────────────────── */}
-                <TabsContent value="formulas">
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
-                    <SectionCard title="Formules de calcul" icon={Calculator} accent="bg-violet-500"
-                      description="Définissez les formules utilisées pour calculer les moyennes des matières et la moyenne générale">
-                      <div className="space-y-6">
-                        <FormulaEditor label="Formule — Moyenne de matière" value={subjectFormula} onChange={setSubjectFormula} />
-                        <FormulaEditor label="Moyenne Générale" value={generalFormula} onChange={setGeneralFormula} />
-                
-                <div className="pt-4 border-t border-gray-100">
-                  <h4 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
-                    <Award className="w-4 h-4 text-blue-600" /> Règles de passage (Promotion)
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Moyenne de passage exigée</Label>
-                      <Input 
-                        type="number" 
-                        value={promotionThreshold} 
-                        onChange={(e) => setPromotionThreshold(e.target.value)} 
-                        className="w-32 bg-gray-50 border-gray-200"
-                        step="0.5"
-                        min={0}
-                        max={Number(scoreMax)}
-                      />
-                      <p className="text-xs text-gray-500">Moyenne minimum pour valider l'année (ex: 10/20).</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </SectionCard>
-
-                    <SectionCard title="Exemple de calcul" icon={BarChart3} accent="bg-emerald-500"
-                      description="Aperçu du résultat avec des données fictives">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {assessmentTypes.filter((t) => t.includedInAverage).slice(0, 3).map((type, i) => (
-                          <div key={type.id} className="p-3 rounded-xl bg-gray-50 border border-gray-100 space-y-1">
-                            <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">{type.label}</p>
-                            <p className="text-2xl font-black text-gray-900">{[14.5, 16, 8.5][i] ?? 10}<span className="text-sm text-gray-400 ml-1">/{type.maxScore}</span></p>
-                            <p className="text-[10px] text-gray-400">Poids ×{type.weight}</p>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-4 p-4 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-bold text-blue-700 uppercase tracking-wider">Résultat calculé</p>
-                          <p className="text-xs text-blue-500 mt-0.5">{subjectFormula}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-3xl font-black text-blue-700">14.83</p>
-                          <p className="text-[10px] font-bold text-blue-500">/{scoreMax}</p>
-                        </div>
-                      </div>
-                    </SectionCard>
-                  </motion.div>
-                </TabsContent>
-
-                {/* ─── TAB 4: Mentions ──────────────────────────────────────── */}
-                <TabsContent value="mentions">
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-                    <SectionCard title="Barèmes des mentions" icon={Award} accent="bg-amber-500"
-                      description="Seuils de notes pour l'attribution automatique des appréciations sur les bulletins">
-                      <div className="space-y-2">
-                        {mentions.map((m) => {
-                          const colorMap: Record<string, string> = {
-                            emerald: 'bg-emerald-100 border-emerald-200 text-emerald-800',
-                            blue: 'bg-blue-100 border-blue-200 text-blue-800',
-                            indigo: 'bg-blue-100 border-blue-200 text-blue-800',
-                            amber: 'bg-amber-100 border-amber-200 text-amber-800',
-                            rose: 'bg-rose-100 border-rose-200 text-rose-800',
-                          };
-                          return (
-                            <div key={m.id} className="grid grid-cols-5 gap-3 items-center p-3 rounded-xl bg-gray-50/60 border border-gray-100">
-                              <div className="col-span-2">
-                                <span className={cn('inline-flex px-3 py-1 rounded-full text-xs font-black border', colorMap[m.color] ?? colorMap.amber)}>
-                                  {m.label}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
-                                <Input type="number" defaultValue={m.minScore} className="h-8 w-16 text-center border-gray-200 text-sm" />
-                                <span className="text-gray-400">→</span>
-                                <Input type="number" defaultValue={m.maxScore} className="h-8 w-16 text-center border-gray-200 text-sm" />
-                              </div>
-                              <div className="col-span-2">
-                                <Input defaultValue={m.appreciation} placeholder="Appréciation" className="h-8 text-sm border-gray-200" />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </SectionCard>
-                  </motion.div>
-                </TabsContent>
-
-                {/* ─── TAB 5: Classements ───────────────────────────────────── */}
-                <TabsContent value="rankings">
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-                    <SectionCard title="Règles de classement" icon={BarChart3} accent="bg-sky-500"
-                      description="Configurez la portée et les critères de classement des élèves">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                        <div className="p-4 rounded-xl border border-gray-100 bg-gray-50/50 space-y-4">
-                          <div className="flex items-center gap-2 font-bold text-gray-800">
-                            <Users className="w-4 h-4 text-sky-600" />
-                            <span className="text-sm">Portée du classement</span>
-                          </div>
-                          <Select defaultValue="CLASS">
-                            <SelectTrigger className="border-gray-200">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="CLASS">Par classe</SelectItem>
-                              <SelectItem value="LEVEL">Par niveau</SelectItem>
-                              <SelectItem value="SCHOOL">Par établissement</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="p-4 rounded-xl border border-gray-100 bg-gray-50/50 space-y-4">
-                          <div className="flex items-center gap-2 font-bold text-gray-800">
-                            <GraduationCap className="w-4 h-4 text-violet-600" />
-                            <span className="text-sm">Règles de gestion des ex aequo</span>
-                          </div>
-                          <div className="space-y-3">
-                            {[
-                              { label: 'Autoriser les ex aequo (même rang)', key: 'allowTies', default: true },
-                              { label: 'Exclure les absents du classement', key: 'excludeAbsent', default: false },
-                              { label: 'Publier le rang sur le bulletin', key: 'publishRank', default: true },
-                            ].map((opt) => (
-                              <div key={opt.key} className="flex items-center justify-between">
-                                <Label className="text-sm text-gray-700">{opt.label}</Label>
-                                <Switch defaultChecked={opt.default} />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </SectionCard>
-                  </motion.div>
-                </TabsContent>
-
-                {/* ─── TAB 6: Bulletin ──────────────────────────────────────── */}
-                <TabsContent value="bulletin">
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-                    <SectionCard title="Options du bulletin" icon={FileText} accent="bg-rose-500"
-                      description="Personnalisez les éléments affichés sur les bulletins scolaires">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                        {[
-                          { label: 'Afficher la moyenne de la classe', key: 'showClassAverage', default: true },
-                          { label: 'Afficher le rang', key: 'showRank', default: true },
-                          { label: "Afficher la mention de l'élève", key: 'showMention', default: true },
-                          { label: 'Afficher les appréciations des enseignants', key: 'showTeacherComment', default: true },
-                          { label: 'Afficher les absences', key: 'showAbsences', default: false },
-                          { label: "Afficher le cachet de l'établissement", key: 'showStamp', default: true },
-                          { label: 'Afficher la signature du directeur', key: 'showSignature', default: true },
-                          { label: 'Inclure la photo de l\'élève', key: 'showPhoto', default: false },
-                        ].map((opt) => (
-                          <div key={opt.key} className="flex items-center justify-between p-3 rounded-xl border border-gray-100 bg-gray-50/40">
-                            <Label className="text-sm text-gray-700 font-medium">{opt.label}</Label>
-                            <Switch defaultChecked={opt.default} />
-                          </div>
-                        ))}
-                      </div>
-                    </SectionCard>
-                  </motion.div>
-                </TabsContent>
-
-                {/* ─── TAB 7: Simulation ────────────────────────────────────── */}
-                <TabsContent value="simulation">
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
-                    <Card className="border-none shadow-sm bg-gradient-to-br from-blue-600 to-violet-600 text-white overflow-hidden relative">
-                      <div className="absolute -right-8 -top-8 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
-                      <CardContent className="p-6 flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-black uppercase tracking-widest text-blue-200 mb-1">Moteur de simulation</p>
-                          <h3 className="text-xl font-black">Tester votre configuration</h3>
-                          <p className="text-sm text-blue-200 mt-1">Vérifiez les résultats sur 3 profils d'élèves simulés avant d'activer.</p>
-                        </div>
-                        <Button
-                          onClick={handleSimulate}
-                          disabled={simulationRunning}
-                          className="bg-white text-blue-700 hover:bg-blue-50 font-black shadow-lg border-none px-6"
-                        >
-                          {simulationRunning ? (
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          ) : (
-                            <Play className="w-4 h-4 mr-2" />
-                          )}
-                          Lancer la simulation
-                        </Button>
-                      </CardContent>
-                    </Card>
-
-                    <AnimatePresence>
-                      {simulationResults && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="grid grid-cols-1 md:grid-cols-3 gap-5"
-                        >
-                          {simulationResults.map((student, idx) => {
-                            const mentionMatch = mentions.find((m) => student.average >= m.minScore && student.average <= m.maxScore);
-                            const colorMap: Record<string, string> = {
-                              emerald: 'border-t-emerald-500 bg-emerald-50',
-                              blue: 'border-t-blue-500 bg-blue-50',
-                              indigo: 'border-t-blue-500 bg-blue-50',
-                              amber: 'border-t-amber-500 bg-amber-50',
-                              rose: 'border-t-rose-500 bg-rose-50',
-                            };
-                            const cardColor = colorMap[mentionMatch?.color ?? 'amber'];
-                            return (
-                              <motion.div
-                                key={student.name}
-                                initial={{ opacity: 0, scale: 0.95 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                transition={{ delay: idx * 0.1 }}
-                              >
-                                <Card className={cn('border-t-4 shadow-sm overflow-hidden', cardColor)}>
-                                  <CardHeader className="pb-2">
-                                    <div className="flex items-center justify-between">
-                                      <CardTitle className="text-sm font-black truncate">{student.name}</CardTitle>
-                                      <Badge className="bg-gray-900 text-white border-none text-xs">#{student.rank}</Badge>
-                                    </div>
-                                  </CardHeader>
-                                  <CardContent className="space-y-3">
-                                    <div className="space-y-1.5">
-                                      {Object.entries(student.scores).map(([code, score]) => {
-                                        const type = assessmentTypes.find((t) => t.code === code);
-                                        return (
-                                          <div key={code} className="flex items-center justify-between text-xs">
-                                            <span className="text-gray-600 font-medium">{type?.label ?? code}</span>
-                                            <span className="font-black text-gray-900">{score}<span className="text-gray-400 font-normal">/{type?.maxScore ?? 20}</span></span>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                    <div className="pt-2 border-t border-gray-200 flex items-center justify-between">
-                                      <div>
-                                        <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Moyenne</p>
-                                        <p className="text-2xl font-black text-gray-900">{student.average}</p>
-                                      </div>
-                                      <div className="text-right">
-                                        <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Mention</p>
-                                        <p className="text-sm font-black text-gray-800">{mentionMatch?.label ?? student.mention}</p>
-                                      </div>
-                                    </div>
-                                  </CardContent>
-                                </Card>
-                              </motion.div>
-                            );
-                          })}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    {!simulationResults && !simulationRunning && (
-                      <div className="flex flex-col items-center justify-center py-16 text-center text-gray-400">
-                        <Play className="w-12 h-12 mb-3 opacity-10" />
-                        <p className="text-sm font-semibold">Cliquez sur &quot;Lancer la simulation&quot; pour tester votre configuration</p>
-                      </div>
-                    )}
-                  </motion.div>
-                </TabsContent>
-
-                {/* ─── TAB 8: Historique ────────────────────────────────────── */}
-                <TabsContent value="history">
-                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-                    <SectionCard title="Historique des configurations" icon={Shield} accent="bg-gray-400"
-                      description="Consultez et gérez toutes les versions de paramétrage académique">
-                      {settings.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-16 text-center text-gray-400">
-                          <Shield className="w-12 h-12 mb-3 opacity-10" />
-                          <p className="text-sm font-semibold">Aucun paramétrage créé pour l'instant</p>
-                          <p className="text-xs text-gray-400 mt-1">Configurez votre premier paramétrage dans l'onglet Profil académique</p>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {settings.map((setting, idx) => {
-                            const cfg = statusConfig(setting.status);
-                            const StatusIcon = cfg.icon;
-                            return (
-                              <motion.div
-                                key={setting.id}
-                                initial={{ opacity: 0, x: -10 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: idx * 0.05 }}
-                                className={cn('flex items-center gap-4 p-4 rounded-xl border', cfg.bg, cfg.border)}
-                              >
-                                <div className={cn('p-2 rounded-lg bg-white shadow-sm', cfg.text)}>
-                                  <StatusIcon className="w-4 h-4" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <p className="text-sm font-bold text-gray-900">
-                                      {setting.country} · {setting.periodType} · /{setting.scoreMax}
-                                    </p>
-                                    <Badge className={cn('border-none text-xs font-black', {
-                                      'bg-emerald-500 text-white': setting.status === 'ACTIVE',
-                                      'bg-amber-500 text-white': setting.status === 'DRAFT',
-                                      'bg-slate-400 text-white': setting.status === 'LOCKED',
-                                      'bg-gray-300 text-gray-700': setting.status === 'ARCHIVED',
-                                    })}>
-                                      {cfg.label}
-                                    </Badge>
-                                  </div>
-                                  {setting.updatedAt && (
-                                    <p className="text-xs text-gray-400 mt-0.5">
-                                      Modifié le {new Date(setting.updatedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}
-                                    </p>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-1 flex-shrink-0">
-                                  {setting.status === 'DRAFT' && (
-                                    <Button variant="ghost" size="sm" className="h-8 text-xs text-emerald-700 hover:bg-emerald-50"
-                                      onClick={() => handleStatusAction(setting.id, 'activate')}>
-                                      <CheckCircle className="w-3.5 h-3.5 mr-1" /> Activer
-                                    </Button>
-                                  )}
-                                  {setting.status === 'ACTIVE' && (
-                                    <Button variant="ghost" size="sm" className="h-8 text-xs text-slate-700 hover:bg-slate-100"
-                                      onClick={() => handleStatusAction(setting.id, 'lock')}>
-                                      <Lock className="w-3.5 h-3.5 mr-1" /> Verrouiller
-                                    </Button>
-                                  )}
-                                  {(setting.status === 'ACTIVE' || setting.status === 'LOCKED') && (
-                                    <Button variant="ghost" size="sm" className="h-8 text-xs text-gray-600 hover:bg-gray-100"
-                                      onClick={() => handleStatusAction(setting.id, 'archive')}>
-                                      <Archive className="w-3.5 h-3.5 mr-1" /> Archiver
-                                    </Button>
-                                  )}
-                                  <Button variant="ghost" size="sm" className="h-8 text-xs text-blue-700 hover:bg-blue-50"
-                                    onClick={() => handleStatusAction(setting.id, 'duplicate')}>
-                                    <Copy className="w-3.5 h-3.5 mr-1" /> Dupliquer
-                                  </Button>
-                                </div>
-                              </motion.div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </SectionCard>
-
-                    {/* Stats summary */}
-                    {settings.length > 0 && (
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-5">
-                        {(['ACTIVE', 'DRAFT', 'LOCKED', 'ARCHIVED'] as SettingStatus[]).map((s) => {
-                          const count = settings.filter((x) => x.status === s).length;
-                          const cfg = statusConfig(s);
-                          return (
-                            <Card key={s} className={cn('border shadow-sm', cfg.border, cfg.bg)}>
-                              <CardContent className="p-4 text-center">
-                                <p className="text-2xl font-black text-gray-900">{count}</p>
-                                <p className={cn('text-xs font-black uppercase tracking-wider mt-0.5', cfg.text)}>{cfg.label}</p>
-                              </CardContent>
-                            </Card>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </motion.div>
-                </TabsContent>
-              </Tabs>
-            )}
-          </div>
+          <ExamModuleEntry>
+            <Suspense fallback={<div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>}>
+              <SettingsContent />
+            </Suspense>
+          </ExamModuleEntry>
         ),
       }}
     />

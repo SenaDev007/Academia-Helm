@@ -47,8 +47,8 @@ import { useBilingual } from '@/contexts/BilingualContext';
 import { BilingualTrackSelector } from '@/contexts/BilingualContext';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
+import { useExamSubModules } from '../layout';
 import { cn } from '@/lib/utils';
-import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -69,6 +69,7 @@ interface BulletinEntry {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function BulletinsPage() {
+  const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   const { academicYear, schoolLevel } = useModuleContext();
   const {
     config: academicConfig,
@@ -268,12 +269,11 @@ export default function BulletinsPage() {
         description: 'Génération et publication des bulletins selon le paramétrage académique actif.',
         icon: 'fileCheck',
       }}
-      subModules={{ modules: EXAMS_SUB_MODULES, activeModuleId: 'bulletins' }}
+      subModules={{ modules: scopedSubModules, activeModuleId: 'bulletins' }}
       content={{
         layout: 'full',
         children: (
-          <ExamModuleEntry>
-            <div className="space-y-5">
+          <div className="space-y-5">
             {/* Bilingual track selector */}
             <BilingualTrackSelector />
 
@@ -623,8 +623,6 @@ export default function BulletinsPage() {
               )}
             </div>
           </div>
-
-          </ExamModuleEntry>
         ),
       }}
     />

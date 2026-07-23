@@ -36,11 +36,12 @@ import { institutionalExamsService } from '@/services/institutional-exams.servic
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { EXAMS_SUB_MODULES } from './sub-modules';
-import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
+import { useExamSubModules } from './layout';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
 export default function ExamsDashboardPage() {
+  const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   const { academicYear, schoolLevel, tenant } = useModuleContext();
   const [kpi, setKpi] = useState<any>(null);
   const [completionData, setCompletionData] = useState<any[]>([]);
@@ -83,13 +84,12 @@ export default function ExamsDashboardPage() {
         icon: 'fileText',
       }}
       subModules={{
-        modules: EXAMS_SUB_MODULES,
+        modules: scopedSubModules,
         activeModuleId: 'dashboard',
       }}
       content={{
         layout: 'full',
         children: (
-          <ExamModuleEntry>
           <div className="space-y-6 p-1">
             {/* KPI Section */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -292,7 +292,6 @@ export default function ExamsDashboardPage() {
               </div>
             </div>
           </div>
-          </ExamModuleEntry>
         ),
       }}
     />

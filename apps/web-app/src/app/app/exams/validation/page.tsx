@@ -40,9 +40,10 @@ import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
-import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
+import { useExamSubModules } from '../layout';
 
 export default function ValidationPage() {
+  const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   const { academicYear, schoolLevel } = useModuleContext();
   const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
   const [batches, setBatches] = useState<any[]>([]);
@@ -107,14 +108,13 @@ export default function ValidationPage() {
         icon: 'shieldCheck',
       }}
       subModules={{ 
-        modules: EXAMS_SUB_MODULES,
+        modules: scopedSubModules,
         activeModuleId: 'validation'
       }}
       content={{
         layout: 'full',
         children: (
-          <ExamModuleEntry>
-            <div className="space-y-4">
+          <div className="space-y-4">
             {/* Bilingual track selector */}
             <BilingualTrackSelector />
 
@@ -261,7 +261,6 @@ export default function ValidationPage() {
               </DialogContent>
             </Dialog>
           </div>
-          </ExamModuleEntry>
         )
       }}
     />

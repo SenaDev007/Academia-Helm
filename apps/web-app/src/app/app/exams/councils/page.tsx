@@ -29,9 +29,10 @@ import { BilingualTrackSelector, useBilingual } from '@/contexts/BilingualContex
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
-import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
+import { useExamSubModules } from '../layout';
 
 export default function CouncilsPage() {
+  const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   const { academicYear, schoolLevel } = useModuleContext();
   const { currentTrack } = useBilingual();
   const [councils, setCouncils] = useState<any[]>([]);
@@ -64,14 +65,13 @@ export default function CouncilsPage() {
         icon: 'gavel',
       }}
       subModules={{ 
-        modules: EXAMS_SUB_MODULES,
+        modules: scopedSubModules,
         activeModuleId: 'councils'
       }}
       content={{
         layout: 'full',
         children: (
-          <ExamModuleEntry>
-            <div className="space-y-6">
+          <div className="space-y-6">
             <BilingualTrackSelector />
             <div className="flex justify-between items-center">
                <h2 className="text-lg font-bold text-gray-900">Sessions de délibération</h2>
@@ -127,7 +127,6 @@ export default function CouncilsPage() {
               )}
             </div>
           </div>
-          </ExamModuleEntry>
         )
       }}
     />

@@ -28,7 +28,7 @@ import { useBilingual, BilingualTrackSelector } from '@/contexts/BilingualContex
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
-import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
+import { useExamSubModules } from '../layout';
 
 const LEVEL_LABELS: Record<string, string> = {
   MATERNELLE: 'Maternelle',
@@ -52,6 +52,7 @@ interface OrionInsight {
 }
 
 export default function AnalyticsPage() {
+  const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
   const { academicYear, tenant } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
@@ -160,20 +161,17 @@ export default function AnalyticsPage() {
         icon: 'barChart3',
       }}
       subModules={{
-        modules: EXAMS_SUB_MODULES,
+        modules: scopedSubModules,
         activeModuleId: 'analytics'
       }}
       content={{
         layout: 'full',
         children: loading ? (
-          <ExamModuleEntry>
           <div className="flex items-center justify-center py-16">
             <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
             <span className="ml-2 text-gray-600">Chargement des analytics...</span>
           </div>
-          </ExamModuleEntry>
         ) : (
-          <ExamModuleEntry>
           <div className="space-y-6">
             {/* Bilingual track selector */}
             <BilingualTrackSelector />
@@ -291,7 +289,6 @@ export default function AnalyticsPage() {
               </div>
             </div>
           </div>
-          </ExamModuleEntry>
         )
       }}
     />

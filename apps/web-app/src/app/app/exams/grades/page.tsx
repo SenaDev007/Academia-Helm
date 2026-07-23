@@ -54,8 +54,8 @@ import { useBilingual } from '@/contexts/BilingualContext';
 import { BilingualTrackSelector } from '@/contexts/BilingualContext';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
+import { useExamSubModules } from '../layout';
 import { cn } from '@/lib/utils';
-import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -121,6 +121,7 @@ function getStatusBadge(status: string) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function GradesPage() {
+  const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   const { academicYear, schoolLevel } = useModuleContext();
   const { config: academicConfig, getScoreColor, getAppreciation } = useAcademicSettings();
   const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
@@ -340,12 +341,11 @@ export default function GradesPage() {
           description: `${selectedEvaluation.className} · ${selectedEvaluation.subjectName}`,
           icon: 'clipboardList',
         }}
-        subModules={{ modules: EXAMS_SUB_MODULES, activeModuleId: 'grades' }}
+        subModules={{ modules: scopedSubModules, activeModuleId: 'grades' }}
         content={{
           layout: 'full',
           children: (
-            <ExamModuleEntry>
-              <div className="space-y-4">
+            <div className="space-y-4">
               {/* Action Bar */}
               <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-3">
                 <Button variant="ghost" onClick={() => setSelectedEvaluation(null)}>
@@ -675,8 +675,6 @@ export default function GradesPage() {
                 </div>
               )}
             </div>
-
-            </ExamModuleEntry>
           ),
         }}
       />
@@ -692,7 +690,7 @@ export default function GradesPage() {
         description: 'Sélectionnez une évaluation. Les colonnes s\'afficheront selon votre paramétrage académique actif.',
         icon: 'clipboardList',
       }}
-      subModules={{ modules: EXAMS_SUB_MODULES, activeModuleId: 'grades' }}
+      subModules={{ modules: scopedSubModules, activeModuleId: 'grades' }}
       content={{
         layout: 'full',
         children: (

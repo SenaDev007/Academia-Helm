@@ -44,8 +44,8 @@ import { useBilingual } from '@/contexts/BilingualContext';
 import { BilingualTrackSelector } from '@/contexts/BilingualContext';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
+import { useExamSubModules } from '../layout';
 import { cn } from '@/lib/utils';
-import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,6 +74,7 @@ function getTrendIcon(current: number, previous?: number) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AveragesPage() {
+  const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   const { academicYear, schoolLevel } = useModuleContext();
   const {
     config: academicConfig,
@@ -238,12 +239,11 @@ export default function AveragesPage() {
         description: 'Consolidation des résultats. Les calculs utilisent les formules de votre paramétrage académique.',
         icon: 'calculator',
       }}
-      subModules={{ modules: EXAMS_SUB_MODULES, activeModuleId: 'averages' }}
+      subModules={{ modules: scopedSubModules, activeModuleId: 'averages' }}
       content={{
         layout: 'full',
         children: (
-          <ExamModuleEntry>
-            <div className="space-y-6 p-1">
+          <div className="space-y-6 p-1">
             {/* Bilingual track selector */}
             <BilingualTrackSelector />
 
@@ -556,8 +556,6 @@ export default function AveragesPage() {
               </div>
             </div>
           </div>
-
-          </ExamModuleEntry>
         ),
       }}
     />

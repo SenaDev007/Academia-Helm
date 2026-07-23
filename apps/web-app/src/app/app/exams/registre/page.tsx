@@ -31,9 +31,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
 import { academicSettingsService } from '@/services/academic-settings.service';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
+import { useExamSubModules } from '../layout';
 
 function RegistreContent() {
   const searchParams = useSearchParams();
@@ -306,6 +306,7 @@ function RegistreContent() {
 }
 
 export default function RegistrePage() {
+  const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   return (
     <ModuleContainer
       header={{
@@ -314,17 +315,15 @@ export default function RegistrePage() {
         icon: 'clipboardList',
       }}
       subModules={{
-        modules: EXAMS_SUB_MODULES,
+        modules: scopedSubModules,
         activeModuleId: 'registre',
       }}
       content={{
         layout: 'full',
         children: (
-          <ExamModuleEntry>
-            <Suspense fallback={<div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>}>
+          <Suspense fallback={<div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>}>
               <RegistreContent />
             </Suspense>
-          </ExamModuleEntry>
         ),
       }}
     />

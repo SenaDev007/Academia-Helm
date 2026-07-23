@@ -30,9 +30,10 @@ import { institutionalExamsService } from '@/services/institutional-exams.servic
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
-import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
+import { useExamSubModules } from '../layout';
 
 export default function EvaluationsPage() {
+  const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   const { academicYear, schoolLevel } = useModuleContext();
   const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
   const [evaluations, setEvaluations] = useState<any[]>([]);
@@ -68,14 +69,13 @@ export default function EvaluationsPage() {
         icon: 'fileText',
       }}
       subModules={{ 
-        modules: EXAMS_SUB_MODULES,
+        modules: scopedSubModules,
         activeModuleId: 'evaluations'
       }}
       content={{
         layout: 'full',
         children: (
-          <ExamModuleEntry>
-            <div className="space-y-4">
+          <div className="space-y-4">
             {/* Bilingual track selector */}
             <BilingualTrackSelector />
 
@@ -159,7 +159,6 @@ export default function EvaluationsPage() {
               </Table>
             </Card>
           </div>
-          </ExamModuleEntry>
         )
       }}
     />

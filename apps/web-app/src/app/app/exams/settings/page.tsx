@@ -32,9 +32,9 @@ import { cn } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useBilingual } from '@/contexts/BilingualContext';
-import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
 import { academicSettingsService } from '@/services/academic-settings.service';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
+import { useExamSubModules } from '../layout';
 import { toast } from 'sonner';
 
 // ─── Types d'évaluation par défaut selon le niveau ─────────────────────────
@@ -781,6 +781,7 @@ function ToggleRow({ label, checked, onChange }: {
 // ─── Page export avec Suspense (useSearchParams nécessite Suspense) ──────────
 
 export default function AcademicSettingsPage() {
+  const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   return (
     <ModuleContainer
       header={{
@@ -789,17 +790,15 @@ export default function AcademicSettingsPage() {
         icon: 'slidersHorizontal',
       }}
       subModules={{
-        modules: EXAMS_SUB_MODULES,
+        modules: scopedSubModules,
         activeModuleId: 'settings',
       }}
       content={{
         layout: 'full',
         children: (
-          <ExamModuleEntry>
-            <Suspense fallback={<div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>}>
+          <Suspense fallback={<div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>}>
               <SettingsContent />
             </Suspense>
-          </ExamModuleEntry>
         ),
       }}
     />

@@ -250,6 +250,7 @@ function SettingsContent() {
         if (cfg.scoreMax) setScoreMax(cfg.scoreMax);
         if (cfg.passScore) setPassScore(cfg.passScore);
         if (cfg.qualitativeThreshold) setQualitativeThreshold(cfg.qualitativeThreshold);
+        if (cfg.qualitativeItems?.length) setQualitativeItems(cfg.qualitativeItems);
         if (cfg.mentions?.length) setMentions(cfg.mentions);
         if (cfg.rankingScope) setRankingScope(cfg.rankingScope);
         if (cfg.tieMode) setTieMode(cfg.tieMode);
@@ -315,6 +316,7 @@ function SettingsContent() {
         roundingMode,
         scoreMin, scoreMax, passScore,
         qualitativeThreshold,
+        qualitativeItems,
         mentions,
         rankingScope,
         tieMode,

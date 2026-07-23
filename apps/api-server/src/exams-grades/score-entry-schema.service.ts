@@ -187,9 +187,10 @@ export class ScoreEntrySchemaService {
       return { columns, formula };
     }
 
-    // ⭐ Mode quantitatif (PRIMAIRE et SECONDAIRE) — notes /20
-    // Pour le PRIMAIRE : toutes les matières ont coef 1 (poids identique)
-    // Pour le SECONDAIRE : coef variable par matière
+    // ⭐ Mode quantitatif (PRIMAIRE et SECONDAIRE)
+    // Système FRANCOPHONE : notes /20 (CM/CP pour primaire, Interros/Devoirs pour secondaire)
+    // Système ANGLOPHONE : notes /100 (First CA /40 + Second CA /40 + Exam /60)
+    const isAnglophone = (language || '').toUpperCase() === 'EN';
 
     // Resolve the assessment-type list — period-specific overrides first
     let assessmentTypes: any[] = [];
@@ -208,19 +209,30 @@ export class ScoreEntrySchemaService {
     }
 
     // ⭐ Si aucune config assessmentTypes, utiliser les valeurs par défaut
-    // selon le niveau scolaire
+    // selon le niveau scolaire ET la piste linguistique
     if (assessmentTypes.length === 0) {
-      if (isPrimaire) {
-        // PRIMAIRE : CM (Contrôle Mensuel) + CP (Contrôle Ponctuel) + Total, /20, coef 1
+      if (isAnglophone) {
+        // ⭐ SYSTÈME ANGLOPHONE : First CA (/40) + Second CA (/40) + Exam (/60) = /100
         assessmentTypes = [
-          { code: 'CM', label: 'Contrôle Mensuel', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-          { code: 'CP', label: 'Contrôle Ponctuel', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+          { code: 'FIRST_CA', label: 'First CA', maxScore: 40, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+          { code: 'SECOND_CA', label: 'Second CA', maxScore: 40, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+          { code: 'EXAM', label: 'Exam', maxScore: 60, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+        ];
+      } else if (isPrimaire) {
+        // PRIMAIRE FRANCOPHONE : Éval. mensuelle 1, Éval. mensuelle 2, Éval. certificative — /20, coef 1
+        // CM (Critère Maximal, sur 18) + CP (Critère de Perfectionnement, sur 2) = /20
+        assessmentTypes = [
+          { code: 'EM1', label: 'Évaluation mensuelle 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+          { code: 'EM2', label: 'Évaluation mensuelle 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+          { code: 'EC', label: 'Évaluation certificative', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
         ];
       } else {
-        // SECONDAIRE : Devoir + Composition, /20, coef variable (configurable)
+        // SECONDAIRE FRANCOPHONE : Interrogation 1, Interrogation 2, Devoir surveillé 1, Devoir surveillé 2 — /20
         assessmentTypes = [
-          { code: 'DEVOIR', label: 'Devoir', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-          { code: 'COMPOSITION', label: 'Composition', maxScore: 20, weight: 2, required: true, includedInAverage: true, visibleOnReportCard: true },
+          { code: 'INT1', label: 'Interrogation 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+          { code: 'INT2', label: 'Interrogation 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+          { code: 'DS1', label: 'Devoir surveillé 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+          { code: 'DS2', label: 'Devoir surveillé 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
         ];
       }
     }
@@ -234,22 +246,26 @@ export class ScoreEntrySchemaService {
       required: at.required !== false,
       includedInAverage: at.includedInAverage !== false,
       visibleOnReportCard: at.visibleOnReportCard !== false,
-      // ⭐ Pour le PRIMAIRE, forcer le poids à 1 (toutes matières coef 1)
-      // Pour le SECONDAIRE, utiliser le poids configuré
+      // ⭐ Pour le PRIMAIRE francophone, forcer le poids à 1 (toutes matières coef 1)
+      // Pour l'anglophone, le barème est /100 (First CA + Second CA + Exam)
+      // Pour le SECONDAIRE francophone, utiliser le poids configuré
       weight: isPrimaire ? 1 : (at.weight ?? 1),
     }));
 
     // Extract the subject-average formula expression
     let formula: string = config.calculationRules?.subjectAverage?.expression ?? '';
 
-    // ⭐ Formule par défaut selon le niveau scolaire
+    // ⭐ Formule par défaut selon le niveau scolaire ET la piste linguistique
     if (!formula) {
-      if (isPrimaire) {
-        // PRIMAIRE : moyenne arithmétique simple (coef 1 partout)
-        formula = '(CM + CP) / 2';
+      if (isAnglophone) {
+        // ANGLOPHONE : First CA + Second CA + Exam = Total /100
+        formula = 'FIRST_CA + SECOND_CA + EXAM';
+      } else if (isPrimaire) {
+        // PRIMAIRE FRANCOPHONE : CM(18) + CP(2) = /20 (moyenne arithmétique, coef 1)
+        formula = '(EM1 + EM2 + EC) / 3';
       } else {
-        // SECONDAIRE : moyenne pondérée (Devoir × 1 + Composition × 2) / 3
-        formula = '((DEVOIR * 1) + (COMPOSITION * 2)) / 3';
+        // SECONDAIRE FRANCOPHONE : (INT1 + INT2) / 2 puis (Moy_interros + DS1 + DS2) / 3
+        formula = '((INT1 + INT2) / 2 + DS1 + DS2) / 3';
       }
     }
 

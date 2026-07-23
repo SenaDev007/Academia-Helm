@@ -19,6 +19,7 @@ import {
   BarChart3,
   History,
   Calendar,
+  ClipboardList,
   SlidersHorizontal
 } from 'lucide-react';
 
@@ -40,6 +41,12 @@ export const EXAMS_SUB_MODULES = [
     label: 'Saisie des notes',
     href: '/app/exams/grades',
     icon: FileEdit
+  },
+  {
+    id: 'registre',
+    label: 'Registre des notes',
+    href: '/app/exams/registre',
+    icon: ClipboardList
   },
   {
     id: 'validation',

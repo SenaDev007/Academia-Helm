@@ -58,40 +58,83 @@ interface MentionRule {
   appreciation: string;
 }
 
-const DEFAULT_ASSESSMENT_TYPES: Record<string, AssessmentType[]> = {
-  MATERNELLE: [
-    { code: 'EM1', label: 'Évaluation mensuelle 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-    { code: 'EM2', label: 'Évaluation mensuelle 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-    { code: 'EC', label: 'Évaluation certificative', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-  ],
-  PRIMAIRE: [
-    { code: 'EM1', label: 'Évaluation mensuelle 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-    { code: 'EM2', label: 'Évaluation mensuelle 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-    { code: 'EC', label: 'Évaluation certificative', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-  ],
-  SECONDAIRE: [
-    { code: 'INT1', label: 'Interrogation 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-    { code: 'INT2', label: 'Interrogation 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-    { code: 'DS1', label: 'Devoir surveillé 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-    { code: 'DS2', label: 'Devoir surveillé 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-  ],
-};
-
-const DEFAULT_FORMULAS: Record<string, { subject: string; general: string; description: string }> = {
+// ⭐ Valeurs par défaut par niveau + piste linguistique (PERSONNALISABLES par l'école)
+const DEFAULT_ASSESSMENT_TYPES: Record<string, Record<string, AssessmentType[]>> = {
   MATERNELLE: {
-    subject: 'Synthèse qualitative : TS=3, S=2, PS=1 — seuil de réussite (TS+S) ≥ seuil',
-    general: 'Somme qualitative par domaine',
-    description: 'Maternelle : évaluation qualitative TS/S/PS. Pas de moyenne numérique. Réussite si (TS+S) ≥ seuil fixé.',
+    FR: [
+      { code: 'EM1', label: 'Évaluation mensuelle 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EM2', label: 'Évaluation mensuelle 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EC', label: 'Évaluation certificative', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+    ],
+    EN: [
+      { code: 'FIRST_CA', label: 'First CA', maxScore: 40, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'SECOND_CA', label: 'Second CA', maxScore: 40, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EXAM', label: 'Exam', maxScore: 60, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+    ],
   },
   PRIMAIRE: {
-    subject: 'CM(max 18) + CP(max 2) = /20',
-    general: 'SUM(moyenne_matière) / COUNT(matières)',
-    description: 'Primaire : CM (Critère Maximal, sur 18) + CP (Critère de Perfectionnement, sur 2) = note /20. CP obtenu seulement si CM ≥ 10. Moyenne générale = moyenne arithmétique (coefficient 1 partout).',
+    FR: [
+      { code: 'EM1', label: 'Évaluation mensuelle 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EM2', label: 'Évaluation mensuelle 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EC', label: 'Évaluation certificative', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+    ],
+    EN: [
+      { code: 'FIRST_CA', label: 'First CA', maxScore: 40, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'SECOND_CA', label: 'Second CA', maxScore: 40, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EXAM', label: 'Exam', maxScore: 60, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+    ],
   },
   SECONDAIRE: {
-    subject: '((INT1 + INT2) / 2 + DS1 + DS2) / 3',
-    general: 'SUM(moyenne_matière × coefficient) / SUM(coefficients)',
-    description: 'Secondaire : Moyenne interros = (INT1 + INT2) / 2, puis note = (Moy_interros + DS1 + DS2) / 3. Avec coefficient : note × coef. Moyenne générale = somme pondérée / somme coefficients.',
+    FR: [
+      { code: 'INT1', label: 'Interrogation 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'INT2', label: 'Interrogation 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'DS1', label: 'Devoir surveillé 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'DS2', label: 'Devoir surveillé 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+    ],
+    EN: [
+      { code: 'FIRST_CA', label: 'First CA', maxScore: 40, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'SECOND_CA', label: 'Second CA', maxScore: 40, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EXAM', label: 'Exam', maxScore: 60, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+    ],
+  },
+};
+
+const DEFAULT_FORMULAS: Record<string, Record<string, { subject: string; general: string; description: string }>> = {
+  MATERNELLE: {
+    FR: {
+      subject: 'Synthèse qualitative : TS=3, S=2, PS=1 — seuil de réussite (TS+S) ≥ seuil',
+      general: 'Somme qualitative par domaine',
+      description: 'Maternelle FR : évaluation qualitative TS/S/PS. Pas de moyenne numérique. Réussite si (TS+S) ≥ seuil fixé.',
+    },
+    EN: {
+      subject: 'Qualitative synthesis: TS=3, S=2, PS=1 — pass threshold (TS+S) ≥ threshold',
+      general: 'Qualitative sum by domain',
+      description: 'Maternelle EN : qualitative assessment TS/S/PS. No numeric average. Pass if (TS+S) ≥ threshold.',
+    },
+  },
+  PRIMAIRE: {
+    FR: {
+      subject: '(EM1 + EM2 + EC) / 3',
+      general: 'SUM(moyenne_matière) / COUNT(matières)',
+      description: 'Primaire FR : 2 évaluations mensuelles + 1 certificative, /20, coefficient 1. Moyenne générale = moyenne arithmétique simple.',
+    },
+    EN: {
+      subject: 'FIRST_CA + SECOND_CA + EXAM',
+      general: 'SUM(total_matière) / (COUNT(matières) × 100)',
+      description: 'Primary EN : First CA (/40) + Second CA (/40) + Exam (/60) = Total /100 per subject. General average = Sum of totals / (number of subjects × 100).',
+    },
+  },
+  SECONDAIRE: {
+    FR: {
+      subject: '((INT1 + INT2) / 2 + DS1 + DS2) / 3',
+      general: 'SUM(moyenne_matière × coefficient) / SUM(coefficients)',
+      description: 'Secondaire FR : Moy. interros = (INT1 + INT2) / 2, note = (Moy_interros + DS1 + DS2) / 3. Avec coef : note × coef. Moy. générale = somme pondérée / somme coef.',
+    },
+    EN: {
+      subject: 'FIRST_CA + SECOND_CA + EXAM',
+      general: 'SUM(total_matière) / (COUNT(matières) × 100)',
+      description: 'Secondary EN : First CA (/40) + Second CA (/40) + Exam (/60) = Total /100 per subject. General average = Sum of totals / (number of subjects × 100).',
+    },
   },
 };
 
@@ -215,8 +258,8 @@ function SettingsContent() {
         }
       } else {
         // Pas de config existante → utiliser les valeurs par défaut selon le niveau
-        const defaults = DEFAULT_ASSESSMENT_TYPES[levelCode] || DEFAULT_ASSESSMENT_TYPES.PRIMAIRE;
-        const formulas = DEFAULT_FORMULAS[levelCode] || DEFAULT_FORMULAS.PRIMAIRE;
+        const defaults = DEFAULT_ASSESSMENT_TYPES[levelCode]?.[language || 'FR'] || DEFAULT_ASSESSMENT_TYPES.PRIMAIRE?.FR;
+        const formulas = DEFAULT_FORMULAS[levelCode]?.[language || 'FR'] || DEFAULT_FORMULAS.PRIMAIRE?.FR;
         setAssessmentTypes(defaults);
         setSubjectFormula(formulas.subject);
         setGeneralFormula(formulas.general);
@@ -224,8 +267,8 @@ function SettingsContent() {
       }
     } catch {
       // Config inexistante → valeurs par défaut
-      const defaults = DEFAULT_ASSESSMENT_TYPES[levelCode] || DEFAULT_ASSESSMENT_TYPES.PRIMAIRE;
-      const formulas = DEFAULT_FORMULAS[levelCode] || DEFAULT_FORMULAS.PRIMAIRE;
+      const defaults = DEFAULT_ASSESSMENT_TYPES[levelCode]?.[language || 'FR'] || DEFAULT_ASSESSMENT_TYPES.PRIMAIRE?.FR;
+      const formulas = DEFAULT_FORMULAS[levelCode]?.[language || 'FR'] || DEFAULT_FORMULAS.PRIMAIRE?.FR;
       setAssessmentTypes(defaults);
       setSubjectFormula(formulas.subject);
       setGeneralFormula(formulas.general);
@@ -421,7 +464,7 @@ function SettingsContent() {
                 <div>
                   <h3 className="text-sm font-bold text-blue-900">Système de calcul — {levelLabel}</h3>
                   <p className="text-xs text-blue-700 mt-1">
-                    {DEFAULT_FORMULAS[levelCode]?.description || 'Configurez les règles de calcul ci-dessous.'}
+                    {DEFAULT_FORMULAS[levelCode]?.[language || 'FR']?.description || 'Configurez les règles de calcul ci-dessous.'}
                   </p>
                 </div>
               </div>
@@ -467,12 +510,14 @@ function SettingsContent() {
               {/* Boutons de sélection rapide */}
               <div className="mt-3 flex flex-wrap gap-2">
                 <span className="text-xs text-gray-500">Sélection rapide :</span>
-                {Object.entries(DEFAULT_ASSESSMENT_TYPES).map(([level, types]) => (
-                  <button key={level} onClick={() => setAssessmentTypes([...types])}
+                {Object.entries(DEFAULT_ASSESSMENT_TYPES).map(([level, langTypes]) =>
+                    Object.entries(langTypes).map(([lang, types]) => (
+                  <button key={`${level}-${lang}`} onClick={() => setAssessmentTypes([...types])}
                     className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded font-semibold">
-                    {level === 'MATERNELLE' ? '🧒 Maternelle' : level === 'PRIMAIRE' ? '👦 Primaire' : '👨‍🎓 Secondaire'}
+                    {level === 'MATERNELLE' ? '🧒' : level === 'PRIMAIRE' ? '👦' : '👨\‍🎓'} {lang === 'FR' ? 'FR' : 'EN'}
                   </button>
-                ))}
+                    ))
+                )}
               </div>
             </CardContent>
           </Card>

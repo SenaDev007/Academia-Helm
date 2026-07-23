@@ -8,7 +8,7 @@
  *   1. POST /api/billing/cron/daily-check
  *      Cron job quotidien — vérifie tous les abonnements et applique
  *      les transitions (notifications, expiration, suspension, blocage).
- *      Appelé par Vercel Cron ou fly.io cron.
+ *      Appelé par Vercel Cron ou Railway cron.
  *
  *   2. POST /api/billing/renew/:tenantId
  *      Renouvelle un abonnement (après paiement).

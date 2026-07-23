@@ -29,6 +29,7 @@ import { BilingualTrackSelector, useBilingual } from '@/contexts/BilingualContex
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
+import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
 
 export default function CouncilsPage() {
   const { academicYear, schoolLevel } = useModuleContext();
@@ -69,7 +70,8 @@ export default function CouncilsPage() {
       content={{
         layout: 'full',
         children: (
-          <div className="space-y-6">
+          <ExamModuleEntry>
+            <div className="space-y-6">
             <BilingualTrackSelector />
             <div className="flex justify-between items-center">
                <h2 className="text-lg font-bold text-gray-900">Sessions de délibération</h2>
@@ -125,6 +127,7 @@ export default function CouncilsPage() {
               )}
             </div>
           </div>
+          </ExamModuleEntry>
         )
       }}
     />

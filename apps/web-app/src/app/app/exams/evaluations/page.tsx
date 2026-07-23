@@ -30,6 +30,7 @@ import { institutionalExamsService } from '@/services/institutional-exams.servic
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
+import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
 
 export default function EvaluationsPage() {
   const { academicYear, schoolLevel } = useModuleContext();
@@ -73,7 +74,8 @@ export default function EvaluationsPage() {
       content={{
         layout: 'full',
         children: (
-          <div className="space-y-4">
+          <ExamModuleEntry>
+            <div className="space-y-4">
             {/* Bilingual track selector */}
             <BilingualTrackSelector />
 
@@ -157,6 +159,7 @@ export default function EvaluationsPage() {
               </Table>
             </Card>
           </div>
+          </ExamModuleEntry>
         )
       }}
     />

@@ -40,6 +40,7 @@ import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
+import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
 
 export default function ValidationPage() {
   const { academicYear, schoolLevel } = useModuleContext();
@@ -112,7 +113,8 @@ export default function ValidationPage() {
       content={{
         layout: 'full',
         children: (
-          <div className="space-y-4">
+          <ExamModuleEntry>
+            <div className="space-y-4">
             {/* Bilingual track selector */}
             <BilingualTrackSelector />
 
@@ -259,6 +261,7 @@ export default function ValidationPage() {
               </DialogContent>
             </Dialog>
           </div>
+          </ExamModuleEntry>
         )
       }}
     />

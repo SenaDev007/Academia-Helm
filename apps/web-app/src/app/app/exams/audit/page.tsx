@@ -29,6 +29,7 @@ import { BilingualTrackSelector, useBilingual } from '@/contexts/BilingualContex
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
+import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
 
 export default function AuditPage() {
   const { academicYear } = useModuleContext();
@@ -73,7 +74,8 @@ export default function AuditPage() {
       content={{
         layout: 'full',
         children: (
-          <div className="space-y-6">
+          <ExamModuleEntry>
+            <div className="space-y-6">
             <BilingualTrackSelector />
             <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-gray-100">
                <div className="flex items-center space-x-2 text-sm text-gray-500 font-medium">
@@ -142,6 +144,7 @@ export default function AuditPage() {
               </Table>
             </div>
           </div>
+          </ExamModuleEntry>
         )
       }}
     />

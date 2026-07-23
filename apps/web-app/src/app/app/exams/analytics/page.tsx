@@ -28,6 +28,7 @@ import { useBilingual, BilingualTrackSelector } from '@/contexts/BilingualContex
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
+import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
 
 const LEVEL_LABELS: Record<string, string> = {
   MATERNELLE: 'Maternelle',
@@ -165,11 +166,14 @@ export default function AnalyticsPage() {
       content={{
         layout: 'full',
         children: loading ? (
+          <ExamModuleEntry>
           <div className="flex items-center justify-center py-16">
             <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
             <span className="ml-2 text-gray-600">Chargement des analytics...</span>
           </div>
+          </ExamModuleEntry>
         ) : (
+          <ExamModuleEntry>
           <div className="space-y-6">
             {/* Bilingual track selector */}
             <BilingualTrackSelector />
@@ -287,6 +291,7 @@ export default function AnalyticsPage() {
               </div>
             </div>
           </div>
+          </ExamModuleEntry>
         )
       }}
     />

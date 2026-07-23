@@ -45,6 +45,7 @@ import { BilingualTrackSelector } from '@/contexts/BilingualContext';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { cn } from '@/lib/utils';
+import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -241,7 +242,8 @@ export default function AveragesPage() {
       content={{
         layout: 'full',
         children: (
-          <div className="space-y-6 p-1">
+          <ExamModuleEntry>
+            <div className="space-y-6 p-1">
             {/* Bilingual track selector */}
             <BilingualTrackSelector />
 
@@ -554,6 +556,8 @@ export default function AveragesPage() {
               </div>
             </div>
           </div>
+
+          </ExamModuleEntry>
         ),
       }}
     />

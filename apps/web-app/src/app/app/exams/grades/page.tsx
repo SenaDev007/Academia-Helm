@@ -55,6 +55,7 @@ import { BilingualTrackSelector } from '@/contexts/BilingualContext';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { cn } from '@/lib/utils';
+import { ExamModuleEntry } from '@/components/exams/ExamModuleEntry';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -343,7 +344,8 @@ export default function GradesPage() {
         content={{
           layout: 'full',
           children: (
-            <div className="space-y-4">
+            <ExamModuleEntry>
+              <div className="space-y-4">
               {/* Action Bar */}
               <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-3">
                 <Button variant="ghost" onClick={() => setSelectedEvaluation(null)}>
@@ -673,6 +675,8 @@ export default function GradesPage() {
                 </div>
               )}
             </div>
+
+            </ExamModuleEntry>
           ),
         }}
       />

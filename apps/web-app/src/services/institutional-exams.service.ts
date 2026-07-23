@@ -216,10 +216,11 @@ export const institutionalExamsService = {
   /**
    * CONFIGURATION — avec fallback offline
    */
-  async getEvaluationTypes() {
+  async getEvaluationTypes(schoolLevelId?: string) {
     if (!networkDetectionService.isConnected()) return [];
     try {
-      const response = await apiClient.get(`/institutional-exams/config/evaluation-types`);
+      const params = schoolLevelId ? { schoolLevelId } : {};
+      const response = await apiClient.get(`/institutional-exams/config/evaluation-types`, { params });
       return response.data;
     } catch (error: any) {
       if (error.isOffline) return [];
@@ -229,6 +230,16 @@ export const institutionalExamsService = {
 
   async createEvaluationType(data: any) {
     const response = await apiClient.post(`/institutional-exams/config/evaluation-types`, data);
+    return response.data;
+  },
+
+  async updateEvaluationType(id: string, data: any) {
+    const response = await apiClient.patch(`/institutional-exams/config/evaluation-types/${id}`, data);
+    return response.data;
+  },
+
+  async deleteEvaluationType(id: string) {
+    const response = await apiClient.delete(`/institutional-exams/config/evaluation-types/${id}`);
     return response.data;
   },
 

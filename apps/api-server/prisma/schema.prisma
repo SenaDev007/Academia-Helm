@@ -2603,7 +2603,9 @@ model Quarter {
   tenant                 Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   rankings               Ranking[]
   reportCards            ReportCard[]
-  evaluations            Evaluation[]
+  // ⚠️ RETIRÉ : evaluations Evaluation[] — la relation Evaluation.period
+  // pointe maintenant vers AcademicPeriod (pas Quarter). Voir migration
+  // 20260724100000_fix_evaluations_schema pour détails.
   gradeValidationBatches GradeValidationBatch[]
   gradeLocks             GradeLock[]
   studentPeriodAverages  StudentPeriodAverage[]

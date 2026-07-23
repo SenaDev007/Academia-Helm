@@ -20,7 +20,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   Plus, Search, Calendar, Eye, Send, Trash2, Pencil, Lock, XCircle,
-  Play, CheckCircle, MoreVertical, Loader2,
+  Play, CheckCircle, MoreVertical, Loader2, Settings,
 } from 'lucide-react';
 import { ModuleContainer, FormModal } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import { classesService } from '@/services/classes.service';
 import { pedagogyService } from '@/services/pedagogy.service';
@@ -74,6 +75,7 @@ interface EvaluationTypeItem {
   id: string; name: string; code?: string;
   defaultMaxScore: number; defaultCoefficient: number;
   schoolLevelId?: string | null;
+  isSystem?: boolean;
 }
 
 interface EvaluationForm {
@@ -87,6 +89,22 @@ interface EvaluationForm {
   maxScore: string;
   coefficient: string;
 }
+
+interface EvaluationTypeForm {
+  name: string;
+  code: string;
+  schoolLevelId: string;
+  defaultMaxScore: string;
+  defaultCoefficient: string;
+}
+
+const EMPTY_TYPE_FORM: EvaluationTypeForm = {
+  name: '',
+  code: '',
+  schoolLevelId: '',
+  defaultMaxScore: '20',
+  defaultCoefficient: '1',
+};
 
 const EMPTY_FORM: EvaluationForm = {
   title: '',
@@ -122,6 +140,7 @@ function StatusBadge({ status }: { status: string }) {
 export default function EvaluationsPage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   const { academicYear, schoolLevel } = useModuleContext();
+  const { availableLevels } = useSchoolLevel();
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
 
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
@@ -129,11 +148,17 @@ export default function EvaluationsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
 
-  // Modal state
+  // Modal state — Évaluation
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<EvaluationForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+
+  // Modal state — Type d'évaluation (CRUD)
+  const [isTypeModalOpen, setIsTypeModalOpen] = useState(false);
+  const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
+  const [typeForm, setTypeForm] = useState<EvaluationTypeForm>(EMPTY_TYPE_FORM);
+  const [savingType, setSavingType] = useState(false);
 
   // Référence data
   const [classes, setClasses] = useState<ClassItem[]>([]);
@@ -155,18 +180,14 @@ export default function EvaluationsPage() {
         institutionalExamsService.getEvaluations(params),
         classesService.getAll({ schoolLevelId: schoolLevel.id, academicYearId: academicYear.id }).catch(() => []),
         getAcademicYearPeriods(academicYear.id).catch(() => []),
-        institutionalExamsService.getEvaluationTypes().catch(() => []),
+        institutionalExamsService.getEvaluationTypes(schoolLevel.id).catch(() => []),
         pedagogyService.getSubjects(academicYear.id).catch(() => []),
       ]);
       setEvaluations(Array.isArray(evals) ? evals : []);
       setClasses(Array.isArray(classesData) ? classesData : (classesData?.data ?? []));
       setPeriods(Array.isArray(periodsData) ? periodsData : []);
       setSubjects(Array.isArray(subjectsData) ? subjectsData : (subjectsData?.data ?? []));
-      // Filtrer les types d'évaluation par niveau scolaire courant
-      const allTypes = Array.isArray(typesData) ? typesData : [];
-      setEvaluationTypes(allTypes.filter((t: any) =>
-        !t.schoolLevelId || t.schoolLevelId === schoolLevel.id
-      ));
+      setEvaluationTypes(Array.isArray(typesData) ? typesData : []);
     } catch (error) {
       console.error('Error loading evaluations', error);
       toast.error('Erreur lors du chargement des évaluations');
@@ -313,6 +334,83 @@ export default function EvaluationsPage() {
     }
   };
 
+  // ─── Handlers : CRUD des types d'évaluation ──────────────────────────────
+  const handleOpenTypeModal = () => {
+    // Pré-remplir avec le niveau scolaire actuellement sélectionné (s'il est valide)
+    const currentLevel = (availableLevels || []).find(
+      (l: any) => (l.code || '').toUpperCase() === scopeLevel && l.id !== 'ALL'
+    );
+    setTypeForm({
+      ...EMPTY_TYPE_FORM,
+      schoolLevelId: currentLevel?.id || '',
+    });
+    setEditingTypeId(null);
+    setIsTypeModalOpen(true);
+  };
+
+  const handleEditType = (type: EvaluationTypeItem) => {
+    setTypeForm({
+      name: type.name,
+      code: type.code || '',
+      schoolLevelId: type.schoolLevelId || '',
+      defaultMaxScore: String(type.defaultMaxScore),
+      defaultCoefficient: String(type.defaultCoefficient),
+    });
+    setEditingTypeId(type.id);
+    setIsTypeModalOpen(true);
+  };
+
+  const handleCloseTypeModal = () => {
+    setIsTypeModalOpen(false);
+    setEditingTypeId(null);
+    setTypeForm(EMPTY_TYPE_FORM);
+  };
+
+  const handleSaveType = async () => {
+    if (!typeForm.name || !typeForm.schoolLevelId) {
+      toast.error('Le nom et le niveau scolaire sont obligatoires');
+      return;
+    }
+    setSavingType(true);
+    try {
+      const payload = {
+        name: typeForm.name,
+        code: typeForm.code || null,
+        schoolLevelId: typeForm.schoolLevelId,
+        defaultMaxScore: parseFloat(typeForm.defaultMaxScore) || 20,
+        defaultCoefficient: parseFloat(typeForm.defaultCoefficient) || 1,
+      };
+      if (editingTypeId) {
+        await institutionalExamsService.updateEvaluationType(editingTypeId, payload);
+        toast.success('✅ Type modifié');
+      } else {
+        await institutionalExamsService.createEvaluationType(payload);
+        toast.success('✅ Type créé');
+      }
+      handleCloseTypeModal();
+      await loadData();
+    } catch (err: any) {
+      toast.error('Erreur lors de la sauvegarde du type', { description: err.message });
+    } finally {
+      setSavingType(false);
+    }
+  };
+
+  const handleDeleteType = async (type: EvaluationTypeItem) => {
+    if (type.isSystem) {
+      toast.error('Les types système ne peuvent pas être supprimés');
+      return;
+    }
+    if (!confirm(`Supprimer le type "${type.name}" ?`)) return;
+    try {
+      await institutionalExamsService.deleteEvaluationType(type.id);
+      toast.success('✅ Type supprimé');
+      await loadData();
+    } catch (err: any) {
+      toast.error('Erreur lors de la suppression', { description: err.message });
+    }
+  };
+
   // ─── Available actions based on status ───────────────────────────────────
   const getAvailableActions = (evaluation: Evaluation) => {
     const actions: Array<{ label: string; icon: any; onClick: () => void; color?: string; disabled?: boolean }> = [];
@@ -355,13 +453,23 @@ export default function EvaluationsPage() {
         description: 'Créer et gérer les évaluations : devoirs, interrogations, compositions, examens blancs, épreuves pratiques, oraux.',
         icon: 'fileText',
         actions: (
-          <button
-            onClick={handleOpenCreate}
-            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Nouvelle évaluation</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleOpenTypeModal}
+              className="flex items-center space-x-2 px-3 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors text-sm"
+              title="Gérer les types d'évaluation (devoir, interrogation, composition...)"
+            >
+              <Settings className="w-4 h-4" />
+              <span className="hidden sm:inline">Types d'évaluation</span>
+            </button>
+            <button
+              onClick={handleOpenCreate}
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nouvelle évaluation</span>
+            </button>
+          </div>
         ),
       }}
       subModules={{
@@ -666,6 +774,180 @@ export default function EvaluationsPage() {
             rows={3}
           />
         </div>
+      </div>
+    </FormModal>
+
+    {/* ─── Modal Gestion des Types d'Évaluation (CRUD) ──────────────────────── */}
+    <FormModal
+      title={editingTypeId ? 'Modifier le type d\'évaluation' : 'Gérer les types d\'évaluation'}
+      isOpen={isTypeModalOpen}
+      onClose={handleCloseTypeModal}
+      size="lg"
+      actions={
+        <>
+          <button
+            onClick={handleCloseTypeModal}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+          >
+            Fermer
+          </button>
+          <button
+            onClick={handleSaveType}
+            disabled={savingType || !typeForm.name || !typeForm.schoolLevelId}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+          >
+            {savingType ? 'Enregistrement...' : editingTypeId ? 'Modifier' : 'Créer'}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-4 py-2">
+        {/* Liste des types existants */}
+        {!editingTypeId && (
+          <div>
+            <Label className="text-sm font-semibold text-gray-700">
+              Types existants {evaluationTypes.length > 0 && `(${evaluationTypes.length})`}
+            </Label>
+            <div className="mt-2 space-y-2 max-h-[200px] overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">
+              {evaluationTypes.length === 0 ? (
+                <p className="text-sm text-gray-500 italic text-center py-4">
+                  Aucun type d'évaluation pour ce niveau scolaire.
+                  Créez-en un ci-dessous.
+                </p>
+              ) : (
+                evaluationTypes.map(t => (
+                  <div key={t.id} className="flex items-center justify-between bg-white rounded-md p-2 border border-gray-100">
+                    <div className="flex items-center gap-2">
+                      {t.code && (
+                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-100 text-xs">
+                          {t.code}
+                        </Badge>
+                      )}
+                      <span className="text-sm font-medium text-gray-800">{t.name}</span>
+                      <span className="text-xs text-gray-500">
+                        /{t.defaultMaxScore} · coef {t.defaultCoefficient}
+                      </span>
+                      {t.isSystem && (
+                        <Badge variant="outline" className="bg-gray-100 text-gray-600 text-[10px]">Système</Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => handleEditType(t)}
+                        disabled={t.isSystem}
+                        title={t.isSystem ? 'Type système non modifiable' : 'Modifier'}
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-red-600"
+                        onClick={() => handleDeleteType(t)}
+                        disabled={t.isSystem}
+                        title={t.isSystem ? 'Type système non supprimable' : 'Supprimer'}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <p className="text-xs text-gray-600 font-medium">
+                ➕ Créer un nouveau type :
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Formulaire de création/édition */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="typeName">Nom <span className="text-red-500">*</span></Label>
+            <Input
+              id="typeName"
+              value={typeForm.name}
+              onChange={(e) => setTypeForm({ ...typeForm, name: e.target.value })}
+              placeholder="Ex: Devoir surveillé"
+            />
+          </div>
+          <div>
+            <Label htmlFor="typeCode">Code <span className="text-gray-400 font-normal">(optionnel)</span></Label>
+            <Input
+              id="typeCode"
+              value={typeForm.code}
+              onChange={(e) => setTypeForm({ ...typeForm, code: e.target.value.toUpperCase() })}
+              placeholder="Ex: DS"
+              maxLength={10}
+            />
+          </div>
+        </div>
+
+        <div>
+          <Label htmlFor="typeLevel">Niveau scolaire <span className="text-red-500">*</span></Label>
+          <Select
+            value={typeForm.schoolLevelId}
+            onValueChange={(v) => setTypeForm({ ...typeForm, schoolLevelId: v })}
+            disabled={!!editingTypeId}
+          >
+            <SelectTrigger id="typeLevel">
+              <SelectValue placeholder="Sélectionner un niveau..." />
+            </SelectTrigger>
+            <SelectContent>
+              {(availableLevels || [])
+                .filter((l: any) => l.id !== 'ALL' && l.isActive)
+                .map((level: any) => (
+                  <SelectItem key={level.id} value={level.id}>
+                    {level.label}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-gray-500 mt-1">
+            {editingTypeId
+              ? '⚠️ Le niveau scolaire ne peut pas être modifié après création.'
+              : 'Le type sera disponible uniquement pour ce niveau scolaire.'}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="typeMaxScore">Barème par défaut</Label>
+            <Input
+              id="typeMaxScore"
+              type="number"
+              step="0.5"
+              value={typeForm.defaultMaxScore}
+              onChange={(e) => setTypeForm({ ...typeForm, defaultMaxScore: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="typeCoef">Coefficient par défaut</Label>
+            <Input
+              id="typeCoef"
+              type="number"
+              step="0.5"
+              value={typeForm.defaultCoefficient}
+              onChange={(e) => setTypeForm({ ...typeForm, defaultCoefficient: e.target.value })}
+            />
+          </div>
+        </div>
+
+        {/* Aide : exemples par niveau */}
+        {!editingTypeId && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-xs font-semibold text-blue-900 mb-1">💡 Aide — Types d'évaluation par niveau :</p>
+            <ul className="text-xs text-blue-800 space-y-0.5">
+              <li>• <strong>Maternelle / Primaire</strong> : Évaluation mensuelle, Évaluation certificative, Évaluation formative, Évaluation sommative</li>
+              <li>• <strong>Secondaire</strong> : Devoir, Interrogation, Interrogation écrite, Devoir surveillé, Épreuve pratique (TP)</li>
+            </ul>
+          </div>
+        )}
       </div>
     </FormModal>
     </>

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
+import { FlagIcon } from '@/components/ui/flag-icon';
 
 /**
  * ============================================================================
@@ -127,8 +128,8 @@ export default function PhoneInput({
         className,
       )}>
         {/* Préfixe fixe +229 */}
-        <span className="px-3 py-2.5 text-sm font-bold text-slate-500 bg-slate-100 border-r border-slate-200 select-none whitespace-nowrap">
-          🇧🇯 +229
+        <span className="px-3 py-2.5 text-sm font-bold text-slate-500 bg-slate-100 border-r border-slate-200 select-none whitespace-nowrap inline-flex items-center gap-1.5">
+          <FlagIcon code="BJ" size="sm" /> +229
         </span>
         {/* Champ de saisie (10 chiffres, masque XX XX XX XX XX) */}
         <input

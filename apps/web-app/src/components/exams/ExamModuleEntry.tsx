@@ -26,6 +26,7 @@ import {
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useBilingual } from '@/contexts/BilingualContext';
 import { Card } from '@/components/ui/card';
+import { FlagIcon } from '@/components/ui/flag-icon';
 
 const LEVEL_ICONS: Record<string, any> = {
   MATERNELLE: Baby,
@@ -198,7 +199,7 @@ export function ExamModuleEntry({ children }: { children: React.ReactNode }) {
             onClick={() => handleLanguageSelect('FR')}
             className="group rounded-2xl border-2 border-gray-200 hover:border-blue-500 bg-white p-8 text-center transition-all hover:shadow-lg"
           >
-            <div className="text-5xl mb-3">🇫🇷</div>
+            <div className="mb-3 flex justify-center"><FlagIcon code="FR" size="xl" /></div>
             <h3 className="text-lg font-bold text-gray-900">Francophone</h3>
             <p className="text-xs text-gray-500 mt-1">Matières enseignées en français</p>
           </button>
@@ -207,7 +208,7 @@ export function ExamModuleEntry({ children }: { children: React.ReactNode }) {
             onClick={() => handleLanguageSelect('EN')}
             className="group rounded-2xl border-2 border-gray-200 hover:border-blue-500 bg-white p-8 text-center transition-all hover:shadow-lg"
           >
-            <div className="text-5xl mb-3">🇬🇧</div>
+            <div className="mb-3 flex justify-center"><FlagIcon code="GB" size="xl" /></div>
             <h3 className="text-lg font-bold text-gray-900">Anglophone</h3>
             <p className="text-xs text-gray-500 mt-1">Matières enseignées en anglais</p>
           </button>
@@ -225,7 +226,7 @@ export function ExamModuleEntry({ children }: { children: React.ReactNode }) {
 
   // === Étape 3 : Contenu du module (avec scope niveau + langue) ===
   const levelLabel = activeLevels.find((l: any) => l.code === selectedLevel)?.label || selectedLevel;
-  const langLabel = selectedLang === 'FR' ? '🇫🇷 FR' : selectedLang === 'EN' ? '🇬🇧 EN' : '';
+  const langCode = selectedLang === 'FR' ? 'FR' : selectedLang === 'EN' ? 'GB' : '';
 
   return (
     <div>
@@ -237,11 +238,12 @@ export function ExamModuleEntry({ children }: { children: React.ReactNode }) {
             {levelLabel}
           </span>
         </div>
-        {isBilingual && (
+        {isBilingual && langCode && (
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-blue-900 uppercase">Piste :</span>
-            <span className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold">
-              {langLabel}
+            <span className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1.5">
+              <FlagIcon code={langCode} size="sm" className="border-white/30" />
+              {selectedLang}
             </span>
           </div>
         )}

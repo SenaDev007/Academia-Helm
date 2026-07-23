@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useBilingual } from '@/contexts/BilingualContext';
+import { FlagIcon } from '@/components/ui/flag-icon';
 
 // ─── ExamScopeContext ─────────────────────────────────────────────────────────
 
@@ -166,7 +167,7 @@ function LanguageSelector({ onSelect, onBack }: { onSelect: (lang: string) => vo
           onClick={() => onSelect('FR')}
           className="group rounded-2xl border-2 border-gray-200 hover:border-blue-500 bg-white p-8 text-center transition-all hover:shadow-lg w-full sm:w-72"
         >
-          <div className="text-5xl mb-3">🇫🇷</div>
+          <div className="mb-3 flex justify-center"><FlagIcon code="FR" size="xl" /></div>
           <h3 className="text-lg font-bold text-gray-900">Francophone</h3>
           <p className="text-xs text-gray-500 mt-1">Matières enseignées en français</p>
         </button>
@@ -175,7 +176,7 @@ function LanguageSelector({ onSelect, onBack }: { onSelect: (lang: string) => vo
           onClick={() => onSelect('EN')}
           className="group rounded-2xl border-2 border-gray-200 hover:border-blue-500 bg-white p-8 text-center transition-all hover:shadow-lg w-full sm:w-72"
         >
-          <div className="text-5xl mb-3">🇬🇧</div>
+          <div className="mb-3 flex justify-center"><FlagIcon code="GB" size="xl" /></div>
           <h3 className="text-lg font-bold text-gray-900">Anglophone</h3>
           <p className="text-xs text-gray-500 mt-1">Matières enseignées en anglais</p>
         </button>
@@ -197,7 +198,7 @@ function ScopeBar({ levelLabel, language, onChangeLevel, onChangeLanguage }: {
   onChangeLanguage: () => void;
 }) {
   const { isEnabled: isBilingual } = useBilingual();
-  const langLabel = language === 'FR' ? '🇫🇷 FR' : language === 'EN' ? '🇬🇧 EN' : '';
+  const langCode = language === 'FR' ? 'FR' : language === 'EN' ? 'GB' : '';
 
   return (
     <div className="flex items-center gap-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3 mb-4">
@@ -207,11 +208,12 @@ function ScopeBar({ levelLabel, language, onChangeLevel, onChangeLanguage }: {
           {levelLabel}
         </span>
       </div>
-      {isBilingual && (
+      {isBilingual && langCode && (
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold text-blue-900 uppercase">Piste :</span>
-          <span className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold">
-            {langLabel}
+          <span className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1.5">
+            <FlagIcon code={langCode} size="sm" className="border-white/30" />
+            {language}
           </span>
         </div>
       )}

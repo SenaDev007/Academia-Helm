@@ -13,6 +13,7 @@ import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useQueryClient } from '@tanstack/react-query';
 import { settingsKeys } from '@/lib/query/settings-keys';
 import { academicYearsKeys } from '@/lib/query/academic-years-keys';
+import { FlagIcon } from '@/components/ui/flag-icon';
 import {
   buildAcademicYearsSnapshot,
   hydrateAcademicYearsFromBootstrap,
@@ -2352,14 +2353,15 @@ export default function SettingsPage() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Pays</label>
-                  <div className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md bg-gray-50 text-gray-700">
+                  <div className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md bg-gray-50 text-gray-700 inline-flex items-center gap-2">
                     {(() => {
-                      const countryMap: Record<string, string> = {
-                        'BJ': '🇧🇯 Bénin',
-                        'TG': '🇹🇬 Togo',
-                        'CI': '🇨🇮 Côte d\'Ivoire'
+                      const countryMap: Record<string, { code: string; label: string }> = {
+                        'BJ': { code: 'BJ', label: 'Bénin' },
+                        'TG': { code: 'TG', label: 'Togo' },
+                        'CI': { code: 'CI', label: "Côte d'Ivoire" }
                       };
-                      return countryMap[identityForm.country] || '🇧🇯 Bénin';
+                      const c = countryMap[identityForm.country] || { code: 'BJ', label: 'Bénin' };
+                      return <><FlagIcon code={c.code} size="sm" /> {c.label}</>;
                     })()}
                   </div>
                 </div>
@@ -2382,9 +2384,9 @@ export default function SettingsPage() {
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Fuseau horaire</label>
                   <select className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500" value={identityForm.timezone || 'Africa/Porto-Novo'} onChange={(e) => setIdentityForm({ ...identityForm, timezone: e.target.value })}>
-                    <option value="Africa/Porto-Novo">🇧🇯 Porto-Novo (UTC+1)</option>
-                    <option value="Africa/Lome">🇹🇬 Lomé (UTC+0)</option>
-                    <option value="Africa/Abidjan">🇨🇮 Abidjan (UTC+0)</option>
+                    <option value="Africa/Porto-Novo">BJ — Porto-Novo (UTC+1)</option>
+                    <option value="Africa/Lome">TG — Lomé (UTC+0)</option>
+                    <option value="Africa/Abidjan">CI — Abidjan (UTC+0)</option>
                   </select>
                 </div>
                 <div>

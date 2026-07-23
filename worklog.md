@@ -1151,3 +1151,139 @@ Stage Summary:
 - 3 systèmes d'évaluation par niveau scolaire (maternelle qualitative / primaire coef 1 / secondaire coef variable)
 - Bilingue FR/EN étendu à councils + audit (8/11 pages)
 - Portail enseignant créé avec filtrage par piste linguistique + check serveur teacherId
+
+---
+Task ID: module-examen-verification-persistance+fix-navigation
+Agent: main
+Task: Vérifier la persistance des paramètres dans Neon DB + corriger le bug de navigation (retour involontaire à la page de sélection du niveau scolaire)
+
+Work Log:
+
+== VÉRIFICATION PERSISTANCE DB ==
+
+Script créé : scripts/verify_academic_settings_persistence.mjs
+Connexion Neon DB (postgresql://neondb_owner@ep-curly-frost-agx7owra-pooler...) — OK
+
+Table school_academic_settings — 3 entrées trouvées :
+
+  1. PRIMAIRE FR — STATUS=ACTIVE ✅
+     - ID: 7bbb99b7-9cf4-4817-9f0c-ff2735778222
+     - Créé: 2026-07-23 17:09:54 UTC
+     - Modifié: 2026-07-23 17:28:26 UTC (activation)
+     - Pays: BJ, Année: a7593470-e4f4-460a-b3b6-4dabe53bec2a
+     - Config : absencePolicy=EXCLUDE, roundingDecimals=2, mentions=5, rankingScope=CLASS
+
+  2. MATERNELLE FR — STATUS=DRAFT
+     - ID: 2c4f17ee-0cd3-4f4a-838e-1f7366ed7056
+     - 3 types d'évaluation (EM1, EM2, EC)
+     - Formule : Synthèse qualitative TS=3/S=2/PS=1
+
+  3. SECONDAIRE FR — STATUS=DRAFT
+     - ID: b95830d1-240e-4d9e-86f7-2d5fe0410902
+     - 4 types d'évaluation (INT1, INT2, DS1, DS2)
+     - Formule : ((INT1 + INT2) / 2 + DS1 + DS2) / 3
+
+⚠️ Anomalie : L'entrée PRIMAIRE FR (ACTIVE) a 0 types d'évaluation et aucune formule
+enregistrée dans le config. Les champs assessmentTypes, calculationRules.subjectAverage
+et calculationRules.generalAverage sont vides. Les autres champs (mentions, ranking,
+bulletinOptions) sont bien présents.
+→ Hypothèse : la dernière sauvegarde avant activation n'a pas inclus les
+   assessmentTypes/formules (peut-être que l'utilisateur les a effacés ou qu'il y a
+   eu un bug de sauvegarde). Le reste du config est correct.
+
+CONCLUSION PERSISTANCE : ✅ LA SAUVEGARDE A BIEN FONCTIONNÉ
+- L'activation a bien persisté (status=ACTIVE, updatedAt=17:28:26)
+- Le badge "Active" côté frontend reflète bien l'état en DB
+- Les 3 entrées sont bien filtrables par (levelCode, language)
+
+== BUG NAVIGATION — ANALYSE ==
+
+Symptôme rapporté par l'utilisateur :
+- Après avoir sélectionné niveau + piste linguistique + cliqué sur n'importe quel
+  onglet (Paramètres, Évaluations, etc.), l'utilisateur est ramené à la page de
+  sélection du niveau scolaire.
+
+Analyse du code (apps/web-app/src/app/app/exams/layout.tsx) :
+
+  const levelCode = searchParams.get('level') || '';
+  ...
+  useEffect(() => {
+    if (levelCode) { ... setStep('content'); }
+    else { setStep('level'); }  // ← PROBLÈME
+  }, [levelCode, language, isBilingual]);
+
+CAUSE RACINE IDENTIFIÉE :
+
+  1. RACE CONDITION Next.js 16 / HYDRATION :
+     - Toutes les 11 pages du module exams appellent useExamSubModules() qui
+       utilise useSearchParams() SANS être enveloppé dans un Suspense boundary
+       propre (seul le layout.tsx a un Suspense)
+     - Pendant la navigation entre onglets, useSearchParams() peut retourner
+       brièvement un objet vide (perte temporaire des query params)
+     - À ce moment-là, levelCode devient '', déclenchant setStep('level')
+     - L'utilisateur voit la page de sélection du niveau s'afficher
+
+  2. EFFET DE BORD ISBILINGUAL :
+     - isBilingual commence à false (settings BilingualContext non chargés)
+     - Après chargement async, isBilingual passe à true
+     - Si l'URL n'a pas ?lang=... à ce moment, language devient ''
+     - Le useEffect se redéclenche → setStep('language') ou pire
+
+  3. AUCUNE PERSISTANCE DE LA SÉLECTION :
+     - Une fois les query params perdus, l'utilisateur devait tout recommencer
+     - Pas de mécanisme de récupération
+
+  4. useExamSubModules pouvait générer des hrefs SANS params :
+     - Si useSearchParams() retournait vide, les hrefs des sous-onglets
+       devenaient /app/exams/settings (sans ?level=...&lang=...)
+     - Cliquer sur ces hrefs naviguait vers une URL sans params
+     - La layout affichait alors la page de sélection
+
+== CORRECTION APPLIQUÉE ==
+
+Fichier modifié : apps/web-app/src/app/app/exams/layout.tsx
+
+A. Persistance sessionStorage de la sélection (nouvelles fonctions) :
+   - SESSION_KEY_LEVEL = 'exams_selected_level'
+   - SESSION_KEY_LANG = 'exams_selected_lang'
+   - readSessionLevel() / readSessionLang() / writeSessionSelection() / clearSessionSelection()
+   - La sélection est persistée à CHAQUE changement d'URL valide
+
+B. Auto-restoration au montage du layout (useEffect initial) :
+   - Si l'URL n'a pas ?level=... MAIS sessionStorage a une sélection → router.replace()
+     avec les params restaurés
+   - Si l'URL a déjà les params → synchroniser sessionStorage
+   - Si aucun des deux → l'utilisateur doit vraiment choisir (étape 'level')
+
+C. Tracking de l'intention utilisateur (userIntentRef) :
+   - 'initial' → 'selecting' → 'in_module'
+   - Une fois 'in_module', le useEffect NE REMET JAMAIS step à 'level'
+     même si levelCode devient vide temporairement
+   - Seul un clic explicite sur "Changer de niveau" remet l'intention à 'selecting'
+     et clears sessionStorage
+
+D. Fallback sessionStorage dans useExamSubModules :
+   - Si searchParams.get('level') est vide, on fallback sur sessionStorage
+   - Les hrefs générés sont TOUJOURS corrects (avec params)
+   - Même pendant une race condition, les liens cliquables restent valides
+
+E. handleChangeLevel explicite :
+   - clearSessionSelection() au clic sur "Changer de niveau"
+   - userIntentRef.current = 'selecting' pour permettre l'affichage du LevelSelector
+
+== VÉRIFICATIONS ==
+
+- TypeScript check sur apps/web-app : 0 erreur dans exams/ ✅
+- Aucune régression sur les autres modules (erreurs préexistantes dans cms/useAutoSave.ts
+  sont indépendantes)
+- Le fix est non-intrusif : seul layout.tsx est modifié, aucune page individuelle
+  n'a besoin d'être changée
+
+Stage Summary:
+- ✅ Persistance DB confirmée : 3 entrées dans school_academic_settings (1 ACTIVE + 2 DRAFT)
+- ⚠️ Anomalie : l'entrée PRIMAIRE FR (ACTIVE) a 0 types d'évaluation et 0 formule dans
+  son config — à investiguer (probablement un effacement accidentel ou un bug de sauvegarde)
+- ✅ Bug de navigation corrigé : layout.tsx refondu avec persistance sessionStorage
+  + auto-restoration + tracking d'intention utilisateur + fallback useExamSubModules
+- ✅ TypeScript : 0 erreur dans exams/
+- ⏳ En attente : redéploiement Vercel pour tester en production

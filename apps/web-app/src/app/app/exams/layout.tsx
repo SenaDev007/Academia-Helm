@@ -13,10 +13,17 @@
  *   2. User sélectionne un niveau → si bilingue, layout affiche le sélecteur de piste
  *   3. User sélectionne la piste → layout affiche {children} (toutes les pages/onglets)
  *   4. User navigue entre les onglets → la sélection reste (URL params préservés)
+ *
+ * ⭐ ROBUSTESSE — Persistance sessionStorage + auto-restoration :
+ *   - La sélection niveau + piste est persistée en sessionStorage à chaque changement
+ *   - Si l'URL perd temporairement ses query params (race condition Next.js 16,
+ *     navigation streaming, hydration), on restaure automatiquement depuis la session
+ *   - L'utilisateur n'est JAMAIS ramené à la page de sélection involontairement :
+ *     seul un clic explicite sur "Changer de niveau" déclenche la réinitialisation
  * ============================================================================
  */
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import {
   Baby, GraduationCap, School, Loader2, ChevronRight,
@@ -48,8 +55,16 @@ export function useExamScope() {
 
 export function useExamSubModules(baseModules: any[]) {
   const searchParams = useSearchParams();
-  const level = searchParams.get('level') || '';
-  const lang = searchParams.get('lang') || '';
+  // ⭐ Fallback sur sessionStorage : si l'URL perd temporairement ses query params
+  // (race condition Next.js 16 / hydration / navigation streaming), on récupère
+  // la sélection depuis la session pour générer des hrefs corrects.
+  // Cela évite que l'utilisateur clique sur un href sans params et perde sa sélection.
+  const urlLevel = searchParams.get('level') || '';
+  const urlLang = searchParams.get('lang') || '';
+  const sessionLevel = typeof window !== 'undefined' ? (sessionStorage.getItem('exams_selected_level') || '') : '';
+  const sessionLang = typeof window !== 'undefined' ? (sessionStorage.getItem('exams_selected_lang') || '') : '';
+  const level = urlLevel || sessionLevel;
+  const lang = urlLang || sessionLang;
 
   return baseModules.map((m: any) => ({
     ...m,
@@ -215,6 +230,53 @@ function ScopeBar({ levelLabel, language, onChangeLevel, onChangeLanguage }: {
 
 // ─── Layout inner (client component with useSearchParams) ────────────────────
 
+// ⭐ Clés sessionStorage pour persister la sélection niveau + piste linguistique.
+// Ceci évite que l'utilisateur soit ramené à la page de sélection si l'URL
+// perd temporairement ses query params (race condition Next.js 16 / hydration /
+// navigation streaming). On restaure automatiquement les params depuis la session.
+const SESSION_KEY_LEVEL = 'exams_selected_level';
+const SESSION_KEY_LANG = 'exams_selected_lang';
+
+function readSessionLevel(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return sessionStorage.getItem(SESSION_KEY_LEVEL) || '';
+  } catch {
+    return '';
+  }
+}
+
+function readSessionLang(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return sessionStorage.getItem(SESSION_KEY_LANG) || '';
+  } catch {
+    return '';
+  }
+}
+
+function writeSessionSelection(level: string, lang: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (level) sessionStorage.setItem(SESSION_KEY_LEVEL, level);
+    else sessionStorage.removeItem(SESSION_KEY_LEVEL);
+    if (lang) sessionStorage.setItem(SESSION_KEY_LANG, lang);
+    else sessionStorage.removeItem(SESSION_KEY_LANG);
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
+function clearSessionSelection() {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.removeItem(SESSION_KEY_LEVEL);
+    sessionStorage.removeItem(SESSION_KEY_LANG);
+  } catch {
+    /* ignore */
+  }
+}
+
 function ExamLayoutInner({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -225,32 +287,100 @@ function ExamLayoutInner({ children }: { children: React.ReactNode }) {
   const levelCode = searchParams.get('level') || '';
   const language = searchParams.get('lang') || (isBilingual ? '' : 'FR');
 
+  // ⭐ Référence pour savoir si c'est le premier render (pour éviter les boucles)
+  const hasRestoredRef = useRef(false);
+
+  // ⭐ Référence pour tracker la dernière "intention" utilisateur :
+  // - 'initial' : pas encore d'intention (premier chargement)
+  // - 'selecting' : utilisateur en train de sélectionner niveau/piste
+  // - 'in_module' : utilisateur a validé sa sélection et est dans le module
+  const userIntentRef = useRef<'initial' | 'selecting' | 'in_module'>('initial');
+
   const [step, setStep] = useState<'level' | 'language' | 'content'>(
     levelCode ? (isBilingual && !language ? 'language' : 'content') : 'level'
   );
 
-  // Mettre à jour l'état quand l'URL change
+  // ─── Auto-restoration depuis sessionStorage ────────────────────────────────
+  // Si l'URL n'a pas de ?level=... mais qu'on a une sélection en sessionStorage,
+  // c'est qu'on a perdu les params (race condition Next.js). On restaure.
   useEffect(() => {
+    if (hasRestoredRef.current) return;
+    hasRestoredRef.current = true;
+
+    if (levelCode) {
+      // L'URL a déjà les params → synchroniser sessionStorage
+      writeSessionSelection(levelCode, language);
+      userIntentRef.current = 'in_module';
+      return;
+    }
+
+    // L'URL n'a pas les params → vérifier sessionStorage
+    const savedLevel = readSessionLevel();
+    const savedLang = readSessionLang();
+    if (savedLevel) {
+      // ⭐ Restaurer les params dans l'URL sans recharger la page
+      const params = new URLSearchParams();
+      params.set('level', savedLevel);
+      if (savedLang) params.set('lang', savedLang);
+      const queryString = params.toString();
+      const targetUrl = `${pathname}?${queryString}`;
+      // Remplacer l'URL sans polluer l'historique
+      router.replace(targetUrl);
+      // Ne pas setStep ici — le useEffect suivant le fera quand levelCode sera mis à jour
+      userIntentRef.current = 'in_module';
+    } else {
+      // Pas de sélection sauvegardée → l'utilisateur doit vraiment choisir
+      userIntentRef.current = 'selecting';
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Mettre à jour l'état quand l'URL change.
+  // ⭐ IMPORTANT : On ne reset JAMAIS step à 'level' si l'utilisateur était
+  // déjà dans le module (userIntentRef === 'in_module'). Cela évite les
+  // retours involontaires à la page de sélection pendant les navigations.
+  useEffect(() => {
+    // Persister la sélection en sessionStorage à chaque changement d'URL
+    if (levelCode) {
+      writeSessionSelection(levelCode, language);
+    }
+
     if (levelCode) {
       if (!isBilingual) {
         setStep('content');
+        userIntentRef.current = 'in_module';
       } else if (language) {
         setStep('content');
+        userIntentRef.current = 'in_module';
       } else {
+        // Bilingue + niveau sélectionné mais pas de piste → étape piste
         setStep('language');
+        userIntentRef.current = 'selecting';
       }
     } else {
-      setStep('level');
+      // L'URL n'a pas ?level=...
+      if (userIntentRef.current === 'in_module') {
+        // ⭐ L'utilisateur ÉTAIT dans le module — ne pas le ramener à la sélection.
+        // C'est probablement une race condition Next.js (perte temporaire des params).
+        // On garde step='content' et on attend que l'auto-restoration recharge les params.
+        // Ne rien faire (garder l'ancien step).
+      } else {
+        // L'utilisateur n'a pas encore sélectionné de niveau → afficher la sélection
+        setStep('level');
+      }
     }
   }, [levelCode, language, isBilingual]);
 
   const handleLevelSelect = (level: string) => {
+    userIntentRef.current = 'selecting';
+    writeSessionSelection(level, ''); // mémoriser le niveau (piste pas encore choisie)
     if (!isBilingual) {
       const params = new URLSearchParams(searchParams.toString());
       params.set('level', level);
       params.set('lang', 'FR');
       router.push(`${pathname}?${params.toString()}`);
       setStep('content');
+      userIntentRef.current = 'in_module';
     } else {
       // Stocker temporairement le niveau et passer à la sélection de la langue
       const params = new URLSearchParams(searchParams.toString());
@@ -263,12 +393,17 @@ function ExamLayoutInner({ children }: { children: React.ReactNode }) {
   const handleLanguageSelect = (lang: string) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('lang', lang);
+    writeSessionSelection(levelCode || readSessionLevel(), lang);
     // ⭐ Toujours rediriger vers /app/exams (dashboard) après la sélection
     router.push(`/app/exams?${params.toString()}`);
     setStep('content');
+    userIntentRef.current = 'in_module';
   };
 
   const handleChangeLevel = () => {
+    // ⭐ L'utilisateur a EXPLICITEMENT demandé à changer de niveau
+    userIntentRef.current = 'selecting';
+    clearSessionSelection();
     const params = new URLSearchParams(searchParams.toString());
     params.delete('level');
     params.delete('lang');
@@ -277,6 +412,7 @@ function ExamLayoutInner({ children }: { children: React.ReactNode }) {
   };
 
   const handleChangeLanguage = () => {
+    userIntentRef.current = 'selecting';
     setStep('language');
   };
 

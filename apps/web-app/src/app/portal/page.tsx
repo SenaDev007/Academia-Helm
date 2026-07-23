@@ -17,9 +17,31 @@
  * ============================================================================
  */
 
+// ⚠️ FORCE-DYNAMIC : cette page utilise React Query (usePublicSchools via
+// SchoolSearch + BeninMap). Le prerendering statique échoue car QueryClient
+// n'est pas disponible hors d'un Provider React. Force-dynamic désactive le
+// prerender et laisse la page s'hydrider côté client uniquement.
+export const dynamic = 'force-dynamic';
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+// ⭐ QueryClient LOCAL pour la page /portal.
+// Raison : la page /portal n'est PAS dans le layout /app/* qui fournit
+// QueryProvider. Sans ce wrapper local, usePublicSchools() (utilisé par
+// SchoolSearch et BeninMap via useSchoolsMap) crashe avec "No QueryClient set".
+const portalQueryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 min — la liste des écoles change rarement
+      gcTime: 30 * 60 * 1000,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 import {
   Building2,
   GraduationCap,
@@ -427,6 +449,7 @@ export default function PortalPage() {
   // RENDER
   // ──────────────────────────────────────────────────────────────────────
   return (
+    <QueryClientProvider client={portalQueryClient}>
     <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-white to-blue-50/80 text-slate-900">
       {/* ── Background blobs ── */}
       <div className="pointer-events-none absolute inset-0 opacity-[0.3]" aria-hidden>
@@ -1101,5 +1124,6 @@ export default function PortalPage() {
         </motion.button>
       )}
     </div>
+    </QueryClientProvider>
   );
 }

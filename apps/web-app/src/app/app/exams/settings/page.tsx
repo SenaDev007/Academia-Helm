@@ -42,8 +42,6 @@ import { toast } from 'sonner';
 interface AssessmentType {
   code: string;
   label: string;
-  maxScore: number;
-  weight: number;
   required: boolean;
   includedInAverage: boolean;
   visibleOnReportCard: boolean;
@@ -62,39 +60,39 @@ interface MentionRule {
 const DEFAULT_ASSESSMENT_TYPES: Record<string, Record<string, AssessmentType[]>> = {
   MATERNELLE: {
     FR: [
-      { code: 'EM1', label: 'Évaluation mensuelle 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'EM2', label: 'Évaluation mensuelle 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'EC', label: 'Évaluation certificative', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EM1', label: 'Évaluation mensuelle 1', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EM2', label: 'Évaluation mensuelle 2', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EC', label: 'Évaluation certificative', required: true, includedInAverage: true, visibleOnReportCard: true },
     ],
     EN: [
-      { code: 'FIRST_CA', label: 'First CA', maxScore: 40, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'SECOND_CA', label: 'Second CA', maxScore: 40, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'EXAM', label: 'Exam', maxScore: 60, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'FIRST_CA', label: 'First CA', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'SECOND_CA', label: 'Second CA', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EXAM', label: 'Exam', required: true, includedInAverage: true, visibleOnReportCard: true },
     ],
   },
   PRIMAIRE: {
     FR: [
-      { code: 'EM1', label: 'Évaluation mensuelle 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'EM2', label: 'Évaluation mensuelle 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'EC', label: 'Évaluation certificative', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EM1', label: 'Évaluation mensuelle 1', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EM2', label: 'Évaluation mensuelle 2', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EC', label: 'Évaluation certificative', required: true, includedInAverage: true, visibleOnReportCard: true },
     ],
     EN: [
-      { code: 'FIRST_CA', label: 'First CA', maxScore: 40, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'SECOND_CA', label: 'Second CA', maxScore: 40, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'EXAM', label: 'Exam', maxScore: 60, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'FIRST_CA', label: 'First CA', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'SECOND_CA', label: 'Second CA', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EXAM', label: 'Exam', required: true, includedInAverage: true, visibleOnReportCard: true },
     ],
   },
   SECONDAIRE: {
     FR: [
-      { code: 'INT1', label: 'Interrogation 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'INT2', label: 'Interrogation 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'DS1', label: 'Devoir surveillé 1', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'DS2', label: 'Devoir surveillé 2', maxScore: 20, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'INT1', label: 'Interrogation 1', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'INT2', label: 'Interrogation 2', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'DS1', label: 'Devoir surveillé 1', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'DS2', label: 'Devoir surveillé 2', required: true, includedInAverage: true, visibleOnReportCard: true },
     ],
     EN: [
-      { code: 'FIRST_CA', label: 'First CA', maxScore: 40, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'SECOND_CA', label: 'Second CA', maxScore: 40, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'EXAM', label: 'Exam', maxScore: 60, weight: 1, required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'FIRST_CA', label: 'First CA', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'SECOND_CA', label: 'Second CA', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EXAM', label: 'Exam', required: true, includedInAverage: true, visibleOnReportCard: true },
     ],
   },
 };
@@ -371,7 +369,7 @@ function SettingsContent() {
   // ── Ajouter/Supprimer un type d'évaluation ────────────────────────────────
   const addAssessmentType = () => {
     setAssessmentTypes([...assessmentTypes, {
-      code: '', label: '', maxScore: 20, weight: 1, required: true,
+      code: '', label: '', required: true,
       includedInAverage: true, visibleOnReportCard: true,
     }]);
   };
@@ -502,8 +500,6 @@ function SettingsContent() {
               <div className="flex items-center gap-2 mb-2 px-2 text-xs font-bold text-gray-500 uppercase">
                 <span className="w-24 flex-shrink-0">Code</span>
                 <span className="flex-1">Nom de l'évaluation</span>
-                {!isMaternelleFR && <span className="w-20 text-center flex-shrink-0">Barème max</span>}
-                {!isMaternelleFR && <span className="w-20 text-center flex-shrink-0">Coefficient</span>}
                 <span className="w-10"></span>
               </div>
               <div className="space-y-2">
@@ -515,18 +511,6 @@ function SettingsContent() {
                     <Input placeholder="Nom de l'évaluation" value={at.label}
                       onChange={e => updateAssessmentType(i, 'label', e.target.value)}
                       className="flex-1 min-w-0 text-sm" />
-                    {/* Max et Coef masqués pour la maternelle FR (pas de notes numériques) */}
-                    {!isMaternelleFR && (
-                      <Input type="number" placeholder="Max" value={at.maxScore}
-                        onChange={e => updateAssessmentType(i, 'maxScore', Number(e.target.value))}
-                        className="w-20 text-center text-sm flex-shrink-0" />
-                    )}
-                    {!isMaternelleFR && (
-                      <Input type="number" placeholder="Coef" value={at.weight}
-                        onChange={e => updateAssessmentType(i, 'weight', Number(e.target.value))}
-                        className="w-20 text-center text-sm flex-shrink-0" disabled={isPrimaire}
-                        title={isPrimaire ? 'Primaire : coefficient toujours 1' : ''} />
-                    )}
                     <Button size="sm" variant="ghost" onClick={() => removeAssessmentType(i)} className="flex-shrink-0">
                       <Trash2 className="w-4 h-4 text-rose-500" />
                     </Button>

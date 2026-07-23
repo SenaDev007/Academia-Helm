@@ -27,7 +27,7 @@ export interface TenantThemeSettings {
 
 async function ttFetch<T>(
   path: string,
-  options?: { method?: string; body?: any },
+  options?: { method?: string; body?: any; signal?: AbortSignal },
 ): Promise<T> {
   const method = options?.method ?? 'GET';
   const url = `/api/tenant-theme/${path.replace(/^\//, '')}`;
@@ -41,6 +41,7 @@ async function ttFetch<T>(
     credentials: 'include',
     cache: 'no-store',
     ...(options?.body && { body: JSON.stringify(options.body) }),
+    ...(options?.signal && { signal: options.signal }),
   });
 
   const text = await res.text();
@@ -65,6 +66,7 @@ export const tenantThemeService = {
     ttFetch<TenantThemeSettings>('', { method: 'PUT', body: payload }),
 
   // Récupère les settings publics par slug tenant (no auth — pour le site public)
-  getPublicSettings: (tenantSlug: string): Promise<TenantThemeSettings> =>
-    ttFetch<TenantThemeSettings>(`public/${encodeURIComponent(tenantSlug)}`),
+  // ⚠️ Accepte un signal AbortSignal pour permettre un timeout côté appelant.
+  getPublicSettings: (tenantSlug: string, opts?: { signal?: AbortSignal }): Promise<TenantThemeSettings> =>
+    ttFetch<TenantThemeSettings>(`public/${encodeURIComponent(tenantSlug)}`, opts),
 };

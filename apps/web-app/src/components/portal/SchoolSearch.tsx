@@ -55,11 +55,14 @@ export default function SchoolSearch({
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Liste des établissements : route App Router → BFF qui appelle Nest
-  // Fallback : si /list échoue (403/5xx), essayer /search?q= pour obtenir au moins des résultats
+  // ⚠️ PERFORMANCE : Timeout réduit de 35s à 8s pour matcher le timeout BFF.
+  // Si le BFF timeout (8s), il renvoie déjà une liste vide — pas besoin
+  // d'attendre 35s côté client. Plus de fallback /search non plus : c'est le
+  // même backend, si /list tombe /search tombe aussi, ça ajoute juste 10s
+  // de spinner inutile. L'UI affiche un bouton "Réessayer" à la place.
   const loadAllSchools = async () => {
     const abortController = new AbortController();
-    // Timeout augmenté à 35s — le backend peut avoir un cold start Neon
-    const timeoutId = setTimeout(() => abortController.abort(), 35000);
+    const timeoutId = setTimeout(() => abortController.abort(), 8000);
 
     setIsLoading(true);
     setFetchError(null);
@@ -70,24 +73,27 @@ export default function SchoolSearch({
       clearTimeout(timeoutId);
       if (response.ok) {
         const data = await response.json();
+        // ⚠️ Le BFF peut renvoyer { schools: [], error: 'timeout' } en cas
+        // de timeout backend — traiter ce cas comme une liste vide.
+        if (data?.error === 'timeout' || data?.error === 'backend_timeout') {
+          console.warn('[SchoolSearch] BFF returned timeout, showing empty list');
+          setAllSchools([]);
+          setFetchError('Le serveur met trop de temps à répondre. Cliquez sur Réessayer.');
+          return;
+        }
         if (Array.isArray(data)) {
           setAllSchools(data);
         } else if (data && Array.isArray(data.schools)) {
           setAllSchools(data.schools);
+        } else if (data && Array.isArray(data.tenants)) {
+          setAllSchools(data.tenants);
         } else {
           console.warn('[SchoolSearch] Unexpected response format:', data);
           setAllSchools([]);
         }
       } else {
-        // Tenter le fallback via /search si /list échoue
         const errorBody = await response.json().catch(() => null);
         console.error('[SchoolSearch] /list failed:', response.status, errorBody);
-
-        if (response.status === 403 || response.status >= 500) {
-          console.log('[SchoolSearch] Trying /search fallback...');
-          const fallbackOk = await trySearchFallback();
-          if (fallbackOk) return; // Succès du fallback
-        }
 
         const hint = errorBody?._debug?.hint || '';
         const errorMsg = response.status === 403
@@ -100,49 +106,18 @@ export default function SchoolSearch({
     } catch (error: any) {
       clearTimeout(timeoutId);
       if (error.name === 'AbortError') {
-        console.warn('[SchoolSearch] Schools list fetch timed out');
-        // Timeout côté client → essayer le search fallback
-        const fallbackOk = await trySearchFallback().catch(() => false);
-        if (!fallbackOk) {
-          setFetchError('Le serveur met trop de temps à répondre. Réessayez.');
-        }
+        console.warn('[SchoolSearch] Schools list fetch timed out (8s)');
+        setFetchError('Le serveur met trop de temps à répondre. Cliquez sur Réessayer.');
       } else {
         console.error('[SchoolSearch] Error loading schools list:', error);
-        // Dernier recours : essayer le search fallback
-        const fallbackOk = await trySearchFallback().catch(() => false);
-        if (!fallbackOk) {
-          setFetchError('Erreur de connexion au serveur.');
-        }
+        setFetchError('Erreur de connexion au serveur.');
       }
     } finally {
       setIsLoading(false);
     }
   };
 
-  /** Fallback : charger quelques écoles via le endpoint /search */
-  const trySearchFallback = async (): Promise<boolean> => {
-    try {
-      const fallbackController = new AbortController();
-      const fallbackTimeout = setTimeout(() => fallbackController.abort(), 10000);
-      // Recherche large pour obtenir un maximum de résultats
-      // ⚠️ Le endpoint /search exige au moins 2 caractères — ne pas utiliser q=a
-      const response = await fetch('/api/public/schools/search?q=aa', {
-        signal: fallbackController.signal,
-      });
-      clearTimeout(fallbackTimeout);
-      if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data) && data.length > 0) {
-          console.log(`[SchoolSearch] Fallback /search loaded ${data.length} schools`);
-          setAllSchools(data);
-          return true;
-        }
-      }
-      return false;
-    } catch {
-      return false;
-    }
-  };
+  /** Fallback supprimé — voir commentaire dans loadAllSchools. */
 
   useEffect(() => {
     loadAllSchools();

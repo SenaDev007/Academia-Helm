@@ -104,10 +104,13 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function SchoolPortalPage() {
-  // Délai minimum côté serveur pour garantir l'affichage du loading
-  // Le loading.tsx (AcademiaLoader) doit être visible au moins 5 secondes
-  // (unifié avec le loader SaisieMaster — Task 25 révisée)
-  const loadingDelay = new Promise(resolve => setTimeout(resolve, 5000));
+  // ⚠️ PERFORMANCE : Plus de délai artificiel côté serveur.
+  // Le loading.tsx (AcademiaLoader) reste affiché pendant que les données
+  // sont récupérées — pas besoin de forcer un setTimeout qui bloque le rendu.
+  // Raison du changement : sur mobile, ce setTimeout(5000) ajoutait 5s
+  // systématiques à TOUTE visite de sous-domaine école, avant même que le
+  // HTML ne commence à être envoyé. Sans compter qu'il s'additionnait au
+  // fetch /tenants/by-subdomain (jusqu'à 6s timeout) = jusqu'à 11s de spinner.
 
   // Tenter de résoudre les informations de l'école côté serveur
   let schoolInfo = null;
@@ -134,9 +137,11 @@ export default async function SchoolPortalPage() {
           if (response.ok) schoolInfo = await response.json();
         } else {
           // En production : Appel direct au backend NestJS
+          // ⚠️ Réduit de 6s à 4s — le frontend client a son propre fallback
+          // via /api/public/schools/by-subdomain si cet appel échoue.
           const apiBaseUrl = getApiBaseUrl();
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 6000);
+          const timeoutId = setTimeout(() => controller.abort(), 4000);
 
           const response = await fetch(
             `${apiBaseUrl}/tenants/by-subdomain/${encodeURIComponent(subdomain)}`,
@@ -161,9 +166,6 @@ export default async function SchoolPortalPage() {
   } catch {
     // headers() peut échouer dans certains contextes
   }
-
-  // Attendre que le délai minimum soit écoulé (garantit l'affichage du loading)
-  await loadingDelay;
 
   return (
     <>

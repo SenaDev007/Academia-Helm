@@ -303,28 +303,47 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       if (isLoading) setIsLoading(false);
       return;
     }
-    if (!schoolInfo) loadSchoolData();
-    loadWebsiteData();
-    loadThemeSettings();
+
+    // ⚠️ PERFORMANCE : Si schoolInfo est déjà fourni par le Server Component,
+    // SKIP loadSchoolData — il avait déjà été fait côté serveur via /tenants/by-subdomain.
+    // On lance en parallèle (Promise.all) loadWebsiteData + loadThemeSettings
+    // qui ne sont PAS déjà résolus côté serveur.
+    if (schoolInfo) {
+      // schoolInfo déjà présent → initialiser schoolData + tenantId
+      setSchoolData(schoolInfo as any);
+      if ((schoolInfo as any)?.tenantId) setTenantId((schoolInfo as any).tenantId);
+      else if ((schoolInfo as any)?.id) setTenantId((schoolInfo as any).id);
+      setIsLoading(false);
+      // Charger en parallèle les données complémentaires
+      Promise.all([loadWebsiteData(), loadThemeSettings()]);
+    } else {
+      // Pas de schoolInfo → tout charger en parallèle (3 fetchs)
+      Promise.all([
+        loadSchoolData(),
+        loadWebsiteData(),
+        loadThemeSettings(),
+      ]).finally(() => setIsLoading(false));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
 
-  // ⭐ Timeout de sécurité : si les données ne chargent pas après 10s, afficher
-  // le contenu par défaut plutôt que de laisser le loader tourner indéfiniment.
-  // L'API Fly.io peut être en cold start (30-60s) — on ne peut pas attendre aussi longtemps.
+  // ⭐ Timeout de sécurité réduit de 10s à 5s — les 3 fetchs ont chacun un
+  // timeout de 6s max, donc 6s devrait suffire. Si on est encore en loading
+  // après 5s, on affiche le contenu par défaut (les données partielles
+  // s'afficheront au fur et à mesure de leur arrivée).
   useEffect(() => {
     if (!isLoading) return;
     const timer = setTimeout(() => {
       setIsLoading(false);
-    }, 10000);
+    }, 5000);
     return () => clearTimeout(timer);
   }, [isLoading]);
 
   const loadSchoolData = async () => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
     try {
       const res = await fetch(`/api/public/schools/by-subdomain/${slug}`, {
-        cache: 'no-store',
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -337,15 +356,14 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
     } catch (e) {
       clearTimeout(timeoutId);
       console.error(e);
-    } finally { setIsLoading(false); }
+    }
   };
 
   const loadWebsiteData = async () => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
     try {
       const res = await fetch(`/api/tenant-website/public/${slug}`, {
-        cache: 'no-store',
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -361,9 +379,14 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   // Si un themeId est retourné et qu'il correspond à un thème connu de
   // themes.config (40+ thèmes), on l'active — sinon on reste sur le fallback
   // customColors / Helm default.
+  // ⚠️ Ajout d'un timeout de 6s — avant ce fetch n'en avait aucun et pouvait
+  // bloquer indéfiniment le rendu.
   const loadThemeSettings = async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
     try {
-      const settings = await tenantThemeService.getPublicSettings(slug);
+      const settings = await tenantThemeService.getPublicSettings(slug, { signal: controller.signal });
+      clearTimeout(timeoutId);
       if (settings?.themeId) {
         const theme = getThemeById(settings.themeId);
         if (theme) {
@@ -372,6 +395,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         }
       }
     } catch (e) {
+      clearTimeout(timeoutId);
       // Silencieux : le tenant n'a peut-être pas configuré de thème officiel.
       // On conserve le fallback customColors / Helm default.
       console.debug('[theme] No official theme for tenant', slug, e);

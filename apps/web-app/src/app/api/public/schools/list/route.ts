@@ -24,36 +24,39 @@ export async function GET(_request: NextRequest) {
       ? `${API_BASE_URL}/public/schools/list`
       : `${API_BASE_URL}/api/public/schools/list`;
 
-    console.log('[School List API] Calling backend at:', apiUrl);
-
-    // Timeout de 30s pour accommoder les cold starts Neon DB
+    // ⚠️ PERFORMANCE : Timeout réduit de 30s à 8s.
+    // Raison : le bouton "Portail" pouvait rester bloqué jusqu'à 30s + fallback
+    // 10s côté client = 45s de spinner. Sur mobile c'était insupportable.
+    // 8s est suffisant pour un cold start Neon (~3-5s) + marge.
+    // En cas de timeout, on renvoie une liste VIDE (200) au lieu de 504
+    // — l'UI affiche "Aucune école trouvée" au lieu d'un spinner infini.
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
 
     let response;
     try {
       response = await fetch(normalizeApiUrl(apiUrl), {
         method: 'GET',
         headers: bffHeaders(),
-        // ⭐ cache: 'no-store' pour ne JAMAIS cacher côté Next.js BFF.
-        // Le cache Redis backend (60s) suffit pour la performance.
-        // AVANT : next: { revalidate: 60 } → les nouveaux tenants créés
-        // pendant l'onboarding n'apparaissaient pas dans le modal portail
-        // pendant 60s (voire plus si le cache Next.js persistait).
-        cache: 'no-store',
+        // ⭐ Cache court côté Next.js BFF (10s) en PLUS du cache Redis backend (60s).
+        // Avant : cache: 'no-store' → chaque visite du /portal faisait un appel
+        // backend complet. Sur 1000 visites/heure, c'était 1000 appels DB.
+        // Maintenant : 360 appels/heure max (1 toutes les 10s) — divisé par 28.
+        // Les nouveaux tenants onboarded apparaissent dans les 10s suivant leur création,
+        // c'est acceptable pour un listage portail public.
+        next: { revalidate: 10 },
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
       if (fetchError.name === 'AbortError') {
-        console.error('[School List API] Request timed out after 30s');
+        console.error('[School List API] Request timed out after 8s');
+        // ⚠️ Retourner une liste vide au lieu de 504 — l'UI affichera
+        // "Aucune école trouvée" au lieu d'un spinner infini.
         return NextResponse.json(
-          {
-            error: 'Backend timeout',
-            message: 'Le serveur met trop de temps à répondre. Veuillez réessayer dans quelques instants.'
-          },
-          { status: 504 }
+          { schools: [], tenants: [], error: 'timeout', message: 'Délai dépassé' },
+          { status: 200 }
         );
       }
       throw fetchError;
@@ -68,7 +71,13 @@ export async function GET(_request: NextRequest) {
     }
 
     const data = await response.json();
-    return NextResponse.json(data);
+    // ⚠️ Forcer les headers de cache côté client aussi (10s) pour éviter
+    // que le navigateur ne refasse la même requête immédiatement.
+    return NextResponse.json(data, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=30',
+      },
+    });
   } catch (error: any) {
     console.error('[School List API] Error:', error);
     return NextResponse.json(

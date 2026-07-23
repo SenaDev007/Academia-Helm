@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * ============================================================================
  * PORTAL ACCESS PAGE — ACCÉDER À UN PORTAIL
@@ -22,8 +24,6 @@
 // n'est pas disponible hors d'un Provider React. Force-dynamic désactive le
 // prerender et laisse la page s'hydrider côté client uniquement.
 export const dynamic = 'force-dynamic';
-
-'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

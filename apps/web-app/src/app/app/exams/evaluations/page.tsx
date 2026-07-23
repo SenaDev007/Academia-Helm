@@ -24,18 +24,17 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { useBilingual } from '@/contexts/BilingualContext';
-import { BilingualTrackSelector } from '@/contexts/BilingualContext';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules } from '../layout';
+import { useExamScope } from '../layout';
 
 export default function EvaluationsPage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   const { academicYear, schoolLevel } = useModuleContext();
-  const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
+  const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
   const [evaluations, setEvaluations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -48,7 +47,7 @@ export default function EvaluationsPage() {
           schoolLevelId: schoolLevel.id,
           academicYearId: academicYear.id,
         };
-        if (isBilingual) params.language = currentTrack;
+        if (scopeLang) params.language = scopeLang;
         const res = await institutionalExamsService.getEvaluations(params);
         setEvaluations(res);
       } catch (error) {
@@ -58,7 +57,7 @@ export default function EvaluationsPage() {
       }
     }
     loadData();
-  }, [schoolLevel, academicYear, isBilingual, currentTrack]);
+  }, [schoolLevel, academicYear, !!scopeLang, scopeLang]);
 
 
   return (
@@ -77,7 +76,6 @@ export default function EvaluationsPage() {
         children: (
           <div className="space-y-4">
             {/* Bilingual track selector */}
-            <BilingualTrackSelector />
 
             <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-gray-100">
               <div className="flex items-center space-x-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 w-96">

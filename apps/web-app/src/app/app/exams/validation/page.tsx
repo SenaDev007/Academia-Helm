@@ -33,19 +33,18 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { useBilingual } from '@/contexts/BilingualContext';
-import { BilingualTrackSelector } from '@/contexts/BilingualContext';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules } from '../layout';
+import { useExamScope } from '../layout';
 
 export default function ValidationPage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   const { academicYear, schoolLevel } = useModuleContext();
-  const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
+  const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBatch, setSelectedBatch] = useState<any>(null);
@@ -62,7 +61,7 @@ export default function ValidationPage() {
         const res = await institutionalExamsService.getPendingValidations(
           schoolLevel.id,
           academicYear.id,
-          isBilingual ? currentTrack : undefined,
+          scopeLang || undefined,
         );
         setBatches(Array.isArray(res) ? res : []);
       } catch (error) {
@@ -72,7 +71,7 @@ export default function ValidationPage() {
       }
     }
     loadData();
-  }, [schoolLevel, academicYear, isBilingual, currentTrack]);
+  }, [schoolLevel, academicYear, !!scopeLang, scopeLang]);
 
   const handleApprove = async () => {
     try {
@@ -116,7 +115,6 @@ export default function ValidationPage() {
         children: (
           <div className="space-y-4">
             {/* Bilingual track selector */}
-            <BilingualTrackSelector />
 
             <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex items-start space-x-3">
               <ShieldCheck className="w-6 h-6 text-blue-600 mt-0.5" />

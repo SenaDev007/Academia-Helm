@@ -25,16 +25,16 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
-import { BilingualTrackSelector, useBilingual } from '@/contexts/BilingualContext';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules } from '../layout';
+import { useExamScope } from '../layout';
 
 export default function AuditPage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   const { academicYear } = useModuleContext();
-  const { currentTrack } = useBilingual();
+  const { language: scopeLang } = useExamScope();
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -76,7 +76,6 @@ export default function AuditPage() {
         layout: 'full',
         children: (
           <div className="space-y-6">
-            <BilingualTrackSelector />
             <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-gray-100">
                <div className="flex items-center space-x-2 text-sm text-gray-500 font-medium">
                   <Filter className="w-4 h-4" />

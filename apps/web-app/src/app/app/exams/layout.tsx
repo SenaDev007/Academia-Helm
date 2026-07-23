@@ -100,7 +100,7 @@ function LevelSelector({ onSelect }: { onSelect: (level: string) => void }) {
           <p className="text-sm text-gray-500">Chargement des niveaux scolaires...</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl w-full">
+        <div className="flex flex-wrap justify-center gap-4 max-w-3xl w-full">
           {activeLevels.map((level: any) => {
             const Icon = LEVEL_ICONS[level.code] || School;
             const gradient = LEVEL_COLORS[level.code] || 'from-gray-500 to-gray-600';
@@ -108,7 +108,7 @@ function LevelSelector({ onSelect }: { onSelect: (level: string) => void }) {
               <button
                 key={level.id}
                 onClick={() => onSelect(level.code)}
-                className="group relative overflow-hidden rounded-2xl border-2 border-gray-200 hover:border-blue-400 bg-white p-6 text-left transition-all hover:shadow-lg"
+                className="group relative overflow-hidden rounded-2xl border-2 border-gray-200 hover:border-blue-400 bg-white p-6 text-left transition-all hover:shadow-lg w-full sm:w-72"
               >
                 <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${gradient}`} />
                 <div className={`inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br ${gradient} mb-4`}>
@@ -146,10 +146,10 @@ function LanguageSelector({ onSelect, onBack }: { onSelect: (lang: string) => vo
         <p className="text-sm text-gray-500">Sélectionnez votre piste linguistique</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 max-w-xl w-full">
+      <div className="flex flex-wrap justify-center gap-4 max-w-2xl w-full">
         <button
           onClick={() => onSelect('FR')}
-          className="group rounded-2xl border-2 border-gray-200 hover:border-blue-500 bg-white p-8 text-center transition-all hover:shadow-lg"
+          className="group rounded-2xl border-2 border-gray-200 hover:border-blue-500 bg-white p-8 text-center transition-all hover:shadow-lg w-full sm:w-72"
         >
           <div className="text-5xl mb-3">🇫🇷</div>
           <h3 className="text-lg font-bold text-gray-900">Francophone</h3>
@@ -158,7 +158,7 @@ function LanguageSelector({ onSelect, onBack }: { onSelect: (lang: string) => vo
 
         <button
           onClick={() => onSelect('EN')}
-          className="group rounded-2xl border-2 border-gray-200 hover:border-blue-500 bg-white p-8 text-center transition-all hover:shadow-lg"
+          className="group rounded-2xl border-2 border-gray-200 hover:border-blue-500 bg-white p-8 text-center transition-all hover:shadow-lg w-full sm:w-72"
         >
           <div className="text-5xl mb-3">🇬🇧</div>
           <h3 className="text-lg font-bold text-gray-900">Anglophone</h3>
@@ -263,7 +263,8 @@ function ExamLayoutInner({ children }: { children: React.ReactNode }) {
   const handleLanguageSelect = (lang: string) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('lang', lang);
-    router.push(`${pathname}?${params.toString()}`);
+    // ⭐ Toujours rediriger vers /app/exams (dashboard) après la sélection
+    router.push(`/app/exams?${params.toString()}`);
     setStep('content');
   };
 

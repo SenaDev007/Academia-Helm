@@ -40,11 +40,10 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAcademicSettings } from '@/hooks/useAcademicSettings';
-import { useBilingual } from '@/contexts/BilingualContext';
-import { BilingualTrackSelector } from '@/contexts/BilingualContext';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules } from '../layout';
+import { useExamScope } from '../layout';
 import { cn } from '@/lib/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -86,7 +85,7 @@ export default function AveragesPage() {
     passingScore,
     decimals,
   } = useAcademicSettings();
-  const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
+  const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
 
   const [classes, setClasses] = useState<any[]>([]);
   const [periods, setPeriods] = useState<any[]>([]);
@@ -162,7 +161,7 @@ export default function AveragesPage() {
         periodId: selectedPeriodId,
         academicYearId: academicYear?.id ?? '',
       });
-      if (isBilingual) params.append('language', currentTrack);
+      if (scopeLang) params.append('language', scopeLang);
       const res = await fetch(
         `/api/exams/averages?${params.toString()}`,
         { credentials: 'include' }
@@ -173,7 +172,7 @@ export default function AveragesPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedClassId, selectedPeriodId, academicYear?.id, isBilingual, currentTrack]);
+  }, [selectedClassId, selectedPeriodId, academicYear?.id, !!scopeLang, scopeLang]);
 
   useEffect(() => { if (selectedClassId && selectedPeriodId) loadResults(); }, [loadResults]);
 
@@ -187,7 +186,7 @@ export default function AveragesPage() {
         periodId: selectedPeriodId,
         academicYearId: academicYear.id,
       };
-      if (isBilingual) payload.language = currentTrack;
+      if (scopeLang) payload.language = scopeLang;
       const res = await fetch('/api/exams/calculate-averages', {
         method: 'POST',
         credentials: 'include',
@@ -245,7 +244,6 @@ export default function AveragesPage() {
         children: (
           <div className="space-y-6 p-1">
             {/* Bilingual track selector */}
-            <BilingualTrackSelector />
 
             {/* No config banner */}
             {noConfig && (

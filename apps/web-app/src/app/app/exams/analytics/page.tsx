@@ -24,11 +24,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
-import { useBilingual, BilingualTrackSelector } from '@/contexts/BilingualContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules } from '../layout';
+import { useExamScope } from '../layout';
 
 const LEVEL_LABELS: Record<string, string> = {
   MATERNELLE: 'Maternelle',
@@ -53,7 +53,7 @@ interface OrionInsight {
 
 export default function AnalyticsPage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
-  const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
+  const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
   const { academicYear, tenant } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
   const [loading, setLoading] = useState(true);
@@ -70,7 +70,7 @@ export default function AnalyticsPage() {
     if (!academicYear?.id || !tenant?.id) return;
     fetchAnalytics();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [academicYear?.id, tenant?.id, currentTrack]);
+  }, [academicYear?.id, tenant?.id, scopeLang]);
 
   async function fetchAnalytics() {
     try {
@@ -89,7 +89,7 @@ export default function AnalyticsPage() {
             tenantId: tenant!.id,
             academicYearId: academicYear!.id,
             schoolLevelId: level.id,
-            ...(isBilingual && currentTrack ? { language: currentTrack } : {}),
+            ...(scopeLang ? { language: scopeLang } : {}),
           });
           // Récupérer les KPI dashboard
           const res = await fetch(`/api/exams/dashboard?${params.toString()}`, { credentials: 'include' });
@@ -174,7 +174,6 @@ export default function AnalyticsPage() {
         ) : (
           <div className="space-y-6">
             {/* Bilingual track selector */}
-            <BilingualTrackSelector />
 
             {/* Orion Insights — générés à partir des données réelles */}
             {insights.length > 0 ? (

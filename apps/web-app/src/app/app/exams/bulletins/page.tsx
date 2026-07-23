@@ -44,10 +44,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAcademicSettings } from '@/hooks/useAcademicSettings';
 import { useBilingual } from '@/contexts/BilingualContext';
-import { BilingualTrackSelector } from '@/contexts/BilingualContext';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules } from '../layout';
+import { useExamScope } from '../layout';
 import { cn } from '@/lib/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -81,7 +81,8 @@ export default function BulletinsPage() {
     passingScore,
     decimals,
   } = useAcademicSettings();
-  const { isEnabled: isBilingual, currentTrack, setCurrentTrack, separateGrades } = useBilingual();
+  const { separateGrades } = useBilingual();
+  const { language: scopeLang } = useExamScope();
 
   const [bulletins, setBulletins] = useState<BulletinEntry[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
@@ -155,7 +156,7 @@ export default function BulletinsPage() {
         periodId: selectedPeriodId,
         academicYearId: academicYear?.id ?? '',
       });
-      if (isBilingual) params.append('language', currentTrack);
+      if (scopeLang) params.append('language', scopeLang);
       const res = await fetch(
         `/api/exams/bulletins?${params.toString()}`,
         { credentials: 'include' }
@@ -166,7 +167,7 @@ export default function BulletinsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedClassId, selectedPeriodId, academicYear?.id, isBilingual, currentTrack]);
+  }, [selectedClassId, selectedPeriodId, academicYear?.id, scopeLang]);
 
   useEffect(() => { if (selectedClassId && selectedPeriodId) loadBulletins(); }, [loadBulletins]);
 
@@ -180,7 +181,7 @@ export default function BulletinsPage() {
         periodId: selectedPeriodId,
         academicYearId: academicYear?.id,
       };
-      if (isBilingual) payload.language = currentTrack;
+      if (scopeLang) payload.language = scopeLang;
       await fetch('/api/exams/generate-report-cards', {
         method: 'POST',
         credentials: 'include',
@@ -206,7 +207,7 @@ export default function BulletinsPage() {
         periodId: selectedPeriodId,
         academicYearId: academicYear?.id,
       };
-      if (isBilingual) payload.language = currentTrack;
+      if (scopeLang) payload.language = scopeLang;
       await fetch('/api/exams/bulletins/publish', {
         method: 'POST',
         credentials: 'include',
@@ -227,7 +228,7 @@ export default function BulletinsPage() {
     setDownloadingId(bulletinId);
     try {
       const params = new URLSearchParams({ periodId: selectedPeriodId });
-      if (isBilingual) params.append('language', currentTrack);
+      if (scopeLang) params.append('language', scopeLang);
       const res = await fetch(
         `/api/exams/bulletins/${bulletinId}/pdf?${params.toString()}`,
         { credentials: 'include' }
@@ -275,10 +276,9 @@ export default function BulletinsPage() {
         children: (
           <div className="space-y-5">
             {/* Bilingual track selector */}
-            <BilingualTrackSelector />
 
             {/* ⭐ Bannière separateGrades — indique le mode de génération des bulletins bilingues */}
-            {isBilingual && (
+            {separateGrades && (
               <div className={`rounded-xl p-3 text-sm border ${
                 separateGrades
                   ? 'bg-amber-50 border-amber-200 text-amber-900'

@@ -50,11 +50,10 @@ import {
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAcademicSettings } from '@/hooks/useAcademicSettings';
 import { academicSettingsService } from '@/services/academic-settings.service';
-import { useBilingual } from '@/contexts/BilingualContext';
-import { BilingualTrackSelector } from '@/contexts/BilingualContext';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules } from '../layout';
+import { useExamScope } from '../layout';
 import { cn } from '@/lib/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -124,7 +123,7 @@ export default function GradesPage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   const { academicYear, schoolLevel } = useModuleContext();
   const { config: academicConfig, getScoreColor, getAppreciation } = useAcademicSettings();
-  const { isEnabled: isBilingual, currentTrack, setCurrentTrack } = useBilingual();
+  const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
 
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [selectedEvaluation, setSelectedEvaluation] = useState<Evaluation | null>(null);
@@ -147,7 +146,7 @@ export default function GradesPage() {
         schoolLevelId: schoolLevel.id,
         academicYearId: academicYear.id,
       });
-      if (isBilingual) params.append('language', currentTrack);
+      if (scopeLang) params.append('language', scopeLang);
       const res = await fetch(
         `/api/exams/evaluations?${params.toString()}`,
         { credentials: 'include' }
@@ -158,7 +157,7 @@ export default function GradesPage() {
     } finally {
       setLoadingEvals(false);
     }
-  }, [schoolLevel?.id, academicYear?.id, isBilingual, currentTrack]);
+  }, [schoolLevel?.id, academicYear?.id, !!scopeLang, scopeLang]);
 
   useEffect(() => { loadEvaluations(); }, [loadEvaluations]);
 
@@ -696,7 +695,6 @@ export default function GradesPage() {
         children: (
           <div className="space-y-4">
             {/* Bilingual track selector */}
-            <BilingualTrackSelector />
 
             {/* Config status */}
             {academicConfig && (

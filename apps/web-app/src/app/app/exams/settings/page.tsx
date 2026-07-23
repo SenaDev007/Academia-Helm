@@ -607,51 +607,68 @@ function SettingsContent() {
       {activeSubTab === 'mentions' && (
         <div className="space-y-4">
           {/* Barème de notation */}
-          <Card>
-            <CardHeader><CardTitle className="text-md">Barème de notation</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-gray-600 block mb-1">Note minimale</label>
-                  <Input type="number" value={scoreMin} onChange={e => setScoreMin(Number(e.target.value))} className="text-center" />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-600 block mb-1">Note maximale</label>
-                  <Input type="number" value={scoreMax} onChange={e => setScoreMax(Number(e.target.value))} className="text-center" />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-600 block mb-1">Seuil de réussite</label>
-                  <Input type="number" value={passScore} onChange={e => setPassScore(Number(e.target.value))} className="text-center" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Échelle qualitative (maternelle uniquement) */}
-          {isMaternelleFR && (
+          {isMaternelleFR ? (
+            // ⭐ Maternelle FR : barème qualitatif (TS=3, S=2, PS=1)
             <Card className="border-pink-200">
               <CardHeader>
-                <CardTitle className="text-md">Échelle qualitative (Maternelle)</CardTitle>
+                <CardTitle className="text-md">Barème qualitatif (Maternelle FR)</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
                   {QUALITATIVE_SCALE.map(qs => (
                     <div key={qs.code} className="flex items-center gap-3 bg-pink-50 rounded-lg p-2">
-                      <span className="px-3 py-1 bg-pink-200 text-pink-800 rounded font-bold text-sm">{qs.code}</span>
+                      <span className="px-3 py-1 bg-pink-200 text-pink-800 rounded font-bold text-sm w-12 text-center">{qs.code}</span>
                       <span className="flex-1 text-sm">{qs.label}</span>
-                      <span className="text-xs text-gray-500">Valeur calcul : {qs.value}</span>
+                      <span className="text-xs text-gray-500">Valeur : {qs.value}</span>
                     </div>
                   ))}
                 </div>
-                <div className="mt-3">
-                  <label className="text-xs font-bold text-gray-600 block mb-1">
-                    Seuil de réussite (nombre minimum de TS + S sur le total de domaines)
+                <div className="mt-4 grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-600 block mb-1">Valeur minimale (PS)</label>
+                    <Input type="number" value={1} disabled className="text-center bg-gray-50" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-600 block mb-1">Valeur maximale (TS)</label>
+                    <Input type="number" value={3} disabled className="text-center bg-gray-50" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-600 block mb-1">Seuil de réussite (moyenne)</label>
+                    <Input type="number" value={2} disabled className="text-center bg-gray-50" />
+                    <p className="text-[10px] text-gray-400 mt-1">Moyenne = (1+2+3)/3 = 2</p>
+                  </div>
+                </div>
+                <div className="mt-3 bg-pink-50 border border-pink-200 rounded-lg p-3">
+                  <label className="text-xs font-bold text-pink-800 block mb-1">
+                    Seuil de réussite par domaine (nombre minimum de TS+S sur le total)
                   </label>
-                  <Input type="number" value={qualitativeThreshold} onChange={e => setQualitativeThreshold(Number(e.target.value))}
-                    className="w-24 text-center" />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Ex: Si 9 domaines et seuil = 6, l'élève réussit s'il a au moins 6 (TS + S) sur 9.
+                  <Input type="number" min={1} value={qualitativeThreshold} onChange={e => setQualitativeThreshold(Number(e.target.value))}
+                    className="w-20 text-center" />
+                  <p className="text-xs text-pink-600 mt-1">
+                    Ex : Si 9 domaines et seuil = 6, l'élève réussit s'il a au moins 6 domaines en TS ou S sur 9.
+                    Soit l'équivalent d'une moyenne ≥ 2 (Satisfaisant).
                   </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            // ⭐ Primaire/Secondaire/Maternelle EN : barème quantitatif
+            <Card>
+              <CardHeader><CardTitle className="text-md">Barème de notation</CardTitle></CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-600 block mb-1">Note minimale</label>
+                    <Input type="number" value={scoreMin} onChange={e => setScoreMin(Number(e.target.value))} className="text-center" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-600 block mb-1">Note maximale</label>
+                    <Input type="number" value={scoreMax} onChange={e => setScoreMax(Number(e.target.value))} className="text-center" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-600 block mb-1">Seuil de réussite</label>
+                    <Input type="number" value={passScore} onChange={e => setPassScore(Number(e.target.value))} className="text-center" />
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -673,18 +690,18 @@ function SettingsContent() {
                   <div key={m.id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
                     <Input type="number" placeholder="Min" value={m.minScore}
                       onChange={e => updateMention(m.id, 'minScore', Number(e.target.value))}
-                      className="w-16 text-center text-sm" />
-                    <span className="text-gray-400">→</span>
+                      className="w-20 text-center text-sm" />
+                    <span className="text-gray-400 flex-shrink-0">→</span>
                     <Input type="number" placeholder="Max" value={m.maxScore}
                       onChange={e => updateMention(m.id, 'maxScore', Number(e.target.value))}
-                      className="w-16 text-center text-sm" />
+                      className="w-20 text-center text-sm" />
                     <Input placeholder="Mention" value={m.label}
                       onChange={e => updateMention(m.id, 'label', e.target.value)}
-                      className="w-32 text-sm font-semibold" />
+                      className="w-36 text-sm font-semibold flex-shrink-0" />
                     <Input placeholder="Appréciation (optionnel)" value={m.appreciation}
                       onChange={e => updateMention(m.id, 'appreciation', e.target.value)}
-                      className="flex-1 text-sm" />
-                    <Button size="sm" variant="ghost" onClick={() => removeMention(m.id)}>
+                      className="flex-1 min-w-0 text-sm" />
+                    <Button size="sm" variant="ghost" onClick={() => removeMention(m.id)} className="flex-shrink-0">
                       <Trash2 className="w-4 h-4 text-rose-500" />
                     </Button>
                   </div>

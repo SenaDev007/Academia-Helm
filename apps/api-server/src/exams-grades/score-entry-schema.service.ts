@@ -151,9 +151,10 @@ export class ScoreEntrySchemaService {
       levelCodeUpper.includes('PRIM') ||
       (cycleCode || '').toUpperCase().includes('PRIM');
 
-    // ⭐ Mode qualitatif pour la MATERNELLE — retourne des colonnes TS/S/PS
-    // au lieu de colonnes numériques
-    if (isMaternelle) {
+    // ⭐ Mode qualitatif pour la MATERNELLE FRANCOPHONE uniquement — retourne des colonnes TS/S/PS
+    // La maternelle ANGLOPHONE utilise le système quantitatif /100 (comme les autres niveaux EN)
+    const isMaternelleFR = isMaternelle && !isAnglophone;
+    if (isMaternelleFR) {
       // Récupérer les domaines maternelle depuis la config ou utiliser les 9 domaines par défaut
       const kindergartenDomains = config.kindergartenDomains || [
         { code: 'SANTE', label: 'Éducation pour la santé' },

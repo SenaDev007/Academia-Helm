@@ -99,6 +99,8 @@ const DEFAULT_ASSESSMENT_TYPES: Record<string, Record<string, AssessmentType[]>>
   },
 };
 
+// ⭐ Maternelle EN : système QUANTITATIF (pas qualitatif comme le FR)
+// L'anglophone utilise le même système /100 que les autres niveaux EN
 const DEFAULT_FORMULAS: Record<string, Record<string, { subject: string; general: string; description: string }>> = {
   MATERNELLE: {
     FR: {
@@ -107,9 +109,9 @@ const DEFAULT_FORMULAS: Record<string, Record<string, { subject: string; general
       description: 'Maternelle FR : évaluation qualitative TS/S/PS. Pas de moyenne numérique. Réussite si (TS+S) ≥ seuil fixé.',
     },
     EN: {
-      subject: 'Qualitative synthesis: TS=3, S=2, PS=1 — pass threshold (TS+S) ≥ threshold',
-      general: 'Qualitative sum by domain',
-      description: 'Maternelle EN : qualitative assessment TS/S/PS. No numeric average. Pass if (TS+S) ≥ threshold.',
+      subject: 'FIRST_CA + SECOND_CA + EXAM',
+      general: 'SUM(total_matière) / (COUNT(matières) × 100)',
+      description: 'Kindergarten EN : First CA (/40) + Second CA (/40) + Exam (/60) = Total /100 per subject. Quantitative system (NOT qualitative).',
     },
   },
   PRIMAIRE: {
@@ -206,6 +208,7 @@ function SettingsContent() {
   const [showQRCode, setShowQRCode] = useState(true);
 
   const isMaternelle = levelCode === 'MATERNELLE';
+  const isMaternelleFR = isMaternelle && (language || 'FR') === 'FR'; // ⭐ TS/S/PS seulement pour Maternelle FR
   const isPrimaire = levelCode === 'PRIMAIRE';
   const isSecondaire = levelCode === 'SECONDAIRE';
 
@@ -507,17 +510,17 @@ function SettingsContent() {
                   <p className="text-sm text-gray-400 text-center py-4">Aucun type d'évaluation. Cliquez sur "Ajouter".</p>
                 )}
               </div>
-              {/* Boutons de sélection rapide */}
-              <div className="mt-3 flex flex-wrap gap-2">
-                <span className="text-xs text-gray-500">Sélection rapide :</span>
-                {Object.entries(DEFAULT_ASSESSMENT_TYPES).map(([level, langTypes]) =>
-                    Object.entries(langTypes).map(([lang, types]) => (
-                  <button key={`${level}-${lang}`} onClick={() => setAssessmentTypes([...types])}
-                    className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded font-semibold">
-                    {level === 'MATERNELLE' ? '🧒' : level === 'PRIMAIRE' ? '👦' : '👨\‍🎓'} {lang === 'FR' ? 'FR' : 'EN'}
-                  </button>
-                    ))
-                )}
+              {/* Bouton de réinitialisation — SPÉCIFIQUE au niveau + piste sélectionnés */}
+              <div className="mt-3">
+                <button
+                  onClick={() => {
+                    const defaults = DEFAULT_ASSESSMENT_TYPES[levelCode]?.[language || 'FR'];
+                    if (defaults) setAssessmentTypes([...defaults]);
+                  }}
+                  className="px-3 py-1.5 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded font-semibold border border-blue-200"
+                >
+                  ↻ Réinitialiser aux valeurs par défaut ({levelCode} · {language || 'FR'})
+                </button>
               </div>
             </CardContent>
           </Card>
@@ -538,7 +541,7 @@ function SettingsContent() {
                   placeholder="Ex: SUM(moyenne_matière) / COUNT(matières) ou SUM(moyenne × coef) / SUM(coef)"
                   className="font-mono text-sm" />
               </div>
-              {isMaternelle && (
+              {isMaternelleFR && (
                 <div className="bg-pink-50 border border-pink-200 rounded-lg p-3 text-xs text-pink-800">
                   <strong>📌 Maternelle :</strong> Système qualitatif TS/S/PS.
                   TS = Très Satisfaisant (valeur 3), S = Satisfaisant (valeur 2), PS = Peu Satisfaisant (valeur 1).
@@ -625,7 +628,7 @@ function SettingsContent() {
           </Card>
 
           {/* Échelle qualitative (maternelle uniquement) */}
-          {isMaternelle && (
+          {isMaternelleFR && (
             <Card className="border-pink-200">
               <CardHeader>
                 <CardTitle className="text-md">Échelle qualitative (Maternelle)</CardTitle>

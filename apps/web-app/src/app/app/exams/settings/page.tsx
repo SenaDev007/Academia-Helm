@@ -188,12 +188,14 @@ function SettingsContent() {
   const [scoreMax, setScoreMax] = useState(20);
   const [passScore, setPassScore] = useState(10);
   const [qualitativeThreshold, setQualitativeThreshold] = useState(6);
-  // ⭐ Libellés des annotations qualitatives (modifiables par l'école, valeurs fixes)
-  const [qualitativeLabels, setQualitativeLabels] = useState({
-    TS: 'Très Satisfaisant',
-    S: 'Satisfaisant',
-    PS: 'Peu Satisfaisant',
-  });
+  // ⭐ Annotations qualitatives entièrement modifiables (codes + libellés)
+  // L'école peut personnaliser les codes ET les libellés
+  // Les valeurs (3/2/1) restent fixes pour le calcul
+  const [qualitativeItems, setQualitativeItems] = useState([
+    { code: 'TS', label: 'Très Satisfaisant', value: 3 },
+    { code: 'S', label: 'Satisfaisant', value: 2 },
+    { code: 'PS', label: 'Peu Satisfaisant', value: 1 },
+  ]);
   const [mentions, setMentions] = useState<MentionRule[]>(DEFAULT_MENTIONS);
 
   // Form state — Règles de classement
@@ -497,20 +499,20 @@ function SettingsContent() {
               <div className="space-y-2">
                 {assessmentTypes.map((at, i) => (
                   <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                    <Input placeholder="Code (ex: EM1)" value={at.code} maxLength={10}
+                    <Input placeholder="Code" value={at.code} maxLength={10}
                       onChange={e => updateAssessmentType(i, 'code', e.target.value.toUpperCase())}
-                      className="w-20 text-xs font-mono" />
+                      className="w-24 text-xs font-mono flex-shrink-0" />
                     <Input placeholder="Nom de l'évaluation" value={at.label}
                       onChange={e => updateAssessmentType(i, 'label', e.target.value)}
-                      className="flex-1 text-sm" />
+                      className="flex-1 min-w-0 text-sm" />
                     <Input type="number" placeholder="Max" value={at.maxScore}
                       onChange={e => updateAssessmentType(i, 'maxScore', Number(e.target.value))}
-                      className="w-16 text-center text-sm" />
+                      className="w-20 text-center text-sm flex-shrink-0" />
                     <Input type="number" placeholder="Coef" value={at.weight}
                       onChange={e => updateAssessmentType(i, 'weight', Number(e.target.value))}
-                      className="w-16 text-center text-sm" disabled={isPrimaire}
+                      className="w-20 text-center text-sm flex-shrink-0" disabled={isPrimaire}
                       title={isPrimaire ? 'Primaire : coefficient toujours 1' : ''} />
-                    <Button size="sm" variant="ghost" onClick={() => removeAssessmentType(i)}>
+                    <Button size="sm" variant="ghost" onClick={() => removeAssessmentType(i)} className="flex-shrink-0">
                       <Trash2 className="w-4 h-4 text-rose-500" />
                     </Button>
                   </div>
@@ -619,36 +621,46 @@ function SettingsContent() {
         <div className="space-y-4">
           {/* Barème de notation */}
           {isMaternelleFR ? (
-            // ⭐ Maternelle FR : échelle qualitative avec libellés modifiables
+            // ⭐ Maternelle FR : échelle qualitative avec codes ET libellés modifiables
             <Card className="border-pink-200">
               <CardHeader>
                 <CardTitle className="text-md">Échelle qualitative (Maternelle FR)</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {QUALITATIVE_SCALE.map(qs => (
-                    <div key={qs.code} className="flex items-center gap-3 bg-pink-50 rounded-lg p-2">
-                      <span className="px-3 py-1 bg-pink-200 text-pink-800 rounded font-bold text-sm w-12 text-center">{qs.code}</span>
+                  {qualitativeItems.map((qs, idx) => (
+                    <div key={idx} className="flex items-center gap-2 bg-pink-50 rounded-lg p-2">
                       <Input
-                        value={qualitativeLabels[qs.code as keyof typeof qualitativeLabels]}
-                        onChange={e => setQualitativeLabels({
-                          ...qualitativeLabels,
-                          [qs.code]: e.target.value,
-                        })}
-                        className="flex-1 text-sm"
-                        placeholder={qs.label}
+                        value={qs.code}
+                        onChange={e => {
+                          const updated = [...qualitativeItems];
+                          updated[idx] = { ...qs, code: e.target.value.toUpperCase().substring(0, 5) };
+                          setQualitativeItems(updated);
+                        }}
+                        className="w-20 text-center text-sm font-bold flex-shrink-0"
+                        placeholder="Code"
                       />
-                      <span className="text-xs text-gray-500 flex-shrink-0">Valeur : {qs.value} (fixe)</span>
+                      <Input
+                        value={qs.label}
+                        onChange={e => {
+                          const updated = [...qualitativeItems];
+                          updated[idx] = { ...qs, label: e.target.value };
+                          setQualitativeItems(updated);
+                        }}
+                        className="flex-1 min-w-0 text-sm"
+                        placeholder="Libellé"
+                      />
+                      <span className="text-xs text-gray-500 flex-shrink-0 w-20 text-right">Valeur : {qs.value} (fixe)</span>
                     </div>
                   ))}
                 </div>
                 <div className="mt-4 grid grid-cols-3 gap-4">
                   <div>
-                    <label className="text-xs font-bold text-gray-600 block mb-1">Valeur minimale (PS)</label>
+                    <label className="text-xs font-bold text-gray-600 block mb-1">Valeur minimale</label>
                     <Input type="number" value={1} disabled className="text-center bg-gray-50" />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-gray-600 block mb-1">Valeur maximale (TS)</label>
+                    <label className="text-xs font-bold text-gray-600 block mb-1">Valeur maximale</label>
                     <Input type="number" value={3} disabled className="text-center bg-gray-50" />
                   </div>
                   <div>
@@ -657,18 +669,8 @@ function SettingsContent() {
                     <p className="text-[10px] text-gray-400 mt-1">Moyenne = (1+2+3)/3 = 2</p>
                   </div>
                 </div>
-                <div className="mt-3 bg-pink-50 border border-pink-200 rounded-lg p-3">
-                  <label className="text-xs font-bold text-pink-800 block mb-1">
-                    Seuil de réussite par domaine (nombre minimum de TS+S sur le total)
-                  </label>
-                  <Input type="number" min={1} value={qualitativeThreshold} onChange={e => setQualitativeThreshold(Number(e.target.value))}
-                    className="w-20 text-center" />
-                  <p className="text-xs text-pink-600 mt-1">
-                    Ex : Si 9 domaines et seuil = 6, l'élève réussit s'il a au moins 6 domaines en TS ou S sur 9.
-                  </p>
-                </div>
                 <p className="text-xs text-gray-400 mt-3 italic">
-                  ℹ️ Les annotations TS, S et PS sont personnalisables ci-dessus. Les valeurs (3, 2, 1) sont fixes et utilisées pour le calcul en arrière-plan.
+                  ℹ️ Les codes et libellés sont personnalisables. Les valeurs (3, 2, 1) sont fixes et utilisées pour le calcul en arrière-plan.
                 </p>
               </CardContent>
             </Card>
@@ -756,7 +758,7 @@ function SettingsContent() {
                 <select value={tieMode} onChange={e => setTieMode(e.target.value as any)}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
                   <option value="DENSE_RANK">Sans saut — 1er, 2e, 2e, 3e (ex aequo conservés)</option>
-                  <option value="COMPETITION_RANK">Avec saut — 1er, 2e, 2e, 4e (ex aequo avec saut)</option>
+                  <option value="COMPETITION_RANK">Avec saut — 1er, 2e, 2e ex, 4e (ex aequo avec saut)</option>
                   <option value="UNIQUE">Départage — pas d'ex aequo (chaque élève a un rang unique)</option>
                 </select>
               </div>
@@ -765,8 +767,12 @@ function SettingsContent() {
                 <ToggleRow label="Exclure les absents du classement" checked={excludeAbsentees} onChange={setExcludeAbsentees} />
                 <ToggleRow label="Afficher le rang sur le bulletin" checked={showRankOnBulletin} onChange={setShowRankOnBulletin} />
                 <ToggleRow label="Afficher la moyenne de classe sur le bulletin" checked={showClassAverage} onChange={setShowClassAverage} />
-                <ToggleRow label="Afficher la plus forte moyenne" checked={showHighestAverage} onChange={setShowHighestAverage} />
-                <ToggleRow label="Afficher la plus faible moyenne" checked={showLowestAverage} onChange={setShowLowestAverage} />
+                {!isMaternelleFR && (
+                  <ToggleRow label="Afficher la plus forte moyenne" checked={showHighestAverage} onChange={setShowHighestAverage} />
+                )}
+                {!isMaternelleFR && (
+                  <ToggleRow label="Afficher la plus faible moyenne" checked={showLowestAverage} onChange={setShowLowestAverage} />
+                )}
               </div>
             </CardContent>
           </Card>
@@ -785,9 +791,15 @@ function SettingsContent() {
               <ToggleRow label="Afficher le rang" checked={showRankOnBulletin} onChange={setShowRankOnBulletin} />
               <ToggleRow label="Afficher les absences" checked={showAbsences} onChange={setShowAbsences} />
               <ToggleRow label="Afficher les appréciations des enseignants" checked={showTeacherAppreciations} onChange={setShowTeacherAppreciations} />
-              <ToggleRow label="Afficher les coefficients" checked={showCoefficients} onChange={setShowCoefficients} />
-              <ToggleRow label="Afficher la plus forte moyenne" checked={showHighestAverage} onChange={setShowHighestAverage} />
-              <ToggleRow label="Afficher la plus faible moyenne" checked={showLowestAverage} onChange={setShowLowestAverage} />
+              {!isMaternelleFR && (
+                <ToggleRow label="Afficher les coefficients" checked={showCoefficients} onChange={setShowCoefficients} />
+              )}
+              {!isMaternelleFR && (
+                <ToggleRow label="Afficher la plus forte moyenne" checked={showHighestAverage} onChange={setShowHighestAverage} />
+              )}
+              {!isMaternelleFR && (
+                <ToggleRow label="Afficher la plus faible moyenne" checked={showLowestAverage} onChange={setShowLowestAverage} />
+              )}
             </CardContent>
           </Card>
 

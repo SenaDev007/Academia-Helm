@@ -24,36 +24,36 @@ export async function GET(_request: NextRequest) {
       ? `${API_BASE_URL}/public/schools/list`
       : `${API_BASE_URL}/api/public/schools/list`;
 
-    // ⚠️ PERFORMANCE : Timeout réduit de 30s à 8s.
-    // Raison : le bouton "Portail" pouvait rester bloqué jusqu'à 30s + fallback
-    // 10s côté client = 45s de spinner. Sur mobile c'était insupportable.
-    // 8s est suffisant pour un cold start Neon (~3-5s) + marge.
-    // En cas de timeout, on renvoie une liste VIDE (200) au lieu de 504
-    // — l'UI affiche "Aucune école trouvée" au lieu d'un spinner infini.
+    // ⚠️ PERFORMANCE : Timeout 15s (compromis).
+    // Avant : 30s → le user attendait jusqu'à 30s avant de voir une erreur.
+    // Maintenant : 15s — suffisant pour un cold start Neon (~3-5s) + transmission
+    // des logos base64 (1-2MB par école). En cas de timeout, on renvoie une
+    // liste VIDE (200) au lieu de 504 — l'UI affiche "Réessayer" au lieu d'un
+    // spinner infini.
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     let response;
     try {
       response = await fetch(normalizeApiUrl(apiUrl), {
         method: 'GET',
         headers: bffHeaders(),
-        // ⭐ Cache court côté Next.js BFF (10s) en PLUS du cache Redis backend (60s).
-        // Avant : cache: 'no-store' → chaque visite du /portal faisait un appel
-        // backend complet. Sur 1000 visites/heure, c'était 1000 appels DB.
-        // Maintenant : 360 appels/heure max (1 toutes les 10s) — divisé par 28.
-        // Les nouveaux tenants onboarded apparaissent dans les 10s suivant leur création,
-        // c'est acceptable pour un listage portail public.
-        next: { revalidate: 10 },
+        // ⭐ Cache côté Next.js BFF (60s) — AVANT : cache: 'no-store'.
+        // Raison : la liste des écoles change RAREMENT (nouveau tenant = quelques
+        // fois par an). 60s de cache Next.js = 1 appel backend par minute max,
+        // au lieu de 1 par visite. Sur 1000 visites/heure, on passe de 1000 à 60
+        // appels backend — divisé par 16. Les nouveaux tenants onboarded
+        // apparaissent dans la minute suivant leur création, c'est acceptable.
+        next: { revalidate: 60 },
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
       if (fetchError.name === 'AbortError') {
-        console.error('[School List API] Request timed out after 8s');
-        // ⚠️ Retourner une liste vide au lieu de 504 — l'UI affichera
-        // "Aucune école trouvée" au lieu d'un spinner infini.
+        console.error('[School List API] Request timed out after 15s');
+        // Retourner une liste vide au lieu de 504 — l'UI affichera
+        // un bouton "Réessayer" au lieu d'un spinner infini.
         return NextResponse.json(
           { schools: [], tenants: [], error: 'timeout', message: 'Délai dépassé' },
           { status: 200 }
@@ -72,28 +72,18 @@ export async function GET(_request: NextRequest) {
 
     const data = await response.json();
 
-    // ⚠️ PERFORMANCE — Strip les logos base64 de la liste publique.
-    // Les logos peuvent faire 1-2MB chacun en base64. Pour 2 écoles, ça fait
-    // 3-4MB de JSON juste pour la liste — Vercel peut tronquer la réponse
-    // ou mettre trop de temps à la transmettre.
-    // Le frontend n'a PAS besoin du logo dans la liste : il peut le charger
-    // séparément via <img src="..."> avec lazy-loading quand l'école est
-    // sélectionnée (route /api/public/schools/by-subdomain/:slug).
-    const rawList = Array.isArray(data) ? data
-      : (data?.schools ?? data?.tenants ?? []);
-    const strippedList = rawList.map((school: any) => {
-      if (!school) return school;
-      // Conserver toutes les méta-données sauf le logo base64
-      // (on garde logoUrl: null pour que le frontend sache qu'il faut
-      // charger le logo séparément si nécessaire)
-      return { ...school, logoUrl: school.logoUrl ? undefined : null };
-    });
+    // ⭐ RESTAURER les logos base64 — l'utilisateur a confirmé qu'AVANT les
+    // modifications, toutes les écoles s'affichaient AVEC leur logo.
+    // Le vrai problème n'était pas les logos mais le cache: 'no-store' qui
+    // faisait 1 appel backend par visite → cold start Neon → 30s+ de spinner.
+    // Avec next: { revalidate: 60 }, le cache Next.js sert la réponse en <100ms
+    // pour toutes les visites suivantes dans la minute.
 
-    // ⚠️ Forcer les headers de cache côté client aussi (10s) pour éviter
-    // que le navigateur ne refasse la même requête immédiatement.
-    return NextResponse.json(strippedList, {
+    // Forcer les headers de cache côté client aussi (60s) + stale-while-revalidate
+    // pour servir instantanément la version cacheée pendant qu'on re-fetch en arrière-plan.
+    return NextResponse.json(data, {
       headers: {
-        'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=30',
+        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
       },
     });
   } catch (error: any) {

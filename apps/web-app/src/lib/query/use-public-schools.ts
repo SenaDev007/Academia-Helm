@@ -59,7 +59,10 @@ interface UsePublicSchoolsOptions {
 
 async function fetchPublicSchools(endpoint: 'list' | 'with-jobs' = 'list'): Promise<PublicSchool[]> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  // ⚠️ Timeout 15s (matche le timeout BFF) — avant c'était 8s mais les logos
+  // base64 peuvent mettre 5-10s à transiter sur connexion lente. 15s donne
+  // assez de marge sans être insupportable.
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
   try {
     const url = endpoint === 'with-jobs'

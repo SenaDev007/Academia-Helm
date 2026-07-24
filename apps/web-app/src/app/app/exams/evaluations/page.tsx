@@ -42,6 +42,7 @@ import {
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
+import { academicSettingsService } from '@/services/academic-settings.service';
 import { classesService } from '@/services/classes.service';
 import { pedagogyService } from '@/services/pedagogy.service';
 import { getAcademicYearPeriods } from '@/services/settings.service';
@@ -204,25 +205,50 @@ export default function EvaluationsPage() {
         academicYearId: academicYear.id,
       };
       if (scopeLang) params.language = scopeLang;
-      const [evals, classesData, periodsData, typesData, subjectsData] = await Promise.all([
+
+      // ⭐ Récupérer les types d'évaluation depuis school_academic_settings
+      // (où l'utilisateur les a créés dans l'onglet Paramètres).
+      // Le paramétrage actif contient config.assessmentTypes avec code/label.
+      const activeSettings = await academicSettingsService.getActive(academicYear.id, {
+        levelCode: scopeLevel || undefined,
+        language: scopeLang || undefined,
+      }).catch(() => null);
+
+      // Convertir assessmentTypes → format EvaluationTypeItem
+      const assessmentTypes = activeSettings?.config?.assessmentTypes || [];
+      const typesFromSettings = assessmentTypes.map((at: any) => ({
+        id: at.code, // Utiliser le code comme ID (pas d'UUID dans school_academic_settings)
+        name: at.label || at.code,
+        code: at.code,
+        defaultMaxScore: activeSettings?.config?.scoreMax || 20,
+        defaultCoefficient: at.includedInAverage ? 1 : 0,
+        schoolLevelId: schoolLevelUuid,
+        isSystem: false,
+      }));
+
+      const [evals, classesData, periodsData, subjectsData] = await Promise.all([
         institutionalExamsService.getEvaluations(params),
         classesService.getAll({ schoolLevelId: schoolLevelUuid, academicYearId: academicYear.id }).catch(() => []),
         getAcademicYearPeriods(academicYear.id).catch(() => []),
-        institutionalExamsService.getEvaluationTypes(schoolLevelUuid).catch(() => []),
         pedagogyService.getSubjects(academicYear.id).catch(() => []),
       ]);
       setEvaluations(Array.isArray(evals) ? evals : []);
       setClasses(Array.isArray(classesData) ? classesData : (classesData?.data ?? []));
       setPeriods(Array.isArray(periodsData) ? periodsData : []);
-      setSubjects(Array.isArray(subjectsData) ? subjectsData : (subjectsData?.data ?? []));
-      setEvaluationTypes(Array.isArray(typesData) ? typesData : []);
+      // ⭐ Filtrer les matières par piste linguistique (FR/EN)
+      const allSubjects = Array.isArray(subjectsData) ? subjectsData : (subjectsData?.data ?? []);
+      const filteredSubjects = scopeLang
+        ? allSubjects.filter((s: any) => !s.language || s.language === scopeLang)
+        : allSubjects;
+      setSubjects(filteredSubjects);
+      setEvaluationTypes(typesFromSettings);
     } catch (error) {
       console.error('Error loading evaluations', error);
       toast.error('Erreur lors du chargement des évaluations');
     } finally {
       setLoading(false);
     }
-  }, [schoolLevelUuid, academicYear?.id, scopeLang]);
+  }, [schoolLevelUuid, academicYear?.id, scopeLang, scopeLevel]);
 
   useEffect(() => { loadData(); }, [loadData]);
 

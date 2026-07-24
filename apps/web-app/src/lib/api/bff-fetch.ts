@@ -29,7 +29,7 @@
  * ============================================================================
  */
 
-import { getApiBaseUrlForRoutes, normalizeApiUrl, bffHeaders } from './api-urls';
+import { getApiBaseUrlForRoutes, normalizeApiUrl, bffHeaders } from '../utils/api-urls';
 
 /** Timeout par défaut pour les appels BFF → backend (15s) */
 export const BFF_TIMEOUT = 15_000;

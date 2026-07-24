@@ -80,8 +80,11 @@ type TabId = 'identity' | 'academic-year' | 'school-calendar' | 'structure' | 'a
              'roles' | 'communication' | 'billing' | 'payments' | 'security' | 'seals' | 'orion' | 'atlas' | 'offline' | 'appareils' | 'history';
 
 const SETTINGS_TAB_IDS: TabId[] = [
-  'identity', 'academic-year', 'school-calendar', 'structure', 'admin-structure', 'departments', 'bilingual', 'features',
+  'identity', 'academic-year', 'structure', 'departments', 'bilingual', 'features',
   'roles', 'communication', 'billing', 'payments', 'security', 'seals', 'orion', 'atlas', 'offline', 'appareils', 'history',
+  // school-calendar et admin-structure conservés dans le type pour compat URL
+  // mais retirés de l'affichage (fusionnés dans academic-year et departments)
+  'school-calendar', 'admin-structure',
 ];
 
 const SCHOOL_IDENTITY_UPDATED_EVENT = 'settings-school-identity-updated';
@@ -2191,9 +2194,9 @@ export default function SettingsPage() {
     { id: 'identity' as TabId, label: 'Identité', icon: Globe },
     { id: 'academic-year' as TabId, label: 'Année scolaire', icon: Calendar },
     { id: 'structure' as TabId, label: 'Structure', icon: GraduationCap },
-    { id: 'admin-structure' as TabId, label: 'Administration', icon: Building2 },
-    { id: 'departments' as TabId, label: 'Départements', icon: Building2 },
-    { id: 'school-calendar' as TabId, label: 'Calendrier scolaire', icon: CalendarRange },
+    // ⭐ Fusion : Administration + Départements → un seul onglet
+    { id: 'departments' as TabId, label: 'Administration', icon: Building2 },
+    // school-calendar fusionné dans academic-year (plus d'onglet séparé)
     // M3 — Masquer l'onglet Bilingue si le plan ne l'autorise pas
     ...(billingSettings?.planDetails?.bilingualAllowed !== false ? [{ id: 'bilingual' as TabId, label: 'Bilingue', icon: Languages }] : []),
     { id: 'features' as TabId, label: 'Modules', icon: ToggleLeft },
@@ -2510,6 +2513,7 @@ export default function SettingsPage() {
 
       case 'academic-year':
         return (
+          <>
           <div className="space-y-6">
             {/* Sélecteur d'établissement pour Plateforme Owner */}
             {isPlatformOwner && (
@@ -3143,20 +3147,32 @@ export default function SettingsPage() {
               </div>
             )}
           </div>
-        );
+
+          {/* ⭐ Section Calendrier scolaire (fusionnée depuis l'onglet séparé) */}
+          <div className="mt-6">
+            <SchoolCalendarConfigSection tenantId={effectiveTenantId} showToast={showToast} />
+          </div>
+        </>);
 
       case 'school-calendar':
-        return <SchoolCalendarConfigSection tenantId={effectiveTenantId} showToast={showToast} />;
+        // ⭐ Fusionné dans 'academic-year' — rediriger
+        return null;
 
       case 'admin-structure':
-        return (
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-            <AdminStructureSection tenantId={effectiveTenantId ?? undefined} />
-          </div>
-        );
+        // ⭐ Fusionné dans 'departments' — rediriger
+        return null;
 
       case 'departments':
-        return <DepartmentsAndPositionsTab tenantId={effectiveTenantId} showToast={showToast} />;
+        return (
+          <div className="space-y-6">
+            {/* Section Administration (anciennement onglet séparé) */}
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+              <AdminStructureSection tenantId={effectiveTenantId ?? undefined} />
+            </div>
+            {/* Section Départements + Postes */}
+            <DepartmentsAndPositionsTab tenantId={effectiveTenantId} showToast={showToast} />
+          </div>
+        );
 
       case 'structure':
         const levels = educationStructure?.levels ?? [];

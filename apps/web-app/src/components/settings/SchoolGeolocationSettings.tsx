@@ -48,6 +48,12 @@ export function SchoolGeolocationSettings() {
     setLoading(true);
     try {
       const res = await fetch("/api/settings/identity/geolocation", { credentials: "include" });
+      // ⚠️ Si la réponse n'est pas du JSON (ex: page 404 HTML), ne pas crasher
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        setConfig({ configured: false, message: 'Non configuré' });
+        return;
+      }
       const data = await res.json();
       setConfig(data);
       if (data.configured) {
@@ -56,7 +62,9 @@ export function SchoolGeolocationSettings() {
         setGeoRadius(data.geoRadius || 100);
       }
     } catch (e: any) {
-      toast.error("Erreur chargement config géo", { description: e.message });
+      // Dégradation gracieuse — ne pas afficher d'erreur bloquante
+      setConfig({ configured: false, message: 'Non configuré' });
+      console.warn('[Geolocation] Load error:', e.message);
     } finally {
       setLoading(false);
     }

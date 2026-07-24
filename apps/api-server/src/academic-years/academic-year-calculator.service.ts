@@ -51,26 +51,33 @@ export class AcademicYearCalculatorService {
   }
 
   /**
-   * Pré-rentrée : 2e lundi de septembre (lundi de la 2e semaine de septembre).
+   * Pré-rentrée : lundi de la 2e semaine de septembre.
+   *
+   * Règle (calendrier Bénin) :
+   *   - Si le 1er septembre est un lundi → la 1re semaine = 1-7 sept,
+   *     la 2e semaine commence le 8 → pré-rentrée = 8 septembre.
+   *   - Si le 1er septembre n'est PAS un lundi → la 1re semaine (partielle)
+   *     va du 1er au premier dimanche, la 2e semaine commence le 1er lundi
+   *     de septembre → pré-rentrée = 1er lundi de septembre.
+   *
+   * Exemples :
+   *   2026 : 1 sept = mardi → pré-rentrée = lundi 7 sept 2026 ✅
+   *   2025 : 1 sept = lundi → pré-rentrée = lundi 8 sept 2025 ✅
+   *   2024 : 1 sept = dimanche → pré-rentrée = lundi 2 sept 2024 ✅
    */
   private calculatePreEntryDate(year: number): Date {
-    const firstMonday = this.getNthMondayOfSeptember(year, 1);
-    const second = new Date(firstMonday);
-    second.setDate(firstMonday.getDate() + 7);
-    return second;
-  }
-
-  /**
-   * N-ième lundi de septembre (n=1 → 1er lundi).
-   */
-  private getNthMondayOfSeptember(year: number, n: number): Date {
     const sept1 = new Date(year, 8, 1);
-    const dayOfWeek = sept1.getDay();
-    const daysUntilFirstMonday = dayOfWeek === 1 ? 0 : (8 - dayOfWeek) % 7;
-    const firstMonday = new Date(year, 8, 1 + daysUntilFirstMonday);
-    const nth = new Date(firstMonday);
-    nth.setDate(firstMonday.getDate() + (n - 1) * 7);
-    return nth;
+    const dayOfWeek = sept1.getDay(); // 0=dim, 1=lun, ..., 6=sam
+
+    if (dayOfWeek === 1) {
+      // Le 1er est lundi → 1re semaine = 1-7, 2e semaine commence le 8
+      return new Date(year, 8, 8);
+    }
+
+    // Le 1er n'est pas lundi → 1re semaine (partielle) = 1er au 1er dimanche
+    // La 2e semaine commence le 1er lundi de septembre
+    const daysUntilFirstMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek);
+    return new Date(year, 8, 1 + daysUntilFirstMonday);
   }
 
   /**

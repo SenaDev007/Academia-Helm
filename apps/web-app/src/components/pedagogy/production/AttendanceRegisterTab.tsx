@@ -42,6 +42,7 @@ import {
 import { toast } from "sonner";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
 import { useAppSession } from "@/contexts/AppSessionContext";
+import { useMyClasses } from "@/lib/query/pedagogy-hooks";
 
 interface AttendanceRegisterTabProps {
   tenantId: string;
@@ -210,22 +211,15 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
   const [loadingSubjects, setLoadingSubjects] = useState(false);
 
   // === Chargement des classes ===
+  // ⭐ Hook React Query partagé — cache 2 min, dégradation gracieuse
+  const { data: classesData = [] } = useMyClasses(teacherId, academicYearId);
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(
-          `/api/pedagogy-space/my-classes?teacherId=${teacherId}&academicYearId=${academicYearId}`,
-          { credentials: "include" }
-        );
-        const data = await res.json();
-        const list = Array.isArray(data) ? data : [];
-        setClasses(list);
-        if (list.length > 0 && !selectedClassId) {
-          setSelectedClassId(list[0].classId);
-        }
-      } catch { setClasses([]); }
-    })();
-  }, [teacherId, academicYearId]);
+    const list = Array.isArray(classesData) ? classesData : [];
+    setClasses(list);
+    if (list.length > 0 && !selectedClassId) {
+      setSelectedClassId(list[0].classId);
+    }
+  }, [classesData, selectedClassId]);
 
   // === Chargement du registre ===
   const loadRegister = useCallback(async () => {

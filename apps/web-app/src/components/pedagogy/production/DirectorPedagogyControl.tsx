@@ -31,6 +31,15 @@ import {
   ChevronRight, X, Eye, Sigma, FlaskConical, Users, Palette, Award,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useDirectorPedagogyDashboard,
+  usePendingCahierJournals, usePendingFiches, usePendingRegisters,
+  usePendingEvaluations, usePendingCahierTextes,
+  useCahierJournalDetail, useFicheDetail, useRegisterDetail,
+  useEvaluationDetail, useCahierTexteDetail,
+} from "@/lib/query/pedagogy-hooks";
+import { pedagogySpaceService } from "@/services/pedagogy-space.service";
 
 interface DirectorPedagogyControlProps {
   tenantId: string;
@@ -141,20 +150,13 @@ export function DirectorPedagogyControl({ tenantId, academicYearId, userId }: Di
 function DashboardTab({ tenantId, academicYearId, refreshKey, onNavigate }: {
   tenantId: string; academicYearId: string; refreshKey: number; onNavigate: (t: TabId) => void;
 }) {
-  const [dashboard, setDashboard] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  // ⭐ Hook React Query partagé — cache 2 min, dégradation gracieuse
+  const { data: dashboard, isLoading: loading, refetch } = useDirectorPedagogyDashboard(academicYearId);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/pedagogy-space/director/pedagogy-dashboard?academicYearId=${academicYearId}`, { credentials: "include" });
-      const data = await res.json();
-      setDashboard(data);
-    } catch { setDashboard(null); }
-    finally { setLoading(false); }
-  }, [academicYearId]);
-
-  useEffect(() => { load(); }, [load, refreshKey]);
+  // Recharger quand refreshKey change (déclenché par le parent après une validation)
+  useEffect(() => {
+    if (refreshKey > 0) refetch();
+  }, [refreshKey, refetch]);
 
   if (loading) {
     return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>;
@@ -344,41 +346,35 @@ function ValidationModal({ open, onClose, onValidate, title }: {
 function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey, onRefresh }: {
   tenantId: string; academicYearId: string; userId: string; refreshKey: number; onRefresh: () => void;
 }) {
-  const [items, setItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  // ⭐ Hook React Query partagé — cache 2 min, dégradation gracieuse
+  const queryClient = useQueryClient();
+  const { data: items = [], isLoading: loading, refetch } = usePendingCahierJournals(academicYearId);
   const [selected, setSelected] = useState<any>(null);
   const [modalItem, setModalItem] = useState<any>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/pedagogy-space/director/pending-cahier-journals?academicYearId=${academicYearId}`, { credentials: "include" });
-      const data = await res.json();
-      setItems(Array.isArray(data) ? data : []);
-    } catch { setItems([]); }
-    finally { setLoading(false); }
-  }, [academicYearId]);
-
-  useEffect(() => { load(); }, [load, refreshKey]);
+  // Recharger quand refreshKey change
+  useEffect(() => {
+    if (refreshKey > 0) refetch();
+  }, [refreshKey, refetch]);
 
   const handleValidate = async (action: "VALIDATED" | "REJECTED", reason?: string) => {
     if (!modalItem) return;
-    const res = await fetch(`/api/pedagogy-space/director/validate-cahier-journal/${modalItem.id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ action, validatedBy: userId, rejectionReason: reason }),
+    await pedagogySpaceService.validateCahierJournal(modalItem.id, {
+      action,
+      validatedBy: userId,
+      rejectionReason: reason,
     });
-    if (!res.ok) throw new Error("Erreur lors de la validation");
     toast.success(action === "VALIDATED" ? "✅ Cahier journal validé" : "Cahier journal rejeté");
     onRefresh();
-    load();
+    // Invalider le cache pour forcer le re-fetch
+    queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "pending-cahier-journals"] });
+    queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "dashboard"] });
   };
 
   const handleView = async (item: any) => {
     try {
-      const res = await fetch(`/api/pedagogy-space/director/cahier-journal/${item.id}`, { credentials: "include" });
-      const data = await res.json();
+      // ⭐ Utiliser le service partagé (cache React Query via useCahierJournalDetail)
+      const data = await pedagogySpaceService.getCahierJournalDetail(item.id);
       setSelected(data);
     } catch { toast.error("Erreur lors du chargement"); }
   };
@@ -481,41 +477,32 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
 function PendingFichesTab({ tenantId, academicYearId, userId, refreshKey, onRefresh }: {
   tenantId: string; academicYearId: string; userId: string; refreshKey: number; onRefresh: () => void;
 }) {
-  const [items, setItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  // ⭐ Hook React Query partagé — cache 2 min, dégradation gracieuse
+  const queryClient = useQueryClient();
+  const { data: items = [], isLoading: loading, refetch } = usePendingFiches(academicYearId);
   const [selected, setSelected] = useState<any>(null);
   const [modalItem, setModalItem] = useState<any>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/pedagogy-space/director/pending-fiches?academicYearId=${academicYearId}`, { credentials: "include" });
-      const data = await res.json();
-      setItems(Array.isArray(data) ? data : []);
-    } catch { setItems([]); }
-    finally { setLoading(false); }
-  }, [academicYearId]);
-
-  useEffect(() => { load(); }, [load, refreshKey]);
+  useEffect(() => {
+    if (refreshKey > 0) refetch();
+  }, [refreshKey, refetch]);
 
   const handleValidate = async (action: "VALIDATED" | "REJECTED", reason?: string) => {
     if (!modalItem) return;
-    const res = await fetch(`/api/pedagogy-space/director/validate-fiche/${modalItem.id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ action, validatedBy: userId, rejectionReason: reason }),
+    await pedagogySpaceService.validatePedagogicalFiche(modalItem.id, {
+      action,
+      validatedBy: userId,
+      rejectionReason: reason,
     });
-    if (!res.ok) throw new Error("Erreur");
     toast.success(action === "VALIDATED" ? "✅ Fiche validée" : "Fiche rejetée");
     onRefresh();
-    load();
+    queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "pending-fiches"] });
+    queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "dashboard"] });
   };
 
   const handleView = async (item: any) => {
     try {
-      const res = await fetch(`/api/pedagogy-space/director/fiches/${item.id}`, { credentials: "include" });
-      const data = await res.json();
+      const data = await pedagogySpaceService.getPedagogicalFicheDetail(item.id);
       setSelected(data);
     } catch { toast.error("Erreur"); }
   };
@@ -634,41 +621,32 @@ function PendingFichesTab({ tenantId, academicYearId, userId, refreshKey, onRefr
 function PendingRegistersTab({ tenantId, academicYearId, userId, refreshKey, onRefresh }: {
   tenantId: string; academicYearId: string; userId: string; refreshKey: number; onRefresh: () => void;
 }) {
-  const [items, setItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  // ⭐ Hook React Query partagé — cache 2 min, dégradation gracieuse
+  const queryClient = useQueryClient();
+  const { data: items = [], isLoading: loading, refetch } = usePendingRegisters(academicYearId);
   const [selected, setSelected] = useState<any>(null);
   const [modalItem, setModalItem] = useState<any>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/pedagogy-space/director/pending-registers?academicYearId=${academicYearId}`, { credentials: "include" });
-      const data = await res.json();
-      setItems(Array.isArray(data) ? data : []);
-    } catch { setItems([]); }
-    finally { setLoading(false); }
-  }, [academicYearId]);
-
-  useEffect(() => { load(); }, [load, refreshKey]);
+  useEffect(() => {
+    if (refreshKey > 0) refetch();
+  }, [refreshKey, refetch]);
 
   const handleValidate = async (action: "VALIDATED" | "REJECTED", reason?: string) => {
     if (!modalItem) return;
-    const res = await fetch(`/api/pedagogy-space/director/validate-attendance-register/${modalItem.id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ action, validatedBy: userId, rejectionReason: reason }),
+    await pedagogySpaceService.validateAttendanceRegister(modalItem.id, {
+      action,
+      validatedBy: userId,
+      rejectionReason: reason,
     });
-    if (!res.ok) throw new Error("Erreur");
     toast.success(action === "VALIDATED" ? "✅ Registre validé" : "Registre rejeté");
     onRefresh();
-    load();
+    queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "pending-registers"] });
+    queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "dashboard"] });
   };
 
   const handleView = async (item: any) => {
     try {
-      const res = await fetch(`/api/pedagogy-space/director/attendance-register/${item.id}`, { credentials: "include" });
-      const data = await res.json();
+      const data = await pedagogySpaceService.getAttendanceRegisterDetail(item.id);
       setSelected(data);
     } catch { toast.error("Erreur"); }
   };
@@ -812,41 +790,32 @@ function PendingRegistersTab({ tenantId, academicYearId, userId, refreshKey, onR
 function PendingEvaluationsTab({ tenantId, academicYearId, userId, refreshKey, onRefresh }: {
   tenantId: string; academicYearId: string; userId: string; refreshKey: number; onRefresh: () => void;
 }) {
-  const [items, setItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  // ⭐ Hook React Query partagé — cache 2 min, dégradation gracieuse
+  const queryClient = useQueryClient();
+  const { data: items = [], isLoading: loading, refetch } = usePendingEvaluations(academicYearId);
   const [selected, setSelected] = useState<any>(null);
   const [modalItem, setModalItem] = useState<any>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/pedagogy-space/director/pending-evaluations?academicYearId=${academicYearId}`, { credentials: "include" });
-      const data = await res.json();
-      setItems(Array.isArray(data) ? data : []);
-    } catch { setItems([]); }
-    finally { setLoading(false); }
-  }, [academicYearId]);
-
-  useEffect(() => { load(); }, [load, refreshKey]);
+  useEffect(() => {
+    if (refreshKey > 0) refetch();
+  }, [refreshKey, refetch]);
 
   const handleValidate = async (action: "VALIDATED" | "REJECTED", reason?: string) => {
     if (!modalItem) return;
-    const res = await fetch(`/api/pedagogy-space/director/validate-evaluation/${modalItem.id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ action, validatedBy: userId, rejectionReason: reason }),
+    await pedagogySpaceService.validateMonthlyEvaluation(modalItem.id, {
+      action,
+      validatedBy: userId,
+      rejectionReason: reason,
     });
-    if (!res.ok) throw new Error("Erreur");
     toast.success(action === "VALIDATED" ? "✅ Évaluation validée" : "Évaluation rejetée");
     onRefresh();
-    load();
+    queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "pending-evaluations"] });
+    queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "dashboard"] });
   };
 
   const handleView = async (item: any) => {
     try {
-      const res = await fetch(`/api/pedagogy-space/director/evaluation/${item.id}`, { credentials: "include" });
-      const data = await res.json();
+      const data = await pedagogySpaceService.getMonthlyEvaluationDetail(item.id);
       setSelected(data);
     } catch { toast.error("Erreur"); }
   };
@@ -1030,41 +999,32 @@ const TEST_TYPE_LABELS: Record<string, { label: string; color: string }> = {
 function PendingCahierTestsTab({ tenantId, academicYearId, userId, refreshKey, onRefresh }: {
   tenantId: string; academicYearId: string; userId: string; refreshKey: number; onRefresh: () => void;
 }) {
-  const [items, setItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  // ⭐ Hook React Query partagé — cache 2 min, dégradation gracieuse
+  const queryClient = useQueryClient();
+  const { data: items = [], isLoading: loading, refetch } = usePendingCahierTextes(academicYearId);
   const [selected, setSelected] = useState<any>(null);
   const [modalItem, setModalItem] = useState<any>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/pedagogy-space/director/pending-cahier-textes?academicYearId=${academicYearId}`, { credentials: "include" });
-      const data = await res.json();
-      setItems(Array.isArray(data) ? data : []);
-    } catch { setItems([]); }
-    finally { setLoading(false); }
-  }, [academicYearId]);
-
-  useEffect(() => { load(); }, [load, refreshKey]);
+  useEffect(() => {
+    if (refreshKey > 0) refetch();
+  }, [refreshKey, refetch]);
 
   const handleValidate = async (action: "VALIDATED" | "REJECTED", reason?: string) => {
     if (!modalItem) return;
-    const res = await fetch(`/api/pedagogy-space/director/validate-cahier-texte/${modalItem.id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ action, validatedBy: userId, rejectionReason: reason }),
+    await pedagogySpaceService.validateCahierTexte(modalItem.id, {
+      action,
+      validatedBy: userId,
+      rejectionReason: reason,
     });
-    if (!res.ok) throw new Error("Erreur");
     toast.success(action === "VALIDATED" ? "✅ Cahier de test validé" : "Cahier de test rejeté");
     onRefresh();
-    load();
+    queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "pending-cahier-textes"] });
+    queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "dashboard"] });
   };
 
   const handleView = async (item: any) => {
     try {
-      const res = await fetch(`/api/pedagogy-space/director/cahier-texte/${item.id}`, { credentials: "include" });
-      const data = await res.json();
+      const data = await pedagogySpaceService.getCahierTexteDetail(item.id);
       setSelected(data);
     } catch { toast.error("Erreur"); }
   };

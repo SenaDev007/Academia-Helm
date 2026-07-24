@@ -53,6 +53,13 @@ import { exportArrearsToPdf } from '@/lib/exports/finance-exports';
 import { exportArrearsToExcel } from '@/lib/exports/excel-exports';
 import { loadPdfLibs } from '@/lib/exports/pdf-loader';
 import { loadXlsx } from '@/lib/exports/xlsx-loader';
+import { useSchoolLevelsQuery } from '@/lib/query/use-school-levels';
+import { useAllClasses } from '@/lib/query/use-all-classes';
+import {
+  useArrears, useCollectionReminders, useCollectionStatistics,
+  useCollectionPromises, useCollectionActions, useCollectionCases,
+} from '@/lib/query/finance-hooks';
+import { useQueryClient } from '@tanstack/react-query';
 
 type TabId = 'dashboard' | 'arrears' | 'reminders' | 'promises' | 'actions' | 'cases' | 'settings';
 
@@ -106,17 +113,28 @@ export default function RecoveryContent() {
   }), [tenant, academicYear]);
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
-  const [loading, setLoading] = useState(true);
   const [detecting, setDetecting] = useState(false);
   const [escalating, setEscalating] = useState(false);
 
-  // Données
-  const [arrears, setArrears] = useState<any[]>([]);
-  const [reminders, setReminders] = useState<any[]>([]);
-  const [statistics, setStatistics] = useState<any>(null);
-  const [promises, setPromises] = useState<any[]>([]);
-  const [actions, setActions] = useState<any[]>([]);
-  const [cases, setCases] = useState<any[]>([]);
+  // ⭐ Hooks React Query partagés — remplacent loadAll() + 6 useState + useEffect.
+  // Cache 2 min, dégradation gracieuse au timeout, invalidation croisée via
+  // queryClient.invalidateQueries après mutations.
+  const queryClient = useQueryClient();
+  const { data: arrears = [], isLoading: arrearsLoading } = useArrears({});
+  const { data: reminders = [], isLoading: remindersLoading } = useCollectionReminders({ academicYearId: academicYear?.id });
+  const { data: statistics = null } = useCollectionStatistics(tenant?.id || '', academicYear?.id || '');
+  const { data: promises = [], isLoading: promisesLoading } = useCollectionPromises({ academicYearId: academicYear?.id });
+  const { data: actions = [], isLoading: actionsLoading } = useCollectionActions({ academicYearId: academicYear?.id });
+  const { data: cases = [], isLoading: casesLoading } = useCollectionCases({ academicYearId: academicYear?.id });
+
+  // Loading global — true tant qu'au moins une query est en cours
+  const loading = arrearsLoading || remindersLoading || promisesLoading || actionsLoading || casesLoading;
+
+  // Helper pour invalider toutes les queries recovery après une mutation
+  const invalidateRecoveryData = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['finance', 'arrears'] });
+    queryClient.invalidateQueries({ queryKey: ['finance', 'collection'] });
+  }, [queryClient]);
 
   // Filtres arriérés
   const [arrearLevelFilter, setArrearLevelFilter] = useState<string>('ALL');
@@ -148,13 +166,9 @@ export default function RecoveryContent() {
   const [arrearSaving, setArrearSaving] = useState(false);
 
   // Niveaux scolaires chargés au niveau du parent (pour le filtrage)
-  const [parentSchoolLevels, setParentSchoolLevels] = useState<any[]>([]);
-  useEffect(() => {
-    fetch('/api/school-levels', { credentials: 'include' })
-      .then((r) => r.json())
-      .then((d) => setParentSchoolLevels(Array.isArray(d) ? d : []))
-      .catch(() => setParentSchoolLevels([]));
-  }, []);
+  // ⭐ Hook React Query partagé — cache 5 min, dégradation gracieuse au timeout
+  const { data: parentSchoolLevelsData = [] } = useSchoolLevelsQuery();
+  const parentSchoolLevels = parentSchoolLevelsData;
 
   // Modals Phase 2
   const [promiseModal, setPromiseModal] = useState<{ arrearId: string; studentName: string; balanceDue: number } | null>(null);
@@ -164,13 +178,8 @@ export default function RecoveryContent() {
   // ─── Filtres par classe pour Promesses et Actions ───
   const [promiseClassFilter, setPromiseClassFilter] = useState<string>('ALL');
   const [actionClassFilter, setActionClassFilter] = useState<string>('ALL');
-  const [allClasses, setAllClasses] = useState<any[]>([]);
-  useEffect(() => {
-    fetch('/api/all-classes', { credentials: 'include' })
-      .then((r) => r.json())
-      .then((d) => setAllClasses(Array.isArray(d) ? d : (d?.data ?? [])))
-      .catch(() => setAllClasses([]));
-  }, []);
+  // ⭐ Hook React Query partagé — cache 2 min, dégradation gracieuse au timeout
+  const { classes: allClasses = [] } = useAllClasses();
 
   // ─── Lien Action → Promesse (workflow : action déclenche promesse) ───
   // Après création d'une action, on bascule sur l'onglet Promesses et on
@@ -287,7 +296,7 @@ export default function RecoveryContent() {
       if (!r.ok) throw new Error(data?.error || data?.message || `Échec (HTTP ${r.status})`);
       toast({ title: '✅ Promesse supprimée', description: 'La promesse a été retirée.' });
       setDeletePromiseModal(null);
-      loadAll();
+      invalidateRecoveryData();
     } catch (e: any) {
       toast({ title: 'Erreur', description: e?.message || 'Erreur', variant: 'destructive' });
     } finally {
@@ -317,7 +326,7 @@ export default function RecoveryContent() {
       if (!r.ok) throw new Error(data?.error || data?.message || `Échec (HTTP ${r.status})`);
       toast({ title: '✅ Action supprimée', description: "L'action a été retirée." });
       setDeleteActionModal(null);
-      loadAll();
+      invalidateRecoveryData();
     } catch (e: any) {
       toast({ title: 'Erreur', description: e?.message || 'Erreur', variant: 'destructive' });
     } finally {
@@ -325,45 +334,19 @@ export default function RecoveryContent() {
     }
   };
 
-  const loadAll = useCallback(async () => {
-    if (!academicYear?.id) return;
-    setLoading(true);
-    try {
-      const [arrearsData, remindersData, statsData, promisesData, actionsData, casesData] = await Promise.all([
-        // ⚠️ Les arriérés sont chargés SANS filtre academicYearId pour inclure
-        // les arriérés antérieurs (saisis manuellement pour l'onboarding).
-        // Le backend findAllArrears retourne tous les arriérés du tenant si
-        // academicYearId n'est pas fourni.
-        financeService.getArrears({}).catch(() => []),
-        financeService.getRecoveryReminders({ academicYearId: academicYear.id }).catch(() => []),
-        financeService.getCollectionStatistics(academicYear.id).catch(() => null),
-        financeService.getCollectionPromises({ academicYearId: academicYear.id }).catch(() => []),
-        financeService.getCollectionActions({ academicYearId: academicYear.id }).catch(() => []),
-        financeService.getCollectionCases({ academicYearId: academicYear.id }).catch(() => []),
-      ]);
-      setArrears(Array.isArray(arrearsData) ? arrearsData : []);
-      setReminders(Array.isArray(remindersData) ? remindersData : []);
-      setStatistics(statsData);
-      setPromises(Array.isArray(promisesData) ? promisesData : []);
-      setActions(Array.isArray(actionsData) ? actionsData : []);
-      setCases(Array.isArray(casesData) ? casesData : []);
-    } catch (e) {
-      console.error('Failed to load recovery data', e);
-    } finally {
-      setLoading(false);
-    }
-  }, [academicYear?.id]);
-
-  useEffect(() => {
-    loadAll();
-  }, [loadAll]);
+  // ⭐ loadAll() supprimé — remplacé par les hooks React Query ci-dessus.
+  // Les données se rechargent automatiquement quand academicYear?.id change
+  // (queryKey dépend de academicYearId).
+  // Pour forcer un rechargement après une mutation, utiliser :
+  //   invalidateRecoveryData() — invalide toutes les queries recovery.
 
   // Recharger quand un bouton delete/write-off déclenche l'événement recovery-reload
+  // (compatibilité avec les composants enfants qui utilisent toujours window.dispatchEvent)
   useEffect(() => {
-    const handler = () => loadAll();
+    const handler = () => invalidateRecoveryData();
     window.addEventListener('recovery-reload', handler);
     return () => window.removeEventListener('recovery-reload', handler);
-  }, [loadAll]);
+  }, [invalidateRecoveryData]);
 
   const handleDetectArrears = async () => {
     if (!academicYear?.id) return;
@@ -374,7 +357,7 @@ export default function RecoveryContent() {
         title: '✅ Détection terminée',
         description: `${result?.length ?? 0} arriéré(s) détecté(s) ou mis à jour.`,
       });
-      await loadAll();
+      await invalidateRecoveryData();
     } catch (e: any) {
       toast({
         title: 'Erreur détection',
@@ -447,7 +430,7 @@ export default function RecoveryContent() {
         });
       }
       setManualModal(false);
-      loadAll();
+      invalidateRecoveryData();
     } catch (error: any) {
       toast({
         title: 'Erreur',
@@ -497,7 +480,7 @@ export default function RecoveryContent() {
         // Statut inconnu — ne pas afficher succès
         toast({ title: 'Statut inconnu', description: `Réponse inattendue: ${s.status}`, variant: 'destructive' });
       }
-      loadAll();
+      invalidateRecoveryData();
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
     }
@@ -541,7 +524,7 @@ export default function RecoveryContent() {
       setArrearAmount('');
       setArrearReason('');
       setArrearYearName('');
-      loadAll();
+      invalidateRecoveryData();
     } catch (e: any) {
       toast({ title: 'Erreur', description: e?.message || 'Erreur réseau', variant: 'destructive' });
     } finally {
@@ -563,7 +546,7 @@ export default function RecoveryContent() {
         title: '✅ Escalade terminée',
         description: `${result.processed} cas traités, ${result.triggered} relances déclenchées.`,
       });
-      loadAll();
+      invalidateRecoveryData();
     } catch (e: any) {
       toast({
         title: 'Erreur escalade',
@@ -585,7 +568,7 @@ export default function RecoveryContent() {
           ? 'La promesse a été marquée comme honorée.'
           : 'La promesse a été marquée comme rompue. Une escalade est recommandée.',
       });
-      loadAll();
+      invalidateRecoveryData();
     } catch (e: any) {
       toast({
         title: 'Erreur',
@@ -602,7 +585,7 @@ export default function RecoveryContent() {
       toast({ title: '✅ Promesse enregistrée', description: 'La promesse de paiement a été créée.' });
       setPromiseModal(null);
       setPendingPromiseFromAction(null); // Reset au cas où on venait d'une action
-      loadAll();
+      invalidateRecoveryData();
     } catch (e: any) {
       toast({ title: 'Erreur', description: e?.message || 'Erreur', variant: 'destructive' });
     }
@@ -617,7 +600,7 @@ export default function RecoveryContent() {
       await financeService.createCollectionAction(data);
       toast({ title: '✅ Action enregistrée', description: "L'action de recouvrement a été journalisée." });
       setActionModal(null);
-      loadAll();
+      invalidateRecoveryData();
 
       // ─── Lien Action → Promesse ───
       // Trouver l'arriéré correspondant pour pré-remplir le modal promesse
@@ -1012,7 +995,7 @@ export default function RecoveryContent() {
         onClose={() => setShowImportArrears(false)}
         onSuccess={() => {
           // Recharger les données après import
-          loadAll();
+          invalidateRecoveryData();
         }}
       />
 

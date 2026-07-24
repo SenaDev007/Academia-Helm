@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Search, Filter, CheckCircle, XCircle, Clock, FileText,
   UserCheck, Calendar, BadgeCheck, AlertCircle, Loader2, Eye,
@@ -21,6 +21,8 @@ import { studentsService } from '@/services/students.service';
 import EntitySyncIndicator from '@/components/offline/EntitySyncIndicator';
 import { useEntitySyncStatusBatch } from '@/hooks/useEntitySyncStatus';
 import { cn } from '@/lib/utils';
+import { useSchoolLevelsQuery } from '@/lib/query/use-school-levels';
+import { useAllClasses } from '@/lib/query/use-all-classes';
 
 interface Admission {
   id: string;
@@ -71,65 +73,35 @@ export default function AdmissionsContent() {
   const [filterLevelId, setFilterLevelId] = useState<string>('');
   const [filterClassId, setFilterClassId] = useState<string>('');
 
-  // Nettoyer la sélection quand on change de filtre
-  useEffect(() => { setSelectedIds(new Set()); }, [activeFilter]);
-
-  // ⚠️ Niveaux scolaires — chargés depuis /api/school-levels pour faire le
-  // mapping schoolLevelId → label côté client. La relation schoolLevel a été
-  // supprimée du modèle Admission (mismatch FK school_levels vs education_levels).
-  // Sans ça, le tableau affiche "Non défini" pour la colonne Niveau.
-  const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
-
-  // ⚠️ Classes — chargées depuis /api/classes pour faire le mapping
-  // requestedClassId → label côté client. Permet d'afficher la classe souhaitée
-  // par le parent dans la liste + le détail + l'édition.
-  const [schoolClasses, setSchoolClasses] = useState<any[]>([]);
-
   // Multi-sélection pour actions en lot
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchActionPending, setBatchActionPending] = useState(false);
 
-  useEffect(() => {
-    fetch('/api/school-levels', { credentials: 'include' })
-      .then(res => res.ok ? res.json() : [])
-      .then(data => {
-        const levels = Array.isArray(data) ? data : [];
-        console.log('[AdmissionsContent] School levels loaded:', levels.map(l => ({ id: l.id?.substring(0, 8), name: l.name, code: l.code })));
-        setSchoolLevels(levels);
-      })
-      .catch(() => setSchoolLevels([]));
+  // Nettoyer la sélection quand on change de filtre
+  useEffect(() => { setSelectedIds(new Set()); }, [activeFilter]);
 
-    // ⭐ Charger les classes physiques et déduire les classes officielles créées.
-    // On utilise /api/all-classes (classes physiques) comme la "Liste des élèves",
-    // puis on déduplique par officialClass.id pour n'avoir que les classes
-    // officielles réellement paramétrées (pas toutes les séries de la structure).
-    fetch('/api/all-classes', { credentials: 'include' })
-      .then(res => {
-        if (!res.ok) return [];
-        return res.json();
-      })
-      .then(data => {
-        const physicalClasses = Array.isArray(data) ? data : (data?.data || []);
-        // Dédupliquer par officialClass.id pour n'avoir que les classes officielles créées
-        const officialMap = new Map<string, any>();
-        for (const cls of physicalClasses) {
-          if (cls.officialClass && !officialMap.has(cls.officialClass.id)) {
-            officialMap.set(cls.officialClass.id, {
-              id: cls.officialClass.id,
-              name: cls.officialClass.name,
-              levelId: cls.schoolLevelId,
-              level: cls.schoolLevel,
-            });
-          }
-        }
-        const classes = Array.from(officialMap.values()).sort((a, b) => a.name.localeCompare(b.name));
-        setSchoolClasses(classes);
-      })
-      .catch((e) => {
-        console.warn('[AdmissionsContent] Failed to load classes:', e?.message);
-        setSchoolClasses([]);
-      });
-  }, []);
+  // ⭐ Hooks React Query partagés — remplacent les fetch() directs.
+  // Cache 5 min pour school-levels, 2 min pour all-classes.
+  // Dégradation gracieuse au timeout (retourne [] au lieu de crasher).
+  const { data: schoolLevelsData = [] } = useSchoolLevelsQuery();
+  const schoolLevels = schoolLevelsData;
+
+  const { classes: allClassesData = [] } = useAllClasses();
+  // Dédupliquer par officialClass.id pour n'avoir que les classes officielles créées
+  const schoolClasses = useMemo(() => {
+    const officialMap = new Map<string, any>();
+    for (const cls of allClassesData) {
+      if (cls.officialClass && !officialMap.has(cls.officialClass.id)) {
+        officialMap.set(cls.officialClass.id, {
+          id: cls.officialClass.id,
+          name: cls.officialClass.name,
+          levelId: cls.schoolLevelId,
+          level: cls.schoolLevel,
+        });
+      }
+    }
+    return Array.from(officialMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [allClassesData]);
 
   // Helper : retourne le label d'un niveau à partir de son ID
   const getLevelLabel = (levelId: string | null | undefined): string => {

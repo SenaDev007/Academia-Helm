@@ -262,17 +262,24 @@ export default function EvaluationsPage() {
         isSystem: false,
       }));
 
-      const [evals, classesData, periodsData, subjectsData] = await Promise.all([
+      const [evals, allClassesData, periodsData, subjectsData] = await Promise.all([
         institutionalExamsService.getEvaluations(params),
-        classesService.getAll({ schoolLevelId: schoolLevelUuid, academicYearId: academicYear.id }).catch(() => []),
+        fetch('/api/all-classes', { credentials: 'include' }).then(r => r.ok ? r.json() : []).catch(() => []),
         getAcademicYearPeriods(academicYear.id).catch(() => []),
         pedagogyService.getSubjects(academicYear.id).catch(() => []),
       ]);
       setEvaluations(Array.isArray(evals) ? evals : []);
 
-      // ⭐ Trier les classes par ordre pédagogique (Maternelle → Primaire → Secondaire)
-      const rawClasses = Array.isArray(classesData) ? classesData : (classesData?.data ?? []);
-      const sortedClasses = [...rawClasses].sort((a, b) => {
+      // ⭐ Filtrer les classes par niveau scolaire ACTUEL (module examen)
+      // /api/all-classes retourne TOUTES les classes du tenant (header x-school-level-id=ALL).
+      // On filtre côté client par schoolLevelId === schoolLevelUuid (niveau du module examen).
+      const allClasses = Array.isArray(allClassesData) ? allClassesData : [];
+      const levelClasses = allClasses.filter((c: any) =>
+        c.schoolLevelId === schoolLevelUuid ||
+        c.schoolLevel?.id === schoolLevelUuid
+      );
+      // Trier par ordre pédagogique (Maternelle → Primaire → Secondaire)
+      const sortedClasses = [...levelClasses].sort((a, b) => {
         const idxA = getClassOrderIndex(a.name || a.code || '');
         const idxB = getClassOrderIndex(b.name || b.code || '');
         if (idxA !== idxB) return idxA - idxB;
@@ -282,11 +289,14 @@ export default function EvaluationsPage() {
 
       setPeriods(Array.isArray(periodsData) ? periodsData : []);
 
-      // ⭐ Filtrer les matières par piste linguistique (FR/EN) + trier par niveau scolaire
+      // ⭐ Filtrer les matières par niveau scolaire ACTUEL + piste linguistique
       const allSubjects = Array.isArray(subjectsData) ? subjectsData : (subjectsData?.data ?? []);
+      const levelSubjects = allSubjects.filter((s: any) =>
+        s.schoolLevelId === schoolLevelUuid
+      );
       const filteredSubjects = scopeLang
-        ? allSubjects.filter((s: any) => !s.language || s.language === scopeLang)
-        : allSubjects;
+        ? levelSubjects.filter((s: any) => !s.language || s.language === scopeLang)
+        : levelSubjects;
       // Trier par niveau scolaire (Maternelle → Primaire → Secondaire)
       const sortedSubjects = [...filteredSubjects].sort((a, b) => {
         const idxA = getLevelOrderIndex(a.schoolLevelId, availableLevels);

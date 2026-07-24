@@ -323,7 +323,7 @@ export default function SubjectsWorkspace() {
            code.startsWith('PRI');
   }, [selectedLevelObj]);
 
-  // ⭐ Détection du niveau secondaire et de ses cycles
+  // ⭐ Détection du niveau secondaire
   const isSecondary = useMemo(() => {
     if (!selectedLevelObj) return false;
     const nameOrLabel = (selectedLevelObj.name || selectedLevelObj.label || '').toLowerCase();
@@ -332,22 +332,26 @@ export default function SubjectsWorkspace() {
            code.startsWith('SEC') || code.startsWith('LYC');
   }, [selectedLevelObj]);
 
-  // ⭐ Cycle secondaire : "1er cycle" (6e-5e-4e-3e) ou "2nd cycle" (Seconde-Première-Terminale)
-  const [secondaryCycle, setSecondaryCycle] = useState<'FIRST' | 'SECOND' | ''>('');
+  // ⭐ Sous-niveau secondaire : 4 options
+  // '6E_5E' → coef=1 forcé (configuration au niveau subject)
+  // '4E' → coef par matière (configuration dans class_subjects)
+  // '3E' → coef par matière (configuration dans class_subjects)
+  // 'SECOND_CYCLE' → coef par classe officielle/série (configuration dans class_subjects)
+  const [secondarySubLevel, setSecondarySubLevel] = useState<'6E_5E' | '4E' | '3E' | 'SECOND_CYCLE' | ''>('');
 
-  // ⭐ Au 1er cycle, 6e et 5e ont coef=1 (pas de coefficient variable)
-  // À partir de 4e et 3e, chaque matière a un coefficient spécifique
-  const isFirstCycleNoCoef = useMemo(() => {
-    return isSecondary && secondaryCycle === 'FIRST' &&
-      // 6e et 5e : pas de coefficient → coef=1 forcé
-      // 4e et 3e : coefficient variable → on affiche le champ
-      false; // Sera géré au niveau de l'affectation par classe
-  }, [isSecondary, secondaryCycle]);
+  const is6e5e = isSecondary && secondarySubLevel === '6E_5E';
+  const is4e3e = isSecondary && (secondarySubLevel === '4E' || secondarySubLevel === '3E');
+  const isSecondCycle = isSecondary && secondarySubLevel === 'SECOND_CYCLE';
 
-  // ⭐ Au 2nd cycle, les coefficients sont spécifiques par série
-  const isSecondCycleWithSeries = useMemo(() => {
-    return isSecondary && secondaryCycle === 'SECOND';
-  }, [isSecondary, secondaryCycle]);
+  // ⭐ Classes officielles du 2nd cycle (Seconde, Première, Terminale avec séries)
+  const [secondCycleClasses, setSecondCycleClasses] = useState<any[]>([]);
+  const [selectedSecondCycleClassId, setSelectedSecondCycleClassId] = useState<string>('');
+
+  // ⭐ Matières du secondaire avec coefficients (pour 4e/3e/2nd cycle)
+  const [subjectCoefficients, setSubjectCoefficients] = useState<Record<string, number>>({});
+
+  // ⭐ Classe officielle sélectionnée pour 4e ou 3e
+  const [selected4e3eClassId, setSelected4e3eClassId] = useState<string>('');
 
   /** Suggestions de matières pour le niveau sélectionné dans le modal */
   const defaultSuggestionsForLevel = useMemo(() => {
@@ -399,22 +403,36 @@ export default function SubjectsWorkspace() {
     setSelectedSuggestions(new Set());
   }, [subjectForm.schoolLevelId, modal]);
 
-  // ⭐ Réinitialiser le cycle quand le niveau change
+  // ⭐ Réinitialiser le sous-niveau secondaire quand le niveau change
   useEffect(() => {
     if (!isSecondary) {
-      setSecondaryCycle('');
+      setSecondarySubLevel('');
+      setSelectedSecondCycleClassId('');
+      setSelected4e3eClassId('');
+      setSubjectCoefficients({});
     }
   }, [isSecondary]);
+
+  // ⭐ Charger les classes officielles du 2nd cycle quand l'utilisateur sélectionne SECOND_CYCLE
+  useEffect(() => {
+    if (!isSecondCycle) return;
+    // Filtrer les classes officielles du 2nd cycle (Seconde, Première, Terminale)
+    const secondCycle = classes.filter(c => {
+      const name = (c.name || c.code || '').toUpperCase();
+      return name.includes('SECONDE') || name.includes('PREMIERE') || name.includes('PREMIÈRE') || name.includes('TERMINALE');
+    });
+    setSecondCycleClasses(secondCycle);
+  }, [isSecondCycle, classes]);
 
   useEffect(() => {
     if (isPrimaryOrMaternelle && !subjectForm.id) {
       setSubjectForm(prev => ({ ...prev, coefficient: 1 }));
     }
-    // ⭐ Secondaire 1er cycle 6e-5e : coefficient forcé à 1
-    if (isSecondary && secondaryCycle === 'FIRST' && !subjectForm.id) {
+    // ⭐ Secondaire 6e-5e : coefficient forcé à 1
+    if (is6e5e && !subjectForm.id) {
       setSubjectForm(prev => ({ ...prev, coefficient: 1 }));
     }
-  }, [isPrimaryOrMaternelle, isSecondary, secondaryCycle, subjectForm.id]);
+  }, [isPrimaryOrMaternelle, is6e5e, subjectForm.id]);
 
   // --- Loaders ---
 
@@ -611,6 +629,60 @@ export default function SubjectsWorkspace() {
       return;
     }
 
+    // ⭐ Cas 4e/3e : Sauvegarder dans class_subjects (pas dans subjects)
+    if (is4e3e && selected4e3eClassId) {
+      const assignments = Object.entries(subjectCoefficients)
+        .filter(([_, coef]) => coef > 0)
+        .map(([subjectId, coefficient]) => ({
+          classId: selected4e3eClassId,
+          subjectId,
+          coefficient,
+          academicYearId: academicYear?.id,
+        }));
+      if (assignments.length === 0) {
+        toast({ title: "Aucune matière sélectionnée", description: "Sélectionnez au moins une matière avec son coefficient.", variant: "destructive" });
+        return;
+      }
+      try {
+        for (const a of assignments) {
+          await pedagogyFetch(`/api/class-subjects`, { method: 'POST', body: a });
+        }
+        toast({ title: "Succès", description: `${assignments.length} matière(s) affectée(s) avec coefficients.` });
+        setModal('none');
+        loadSubjects();
+      } catch (e: any) {
+        toast({ title: "Erreur", description: e.message, variant: "destructive" });
+      }
+      return;
+    }
+
+    // ⭐ Cas 2nd cycle : Sauvegarder dans class_subjects pour la classe officielle sélectionnée
+    if (isSecondCycle && selectedSecondCycleClassId) {
+      const assignments = Object.entries(subjectCoefficients)
+        .filter(([_, coef]) => coef > 0)
+        .map(([subjectId, coefficient]) => ({
+          classId: selectedSecondCycleClassId,
+          subjectId,
+          coefficient,
+          academicYearId: academicYear?.id,
+        }));
+      if (assignments.length === 0) {
+        toast({ title: "Aucune matière sélectionnée", description: "Sélectionnez au moins une matière avec son coefficient.", variant: "destructive" });
+        return;
+      }
+      try {
+        for (const a of assignments) {
+          await pedagogyFetch(`/api/class-subjects`, { method: 'POST', body: a });
+        }
+        toast({ title: "Succès", description: `${assignments.length} matière(s) affectée(s) avec coefficients.` });
+        setModal('none');
+        loadSubjects();
+      } catch (e: any) {
+        toast({ title: "Erreur", description: e.message, variant: "destructive" });
+      }
+      return;
+    }
+
     if (!subjectForm.code.trim() || !subjectForm.name.trim() || !subjectForm.schoolLevelId) {
       toast({
         title: "Champs manquants",
@@ -630,9 +702,6 @@ export default function SubjectsWorkspace() {
           coefficient: Number(subjectForm.coefficient) || 1.0,
           weeklyHours: Number(subjectForm.weeklyHours) || 0,
           description: subjectForm.description,
-          // ⭐ Secondaire : envoyer le cycle et la série
-          ...(isSecondary ? { secondaryCycle } : {}),
-          ...(isSecondCycleWithSeries && subjectForm.seriesId ? { seriesId: subjectForm.seriesId } : {}),
           ...(bilingualEnabled ? { language: currentTrack } : {}),
         }});
         // Vérifier que la création a VRAIMENT réussi
@@ -1573,29 +1642,51 @@ export default function SubjectsWorkspace() {
             </div>
           </div>
 
-          {/* ⭐ Sélecteur de cycle (Secondaire uniquement) */}
+          {/* ⭐ Sélecteur de sous-niveau (Secondaire uniquement) */}
           {isSecondary && (
-            <div className="space-y-1">
+            <div className="space-y-2">
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Cycle du Secondaire
+                Sous-niveau du Secondaire
               </label>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() => setSecondaryCycle('FIRST')}
-                  className={`flex-1 px-4 py-2 rounded-lg text-sm font-bold transition ${
-                    secondaryCycle === 'FIRST'
+                  onClick={() => setSecondarySubLevel('6E_5E')}
+                  className={`px-3 py-2 rounded-lg text-sm font-bold transition ${
+                    secondarySubLevel === '6E_5E'
                       ? 'bg-indigo-600 text-white shadow-sm'
                       : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400'
                   }`}
                 >
-                  1er Cycle (6e → 3e)
+                  6e - 5e (coef = 1)
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSecondaryCycle('SECOND')}
-                  className={`flex-1 px-4 py-2 rounded-lg text-sm font-bold transition ${
-                    secondaryCycle === 'SECOND'
+                  onClick={() => setSecondarySubLevel('4E')}
+                  className={`px-3 py-2 rounded-lg text-sm font-bold transition ${
+                    secondarySubLevel === '4E'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400'
+                  }`}
+                >
+                  4e (coef par matière)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSecondarySubLevel('3E')}
+                  className={`px-3 py-2 rounded-lg text-sm font-bold transition ${
+                    secondarySubLevel === '3E'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400'
+                  }`}
+                >
+                  3e (coef par matière)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSecondarySubLevel('SECOND_CYCLE')}
+                  className={`px-3 py-2 rounded-lg text-sm font-bold transition ${
+                    secondarySubLevel === 'SECOND_CYCLE'
                       ? 'bg-indigo-600 text-white shadow-sm'
                       : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400'
                   }`}
@@ -1603,34 +1694,182 @@ export default function SubjectsWorkspace() {
                   2nd Cycle (Seconde → Terminale)
                 </button>
               </div>
-              <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
-                {secondaryCycle === 'FIRST' && (
-                  <>📌 6e et 5e : coefficient = 1 (pas de coefficient variable). 4e et 3e : chaque matière a un coefficient spécifique (à définir au niveau de l'affectation par classe).</>
-                )}
-                {secondaryCycle === 'SECOND' && (
-                  <>📌 Les coefficients sont spécifiques à chaque série (A, C, D, G2...). Définissez le coefficient par défaut ici, puis ajustez par série dans l'affectation par classe.</>
-                )}
-                {!secondaryCycle && 'Sélectionnez le cycle pour configurer les coefficients.'}
-              </p>
             </div>
           )}
 
-          {/* ⭐ Sélecteur de série (2nd cycle uniquement) */}
-          {isSecondCycleWithSeries && filteredSeries.length > 0 && (
-            <div className="space-y-1">
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Série (coefficient par défaut pour cette série)
-              </label>
-              <select
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white"
-                value={subjectForm.seriesId || ''}
-                onChange={(e) => setSubjectForm({ ...subjectForm, seriesId: e.target.value })}
-              >
-                <option value="">Toutes les séries (coefficient général)</option>
-                {filteredSeries.map((s: any) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+          {/* ⭐ Cas 4e / 3e : Sélecteur de classe officielle + liste matières avec coef individuel */}
+          {is4e3e && (
+            <div className="space-y-3">
+              {/* Sélecteur de classe officielle (4e ou 3e) */}
+              <div className="space-y-1">
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Classe officielle ({secondarySubLevel === '4E' ? '4e' : '3e'})
+                </label>
+                <select
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 bg-white"
+                  value={selected4e3eClassId}
+                  onChange={(e) => setSelected4e3eClassId(e.target.value)}
+                >
+                  <option value="">Sélectionner la classe officielle</option>
+                  {classes
+                    .filter(c => {
+                      const name = (c.name || c.code || '').toUpperCase();
+                      const target = secondarySubLevel === '4E' ? '4E' : '3E';
+                      const targetFull = secondarySubLevel === '4E' ? 'QUATRIÈME' : 'TROISIÈME';
+                      return name.includes(target) || name.includes(targetFull);
+                    })
+                    .map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))
+                  }
+                </select>
+              </div>
+
+              {/* Liste des matières avec coefficient individuel */}
+              {selected4e3eClassId && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-slate-600">
+                    Définissez le coefficient de chaque matière pour cette classe :
+                  </p>
+                  <div className="max-h-[300px] overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
+                    {subjects
+                      .filter(s => {
+                        const sl = s.schoolLevel;
+                        const levelName = (sl?.name || sl?.code || '').toUpperCase();
+                        return levelName.includes('SECOND') || levelName.includes('SEC');
+                      })
+                      .map(subject => (
+                      <div key={subject.id} className="flex items-center justify-between px-3 py-2 hover:bg-slate-50">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={!!subjectCoefficients[subject.id]}
+                            onChange={(e) => {
+                              setSubjectCoefficients(prev => ({
+                                ...prev,
+                                [subject.id]: e.target.checked ? (prev[subject.id] || 1) : 0,
+                              }));
+                            }}
+                            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-sm text-slate-700">{subject.name}</span>
+                          <span className="text-[10px] text-slate-400">({subject.code})</span>
+                        </div>
+                        {subjectCoefficients[subject.id] ? (
+                          <input
+                            type="number"
+                            min="1"
+                            max="10"
+                            step="0.5"
+                            value={subjectCoefficients[subject.id]}
+                            onChange={(e) => setSubjectCoefficients(prev => ({
+                              ...prev,
+                              [subject.id]: Number(e.target.value) || 1,
+                            }))}
+                            className="w-20 px-2 py-1 text-sm border border-slate-300 rounded text-center font-semibold"
+                          />
+                        ) : (
+                          <span className="text-xs text-slate-400 w-20 text-center">—</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {Object.values(subjectCoefficients).filter(v => v > 0).length > 0 && (
+                    <p className="text-xs text-indigo-600 font-semibold">
+                      {Object.values(subjectCoefficients).filter(v => v > 0).length} matière(s) configurée(s) pour {secondarySubLevel === '4E' ? 'la 4e' : 'la 3e'}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ⭐ Cas 2nd Cycle : Sélecteur de classe officielle + liste matières avec coef */}
+          {isSecondCycle && (
+            <div className="space-y-3">
+              {/* Liste des classes officielles du 2nd cycle (sans checkbox, boutons cliquables) */}
+              <div className="space-y-1">
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Classe officielle (avec série)
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {secondCycleClasses.map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setSelectedSecondCycleClassId(c.id)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-bold transition ${
+                        selectedSecondCycleClassId === c.id
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:border-indigo-400'
+                      }`}
+                    >
+                      {c.name}
+                      {c.series?.name && <span className="ml-1 text-[10px] opacity-70">({c.series.name})</span>}
+                    </button>
+                  ))}
+                  {secondCycleClasses.length === 0 && (
+                    <p className="text-xs text-slate-500 italic">Aucune classe du 2nd cycle trouvée.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Liste des matières avec coefficient individuel pour la classe sélectionnée */}
+              {selectedSecondCycleClassId && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-slate-600">
+                    Définissez le coefficient de chaque matière pour cette classe :
+                  </p>
+                  <div className="max-h-[300px] overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
+                    {subjects
+                      .filter(s => {
+                        const sl = s.schoolLevel;
+                        const levelName = (sl?.name || sl?.code || '').toUpperCase();
+                        return levelName.includes('SECOND') || levelName.includes('SEC');
+                      })
+                      .map(subject => (
+                      <div key={subject.id} className="flex items-center justify-between px-3 py-2 hover:bg-slate-50">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={!!subjectCoefficients[subject.id]}
+                            onChange={(e) => {
+                              setSubjectCoefficients(prev => ({
+                                ...prev,
+                                [subject.id]: e.target.checked ? (prev[subject.id] || 1) : 0,
+                              }));
+                            }}
+                            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-sm text-slate-700">{subject.name}</span>
+                          <span className="text-[10px] text-slate-400">({subject.code})</span>
+                        </div>
+                        {subjectCoefficients[subject.id] ? (
+                          <input
+                            type="number"
+                            min="1"
+                            max="10"
+                            step="0.5"
+                            value={subjectCoefficients[subject.id]}
+                            onChange={(e) => setSubjectCoefficients(prev => ({
+                              ...prev,
+                              [subject.id]: Number(e.target.value) || 1,
+                            }))}
+                            className="w-20 px-2 py-1 text-sm border border-slate-300 rounded text-center font-semibold"
+                          />
+                        ) : (
+                          <span className="text-xs text-slate-400 w-20 text-center">—</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {Object.values(subjectCoefficients).filter(v => v > 0).length > 0 && (
+                    <p className="text-xs text-indigo-600 font-semibold">
+                      {Object.values(subjectCoefficients).filter(v => v > 0).length} matière(s) configurée(s)
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -1799,6 +2038,8 @@ export default function SubjectsWorkspace() {
           )}
 
 
+          {/* ⭐ Champ coefficient — masqué pour 4e/3e/2nd cycle (géré dans la liste ci-dessus) */}
+          {!(is4e3e || isSecondCycle) && (
           <div className="grid grid-cols-2 gap-4">
              <div className="space-y-1">
                <div className="flex justify-between items-center">
@@ -1808,14 +2049,9 @@ export default function SubjectsWorkspace() {
                       Par défaut 1 (Mat/Pri)
                     </span>
                   )}
-                  {isSecondary && secondaryCycle === 'FIRST' && (
+                  {is6e5e && (
                     <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mb-1">
                       6e-5e: coef=1 forcé
-                    </span>
-                  )}
-                  {isSecondCycleWithSeries && (
-                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 mb-1">
-                      Coef par défaut (ajustable par série)
                     </span>
                   )}
                </div>
@@ -1825,14 +2061,8 @@ export default function SubjectsWorkspace() {
                  placeholder="2" 
                  value={subjectForm.coefficient}
                  onChange={(e) => setSubjectForm({ ...subjectForm, coefficient: Number(e.target.value) })}
-                 disabled={isPrimaryOrMaternelle || (isSecondary && secondaryCycle === 'FIRST')}
+                 disabled={isPrimaryOrMaternelle || is6e5e}
                />
-               {isSecondary && secondaryCycle === 'FIRST' && (
-                 <p className="text-[10px] text-amber-600 leading-relaxed">
-                   Au 1er cycle, les coefficients de 6e-5e sont forcés à 1.
-                   Pour 4e-3e, le coefficient sera défini dans l'affectation par classe.
-                 </p>
-               )}
              </div>
              <div className="space-y-1">
                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Volume Hebdo (h)</label>
@@ -1845,6 +2075,7 @@ export default function SubjectsWorkspace() {
                />
              </div>
           </div>
+          )}
         </div>
       </FormModal>
 

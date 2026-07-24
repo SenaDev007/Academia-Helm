@@ -285,7 +285,7 @@ export default function EvaluationsPage() {
 
   const handleSave = async () => {
     // Validation
-    if (form.classIds.length === 0 || form.subjectIds.length === 0 || !form.periodId || !form.evaluationTypeId || !form.evaluationDate) {
+    if (form.classIds.length === 0 || form.subjectIds.length === 0 || !form.periodId || !form.evaluationTypeId || !form.startDate || !form.endDate) {
       toast.error('Veuillez remplir tous les champs obligatoires');
       return;
     }
@@ -296,9 +296,9 @@ export default function EvaluationsPage() {
         description: form.description || null,
         periodId: form.periodId,
         evaluationTypeId: form.evaluationTypeId,
-        evaluationDate: new Date(form.evaluationDate).toISOString(),
-        startDate: form.startDate ? new Date(form.startDate).toISOString() : null,
-        endDate: form.endDate ? new Date(form.endDate).toISOString() : null,
+        evaluationDate: new Date(form.startDate).toISOString(),
+        startDate: new Date(form.startDate).toISOString(),
+        endDate: new Date(form.endDate).toISOString(),
       };
       // ⭐ Maternelle = qualitatif (TS/S/PS) — pas de barème numérique ni coefficient
       if (!isMaternelle) {
@@ -517,25 +517,6 @@ export default function EvaluationsPage() {
         title: 'Évaluations',
         description: 'Créer et gérer les évaluations : devoirs, interrogations, compositions, examens blancs, épreuves pratiques, oraux.',
         icon: 'fileText',
-        actions: (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleOpenTypeModal}
-              className="flex items-center space-x-2 px-3 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors text-sm"
-              title="Gérer les types d'évaluation (devoir, interrogation, composition...)"
-            >
-              <Settings className="w-4 h-4" />
-              <span className="hidden sm:inline">Types d'évaluation</span>
-            </button>
-            <button
-              onClick={handleOpenCreate}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Nouvelle évaluation</span>
-            </button>
-          </div>
-        ),
       }}
       subModules={{
         modules: scopedSubModules,
@@ -573,6 +554,13 @@ export default function EvaluationsPage() {
                     <SelectItem value="CANCELLED">Annulée</SelectItem>
                   </SelectContent>
                 </Select>
+                <button
+                  onClick={handleOpenCreate}
+                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-semibold whitespace-nowrap"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span className="hidden sm:inline">Nouvelle évaluation</span>
+                </button>
               </div>
             </div>
 
@@ -689,7 +677,7 @@ export default function EvaluationsPage() {
           </button>
           <button
             onClick={handleSave}
-            disabled={saving || form.classIds.length === 0 || form.subjectIds.length === 0 || !form.periodId || !form.evaluationTypeId}
+            disabled={saving || form.classIds.length === 0 || form.subjectIds.length === 0 || !form.periodId || !form.evaluationTypeId || !form.startDate || !form.endDate}
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
           >
             {saving ? 'Enregistrement...' : editingId ? 'Modifier' : 'Créer'}
@@ -698,25 +686,21 @@ export default function EvaluationsPage() {
       }
     >
       <div className="space-y-4 py-2">
-        {/* Titre */}
-        <div>
-          <Label htmlFor="title">Titre <span className="text-gray-400 font-normal">(optionnel)</span></Label>
-          <Input
-            id="title"
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-            placeholder="Ex: Devoir n°1 — Trimestre 1"
-          />
-        </div>
-
-        {/* Type d'évaluation */}
+        {/* ⭐ Type d'évaluation EN PREMIER (avant titre) */}
         <div>
           <Label htmlFor="evaluationTypeId">Type d'évaluation <span className="text-red-500">*</span></Label>
           <Select value={form.evaluationTypeId} onValueChange={(v) => {
             const selectedType = evaluationTypes.find(t => t.id === v);
+            // ⭐ Auto-génération intelligente du titre
+            // Ex: "Évaluation mensuelle 1 - Trimestre 1"
+            const periodName = periods.find(p => p.id === form.periodId)?.name || '';
+            const autoTitle = selectedType
+              ? `${selectedType.name} - ${periodName}`
+              : '';
             setForm({
               ...form,
               evaluationTypeId: v,
+              title: editingId ? form.title : autoTitle, // Ne pas écraser si édition
               maxScore: selectedType ? String(selectedType.defaultMaxScore) : form.maxScore,
               coefficient: selectedType ? String(selectedType.defaultCoefficient) : form.coefficient,
             });
@@ -726,7 +710,7 @@ export default function EvaluationsPage() {
             </SelectTrigger>
             <SelectContent>
               {evaluationTypes.length === 0 ? (
-                <SelectItem value="_none" disabled>Aucun type disponible</SelectItem>
+                <SelectItem value="_none" disabled>Aucun type — configurez-les dans l'onglet Paramètres</SelectItem>
               ) : (
                 evaluationTypes.map(t => (
                   <SelectItem key={t.id} value={t.id}>
@@ -736,6 +720,17 @@ export default function EvaluationsPage() {
               )}
             </SelectContent>
           </Select>
+        </div>
+
+        {/* Titre (auto-généré, modifiable) */}
+        <div>
+          <Label htmlFor="title">Titre <span className="text-gray-400 font-normal">(auto-généré, modifiable)</span></Label>
+          <Input
+            id="title"
+            value={form.title}
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+            placeholder="Ex: Évaluation mensuelle - Trimestre 1"
+          />
         </div>
 
         {/* Classes (sélection multiple) + Matières (sélection multiple checkboxes) */}
@@ -846,56 +841,47 @@ export default function EvaluationsPage() {
           </div>
         )}
 
-        {/* Période + Date */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="periodId">Période <span className="text-red-500">*</span></Label>
-            <Select value={form.periodId} onValueChange={(v) => setForm({ ...form, periodId: v })}>
-              <SelectTrigger id="periodId">
-                <SelectValue placeholder="Sélectionner..." />
-              </SelectTrigger>
-              <SelectContent>
-                {periods.length === 0 ? (
-                  <SelectItem value="_none" disabled>Aucune période</SelectItem>
-                ) : (
-                  periods.map(p => (
-                    <SelectItem key={p.id} value={p.id} disabled={p.isClosed}>
-                      {p.name} {p.isClosed && '(clôturée)'}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="evaluationDate">Date <span className="text-red-500">*</span></Label>
-            <Input
-              id="evaluationDate"
-              type="date"
-              value={form.evaluationDate}
-              onChange={(e) => setForm({ ...form, evaluationDate: e.target.value })}
-            />
-          </div>
+        {/* Période (trimestre) — auto-sélectionné si période active */}
+        <div>
+          <Label htmlFor="periodId">Période (Trimestre) <span className="text-red-500">*</span></Label>
+          <Select value={form.periodId} onValueChange={(v) => setForm({ ...form, periodId: v })}>
+            <SelectTrigger id="periodId">
+              <SelectValue placeholder="Sélectionner..." />
+            </SelectTrigger>
+            <SelectContent>
+              {periods.length === 0 ? (
+                <SelectItem value="_none" disabled>Aucune période — configurez dans Paramètres</SelectItem>
+              ) : (
+                periods.map(p => (
+                  <SelectItem key={p.id} value={p.id} disabled={p.isClosed}>
+                    {p.name} {p.isClosed && '(clôturée)'} {p.isActive && !p.isClosed && '✓'}
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
         </div>
 
-        {/* ⭐ Intervalle de dates — date de début + date de fin des évaluations */}
+        {/* ⭐ Intervalle de dates obligatoire — date de début + date de fin */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="startDate">Date de début <span className="text-gray-400 font-normal">(optionnel)</span></Label>
+            <Label htmlFor="startDate">Date de début <span className="text-red-500">*</span></Label>
             <Input
               id="startDate"
               type="date"
               value={form.startDate}
               onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+              required
             />
           </div>
           <div>
-            <Label htmlFor="endDate">Date de fin <span className="text-gray-400 font-normal">(optionnel)</span></Label>
+            <Label htmlFor="endDate">Date de fin <span className="text-red-500">*</span></Label>
             <Input
               id="endDate"
               type="date"
               value={form.endDate}
               onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+              required
             />
           </div>
         </div>

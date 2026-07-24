@@ -44,6 +44,13 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
+    // ⭐ PROMOTER, DIRECTOR, ADMIN = accès total (propriétaires/direction de l'école)
+    // Ces rôles ont tous les droits sur leur établissement.
+    const bypassRoles = ['PROMOTER', 'DIRECTOR', 'ADMIN', 'SUPER_ADMIN'];
+    if (bypassRoles.includes(user.role)) {
+      return true;
+    }
+
     // Use permissions already extracted by JwtStrategy (cached with user) — no DB query needed
     const userPermissions: Set<string> = new Set(user.permissions || []);
 

@@ -186,6 +186,7 @@ export default function SubjectsWorkspace() {
     schoolLevelId: '',
     description: '',
     language: '' as string,
+    seriesId: '' as string,
   });
 
   // Mass Assignment State
@@ -322,6 +323,32 @@ export default function SubjectsWorkspace() {
            code.startsWith('PRI');
   }, [selectedLevelObj]);
 
+  // ⭐ Détection du niveau secondaire et de ses cycles
+  const isSecondary = useMemo(() => {
+    if (!selectedLevelObj) return false;
+    const nameOrLabel = (selectedLevelObj.name || selectedLevelObj.label || '').toLowerCase();
+    const code = (selectedLevelObj.code || '').toUpperCase();
+    return nameOrLabel.includes('secondaire') || nameOrLabel.includes('lycee') ||
+           code.startsWith('SEC') || code.startsWith('LYC');
+  }, [selectedLevelObj]);
+
+  // ⭐ Cycle secondaire : "1er cycle" (6e-5e-4e-3e) ou "2nd cycle" (Seconde-Première-Terminale)
+  const [secondaryCycle, setSecondaryCycle] = useState<'FIRST' | 'SECOND' | ''>('');
+
+  // ⭐ Au 1er cycle, 6e et 5e ont coef=1 (pas de coefficient variable)
+  // À partir de 4e et 3e, chaque matière a un coefficient spécifique
+  const isFirstCycleNoCoef = useMemo(() => {
+    return isSecondary && secondaryCycle === 'FIRST' &&
+      // 6e et 5e : pas de coefficient → coef=1 forcé
+      // 4e et 3e : coefficient variable → on affiche le champ
+      false; // Sera géré au niveau de l'affectation par classe
+  }, [isSecondary, secondaryCycle]);
+
+  // ⭐ Au 2nd cycle, les coefficients sont spécifiques par série
+  const isSecondCycleWithSeries = useMemo(() => {
+    return isSecondary && secondaryCycle === 'SECOND';
+  }, [isSecondary, secondaryCycle]);
+
   /** Suggestions de matières pour le niveau sélectionné dans le modal */
   const defaultSuggestionsForLevel = useMemo(() => {
     // En mode EN, on utilise le catalogue anglais (liste exacte fournie par l'utilisateur)
@@ -372,11 +399,22 @@ export default function SubjectsWorkspace() {
     setSelectedSuggestions(new Set());
   }, [subjectForm.schoolLevelId, modal]);
 
+  // ⭐ Réinitialiser le cycle quand le niveau change
+  useEffect(() => {
+    if (!isSecondary) {
+      setSecondaryCycle('');
+    }
+  }, [isSecondary]);
+
   useEffect(() => {
     if (isPrimaryOrMaternelle && !subjectForm.id) {
       setSubjectForm(prev => ({ ...prev, coefficient: 1 }));
     }
-  }, [isPrimaryOrMaternelle, subjectForm.id]);
+    // ⭐ Secondaire 1er cycle 6e-5e : coefficient forcé à 1
+    if (isSecondary && secondaryCycle === 'FIRST' && !subjectForm.id) {
+      setSubjectForm(prev => ({ ...prev, coefficient: 1 }));
+    }
+  }, [isPrimaryOrMaternelle, isSecondary, secondaryCycle, subjectForm.id]);
 
   // --- Loaders ---
 
@@ -592,6 +630,9 @@ export default function SubjectsWorkspace() {
           coefficient: Number(subjectForm.coefficient) || 1.0,
           weeklyHours: Number(subjectForm.weeklyHours) || 0,
           description: subjectForm.description,
+          // ⭐ Secondaire : envoyer le cycle et la série
+          ...(isSecondary ? { secondaryCycle } : {}),
+          ...(isSecondCycleWithSeries && subjectForm.seriesId ? { seriesId: subjectForm.seriesId } : {}),
           ...(bilingualEnabled ? { language: currentTrack } : {}),
         }});
         // Vérifier que la création a VRAIMENT réussi
@@ -1532,6 +1573,67 @@ export default function SubjectsWorkspace() {
             </div>
           </div>
 
+          {/* ⭐ Sélecteur de cycle (Secondaire uniquement) */}
+          {isSecondary && (
+            <div className="space-y-1">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Cycle du Secondaire
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSecondaryCycle('FIRST')}
+                  className={`flex-1 px-4 py-2 rounded-lg text-sm font-bold transition ${
+                    secondaryCycle === 'FIRST'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400'
+                  }`}
+                >
+                  1er Cycle (6e → 3e)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSecondaryCycle('SECOND')}
+                  className={`flex-1 px-4 py-2 rounded-lg text-sm font-bold transition ${
+                    secondaryCycle === 'SECOND'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400'
+                  }`}
+                >
+                  2nd Cycle (Seconde → Terminale)
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed mt-1">
+                {secondaryCycle === 'FIRST' && (
+                  <>📌 6e et 5e : coefficient = 1 (pas de coefficient variable). 4e et 3e : chaque matière a un coefficient spécifique (à définir au niveau de l'affectation par classe).</>
+                )}
+                {secondaryCycle === 'SECOND' && (
+                  <>📌 Les coefficients sont spécifiques à chaque série (A, C, D, G2...). Définissez le coefficient par défaut ici, puis ajustez par série dans l'affectation par classe.</>
+                )}
+                {!secondaryCycle && 'Sélectionnez le cycle pour configurer les coefficients.'}
+              </p>
+            </div>
+          )}
+
+          {/* ⭐ Sélecteur de série (2nd cycle uniquement) */}
+          {isSecondCycleWithSeries && filteredSeries.length > 0 && (
+            <div className="space-y-1">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Série (coefficient par défaut pour cette série)
+              </label>
+              <select
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white"
+                value={subjectForm.seriesId || ''}
+                onChange={(e) => setSubjectForm({ ...subjectForm, seriesId: e.target.value })}
+              >
+                <option value="">Toutes les séries (coefficient général)</option>
+                {filteredSeries.map((s: any) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Langue (FR/EN) — visible uniquement en mode bilingue.
               La langue est déterminée par le switch FR/EN en haut de la page.
               L'utilisateur ne peut pas la changer dans le modal — il doit basculer
@@ -1706,6 +1808,16 @@ export default function SubjectsWorkspace() {
                       Par défaut 1 (Mat/Pri)
                     </span>
                   )}
+                  {isSecondary && secondaryCycle === 'FIRST' && (
+                    <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mb-1">
+                      6e-5e: coef=1 forcé
+                    </span>
+                  )}
+                  {isSecondCycleWithSeries && (
+                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 mb-1">
+                      Coef par défaut (ajustable par série)
+                    </span>
+                  )}
                </div>
                <input 
                  type="number" 
@@ -1713,7 +1825,14 @@ export default function SubjectsWorkspace() {
                  placeholder="2" 
                  value={subjectForm.coefficient}
                  onChange={(e) => setSubjectForm({ ...subjectForm, coefficient: Number(e.target.value) })}
+                 disabled={isPrimaryOrMaternelle || (isSecondary && secondaryCycle === 'FIRST')}
                />
+               {isSecondary && secondaryCycle === 'FIRST' && (
+                 <p className="text-[10px] text-amber-600 leading-relaxed">
+                   Au 1er cycle, les coefficients de 6e-5e sont forcés à 1.
+                   Pour 4e-3e, le coefficient sera défini dans l'affectation par classe.
+                 </p>
+               )}
              </div>
              <div className="space-y-1">
                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Volume Hebdo (h)</label>

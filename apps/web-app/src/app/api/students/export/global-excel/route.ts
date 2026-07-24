@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
@@ -12,7 +13,7 @@ export async function GET(request: NextRequest) {
     request.nextUrl.searchParams.forEach((value, key) => url.searchParams.append(key, value));
     const headers = await getProxyAuthHeaders(request);
     delete (headers as any)['Accept'];
-    const response = await fetch(normalizeApiUrl(url.toString()), { headers });
+    const response = await fetchWithTimeout(normalizeApiUrl(url.toString()), { headers , cache: 'no-store' }, 15000);
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Erreur');
       return NextResponse.json({ message: errorText || 'Erreur' }, { status: response.status });

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
@@ -26,7 +27,7 @@ export async function GET(
       { headers },
     );
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
     console.error('[BFF] Error fetching card template:', error);
     return NextResponse.json(
@@ -53,7 +54,7 @@ export async function PUT(
       },
     );
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
     console.error('[BFF] Error updating card template:', error);
     return NextResponse.json(
@@ -75,7 +76,7 @@ export async function DELETE(
       { method: 'DELETE', headers },
     );
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
     console.error('[BFF] Error deleting card template:', error);
     return NextResponse.json(

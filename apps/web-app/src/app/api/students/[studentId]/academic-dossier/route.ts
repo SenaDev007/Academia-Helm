@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
@@ -15,7 +16,7 @@ export async function GET(
       `${API_URL}/students/${studentId}/academic-dossier${academicYearId ? `?academicYearId=${academicYearId}` : ''}`
     );
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetch(url, { headers });
+    const response = await fetchWithTimeout(url, { headers , cache: 'no-store' }, 15000);
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       return NextResponse.json(error, { status: response.status });

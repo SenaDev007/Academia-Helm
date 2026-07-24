@@ -3,6 +3,7 @@
  * Proxy vers le backend NestJS pour télécharger le template Excel du bilan.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
     const url = new URL(`${API_URL}/finance/collection-summary/import/template`);
     searchParams.forEach((value, key) => url.searchParams.append(key, value));
 
-    const response = await fetch(normalizeApiUrl(url.toString()), { headers });
+    const response = await fetchWithTimeout(normalizeApiUrl(url.toString()), { headers , cache: 'no-store' }, 15000);
     if (!response.ok) {
       return NextResponse.json({ error: 'Erreur' }, { status: response.status });
     }

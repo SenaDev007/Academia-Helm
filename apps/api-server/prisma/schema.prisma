@@ -14981,6 +14981,8 @@ model Evaluation {
   title            String?
   description      String?
   evaluationDate   DateTime              @default(now())
+  startDate        DateTime?
+  endDate          DateTime?
   maxScore         Float                 @default(20.0)
   coefficient      Float                 @default(1.0)
   teacherId        String?

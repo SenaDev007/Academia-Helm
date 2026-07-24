@@ -137,6 +137,8 @@ export class EvaluationsService {
         title: data.title || null,
         description: data.description || null,
         evaluationDate: data.evaluationDate ? new Date(data.evaluationDate) : new Date(),
+        startDate: data.startDate ? new Date(data.startDate) : null,
+        endDate: data.endDate ? new Date(data.endDate) : null,
         maxScore: data.maxScore ?? type.defaultMaxScore ?? 20,
         coefficient: data.coefficient ?? type.defaultCoefficient ?? 1,
         teacherId: data.teacherId || null,
@@ -291,13 +293,14 @@ export class EvaluationsService {
 
     // Champs autorisés à la mise à jour
     const allowedFields = [
-      'title', 'description', 'evaluationDate', 'maxScore', 'coefficient',
+      'title', 'description', 'evaluationDate', 'startDate', 'endDate',
+      'maxScore', 'coefficient',
       'teacherId', 'gradeScaleId', 'classId', 'subjectId', 'periodId', 'evaluationTypeId',
     ];
     const updateData: any = {};
     for (const field of allowedFields) {
       if (data[field] !== undefined) {
-        if (field === 'evaluationDate' && data[field]) {
+        if ((field === 'evaluationDate' || field === 'startDate' || field === 'endDate') && data[field]) {
           updateData[field] = new Date(data[field]);
         } else {
           updateData[field] = data[field];

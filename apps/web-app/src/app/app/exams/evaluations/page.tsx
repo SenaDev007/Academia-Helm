@@ -86,6 +86,8 @@ interface EvaluationForm {
   periodId: string;
   evaluationTypeId: string;
   evaluationDate: string;
+  startDate: string;        // ⭐ Intervalle de dates
+  endDate: string;           // ⭐ Intervalle de dates
   maxScore: string;
   coefficient: string;
 }
@@ -114,6 +116,8 @@ const EMPTY_FORM: EvaluationForm = {
   periodId: '',
   evaluationTypeId: '',
   evaluationDate: new Date().toISOString().slice(0, 10),
+  startDate: new Date().toISOString().slice(0, 10),
+  endDate: new Date().toISOString().slice(0, 10),
   maxScore: '20',
   coefficient: '1',
 };
@@ -146,12 +150,19 @@ export default function EvaluationsPage() {
   // ⭐ RÉSOLUTION DU NIVEAU SCOLAIRE STRICT :
   // Le module examen utilise ?level=PRIMAIRE dans l'URL (pas le header global).
   // On retrouve l'ID du niveau scolaire à partir du code (scopeLevel).
+  // IMPORTANT : on utilise schoolLevelId (UUID de school_levels) car les
+  // classes, subjects et evaluation_types référencent school_levels.id,
+  // PAS education_levels.id.
   const activeLevel = useMemo(() => {
     if (!scopeLevel) return null;
     return (availableLevels || []).find(
       (l: any) => (l.code || '').toUpperCase() === scopeLevel && l.id !== 'ALL'
     );
   }, [availableLevels, scopeLevel]);
+
+  // ⭐ schoolLevelId = UUID de school_levels (pour filtrer classes/subjects/types)
+  // activeLevel.id = UUID de education_levels (pour le header global seulement)
+  const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
 
   const isMaternelle = scopeLevel === 'MATERNELLE';
   const isPrimaire = scopeLevel === 'PRIMAIRE';
@@ -182,22 +193,22 @@ export default function EvaluationsPage() {
 
   // ─── Chargement initial : évaluations + données de référence ──────────────
   const loadData = useCallback(async () => {
-    if (!activeLevel?.id || !academicYear?.id) {
+    if (!schoolLevelUuid || !academicYear?.id) {
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
       const params: any = {
-        schoolLevelId: activeLevel.id,
+        schoolLevelId: schoolLevelUuid,
         academicYearId: academicYear.id,
       };
       if (scopeLang) params.language = scopeLang;
       const [evals, classesData, periodsData, typesData, subjectsData] = await Promise.all([
         institutionalExamsService.getEvaluations(params),
-        classesService.getAll({ schoolLevelId: activeLevel.id, academicYearId: academicYear.id }).catch(() => []),
+        classesService.getAll({ schoolLevelId: schoolLevelUuid, academicYearId: academicYear.id }).catch(() => []),
         getAcademicYearPeriods(academicYear.id).catch(() => []),
-        institutionalExamsService.getEvaluationTypes(activeLevel.id).catch(() => []),
+        institutionalExamsService.getEvaluationTypes(schoolLevelUuid).catch(() => []),
         pedagogyService.getSubjects(academicYear.id).catch(() => []),
       ]);
       setEvaluations(Array.isArray(evals) ? evals : []);
@@ -211,7 +222,7 @@ export default function EvaluationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeLevel?.id, academicYear?.id, scopeLang]);
+  }, [schoolLevelUuid, academicYear?.id, scopeLang]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -257,6 +268,8 @@ export default function EvaluationsPage() {
       periodId: evaluation.period?.id || '',
       evaluationTypeId: evaluation.evaluationType?.id || '',
       evaluationDate: evaluation.evaluationDate ? new Date(evaluation.evaluationDate).toISOString().slice(0, 10) : '',
+      startDate: (evaluation as any).startDate ? new Date((evaluation as any).startDate).toISOString().slice(0, 10) : '',
+      endDate: (evaluation as any).endDate ? new Date((evaluation as any).endDate).toISOString().slice(0, 10) : '',
       maxScore: String(evaluation.maxScore || (isMaternelle ? 0 : 20)),
       coefficient: String(evaluation.coefficient || (isMaternelle ? 0 : 1)),
     });
@@ -284,6 +297,8 @@ export default function EvaluationsPage() {
         periodId: form.periodId,
         evaluationTypeId: form.evaluationTypeId,
         evaluationDate: new Date(form.evaluationDate).toISOString(),
+        startDate: form.startDate ? new Date(form.startDate).toISOString() : null,
+        endDate: form.endDate ? new Date(form.endDate).toISOString() : null,
       };
       // ⭐ Maternelle = qualitatif (TS/S/PS) — pas de barème numérique ni coefficient
       if (!isMaternelle) {
@@ -379,10 +394,14 @@ export default function EvaluationsPage() {
 
   // ─── Handlers : CRUD des types d'évaluation ──────────────────────────────
   const handleOpenTypeModal = () => {
-    // Pré-remplir avec le niveau scolaire du module examen (activeLevel)
+    // ⭐ Pré-remplir avec le niveau scolaire ACTUEL du module examen.
+    // Le niveau scolaire est déjà choisi par l'utilisateur (URL ?level=PRIMAIRE),
+    // le modal NE DOIT PAS demander de le re-sélectionner.
+    // Utiliser schoolLevelUuid (UUID de school_levels) car les evaluation_types
+    // référencent school_levels.id.
     setTypeForm({
       ...EMPTY_TYPE_FORM,
-      schoolLevelId: activeLevel?.id || '',
+      schoolLevelId: schoolLevelUuid || '',
     });
     setEditingTypeId(null);
     setIsTypeModalOpen(true);
@@ -408,18 +427,24 @@ export default function EvaluationsPage() {
 
   const handleSaveType = async () => {
     if (!typeForm.name || !typeForm.schoolLevelId) {
-      toast.error('Le nom et le niveau scolaire sont obligatoires');
+      toast.error('Le nom est obligatoire');
       return;
     }
     setSavingType(true);
     try {
-      const payload = {
+      const payload: any = {
         name: typeForm.name,
         code: typeForm.code || null,
         schoolLevelId: typeForm.schoolLevelId,
-        defaultMaxScore: parseFloat(typeForm.defaultMaxScore) || 20,
-        defaultCoefficient: parseFloat(typeForm.defaultCoefficient) || 1,
       };
+      // ⭐ Maternelle = qualitatif (TS/S/PS) — pas de barème ni coefficient
+      if (isMaternelle) {
+        payload.defaultMaxScore = 0;
+        payload.defaultCoefficient = 0;
+      } else {
+        payload.defaultMaxScore = parseFloat(typeForm.defaultMaxScore) || 20;
+        payload.defaultCoefficient = parseFloat(typeForm.defaultCoefficient) || 1;
+      }
       if (editingTypeId) {
         await institutionalExamsService.updateEvaluationType(editingTypeId, payload);
         toast.success('✅ Type modifié');
@@ -853,6 +878,28 @@ export default function EvaluationsPage() {
           </div>
         </div>
 
+        {/* ⭐ Intervalle de dates — date de début + date de fin des évaluations */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="startDate">Date de début <span className="text-gray-400 font-normal">(optionnel)</span></Label>
+            <Input
+              id="startDate"
+              type="date"
+              value={form.startDate}
+              onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="endDate">Date de fin <span className="text-gray-400 font-normal">(optionnel)</span></Label>
+            <Input
+              id="endDate"
+              type="date"
+              value={form.endDate}
+              onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+            />
+          </div>
+        </div>
+
         {/* Barème + Coefficient — masqués pour la maternelle (qualitatif TS/S/PS) */}
         {isMaternelle ? (
           <div className="bg-pink-50 border border-pink-200 rounded-lg p-3">
@@ -1016,55 +1063,56 @@ export default function EvaluationsPage() {
           </div>
         </div>
 
+        {/* ⭐ Niveau scolaire — DÉJÀ SÉLECTIONNÉ dans le module examen.
+            Le modal ne demande PAS de le re-sélectionner, on l'affiche juste. */}
         <div>
-          <Label htmlFor="typeLevel">Niveau scolaire <span className="text-red-500">*</span></Label>
-          <Select
-            value={typeForm.schoolLevelId}
-            onValueChange={(v) => setTypeForm({ ...typeForm, schoolLevelId: v })}
-            disabled={!!editingTypeId}
-          >
-            <SelectTrigger id="typeLevel">
-              <SelectValue placeholder="Sélectionner un niveau..." />
-            </SelectTrigger>
-            <SelectContent>
-              {(availableLevels || [])
-                .filter((l: any) => l.id !== 'ALL' && l.isActive)
-                .map((level: any) => (
-                  <SelectItem key={level.id} value={level.id}>
-                    {level.label}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-gray-500 mt-1">
-            {editingTypeId
-              ? '⚠️ Le niveau scolaire ne peut pas être modifié après création.'
-              : 'Le type sera disponible uniquement pour ce niveau scolaire.'}
-          </p>
+          <Label>Niveau scolaire</Label>
+          <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+            <Badge className="bg-blue-600 text-white">
+              {activeLevel?.label || scopeLevel || '—'}
+            </Badge>
+            <span className="text-xs text-blue-700">
+              Le type sera créé pour ce niveau scolaire uniquement.
+            </span>
+          </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="typeMaxScore">Barème par défaut</Label>
-            <Input
-              id="typeMaxScore"
-              type="number"
-              step="0.5"
-              value={typeForm.defaultMaxScore}
-              onChange={(e) => setTypeForm({ ...typeForm, defaultMaxScore: e.target.value })}
-            />
+        {/* Barème + Coefficient — masqués pour la maternelle (qualitatif TS/S/PS) */}
+        {isMaternelle ? (
+          <div className="bg-pink-50 border border-pink-200 rounded-lg p-3">
+            <p className="text-sm font-semibold text-pink-900 mb-1">
+              🎨 Évaluation qualitative (Maternelle)
+            </p>
+            <p className="text-xs text-pink-800">
+              Les évaluations de maternelle utilisent un système qualitatif
+              <strong> TS (Très Satisfaisant) / S (Satisfaisant) / PS (Peu Satisfaisant)</strong>.
+              Pas de barème numérique ni de coefficient.
+            </p>
           </div>
-          <div>
-            <Label htmlFor="typeCoef">Coefficient par défaut</Label>
-            <Input
-              id="typeCoef"
-              type="number"
-              step="0.5"
-              value={typeForm.defaultCoefficient}
-              onChange={(e) => setTypeForm({ ...typeForm, defaultCoefficient: e.target.value })}
-            />
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="typeMaxScore">Barème par défaut</Label>
+              <Input
+                id="typeMaxScore"
+                type="number"
+                step="0.5"
+                value={typeForm.defaultMaxScore}
+                onChange={(e) => setTypeForm({ ...typeForm, defaultMaxScore: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="typeCoef">Coefficient par défaut</Label>
+              <Input
+                id="typeCoef"
+                type="number"
+                step="0.5"
+                value={typeForm.defaultCoefficient}
+                onChange={(e) => setTypeForm({ ...typeForm, defaultCoefficient: e.target.value })}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Aide : exemples par niveau */}
         {!editingTypeId && (

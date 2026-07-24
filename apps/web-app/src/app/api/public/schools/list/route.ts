@@ -38,13 +38,13 @@ export async function GET(_request: NextRequest) {
       response = await fetch(normalizeApiUrl(apiUrl), {
         method: 'GET',
         headers: bffHeaders(),
-        // ⭐ Cache côté Next.js BFF (60s) — AVANT : cache: 'no-store'.
-        // Raison : la liste des écoles change RAREMENT (nouveau tenant = quelques
-        // fois par an). 60s de cache Next.js = 1 appel backend par minute max,
-        // au lieu de 1 par visite. Sur 1000 visites/heure, on passe de 1000 à 60
-        // appels backend — divisé par 16. Les nouveaux tenants onboarded
-        // apparaissent dans la minute suivant leur création, c'est acceptable.
-        next: { revalidate: 60 },
+        // ⚠️ PLUS DE next: { revalidate: 60 } — ce cache est géré par Vercel
+        // Data Cache et peut persister même après redéploiement. Il a été
+        // empoisonné avec une réponse partielle (1 école sur 2) et la purge
+        // est difficile. On utilise UNIQUEMENT Cache-Control HTTP qui est
+        // géré par le CDN et peut être purgé via les headers de réponse.
+        // Le cache navigateur (s-maxage=60) reste actif pour les visites suivantes.
+        cache: 'no-store', // ne pas cacher côté Next.js Data Cache
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -72,18 +72,34 @@ export async function GET(_request: NextRequest) {
 
     const data = await response.json();
 
+    // ⭐ VALIDATION : Vérifier qu'on a bien reçu TOUTES les écoles.
+    // Le backend peut parfois renvoyer une réponse partielle (timeout, cold start
+    // en cours, etc.). Si on cache cette réponse incomplète, le cache Next.js
+    // servira une liste tronquée pendant 60s — c'est le bug "1 école sur 2".
+    // Solution : ne cacher QUE si la réponse est complète (au moins 1 école
+    // ET la réponse fait une taille raisonnable).
+    const rawList = Array.isArray(data) ? data
+      : (data?.schools ?? data?.tenants ?? []);
+    const isResponseComplete = Array.isArray(rawList) && rawList.length > 0
+      && JSON.stringify(data).length > 1000; // 1 école sans logo = ~500 bytes
+
     // ⭐ RESTAURER les logos base64 — l'utilisateur a confirmé qu'AVANT les
     // modifications, toutes les écoles s'affichaient AVEC leur logo.
     // Le vrai problème n'était pas les logos mais le cache: 'no-store' qui
     // faisait 1 appel backend par visite → cold start Neon → 30s+ de spinner.
-    // Avec next: { revalidate: 60 }, le cache Next.js sert la réponse en <100ms
-    // pour toutes les visites suivantes dans la minute.
 
-    // Forcer les headers de cache côté client aussi (60s) + stale-while-revalidate
-    // pour servir instantanément la version cacheée pendant qu'on re-fetch en arrière-plan.
+    // Cache策略 :
+    // - Si réponse COMPLÈTE : cache 60s (s-maxage=60 + stale-while-revalidate=300)
+    // - Si réponse INCOMPLÈTE : no-cache (pour forcer un re-fetch au prochain appel)
+    const cacheControl = isResponseComplete
+      ? 'public, s-maxage=60, stale-while-revalidate=300'
+      : 'no-cache, no-store, must-revalidate';
+
+    console.log(`[School List API] Response: ${rawList.length} schools, ${JSON.stringify(data).length} bytes, cache=${isResponseComplete ? 'enabled' : 'no-cache'}`);
+
     return NextResponse.json(data, {
       headers: {
-        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+        'Cache-Control': cacheControl,
       },
     });
   } catch (error: any) {

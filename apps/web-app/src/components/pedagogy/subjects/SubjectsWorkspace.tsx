@@ -416,10 +416,13 @@ export default function SubjectsWorkspace() {
   // ⭐ Charger les classes officielles du 2nd cycle quand l'utilisateur sélectionne SECOND_CYCLE
   useEffect(() => {
     if (!isSecondCycle) return;
-    // Filtrer les classes officielles du 2nd cycle (Seconde, Première, Terminale)
+    // Filtrer les classes officielles du 2nd cycle (Seconde/2nde, Première/1ère, Terminale/Tle)
     const secondCycle = classes.filter(c => {
-      const name = (c.name || c.code || '').toUpperCase();
-      return name.includes('SECONDE') || name.includes('PREMIERE') || name.includes('PREMIÈRE') || name.includes('TERMINALE');
+      const name = (c.name || '').toUpperCase();
+      const code = (c.code || '').toUpperCase();
+      return name.includes('SECONDE') || name.includes('2NDE') || code.includes('2ND') ||
+             name.includes('PREMIERE') || name.includes('PREMIÈRE') || name.includes('1ÈRE') || code.includes('1ER') ||
+             name.includes('TERMINALE') || name.includes('TLE') || code.includes('TLE');
     });
     setSecondCycleClasses(secondCycle);
   }, [isSecondCycle, classes]);
@@ -1714,9 +1717,17 @@ export default function SubjectsWorkspace() {
                   {classes
                     .filter(c => {
                       const name = (c.name || c.code || '').toUpperCase();
-                      const target = secondarySubLevel === '4E' ? '4E' : '3E';
-                      const targetFull = secondarySubLevel === '4E' ? 'QUATRIÈME' : 'TROISIÈME';
-                      return name.includes(target) || name.includes(targetFull);
+                      const code = (c.code || '').toUpperCase();
+                      // ⭐ Matching robuste : 4e/4ème/quatrième, 3e/3ème/troisième
+                      if (secondarySubLevel === '4E') {
+                        return name.includes('4E') || name.includes('4ÈME') || name.includes('4EME') ||
+                               name.includes('QUATRI') || code.includes('4EME') || code.startsWith('4');
+                      }
+                      if (secondarySubLevel === '3E') {
+                        return name.includes('3E') || name.includes('3ÈME') || name.includes('3EME') ||
+                               name.includes('TROIS') || code.includes('3EME') || code.startsWith('3');
+                      }
+                      return false;
                     })
                     .map(c => (
                       <option key={c.id} value={c.id}>{c.name}</option>
@@ -1729,16 +1740,10 @@ export default function SubjectsWorkspace() {
               {selected4e3eClassId && (
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-slate-600">
-                    Définissez le coefficient de chaque matière pour cette classe :
+                    Sélectionnez les matières et définissez leur coefficient pour cette classe :
                   </p>
                   <div className="max-h-[300px] overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
-                    {subjects
-                      .filter(s => {
-                        const sl = s.schoolLevel;
-                        const levelName = (sl?.name || sl?.code || '').toUpperCase();
-                        return levelName.includes('SECOND') || levelName.includes('SEC');
-                      })
-                      .map(subject => (
+                    {subjects.map(subject => (
                       <div key={subject.id} className="flex items-center justify-between px-3 py-2 hover:bg-slate-50">
                         <div className="flex items-center gap-2">
                           <input
@@ -1818,16 +1823,10 @@ export default function SubjectsWorkspace() {
               {selectedSecondCycleClassId && (
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-slate-600">
-                    Définissez le coefficient de chaque matière pour cette classe :
+                    Sélectionnez les matières et définissez leur coefficient pour cette classe :
                   </p>
                   <div className="max-h-[300px] overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
-                    {subjects
-                      .filter(s => {
-                        const sl = s.schoolLevel;
-                        const levelName = (sl?.name || sl?.code || '').toUpperCase();
-                        return levelName.includes('SECOND') || levelName.includes('SEC');
-                      })
-                      .map(subject => (
+                    {subjects.map(subject => (
                       <div key={subject.id} className="flex items-center justify-between px-3 py-2 hover:bg-slate-50">
                         <div className="flex items-center gap-2">
                           <input

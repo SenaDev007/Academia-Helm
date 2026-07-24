@@ -252,10 +252,17 @@ export class AcademicSettingsService {
     if (dto.schoolYearId !== undefined) data.schoolYearId = dto.schoolYearId;
     if (dto.config !== undefined) data.config = dto.config;
 
-    return this.prisma.schoolAcademicSettings.update({
+    const result = await this.prisma.schoolAcademicSettings.update({
       where: { id },
       data,
     });
+
+    // ⭐ Synchroniser evaluation_types depuis config.assessmentTypes
+    if (dto.config !== undefined) {
+      await this.syncEvaluationTypes(result);
+    }
+
+    return result;
   }
 
   // -------------------------------------------------------------------------
@@ -300,7 +307,7 @@ export class AcademicSettingsService {
       data: { status: 'DRAFT' },
     });
 
-    return this.prisma.schoolAcademicSettings.update({
+    const result = await this.prisma.schoolAcademicSettings.update({
       where: { id },
       data: {
         status: 'ACTIVE',
@@ -308,6 +315,11 @@ export class AcademicSettingsService {
         activatedAt: new Date(),
       },
     });
+
+    // ⭐ Synchroniser evaluation_types depuis config.assessmentTypes
+    await this.syncEvaluationTypes(result);
+
+    return result;
   }
 
   // -------------------------------------------------------------------------
@@ -579,6 +591,74 @@ export class AcademicSettingsService {
       if (values.length === 0) return 0;
       const mean = values.reduce((a, b) => a + b, 0) / values.length;
       return parseFloat(mean.toFixed(2));
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // syncEvaluationTypes — synchronise evaluation_types depuis config.assessmentTypes
+  // -------------------------------------------------------------------------
+
+  /**
+   * ⭐ Synchronise la table evaluation_types avec config.assessmentTypes
+   * du school_academic_settings. Garantit que les types d'évaluation sont
+   * persistés dans une vraie table SQL (pour le backup et les requêtes),
+   * EN PLUS du JSON school_academic_settings.config.
+   *
+   * Appelée automatiquement après update() et activate().
+   */
+  private async syncEvaluationTypes(settings: any) {
+    try {
+      const config = settings.config as any;
+      const assessmentTypes = config?.assessmentTypes || [];
+      const tenantId = settings.tenantId;
+      const levelCode = (settings.levelCode || '').toUpperCase();
+
+      if (assessmentTypes.length === 0 || !levelCode) return;
+
+      // Résoudre le schoolLevelId depuis le levelCode
+      const schoolLevel = await this.prisma.schoolLevel.findFirst({
+        where: { tenantId, code: levelCode },
+      });
+      if (!schoolLevel) return;
+
+      const schoolLevelId = schoolLevel.id;
+      const scoreMax = config?.scoreMax || 20;
+
+      for (const at of assessmentTypes) {
+        const code = at.code;
+        const name = at.label || at.code;
+        const defaultMaxScore = scoreMax;
+        const defaultCoefficient = at.includedInAverage ? 1 : 0;
+
+        // Vérifier si existe déjà
+        const existing = await this.prisma.evaluationType.findFirst({
+          where: { tenantId, code, schoolLevelId },
+        });
+
+        if (existing) {
+          // Mettre à jour
+          await this.prisma.evaluationType.update({
+            where: { id: existing.id },
+            data: { name, defaultMaxScore, defaultCoefficient },
+          });
+        } else {
+          // Créer
+          await this.prisma.evaluationType.create({
+            data: {
+              tenantId,
+              name,
+              code,
+              schoolLevelId,
+              isSystem: false,
+              defaultMaxScore,
+              defaultCoefficient,
+            },
+          });
+        }
+      }
+    } catch (err) {
+      // Ne pas bloquer l'opération principale si la sync échoue
+      console.warn('[AcademicSettings] syncEvaluationTypes failed:', err.message);
     }
   }
 }

@@ -123,6 +123,42 @@ const EMPTY_FORM: EvaluationForm = {
   coefficient: '1',
 };
 
+// ⭐ Ordre pédagogique des classes (Maternelle → Primaire → Secondaire)
+const CLASS_ORDER = [
+  // Maternelle
+  'MATERNELLE 1', 'MATERNELLE 2', 'MATERNELLE 3',
+  'PETITE SECTION', 'MOYENNE SECTION', 'GRANDE SECTION',
+  'PS', 'MS', 'GS',
+  // Primaire
+  'CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2',
+  // Secondaire
+  '6E', '6ÈME', '5E', '5ÈME', '4E', '4ÈME', '3E', '3ÈME',
+  'SECONDE', 'PREMIERE', 'PREMIÈRE', 'TERMINALE',
+];
+
+function getClassOrderIndex(name: string): number {
+  const upper = (name || '').toUpperCase().trim();
+  // Chercher par nom exact
+  const exact = CLASS_ORDER.indexOf(upper);
+  if (exact >= 0) return exact;
+  // Chercher par préfixe (ex: "CI A" → "CI")
+  for (let i = 0; i < CLASS_ORDER.length; i++) {
+    if (upper.startsWith(CLASS_ORDER[i])) return i;
+  }
+  return CLASS_ORDER.length; // Classes inconnues à la fin
+}
+
+// ⭐ Ordre des niveaux scolaires pour les matières
+const LEVEL_ORDER = ['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE'];
+
+function getLevelOrderIndex(schoolLevelId?: string, levels?: any[]): number {
+  if (!schoolLevelId || !levels) return LEVEL_ORDER.length;
+  const level = levels.find((l: any) => l.id === schoolLevelId);
+  const code = (level?.code || '').toUpperCase();
+  const idx = LEVEL_ORDER.indexOf(code);
+  return idx >= 0 ? idx : LEVEL_ORDER.length;
+}
+
 // ─── Status Badge ────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -233,14 +269,32 @@ export default function EvaluationsPage() {
         pedagogyService.getSubjects(academicYear.id).catch(() => []),
       ]);
       setEvaluations(Array.isArray(evals) ? evals : []);
-      setClasses(Array.isArray(classesData) ? classesData : (classesData?.data ?? []));
+
+      // ⭐ Trier les classes par ordre pédagogique (Maternelle → Primaire → Secondaire)
+      const rawClasses = Array.isArray(classesData) ? classesData : (classesData?.data ?? []);
+      const sortedClasses = [...rawClasses].sort((a, b) => {
+        const idxA = getClassOrderIndex(a.name || a.code || '');
+        const idxB = getClassOrderIndex(b.name || b.code || '');
+        if (idxA !== idxB) return idxA - idxB;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+      setClasses(sortedClasses);
+
       setPeriods(Array.isArray(periodsData) ? periodsData : []);
-      // ⭐ Filtrer les matières par piste linguistique (FR/EN)
+
+      // ⭐ Filtrer les matières par piste linguistique (FR/EN) + trier par niveau scolaire
       const allSubjects = Array.isArray(subjectsData) ? subjectsData : (subjectsData?.data ?? []);
       const filteredSubjects = scopeLang
         ? allSubjects.filter((s: any) => !s.language || s.language === scopeLang)
         : allSubjects;
-      setSubjects(filteredSubjects);
+      // Trier par niveau scolaire (Maternelle → Primaire → Secondaire)
+      const sortedSubjects = [...filteredSubjects].sort((a, b) => {
+        const idxA = getLevelOrderIndex(a.schoolLevelId, availableLevels);
+        const idxB = getLevelOrderIndex(b.schoolLevelId, availableLevels);
+        if (idxA !== idxB) return idxA - idxB;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+      setSubjects(sortedSubjects);
       setEvaluationTypes(typesFromSettings);
     } catch (error) {
       console.error('Error loading evaluations', error);

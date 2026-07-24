@@ -2,6 +2,7 @@
  * Proxy API → NestJS /staff-admin-assignments/*
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { nestControllerUrl, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 import { readProxyBodyText } from '@/lib/api/pedagogy-proxy-body';

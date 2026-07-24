@@ -1,5 +1,6 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
 import { nestControllerUrl, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 import { readProxyBodyText } from '@/lib/api/pedagogy-proxy-body';
 

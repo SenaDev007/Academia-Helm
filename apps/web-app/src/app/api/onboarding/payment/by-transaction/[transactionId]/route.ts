@@ -12,6 +12,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 
 export async function GET(
@@ -40,7 +41,7 @@ export async function GET(
     const data = await response.json();
 
     if (!response.ok) {
-      return NextResponse.json(data, { status: response.status });
+      return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
     }
 
     return NextResponse.json(data);

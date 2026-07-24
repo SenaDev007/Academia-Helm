@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
@@ -26,7 +27,7 @@ export async function GET(
     });
 
     const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
     console.error('Error fetching thread:', error);
     return NextResponse.json({ error: 'Failed to fetch thread' }, { status: 500 });

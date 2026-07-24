@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getServerToken, getServerSession } from '@/lib/auth/session';
 
@@ -52,16 +53,17 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const headers = await getAuthHeaders(request); // inclut x-tenant-id depuis la session
-    const response = await fetch(`${API_BASE_URL}/settings/academic-years`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/settings/academic-years`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-    });
+      cache: 'no-store',
+    }, 15000);
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json')
       ? await response.json().catch(() => ({ error: 'Invalid response' }))
       : { error: await response.text() || 'Erreur serveur' };
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
     console.error('Error creating academic year:', error);
     return NextResponse.json({ error: 'Failed to create academic year' }, { status: 500 });

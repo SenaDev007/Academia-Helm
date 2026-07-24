@@ -3,6 +3,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getServerToken, getServerSession } from '@/lib/auth/session';
 
@@ -45,12 +46,12 @@ export async function GET(
   const { id } = await params;
   try {
     const headers = await getAuthHeaders(request);
-    const response = await fetch(`${API_BASE_URL}/settings/academic-years/${id}`, { headers });
+    const response = await fetchWithTimeout(`${API_BASE_URL}/settings/academic-years/${id}`, { headers , cache: 'no-store' }, 15000);
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json')
       ? await response.json().catch(() => ({ error: 'Invalid response' }))
       : { error: await response.text() || 'Erreur serveur' };
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
     console.error('Error fetching academic year:', error);
     return NextResponse.json({ error: 'Failed to fetch academic year' }, { status: 500 });
@@ -87,7 +88,7 @@ export async function PUT(
     const data = contentType.includes('application/json')
       ? await response.json().catch(() => ({ error: 'Invalid response' }))
       : { error: await response.text() || 'Erreur serveur' };
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
     console.error('Error updating academic year:', error);
     return NextResponse.json({ error: 'Failed to update academic year' }, { status: 500 });
@@ -101,15 +102,16 @@ export async function DELETE(
   const { id } = await params;
   try {
     const headers = await getAuthHeaders(request);
-    const response = await fetch(`${API_BASE_URL}/settings/academic-years/${id}`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/settings/academic-years/${id}`, {
       method: 'DELETE',
       headers,
-    });
+      cache: 'no-store',
+    }, 15000);
     const contentType = response.headers.get('content-type') || '';
     const data = contentType.includes('application/json')
       ? await response.json().catch(() => ({ error: 'Invalid response' }))
       : { error: await response.text() || 'Erreur serveur' };
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
     console.error('Error deleting academic year:', error);
     return NextResponse.json({ error: 'Failed to delete academic year' }, { status: 500 });

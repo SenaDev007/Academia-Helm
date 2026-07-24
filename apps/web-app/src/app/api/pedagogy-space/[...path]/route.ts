@@ -3,6 +3,7 @@
  * Forwards to backend /pedagogy-space/*
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
@@ -55,9 +56,9 @@ async function proxy(request: NextRequest, method: string) {
     }
 
     if (!response.ok) {
-      return NextResponse.json(data, { status: response.status });
+      return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
     }
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[pedagogy-space] proxy error:', error);

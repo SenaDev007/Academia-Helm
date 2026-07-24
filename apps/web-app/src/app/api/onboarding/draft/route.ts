@@ -9,6 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 
 export async function POST(request: NextRequest) {
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
         statusText: response.statusText,
         data,
       });
-      return NextResponse.json(data, { status: response.status });
+      return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
     }
 
     return NextResponse.json(data);
@@ -115,7 +116,7 @@ export async function GET(request: NextRequest) {
     const data = await response.json();
 
     if (!response.ok) {
-      return NextResponse.json(data, { status: response.status });
+      return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
     }
 
     return NextResponse.json(data);

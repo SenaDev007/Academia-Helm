@@ -5,6 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes, bffHeaders } from '@/lib/utils/api-urls';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
@@ -17,10 +18,11 @@ export async function GET(
   try {
     const url = `${API_BASE_URL}/receipts/public/verify/${token}`;
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: 'GET',
       headers: bffHeaders(),
-    });
+      cache: 'no-store',
+    }, 15000);
 
     if (!response.ok) {
       const error = await response.json();

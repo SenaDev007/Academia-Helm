@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(buildUrl(request), { headers, cache: 'no-store' });
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
     console.error('Error fetching signatures list:', error);
     return NextResponse.json({ error: 'Failed to fetch signatures' }, { status: 500 });

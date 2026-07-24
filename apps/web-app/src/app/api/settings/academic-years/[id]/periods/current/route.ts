@@ -2,6 +2,7 @@
  * API PROXY - Période académique courante d'une année
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getServerToken, getServerSession } from '@/lib/auth/session';
 

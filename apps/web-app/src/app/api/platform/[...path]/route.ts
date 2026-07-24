@@ -14,6 +14,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { nestControllerUrl } from '@/lib/utils/api-urls';
 import { verifyAdminSession } from '@/lib/admin/admin-auth-server';
 
@@ -130,7 +131,7 @@ async function proxyRequest(
     });
 
     const data = await parseBackendJson(response);
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error: any) {
     console.error(`[platform/proxy] ${method} error:`, error?.message);
     return NextResponse.json(

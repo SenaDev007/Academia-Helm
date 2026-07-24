@@ -5,6 +5,7 @@
  * POST /api/settings/education/series           → crée une série + 3 grades
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getServerToken, getServerSession } from '@/lib/auth/session';
 
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest) {
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
     const response = await fetch(url.toString(), { method: 'GET', headers, cache: 'no-store' });
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
     console.error('Error listing education series:', error);
     return NextResponse.json({ error: 'Failed to list series' }, { status: 500 });
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(body),
     });
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
     console.error('Error creating education series:', error);
     return NextResponse.json({ error: 'Failed to create series' }, { status: 500 });

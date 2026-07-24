@@ -8,6 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 
 export const dynamic = 'force-dynamic';
@@ -40,7 +41,7 @@ export async function GET(request: NextRequest) {
 
     const data = await response.json();
     console.log('[Cron Trigger] Daily check result:', data);
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error: any) {
     console.error('[Cron Trigger] Error:', error);
     return NextResponse.json(

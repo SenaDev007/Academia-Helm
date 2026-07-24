@@ -10,6 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { nestControllerUrl, getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 
 export async function GET(_request: NextRequest) {

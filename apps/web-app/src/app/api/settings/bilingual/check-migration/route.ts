@@ -3,6 +3,7 @@
  * Même pattern que education/structure.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
     const response = await fetch(url.toString(), { headers });
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
     console.error('Error checking bilingual migration:', error);
     return NextResponse.json({ error: 'Failed to check migration' }, { status: 500 });

@@ -5,6 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { cookies } from 'next/headers';
 
@@ -29,12 +30,13 @@ export async function GET(
   try {
     const headers = await getAuthHeaders(request);
     
-    const response = await fetch(normalizeApiUrl(`${API_BASE_URL}/settings/roles/${roleId}`), {
+    const response = await fetchWithTimeout(normalizeApiUrl(`${API_BASE_URL}/settings/roles/${roleId}`), {
       headers,
-    });
+      cache: 'no-store',
+    }, 15000);
 
     const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
     console.error('Error fetching role:', error);
     return NextResponse.json({ error: 'Failed to fetch role' }, { status: 500 });
@@ -50,14 +52,15 @@ export async function PUT(
     const body = await request.json();
     const headers = await getAuthHeaders(request);
     
-    const response = await fetch(normalizeApiUrl(`${API_BASE_URL}/settings/roles/${roleId}`), {
+    const response = await fetchWithTimeout(normalizeApiUrl(`${API_BASE_URL}/settings/roles/${roleId}`), {
       method: 'PUT',
       headers,
       body: JSON.stringify(body),
-    });
+      cache: 'no-store',
+    }, 15000);
 
     const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
     console.error('Error updating role:', error);
     return NextResponse.json({ error: 'Failed to update role' }, { status: 500 });
@@ -72,13 +75,14 @@ export async function DELETE(
   try {
     const headers = await getAuthHeaders(request);
     
-    const response = await fetch(normalizeApiUrl(`${API_BASE_URL}/settings/roles/${roleId}`), {
+    const response = await fetchWithTimeout(normalizeApiUrl(`${API_BASE_URL}/settings/roles/${roleId}`), {
       method: 'DELETE',
       headers,
-    });
+      cache: 'no-store',
+    }, 15000);
 
     const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
     console.error('Error deleting role:', error);
     return NextResponse.json({ error: 'Failed to delete role' }, { status: 500 });

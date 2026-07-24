@@ -12,6 +12,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes, bffHeaders } from '@/lib/utils/api-urls';
 
 // Force dynamic — ne jamais essayer de pré-render cette route au build
@@ -28,11 +29,12 @@ export async function GET(_request: NextRequest) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10_000);
 
-    const response = await fetch(apiUrl, {
+    const response = await fetchWithTimeout(apiUrl, {
       method: 'GET',
       headers: bffHeaders(),
       signal: controller.signal,
-    });
+      cache: 'no-store',
+    }, 15000);
 
     clearTimeout(timeoutId);
 

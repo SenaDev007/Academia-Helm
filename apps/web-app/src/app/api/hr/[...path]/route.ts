@@ -15,6 +15,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { nestControllerUrl, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 

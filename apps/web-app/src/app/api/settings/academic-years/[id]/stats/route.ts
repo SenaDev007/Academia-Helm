@@ -3,6 +3,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
 import { getServerToken } from '@/lib/auth/session';
 
@@ -23,9 +24,9 @@ export async function GET(
   const { id } = await params;
   try {
     const headers = await getAuthHeaders(request);
-    const response = await fetch(`${API_BASE_URL}/settings/academic-years/${id}/stats`, { headers });
+    const response = await fetchWithTimeout(`${API_BASE_URL}/settings/academic-years/${id}/stats`, { headers , cache: 'no-store' }, 15000);
     const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
   } catch (error) {
     console.error('Error fetching academic year stats:', error);
     return NextResponse.json({ error: 'Failed to fetch academic year stats' }, { status: 500 });

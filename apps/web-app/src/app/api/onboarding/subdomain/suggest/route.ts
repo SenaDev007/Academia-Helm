@@ -2,6 +2,7 @@
  * Proxy Next.js pour GET /onboarding/subdomain/suggest?schoolName=xxx
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 
 export async function GET(request: NextRequest) {
@@ -14,7 +15,7 @@ export async function GET(request: NextRequest) {
       headers: { 'Content-Type': 'application/json' },
     });
     const data = await response.json();
-    if (!response.ok) return NextResponse.json(data, { status: response.status });
+    if (!response.ok) return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
     return NextResponse.json(data);
   } catch (error: any) {
     console.error('Onboarding subdomain suggest error:', error);

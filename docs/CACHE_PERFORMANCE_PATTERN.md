@@ -228,3 +228,40 @@ Pour chaque endpoint, suivre cet ordre :
 3. **Supprimer les `useEffect` + `fetch` locaux** dans les composants
 4. **Tester** : 1ère visite + 2e visite + visite après 1 min
 5. **Valider** que les données ne sont jamais tronquées (comparer backend direct vs BFF)
+
+---
+
+## ⚠️ Piège : `school_levels` vs `education_levels`
+
+### Règle d'or
+
+**TOUJOURS utiliser `schoolLevelId` (UUID de `school_levels`) pour filtrer les données métier.**
+
+### Pourquoi ?
+
+Le projet a **2 tables** qui représentent les niveaux scolaires :
+
+| Table | Rôle | UUID | Utilisé par |
+|-------|------|------|-------------|
+| `school_levels` | **Source de vérité business** | `id` | 132 modèles (Classes, Students, Subjects, Grades, etc.) |
+| `education_levels` | Configuration "soft" | `id` | Header global, paramètres structure |
+
+### Code correct
+
+```typescript
+// ❌ FAUX — utilise education_levels.id (les filtres ne matcheront jamais)
+const schoolLevel = useModuleContext().schoolLevel;
+classesService.getAll({ schoolLevelId: schoolLevel.id });
+
+// ✅ CORRECT — utilise school_levels.id (UUID business)
+const schoolLevel = useModuleContext().schoolLevel;
+classesService.getAll({ schoolLevelId: schoolLevel.schoolLevelId });
+```
+
+### Hook `useSchoolLevelsQuery()`
+
+Le hook retourne des objets avec **2 IDs** :
+- `id` = `education_levels.id` (UUID de configuration)
+- `schoolLevelId` = `school_levels.id` (UUID business)
+
+**Toujours utiliser `schoolLevelId` pour les appels API.**

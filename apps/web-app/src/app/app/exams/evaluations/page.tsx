@@ -81,8 +81,8 @@ interface EvaluationTypeItem {
 interface EvaluationForm {
   title: string;
   description: string;
-  classId: string;
-  subjectId: string;
+  classIds: string[];        // ⭐ Sélection multiple
+  subjectIds: string[];      // ⭐ Sélection multiple
   periodId: string;
   evaluationTypeId: string;
   evaluationDate: string;
@@ -109,8 +109,8 @@ const EMPTY_TYPE_FORM: EvaluationTypeForm = {
 const EMPTY_FORM: EvaluationForm = {
   title: '',
   description: '',
-  classId: '',
-  subjectId: '',
+  classIds: [],
+  subjectIds: [],
   periodId: '',
   evaluationTypeId: '',
   evaluationDate: new Date().toISOString().slice(0, 10),
@@ -139,9 +139,23 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function EvaluationsPage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
-  const { academicYear, schoolLevel } = useModuleContext();
+  const { academicYear } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
+
+  // ⭐ RÉSOLUTION DU NIVEAU SCOLAIRE STRICT :
+  // Le module examen utilise ?level=PRIMAIRE dans l'URL (pas le header global).
+  // On retrouve l'ID du niveau scolaire à partir du code (scopeLevel).
+  const activeLevel = useMemo(() => {
+    if (!scopeLevel) return null;
+    return (availableLevels || []).find(
+      (l: any) => (l.code || '').toUpperCase() === scopeLevel && l.id !== 'ALL'
+    );
+  }, [availableLevels, scopeLevel]);
+
+  const isMaternelle = scopeLevel === 'MATERNELLE';
+  const isPrimaire = scopeLevel === 'PRIMAIRE';
+  const isSecondaire = scopeLevel === 'SECONDAIRE';
 
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -168,19 +182,22 @@ export default function EvaluationsPage() {
 
   // ─── Chargement initial : évaluations + données de référence ──────────────
   const loadData = useCallback(async () => {
-    if (!schoolLevel?.id || !academicYear?.id) return;
+    if (!activeLevel?.id || !academicYear?.id) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const params: any = {
-        schoolLevelId: schoolLevel.id,
+        schoolLevelId: activeLevel.id,
         academicYearId: academicYear.id,
       };
       if (scopeLang) params.language = scopeLang;
       const [evals, classesData, periodsData, typesData, subjectsData] = await Promise.all([
         institutionalExamsService.getEvaluations(params),
-        classesService.getAll({ schoolLevelId: schoolLevel.id, academicYearId: academicYear.id }).catch(() => []),
+        classesService.getAll({ schoolLevelId: activeLevel.id, academicYearId: academicYear.id }).catch(() => []),
         getAcademicYearPeriods(academicYear.id).catch(() => []),
-        institutionalExamsService.getEvaluationTypes(schoolLevel.id).catch(() => []),
+        institutionalExamsService.getEvaluationTypes(activeLevel.id).catch(() => []),
         pedagogyService.getSubjects(academicYear.id).catch(() => []),
       ]);
       setEvaluations(Array.isArray(evals) ? evals : []);
@@ -194,7 +211,7 @@ export default function EvaluationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [schoolLevel?.id, academicYear?.id, scopeLang]);
+  }, [activeLevel?.id, academicYear?.id, scopeLang]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -218,7 +235,15 @@ export default function EvaluationsPage() {
 
   // ─── Handlers ────────────────────────────────────────────────────────────
   const handleOpenCreate = () => {
-    setForm(EMPTY_FORM);
+    // ⭐ Pré-remplir la période courante (trimestre actif)
+    const currentPeriod = periods.find(p => p.isActive && !p.isClosed) || periods[0];
+    setForm({
+      ...EMPTY_FORM,
+      periodId: currentPeriod?.id || '',
+      // Maternelle : pas de barème numérique (qualitatif TS/S/PS)
+      maxScore: isMaternelle ? '0' : '20',
+      coefficient: isMaternelle ? '0' : '1',
+    });
     setEditingId(null);
     setIsModalOpen(true);
   };
@@ -227,13 +252,13 @@ export default function EvaluationsPage() {
     setForm({
       title: evaluation.title || '',
       description: evaluation.description || '',
-      classId: evaluation.class?.id || '',
-      subjectId: evaluation.subject?.id || '',
+      classIds: evaluation.class?.id ? [evaluation.class.id] : [],
+      subjectIds: evaluation.subject?.id ? [evaluation.subject.id] : [],
       periodId: evaluation.period?.id || '',
       evaluationTypeId: evaluation.evaluationType?.id || '',
       evaluationDate: evaluation.evaluationDate ? new Date(evaluation.evaluationDate).toISOString().slice(0, 10) : '',
-      maxScore: String(evaluation.maxScore || 20),
-      coefficient: String(evaluation.coefficient || 1),
+      maxScore: String(evaluation.maxScore || (isMaternelle ? 0 : 20)),
+      coefficient: String(evaluation.coefficient || (isMaternelle ? 0 : 1)),
     });
     setEditingId(evaluation.id);
     setIsModalOpen(true);
@@ -247,29 +272,47 @@ export default function EvaluationsPage() {
 
   const handleSave = async () => {
     // Validation
-    if (!form.classId || !form.subjectId || !form.periodId || !form.evaluationTypeId || !form.evaluationDate) {
+    if (form.classIds.length === 0 || form.subjectIds.length === 0 || !form.periodId || !form.evaluationTypeId || !form.evaluationDate) {
       toast.error('Veuillez remplir tous les champs obligatoires');
       return;
     }
     setSaving(true);
     try {
-      const payload = {
+      const basePayload: any = {
         title: form.title || null,
         description: form.description || null,
-        classId: form.classId,
-        subjectId: form.subjectId,
         periodId: form.periodId,
         evaluationTypeId: form.evaluationTypeId,
         evaluationDate: new Date(form.evaluationDate).toISOString(),
-        maxScore: parseFloat(form.maxScore) || 20,
-        coefficient: parseFloat(form.coefficient) || 1,
       };
+      // ⭐ Maternelle = qualitatif (TS/S/PS) — pas de barème numérique ni coefficient
+      if (!isMaternelle) {
+        basePayload.maxScore = parseFloat(form.maxScore) || 20;
+        basePayload.coefficient = parseFloat(form.coefficient) || 1;
+      } else {
+        basePayload.maxScore = 0;
+        basePayload.coefficient = 0;
+      }
+
       if (editingId) {
-        await institutionalExamsService.updateEvaluation(editingId, payload);
+        // Édition : mettre à jour l'évaluation existante (1 classe + 1 matière)
+        await institutionalExamsService.updateEvaluation(editingId, {
+          ...basePayload,
+          classId: form.classIds[0],
+          subjectId: form.subjectIds[0],
+        });
         toast.success('✅ Évaluation modifiée');
       } else {
-        await institutionalExamsService.createEvaluation(payload);
-        toast.success('✅ Évaluation créée');
+        // Création : utiliser bulk create pour générer 1 évaluation par combinaison
+        const bulkPayload = {
+          ...basePayload,
+          classIds: form.classIds,
+          subjectIds: form.subjectIds,
+        };
+        const result = await institutionalExamsService.createBulkEvaluations(bulkPayload);
+        toast.success(`✅ ${result.created} évaluation(s) créée(s)`, {
+          description: result.message,
+        });
       }
       handleCloseModal();
       await loadData();
@@ -336,13 +379,10 @@ export default function EvaluationsPage() {
 
   // ─── Handlers : CRUD des types d'évaluation ──────────────────────────────
   const handleOpenTypeModal = () => {
-    // Pré-remplir avec le niveau scolaire actuellement sélectionné (s'il est valide)
-    const currentLevel = (availableLevels || []).find(
-      (l: any) => (l.code || '').toUpperCase() === scopeLevel && l.id !== 'ALL'
-    );
+    // Pré-remplir avec le niveau scolaire du module examen (activeLevel)
     setTypeForm({
       ...EMPTY_TYPE_FORM,
-      schoolLevelId: currentLevel?.id || '',
+      schoolLevelId: activeLevel?.id || '',
     });
     setEditingTypeId(null);
     setIsTypeModalOpen(true);
@@ -624,7 +664,7 @@ export default function EvaluationsPage() {
           </button>
           <button
             onClick={handleSave}
-            disabled={saving || !form.classId || !form.subjectId || !form.periodId || !form.evaluationTypeId}
+            disabled={saving || form.classIds.length === 0 || form.subjectIds.length === 0 || !form.periodId || !form.evaluationTypeId}
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
           >
             {saving ? 'Enregistrement...' : editingId ? 'Modifier' : 'Créer'}
@@ -673,39 +713,113 @@ export default function EvaluationsPage() {
           </Select>
         </div>
 
-        {/* Classe + Matière */}
+        {/* Classes (sélection multiple) + Matières (sélection multiple checkboxes) */}
         <div className="grid grid-cols-2 gap-4">
+          {/* Classes — checkboxes multiples */}
           <div>
-            <Label htmlFor="classId">Classe <span className="text-red-500">*</span></Label>
-            <Select value={form.classId} onValueChange={(v) => setForm({ ...form, classId: v })}>
-              <SelectTrigger id="classId">
-                <SelectValue placeholder="Sélectionner..." />
-              </SelectTrigger>
-              <SelectContent>
-                {classes.length === 0 ? (
-                  <SelectItem value="_none" disabled>Aucune classe</SelectItem>
-                ) : (
-                  classes.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)
-                )}
-              </SelectContent>
-            </Select>
+            <Label>
+              Classes <span className="text-red-500">*</span>
+              <span className="ml-2 text-xs text-gray-500 font-normal">
+                ({form.classIds.length} sélectionnée{form.classIds.length > 1 ? 's' : ''})
+              </span>
+            </Label>
+            <div className="mt-1 max-h-[160px] overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50 space-y-1">
+              {classes.length === 0 ? (
+                <p className="text-sm text-gray-500 italic text-center py-4">
+                  Aucune classe pour ce niveau scolaire.
+                </p>
+              ) : (
+                classes.map(c => (
+                  <label
+                    key={c.id}
+                    className="flex items-center gap-2 p-2 rounded-md hover:bg-white cursor-pointer transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.classIds.includes(c.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setForm({ ...form, classIds: [...form.classIds, c.id] });
+                        } else {
+                          setForm({ ...form, classIds: form.classIds.filter(id => id !== c.id) });
+                        }
+                      }}
+                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">{c.name}</span>
+                  </label>
+                ))
+              )}
+            </div>
+            {form.classIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, classIds: [] })}
+                className="mt-1 text-xs text-gray-500 hover:text-red-600"
+              >
+                Tout désélectionner
+              </button>
+            )}
           </div>
+
+          {/* Matières — checkboxes multiples */}
           <div>
-            <Label htmlFor="subjectId">Matière <span className="text-red-500">*</span></Label>
-            <Select value={form.subjectId} onValueChange={(v) => setForm({ ...form, subjectId: v })}>
-              <SelectTrigger id="subjectId">
-                <SelectValue placeholder="Sélectionner..." />
-              </SelectTrigger>
-              <SelectContent>
-                {subjects.length === 0 ? (
-                  <SelectItem value="_none" disabled>Aucune matière</SelectItem>
-                ) : (
-                  subjects.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)
-                )}
-              </SelectContent>
-            </Select>
+            <Label>
+              Matières <span className="text-red-500">*</span>
+              <span className="ml-2 text-xs text-gray-500 font-normal">
+                ({form.subjectIds.length} sélectionnée{form.subjectIds.length > 1 ? 's' : ''})
+              </span>
+            </Label>
+            <div className="mt-1 max-h-[160px] overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50 space-y-1">
+              {subjects.length === 0 ? (
+                <p className="text-sm text-gray-500 italic text-center py-4">
+                  Aucune matière pour ce niveau scolaire.
+                </p>
+              ) : (
+                subjects.map(s => (
+                  <label
+                    key={s.id}
+                    className="flex items-center gap-2 p-2 rounded-md hover:bg-white cursor-pointer transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.subjectIds.includes(s.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setForm({ ...form, subjectIds: [...form.subjectIds, s.id] });
+                        } else {
+                          setForm({ ...form, subjectIds: form.subjectIds.filter(id => id !== s.id) });
+                        }
+                      }}
+                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">{s.name}</span>
+                  </label>
+                ))
+              )}
+            </div>
+            {form.subjectIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, subjectIds: [] })}
+                className="mt-1 text-xs text-gray-500 hover:text-red-600"
+              >
+                Tout désélectionner
+              </button>
+            )}
           </div>
         </div>
+
+        {/* Info : combinaisons qui seront créées */}
+        {!editingId && form.classIds.length > 0 && form.subjectIds.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
+            <p className="text-xs text-blue-800">
+              📋 <strong>{form.classIds.length * form.subjectIds.length} évaluation(s)</strong> seront créées
+              ({form.classIds.length} classe{form.classIds.length > 1 ? 's' : ''} × {form.subjectIds.length} matière{form.subjectIds.length > 1 ? 's' : ''}).
+              Chaque enseignant assigné recevra automatiquement l'évaluation dans son interface.
+            </p>
+          </div>
+        )}
 
         {/* Période + Date */}
         <div className="grid grid-cols-2 gap-4">
@@ -739,29 +853,43 @@ export default function EvaluationsPage() {
           </div>
         </div>
 
-        {/* Barème + Coefficient */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="maxScore">Barème (note maximale)</Label>
-            <Input
-              id="maxScore"
-              type="number"
-              step="0.5"
-              value={form.maxScore}
-              onChange={(e) => setForm({ ...form, maxScore: e.target.value })}
-            />
+        {/* Barème + Coefficient — masqués pour la maternelle (qualitatif TS/S/PS) */}
+        {isMaternelle ? (
+          <div className="bg-pink-50 border border-pink-200 rounded-lg p-3">
+            <p className="text-sm font-semibold text-pink-900 mb-1">
+              🎨 Évaluation qualitative (Maternelle)
+            </p>
+            <p className="text-xs text-pink-800">
+              Les évaluations de maternelle utilisent un système qualitatif
+              <strong> TS (Très Satisfaisant) / S (Satisfaisant) / PS (Peu Satisfaisant)</strong>.
+              Pas de note maximale ni de coefficient — la saisie se fait au niveau
+              de l'onglet "Saisie des notes" via des boutons TS/S/PS.
+            </p>
           </div>
-          <div>
-            <Label htmlFor="coefficient">Coefficient</Label>
-            <Input
-              id="coefficient"
-              type="number"
-              step="0.5"
-              value={form.coefficient}
-              onChange={(e) => setForm({ ...form, coefficient: e.target.value })}
-            />
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="maxScore">Barème (note maximale)</Label>
+              <Input
+                id="maxScore"
+                type="number"
+                step="0.5"
+                value={form.maxScore}
+                onChange={(e) => setForm({ ...form, maxScore: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="coefficient">Coefficient</Label>
+              <Input
+                id="coefficient"
+                type="number"
+                step="0.5"
+                value={form.coefficient}
+                onChange={(e) => setForm({ ...form, coefficient: e.target.value })}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Description */}
         <div>

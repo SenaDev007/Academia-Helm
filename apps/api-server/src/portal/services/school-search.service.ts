@@ -197,11 +197,13 @@ export class SchoolSearchService {
     this.logger.log('Listing all schools with active job counts (cache miss)');
 
     try {
-      // 1. Fetch all active tenants of type SCHOOL
+      // 1. Fetch all active tenants of type SCHOOL or mixte (école mixte primaire+secondaire)
+      // ⚠️ FIX : Avant le filtre `type: 'SCHOOL'` exclut les tenants `type: 'mixte'`
+      // qui sont pourtant des écoles valides. On accepte SCHOOL + mixte + MIXTE.
       const tenants = await this.prisma.tenant.findMany({
         where: {
           ...this.buildPublicSchoolListWhere(),
-          type: 'SCHOOL',
+          type: { in: ['SCHOOL', 'mixte', 'MIXTE'] },
         },
         include: {
           schools: { select: SCHOOL_SELECT },

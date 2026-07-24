@@ -67,6 +67,26 @@ export class EvaluationsController {
     });
   }
 
+  /**
+   * ⭐ Crée plusieurs évaluations en une fois (bulk create).
+   * Body : { classIds: string[], subjectIds: string[], ... }
+   * Génère une évaluation par combinaison classe × matière.
+   * L'enseignant est auto-résolu via TeacherClassAssignment.
+   */
+  @Post('bulk')
+  @Permissions('exams.manage')
+  async createBulk(
+    @TenantId() tenantId: string,
+    @AcademicYearId() academicYearId: string,
+    @UserId() userId: string,
+    @Body() data: any,
+  ) {
+    return this.evaluationsService.createBulk(tenantId, academicYearId, {
+      ...data,
+      createdBy: userId,
+    });
+  }
+
   @Patch(':id')
   @Permissions('exams.manage')
   async update(

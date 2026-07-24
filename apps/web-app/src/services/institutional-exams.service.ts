@@ -92,6 +92,22 @@ export const institutionalExamsService = {
     return response.data;
   },
 
+  // ⭐ Bulk create : plusieurs évaluations en une fois (1 par classe × matière)
+  async createBulkEvaluations(data: {
+    classIds: string[];
+    subjectIds: string[];
+    periodId: string;
+    evaluationTypeId: string;
+    title?: string;
+    description?: string;
+    evaluationDate: string;
+    maxScore?: number;
+    coefficient?: number;
+  }) {
+    const response = await apiClient.post(`/institutional-exams/evaluations/bulk`, data);
+    return response.data;
+  },
+
   async submitEvaluation(id: string) {
     const tenantId = getTenantId();
     if (tenantId && !networkDetectionService.isConnected()) {

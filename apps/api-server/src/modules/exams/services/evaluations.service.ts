@@ -155,6 +155,123 @@ export class EvaluationsService {
   }
 
   /**
+   * ⭐ Crée plusieurs évaluations en une seule transaction (bulk create).
+   * Utilisé quand l'admin sélectionne plusieurs classes + plusieurs matières
+   * dans le modal de création — on génère une évaluation par combinaison.
+   *
+   * Exemple : 2 classes × 3 matières = 6 évaluations créées.
+   *
+   * Le teacherId est résolu automatiquement via TeacherClassAssignment :
+   * pour chaque (classe × matière), on cherche l'enseignant assigné.
+   */
+  async createBulk(tenantId: string, academicYearId: string, data: {
+    classIds: string[];
+    subjectIds: string[];
+    periodId: string;
+    evaluationTypeId: string;
+    title?: string;
+    description?: string;
+    evaluationDate: string;
+    maxScore?: number;
+    coefficient?: number;
+    createdBy?: string;
+  }) {
+    // Validation du type
+    const type = await this.prisma.evaluationType.findUnique({
+      where: { id: data.evaluationTypeId },
+    });
+    if (!type) throw new NotFoundException('Type d\'évaluation non trouvé');
+
+    // Vérifier que la période n'est pas clôturée
+    const period = await this.prisma.academicPeriod.findUnique({
+      where: { id: data.periodId },
+    });
+    if (period?.isClosed) {
+      throw new BadRequestException('La période est clôturée — impossible de créer des évaluations.');
+    }
+
+    if (!data.classIds?.length || !data.subjectIds?.length) {
+      throw new BadRequestException('Au moins une classe et une matière sont requises.');
+    }
+
+    // ⭐ Résoudre les enseignants assignés pour chaque (classe × matière)
+    // via TeacherClassAssignment
+    const assignments = await this.prisma.teacherClassAssignment.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        classId: { in: data.classIds },
+        subjectId: { in: data.subjectIds },
+      },
+      select: { classId: true, subjectId: true, teacherId: true },
+    });
+
+    // Construire une map : `${classId}|${subjectId}` → teacherId
+    const teacherMap = new Map<string, string>();
+    for (const a of assignments) {
+      const key = `${a.classId}|${a.subjectId}`;
+      // Si plusieurs enseignants pour la même combo, on prend le premier
+      if (!teacherMap.has(key)) {
+        teacherMap.set(key, a.teacherId);
+      }
+    }
+
+    // Générer toutes les combinaisons
+    const evaluationsToCreate: Array<{
+      tenantId: string;
+      academicYearId: string;
+      classId: string;
+      subjectId: string;
+      periodId: string;
+      evaluationTypeId: string;
+      title: string | null;
+      description: string | null;
+      evaluationDate: Date;
+      maxScore: number;
+      coefficient: number;
+      teacherId: string | null;
+      status: string;
+      createdBy: string | null;
+    }> = [];
+
+    for (const classId of data.classIds) {
+      for (const subjectId of data.subjectIds) {
+        const teacherId = teacherMap.get(`${classId}|${subjectId}`) || null;
+        evaluationsToCreate.push({
+          tenantId,
+          academicYearId,
+          classId,
+          subjectId,
+          periodId: data.periodId,
+          evaluationTypeId: data.evaluationTypeId,
+          title: data.title || null,
+          description: data.description || null,
+          evaluationDate: data.evaluationDate ? new Date(data.evaluationDate) : new Date(),
+          maxScore: data.maxScore ?? type.defaultMaxScore ?? 20,
+          coefficient: data.coefficient ?? type.defaultCoefficient ?? 1,
+          teacherId,
+          status: 'PLANNED',
+          createdBy: data.createdBy || null,
+        });
+      }
+    }
+
+    // Créer toutes les évaluations en transaction
+    const result = await this.prisma.$transaction(
+      evaluationsToCreate.map((evalData) =>
+        this.prisma.evaluation.create({ data: evalData })
+      )
+    );
+
+    return {
+      created: result.length,
+      evaluations: result,
+      teachersAssigned: teacherMap.size,
+      message: `${result.length} évaluation(s) créée(s) pour ${data.classIds.length} classe(s) × ${data.subjectIds.length} matière(s). ${teacherMap.size} enseignant(s) auto-assigné(s).`,
+    };
+  }
+
+  /**
    * Met à jour une évaluation
    * Bloqué si status ∈ {VALIDATED, LOCKED, CANCELLED}
    */

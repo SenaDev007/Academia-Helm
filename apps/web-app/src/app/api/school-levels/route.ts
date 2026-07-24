@@ -5,12 +5,16 @@
  * IMPORTANT: On enrichit chaque niveau avec schoolLevelId (UUID de school_levels)
  * en le récupérant depuis /api/all-classes. Ceci permet au frontend d'utiliser
  * le bon UUID pour filtrer les classes et créer des fee_structures.
+ *
+ * ⚠️ Pattern standardisé : timeout 15s + cache: 'no-store' + Cache-Control HTTP
+ * Voir docs/CACHE_PERFORMANCE_PATTERN.md
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 
-export const revalidate = 0; // ⭐ Force dynamic — ne pas cacher (schoolLevelId peut changer)
+export const dynamic = 'force-dynamic';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
@@ -24,73 +28,81 @@ export async function GET(request: NextRequest) {
   try {
     const headers = await getProxyAuthHeaders(request);
 
-    // 1. Récupérer les niveaux depuis education/structure
+    // 1. Récupérer les niveaux depuis education/structure (timeout 15s)
     const url = new URL(normalizeApiUrl(`${API_BASE_URL}/settings/education/structure`));
     const fromQuery = request.nextUrl?.searchParams?.get('tenant_id');
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
-    const response = await fetch(url.toString(), { headers });
+    const response = await fetchWithTimeout(url.toString(), { headers }, 15000);
     const data = await response.json().catch(() => ({}));
     const levels = (data?.levels ?? []) as { id: string; name: string; isEnabled?: boolean }[];
     const enabledLevels = levels.filter((l) => l.isEnabled !== false);
 
-    // 2. Récupérer les school_levels UUIDs depuis plusieurs sources
-    let schoolLevelMap: Record<string, string> = {}; // code → schoolLevelId
+    // 2. Récupérer les school_levels UUIDs depuis 3 sources EN PARALLÈLE
+    let schoolLevelMap: Record<string, string> = {};
 
-    // Source A: physical classes (Class table)
-    try {
-      const classesUrl = normalizeApiUrl(`${API_BASE_URL}/classes?limit=200`);
-      const classesResponse = await fetch(classesUrl, { headers });
-      const classesData = await classesResponse.json().catch(() => ({}));
-      const classes = Array.isArray(classesData) ? classesData : (classesData?.data ?? []);
-      for (const c of classes) {
-        if (c.schoolLevel?.code && c.schoolLevelId) {
-          schoolLevelMap[c.schoolLevel.code] = c.schoolLevelId;
-        }
-      }
-    } catch {}
+    const [classesRes, acRes, studentsRes] = await Promise.allSettled([
+      // Source A: physical classes
+      fetchWithTimeout(normalizeApiUrl(`${API_BASE_URL}/classes?limit=200`), { headers }, 15000),
+      // Source B: academic classes
+      fetchWithTimeout(normalizeApiUrl(`${API_BASE_URL}/academic-classes?isActive=true`), { headers }, 15000),
+      // Source C: students
+      fetchWithTimeout(normalizeApiUrl(`${API_BASE_URL}/students?limit=100`), { headers }, 15000),
+    ]);
 
-    // Source B: academic classes (AcademicClass table) — fallback si pas de
-    // classes physiques. AcademicClass.levelId est un FK vers education_levels,
-    // PAS vers school_levels. Mais AcademicClass peut avoir une relation
-    // schoolLevel si elle existe.
-    try {
-      const acUrl = normalizeApiUrl(`${API_BASE_URL}/academic-classes?isActive=true`);
-      const acResponse = await fetch(acUrl, { headers });
-      const acData = await acResponse.json().catch(() => ({}));
-      const acClasses = Array.isArray(acData) ? acData : (acData?.data ?? []);
-      for (const c of acClasses) {
-        if (c.schoolLevel?.code && c.schoolLevelId && !schoolLevelMap[c.schoolLevel.code]) {
-          schoolLevelMap[c.schoolLevel.code] = c.schoolLevelId;
+    // Source A
+    if (classesRes.status === 'fulfilled') {
+      try {
+        const classesData = await classesRes.value.json().catch(() => ({}));
+        const classes = Array.isArray(classesData) ? classesData : (classesData?.data ?? []);
+        for (const c of classes) {
+          if (c.schoolLevel?.code && c.schoolLevelId) {
+            schoolLevelMap[c.schoolLevel.code] = c.schoolLevelId;
+          }
         }
-      }
-    } catch {}
+      } catch {}
+    }
 
-    // Source C: /api/students (list) — extrait schoolLevelId depuis les
-    // élèves existants. C'est le fallback le plus fiable car les élèves
-    // ont toujours un schoolLevelId valide (FK vers school_levels).
-    // On l'exécute TOUJOURS (pas seulement si A et B sont vides) pour
-    // remplir les manquants.
-    try {
-      const studentsUrl = normalizeApiUrl(`${API_BASE_URL}/students?limit=100`);
-      const studentsResponse = await fetch(studentsUrl, { headers });
-      const studentsData = await studentsResponse.json().catch(() => ({}));
-      const students = Array.isArray(studentsData) ? studentsData : (studentsData?.data ?? []);
-      for (const s of students) {
-        if (s.schoolLevel?.code && s.schoolLevelId && !schoolLevelMap[s.schoolLevel.code]) {
-          schoolLevelMap[s.schoolLevel.code] = s.schoolLevelId;
+    // Source B
+    if (acRes.status === 'fulfilled') {
+      try {
+        const acData = await acRes.value.json().catch(() => ({}));
+        const acClasses = Array.isArray(acData) ? acData : (acData?.data ?? []);
+        for (const c of acClasses) {
+          if (c.schoolLevel?.code && c.schoolLevelId && !schoolLevelMap[c.schoolLevel.code]) {
+            schoolLevelMap[c.schoolLevel.code] = c.schoolLevelId;
+          }
         }
-      }
-    } catch {}
+      } catch {}
+    }
+
+    // Source C
+    if (studentsRes.status === 'fulfilled') {
+      try {
+        const studentsData = await studentsRes.value.json().catch(() => ({}));
+        const students = Array.isArray(studentsData) ? studentsData : (studentsData?.data ?? []);
+        for (const s of students) {
+          if (s.schoolLevel?.code && s.schoolLevelId && !schoolLevelMap[s.schoolLevel.code]) {
+            schoolLevelMap[s.schoolLevel.code] = s.schoolLevelId;
+          }
+        }
+      } catch {}
+    }
 
     // 3. Construire le résultat avec schoolLevelId
     const result = enabledLevels.map((l) => ({
-      id: l.id,                           // education_levels UUID (pour le header)
-      code: l.name,                        // MATERNELLE / PRIMAIRE / SECONDAIRE
+      id: l.id,
+      code: l.name,
       label: LEVEL_LABELS[l.name] || l.name,
       isActive: true,
-      schoolLevelId: schoolLevelMap[l.name] || null,  // school_levels UUID
+      schoolLevelId: schoolLevelMap[l.name] || null,
     }));
-    return NextResponse.json(result);
+
+    // Cache 60s (les niveaux scolaires changent rarement)
+    return NextResponse.json(result, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+      },
+    });
   } catch (error) {
     console.error('Error fetching school levels from structure:', error);
     return NextResponse.json([], { status: 200 });

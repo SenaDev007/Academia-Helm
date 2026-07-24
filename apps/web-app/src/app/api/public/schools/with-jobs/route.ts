@@ -7,66 +7,34 @@
  * Returns all active schools with their published job counts in one API call,
  * replacing the old N+1 pattern (fetch schools → fetch jobs per school).
  *
- * Pattern simple : le backend NestJS gère lui-même la résolution des données.
- * Le BFF ne fait que proxy la réponse.
+ * ⚠️ Pattern standardisé : utilise bffFetchJson() + buildCacheHeaders()
+ * Voir docs/CACHE_PERFORMANCE_PATTERN.md
  * ============================================================================
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { bffFetchJson, buildCacheHeaders, gracefulTimeoutResponse } from '@/lib/api/bff-fetch';
 
 /** Force dynamic — ne pas pré-render au build (backend peut être lent). */
 export const dynamic = 'force-dynamic';
 
 export async function GET(_request: NextRequest) {
   try {
-    const API_BASE_URL = getApiBaseUrlForRoutes();
-    const apiUrl = API_BASE_URL.endsWith('/api')
-      ? `${API_BASE_URL}/public/schools/with-jobs`
-      : `${API_BASE_URL}/api/public/schools/with-jobs`;
-
-    // Timeout de 30s pour accommoder les cold starts Neon DB
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-    let response;
-    try {
-      response = await fetch(normalizeApiUrl(apiUrl), {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        next: { revalidate: 60 },
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-    } catch (fetchError: any) {
-      clearTimeout(timeoutId);
-      if (fetchError.name === 'AbortError') {
-        console.error('[Schools With Jobs API] Request timed out after 30s');
-        return NextResponse.json(
-          {
-            error: 'Backend timeout',
-            message: 'Le serveur met trop de temps à répondre. Veuillez réessayer dans quelques instants.'
-          },
-          { status: 504 }
-        );
-      }
-      throw fetchError;
-    }
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({
-        message: `Erreur HTTP ${response.status}: ${response.statusText}`,
-      }));
-      console.error('[Schools With Jobs API] Backend error:', errorData);
-      return NextResponse.json(errorData, { status: response.status });
-    }
-
-    const data = await response.json();
-    return NextResponse.json(data);
+    const data = await bffFetchJson<any[]>('/public/schools/with-jobs');
+    return NextResponse.json(data, {
+      headers: buildCacheHeaders(data, { minItems: 1 }),
+    });
   } catch (error: any) {
-    console.error('[Schools With Jobs API] Error:', error);
+    console.error('[Schools With Jobs API] Error:', error.message);
+
+    // Timeout → réponse gracieuse (liste vide au lieu de 504)
+    if (error.message?.includes('timeout')) {
+      return NextResponse.json(
+        gracefulTimeoutResponse('établissements'),
+        { status: 200 }
+      );
+    }
+
     return NextResponse.json(
       {
         error: 'Failed to fetch schools with jobs',

@@ -2,14 +2,18 @@
  * ============================================================================
  * CONTEXT BOOTSTRAP API ROUTE
  * ============================================================================
- * 
+ *
  * Proxy Next.js pour l'endpoint backend /context/bootstrap
- * 
+ *
+ * ⚠️ Pattern standardisé : utilise bffFetch() + buildCacheHeaders()
+ * Voir docs/CACHE_PERFORMANCE_PATTERN.md
  * ============================================================================
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
+import { bffFetch, buildCacheHeaders } from '@/lib/api/bff-fetch';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,14 +26,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Appeler l'API backend
-    const apiBase = getApiBaseUrlForRoutes();
-    const response = await fetch(`${apiBase}/context/bootstrap`, {
+    // Appeler l'API backend avec timeout 15s + cache: 'no-store'
+    const response = await bffFetch('/context/bootstrap', {
       method: 'GET',
       headers: {
         'Authorization': authHeader,
-        'Content-Type': 'application/json',
       },
+      timeoutMs: 15000,
     });
 
     const data = await response.json();
@@ -38,9 +41,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(data, { status: response.status });
     }
 
-    return NextResponse.json(data);
+    // ⚠️ Le bootstrap est propre à l'utilisateur — pas de cache CDN public.
+    // Cache navigateur court (10s) pour éviter le spam pendant la navigation.
+    return NextResponse.json(data, {
+      headers: {
+        'Cache-Control': 'private, max-age=10, stale-while-revalidate=60',
+      },
+    });
   } catch (error: any) {
     console.error('Error in context bootstrap:', error);
+    if (error.message?.includes('timeout')) {
+      return NextResponse.json(
+        { error: 'timeout', message: 'Délai dépassé. Veuillez réessayer.' },
+        { status: 504 }
+      );
+    }
     return NextResponse.json(
       { error: 'Internal server error', message: error.message },
       { status: 500 }

@@ -1,26 +1,15 @@
 import { NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes, bffHeaders } from '@/lib/utils/api-urls';
+import { bffFetchJson, buildCacheHeaders } from '@/lib/api/bff-fetch';
 
-const API_BASE_URL = getApiBaseUrlForRoutes();
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const apiUrl = API_BASE_URL.endsWith('/api')
-      ? `${API_BASE_URL}/public/platform-reviews`
-      : `${API_BASE_URL}/public/platform-reviews`;
-
-    const response = await fetch(apiUrl, {
-      method: 'GET',
-      headers: bffHeaders(),
-      next: { revalidate: 60 },
+    const data = await bffFetchJson<any>('/public/platform-reviews');
+    const reviews = Array.isArray(data?.reviews) ? data : { reviews: [] };
+    return NextResponse.json(reviews, {
+      headers: buildCacheHeaders(reviews),
     });
-
-    if (!response.ok) {
-      return NextResponse.json({ reviews: [] }, { status: 200 });
-    }
-
-    const data = await response.json();
-    return NextResponse.json(Array.isArray(data?.reviews) ? data : { reviews: [] });
   } catch {
     return NextResponse.json({ reviews: [] }, { status: 200 });
   }

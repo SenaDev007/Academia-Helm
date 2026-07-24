@@ -24,6 +24,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
 
 const API_URL = getApiBaseUrlForRoutes();
 
@@ -32,33 +33,30 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   try {
     const url = new URL(`${API_URL}/classes`);
-    // ⚠️ NE PAS mettre schoolLevelId dans les query params !
-    // Le PaginationDto du backend a forbidNonWhitelisted: true → 400 Bad Request.
-    // On passe schoolLevelId=ALL uniquement via le header x-school-level-id
-    // (priorité 3 dans le SchoolLevelId decorator).
     url.searchParams.append('limit', '100');
 
     const headers = await getProxyAuthHeaders(request);
-    // ⚠️ Forcer le header x-school-level-id=ALL pour que le SchoolLevelId decorator
-    // retourne ALL au lieu du schoolLevelId du contexte admin.
-    // Le header prend la priorité 3 (après context et request.schoolLevelId),
-    // mais comme ClassesController n'a pas @RequireTenant(), le ContextInterceptor
-    // ne résout pas le contexte → priorités 1 et 2 sont vides → priorité 3 (header) gagne.
     headers['x-school-level-id'] = 'ALL';
 
-    const response = await fetch(normalizeApiUrl(url.toString()), { headers });
+    // ⚠️ Pattern standardisé : fetchWithTimeout (15s) + cache: 'no-store' + Cache-Control HTTP
+    const response = await fetchWithTimeout(normalizeApiUrl(url.toString()), { headers, cache: 'no-store' }, 15000);
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
       console.warn('[BFF all-classes] Backend returned', response.status, JSON.stringify(data));
-      return NextResponse.json([], { status: 200 }); // fallback vide plutôt qu'erreur
+      return NextResponse.json([], { status: 200, headers: { 'Cache-Control': 'no-cache' } });
     }
 
-    // La réponse peut être un tableau ou un objet paginé { data: [...], total, ... }
     const classes = Array.isArray(data) ? data : (data?.data || data?.items || []);
-    return NextResponse.json(classes);
+
+    // Cache 60s (les classes changent rarement) + stale-while-revalidate 5min
+    return NextResponse.json(classes, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+      },
+    });
   } catch (error) {
     console.error('Error fetching all-classes:', error);
-    return NextResponse.json([], { status: 200 }); // fallback vide
+    return NextResponse.json([], { status: 200, headers: { 'Cache-Control': 'no-cache' } });
   }
 }

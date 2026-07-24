@@ -213,7 +213,9 @@ async function fetchWithTimeout(url: string, timeoutMs = 15000): Promise<Respons
         'Accept': 'application/json',
         'User-Agent': 'AcademiaHelm/1.0',
       },
-      next: { revalidate: 21600 }, // 6h cache Next.js
+      // ⚠️ cache: 'no-store' — JAMAIS next: { revalidate } (poison cache anti-pattern)
+      // Le cache est géré par Redis (voir redisGet/redisSet) + in-memory fallback.
+      cache: 'no-store',
     });
     return response;
   } finally {

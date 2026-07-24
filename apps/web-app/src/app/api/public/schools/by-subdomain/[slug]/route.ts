@@ -11,12 +11,13 @@
  *   2. FALLBACK : GET /api/public/schools/with-jobs
  *      → Recherche l'école par slug dans la liste publique (même source que /jobs)
  *
- * Utilisée par les pages school-portal, login et forgot-password
- * pour résoudre le branding (logo, nom, slogan, couleurs) de l'école.
+ * ⚠️ Pattern standardisé : utilise bffFetchJson() + buildCacheHeaders()
+ * Voir docs/CACHE_PERFORMANCE_PATTERN.md
+ * ============================================================================
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
+import { bffFetch, bffFetchJson, buildCacheHeaders } from '@/lib/api/bff-fetch';
 import { extractBrandingFromTenant } from '@/lib/tenant/branding';
 
 /** Force dynamic — ne pas pré-render au build (backend peut être lent). */
@@ -59,58 +60,35 @@ export async function GET(
       );
     }
 
-    const API_BASE_URL = getApiBaseUrlForRoutes();
-
     // ── STRATÉGIE 1 : /tenants/by-subdomain/:slug (données les plus complètes) ──
-    const tenantApiUrl = API_BASE_URL.endsWith('/api')
-      ? `${API_BASE_URL}/tenants/by-subdomain/${encodeURIComponent(slug)}`
-      : `${API_BASE_URL}/api/tenants/by-subdomain/${encodeURIComponent(slug)}`;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
-
     try {
-      const response = await fetch(normalizeApiUrl(tenantApiUrl), {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        next: { revalidate: 30 },
+      const response = await bffFetch(`/tenants/by-subdomain/${encodeURIComponent(slug)}`, {
+        timeoutMs: 6000,
       });
-      clearTimeout(timeoutId);
 
       if (response.ok) {
         const data = await response.json();
         const branding = extractBrandingFromTenant(data, slug);
-        return NextResponse.json(branding);
+        return NextResponse.json(branding, {
+          headers: buildCacheHeaders(branding),
+        });
       }
 
-      // Si 404, on passe au fallback
       console.warn(`[School By Subdomain] Primary endpoint returned ${response.status} for slug "${slug}", trying fallback...`);
     } catch (fetchError: any) {
-      clearTimeout(timeoutId);
       console.warn(`[School By Subdomain] Primary endpoint failed for slug "${slug}":`, fetchError?.message || fetchError);
     }
 
     // ── STRATÉGIE 2 : /public/schools/with-jobs (fallback — même source que /jobs) ──
-    const schoolsApiUrl = API_BASE_URL.endsWith('/api')
-      ? `${API_BASE_URL}/public/schools/with-jobs`
-      : `${API_BASE_URL}/api/public/schools/with-jobs`;
-
     try {
-      const schoolsResponse = await fetch(normalizeApiUrl(schoolsApiUrl), {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        next: { revalidate: 60 },
-      });
-
-      if (schoolsResponse.ok) {
-        const schools = await schoolsResponse.json();
-        if (Array.isArray(schools)) {
-          const school = schools.find((s: any) => s.slug === slug);
-          if (school) {
-            const branding = extractBrandingFromSchoolList(school);
-            return NextResponse.json(branding);
-          }
+      const schools = await bffFetchJson<any[]>('/public/schools/with-jobs');
+      if (Array.isArray(schools)) {
+        const school = schools.find((s: any) => s.slug === slug);
+        if (school) {
+          const branding = extractBrandingFromSchoolList(school);
+          return NextResponse.json(branding, {
+            headers: buildCacheHeaders(branding),
+          });
         }
       }
     } catch (fallbackError: any) {

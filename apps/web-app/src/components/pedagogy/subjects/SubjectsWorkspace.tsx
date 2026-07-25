@@ -364,6 +364,28 @@ export default function SubjectsWorkspace() {
     return key ? DEFAULT_SUBJECTS_CATALOGUE[key] ?? [] : [];
   }, [selectedLevelObj, bilingualEnabled, currentTrack]);
 
+  /** ⭐ Liste des matières à afficher pour 4e/3e/2nd cycle.
+   *  Utilise les matières du secondaire déjà en DB + les suggestions du catalogue
+   *  secondaire (pour qu'il y ait toujours des matières à afficher même si
+   *  l'utilisateur n'a pas encore créé de matières secondaires). */
+  const secondarySubjectsForModal = useMemo(() => {
+    // Matières du secondaire déjà en DB
+    const dbSubjects = subjects
+      .filter(s => {
+        const sl = s.schoolLevel;
+        const levelName = (sl?.name || sl?.code || '').toUpperCase();
+        return levelName.includes('SECOND') || levelName.includes('SEC');
+      })
+      .map(s => ({ id: s.id, name: s.name, code: s.code, isFromDb: true }));
+
+    // Suggestions du catalogue secondaire (pas déjà en DB)
+    const catalogSubjects = (DEFAULT_SUBJECTS_CATALOGUE['SECONDAIRE'] || [])
+      .filter(cat => !dbSubjects.some(db => db.code === cat.code))
+      .map(cat => ({ id: cat.code, name: cat.name, code: cat.code, isFromDb: false }));
+
+    return [...dbSubjects, ...catalogSubjects];
+  }, [subjects]);
+
   /** Séries filtrées par niveaux actifs (le secondaire doit être actif) */
   const filteredSeries = useMemo(() => {
     const secondaryActive = activeLevelNames.some((n: string) => n.includes('SECONDAIRE'));
@@ -1710,7 +1732,7 @@ export default function SubjectsWorkspace() {
                     Sélectionnez les matières et définissez leur coefficient pour cette classe :
                   </p>
                   <div className="max-h-[300px] overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
-                    {subjects.map(subject => (
+                    {secondarySubjectsForModal.map(subject => (
                       <div key={subject.id} className="flex items-center justify-between px-3 py-2 hover:bg-slate-50">
                         <div className="flex items-center gap-2">
                           <input
@@ -1793,7 +1815,7 @@ export default function SubjectsWorkspace() {
                     Sélectionnez les matières et définissez leur coefficient pour cette classe :
                   </p>
                   <div className="max-h-[300px] overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
-                    {subjects.map(subject => (
+                    {secondarySubjectsForModal.map(subject => (
                       <div key={subject.id} className="flex items-center justify-between px-3 py-2 hover:bg-slate-50">
                         <div className="flex items-center gap-2">
                           <input

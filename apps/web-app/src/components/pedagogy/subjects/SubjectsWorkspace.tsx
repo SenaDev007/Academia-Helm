@@ -656,25 +656,51 @@ export default function SubjectsWorkspace() {
       return;
     }
 
-    // ⭐ Cas 4e/3e : Sauvegarder dans class_subjects (pas dans subjects)
+    // ⭐ Cas 4e/3e : Créer les matières en DB + sauvegarder dans class_subjects
     if (is4e3e && selected4e3eClassId) {
-      const assignments = Object.entries(subjectCoefficients)
-        .filter(([_, coef]) => coef > 0)
-        .map(([subjectId, coefficient]) => ({
-          classId: selected4e3eClassId,
-          subjectId,
-          coefficient,
-          academicYearId: academicYear?.id,
-        }));
-      if (assignments.length === 0) {
+      const selectedSubjects = Object.entries(subjectCoefficients)
+        .filter(([_, coef]) => coef > 0);
+      if (selectedSubjects.length === 0) {
         toast({ title: "Aucune matière sélectionnée", description: "Sélectionnez au moins une matière avec son coefficient.", variant: "destructive" });
         return;
       }
       try {
-        for (const a of assignments) {
-          await pedagogyFetch(`/api/class-subjects`, { method: 'POST', body: a });
+        const schoolLevelId = subjectForm.schoolLevelId;
+        for (const [subjectKey, coefficient] of selectedSubjects) {
+          // Récupérer les infos de la matière depuis secondarySubjectsForModal
+          const subjectInfo = secondarySubjectsForModal.find(s => s.id === subjectKey);
+          if (!subjectInfo) continue;
+
+          let subjectId = subjectInfo.id;
+
+          // Si la matière n'est pas encore en DB (isFromDb=false), la créer d'abord
+          if (!subjectInfo.isFromDb) {
+            const created = await pedagogyFetch<any>(`/api/subjects`, { method: 'POST', body: {
+              academicYearId: academicYear?.id,
+              schoolLevelId,
+              code: subjectInfo.code,
+              name: subjectInfo.name,
+              abbreviation: subjectInfo.code,
+              coefficient: 1, // Coefficient par défaut au niveau subject
+              weeklyHours: 0,
+              ...(bilingualEnabled ? { language: currentTrack } : {}),
+            }});
+            subjectId = created?.id;
+            if (!subjectId) {
+              console.warn('[Subjects] Failed to create subject:', subjectInfo.name);
+              continue;
+            }
+          }
+
+          // Créer l'affectation class_subjects avec le coefficient
+          await pedagogyFetch(`/api/class-subjects`, { method: 'POST', body: {
+            classId: selected4e3eClassId,
+            subjectId,
+            coefficient,
+            academicYearId: academicYear?.id,
+          }});
         }
-        toast({ title: "Succès", description: `${assignments.length} matière(s) affectée(s) avec coefficients.` });
+        toast({ title: "Succès", description: `${selectedSubjects.length} matière(s) affectée(s) avec coefficients.` });
         setModal('none');
         loadSubjects();
       } catch (e: any) {
@@ -683,25 +709,45 @@ export default function SubjectsWorkspace() {
       return;
     }
 
-    // ⭐ Cas 2nd cycle : Sauvegarder dans class_subjects pour la classe officielle sélectionnée
+    // ⭐ Cas 2nd cycle : Créer les matières en DB + sauvegarder dans class_subjects
     if (isSecondCycle && selectedSecondCycleClassId) {
-      const assignments = Object.entries(subjectCoefficients)
-        .filter(([_, coef]) => coef > 0)
-        .map(([subjectId, coefficient]) => ({
-          classId: selectedSecondCycleClassId,
-          subjectId,
-          coefficient,
-          academicYearId: academicYear?.id,
-        }));
-      if (assignments.length === 0) {
+      const selectedSubjects = Object.entries(subjectCoefficients)
+        .filter(([_, coef]) => coef > 0);
+      if (selectedSubjects.length === 0) {
         toast({ title: "Aucune matière sélectionnée", description: "Sélectionnez au moins une matière avec son coefficient.", variant: "destructive" });
         return;
       }
       try {
-        for (const a of assignments) {
-          await pedagogyFetch(`/api/class-subjects`, { method: 'POST', body: a });
+        const schoolLevelId = subjectForm.schoolLevelId;
+        for (const [subjectKey, coefficient] of selectedSubjects) {
+          const subjectInfo = secondarySubjectsForModal.find(s => s.id === subjectKey);
+          if (!subjectInfo) continue;
+
+          let subjectId = subjectInfo.id;
+
+          if (!subjectInfo.isFromDb) {
+            const created = await pedagogyFetch<any>(`/api/subjects`, { method: 'POST', body: {
+              academicYearId: academicYear?.id,
+              schoolLevelId,
+              code: subjectInfo.code,
+              name: subjectInfo.name,
+              abbreviation: subjectInfo.code,
+              coefficient: 1,
+              weeklyHours: 0,
+              ...(bilingualEnabled ? { language: currentTrack } : {}),
+            }});
+            subjectId = created?.id;
+            if (!subjectId) continue;
+          }
+
+          await pedagogyFetch(`/api/class-subjects`, { method: 'POST', body: {
+            classId: selectedSecondCycleClassId,
+            subjectId,
+            coefficient,
+            academicYearId: academicYear?.id,
+          }});
         }
-        toast({ title: "Succès", description: `${assignments.length} matière(s) affectée(s) avec coefficients.` });
+        toast({ title: "Succès", description: `${selectedSubjects.length} matière(s) affectée(s) avec coefficients.` });
         setModal('none');
         loadSubjects();
       } catch (e: any) {

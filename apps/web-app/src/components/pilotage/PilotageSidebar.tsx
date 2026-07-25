@@ -240,8 +240,6 @@ function filterModuleByVisibility(
   visibility: ReturnType<typeof getVisibleModulesForRole>,
 ): boolean {
   if (path.startsWith('/platform')) return visibility.showPlatformModules;
-  if (path.startsWith('/app/orion') || path.startsWith('/app/meetings'))
-    return visibility.showDirectionModules;
   if (path.startsWith('/app/finance')) return visibility.showFinanceModules;
   if (path.startsWith('/app/pedagogy'))
     return visibility.showPedagogyModules;

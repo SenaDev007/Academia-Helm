@@ -46,13 +46,6 @@ export function ConditionalMenu() {
           </Link>
         )}
 
-      {/* Menu ORION */}
-      {hasPermission(Module.ORION) && (
-        <Link href="/app/orion" className="block px-4 py-2 hover:bg-gray-100">
-          ORION
-        </Link>
-      )}
-
       {/* Menu Matériel Pédagogique */}
       {hasPermission(Module.MATERIEL_PEDAGOGIQUE) && (
         <Link

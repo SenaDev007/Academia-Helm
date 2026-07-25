@@ -346,7 +346,7 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
             {/* Alertes ORION */}
             {orionAlertsCount > 0 && (
               <button
-                onClick={() => router.push('/app/orion')}
+                onClick={() => router.push('/app')}
                 className="relative p-2 rounded-lg hover:bg-gray-50 transition-all duration-200 hover:scale-105 active:scale-95 group"
                 title="Alertes ORION"
               >

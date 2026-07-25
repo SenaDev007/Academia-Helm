@@ -792,7 +792,7 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
               </h3>
             </div>
             <Link
-              href="/app/orion"
+              href="/app#alertes"
               className="text-xs text-blue-600 hover:text-blue-800 inline-flex items-center"
             >
               Voir tout <ChevronRight className="w-3 h-3" />

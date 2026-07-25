@@ -55,16 +55,13 @@ export const PAGE_NAMES: Record<string, string> = {
   '/offline': 'Hors ligne',
   '/mobile/student': 'Espace Élève',
   '/mobile/parent': 'Espace Parent',
-  '/app-test': 'Test Application',
   '/admin': 'Administration',
   '/admin/pricing': 'Tarification Admin',
   '/admin/devices': 'Appareils Admin',
 
   // ─── App — Dashboard & Modules transversaux ───
   '/app': 'Tableau de bord',
-  '/app/meetings': 'Réunions',
   '/app/transport': 'Transport',
-  '/app/orion': 'ORION — Pilotage Direction',
   '/app/library': 'Bibliothèque',
   '/app/infirmary': 'Infirmerie',
   '/app/shop': 'Boutique',

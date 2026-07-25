@@ -94,7 +94,7 @@ export default function OrionAlertsCard({ academicYearId, schoolLevelId }: Orion
           <h3 className="text-lg font-semibold text-navy-900">Analyse ORION</h3>
         </div>
         <Link
-          href="/app/orion/alerts"
+          href="/app#orion-alerts"
           className="text-sm text-navy-600 hover:text-navy-900 font-medium flex items-center space-x-1"
         >
           <span>Voir l'analyse complète</span>

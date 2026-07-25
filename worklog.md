@@ -1521,3 +1521,46 @@ Stage Summary:
 - ✅ Tableau de bord transformé en vrai dashboard de pilotage (PilotageDashboardV2)
 - ✅ Loading infini corrigé (KPICards, OrionAlertsCard, QuickAnalytics)
 - ⏳ En attente : redéploiement Vercel + test agent-browser
+
+---
+Task ID: cleanup-orion-meetings
+Agent: main
+Task: Suppression propre du contenu des modules Orion et Réunions (suite au retrait de la sidebar)
+
+Work Log:
+- Supprimé routes Next.js :
+  - `apps/web-app/src/app/app/orion/page.tsx` + `loading.tsx` (route /app/orion)
+  - `apps/web-app/src/app/app/meetings/page.tsx` + `loading.tsx` (route /app/meetings)
+  - `apps/web-app/src/app/app-test/page.tsx` + `loading.tsx` (route /app-test — page de test morte)
+- Supprimé composants morts (plus importés nulle part) :
+  - `apps/web-app/src/components/orion/*` (6 fichiers : OrionPanel, OrionAlerts, OrionHistory, OrionScoreCard, OrionSummary, OrionPilotageWorkspace)
+  - `apps/web-app/src/components/pilotage/orion/*` (3 fichiers : OrionInsightCard, OrionModuleButton, OrionFullPage)
+  - `apps/web-app/src/components/dashboard/*` (tout le dossier legacy : DashboardPage, DashboardSidebar, DashboardDispatcher, DashboardGuard, DashboardHeader, DashboardLayoutClient, TenantSwitcher, AccessRequestsPanel, BillingHistoryPage, ConsolidatedKpiPage, DirectionKpiPage, AcademicTrackSelector + widgets/ + roles/)
+  - `apps/web-app/src/components/pilotage/PilotageDashboard.tsx` (doublon de PilotageDashboardV2)
+  - `apps/web-app/src/components/pilotage/dashboards/{Director,Accountant,Teacher,Admin,Parent,Promoter,Qhs}Dashboard.tsx` (7 dashboards legacy remplacés par PilotageDashboardV2)
+- Nettoyé références résiduelles vers /app/orion et /app/meetings :
+  - `lib/loading/page-names.ts` : retiré '/app/orion', '/app/meetings', '/app-test'
+  - `components/pilotage/PilotageSidebar.tsx` : retiré filterModuleByVisibility pour /app/orion et /app/meetings
+  - `components/navigation/ConditionalMenu.tsx` : retiré bloc menu ORION
+  - `components/pilotage/PilotageTopBar.tsx` : bouton alertes ORION redirige maintenant vers /app (dashboard unifié) au lieu de /app/orion
+  - `components/pilotage/OrionAlertsCard.tsx` : lien "Voir l'analyse complète" → /app#orion-alerts
+  - `components/pilotage/dashboards/PilotageDashboardV2.tsx` : lien "Voir tout" alertes → /app#alertes
+  - `app/app/pedagogy/orion/page.tsx` : lien dashboard global → /app (Tableau de pilotage)
+- CONSERVÉ (intact, toujours utilisé) :
+  - `apps/web-app/src/components/pilotage/OrionAlertsCard.tsx` (utilisé par PilotageDashboardV2)
+  - `apps/web-app/src/components/platform/orion/*` (back-office /platform/orion)
+  - `apps/web-app/src/components/ui/orion/*` (UI library exports)
+  - `apps/web-app/src/app/platform/orion/` + `orion-pilotage/` (back-office admin)
+  - `apps/web-app/src/app/(patronat)/federis/orion/` (Federis portal)
+  - `apps/web-app/src/app/app/pedagogy/orion/` (sub-module pédagogie)
+  - `apps/web-app/src/app/app/teacher/orion/` (sub-module enseignant)
+  - `apps/web-app/src/app/api/orion/*` (BFF routes — toujours appelées par OrionAlertsCard)
+  - `apps/web-app/src/app/api/meetings/*` (BFF routes — backend NestJS encore existant)
+  - `apps/web-app/src/lib/orion/*` (services LLM, prompt builder, response validator, history)
+
+Stage Summary:
+- ✅ Routes /app/orion, /app/meetings, /app-test supprimées
+- ✅ 25+ fichiers composants morts supprimés (components/orion/, components/pilotage/orion/, components/dashboard/ legacy, dashboards legacy)
+- ✅ Références résiduelles nettoyées (page-names, sidebar, top-bar, menus, liens)
+- ✅ TypeScript : 0 erreur (uniquement erreur préexistante dans cms/useAutoSave.ts)
+- ⏳ En attente : redéploiement Vercel pour vérifier build OK

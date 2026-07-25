@@ -341,8 +341,8 @@ export default function OrionPedagogyPage() {
                   <div className="flex items-center gap-2 p-4 rounded-2xl bg-gray-50 border border-gray-100 text-xs text-gray-500">
                     <Info className="h-4 w-4 text-blue-400" />
                     <p>
-                      Les données ORION sont générées par des modèles probabilistes. Elles constituent une aide à la décision et ne remplacent pas le jugement pédagogique. 
-                      Dashboard global : <Link href="/app/orion" className="text-blue-600 hover:underline font-bold">/app/orion</Link>
+                      Les données ORION sont générées par des modèles probabilistes. Elles constituent une aide à la décision et ne remplacent pas le jugement pédagogique.
+                      Dashboard global : <Link href="/app" className="text-blue-600 hover:underline font-bold">Tableau de pilotage</Link>
                     </p>
                   </div>
                 </motion.div>

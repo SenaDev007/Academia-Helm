@@ -1181,7 +1181,20 @@ export default function EvaluationsPage() {
             });
           }}>
             <SelectTrigger id="evaluationTypeId">
-              <SelectValue placeholder="Sélectionner un type..." />
+              <SelectValue placeholder="Sélectionner un type...">
+                {(() => {
+                  // ⭐ Afficher le libellé du type sélectionné manuellement
+                  // car SelectValue ne peut pas le résoudre tant que SelectContent
+                  // n'est pas monté (labelMap vide au premier rendu).
+                  const selectedType = evaluationTypes.find((t) => t.id === form.evaluationTypeId);
+                  if (selectedType) {
+                    return selectedType.code
+                      ? `[${selectedType.code}] ${selectedType.name}`
+                      : selectedType.name;
+                  }
+                  return null;
+                })()}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {evaluationTypes.length === 0 ? (
@@ -1343,7 +1356,20 @@ export default function EvaluationsPage() {
           <Label htmlFor="periodId">Période (Trimestre) <span className="text-red-500">*</span></Label>
           <Select value={form.periodId} onValueChange={(v) => setForm({ ...form, periodId: v })}>
             <SelectTrigger id="periodId">
-              <SelectValue placeholder="Sélectionner..." />
+              <SelectValue placeholder="Sélectionner...">
+                {(() => {
+                  // ⭐ Afficher le libellé de la période sélectionnée manuellement
+                  const selectedPeriod = periods.find((p) => p.id === form.periodId);
+                  if (selectedPeriod) {
+                    return selectedPeriod.isClosed
+                      ? `${selectedPeriod.name} (clôturée)`
+                      : selectedPeriod.isActive
+                        ? `${selectedPeriod.name} (active)`
+                        : selectedPeriod.name;
+                  }
+                  return null;
+                })()}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {periods.length === 0 ? (
@@ -1351,7 +1377,7 @@ export default function EvaluationsPage() {
               ) : (
                 periods.map(p => (
                   <SelectItem key={p.id} value={p.id} disabled={p.isClosed}>
-                    {p.name} {p.isClosed && '(clôturée)'} {p.isActive && !p.isClosed && '✓'}
+                    {p.name} {p.isClosed && '(clôturée)'} {p.isActive && !p.isClosed && '(active)'}
                   </SelectItem>
                 ))
               )}

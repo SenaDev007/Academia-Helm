@@ -259,7 +259,7 @@ export default function AnalyticsPage() {
                     <div className="flex justify-between mt-2 text-[10px] text-gray-400 font-bold uppercase">
                       <span>Cible: 80%</span>
                       <span className={globalStats.passRate >= 80 ? 'text-green-600' : 'text-amber-600'}>
-                        {globalStats.passRate >= 80 ? '✓ Objectif atteint' : 'En dessous de l\'objectif'}
+                        {globalStats.passRate >= 80 ? 'Objectif atteint' : 'En dessous de l\'objectif'}
                       </span>
                     </div>
                   </CardContent>

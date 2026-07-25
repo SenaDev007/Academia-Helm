@@ -24,7 +24,7 @@ import { useRouter } from 'next/navigation';
 import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 import AcademicYearSelector from './AcademicYearSelector';
 import SchoolLevelSelector from './SchoolLevelSelector';
-import AcademicTrackSelector from '../dashboard/AcademicTrackSelector';
+import AcademicTrackSelector from './AcademicTrackSelector';
 import { useOffline, useSyncStatus } from '@/hooks/useOffline';
 import InAppReviewModal from '@/components/reviews/InAppReviewModal';
 import NotificationDropdown from '@/components/notifications/NotificationDropdown';

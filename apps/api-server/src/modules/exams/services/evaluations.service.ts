@@ -186,6 +186,8 @@ export class EvaluationsService {
     title?: string;
     description?: string;
     evaluationDate: string;
+    startDate?: string;
+    endDate?: string;
     maxScore?: number;
     coefficient?: number;
     createdBy?: string;
@@ -290,6 +292,8 @@ export class EvaluationsService {
       title: string | null;
       description: string | null;
       evaluationDate: Date;
+      startDate: Date | null;
+      endDate: Date | null;
       maxScore: number;
       coefficient: number;
       teacherId: string | null;
@@ -313,6 +317,9 @@ export class EvaluationsService {
           title: data.title || null,
           description: data.description || null,
           evaluationDate: data.evaluationDate ? new Date(data.evaluationDate) : new Date(),
+          // ⭐ Persister startDate et endDate (intervalle de la session d'évaluation)
+          startDate: data.startDate ? new Date(data.startDate) : null,
+          endDate: data.endDate ? new Date(data.endDate) : null,
           maxScore: data.maxScore ?? type.defaultMaxScore ?? 20,
           coefficient: data.coefficient ?? type.defaultCoefficient ?? 1,
           teacherId,

@@ -243,6 +243,7 @@ export default function GradesPage() {
         group={selectedGroup}
         isMaternelle={isMaternelle}
         isPrimaire={isPrimaire}
+        scopedSubModules={scopedSubModules}
         onBack={() => setSelectedGroup(null)}
       />
     );
@@ -455,11 +456,13 @@ function GradingSheet({
   group,
   isMaternelle,
   isPrimaire,
+  scopedSubModules,
   onBack,
 }: {
   group: GroupedEvaluation;
   isMaternelle: boolean;
   isPrimaire: boolean;
+  scopedSubModules: any;
   onBack: () => void;
 }) {
   const [rows, setRows] = useState<GradeRow[]>([]);

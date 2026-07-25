@@ -1626,3 +1626,73 @@ Stage Summary:
 - ✅ Source exacte de l'erreur 400 identifiée via capture réseau
 - ✅ Correctif appliqué au backend NestJS (evaluations.service.ts createBulk)
 - ⚠️ En attente : déploiement backend sur Fly.io (auth flyctl requise)
+
+---
+Task ID: evaluations-cards-ui
+Agent: main
+Task: Refonte UI cartes + notification enseignants (commit 86aa7dd7)
+
+Work Log:
+- Refonte totale de l'UI Évaluations :
+  * Remplacé le tableau (TableHeader/TableBody) par cartes groupées par classe
+  * Nouveaux composants :
+    - EvaluationCardsByClass : grille responsive (1/2/3 colonnes) de cartes par classe
+    - EvaluationCardItem : sous-carte pour chaque évaluation individuelle
+  * Chaque carte classe :
+    - Avatar (2 premières lettres uppercase) + nom classe + nb évaluations
+    - Badge statut agrégé (En attente / En cours / Complétée / Partiellement annulée)
+    - Stack vertical des sous-cartes évaluation
+  * Chaque sous-carte évaluation :
+    - Matière (gras) + type + code (ex: [EM1] Évaluation mensuelle 1)
+    - Titre auto-généré (italic, line-clamp-2)
+    - Date + heure + barème (/20) + coefficient (badges colorés)
+    - Statut (StatusBadge existant)
+    - Nb notes saisies
+    - Bouton "Modifier" (Pencil, accès direct) + menu déroulant "Plus d'actions"
+      avec toutes les actions disponibles (Ouvrir/Soumettre/Valider/Annuler/Supprimer)
+  * Supprimé les imports Table* devenus inutiles
+- Toast de création enrichi :
+  * "✅ X évaluation(s) programmée(s)"
+  * Description : "Y classes (CE1, CP) • Z matières (Math, English) • N enseignant(s) notifié(s)"
+  * Durée 6s
+
+Backend — Notifications enseignants :
+- Nouvelle méthode NotificationService.notifyTeachersEvaluationScheduled()
+  * Résolution Teacher.email → User.id (relation email-à-email)
+  * Regroupement par enseignant : 1 notif par enseignant (pas par évaluation)
+  * Type 'EVALUATION_SCHEDULED', priorité HIGH
+  * Title: "Nouvelle évaluation programmée — Mathematics" (1) ou
+           "3 évaluations programmées" (N)
+  * Body: classes + matières + date
+  * data.url = /app/exams/evaluations
+  * Fire-and-forget (catch + log, ne bloque jamais la réponse)
+- EvaluationsService.createBulk modifié :
+  * Injection NotificationService via constructor
+  * Après création transactionnelle, récupère noms classes/matières
+  * Appel notifyTeachersEvaluationScheduled (fire-and-forget via void + catch)
+
+Test agent-browser :
+- Connexion compte promoteur CSPEB (salumerhel2036@gmail.com / CSPEB.fondé2021)
+- Navigation: Examen > Primaire > Anglophone > Évaluations
+- Clic "Nouvelle évaluation" + remplissage formulaire (EM1, CP+CE1, Math+Verbal, T1)
+- POST /api/institutional-exams/evaluations/bulk → 201 Created ✅
+- Toast "✅ 4 évaluation(s) programmée(s) — 2 classes (CP, CE1) • 2 matières" ✅
+- Bascule vers piste FRANCOPHONE → cartes s'affichent correctement ✅
+  * Carte CP avec 2 sous-cartes évaluation (badge "En attente")
+  * Carte CE1 avec 2 sous-cartes évaluation (badge "En attente")
+  * Boutons "Modifier" + "Plus d'actions" visibles ✅
+  * Menu déroulant affiche: Ouvrir/Soumettre/Modifier/Annuler/Supprimer ✅
+- Screenshot saved: /home/z/my-project/download/evaluations-cards.png
+
+⚠️ Note : les classes CP/CE1/CE2/CI A du tenant CSPEB ont `language='FR'` même
+quand l'utilisateur est en piste Anglophone. Donc les évaluations créées
+apparaissent dans la vue FR, pas EN. C'est un bug séparé (les classes n'ont pas
+le bon champ language) — pas lié à la refonte UI.
+
+Stage Summary:
+- ✅ Tableau remplacé par cartes groupées par classe (responsive, moderne)
+- ✅ Boutons d'action implémentés (Modifier + menu déroulant complet)
+- ✅ Toast de création détaillé (X évals / Y classes / Z matières / N enseignants notifiés)
+- ✅ Backend notification enseignants implémenté (fire-and-forget)
+- ⚠️ Backend pas encore déployé sur Fly.io (auth flyctl requise)
+- ⏳ Bug séparé: classes CSPEB ont language='FR' au lieu de 'EN' (à corriger séparément)

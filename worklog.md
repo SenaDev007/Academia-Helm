@@ -1696,3 +1696,64 @@ Stage Summary:
 - ✅ Backend notification enseignants implémenté (fire-and-forget)
 - ⚠️ Backend pas encore déployé sur Fly.io (auth flyctl requise)
 - ⏳ Bug séparé: classes CSPEB ont language='FR' au lieu de 'EN' (à corriger séparément)
+
+---
+Task ID: evaluations-cards-v2
+Agent: main
+Task: Refonte cartes v2 — 1 carte par programmation + liste matières + fix transparence
+
+Work Log:
+- Refonte complète selon retours utilisateur précis :
+  * 1 carte = 1 "programmation d'évaluation" (PAS 1 carte par matière)
+  * Regroupement par (classId × evaluationTypeId × periodId × startDate × endDate)
+  * Toutes les matières composant la même session d'évaluation sont fusionnées
+    dans UNE SEULE carte, affichées en chips/badges bleus
+- Affichage de la période : "Du 25 juil. 2026 au 28 juil. 2026" (PAS d'heure)
+  * Si startDate == endDate → "Le 25 juil. 2026"
+  * Format 'd MMM yyyy' (ex: 25 juil. 2026)
+- Maternelle : barème et coefficient masqués (prop isMaternelle)
+- Retiré la partie "Aucune note" / nb notes — non pertinent pour une programmation
+- Boutons : "Modifier" + "Plus d'actions" avec labels textuels (pas juste icônes)
+
+Fix transparence menu déroulant :
+- Carte parente : overflow-hidden → overflow-visible (permet au menu de dépasser)
+- DropdownMenuContent : ajout z-[100] pour garantir le stacking
+
+Fix backend startDate/endDate (commit 432b4115) :
+- Bug découvert via capture réseau : createBulk ne persistait PAS startDate/endDate
+  → les évaluations étaient créées avec startDate=null, endDate=null
+  → la carte affichait "Date non définie"
+- Correction : ajout des champs dans signature createBulk + evaluationsToCreate
+
+Interface Evaluation :
+- Ajout startDate?: string | null et endDate?: string | null
+- Ajout schoolLevelId?: string sur class
+
+Test agent-browser :
+- Connexion CSPEB promoteur
+- Création évaluation CM1 × 3 matières (Dictée, EA Plastique, EPS) × T1
+- Toast: "✅ 3 évaluation(s) programmée(s) — 1 classe (CM1) • 3 matières"
+- Vue cartes : 3 cartes affichées (CP, CE1, CM1)
+- Carte CM1 contient : avatar CM, "CM1", "3 matières à composer",
+  "EN ATTENTE", "[EM1] Évaluation mensuelle 1", "Trimestre 1",
+  liste matières en chips (Dictée / EA Plastique / EPS),
+  /20 + coef 1, boutons Modifier + Plus d'actions
+- Menu déroulant Plus d'actions : affiche correctement Ouvrir/Soumettre/
+  Modifier/Annuler/Supprimer (transparence résolue ✅)
+- Screenshot saved: /home/z/my-project/download/evaluations-cards-v3.png
+
+⚠️ Bug séparé persistant : Les évaluations créées avant le fix du backend
+ont startDate=null, endDate=null → "Date non définie" sur la carte.
+Le fix backend (commit 432b4115) doit être déployé sur Fly.io pour que les
+NOUVELLES créations enregistrent les dates. Les anciennes évaluations
+auront toujours des dates null tant qu'on ne les édite pas.
+
+Stage Summary:
+- ✅ Cartes : 1 carte par programmation avec liste matières
+- ✅ Période affichée : Du X au Y (pas d'heure)
+- ✅ Maternelle : barème/coef masqués
+- ✅ Retiré "Aucune note" / nb notes
+- ✅ Boutons Modifier + Plus d'actions avec labels
+- ✅ Menu déroulant non-transparent (overflow-visible + z-[100])
+- ✅ Fix backend startDate/endDate
+- ⏳ Déploiement Fly.io backend requis pour activer le fix dates

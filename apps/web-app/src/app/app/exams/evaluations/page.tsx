@@ -241,8 +241,8 @@ function EvaluationCardsByClass({
   isMaternelle,
 }: {
   evaluations: Evaluation[];
-  getAvailableActions: (ev: Evaluation) => EvaluationAction[];
-  onOpenEdit: (ev: Evaluation) => void;
+  getAvailableActions: (group: GroupedEvaluation) => EvaluationAction[];
+  onOpenEdit: (group: GroupedEvaluation) => void;
   isMaternelle: boolean;
 }) {
   // Grouper par (classId × evaluationTypeId × periodId × startDate × endDate)
@@ -297,8 +297,8 @@ function EvaluationCardsByClass({
           key={`${group.classId}-${group.evaluationTypeId}-${idx}`}
           group={group}
           isMaternelle={isMaternelle}
-          actions={getAvailableActions(group.firstEvaluation)}
-          onOpenEdit={() => onOpenEdit(group.firstEvaluation)}
+          actions={getAvailableActions(group)}
+          onOpenEdit={() => onOpenEdit(group)}
         />
       ))}
     </div>
@@ -323,8 +323,6 @@ function EvaluationProgramCard({
   actions: EvaluationAction[];
   onOpenEdit: () => void;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-
   // Formatage des dates : "25 juil. 2026" (pas d'heure)
   const startDate = group.startDate ? new Date(group.startDate) : null;
   const endDate = group.endDate ? new Date(group.endDate) : null;
@@ -437,54 +435,29 @@ function EvaluationProgramCard({
         )}
       </div>
 
-      {/* Pied : actions */}
-      <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-end space-x-2 bg-gray-50/30">
-        {/* Bouton Modifier — accès direct */}
-        {!['VALIDATED', 'LOCKED', 'CANCELLED'].includes(primaryStatus) && (
-          <button
-            onClick={onOpenEdit}
-            className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md transition-colors"
-            title="Modifier"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-            <span>Modifier</span>
-          </button>
+      {/* Pied : actions alignées (icônes uniquement, sans libellés) */}
+      <div className="px-3 py-2.5 border-t border-gray-100 flex items-center justify-end space-x-1 bg-gray-50/30">
+        {actions.length === 0 ? (
+          <span className="text-xs text-gray-400 italic px-2">Aucune action</span>
+        ) : (
+          actions.map((action, idx) => {
+            const Icon = action.icon;
+            return (
+              <button
+                key={idx}
+                onClick={action.onClick}
+                disabled={action.disabled}
+                className={`p-2 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+                  action.color || 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                }`}
+                title={action.label}
+                aria-label={action.label}
+              >
+                <Icon className="w-4 h-4" />
+              </button>
+            );
+          })
         )}
-
-        {/* Menu déroulant avec toutes les actions */}
-        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-          <DropdownMenuTrigger asChild>
-            <button
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-md transition-colors"
-              title="Plus d'actions"
-            >
-              <MoreVertical className="w-3.5 h-3.5" />
-              <span>Plus d&apos;actions</span>
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48 z-[100]">
-            {actions.length === 0 ? (
-              <DropdownMenuItem disabled className="text-gray-400">
-                Aucune action disponible
-              </DropdownMenuItem>
-            ) : (
-              actions.map((action, idx) => (
-                <DropdownMenuItem
-                  key={idx}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    action.onClick();
-                  }}
-                  className={`cursor-pointer ${action.color || ''}`}
-                  disabled={action.disabled}
-                >
-                  <action.icon className="w-4 h-4 mr-2" />
-                  {action.label}
-                </DropdownMenuItem>
-              ))
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
     </div>
   );
@@ -527,6 +500,9 @@ export default function EvaluationsPage() {
   // Modal state — Évaluation
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // ⭐ IDs de toutes les évaluations du groupe en cours d'édition
+  // (pour suppression + recréation lors de la sauvegarde)
+  const [editingGroupIds, setEditingGroupIds] = useState<string[]>([]);
   const [form, setForm] = useState<EvaluationForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
@@ -663,27 +639,36 @@ export default function EvaluationsPage() {
     setIsModalOpen(true);
   };
 
-  const handleOpenEdit = (evaluation: Evaluation) => {
+  const handleOpenEdit = (group: GroupedEvaluation) => {
+    // Pré-remplir le formulaire avec les données du GROUP (toutes les matières)
+    const first = group.firstEvaluation;
+    // ⭐ Le frontend utilise le CODE (EM1) comme ID pour evaluationTypes
+    // (chargé depuis school_academic_settings.config.assessmentTypes).
+    // Mais le backend retourne l'UUID dans first.evaluationType.id.
+    // Pour que le <Select> affiche le bon type, on doit utiliser le code.
+    const evaluationTypeCode = first.evaluationType?.code || '';
     setForm({
-      title: evaluation.title || '',
-      description: evaluation.description || '',
-      classIds: evaluation.class?.id ? [evaluation.class.id] : [],
-      subjectIds: evaluation.subject?.id ? [evaluation.subject.id] : [],
-      periodId: evaluation.period?.id || '',
-      evaluationTypeId: evaluation.evaluationType?.id || '',
-      evaluationDate: evaluation.evaluationDate ? new Date(evaluation.evaluationDate).toISOString().slice(0, 10) : '',
-      startDate: (evaluation as any).startDate ? new Date((evaluation as any).startDate).toISOString().slice(0, 10) : '',
-      endDate: (evaluation as any).endDate ? new Date((evaluation as any).endDate).toISOString().slice(0, 10) : '',
-      maxScore: String(evaluation.maxScore || (isMaternelle ? 0 : 20)),
-      coefficient: String(evaluation.coefficient || (isMaternelle ? 0 : 1)),
+      title: first.title || '',
+      description: first.description || '',
+      classIds: first.class?.id ? [first.class.id] : [],
+      subjectIds: group.subjects.map((s) => s.id), // ⭐ Toutes les matières du groupe
+      periodId: first.period?.id || '',
+      evaluationTypeId: evaluationTypeCode, // ⭐ Utiliser le CODE, pas l'UUID
+      evaluationDate: first.evaluationDate ? new Date(first.evaluationDate).toISOString().slice(0, 10) : '',
+      startDate: (first as any).startDate ? new Date((first as any).startDate).toISOString().slice(0, 10) : '',
+      endDate: (first as any).endDate ? new Date((first as any).endDate).toISOString().slice(0, 10) : '',
+      maxScore: String(first.maxScore || (isMaternelle ? 0 : 20)),
+      coefficient: String(first.coefficient || (isMaternelle ? 0 : 1)),
     });
-    setEditingId(evaluation.id);
+    setEditingId(first.id);
+    setEditingGroupIds(group.evaluationIds); // ⭐ Tous les IDs du groupe
     setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEditingId(null);
+    setEditingGroupIds([]);
     setForm(EMPTY_FORM);
   };
 
@@ -714,13 +699,30 @@ export default function EvaluationsPage() {
       }
 
       if (editingId) {
-        // Édition : mettre à jour l'évaluation existante (1 classe + 1 matière)
-        await institutionalExamsService.updateEvaluation(editingId, {
+        // ⭐ Édition d'un GROUPE d'évaluations (1 classe × N matières).
+        // On supprime toutes les évaluations du groupe puis on recrée via bulk.
+        // Plus simple que de gérer un diff ajout/suppression par matière.
+        // editingGroupIds est setté dans handleOpenEdit.
+        if (editingGroupIds.length > 0) {
+          // 1. Supprimer toutes les évaluations du groupe
+          await Promise.all(
+            editingGroupIds.map((id) =>
+              institutionalExamsService.deleteEvaluation(id).catch((e) =>
+                console.warn(`Failed to delete eval ${id}:`, e),
+              ),
+            ),
+          );
+        }
+        // 2. Recréer via bulk create avec les nouvelles données
+        const bulkPayload = {
           ...basePayload,
-          classId: form.classIds[0],
-          subjectId: form.subjectIds[0],
+          classIds: form.classIds,
+          subjectIds: form.subjectIds,
+        };
+        const result = await institutionalExamsService.createBulkEvaluations(bulkPayload);
+        toast.success(`✅ ${result.created} évaluation(s) modifiée(s)`, {
+          description: `${form.classIds.length} classe(s) × ${form.subjectIds.length} matière(s)`,
         });
-        toast.success('✅ Évaluation modifiée');
       } else {
         // Création : utiliser bulk create pour générer 1 évaluation par combinaison
         const bulkPayload = {
@@ -758,54 +760,119 @@ export default function EvaluationsPage() {
     }
   };
 
-  const handleDelete = async (evaluation: Evaluation) => {
-    if (!confirm(`Supprimer l'évaluation "${evaluation.title || 'sans titre'}" ?`)) return;
+  const handleDelete = async (group: GroupedEvaluation) => {
+    // ⭐ Demander à l'utilisateur : toutes les matières ou une seule ?
+    const subjectCount = group.subjects.length;
+    const subjectNames = group.subjects.map((s) => s.name).join(', ');
+
+    if (subjectCount <= 1) {
+      // Une seule matière : confirmation simple
+      if (!confirm(`Supprimer l'évaluation "${group.firstEvaluation.title || 'sans titre'}" pour ${group.className} ?`)) return;
+      try {
+        await Promise.all(
+          group.evaluationIds.map((id) =>
+            institutionalExamsService.deleteEvaluation(id).catch((e) =>
+              console.warn(`Failed to delete eval ${id}:`, e),
+            ),
+          ),
+        );
+        toast.success('✅ Évaluation supprimée');
+        await loadData();
+      } catch (err: any) {
+        toast.error('Erreur lors de la suppression', { description: err.message });
+      }
+      return;
+    }
+
+    // Plusieurs matières : demander le scope de suppression
+    const choice = confirm(
+      `Supprimer ${subjectCount} évaluation(s) pour la classe ${group.className} ?\n\n` +
+      `Matières : ${subjectNames}\n\n` +
+      `• Cliquez OK pour supprimer TOUTES les ${subjectCount} matières\n` +
+      `• Cliquez Annuler pour ne rien supprimer`
+    );
+
+    if (!choice) return;
+
     try {
-      await institutionalExamsService.deleteEvaluation(evaluation.id);
-      toast.success('✅ Évaluation supprimée');
+      await Promise.all(
+        group.evaluationIds.map((id) =>
+          institutionalExamsService.deleteEvaluation(id).catch((e) =>
+            console.warn(`Failed to delete eval ${id}:`, e),
+          ),
+        ),
+      );
+      toast.success(`✅ ${subjectCount} évaluation(s) supprimée(s) pour ${group.className}`, {
+        description: `Matières : ${subjectNames}`,
+      });
       await loadData();
     } catch (err: any) {
       toast.error('Erreur lors de la suppression', { description: err.message });
     }
   };
 
-  const handleOpen = async (evaluation: Evaluation) => {
+  const handleOpen = async (group: GroupedEvaluation) => {
+    if (!confirm(`Ouvrir ${group.evaluationIds.length} évaluation(s) pour la saisie (${group.className} - ${group.subjects.length} matière(s)) ?`)) return;
     try {
-      await institutionalExamsService.openEvaluation(evaluation.id);
-      toast.success('✅ Évaluation ouverte pour la saisie');
+      await Promise.all(
+        group.evaluationIds.map((id) =>
+          institutionalExamsService.openEvaluation(id).catch((e) =>
+            console.warn(`Failed to open eval ${id}:`, e),
+          ),
+        ),
+      );
+      toast.success(`✅ ${group.evaluationIds.length} évaluation(s) ouverte(s) pour la saisie`);
       await loadData();
     } catch (err: any) {
       toast.error('Erreur', { description: err.message });
     }
   };
 
-  const handleSubmit = async (evaluation: Evaluation) => {
-    if (!confirm('Soumettre cette évaluation pour validation ?')) return;
+  const handleSubmit = async (group: GroupedEvaluation) => {
+    if (!confirm(`Soumettre ${group.evaluationIds.length} évaluation(s) pour validation (${group.className}) ?`)) return;
     try {
-      await institutionalExamsService.submitEvaluation(evaluation.id);
-      toast.success('✅ Évaluation soumise');
+      await Promise.all(
+        group.evaluationIds.map((id) =>
+          institutionalExamsService.submitEvaluation(id).catch((e) =>
+            console.warn(`Failed to submit eval ${id}:`, e),
+          ),
+        ),
+      );
+      toast.success(`✅ ${group.evaluationIds.length} évaluation(s) soumise(s)`);
       await loadData();
     } catch (err: any) {
       toast.error('Erreur', { description: err.message });
     }
   };
 
-  const handleValidate = async (evaluation: Evaluation) => {
-    if (!confirm('Valider définitivement cette évaluation ? Les notes seront verrouillées.')) return;
+  const handleValidate = async (group: GroupedEvaluation) => {
+    if (!confirm(`Valider définitivement ${group.evaluationIds.length} évaluation(s) (${group.className}) ? Les notes seront verrouillées.`)) return;
     try {
-      await institutionalExamsService.validateEvaluation(evaluation.id);
-      toast.success('✅ Évaluation validée');
+      await Promise.all(
+        group.evaluationIds.map((id) =>
+          institutionalExamsService.validateEvaluation(id).catch((e) =>
+            console.warn(`Failed to validate eval ${id}:`, e),
+          ),
+        ),
+      );
+      toast.success(`✅ ${group.evaluationIds.length} évaluation(s) validée(s)`);
       await loadData();
     } catch (err: any) {
       toast.error('Erreur', { description: err.message });
     }
   };
 
-  const handleCancel = async (evaluation: Evaluation) => {
-    const reason = prompt('Raison de l\'annulation (optionnel) :') || '';
+  const handleCancel = async (group: GroupedEvaluation) => {
+    const reason = prompt(`Raison de l'annulation (optionnel) pour ${group.subjects.length} matière(s) ?`) || '';
     try {
-      await institutionalExamsService.cancelEvaluation(evaluation.id, reason || undefined);
-      toast.success('✅ Évaluation annulée');
+      await Promise.all(
+        group.evaluationIds.map((id) =>
+          institutionalExamsService.cancelEvaluation(id, reason || undefined).catch((e) =>
+            console.warn(`Failed to cancel eval ${id}:`, e),
+          ),
+        ),
+      );
+      toast.success(`✅ ${group.evaluationIds.length} évaluation(s) annulée(s) pour ${group.className}`);
       await loadData();
     } catch (err: any) {
       toast.error('Erreur', { description: err.message });
@@ -897,33 +964,33 @@ export default function EvaluationsPage() {
   };
 
   // ─── Available actions based on status ───────────────────────────────────
-  const getAvailableActions = (evaluation: Evaluation) => {
+  const getAvailableActions = (group: GroupedEvaluation) => {
     const actions: Array<{ label: string; icon: any; onClick: () => void; color?: string; disabled?: boolean }> = [];
-    const status = evaluation.status;
+    const status = group.firstEvaluation.status;
 
     if (status === 'PLANNED' || status === 'DRAFT') {
-      actions.push({ label: 'Ouvrir pour saisie', icon: Play, onClick: () => handleOpen(evaluation), color: 'text-amber-600' });
+      actions.push({ label: 'Ouvrir pour saisie', icon: Play, onClick: () => handleOpen(group), color: 'text-amber-600 hover:bg-amber-50' });
     }
     if (status === 'OPEN_FOR_GRADING') {
-      actions.push({ label: 'Soumettre pour validation', icon: Send, onClick: () => handleSubmit(evaluation), color: 'text-purple-600' });
+      actions.push({ label: 'Soumettre pour validation', icon: Send, onClick: () => handleSubmit(group), color: 'text-purple-600 hover:bg-purple-50' });
     }
     if (status === 'SUBMITTED') {
-      actions.push({ label: 'Valider', icon: CheckCircle, onClick: () => handleValidate(evaluation), color: 'text-emerald-600' });
+      actions.push({ label: 'Valider', icon: CheckCircle, onClick: () => handleValidate(group), color: 'text-emerald-600 hover:bg-emerald-50' });
     }
 
     // Edit est possible tant que non validée/verrouillée/annulée
     if (!['VALIDATED', 'LOCKED', 'CANCELLED'].includes(status)) {
-      actions.push({ label: 'Modifier', icon: Pencil, onClick: () => handleOpenEdit(evaluation) });
+      actions.push({ label: 'Modifier', icon: Pencil, onClick: () => handleOpenEdit(group), color: 'text-blue-600 hover:bg-blue-50' });
     }
 
     // Annuler — possible tant que non validée/verrouillée
     if (!['VALIDATED', 'LOCKED', 'CANCELLED'].includes(status)) {
-      actions.push({ label: 'Annuler', icon: XCircle, onClick: () => handleCancel(evaluation), color: 'text-orange-600' });
+      actions.push({ label: 'Annuler', icon: XCircle, onClick: () => handleCancel(group), color: 'text-orange-600 hover:bg-orange-50' });
     }
 
     // Supprimer — possible seulement si pas validée/verrouillée
     if (!['VALIDATED', 'LOCKED'].includes(status)) {
-      actions.push({ label: 'Supprimer', icon: Trash2, onClick: () => handleDelete(evaluation), color: 'text-red-600' });
+      actions.push({ label: 'Supprimer', icon: Trash2, onClick: () => handleDelete(group), color: 'text-red-600 hover:bg-red-50' });
     }
 
     return actions;

@@ -158,6 +158,26 @@ interface AcademicSeries {
 // --- Tabs ---
 type SubTab = 'catalogue' | 'classes';
 
+// ⭐ Ordre pédagogique des classes (Maternelle → Primaire → Secondaire)
+const CLASS_ORDER = [
+  'MATERNELLE 1', 'MATERNELLE 2', 'MATERNELLE 3',
+  'PETITE SECTION', 'MOYENNE SECTION', 'GRANDE SECTION',
+  'PS', 'MS', 'GS',
+  'CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2',
+  '6E', '6ÈME', '5E', '5ÈME', '4E', '4ÈME', '3E', '3ÈME',
+  'SECONDE', '2NDE', 'PREMIERE', 'PREMIÈRE', 'TERMINALE',
+];
+
+function getClassOrderIndex(name: string): number {
+  const upper = (name || '').toUpperCase().trim();
+  const exact = CLASS_ORDER.indexOf(upper);
+  if (exact >= 0) return exact;
+  for (let i = 0; i < CLASS_ORDER.length; i++) {
+    if (upper.startsWith(CLASS_ORDER[i])) return i;
+  }
+  return CLASS_ORDER.length;
+}
+
 export default function SubjectsWorkspace() {
   const { academicYear, tenantId } = useModuleContext();
   const { user } = useAuth();

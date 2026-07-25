@@ -693,7 +693,7 @@ export default function SubjectsWorkspace() {
           }
 
           // Créer l'affectation class_subjects avec le coefficient
-          await pedagogyFetch(`/api/class-subjects`, { method: 'POST', body: {
+          await pedagogyFetch(`/api/pedagogy/class-subjects`, { method: 'POST', body: {
             classId: selected4e3eClassId,
             subjectId,
             coefficient,
@@ -740,7 +740,7 @@ export default function SubjectsWorkspace() {
             if (!subjectId) continue;
           }
 
-          await pedagogyFetch(`/api/class-subjects`, { method: 'POST', body: {
+          await pedagogyFetch(`/api/pedagogy/class-subjects`, { method: 'POST', body: {
             classId: selectedSecondCycleClassId,
             subjectId,
             coefficient,

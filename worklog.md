@@ -1564,3 +1564,65 @@ Stage Summary:
 - ✅ Références résiduelles nettoyées (page-names, sidebar, top-bar, menus, liens)
 - ✅ TypeScript : 0 erreur (uniquement erreur préexistante dans cms/useAutoSave.ts)
 - ⏳ En attente : redéploiement Vercel pour vérifier build OK
+
+---
+Task ID: fix-400-evaluation-2
+Agent: main
+Task: Diagnostic et correction erreur 400 création évaluation (deuxième investigation agent-browser)
+
+Work Log:
+- Connexion agent-browser au compte promoteur CSPEB :
+  * URL: https://academiahelm.com/login
+  * Email: salumerhel2036@gmail.com
+  * Mot de passe: CSPEB.fondé2021
+  * Redirect vers /app?tenant=cspeb-eveildafriqueeducation
+- Navigation: Examen → Primaire → Anglophone → Évaluations
+- Clic "Nouvelle évaluation" → modal ouvert
+- Sélection: Type=EM1, Classes=CP+CE1, Matière=Mathematics, Période=Trimestre 1
+- Clic "Créer" → toast erreur "Erreur lors de la sauvegarde Request failed with status code 400"
+- Installation intercepteur XHR (window.fetch ET XMLHttpRequest) pour capturer reqBody + respBody
+- Re-clic "Créer" → capture réseau :
+  * URL: POST https://api.academiahelm.com/api/institutional-exams/evaluations/bulk
+  * Status: 400
+  * reqBody: { title, periodId, evaluationTypeId: 'EM1', classIds: [2 UUIDs], subjectIds: [1 UUID], ... }
+  * respBody: PrismaClientValidationError !
+    "Argument subjectId is not valid"
+    "Did you mean classSubjectId?"
+    Le modèle `TeacherClassAssignment` ne possède PAS de champ `subjectId`
+
+CAUSE RACINE (CONFIRMÉE VIA CAPTURE RÉSEAU) :
+- Code fautif dans apps/api-server/src/modules/exams/services/evaluations.service.ts
+  (fonction createBulk, lignes ~216-224) :
+    const assignments = await this.prisma.teacherClassAssignment.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        classId: { in: data.classIds },
+        subjectId: { in: data.subjectIds },  // ← INVALIDE — champ inexistant
+      },
+      select: { classId: true, subjectId: true, teacherId: true },  // ← INVALIDE
+    });
+- Le modèle TeacherClassAssignment (schema.prisma ligne 7635) possède :
+    * id, tenantId, teacherId, classSubjectId (FK → ClassSubject), classId (classe physique)
+    * PAS de subjectId direct !
+- Prisma → PrismaClientValidationError → mappée en HTTP 400 par prisma-exception.filter.ts
+
+CORRECTION APPLIQUÉE :
+- Refactor de la résolution des enseignants en 2 étapes :
+  1. classSubject.findMany({ where: { classId: { in: classIds }, subjectId: { in: subjectIds } } })
+     → map `${classId}|${subjectId}` → classSubjectId
+  2. teacherClassAssignment.findMany({ where: { classSubjectId: { in: [...] } } })
+     → map classSubjectId → teacherId
+  3. Combine → map finale `${classId}|${subjectId}` → teacherId
+- Si aucun ClassSubject trouvé → teacherId = null (ne bloque PAS la création)
+
+DEPLOIEMENT :
+- Commit 3d8fad6f poussé sur GitHub main
+- Déploiement Vercel (web-app) automatique — OK
+- Déploiement Fly.io (api-server) — ⚠️ flyctl pas authentifié dans cet environnement
+  * Action requise utilisateur : exécuter `cd apps/api-server && flyctl auth login && flyctl deploy -a academia-helm-api`
+
+Stage Summary:
+- ✅ Source exacte de l'erreur 400 identifiée via capture réseau
+- ✅ Correctif appliqué au backend NestJS (evaluations.service.ts createBulk)
+- ⚠️ En attente : déploiement backend sur Fly.io (auth flyctl requise)

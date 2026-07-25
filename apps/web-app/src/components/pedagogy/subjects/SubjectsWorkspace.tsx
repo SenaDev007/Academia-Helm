@@ -1930,7 +1930,8 @@ export default function SubjectsWorkspace() {
           </div>}
 
           {/* ── Suggestions de matières par défaut (multi-sélection) ──────── */}
-          {modal === 'create-subject' && defaultSuggestionsForLevel.length > 0 && (
+          {/* Masqué pour 4e/3e/2nd cycle (les matières sont déjà listées avec coef ci-dessus) */}
+          {modal === 'create-subject' && defaultSuggestionsForLevel.length > 0 && !(is4e3e || isSecondCycle) && (
             <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50/60 to-slate-50 p-4 space-y-3">
               {/* En-tête */}
               <div className="flex items-center justify-between">

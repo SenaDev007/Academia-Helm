@@ -861,15 +861,26 @@ export default function EvaluationsPage() {
                 ))
               )}
             </div>
-            {form.classIds.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, classIds: [] })}
-                className="mt-1 text-xs text-gray-500 hover:text-red-600"
-              >
-                Tout désélectionner
-              </button>
-            )}
+            <div className="mt-1 flex items-center gap-3">
+              {classes.length > 0 && form.classIds.length < classes.length && (
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, classIds: classes.map(c => c.id) })}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
+                >
+                  Tout sélectionner
+                </button>
+              )}
+              {form.classIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, classIds: [] })}
+                  className="text-xs text-gray-500 hover:text-red-600"
+                >
+                  Tout désélectionner
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Matières — checkboxes multiples */}
@@ -908,15 +919,26 @@ export default function EvaluationsPage() {
                 ))
               )}
             </div>
-            {form.subjectIds.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, subjectIds: [] })}
-                className="mt-1 text-xs text-gray-500 hover:text-red-600"
-              >
-                Tout désélectionner
-              </button>
-            )}
+            <div className="mt-1 flex items-center gap-3">
+              {subjects.length > 0 && form.subjectIds.length < subjects.length && (
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, subjectIds: subjects.map(s => s.id) })}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
+                >
+                  Tout sélectionner
+                </button>
+              )}
+              {form.subjectIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, subjectIds: [] })}
+                  className="text-xs text-gray-500 hover:text-red-600"
+                >
+                  Tout désélectionner
+                </button>
+              )}
+            </div>
           </div>
         </div>
 

@@ -178,9 +178,16 @@ export class EvaluationsService {
     coefficient?: number;
     createdBy?: string;
   }) {
-    // Validation du type
-    const type = await this.prisma.evaluationType.findUnique({
-      where: { id: data.evaluationTypeId },
+    // Validation du type — chercher par id OU par code
+    // (le frontend peut envoyer un code comme "EM1" si le type vient de
+    // school_academic_settings.config.assessmentTypes qui n'a pas d'UUID)
+    let type = await this.prisma.evaluationType.findFirst({
+      where: {
+        OR: [
+          { id: data.evaluationTypeId },
+          { code: data.evaluationTypeId, tenantId },
+        ],
+      },
     });
     if (!type) throw new NotFoundException('Type d\'évaluation non trouvé');
 

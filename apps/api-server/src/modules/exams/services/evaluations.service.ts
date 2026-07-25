@@ -212,24 +212,66 @@ export class EvaluationsService {
     }
 
     // ⭐ Résoudre les enseignants assignés pour chaque (classe × matière)
-    // via TeacherClassAssignment
-    const assignments = await this.prisma.teacherClassAssignment.findMany({
+    //
+    // Le modèle TeacherClassAssignment ne possède PAS de `subjectId` direct.
+    // Il possède `classSubjectId` (FK vers ClassSubject) + `classId` (classe physique).
+    // Pour résoudre l'enseignant pour (classId × subjectId), il faut donc :
+    //   1. Trouver les ClassSubject dont `classId ∈ classIds` ET `subjectId ∈ subjectIds`
+    //   2. Pour chaque ClassSubject trouvé, chercher les TeacherClassAssignment
+    //      avec `classSubjectId` correspondant (et `classId` si défini).
+    //
+    // Cela génère une map `${classId}|${subjectId}` → teacherId.
+
+    // Étape 1 : récupérer les ClassSubject pour les (classe × matière) demandées
+    const classSubjects = await this.prisma.classSubject.findMany({
       where: {
         tenantId,
-        academicYearId,
         classId: { in: data.classIds },
         subjectId: { in: data.subjectIds },
       },
-      select: { classId: true, subjectId: true, teacherId: true },
+      select: {
+        id: true,
+        classId: true,
+        subjectId: true,
+      },
     });
 
-    // Construire une map : `${classId}|${subjectId}` → teacherId
-    const teacherMap = new Map<string, string>();
+    // Construire une map `${classId}|${subjectId}` → classSubjectId
+    const classSubjectMap = new Map<string, string>();
+    for (const cs of classSubjects) {
+      const key = `${cs.classId}|${cs.subjectId}`;
+      if (!classSubjectMap.has(key)) {
+        classSubjectMap.set(key, cs.id);
+      }
+    }
+
+    // Étape 2 : récupérer les TeacherClassAssignment pour ces classSubjectId
+    const classSubjectIds = Array.from(classSubjectMap.values());
+    const assignments = classSubjectIds.length > 0
+      ? await this.prisma.teacherClassAssignment.findMany({
+          where: {
+            tenantId,
+            academicYearId,
+            classSubjectId: { in: classSubjectIds },
+          },
+          select: { classSubjectId: true, teacherId: true },
+        })
+      : [];
+
+    // Construire une map inverse : classSubjectId → teacherId (premier trouvé)
+    const csToTeacher = new Map<string, string>();
     for (const a of assignments) {
-      const key = `${a.classId}|${a.subjectId}`;
-      // Si plusieurs enseignants pour la même combo, on prend le premier
-      if (!teacherMap.has(key)) {
-        teacherMap.set(key, a.teacherId);
+      if (!csToTeacher.has(a.classSubjectId)) {
+        csToTeacher.set(a.classSubjectId, a.teacherId);
+      }
+    }
+
+    // Construire la map finale `${classId}|${subjectId}` → teacherId
+    const teacherMap = new Map<string, string>();
+    for (const [key, csId] of classSubjectMap.entries()) {
+      const teacherId = csToTeacher.get(csId);
+      if (teacherId) {
+        teacherMap.set(key, teacherId);
       }
     }
 

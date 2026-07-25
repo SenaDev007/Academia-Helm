@@ -39,6 +39,8 @@ import {
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
+import apiClient from '@/lib/api/client';
+import { institutionalExamsService } from '@/services/institutional-exams.service';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules, useExamScope } from '../layout';
 import { format } from 'date-fns';
@@ -149,15 +151,12 @@ export default function GradesPage() {
     }
     setLoading(true);
     try {
-      const params = new URLSearchParams({
+      const params: any = {
         schoolLevelId: schoolLevelUuid,
         academicYearId: academicYear.id,
-      });
-      if (scopeLang) params.append('language', scopeLang);
-      const res = await fetch(
-        `/api/institutional-exams/evaluations?${params.toString()}`,
-        { credentials: 'include' }
-      ).then((r) => r.json());
+      };
+      if (scopeLang) params.language = scopeLang;
+      const res = await institutionalExamsService.getEvaluations(params);
       setEvaluations(Array.isArray(res) ? res : []);
     } catch (err) {
       console.error('Error loading evaluations', err);
@@ -478,39 +477,37 @@ function GradingSheet({
       }
       setLoading(true);
       try {
-        // Fetch la grading sheet pour chaque évaluation du groupe
+        // Fetch la grading sheet pour chaque évaluation du groupe via apiClient
         const sheets = await Promise.all(
           group.evaluationIds.map(async (evId) => {
-            const res = await fetch(
-              `/api/institutional-exams/grades/evaluation/${evId}`,
-              { credentials: 'include' }
-            );
-            if (!res.ok) return { evaluationId: evId, students: [] };
-            const data = await res.json();
-            return { evaluationId: evId, students: Array.isArray(data) ? data : [] };
+            try {
+              const response = await apiClient.get(`/institutional-exams/grades/evaluation/${evId}`);
+              return { evaluationId: evId, students: Array.isArray(response.data) ? response.data : [] };
+            } catch {
+              return { evaluationId: evId, students: [] };
+            }
           })
         );
 
         // Construire la map evaluationId → subjectId
-        // Pour chaque évaluation, on sait quelle matière elle évalue
         const evalToSubject = new Map<string, string>();
-        // On suppose que les évaluations sont ordonnées dans le même ordre que group.subjects
-        // → on prend la première matière de chaque évaluation
-        // (en réalité, chaque évaluation du groupe évalue UNE matière spécifique)
-        // Pour résoudre : on refetch les évaluations avec leur subject
-        const evalsRes = await fetch(
-          `/api/institutional-exams/evaluations?academicYearId=${academicYear?.id || ''}&schoolLevelId=${group.classId}`,
-          { credentials: 'include' }
-        ).then((r) => r.json()).catch(() => []);
-
-        const evalsWithSubject = (Array.isArray(evalsRes) ? evalsRes : []).filter(
-          (ev: Evaluation) => group.evaluationIds.includes(ev.id)
-        );
-        evalsWithSubject.forEach((ev: Evaluation) => {
-          if (ev.subject?.id) {
-            evalToSubject.set(ev.id, ev.subject.id);
-          }
-        });
+        // Refetch les évaluations avec leur subject via institutionalExamsService
+        try {
+          const evalsRes = await institutionalExamsService.getEvaluations({
+            academicYearId: academicYear?.id || '',
+            schoolLevelId: group.classId,
+          });
+          const evalsWithSubject = (Array.isArray(evalsRes) ? evalsRes : []).filter(
+            (ev: Evaluation) => group.evaluationIds.includes(ev.id)
+          );
+          evalsWithSubject.forEach((ev: Evaluation) => {
+            if (ev.subject?.id) {
+              evalToSubject.set(ev.id, ev.subject.id);
+            }
+          });
+        } catch (err) {
+          console.warn('Failed to fetch evaluations for subject mapping', err);
+        }
 
         // Fallback : si on n'arrive pas à résoudre, on associe par ordre
         if (evalToSubject.size === 0 && group.subjects.length === group.evaluationIds.length) {
@@ -617,18 +614,24 @@ function GradingSheet({
   const handleSave = async (submit = false) => {
     setSaving(true);
     try {
+      // Refetch les évaluations pour résoudre evaluationId → subjectId
+      let evalsWithSubject: Evaluation[] = [];
+      try {
+        const evalsRes = await institutionalExamsService.getEvaluations({
+          academicYearId: academicYear?.id || '',
+          schoolLevelId: group.classId,
+        });
+        evalsWithSubject = (Array.isArray(evalsRes) ? evalsRes : []).filter(
+          (e: Evaluation) => group.evaluationIds.includes(e.id)
+        );
+      } catch (err) {
+        console.warn('Failed to fetch evaluations for save', err);
+      }
+
       // Sauvegarder chaque évaluation du groupe séparément
       await Promise.all(
         group.evaluationIds.map(async (evId) => {
-          // Pour cette évaluation, on a besoin de récupérer le subjectId correspondant
-          // et de n'envoyer que les grades des élèves pour ce sujet
-          const evalsWithSubject = await fetch(
-            `/api/institutional-exams/evaluations?academicYearId=${academicYear?.id || ''}&schoolLevelId=${group.classId}`,
-            { credentials: 'include' }
-          ).then((r) => r.json()).catch(() => []);
-          const ev = (Array.isArray(evalsWithSubject) ? evalsWithSubject : []).find(
-            (e: Evaluation) => e.id === evId
-          );
+          const ev = evalsWithSubject.find((e) => e.id === evId);
           const subjectId = ev?.subject?.id;
           if (!subjectId) return;
 
@@ -645,12 +648,10 @@ function GradingSheet({
               status: submit ? 'SUBMITTED' : 'DRAFT',
             }));
 
-          await fetch(`/api/institutional-exams/grades/evaluation/${evId}/bulk`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(gradesForEval),
-          });
+          await apiClient.post(
+            `/institutional-exams/grades/evaluation/${evId}/bulk`,
+            gradesForEval,
+          );
         })
       );
 

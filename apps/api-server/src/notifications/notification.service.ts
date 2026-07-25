@@ -329,4 +329,163 @@ export class NotificationService {
       return [];
     }
   }
+
+  /**
+   * ═══ Notifie les enseignants qu'une évaluation a été programmée ═══
+   *
+   * Cas d'usage : après `EvaluationsService.createBulk()`, on prévient chaque
+   * enseignant assigné qu'une évaluation a été planifiée pour sa classe × matière.
+   *
+   * Résolution des destinataires :
+   *   1. Pour chaque (teacherId) impliqué, on cherche un User avec email matching
+   *      (Teacher.email = User.email, tenantId identique).
+   *   2. Si pas de Teacher associé à la combo (classe × matière), aucune notif.
+   *
+   * Fire-and-forget — ne lève jamais d'erreur bloquante.
+   */
+  async notifyTeachersEvaluationScheduled(params: {
+    tenantId: string;
+    academicYearId: string;
+    evaluations: Array<{
+      id: string;
+      title: string | null;
+      evaluationDate: Date;
+      className: string;
+      subjectName: string;
+      teacherId: string | null;
+      evaluationTypeName?: string;
+    }>;
+  }) {
+    try {
+      // 1. Collecter les teacherIds uniques
+      const teacherIds = Array.from(
+        new Set(params.evaluations.map((e) => e.teacherId).filter(Boolean) as string[]),
+      );
+
+      if (teacherIds.length === 0) {
+        this.logger.log(
+          `notifyTeachersEvaluationScheduled: aucun enseignant assigné — aucune notification envoyée`,
+        );
+        return;
+      }
+
+      // 2. Résoudre les Teacher.email → User.id
+      const teachers = await this.prisma.teacher.findMany({
+        where: { id: { in: teacherIds }, tenantId: params.tenantId },
+        select: { id: true, email: true, firstName: true, lastName: true },
+      });
+
+      const teacherEmails = teachers
+        .map((t) => t.email)
+        .filter((e): e is string => !!e);
+
+      const users = teacherEmails.length
+        ? await this.prisma.user.findMany({
+            where: { email: { in: teacherEmails }, tenantId: params.tenantId },
+            select: { id: true, email: true },
+          })
+        : [];
+
+      const emailToUserId = new Map<string, string>();
+      for (const u of users) {
+        emailToUserId.set(u.email, u.id);
+      }
+      const teacherIdToUserId = new Map<string, string>();
+      for (const t of teachers) {
+        if (t.email && emailToUserId.has(t.email)) {
+          teacherIdToUserId.set(t.id, emailToUserId.get(t.email)!);
+        }
+      }
+
+      // 3. Grouper les évaluations par enseignant destinataire
+      // Pour chaque enseignant, on génère UNE notification résumée plutôt
+      // qu'une par évaluation (évite le spam).
+      const byTeacher = new Map<string, typeof params.evaluations>();
+      for (const ev of params.evaluations) {
+        if (!ev.teacherId) continue;
+        const userId = teacherIdToUserId.get(ev.teacherId);
+        if (!userId) continue;
+        if (!byTeacher.has(userId)) byTeacher.set(userId, []);
+        byTeacher.get(userId)!.push(ev);
+      }
+
+      if (byTeacher.size === 0) {
+        this.logger.warn(
+          `notifyTeachersEvaluationScheduled: aucun User trouvé pour ${teacherIds.length} enseignant(s)`,
+        );
+        return;
+      }
+
+      // 4. Créer une notification par enseignant
+      const teacherName = (id: string) => {
+        const t = teachers.find((t) => t.id === id);
+        return t ? `${t.firstName} ${t.lastName}` : 'Enseignant';
+      };
+
+      const notifications = await Promise.all(
+        Array.from(byTeacher.entries()).map(([userId, evals]) => {
+          const count = evals.length;
+          const first = evals[0];
+          const dateStr = first.evaluationDate.toLocaleDateString('fr-FR', {
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric',
+          });
+
+          const title =
+            count === 1
+              ? `Nouvelle évaluation programmée — ${first.subjectName}`
+              : `${count} évaluations programmées`;
+
+          const classesList = Array.from(
+            new Set(evals.map((e) => e.className)),
+          ).slice(0, 5);
+          const subjectsList = Array.from(
+            new Set(evals.map((e) => e.subjectName)),
+          ).slice(0, 5);
+
+          const body =
+            count === 1
+              ? `Classe ${first.className} • ${first.evaluationTypeName || 'Évaluation'} • ${dateStr}`
+              : `Classes : ${classesList.join(', ')} • Matières : ${subjectsList.join(', ')} • À partir du ${dateStr}`;
+
+          return this
+            .create({
+              tenantId: params.tenantId,
+              recipientId: userId,
+              type: 'EVALUATION_SCHEDULED',
+              title,
+              body,
+              priority: 'HIGH',
+              data: {
+                url: '/app/exams/evaluations',
+                evaluationIds: evals.map((e) => e.id),
+                count,
+                classes: classesList,
+                subjects: subjectsList,
+                date: first.evaluationDate.toISOString(),
+              },
+              relatedEntityType: 'Evaluation',
+              relatedEntityId: first.id,
+            })
+            .catch((e) => {
+              this.logger.error(
+                `notifyTeachersEvaluationScheduled: create notif failed for user ${userId}: ${e.message}`,
+              );
+              return null;
+            });
+        }),
+      );
+
+      const created = notifications.filter(Boolean);
+      this.logger.log(
+        `notifyTeachersEvaluationScheduled: ${created.length} notification(s) créée(s) pour ${byTeacher.size} enseignant(s)`,
+      );
+    } catch (err: any) {
+      this.logger.error(
+        `notifyTeachersEvaluationScheduled failed: ${err.message}`,
+        err.stack,
+      );
+    }
+  }
 }

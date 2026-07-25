@@ -30,9 +30,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/ui/table';
-import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
@@ -174,6 +171,244 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
 function StatusBadge({ status }: { status: string }) {
   const cfg = STATUS_CONFIG[status] || { label: status, className: 'bg-gray-100 text-gray-700' };
   return <Badge variant="outline" className={cfg.className}>{cfg.label}</Badge>;
+}
+
+// ─── Composant : Cartes groupées par classe ──────────────────────────────────
+
+interface EvaluationAction {
+  label: string;
+  icon: any;
+  onClick: () => void;
+  color?: string;
+  disabled?: boolean;
+}
+
+/**
+ * Affiche les évaluations sous forme de cartes groupées par classe.
+ *
+ * Structure :
+ *   ┌─ Carte "Classe CE1" ──────────────────────────────┐
+ *   │  En-tête : nom classe + nb évaluations programmées │
+ *   │  ┌─ Sous-carte évaluation ─────────────────────┐  │
+ *   │  │  Titre / Type / Date début → fin / Statut   │  │
+ *   │  │  Matière • Barème/Coef • Nb notes           │  │
+ *   │  │  Boutons d'action (icônes)                  │  │
+ *   │  └─────────────────────────────────────────────┘  │
+ *   └────────────────────────────────────────────────────┘
+ *
+ * Si plusieurs évaluations pour la même classe → toutes affichées
+ * dans la même carte, en stack vertical.
+ */
+function EvaluationCardsByClass({
+  evaluations,
+  getAvailableActions,
+  onOpenEdit,
+}: {
+  evaluations: Evaluation[];
+  getAvailableActions: (ev: Evaluation) => EvaluationAction[];
+  onOpenEdit: (ev: Evaluation) => void;
+}) {
+  // Grouper par classe (id), puis trier par ordre pédagogique
+  const grouped = useMemo(() => {
+    const map = new Map<string, { classInfo: { id: string; name: string } | null; evals: Evaluation[] }>();
+    for (const ev of evaluations) {
+      const key = ev.class?.id || '_no_class';
+      if (!map.has(key)) {
+        map.set(key, {
+          classInfo: ev.class ? { id: ev.class.id, name: ev.class.name } : null,
+          evals: [],
+        });
+      }
+      map.get(key)!.evals.push(ev);
+    }
+    // Trier les classes par ordre pédagogique
+    return Array.from(map.values()).sort((a, b) => {
+      const nameA = a.classInfo?.name || 'ZZZ';
+      const nameB = b.classInfo?.name || 'ZZZ';
+      return getClassOrderIndex(nameA) - getClassOrderIndex(nameB);
+    });
+  }, [evaluations]);
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+      {grouped.map((group, idx) => {
+        const className = group.classInfo?.name || 'Sans classe';
+        const count = group.evals.length;
+        // Statut agrégé : si toutes les éval sont "VALIDATED" → "Validée", etc.
+        const allValidated = group.evals.every(e => e.status === 'VALIDATED' || e.status === 'LOCKED');
+        const anyCancelled = group.evals.some(e => e.status === 'CANCELLED');
+        const allPlanned = group.evals.every(e => e.status === 'PLANNED');
+        const headerStatus = allValidated
+          ? 'Complétée'
+          : anyCancelled
+          ? 'Partiellement annulée'
+          : allPlanned
+          ? 'En attente'
+          : 'En cours';
+
+        return (
+          <div
+            key={group.classInfo?.id || `group-${idx}`}
+            className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col"
+          >
+            {/* En-tête de la carte (classe) */}
+            <div className="px-5 py-4 bg-gradient-to-br from-blue-50 to-indigo-50/50 border-b border-blue-100">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center space-x-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+                    {(className || '?').slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-base font-bold text-navy-900 truncate">{className}</h3>
+                    <p className="text-xs text-gray-500">
+                      {count} évaluation{count > 1 ? 's' : ''} programmée{count > 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </div>
+                <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap ${
+                  allValidated ? 'bg-emerald-100 text-emerald-700'
+                  : anyCancelled ? 'bg-red-100 text-red-700'
+                  : allPlanned ? 'bg-blue-100 text-blue-700'
+                  : 'bg-amber-100 text-amber-700'
+                }`}>
+                  {headerStatus}
+                </span>
+              </div>
+            </div>
+
+            {/* Corps : liste des évaluations de cette classe */}
+            <div className="p-4 space-y-3 flex-1">
+              {group.evals.map((ev) => (
+                <EvaluationCardItem
+                  key={ev.id}
+                  evaluation={ev}
+                  actions={getAvailableActions(ev)}
+                  onOpenEdit={() => onOpenEdit(ev)}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Sous-carte : une évaluation individuelle.
+ * Affiche : matière, type, date début → fin, statut, barème/coef, nb notes,
+ * et les boutons d'action disponibles selon le statut.
+ */
+function EvaluationCardItem({
+  evaluation,
+  actions,
+  onOpenEdit,
+}: {
+  evaluation: Evaluation;
+  actions: EvaluationAction[];
+  onOpenEdit: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  // Pour le rendu des dates
+  const evDate = new Date(evaluation.evaluationDate);
+  const dateLabel = format(evDate, 'dd MMM yyyy', { locale: fr });
+  const timeLabel = format(evDate, 'HH:mm', { locale: fr });
+
+  return (
+    <div className="bg-gray-50/50 border border-gray-200 rounded-xl p-4 hover:border-blue-300 hover:bg-blue-50/30 transition-colors group">
+      {/* Titre + statut */}
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-navy-900 truncate">
+            {evaluation.subject?.name || '—'}
+          </p>
+          {evaluation.evaluationType && (
+            <p className="text-xs text-gray-500 mt-0.5">
+              {evaluation.evaluationType.code ? `[${evaluation.evaluationType.code}] ` : ''}
+              {evaluation.evaluationType.name}
+            </p>
+          )}
+        </div>
+        <StatusBadge status={evaluation.status} />
+      </div>
+
+      {/* Titre de l'évaluation (si défini) */}
+      {evaluation.title && (
+        <p className="text-xs text-gray-700 italic mb-2 line-clamp-2">
+          « {evaluation.title} »
+        </p>
+      )}
+
+      {/* Date + barème + coef */}
+      <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 mb-3">
+        <div className="flex items-center space-x-1.5">
+          <Calendar className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+          <span className="font-medium">{dateLabel}</span>
+          <span className="text-gray-400">•</span>
+          <span className="text-gray-500">{timeLabel}</span>
+        </div>
+        <div className="flex items-center justify-end space-x-2 text-gray-500">
+          <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-semibold">/{evaluation.maxScore}</span>
+          <span className="px-1.5 py-0.5 bg-gray-200 text-gray-700 rounded">coef {evaluation.coefficient}</span>
+        </div>
+      </div>
+
+      {/* Notes count + actions */}
+      <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+        <span className="text-xs text-gray-500">
+          {evaluation._count?.grades
+            ? `${evaluation._count.grades} note${evaluation._count.grades > 1 ? 's' : ''} saisie${evaluation._count.grades > 1 ? 's' : ''}`
+            : 'Aucune note'}
+        </span>
+        <div className="flex items-center space-x-1">
+          {/* Bouton Voir / Modifier — accès direct */}
+          {!['VALIDATED', 'LOCKED', 'CANCELLED'].includes(evaluation.status) && (
+            <button
+              onClick={onOpenEdit}
+              className="p-1.5 rounded-md text-gray-500 hover:text-blue-700 hover:bg-blue-50 transition-colors"
+              title="Modifier"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {/* Menu déroulant avec toutes les actions */}
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="p-1.5 rounded-md text-gray-500 hover:bg-gray-100 transition-colors"
+                title="Plus d'actions"
+              >
+                <MoreVertical className="w-3.5 h-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {actions.length === 0 ? (
+                <DropdownMenuItem disabled className="text-gray-400">
+                  Aucune action disponible
+                </DropdownMenuItem>
+              ) : (
+                actions.map((action, idx) => (
+                  <DropdownMenuItem
+                    key={idx}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      action.onClick();
+                    }}
+                    className={`cursor-pointer ${action.color || ''}`}
+                    disabled={action.disabled}
+                  >
+                    <action.icon className="w-4 h-4 mr-2" />
+                    {action.label}
+                  </DropdownMenuItem>
+                ))
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── Page Principale ────────────────────────────────────────────────────────
@@ -415,9 +650,25 @@ export default function EvaluationsPage() {
           subjectIds: form.subjectIds,
         };
         const result = await institutionalExamsService.createBulkEvaluations(bulkPayload);
-        toast.success(`✅ ${result.created} évaluation(s) créée(s)`, {
-          description: result.message,
-        });
+        // ⭐ Toast détaillé : "X matières programmées pour Y classes(s) — Z enseignant(s) notifié(s)"
+        const classNames = form.classIds
+          .map((cid) => classes.find((c) => c.id === cid)?.name)
+          .filter(Boolean);
+        const subjectNames = form.subjectIds
+          .map((sid) => subjects.find((s) => s.id === sid)?.name)
+          .filter(Boolean);
+        const teachersNotified = (result as any)?.teachersAssigned || 0;
+
+        toast.success(
+          `✅ ${result.created} évaluation(s) programmée(s)`,
+          {
+            description:
+              `${classNames.length} classe${classNames.length > 1 ? 's' : ''} (${classNames.join(', ')}) • ` +
+              `${subjectNames.length} matière${subjectNames.length > 1 ? 's' : ''} (${subjectNames.join(', ')})` +
+              (teachersNotified > 0 ? ` • ${teachersNotified} enseignant${teachersNotified > 1 ? 's' : ''} notifié${teachersNotified > 1 ? 's' : ''}` : ''),
+            duration: 6000,
+          },
+        );
       }
       handleCloseModal();
       await loadData();
@@ -654,98 +905,29 @@ export default function EvaluationsPage() {
               </div>
             </div>
 
-            {/* Tableau des évaluations */}
-            <Card className="border-none shadow-sm">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50/50">
-                    <TableHead>Titre</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Classe</TableHead>
-                    <TableHead>Matière</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Barème</TableHead>
-                    <TableHead>Statut</TableHead>
-                    <TableHead>Notes</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    <TableRow>
-                      <TableCell colSpan={9} className="text-center py-10">
-                        <Loader2 className="w-6 h-6 animate-spin text-blue-500 mx-auto" />
-                      </TableCell>
-                    </TableRow>
-                  ) : filteredEvaluations.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={9} className="text-center py-10 text-gray-500">
-                        {searchQuery || statusFilter !== 'ALL'
-                          ? 'Aucune évaluation ne correspond aux filtres.'
-                          : 'Aucune évaluation. Cliquez sur "Nouvelle évaluation" pour commencer.'}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredEvaluations.map((ev) => (
-                      <TableRow key={ev.id} className="hover:bg-gray-50/50 transition-colors">
-                        <TableCell className="font-medium">
-                          {ev.title || <span className="text-gray-400 italic">Sans titre</span>}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-100">
-                            {ev.evaluationType?.name || '—'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{ev.class?.name || '—'}</TableCell>
-                        <TableCell>{ev.subject?.name || '—'}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center text-gray-600">
-                            <Calendar className="w-3 h-3 mr-1" />
-                            {format(new Date(ev.evaluationDate), 'dd MMM yyyy', { locale: fr })}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm">
-                            /{ev.maxScore} <span className="text-gray-400">(coef {ev.coefficient})</span>
-                          </span>
-                        </TableCell>
-                        <TableCell><StatusBadge status={ev.status} /></TableCell>
-                        <TableCell>
-                          <span className="text-sm font-medium">{ev._count?.grades ?? 0}</span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreVertical className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48">
-                              {getAvailableActions(ev).map((action, idx) => (
-                                <DropdownMenuItem
-                                  key={idx}
-                                  onClick={action.onClick}
-                                  className={`cursor-pointer ${action.color || ''}`}
-                                  disabled={action.disabled}
-                                >
-                                  <action.icon className="w-4 h-4 mr-2" />
-                                  {action.label}
-                                </DropdownMenuItem>
-                              ))}
-                              {getAvailableActions(ev).length === 0 && (
-                                <DropdownMenuItem disabled className="text-gray-400">
-                                  Aucune action disponible
-                                </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </Card>
+            {/* ⭐ Vue en cartes groupées par classe (programmation des évaluations) */}
+            {loading ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+                <span className="ml-3 text-sm text-gray-500">Chargement des évaluations…</span>
+              </div>
+            ) : filteredEvaluations.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
+                <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-600 font-medium mb-1">Aucune évaluation programmée</p>
+                <p className="text-sm text-gray-400">
+                  {searchQuery || statusFilter !== 'ALL'
+                    ? 'Aucune évaluation ne correspond aux filtres.'
+                    : 'Cliquez sur "Nouvelle évaluation" pour planifier la première.'}
+                </p>
+              </div>
+            ) : (
+              <EvaluationCardsByClass
+                evaluations={filteredEvaluations}
+                getAvailableActions={getAvailableActions}
+                onOpenEdit={handleOpenEdit}
+              />
+            )}
           </div>
         )
       }}

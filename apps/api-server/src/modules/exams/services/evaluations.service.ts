@@ -25,10 +25,14 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
+import { NotificationService } from '../../../notifications/notification.service';
 
 @Injectable()
 export class EvaluationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationService: NotificationService,
+  ) {}
 
   /**
    * Liste les évaluations filtrées
@@ -324,6 +328,49 @@ export class EvaluationsService {
         this.prisma.evaluation.create({ data: evalData })
       )
     );
+
+    // ⭐ Notifier les enseignants qu'une évaluation a été programmée pour eux.
+    // Fire-and-forget — ne bloque jamais la réponse au client.
+    if (teacherMap.size > 0) {
+      // Récupérer les noms de classe/matière/type pour les notifications
+      const [classes, subjects, evalType] = await Promise.all([
+        this.prisma.class.findMany({
+          where: { id: { in: data.classIds } },
+          select: { id: true, name: true },
+        }),
+        this.prisma.subject.findMany({
+          where: { id: { in: data.subjectIds } },
+          select: { id: true, name: true },
+        }),
+        Promise.resolve(type),
+      ]);
+
+      const classNameById = new Map(classes.map((c) => [c.id, c.name]));
+      const subjectNameById = new Map(subjects.map((s) => [s.id, s.name]));
+
+      const evaluationNotifs = result.map((ev) => ({
+        id: ev.id,
+        title: ev.title,
+        evaluationDate: ev.evaluationDate,
+        className: classNameById.get(ev.classId) || '—',
+        subjectName: subjectNameById.get(ev.subjectId) || '—',
+        teacherId: ev.teacherId,
+        evaluationTypeName: evalType?.name,
+      }));
+
+      void this.notificationService
+        .notifyTeachersEvaluationScheduled({
+          tenantId,
+          academicYearId,
+          evaluations: evaluationNotifs,
+        })
+        .catch((err) =>
+          console.error(
+            '[EvaluationsService.createBulk] notification failed:',
+            err,
+          ),
+        );
+    }
 
     return {
       created: result.length,

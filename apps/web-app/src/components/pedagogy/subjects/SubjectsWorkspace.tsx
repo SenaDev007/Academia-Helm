@@ -1398,6 +1398,121 @@ export default function SubjectsWorkspace() {
                   </tbody>
                 </table>
               </div>
+
+            {/* ⭐ 2e tableau : Affectation par classe (matières à coefficient variable)
+                Affiche les matières configurées pour 4e, 3e, 2nd cycle avec leur coefficient.
+                Ce tableau est alimenté par class_subjects (pas par subjects). */}
+            {(() => {
+              // Collecter toutes les classes qui ont des class_subjects
+              const classesWithSubjects = classes
+                .filter(c => {
+                  const links = classSubjectsMap[c.id] || [];
+                  return links.length > 0;
+                })
+                .sort((a, b) => {
+                  const idxA = getClassOrderIndex(a.name || a.code || '');
+                  const idxB = getClassOrderIndex(b.name || b.code || '');
+                  return idxA - idxB;
+                });
+
+              if (classesWithSubjects.length === 0) return null;
+
+              return (
+                <div className="mt-6">
+                  <div className="flex items-center gap-2 mb-3">
+                    <ClipboardList className="w-5 h-5 text-indigo-600" />
+                    <h3 className="text-base font-bold text-slate-900">
+                      {currentTrack === 'EN' ? 'Subject Assignments by Class' : 'Affectation des matières par classe'}
+                    </h3>
+                    <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                      {classesWithSubjects.length} classe(s)
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mb-3">
+                    {currentTrack === 'EN'
+                      ? 'Subjects with specific coefficients per class (4e, 3e, 2nd cycle). The main table above shows general subjects (coef=1).'
+                      : 'Matières à coefficient variable par classe (4e, 3e, 2nd cycle). Le tableau principal ci-dessus montre les matières générales (coef=1).'}
+                  </p>
+
+                  {classesWithSubjects.map(cls => {
+                    const links = classSubjectsMap[cls.id] || [];
+                    const isSecondCycleClass = (() => {
+                      const name = (cls.name || '').toUpperCase();
+                      return name.includes('SECONDE') || name.includes('2NDE') ||
+                             name.includes('PREMIERE') || name.includes('TERMINALE');
+                    })();
+                    const cycleLabel = (() => {
+                      const name = (cls.name || '').toUpperCase();
+                      if (name.includes('4E') || name.includes('4ÈME')) return '1er cycle';
+                      if (name.includes('3E') || name.includes('3ÈME')) return '1er cycle';
+                      if (isSecondCycleClass) return '2nd cycle';
+                      return '';
+                    })();
+
+                    return (
+                      <div key={cls.id} className="mb-4 rounded-xl border border-slate-200 overflow-hidden">
+                        {/* En-tête de classe */}
+                        <div className="bg-indigo-50 border-b border-indigo-100 px-4 py-2 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm text-indigo-900">{cls.name}</span>
+                            {cls.series?.name && (
+                              <span className="text-xs text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded">
+                                {cls.series.name}
+                              </span>
+                            )}
+                            {cycleLabel && (
+                              <span className="text-[10px] font-bold text-slate-500 uppercase">
+                                {cycleLabel}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs font-semibold text-indigo-600">
+                            {links.length} matière(s)
+                          </span>
+                        </div>
+                        {/* Liste des matières avec coefficients */}
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-slate-100 bg-slate-50/50 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                                <th className="px-4 py-2">Matière</th>
+                                <th className="px-4 py-2 w-24 text-center">Coefficient</th>
+                                <th className="px-4 py-2 w-24 text-center">Volume Hebdo</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {links.map((link: any) => (
+                                <tr key={link.id} className="hover:bg-slate-50/50">
+                                  <td className="px-4 py-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium text-slate-700">
+                                        {link.subject?.name || '—'}
+                                      </span>
+                                      {link.subject?.code && (
+                                        <span className="text-[10px] text-slate-400">({link.subject.code})</span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-2 text-center">
+                                    <span className="inline-flex items-center justify-center w-8 h-6 rounded-md bg-indigo-100 text-indigo-700 text-xs font-bold">
+                                      {link.coefficient || 1}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-2 text-center text-slate-600">
+                                    {link.weeklyHours ? `${link.weeklyHours}h` : '—'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
             </div>
           )}
 

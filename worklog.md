@@ -1757,3 +1757,101 @@ Stage Summary:
 - ✅ Menu déroulant non-transparent (overflow-visible + z-[100])
 - ✅ Fix backend startDate/endDate
 - ⏳ Déploiement Fly.io backend requis pour activer le fix dates
+
+---
+Task ID: evaluations-v3-emojis-confirm-language
+Agent: main
+Task: Emojis → icônes Lucide + Modal confirmation moderne + Fix language classes dynamique
+
+Work Log:
+
+1. Emojis → icônes Lucide (pas d'emojis dans les toasts)
+   - Créé lib/toast/toast-helpers.ts avec toastSuccess/Error/Warning/Info
+   - Chaque helper injecte automatiquement une icône Lucide dans le toast sonner :
+     * toastSuccess → CheckCircle2 (vert)
+     * toastError → XCircle (rouge)
+     * toastWarning → AlertTriangle (orange)
+     * toastInfo → Info (bleu)
+   - Tous les appels toast.success('✅ ...') → toastSuccess('...') dans:
+     * apps/web-app/src/app/app/exams/evaluations/page.tsx
+     * apps/web-app/src/app/app/exams/settings/page.tsx
+   - Retiré tous les emojis ✅/❌/📌/💡/🔒/✏️/✓ dans:
+     * evaluations/page.tsx (aide et types)
+     * settings/page.tsx (statut et aide niveau)
+     * bulletins/page.tsx (mode bulletins)
+     * analytics/page.tsx (objectif atteint)
+
+2. Modal de confirmation personnalisé (remplace window.confirm/prompt)
+   - Utilisation de useConfirmDialog() déjà existant dans components/ui/confirm-dialog.tsx
+   - Ajout du {confirmDialog} dans le rendu JSX de la page Évaluations
+   - handleDelete: danger() avec titre + description + details + bouton destructif
+     * 1 matière: "Supprimer l'évaluation X pour Y ?"
+     * N matières: "Suppression multiple" + liste matières + avertissement irréversible
+   - handleOpen/handleSubmit/handleValidate: warning() avec contexte
+   - handleCancel: warning() (remplacé prompt() par défaut 'Annulation batch')
+   - handleDeleteType: danger() avec message clair
+   - Modal moderne avec icônes contextuelles, animations, boutons colorés
+
+3. Fix automatique language classes (FR/EN) — dynamique
+   Backend (evaluations.service.ts findAll):
+   - Filtre language dynamique:
+     OR: [{ academicTrack: { code: lang } }, { language: lang }]
+   - Permet aux classes avec academicTrack.code=EN d'apparaître en piste EN
+     même si class.language est null/FR
+   - Solution générique qui marche pour toutes les écoles (pas de migration SQL)
+
+   Frontend (evaluations/page.tsx):
+   - Filtre classes côté client:
+     * Accepte si class.language === scopeLang
+     * OU si academicTrack.code === scopeLang
+     * OU si aucun des deux n'est défini (compat ascendante)
+   - Filtre matières: même logique (s.language OR s.academicTrack.code)
+
+4. Correction duplication bouton Modifier
+   - Supprimé le bouton 'Modifier' séparé (accès direct en bas de carte)
+   - Supprimé le menu déroulant 'Plus d'actions'
+   - Toutes les actions maintenant alignées en bas de carte (icônes seules)
+   - 4 boutons: Ouvrir pour saisie | Modifier | Annuler | Supprimer
+   - Chaque bouton a un title/aria-label pour accessibilité
+   - Couleurs par action: amber (ouvrir), blue (modifier), orange (annuler), red (supprimer)
+
+5. Fix édition groupe: pré-remplir toutes les matières du groupe
+   - handleOpenEdit(group) au lieu de handleOpenEdit(evaluation)
+   - subjectIds = group.subjects.map(s => s.id) (toutes les matières)
+   - editingGroupIds state pour suppression+recréation lors du save
+   - handleSave: si editingId → supprime tous les IDs du groupe, puis bulk create
+
+6. Fix SelectValue n'affichait pas le type/période en édition
+   - Cause: le composant Select local construit labelMap dans useEffect de
+     SelectItem, mais SelectContent n'est monté qu'à l'ouverture du dropdown
+     → labelMap vide au premier rendu → placeholder affiché
+   - Correction: passer explicitement les libellés via children de SelectValue
+     * Type: '[EM1] Évaluation mensuelle 1' (calculé depuis form.evaluationTypeId)
+     * Période: 'Trimestre 1 (active)' (calculé depuis form.periodId)
+
+7. Investigation bug "erreur de chargement" onglet Espace Pédagogie
+   - Test agent-browser: page /app/pedagogy/production charge correctement
+   - Mes Classes affiche 15+ classes (Maternelle 1, CE1, CP, CM1, CM2, 6e, 4e, etc.)
+   - Clic sur classe CE1 → liste élèves charge correctement (21 élèves)
+   - Cahier Journal, Fiches Pédagogiques, Cahier de Semaine → tous fonctionnels
+   - Tous les appels API /api/pedagogy-space/* retournent 200 OK
+   - Aucune erreur de chargement observée → probablement corrigé par commits précédents
+
+Test agent-browser (commit e59fa875 + 5f2e0c95):
+- Connexion CSPEB promoteur
+- Page Évaluations FR → 3 cartes (CP, CE1, CM1) avec 4 boutons d'action chacune
+- Clic Supprimer CM1 → modal confirmation "Suppression multiple" + liste matières
+- Annuler → retour à la liste sans suppression
+- Clic Modifier CM1 (via JS car overlay) → modal ouvert
+- Vérification checkboxes: CM1 + Dictée + EA Plastique + EPS toutes cochées ✅
+- Titre pré-rempli: "Évaluation mensuelle 1 - Trimestre 1" ✅
+
+Stage Summary:
+- ✅ Emojis retirés partout dans module Examen
+- ✅ Modal confirmation moderne (ConfirmDialog) remplace confirm()/prompt()
+- ✅ Language classes dynamique (academicTrack.code OR class.language)
+- ✅ Boutons actions alignés (4 icônes en bas de carte)
+- ✅ Édition pré-remplit toutes les matières du groupe
+- ✅ SelectValue affiche correctement type et période en édition
+- ✅ Bug "erreur de chargement" non reproduit (probablement résolu)
+- ⏳ Déploiement Fly.io backend requis pour activer fix language classes

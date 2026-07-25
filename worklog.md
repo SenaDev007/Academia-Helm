@@ -1855,3 +1855,73 @@ Stage Summary:
 - ✅ SelectValue affiche correctement type et période en édition
 - ✅ Bug "erreur de chargement" non reproduit (probablement résolu)
 - ⏳ Déploiement Fly.io backend requis pour activer fix language classes
+
+---
+Task ID: grades-input-refonte
+Agent: main
+Task: Refonte onglet 'Saisie des notes' — fiche par évaluation groupée
+
+Work Log:
+1. Analyse des registres d'appel (VLM via z-ai vision):
+   - Maternelle: registre avec domaines en colonnes + annotations TS/S/PS
+     (Éducation pour la santé, Expression orale, Expression corporelle,
+     Expression plastique, Éveil scientifique, Pré-lecture, Pré-math, Pré-écriture)
+   - Primaire: registre avec matières en colonnes + note /20
+     (Comm. Orale, Product. d'Écrit, Lecture, MATH, Éduc. Scientif., Éduc. Sociale, etc.)
+
+2. Refonte complète apps/web-app/src/app/app/exams/grades/page.tsx:
+   - 1 fiche de saisie par 'programmation d'évaluation' (groupe)
+   - Regroupement identique à evaluations/page.tsx:
+     (classId × evaluationTypeId × periodId × startDate × endDate)
+   - Lignes = élèves de la classe
+   - Colonnes = matières programmées (chargement dynamique depuis le groupe)
+   - Maternelle: 3 boutons TS/S/PS par cellule (vert/bleu/orange)
+   - Primaire: input /20 + checkbox Absent par cellule
+   - Stats rapides: élèves, matières, taux remplissage, absents
+   - Recherche élève
+   - Légende contextuelle (maternelle qualitative / primaire quantitative)
+
+3. Sources de données (apiClient axios, pas fetch):
+   - GET /institutional-exams/evaluations — liste filtrée par niveau + langue
+   - GET /institutional-exams/grades/evaluation/:id — élèves + notes existantes
+   - POST /institutional-exams/grades/evaluation/:id/bulk — sauvegarde
+
+4. Fix backend score-entry-schema.service.ts:
+   - Bug: isAnglophone utilisé avant sa déclaration (déplacé avant le bloc Maternelle)
+
+5. Fix backend grades.service.ts getGradingSheet:
+   - Bug: ne retournait aucun élève pour les classes CSPEB
+   - Cause: utilisait uniquement evaluation.class.classStudents
+   - Correction: fusionner ClassStudent + StudentEnrollment (avec classId)
+   - Status acceptés: ACTIVE, ENROLLED, CONFIRMED, PENDING
+   - Ajout matricule + gender dans la réponse
+
+6. Fix frontend scopedSubModules:
+   - Bug: GradingSheet référençait scopedSubModules du parent → 'not defined'
+   - Correction: passer scopedSubModules en prop
+
+Test agent-browser (commits 20fa7b20 + 6881865e + 8362adc0):
+- Page grades Primaire FR → 3 cartes (CP, CE1, CM1) avec:
+  * CP: 2 matières (Mathematics, Verbal Reasoning), Saisie ouverte
+  * CE1: 2 matières (Verbal Reasoning, Mathematics), Saisie ouverte
+  * CM1: 3 matières (EPS, Dictée, EA Plastique), Saisie ouverte
+- Mode affiché: "Quantitatif (/20) — Évaluation primaire"
+- Page grades Maternelle FR → 1 carte (Maternelle 1) avec:
+  * 14 matières à évaluer, Saisie ouverte
+  * Période: Du 25 juil. 2026 au 28 juil. 2026
+  * Mode affiché: "Qualitatif (TS / S / PS) — Évaluation maternelle"
+- Clic carte CM1 → fiche de saisie ouverte:
+  * Titre: "Fiche de saisie — Évaluation mensuelle 1"
+  * Sous-titre: "CM1 · Trimestre 1 · Date non définie"
+  * Boutons: Retour, Sauvegarder, Soumettre
+  * Badges: 0 élèves, 3 matières, /20
+  * ⚠️ "Aucun élève dans cette classe" — fix backend a341689c à déployer
+
+Stage Summary:
+- ✅ Refonte UI Saisie des notes (cartes groupées + fiche de saisie)
+- ✅ Mode maternelle (TS/S/PS) et primaire (/20) détectés automatiquement
+- ✅ Matières chargées dynamiquement depuis le groupe d'évaluation
+- ✅ Fix backend getGradingSheet (fusion ClassStudent + StudentEnrollment)
+- ✅ Fix bug isAnglophone avant déclaration
+- ⏳ Déploiement Fly.io backend requis pour activer le fix élèves
+- ⏳ Ensuite: implémenter le mode secondaire (INT1/INT2/DS1/DS2 /20 avec coef)

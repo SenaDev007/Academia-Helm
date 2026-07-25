@@ -36,6 +36,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
@@ -43,7 +44,7 @@ import { academicSettingsService } from '@/services/academic-settings.service';
 import { classesService } from '@/services/classes.service';
 import { pedagogyService } from '@/services/pedagogy.service';
 import { getAcademicYearPeriods } from '@/services/settings.service';
-import { toast } from 'sonner';
+import { toastSuccess, toastError, toastWarning, toastInfo } from '@/lib/toast/toast-helpers';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
@@ -470,6 +471,8 @@ export default function EvaluationsPage() {
   const { academicYear } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
+  // ⭐ Modal de confirmation personnalisé (remplace window.confirm / window.prompt)
+  const { confirm, danger, warning, info, dialog: confirmDialog } = useConfirmDialog();
 
   // ⭐ RÉSOLUTION DU NIVEAU SCOLAIRE STRICT :
   // Le module examen utilise ?level=PRIMAIRE dans l'URL (pas le header global).
@@ -568,8 +571,22 @@ export default function EvaluationsPage() {
         c.schoolLevelId === schoolLevelUuid ||
         c.schoolLevel?.id === schoolLevelUuid
       );
+      // ⭐ Filtrage dynamique par piste linguistique (FR/EN).
+      // Une classe peut avoir 'language' ou 'academicTrack.code' (ou les deux).
+      // On accepte si l'un OU l'autre correspond à scopeLang, OU si aucun n'est défini
+      // (compatibilité ascendante : les classes sans track sont affichées partout).
+      const langClasses = scopeLang
+        ? levelClasses.filter((c: any) => {
+            const classLang = c.language;
+            const trackCode = c.academicTrack?.code || c.academicTrackCode;
+            if (!classLang && !trackCode) return true; // pas d'info → on garde
+            if (classLang === scopeLang) return true;
+            if (trackCode === scopeLang) return true;
+            return false;
+          })
+        : levelClasses;
       // Trier par ordre pédagogique (Maternelle → Primaire → Secondaire)
-      const sortedClasses = [...levelClasses].sort((a, b) => {
+      const sortedClasses = [...langClasses].sort((a, b) => {
         const idxA = getClassOrderIndex(a.name || a.code || '');
         const idxB = getClassOrderIndex(b.name || b.code || '');
         if (idxA !== idxB) return idxA - idxB;
@@ -585,7 +602,16 @@ export default function EvaluationsPage() {
         s.schoolLevelId === schoolLevelUuid
       );
       const filteredSubjects = scopeLang
-        ? levelSubjects.filter((s: any) => !s.language || s.language === scopeLang)
+        ? levelSubjects.filter((s: any) => {
+            // Accepter si la matière n'a pas de langue, OU si sa langue correspond,
+            // OU si son academicTrack.code correspond (piste académique liée).
+            const subjectLang = s.language;
+            const trackCode = s.academicTrack?.code || s.academicTrackCode;
+            if (!subjectLang && !trackCode) return true;
+            if (subjectLang === scopeLang) return true;
+            if (trackCode === scopeLang) return true;
+            return false;
+          })
         : levelSubjects;
       // Trier par niveau scolaire (Maternelle → Primaire → Secondaire)
       const sortedSubjects = [...filteredSubjects].sort((a, b) => {
@@ -598,7 +624,7 @@ export default function EvaluationsPage() {
       setEvaluationTypes(typesFromSettings);
     } catch (error) {
       console.error('Error loading evaluations', error);
-      toast.error('Erreur lors du chargement des évaluations');
+      toastError('Erreur lors du chargement des évaluations');
     } finally {
       setLoading(false);
     }
@@ -675,7 +701,7 @@ export default function EvaluationsPage() {
   const handleSave = async () => {
     // Validation
     if (form.classIds.length === 0 || form.subjectIds.length === 0 || !form.periodId || !form.evaluationTypeId || !form.startDate || !form.endDate) {
-      toast.error('Veuillez remplir tous les champs obligatoires');
+      toastError('Veuillez remplir tous les champs obligatoires');
       return;
     }
     setSaving(true);
@@ -720,7 +746,7 @@ export default function EvaluationsPage() {
           subjectIds: form.subjectIds,
         };
         const result = await institutionalExamsService.createBulkEvaluations(bulkPayload);
-        toast.success(`✅ ${result.created} évaluation(s) modifiée(s)`, {
+        toastSuccess(`${result.created} évaluation(s) modifiée(s)`, {
           description: `${form.classIds.length} classe(s) × ${form.subjectIds.length} matière(s)`,
         });
       } else {
@@ -740,8 +766,8 @@ export default function EvaluationsPage() {
           .filter(Boolean);
         const teachersNotified = (result as any)?.teachersAssigned || 0;
 
-        toast.success(
-          `✅ ${result.created} évaluation(s) programmée(s)`,
+        toastSuccess(
+          `${result.created} évaluation(s) programmée(s)`,
           {
             description:
               `${classNames.length} classe${classNames.length > 1 ? 's' : ''} (${classNames.join(', ')}) • ` +
@@ -754,7 +780,7 @@ export default function EvaluationsPage() {
       handleCloseModal();
       await loadData();
     } catch (err: any) {
-      toast.error('Erreur lors de la sauvegarde', { description: err.message });
+      toastError('Erreur lors de la sauvegarde', { description: err.message });
     } finally {
       setSaving(false);
     }
@@ -767,7 +793,12 @@ export default function EvaluationsPage() {
 
     if (subjectCount <= 1) {
       // Une seule matière : confirmation simple
-      if (!confirm(`Supprimer l'évaluation "${group.firstEvaluation.title || 'sans titre'}" pour ${group.className} ?`)) return;
+      const ok = await danger(
+        `Supprimer l'évaluation "${group.firstEvaluation.title || 'sans titre'}" pour ${group.className} ?`,
+        'Supprimer l\'évaluation',
+        'Cette action est irréversible.'
+      );
+      if (!ok) return;
       try {
         await Promise.all(
           group.evaluationIds.map((id) =>
@@ -776,23 +807,23 @@ export default function EvaluationsPage() {
             ),
           ),
         );
-        toast.success('✅ Évaluation supprimée');
+        toastSuccess('Évaluation supprimée');
         await loadData();
       } catch (err: any) {
-        toast.error('Erreur lors de la suppression', { description: err.message });
+        toastError('Erreur lors de la suppression', { description: err.message });
       }
       return;
     }
 
     // Plusieurs matières : demander le scope de suppression
-    const choice = confirm(
+    const ok = await danger(
       `Supprimer ${subjectCount} évaluation(s) pour la classe ${group.className} ?\n\n` +
-      `Matières : ${subjectNames}\n\n` +
-      `• Cliquez OK pour supprimer TOUTES les ${subjectCount} matières\n` +
-      `• Cliquez Annuler pour ne rien supprimer`
+      `Matières : ${subjectNames}`,
+      'Suppression multiple',
+      'Cliquez sur "Supprimer" pour supprimer TOUTES les matières de cette session. Cette action est irréversible.'
     );
 
-    if (!choice) return;
+    if (!ok) return;
 
     try {
       await Promise.all(
@@ -802,17 +833,22 @@ export default function EvaluationsPage() {
           ),
         ),
       );
-      toast.success(`✅ ${subjectCount} évaluation(s) supprimée(s) pour ${group.className}`, {
+      toastSuccess(`${subjectCount} évaluation(s) supprimée(s) pour ${group.className}`, {
         description: `Matières : ${subjectNames}`,
       });
       await loadData();
     } catch (err: any) {
-      toast.error('Erreur lors de la suppression', { description: err.message });
+      toastError('Erreur lors de la suppression', { description: err.message });
     }
   };
 
   const handleOpen = async (group: GroupedEvaluation) => {
-    if (!confirm(`Ouvrir ${group.evaluationIds.length} évaluation(s) pour la saisie (${group.className} - ${group.subjects.length} matière(s)) ?`)) return;
+    const ok = await warning(
+      `Ouvrir ${group.evaluationIds.length} évaluation(s) pour la saisie (${group.className} - ${group.subjects.length} matière(s)) ?`,
+      'Ouvrir pour saisie',
+      'Les enseignants pourront commencer à saisir les notes.'
+    );
+    if (!ok) return;
     try {
       await Promise.all(
         group.evaluationIds.map((id) =>
@@ -821,15 +857,20 @@ export default function EvaluationsPage() {
           ),
         ),
       );
-      toast.success(`✅ ${group.evaluationIds.length} évaluation(s) ouverte(s) pour la saisie`);
+      toastSuccess(`${group.evaluationIds.length} évaluation(s) ouverte(s) pour la saisie`);
       await loadData();
     } catch (err: any) {
-      toast.error('Erreur', { description: err.message });
+      toastError('Erreur', { description: err.message });
     }
   };
 
   const handleSubmit = async (group: GroupedEvaluation) => {
-    if (!confirm(`Soumettre ${group.evaluationIds.length} évaluation(s) pour validation (${group.className}) ?`)) return;
+    const ok = await warning(
+      `Soumettre ${group.evaluationIds.length} évaluation(s) pour validation (${group.className}) ?`,
+      'Soumettre pour validation',
+      'Les évaluations seront soumises à la direction pour validation.'
+    );
+    if (!ok) return;
     try {
       await Promise.all(
         group.evaluationIds.map((id) =>
@@ -838,15 +879,20 @@ export default function EvaluationsPage() {
           ),
         ),
       );
-      toast.success(`✅ ${group.evaluationIds.length} évaluation(s) soumise(s)`);
+      toastSuccess(`${group.evaluationIds.length} évaluation(s) soumise(s)`);
       await loadData();
     } catch (err: any) {
-      toast.error('Erreur', { description: err.message });
+      toastError('Erreur', { description: err.message });
     }
   };
 
   const handleValidate = async (group: GroupedEvaluation) => {
-    if (!confirm(`Valider définitivement ${group.evaluationIds.length} évaluation(s) (${group.className}) ? Les notes seront verrouillées.`)) return;
+    const ok = await warning(
+      `Valider définitivement ${group.evaluationIds.length} évaluation(s) (${group.className}) ?\n\nLes notes seront verrouillées.`,
+      'Valider définitivement',
+      'Cette action est irréversible. Les notes seront définitivement verrouillées.'
+    );
+    if (!ok) return;
     try {
       await Promise.all(
         group.evaluationIds.map((id) =>
@@ -855,27 +901,32 @@ export default function EvaluationsPage() {
           ),
         ),
       );
-      toast.success(`✅ ${group.evaluationIds.length} évaluation(s) validée(s)`);
+      toastSuccess(`${group.evaluationIds.length} évaluation(s) validée(s)`);
       await loadData();
     } catch (err: any) {
-      toast.error('Erreur', { description: err.message });
+      toastError('Erreur', { description: err.message });
     }
   };
 
   const handleCancel = async (group: GroupedEvaluation) => {
-    const reason = prompt(`Raison de l'annulation (optionnel) pour ${group.subjects.length} matière(s) ?`) || '';
+    const ok = await warning(
+      `Annuler ${group.subjects.length} matière(s) pour ${group.className} ?`,
+      'Annuler les évaluations',
+      'Les évaluations seront marquées comme annulées (mais non supprimées).'
+    );
+    if (!ok) return;
     try {
       await Promise.all(
         group.evaluationIds.map((id) =>
-          institutionalExamsService.cancelEvaluation(id, reason || undefined).catch((e) =>
+          institutionalExamsService.cancelEvaluation(id, 'Annulation batch').catch((e) =>
             console.warn(`Failed to cancel eval ${id}:`, e),
           ),
         ),
       );
-      toast.success(`✅ ${group.evaluationIds.length} évaluation(s) annulée(s) pour ${group.className}`);
+      toastSuccess(`${group.evaluationIds.length} évaluation(s) annulée(s) pour ${group.className}`);
       await loadData();
     } catch (err: any) {
-      toast.error('Erreur', { description: err.message });
+      toastError('Erreur', { description: err.message });
     }
   };
 
@@ -914,7 +965,7 @@ export default function EvaluationsPage() {
 
   const handleSaveType = async () => {
     if (!typeForm.name || !typeForm.schoolLevelId) {
-      toast.error('Le nom est obligatoire');
+      toastError('Le nom est obligatoire');
       return;
     }
     setSavingType(true);
@@ -934,15 +985,15 @@ export default function EvaluationsPage() {
       }
       if (editingTypeId) {
         await institutionalExamsService.updateEvaluationType(editingTypeId, payload);
-        toast.success('✅ Type modifié');
+        toastSuccess('Type modifié');
       } else {
         await institutionalExamsService.createEvaluationType(payload);
-        toast.success('✅ Type créé');
+        toastSuccess('Type créé');
       }
       handleCloseTypeModal();
       await loadData();
     } catch (err: any) {
-      toast.error('Erreur lors de la sauvegarde du type', { description: err.message });
+      toastError('Erreur lors de la sauvegarde du type', { description: err.message });
     } finally {
       setSavingType(false);
     }
@@ -950,16 +1001,21 @@ export default function EvaluationsPage() {
 
   const handleDeleteType = async (type: EvaluationTypeItem) => {
     if (type.isSystem) {
-      toast.error('Les types système ne peuvent pas être supprimés');
+      toastError('Les types système ne peuvent pas être supprimés');
       return;
     }
-    if (!confirm(`Supprimer le type "${type.name}" ?`)) return;
+    const ok = await danger(
+      `Supprimer le type "${type.name}" ?`,
+      'Supprimer le type d\'évaluation',
+      'Cette action est irréversible. Les évaluations existantes de ce type ne seront pas supprimées.'
+    );
+    if (!ok) return;
     try {
       await institutionalExamsService.deleteEvaluationType(type.id);
-      toast.success('✅ Type supprimé');
+      toastSuccess('Type supprimé');
       await loadData();
     } catch (err: any) {
-      toast.error('Erreur lors de la suppression', { description: err.message });
+      toastError('Erreur lors de la suppression du type', { description: err.message });
     }
   };
 
@@ -1544,7 +1600,7 @@ export default function EvaluationsPage() {
         {/* Aide : exemples par niveau */}
         {!editingTypeId && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <p className="text-xs font-semibold text-blue-900 mb-1">💡 Aide — Types d'évaluation par niveau :</p>
+            <p className="text-xs font-semibold text-blue-900 mb-1">Aide — Types d'évaluation par niveau :</p>
             <ul className="text-xs text-blue-800 space-y-0.5">
               <li>• <strong>Maternelle / Primaire</strong> : Évaluation mensuelle, Évaluation certificative, Évaluation formative, Évaluation sommative</li>
               <li>• <strong>Secondaire</strong> : Devoir, Interrogation, Interrogation écrite, Devoir surveillé, Épreuve pratique (TP)</li>
@@ -1553,6 +1609,7 @@ export default function EvaluationsPage() {
         )}
       </div>
     </FormModal>
+    {confirmDialog}
     </>
   );
 }

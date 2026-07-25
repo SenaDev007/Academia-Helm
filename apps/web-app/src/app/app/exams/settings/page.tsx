@@ -35,7 +35,7 @@ import { useBilingual } from '@/contexts/BilingualContext';
 import { academicSettingsService } from '@/services/academic-settings.service';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules } from '../layout';
-import { toast } from 'sonner';
+import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
 
 // ─── Types d'évaluation par défaut selon le niveau ─────────────────────────
 
@@ -343,10 +343,10 @@ function SettingsContent() {
         const result = await academicSettingsService.create(payload);
         if (result?.id) setSettingsId(result.id);
       }
-      toast.success('✅ Paramètres enregistrés');
+      toastSuccess('Paramètres enregistrés');
       await loadSettings();
     } catch (err: any) {
-      toast.error('Erreur lors de la sauvegarde', { description: err.message });
+      toastError('Erreur lors de la sauvegarde', { description: err.message });
     } finally {
       setSaving(false);
     }
@@ -357,10 +357,10 @@ function SettingsContent() {
     setSaving(true);
     try {
       await academicSettingsService.activate(settingsId);
-      toast.success('✅ Paramètres activés');
+      toastSuccess('Paramètres activés');
       await loadSettings();
     } catch (err: any) {
-      toast.error('Erreur activation', { description: err.message });
+      toastError('Erreur activation', { description: err.message });
     } finally {
       setSaving(false);
     }
@@ -436,7 +436,7 @@ function SettingsContent() {
             status === 'LOCKED' ? 'bg-amber-100 text-amber-700' :
             'bg-gray-100 text-gray-600'
           )}>
-            {status === 'ACTIVE' ? '✅ Active' : status === 'LOCKED' ? '🔒 Verrouillée' : '✏️ Brouillon'}
+            {status === 'ACTIVE' ? 'Active' : status === 'LOCKED' ? 'Verrouillée' : 'Brouillon'}
           </Badge>
         </div>
         <div className="flex items-center gap-2">
@@ -553,7 +553,7 @@ function SettingsContent() {
               </div>
               {isMaternelleFR && (
                 <div className="bg-pink-50 border border-pink-200 rounded-lg p-3 text-xs text-pink-800">
-                  <strong>📌 Maternelle :</strong> Système qualitatif TS/S/PS.
+                  <strong>Maternelle :</strong> Système qualitatif TS/S/PS.
                   TS = Très Satisfaisant (valeur 3), S = Satisfaisant (valeur 2), PS = Peu Satisfaisant (valeur 1).
                   Le système calcule en arrière-plan avec ces valeurs mais affiche TS/S/PS côté interface.
                   Seuil de réussite : (TS + S) ≥ seuil fixé dans l'onglet Barèmes & Mentions.
@@ -561,7 +561,7 @@ function SettingsContent() {
               )}
               {isPrimaire && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800">
-                  <strong>📌 Primaire :</strong> CM (Critère Maximal, sur 18) + CP (Critère de Perfectionnement, sur 2) = note /20.
+                  <strong>Primaire :</strong> CM (Critère Maximal, sur 18) + CP (Critère de Perfectionnement, sur 2) = note /20.
                   L'élève n'obtient le CP que s'il a au moins 10/18 au CM.
                   Le CP peut être 0, 1 ou 2 (jamais plus de 2).
                   Toutes les matières ont le coefficient 1 — la moyenne générale est arithmétique simple.
@@ -569,7 +569,7 @@ function SettingsContent() {
               )}
               {isSecondaire && (
                 <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 text-xs text-violet-800">
-                  <strong>📌 Secondaire :</strong> Moyenne interros = (INT1 + INT2) / 2.
+                  <strong>Secondaire :</strong> Moyenne interros = (INT1 + INT2) / 2.
                   Note matière = (Moy_interros + DS1 + DS2) / 3.
                   Avec coefficients : Note × coefficient = Moyenne coefficientée.
                   Moyenne générale = Somme(Moyenne_coef) / Somme(coefficients).

@@ -51,8 +51,20 @@ export class EvaluationsService {
     if (filters.teacherId) where.teacherId = filters.teacherId;
     if (filters.evaluationTypeId) where.evaluationTypeId = filters.evaluationTypeId;
     if (filters.language) {
-      // Filtrage par piste linguistique (FR/EN) via la classe
-      where.class = { ...where.class, language: filters.language };
+      // ⭐ Filtrage dynamique par piste linguistique (FR/EN).
+      // On cherche d'abord par academicTrack.code (solution propre, basée sur
+      // AcademicTrack lié à la classe). Fallback sur class.language pour
+      // compatibilité ascendante avec les anciennes classes.
+      //
+      // IMPORTANT : pour éviter de dupliquer la classe sur le where, on
+      // fusionne les deux critères dans le même objet where.class.
+      where.class = {
+        ...where.class,
+        OR: [
+          { academicTrack: { code: filters.language } },
+          { language: filters.language },
+        ],
+      };
     }
 
     return this.prisma.evaluation.findMany({

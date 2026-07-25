@@ -285,9 +285,9 @@ export default function BulletinsPage() {
                   : 'bg-blue-50 border-blue-200 text-blue-900'
               }`}>
                 {separateGrades ? (
-                  <span><strong>📌 Mode bulletins séparés :</strong> Deux bulletins distincts seront générés (un pour les matières FR, un pour les matières EN).</span>
+                  <span><strong>Mode bulletins séparés :</strong> Deux bulletins distincts seront générés (un pour les matières FR, un pour les matières EN).</span>
                 ) : (
-                  <span><strong>📌 Mode bulletins fusionnés :</strong> Les matières FR et EN apparaîtront côte à côte sur un seul bulletin bilingue.</span>
+                  <span><strong>Mode bulletins fusionnés :</strong> Les matières FR et EN apparaîtront côte à côte sur un seul bulletin bilingue.</span>
                 )}
               </div>
             )}

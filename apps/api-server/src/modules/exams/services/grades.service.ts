@@ -82,26 +82,69 @@ export class GradesService {
   }
 
   /**
-   * Récupère la liste des élèves pour initialiser une grille de saisie
+   * Récupère la liste des élèves pour initialiser une grille de saisie.
+   *
+   * ⭐ Les élèves peuvent venir de 2 sources :
+   *   1. ClassStudent (relation directe classe → élève)
+   *   2. StudentEnrollment (élève inscrit dans l'année avec classId optionnel)
+   *
+   * On fusionne les 2 sources (déduplication par studentId) pour maximiser
+   * les chances d'afficher tous les élèves de la classe.
    */
   async getGradingSheet(evaluationId: string, tenantId: string) {
     const evaluation = await this.prisma.evaluation.findFirst({
       where: { id: evaluationId, tenantId },
-      include: { class: { include: { classStudents: { include: { student: true } } } } }
+      include: {
+        class: {
+          include: {
+            classStudents: { include: { student: true } },
+          },
+        },
+      },
     });
 
     if (!evaluation) throw new NotFoundException('Evaluation not found');
 
+    // Source 1 : ClassStudent (relation directe)
+    const studentsFromClassStudents = evaluation.class?.classStudents?.map(cs => cs.student) || [];
+
+    // Source 2 : StudentEnrollment (élèves inscrits dans cette classe pour cette année)
+    let studentsFromEnrollment: any[] = [];
+    try {
+      const enrollments = await this.prisma.studentEnrollment.findMany({
+        where: {
+          classId: evaluation.classId,
+          tenantId,
+          academicYearId: evaluation.academicYearId,
+          status: { in: ['ACTIVE', 'ENROLLED', 'CONFIRMED', 'PENDING'] },
+        },
+        include: { student: true },
+      });
+      studentsFromEnrollment = enrollments
+        .map(e => e.student)
+        .filter(s => s != null);
+    } catch (err) {
+      console.warn('[getGradingSheet] StudentEnrollment fetch failed:', err);
+    }
+
+    // Fusionner + dédupliquer par studentId
+    const studentMap = new Map<string, any>();
+    [...studentsFromClassStudents, ...studentsFromEnrollment].forEach(student => {
+      if (student && !studentMap.has(student.id)) {
+        studentMap.set(student.id, student);
+      }
+    });
+    const students = Array.from(studentMap.values());
+
     const existingGrades = await this.findByEvaluation(evaluationId, tenantId);
-    
-    // Combiner les notes existantes et les élèves sans note
-    const students = evaluation.class.classStudents.map(cs => cs.student);
-    
+
     return students.map(student => {
       const grade = existingGrades.find(g => g.studentId === student.id);
       return {
         studentId: student.id,
-        studentName: `${student.lastName} ${student.firstName}`,
+        studentName: `${student.lastName} ${student.firstName}`.trim(),
+        matricule: student.matricule ?? null,
+        gender: student.gender ?? null,
         score: grade?.score ?? null,
         qualitativeCode: grade?.qualitativeCode ?? null,
         isAbsent: grade?.isAbsent ?? false,

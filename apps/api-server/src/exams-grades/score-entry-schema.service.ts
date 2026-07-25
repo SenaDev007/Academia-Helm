@@ -144,6 +144,7 @@ export class ScoreEntrySchemaService {
     // PRIMAIRE → quantitatif /20 avec coef 1 partout
     // SECONDAIRE → quantitatif /20 avec coef variable
     const levelCodeUpper = (levelCode || '').toUpperCase();
+    const isAnglophone = (language || '').toUpperCase() === 'EN';
     const isMaternelle = levelCodeUpper === 'MATERNELLE' ||
       levelCodeUpper.includes('MATERN') ||
       (cycleCode || '').toUpperCase().includes('MATERN');
@@ -191,7 +192,6 @@ export class ScoreEntrySchemaService {
     // ⭐ Mode quantitatif (PRIMAIRE et SECONDAIRE)
     // Système FRANCOPHONE : notes /20 (CM/CP pour primaire, Interros/Devoirs pour secondaire)
     // Système ANGLOPHONE : notes /100 (First CA /40 + Second CA /40 + Exam /60)
-    const isAnglophone = (language || '').toUpperCase() === 'EN';
 
     // Resolve the assessment-type list — period-specific overrides first
     let assessmentTypes: any[] = [];

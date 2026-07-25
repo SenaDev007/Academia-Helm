@@ -1597,52 +1597,19 @@ export default function SubjectsWorkspace() {
         }
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
-            <div className="space-y-1">
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Code Matière</label>
-              <input 
-                type="text" 
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800" 
-                placeholder="EX: MATH-01" 
-                value={subjectForm.code}
-                onChange={(e) => setSubjectForm({ ...subjectForm, code: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1 col-span-2">
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nom de la matière</label>
-              <input 
-                type="text" 
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800" 
-                placeholder="Mathématiques" 
-                value={subjectForm.name}
-                onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })}
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Abréviation</label>
-              <input 
-                type="text" 
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800" 
-                placeholder="EX: MATH" 
-                value={subjectForm.abbreviation}
-                onChange={(e) => setSubjectForm({ ...subjectForm, abbreviation: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1">
-               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Niveau Scolaire</label>
-               <select
-                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white"
-                 value={subjectForm.schoolLevelId}
-                 onChange={(e) => setSubjectForm({ ...subjectForm, schoolLevelId: e.target.value })}
-               >
-                 <option value="">Sélectionner un niveau</option>
-                 {schoolLevels.map(l => (
-                   <option key={l.id} value={l.id}>{l.label || l.name}</option>
-                 ))}
-               </select>
-            </div>
+          {/* ⭐ 1. Niveau scolaire EN PREMIER */}
+          <div className="space-y-1">
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Niveau Scolaire</label>
+            <select
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800 bg-white"
+              value={subjectForm.schoolLevelId}
+              onChange={(e) => setSubjectForm({ ...subjectForm, schoolLevelId: e.target.value })}
+            >
+              <option value="">Sélectionner un niveau</option>
+              {schoolLevels.map(l => (
+                <option key={l.id} value={l.id}>{l.label || l.name}</option>
+              ))}
+            </select>
           </div>
 
           {/* ⭐ Sélecteur de sous-niveau (Secondaire uniquement) */}
@@ -1891,6 +1858,77 @@ export default function SubjectsWorkspace() {
             </div>
           )}
 
+          {/* ⭐ 2. Champs matière (code, nom, abréviation, coefficient) — masqués pour 4e/3e/2nd cycle */}
+          {!(is4e3e || isSecondCycle) && <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-1">
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Code Matière</label>
+                <input
+                  type="text"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800"
+                  placeholder="EX: MATH-01"
+                  value={subjectForm.code}
+                  onChange={(e) => setSubjectForm({ ...subjectForm, code: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1 col-span-2">
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nom de la matière</label>
+                <input
+                  type="text"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800"
+                  placeholder="Mathématiques"
+                  value={subjectForm.name}
+                  onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-1">
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Abréviation</label>
+                <input
+                  type="text"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800"
+                  placeholder="EX: MATH"
+                  value={subjectForm.abbreviation}
+                  onChange={(e) => setSubjectForm({ ...subjectForm, abbreviation: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between items-center">
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Coefficient</label>
+                  {isPrimaryOrMaternelle && (
+                    <span className="text-[10px] font-bold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 mb-1">
+                      Par défaut 1 (Mat/Pri)
+                    </span>
+                  )}
+                  {is6e5e && (
+                    <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mb-1">
+                      6e-5e: coef=1 forcé
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800"
+                  placeholder="2"
+                  value={subjectForm.coefficient}
+                  onChange={(e) => setSubjectForm({ ...subjectForm, coefficient: Number(e.target.value) })}
+                  disabled={isPrimaryOrMaternelle || is6e5e}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Volume Hebdo (h)</label>
+                <input
+                  type="number"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800"
+                  placeholder="4"
+                  value={subjectForm.weeklyHours}
+                  onChange={(e) => setSubjectForm({ ...subjectForm, weeklyHours: Number(e.target.value) })}
+                />
+              </div>
+            </div>
+          </div>}
+
           {/* ── Suggestions de matières par défaut (multi-sélection) ──────── */}
           {modal === 'create-subject' && defaultSuggestionsForLevel.length > 0 && (
             <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50/60 to-slate-50 p-4 space-y-3">
@@ -2037,44 +2075,6 @@ export default function SubjectsWorkspace() {
           )}
 
 
-          {/* ⭐ Champ coefficient — masqué pour 4e/3e/2nd cycle (géré dans la liste ci-dessus) */}
-          {!(is4e3e || isSecondCycle) && (
-          <div className="grid grid-cols-2 gap-4">
-             <div className="space-y-1">
-               <div className="flex justify-between items-center">
-                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Coefficient</label>
-                  {isPrimaryOrMaternelle && (
-                    <span className="text-[10px] font-bold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 mb-1">
-                      Par défaut 1 (Mat/Pri)
-                    </span>
-                  )}
-                  {is6e5e && (
-                    <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mb-1">
-                      6e-5e: coef=1 forcé
-                    </span>
-                  )}
-               </div>
-               <input 
-                 type="number" 
-                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800" 
-                 placeholder="2" 
-                 value={subjectForm.coefficient}
-                 onChange={(e) => setSubjectForm({ ...subjectForm, coefficient: Number(e.target.value) })}
-                 disabled={isPrimaryOrMaternelle || is6e5e}
-               />
-             </div>
-             <div className="space-y-1">
-               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Volume Hebdo (h)</label>
-               <input 
-                 type="number" 
-                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800" 
-                 placeholder="4" 
-                 value={subjectForm.weeklyHours}
-                 onChange={(e) => setSubjectForm({ ...subjectForm, weeklyHours: Number(e.target.value) })}
-               />
-             </div>
-          </div>
-          )}
         </div>
       </FormModal>
 

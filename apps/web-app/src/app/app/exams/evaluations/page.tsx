@@ -56,10 +56,12 @@ interface Evaluation {
   title: string | null;
   description?: string | null;
   evaluationDate: string;
+  startDate?: string | null;
+  endDate?: string | null;
   maxScore: number;
   coefficient: number;
   status: 'DRAFT' | 'PLANNED' | 'OPEN_FOR_GRADING' | 'SUBMITTED' | 'VALIDATED' | 'LOCKED' | 'CANCELLED';
-  class?: { id: string; name: string };
+  class?: { id: string; name: string; schoolLevelId?: string };
   subject?: { id: string; name: string };
   evaluationType?: { id: string; name: string; code?: string };
   period?: { id: string; name: string };
@@ -184,228 +186,305 @@ interface EvaluationAction {
 }
 
 /**
- * Affiche les évaluations sous forme de cartes groupées par classe.
+ * ============================================================================
+ * VUE EN CARTES — PROGRAMMATION DES ÉVALUATIONS
+ * ============================================================================
  *
  * Structure :
- *   ┌─ Carte "Classe CE1" ──────────────────────────────┐
- *   │  En-tête : nom classe + nb évaluations programmées │
- *   │  ┌─ Sous-carte évaluation ─────────────────────┐  │
- *   │  │  Titre / Type / Date début → fin / Statut   │  │
- *   │  │  Matière • Barème/Coef • Nb notes           │  │
- *   │  │  Boutons d'action (icônes)                  │  │
- *   │  └─────────────────────────────────────────────┘  │
- *   └────────────────────────────────────────────────────┘
+ *   ┌─ Carte par évaluation programmée ────────────────────────────┐
+ *   │  Avatar + Classe CI A  •  Statut agrégé                      │
+ *   │  Type d'évaluation + Période                                  │
+ *   │  Du 25 juil. 2026 → Au 28 juil. 2026  (PAS d'heure)          │
+ *   │  ─────────────────────────────────────────────────────────   │
+ *   │  Matières à composer :                                        │
+ *   │   • Mathematics                                               │
+ *   │   • English Language                                          │
+ *   │   • Civic Education                                           │
+ *   │  ─────────────────────────────────────────────────────────   │
+ *   │  [Modifier]  [Plus d'actions ▾]                               │
+ *   └───────────────────────────────────────────────────────────────┘
  *
- * Si plusieurs évaluations pour la même classe → toutes affichées
- * dans la même carte, en stack vertical.
+ * Regroupement : par (classId × evaluationTypeId × periodId × startDate × endDate)
+ * → toutes les matières composant la même "session d'évaluation" sont fusionnées
+ *   dans une seule carte.
+ *
+ * Maternelle : pas de barème ni coefficient affichés.
+ * Pas d'information "heure" ni "nombre de notes" — l'utilisateur veut juste
+ * savoir quelles matières seront composées et sur quelle période.
+ * ============================================================================
  */
+
+interface GroupedEvaluation {
+  // Clé de regroupement
+  classId: string;
+  className: string;
+  evaluationTypeId: string;
+  evaluationTypeName: string;
+  evaluationTypeCode?: string;
+  periodId: string;
+  periodName: string;
+  startDate: string | null;
+  endDate: string | null;
+  // Données agrégées
+  subjects: Array<{ id: string; name: string }>;
+  evaluationIds: string[];
+  // Statut agrégé : si tous VALIDATED → "Complétée", etc.
+  statuses: string[];
+  // Référence vers la première évaluation (pour les actions)
+  firstEvaluation: Evaluation;
+}
+
 function EvaluationCardsByClass({
   evaluations,
   getAvailableActions,
   onOpenEdit,
+  isMaternelle,
 }: {
   evaluations: Evaluation[];
   getAvailableActions: (ev: Evaluation) => EvaluationAction[];
   onOpenEdit: (ev: Evaluation) => void;
+  isMaternelle: boolean;
 }) {
-  // Grouper par classe (id), puis trier par ordre pédagogique
+  // Grouper par (classId × evaluationTypeId × periodId × startDate × endDate)
   const grouped = useMemo(() => {
-    const map = new Map<string, { classInfo: { id: string; name: string } | null; evals: Evaluation[] }>();
+    const map = new Map<string, GroupedEvaluation>();
     for (const ev of evaluations) {
-      const key = ev.class?.id || '_no_class';
+      const classId = ev.class?.id || '_no_class';
+      const evaluationTypeId = ev.evaluationType?.id || '_no_type';
+      const periodId = ev.period?.id || '_no_period';
+      const sd = ev.startDate || ev.evaluationDate || '';
+      const ed = ev.endDate || ev.startDate || ev.evaluationDate || '';
+      const key = `${classId}|${evaluationTypeId}|${periodId}|${sd}|${ed}`;
+
       if (!map.has(key)) {
         map.set(key, {
-          classInfo: ev.class ? { id: ev.class.id, name: ev.class.name } : null,
-          evals: [],
+          classId,
+          className: ev.class?.name || 'Sans classe',
+          evaluationTypeId,
+          evaluationTypeName: ev.evaluationType?.name || 'Évaluation',
+          evaluationTypeCode: ev.evaluationType?.code,
+          periodId,
+          periodName: ev.period?.name || '',
+          startDate: ev.startDate || null,
+          endDate: ev.endDate || null,
+          subjects: [],
+          evaluationIds: [],
+          statuses: [],
+          firstEvaluation: ev,
         });
       }
-      map.get(key)!.evals.push(ev);
+      const g = map.get(key)!;
+      if (ev.subject && !g.subjects.find((s) => s.id === ev.subject!.id)) {
+        g.subjects.push({ id: ev.subject.id, name: ev.subject.name });
+      }
+      g.evaluationIds.push(ev.id);
+      g.statuses.push(ev.status);
     }
-    // Trier les classes par ordre pédagogique
     return Array.from(map.values()).sort((a, b) => {
-      const nameA = a.classInfo?.name || 'ZZZ';
-      const nameB = b.classInfo?.name || 'ZZZ';
-      return getClassOrderIndex(nameA) - getClassOrderIndex(nameB);
+      // Trier par classe (ordre pédagogique) puis par date de début
+      const classCmp = getClassOrderIndex(a.className) - getClassOrderIndex(b.className);
+      if (classCmp !== 0) return classCmp;
+      const da = a.startDate ? new Date(a.startDate).getTime() : 0;
+      const db = b.startDate ? new Date(b.startDate).getTime() : 0;
+      return da - db;
     });
   }, [evaluations]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-      {grouped.map((group, idx) => {
-        const className = group.classInfo?.name || 'Sans classe';
-        const count = group.evals.length;
-        // Statut agrégé : si toutes les éval sont "VALIDATED" → "Validée", etc.
-        const allValidated = group.evals.every(e => e.status === 'VALIDATED' || e.status === 'LOCKED');
-        const anyCancelled = group.evals.some(e => e.status === 'CANCELLED');
-        const allPlanned = group.evals.every(e => e.status === 'PLANNED');
-        const headerStatus = allValidated
-          ? 'Complétée'
-          : anyCancelled
-          ? 'Partiellement annulée'
-          : allPlanned
-          ? 'En attente'
-          : 'En cours';
-
-        return (
-          <div
-            key={group.classInfo?.id || `group-${idx}`}
-            className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col"
-          >
-            {/* En-tête de la carte (classe) */}
-            <div className="px-5 py-4 bg-gradient-to-br from-blue-50 to-indigo-50/50 border-b border-blue-100">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center space-x-3 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
-                    {(className || '?').slice(0, 2).toUpperCase()}
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="text-base font-bold text-navy-900 truncate">{className}</h3>
-                    <p className="text-xs text-gray-500">
-                      {count} évaluation{count > 1 ? 's' : ''} programmée{count > 1 ? 's' : ''}
-                    </p>
-                  </div>
-                </div>
-                <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap ${
-                  allValidated ? 'bg-emerald-100 text-emerald-700'
-                  : anyCancelled ? 'bg-red-100 text-red-700'
-                  : allPlanned ? 'bg-blue-100 text-blue-700'
-                  : 'bg-amber-100 text-amber-700'
-                }`}>
-                  {headerStatus}
-                </span>
-              </div>
-            </div>
-
-            {/* Corps : liste des évaluations de cette classe */}
-            <div className="p-4 space-y-3 flex-1">
-              {group.evals.map((ev) => (
-                <EvaluationCardItem
-                  key={ev.id}
-                  evaluation={ev}
-                  actions={getAvailableActions(ev)}
-                  onOpenEdit={() => onOpenEdit(ev)}
-                />
-              ))}
-            </div>
-          </div>
-        );
-      })}
+      {grouped.map((group, idx) => (
+        <EvaluationProgramCard
+          key={`${group.classId}-${group.evaluationTypeId}-${idx}`}
+          group={group}
+          isMaternelle={isMaternelle}
+          actions={getAvailableActions(group.firstEvaluation)}
+          onOpenEdit={() => onOpenEdit(group.firstEvaluation)}
+        />
+      ))}
     </div>
   );
 }
 
 /**
- * Sous-carte : une évaluation individuelle.
- * Affiche : matière, type, date début → fin, statut, barème/coef, nb notes,
- * et les boutons d'action disponibles selon le statut.
+ * Carte individuelle : une "programmation d'évaluation" pour une classe donnée.
+ * Affiche le type d'évaluation, la période, les dates, la liste des matières,
+ * le statut agrégé, et les boutons d'action.
+ *
+ * Note : overflow-visible pour permettre au menu déroulant de dépasser la carte.
  */
-function EvaluationCardItem({
-  evaluation,
+function EvaluationProgramCard({
+  group,
+  isMaternelle,
   actions,
   onOpenEdit,
 }: {
-  evaluation: Evaluation;
+  group: GroupedEvaluation;
+  isMaternelle: boolean;
   actions: EvaluationAction[];
   onOpenEdit: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  // Pour le rendu des dates
-  const evDate = new Date(evaluation.evaluationDate);
-  const dateLabel = format(evDate, 'dd MMM yyyy', { locale: fr });
-  const timeLabel = format(evDate, 'HH:mm', { locale: fr });
+
+  // Formatage des dates : "25 juil. 2026" (pas d'heure)
+  const startDate = group.startDate ? new Date(group.startDate) : null;
+  const endDate = group.endDate ? new Date(group.endDate) : null;
+  const sameDay =
+    startDate && endDate &&
+    startDate.getFullYear() === endDate.getFullYear() &&
+    startDate.getMonth() === endDate.getMonth() &&
+    startDate.getDate() === endDate.getDate();
+
+  const fmtLong = (d: Date) => format(d, 'd MMM yyyy', { locale: fr });
+
+  const dateRange = startDate
+    ? sameDay || !endDate
+      ? `Le ${fmtLong(startDate)}`
+      : `Du ${fmtLong(startDate)} au ${fmtLong(endDate)}`
+    : 'Date non définie';
+
+  // Statut agrégé
+  const allValidated = group.statuses.every((s) => s === 'VALIDATED' || s === 'LOCKED');
+  const anyCancelled = group.statuses.some((s) => s === 'CANCELLED');
+  const allPlanned = group.statuses.every((s) => s === 'PLANNED');
+  const headerStatus = allValidated
+    ? 'Complétée'
+    : anyCancelled
+    ? 'Partiellement annulée'
+    : allPlanned
+    ? 'En attente'
+    : 'En cours';
+
+  // Statut principal pour le badge (prendre le statut le plus "avancé")
+  const primaryStatus = group.firstEvaluation.status;
+  const subjectCount = group.subjects.length;
 
   return (
-    <div className="bg-gray-50/50 border border-gray-200 rounded-xl p-4 hover:border-blue-300 hover:bg-blue-50/30 transition-colors group">
-      {/* Titre + statut */}
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-navy-900 truncate">
-            {evaluation.subject?.name || '—'}
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow flex flex-col overflow-visible">
+      {/* En-tête : classe + statut */}
+      <div className="px-5 py-4 bg-gradient-to-br from-blue-50 to-indigo-50/50 border-b border-blue-100">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center space-x-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+              {(group.className || '?').slice(0, 2).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-base font-bold text-navy-900 truncate">{group.className}</h3>
+              <p className="text-xs text-gray-500">
+                {subjectCount} matière{subjectCount > 1 ? 's' : ''} à composer
+              </p>
+            </div>
+          </div>
+          <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap ${
+            allValidated ? 'bg-emerald-100 text-emerald-700'
+            : anyCancelled ? 'bg-red-100 text-red-700'
+            : allPlanned ? 'bg-blue-100 text-blue-700'
+            : 'bg-amber-100 text-amber-700'
+          }`}>
+            {headerStatus}
+          </span>
+        </div>
+      </div>
+
+      {/* Corps : type évaluation + période + dates + matières */}
+      <div className="p-5 flex-1 space-y-3">
+        {/* Type d'évaluation + période */}
+        <div>
+          <p className="text-sm font-semibold text-navy-900">
+            {group.evaluationTypeCode ? `[${group.evaluationTypeCode}] ` : ''}
+            {group.evaluationTypeName}
           </p>
-          {evaluation.evaluationType && (
-            <p className="text-xs text-gray-500 mt-0.5">
-              {evaluation.evaluationType.code ? `[${evaluation.evaluationType.code}] ` : ''}
-              {evaluation.evaluationType.name}
-            </p>
+          {group.periodName && (
+            <p className="text-xs text-gray-500 mt-0.5">{group.periodName}</p>
           )}
         </div>
-        <StatusBadge status={evaluation.status} />
-      </div>
 
-      {/* Titre de l'évaluation (si défini) */}
-      {evaluation.title && (
-        <p className="text-xs text-gray-700 italic mb-2 line-clamp-2">
-          « {evaluation.title} »
-        </p>
-      )}
-
-      {/* Date + barème + coef */}
-      <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 mb-3">
-        <div className="flex items-center space-x-1.5">
-          <Calendar className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-          <span className="font-medium">{dateLabel}</span>
-          <span className="text-gray-400">•</span>
-          <span className="text-gray-500">{timeLabel}</span>
+        {/* Période : Du X au Y (pas d'heure) */}
+        <div className="flex items-center space-x-1.5 text-xs text-gray-700 bg-gray-50 rounded-lg px-3 py-2">
+          <Calendar className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+          <span className="font-medium">{dateRange}</span>
         </div>
-        <div className="flex items-center justify-end space-x-2 text-gray-500">
-          <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-semibold">/{evaluation.maxScore}</span>
-          <span className="px-1.5 py-0.5 bg-gray-200 text-gray-700 rounded">coef {evaluation.coefficient}</span>
-        </div>
-      </div>
 
-      {/* Notes count + actions */}
-      <div className="flex items-center justify-between pt-2 border-t border-gray-200">
-        <span className="text-xs text-gray-500">
-          {evaluation._count?.grades
-            ? `${evaluation._count.grades} note${evaluation._count.grades > 1 ? 's' : ''} saisie${evaluation._count.grades > 1 ? 's' : ''}`
-            : 'Aucune note'}
-        </span>
-        <div className="flex items-center space-x-1">
-          {/* Bouton Voir / Modifier — accès direct */}
-          {!['VALIDATED', 'LOCKED', 'CANCELLED'].includes(evaluation.status) && (
-            <button
-              onClick={onOpenEdit}
-              className="p-1.5 rounded-md text-gray-500 hover:text-blue-700 hover:bg-blue-50 transition-colors"
-              title="Modifier"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {/* Menu déroulant avec toutes les actions */}
-          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="p-1.5 rounded-md text-gray-500 hover:bg-gray-100 transition-colors"
-                title="Plus d'actions"
+        {/* Liste des matières à composer */}
+        <div className="space-y-1.5 pt-1">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+            Matières à composer
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {group.subjects.map((s) => (
+              <span
+                key={s.id}
+                className="inline-flex items-center px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-medium border border-blue-100"
               >
-                <MoreVertical className="w-3.5 h-3.5" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              {actions.length === 0 ? (
-                <DropdownMenuItem disabled className="text-gray-400">
-                  Aucune action disponible
-                </DropdownMenuItem>
-              ) : (
-                actions.map((action, idx) => (
-                  <DropdownMenuItem
-                    key={idx}
-                    onClick={() => {
-                      setMenuOpen(false);
-                      action.onClick();
-                    }}
-                    className={`cursor-pointer ${action.color || ''}`}
-                    disabled={action.disabled}
-                  >
-                    <action.icon className="w-4 h-4 mr-2" />
-                    {action.label}
-                  </DropdownMenuItem>
-                ))
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                {s.name}
+              </span>
+            ))}
+            {group.subjects.length === 0 && (
+              <span className="text-xs text-gray-400 italic">Aucune matière</span>
+            )}
+          </div>
         </div>
+
+        {/* Barème / coefficient — masqués pour Maternelle */}
+        {!isMaternelle && (
+          <div className="flex items-center space-x-2 pt-2 border-t border-gray-100">
+            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-semibold">
+              /{group.firstEvaluation.maxScore}
+            </span>
+            <span className="px-2 py-0.5 bg-gray-200 text-gray-700 rounded text-xs">
+              coef {group.firstEvaluation.coefficient}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Pied : actions */}
+      <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-end space-x-2 bg-gray-50/30">
+        {/* Bouton Modifier — accès direct */}
+        {!['VALIDATED', 'LOCKED', 'CANCELLED'].includes(primaryStatus) && (
+          <button
+            onClick={onOpenEdit}
+            className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md transition-colors"
+            title="Modifier"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            <span>Modifier</span>
+          </button>
+        )}
+
+        {/* Menu déroulant avec toutes les actions */}
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-md transition-colors"
+              title="Plus d'actions"
+            >
+              <MoreVertical className="w-3.5 h-3.5" />
+              <span>Plus d&apos;actions</span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48 z-[100]">
+            {actions.length === 0 ? (
+              <DropdownMenuItem disabled className="text-gray-400">
+                Aucune action disponible
+              </DropdownMenuItem>
+            ) : (
+              actions.map((action, idx) => (
+                <DropdownMenuItem
+                  key={idx}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    action.onClick();
+                  }}
+                  className={`cursor-pointer ${action.color || ''}`}
+                  disabled={action.disabled}
+                >
+                  <action.icon className="w-4 h-4 mr-2" />
+                  {action.label}
+                </DropdownMenuItem>
+              ))
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
@@ -926,6 +1005,7 @@ export default function EvaluationsPage() {
                 evaluations={filteredEvaluations}
                 getAvailableActions={getAvailableActions}
                 onOpenEdit={handleOpenEdit}
+                isMaternelle={isMaternelle}
               />
             )}
           </div>

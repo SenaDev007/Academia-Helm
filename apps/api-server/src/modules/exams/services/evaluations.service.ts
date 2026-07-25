@@ -109,9 +109,16 @@ export class EvaluationsService {
    * Crée une nouvelle évaluation
    */
   async create(tenantId: string, academicYearId: string, data: any) {
-    // Validation du type d'évaluation pour le barème par défaut
-    const type = await this.prisma.evaluationType.findUnique({
-      where: { id: data.evaluationTypeId },
+    // Validation du type d'évaluation — chercher par id OU par code
+    // (le frontend peut envoyer un code comme "EM1" si le type vient de
+    // school_academic_settings.config.assessmentTypes qui n'a pas d'UUID)
+    const type = await this.prisma.evaluationType.findFirst({
+      where: {
+        OR: [
+          { id: data.evaluationTypeId },
+          { code: data.evaluationTypeId, tenantId },
+        ],
+      },
     });
 
     if (!type) throw new NotFoundException('Type d\'évaluation non trouvé');
@@ -133,7 +140,8 @@ export class EvaluationsService {
         classId: data.classId,
         subjectId: data.subjectId,
         periodId: data.periodId,
-        evaluationTypeId: data.evaluationTypeId,
+        // ⭐ Utiliser l'UUID résolu (type.id), pas le code brut envoyé par le frontend
+        evaluationTypeId: type.id,
         title: data.title || null,
         description: data.description || null,
         evaluationDate: data.evaluationDate ? new Date(data.evaluationDate) : new Date(),
@@ -252,7 +260,10 @@ export class EvaluationsService {
           classId,
           subjectId,
           periodId: data.periodId,
-          evaluationTypeId: data.evaluationTypeId,
+          // ⭐ Utiliser l'UUID résolu (type.id), pas le code brut envoyé par le frontend
+          // (data.evaluationTypeId peut être "EM1" si le type vient de
+          // school_academic_settings.config.assessmentTypes — code, pas UUID).
+          evaluationTypeId: type.id,
           title: data.title || null,
           description: data.description || null,
           evaluationDate: data.evaluationDate ? new Date(data.evaluationDate) : new Date(),

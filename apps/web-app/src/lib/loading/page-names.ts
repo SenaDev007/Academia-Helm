@@ -62,7 +62,6 @@ export const PAGE_NAMES: Record<string, string> = {
 
   // ─── App — Dashboard & Modules transversaux ───
   '/app': 'Tableau de bord',
-  '/app/general': 'Général',
   '/app/meetings': 'Réunions',
   '/app/transport': 'Transport',
   '/app/orion': 'ORION — Pilotage Direction',

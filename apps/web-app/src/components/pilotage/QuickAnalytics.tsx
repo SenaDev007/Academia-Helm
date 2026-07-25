@@ -30,14 +30,16 @@ interface BilingualData {
 
 export default function QuickAnalytics({ academicYearId, schoolLevelId }: QuickAnalyticsProps) {
   const [analytics, setAnalytics] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const loadAnalytics = async () => {
+      if (!academicYearId) return;
       setIsLoading(true);
       try {
         const response = await fetch(
-          `/api/general/weighted-average?academicYearId=${academicYearId}&schoolLevelId=${schoolLevelId}`
+          `/api/general/weighted-average?academicYearId=${academicYearId}&schoolLevelId=${schoolLevelId || ''}`,
+          { cache: 'no-store' }
         );
         if (response.ok) {
           const data = await response.json();

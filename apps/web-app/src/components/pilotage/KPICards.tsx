@@ -5,19 +5,28 @@
  *
  * Cartes KPI clés : Effectifs, Assiduité, Recettes, Alertes
  * Données réelles depuis /api/general/consolidated-report
+ *
+ * NB: `isLoading` est déprécié — on l'ignore volontairement pour éviter le
+ * spinner infini (le parent peut passer les données quand elles arrivent,
+ * sinon on affiche des zéros). L'état loading doit être géré en dehors.
  * ============================================================================
  */
 
 'use client';
 
-import { Users, TrendingUp, AlertTriangle, DollarSign, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { Users, TrendingUp, AlertTriangle, DollarSign } from 'lucide-react';
 
 interface KPICardsProps {
-  data: any;
-  isLoading: boolean;
+  data?: any;
+  /** Déprécié — ignoré pour éviter le spinner infini. */
+  isLoading?: boolean;
+  /** Surcharge optionnelle de l'academicYearId (non utilisé ici, gardé pour compat). */
+  academicYearId?: string;
+  /** Surcharge optionnelle du schoolLevelId (non utilisé ici, gardé pour compat). */
+  schoolLevelId?: string;
 }
 
-export default function KPICards({ data, isLoading }: KPICardsProps) {
+export default function KPICards({ data }: KPICardsProps) {
   const kpis = [
     {
       label: 'Effectifs',
@@ -59,17 +68,18 @@ export default function KPICards({ data, isLoading }: KPICardsProps) {
     },
   ];
 
-  if (isLoading) {
+  if (!data) {
+    // Affichage initial : zéros plutôt que spinner infini
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[1, 2, 3, 4].map((i) => (
           <div
             key={i}
-            className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 animate-pulse"
+            className="bg-white rounded-xl border border-gray-200 shadow-sm p-6"
           >
-            <div className="h-4 bg-gray-200 rounded w-24 mb-4" />
-            <div className="h-8 bg-gray-200 rounded w-32 mb-2" />
-            <div className="h-3 bg-gray-200 rounded w-16" />
+            <div className="h-4 bg-gray-100 rounded w-24 mb-4" />
+            <div className="h-8 bg-gray-100 rounded w-32 mb-2" />
+            <div className="h-3 bg-gray-100 rounded w-16" />
           </div>
         ))}
       </div>

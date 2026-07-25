@@ -22,18 +22,21 @@ interface OrionAlertsCardProps {
 
 export default function OrionAlertsCard({ academicYearId, schoolLevelId }: OrionAlertsCardProps) {
   const [alerts, setAlerts] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const loadAlerts = async () => {
+      // Ne pas déclencher si pas d'année scolaire
+      if (!academicYearId) return;
       setIsLoading(true);
       try {
         const response = await fetch(
-          `/api/orion/alerts?academicYearId=${academicYearId}&schoolLevelId=${schoolLevelId}&status=active&limit=3`
+          `/api/orion/alerts?academicYearId=${academicYearId}&schoolLevelId=${schoolLevelId || ''}&status=active&limit=3`,
+          { cache: 'no-store' }
         );
         if (response.ok) {
           const data = await response.json();
-          setAlerts(Array.isArray(data) ? data : []);
+          setAlerts(Array.isArray(data) ? data : (data?.items || []));
         } else {
           setAlerts([]);
         }
@@ -50,12 +53,18 @@ export default function OrionAlertsCard({ academicYearId, schoolLevelId }: Orion
     return () => clearInterval(interval);
   }, [academicYearId, schoolLevelId]);
 
-  if (isLoading) {
+  // Affichage initial discret (pas de animate-pulse infini)
+  if (isLoading && alerts.length === 0) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6 animate-pulse">
-        <div className="h-4 bg-gray-200 rounded w-32 mb-4" />
-        <div className="h-3 bg-gray-200 rounded w-full mb-2" />
-        <div className="h-3 bg-gray-200 rounded w-3/4" />
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+        <div className="flex items-center space-x-2 mb-4">
+          <Brain className="w-5 h-5 text-navy-900" />
+          <h3 className="text-lg font-semibold text-navy-900">Analyse ORION</h3>
+        </div>
+        <div className="text-center py-6">
+          <Brain className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+          <p className="text-sm text-gray-400">Chargement des alertes…</p>
+        </div>
       </div>
     );
   }

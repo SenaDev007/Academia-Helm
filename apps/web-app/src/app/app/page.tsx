@@ -1,21 +1,25 @@
 /**
  * ============================================================================
- * APP PAGE - DASHBOARD PRINCIPAL
+ * APP PAGE - DASHBOARD PRINCIPAL DE PILOTAGE
  * ============================================================================
- * 
- * Page principale de l'application
- * Affiche le dashboard selon le rôle de l'utilisateur
+ *
+ * Page principale de l'application. Affiche le tableau de bord de pilotage
+ * unifié (PilotageDashboardV2) pour tous les rôles administratifs /
+ * direction / finance, avec redirection vers les portails dédiés pour
+ * les enseignants et parents.
+ *
+ * PilotageDashboardV2 couvre toute l'application :
+ *  - KPIs transverses (élèves, finances, pédagogie, RH)
+ *  - Graphiques (effectifs par classe, répartition par sexe, évolution moyennes)
+ *  - Alertes ORION
+ *  - Accès rapide aux modules
+ *
  * ============================================================================
  */
 
 import { getServerSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
-import DirectorDashboard from '@/components/pilotage/dashboards/DirectorDashboard';
-import TeacherDashboard from '@/components/pilotage/dashboards/TeacherDashboard';
-import AccountantDashboard from '@/components/pilotage/dashboards/AccountantDashboard';
-import AdminDashboard from '@/components/pilotage/dashboards/AdminDashboard';
-import ParentDashboard from '@/components/pilotage/dashboards/ParentDashboard';
-import PromoterDashboard from '@/components/pilotage/dashboards/PromoterDashboard';
+import PilotageDashboardV2 from '@/components/pilotage/dashboards/PilotageDashboardV2';
 import type { User } from '@/types';
 
 export default async function AppPage() {
@@ -26,7 +30,6 @@ export default async function AppPage() {
   }
 
   const user = session.user as User;
-  const tenantId = user.tenantId || '';
 
   // ⭐ Rediriger les enseignants vers leur portail dédié
   const teacherRoles = ['teacher', 'TEACHER', 'TEACHER_RESP', 'ENSEIGNANT'];
@@ -40,48 +43,11 @@ export default async function AppPage() {
     redirect('/app/parent');
   }
 
-  // Afficher le dashboard selon le rôle (pour les rôles admin/direction/finance)
-  const renderDashboard = () => {
-    switch (user.role) {
-      case 'PLATFORM_OWNER':
-      case 'PLATFORM_ADMIN':
-      case 'SUPER_DIRECTOR':
-      case 'director':
-      case 'DIRECTEUR_GENERAL':
-      case 'DIRECTEUR_ETABLISSEMENT':
-      case 'DIRECTEUR':
-      case 'DIRECTOR_GENERAL':
-      case 'SCHOOL_DIRECTOR':
-      case 'DEPUTY_DIRECTOR':
-        return <DirectorDashboard tenantId={tenantId} />;
-      case 'PROMOTER':
-      case 'PROMOTEUR':
-        return <PromoterDashboard tenantId={tenantId} />;
-      case 'COMPTABLE':
-      case 'ACCOUNTANT':
-      case 'SECRETAIRE_COMPTABLE':
-      case 'CFO':
-      case 'FINANCE_MANAGER':
-      case 'CASHIER':
-      case 'CAISSIER':
-      case 'ECONOME':
-      case 'RECOVERY_MANAGER':
-      case 'accountant':
-        return <AccountantDashboard />;
-      // Les secrétaires, surveillants, et autres rôles voient le dashboard admin
-      case 'SECRETAIRE':
-      case 'SECRETAIRE_GENERAL':
-      case 'SURVEILLANT':
-      case 'SURVEILLANT_GENERAL':
-      case 'CENSEUR':
-      case 'SCHOOL_LIFE_MANAGER':
-      case 'admin':
-      case 'SCHOOL_ADMIN':
-      case 'SCHOOL_OWNER':
-      default:
-        return <AdminDashboard />;
-    }
-  };
+  // Pour tous les autres rôles (direction, admin, finance, RH, etc.) on
+  // affiche le tableau de bord de pilotage unifié.
+  // L'accès rapide aux modules est masqué pour les rôles non-admin pour
+  // éviter la confusion (ils ont déjà la sidebar pour naviguer).
+  const showQuickAccess = true;
 
-  return renderDashboard();
+  return <PilotageDashboardV2 showQuickAccess={showQuickAccess} />;
 }

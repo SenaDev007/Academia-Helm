@@ -24,15 +24,14 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import {
   LayoutDashboard,
   Users,
-  Calculator,
-  BookOpen,
-  UserCheck,
-  Building,
+  Wallet,
+  GraduationCap,
+  UserCog,
+  School,
   MessageSquare,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  Network,
   Library,
   Bus,
   UtensilsCrossed,
@@ -41,24 +40,19 @@ import {
   Radio,
   ShoppingBag,
   Brain,
-  Calendar,
   Settings,
   Globe,
   Briefcase,
   CreditCard,
-  Zap,
   ShieldAlert,
   HelpCircle,
   History,
   Lock,
   PieChart,
   BarChart3,
-  School,
-  Shield,
   Star,
   Sparkles,
   FileText,
-  GraduationCap,
   FileSpreadsheet,
   Image as ImageIcon,
   Mail,
@@ -171,8 +165,6 @@ const MODULE_ROOTS_WITH_SUBTABS = [
   '/app/finance',
   '/app/communication',
   '/app/exams',
-  '/app/meetings',
-  '/app/general',
 ];
 
 /**
@@ -244,7 +236,7 @@ function filterModuleByVisibility(
   visibility: ReturnType<typeof getVisibleModulesForRole>,
 ): boolean {
   if (path.startsWith('/platform')) return visibility.showPlatformModules;
-  if (path.startsWith('/app/orion') || path.startsWith('/app/meetings') || path.startsWith('/app/general'))
+  if (path.startsWith('/app/orion') || path.startsWith('/app/meetings'))
     return visibility.showDirectionModules;
   if (path.startsWith('/app/finance')) return visibility.showFinanceModules;
   if (path.startsWith('/app/pedagogy'))
@@ -276,13 +268,11 @@ interface PilotageSidebarProps {
 /** Mapping path → featureCode (optionnel). Sans featureCode = toujours affiché. */
 const MAIN_MODULES = [
   { path: '/app', label: 'Tableau de pilotage', icon: LayoutDashboard },
-  { path: '/app/orion', label: 'ORION — Pilotage Direction', icon: Zap, featureCode: 'ORION', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'CENSEUR', 'SURVEILLANT', 'SURVEILLANT_GENERAL', 'director', 'admin'] },
-  { path: '/app/meetings', label: 'Réunions', icon: Calendar },
+  { path: '/app/pedagogy', label: 'Organisation Pédagogique', icon: School, featureCode: 'PEDAGOGY' },
   { path: '/app/students', label: 'Élèves & Scolarité', icon: Users, featureCode: 'STUDENTS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'SCOLARITE', 'SECRETAIRE', 'SECRETAIRE_GENERAL', 'SECRETAIRE_COMPTABLE', 'COMPTABLE', 'CENSEUR', 'SURVEILLANT', 'SURVEILLANT_GENERAL', 'admin'] },
-  { path: '/app/finance', label: 'Finances & Économat', icon: Calculator, featureCode: 'FINANCE', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_BILLING', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'CAISSIER', 'COMPTABLE', 'SECRETAIRE_COMPTABLE', 'ECONOME', 'DIRECTEUR_GENERAL', 'CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER', 'accountant', 'admin'] },
-  { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: BookOpen, featureCode: 'EXAMS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'CENSEUR', 'TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE', 'PEDAGOGIC_COORDINATOR', 'admin'] },
-  { path: '/app/pedagogy', label: 'Organisation Pédagogique', icon: Building, featureCode: 'PEDAGOGY' },
-  { path: '/app/hr', label: 'Personnel, RH & Paie', icon: UserCheck, featureCode: 'HR_PAYROLL', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'HR_MANAGER', 'PAYROLL_MANAGER', 'SCOLARITE', 'admin'] },
+  { path: '/app/finance', label: 'Finances & Économat', icon: Wallet, featureCode: 'FINANCE', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_BILLING', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'CAISSIER', 'COMPTABLE', 'SECRETAIRE_COMPTABLE', 'ECONOME', 'DIRECTEUR_GENERAL', 'CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER', 'accountant', 'admin'] },
+  { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: GraduationCap, featureCode: 'EXAMS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'CENSEUR', 'TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE', 'PEDAGOGIC_COORDINATOR', 'admin'] },
+  { path: '/app/hr', label: 'Personnel, RH & Paie', icon: UserCog, featureCode: 'HR_PAYROLL', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'HR_MANAGER', 'PAYROLL_MANAGER', 'SCOLARITE', 'admin'] },
   { path: '/app/communication', label: 'Communication', icon: MessageSquare, featureCode: 'COMMUNICATION' },
   { path: '/app/cms', label: 'Site Institutionnel', icon: Globe, roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'COMMUNICATION_MANAGER', 'admin'] },
 ];
@@ -399,16 +389,6 @@ export default function PilotageSidebar({
     return () => { window.removeEventListener(SCHOOL_IDENTITY_UPDATED_EVENT, onIdentityUpdated); };
   }, [loadSchoolIdentity]);
 
-  const isSuperDirector =
-    user?.role === 'SUPER_DIRECTOR' || 
-    user?.role === 'PLATFORM_OWNER' || 
-    user?.role === 'PLATFORM_SUPER_ADMIN' || 
-    user?.role === 'PROMOTER' || 
-    user?.role === 'SCHOOL_OWNER' || 
-    user?.role === 'SCHOOL_ADMIN' ||
-    user?.role === 'DIRECTEUR_GENERAL' ||
-    user?.role === 'DIRECTEUR_ETABLISSEMENT' ||
-    user?.role === 'director';
   const [mainModulesOpen, setMainModulesOpen] = useState(true);
   const [supplementaryModulesOpen, setSupplementaryModulesOpen] = useState(true);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
@@ -477,11 +457,6 @@ export default function PilotageSidebar({
   // permettre aux platform owners de basculer vers admin.academiahelm.com.
   const isAdminSubdomain = useAdminSubdomain();
   const isPlatformPortal = (user?.portal === 'PLATFORM' || isPlatformOwner) && isAdminSubdomain;
-
-  // Module Général (Direction uniquement)
-  const generalModule = isSuperDirector
-    ? { path: '/app/general', label: 'Module Général', icon: Network }
-    : null;
 
   const isActive = (path: string) => {
     // Routes racines : correspondance exacte uniquement
@@ -769,13 +744,6 @@ export default function PilotageSidebar({
           </>
         )}
 
-        {/* Module Général (Direction) — MASQUÉ sur le back-office admin */}
-        {!isPlatformPortal && generalModule && (
-          <div className="mb-5">
-            {renderNavItem(generalModule, true)}
-          </div>
-        )}
-
         {/* Modules Supplémentaires — MASQUÉS sur le back-office admin */}
         {!isPlatformPortal && (
         <div className="mb-5">
@@ -975,22 +943,6 @@ export default function PilotageSidebar({
         <div className="absolute top-0 left-0 bottom-0 w-1 bg-gradient-to-b from-gold-500/20 via-transparent to-transparent pointer-events-none" />
         <nav className="flex-1 overflow-y-auto p-2 space-y-0.5 relative z-10">
           {mainModules.map((item) => renderIconItem(item))}
-          {generalModule && (
-            <Link
-              href={tenantParam ? `${generalModule.path}?tenant=${tenantParam}` : generalModule.path}
-              className={`group relative flex items-center justify-center p-2.5 rounded-xl transition-all duration-200 min-h-[44px] min-w-[44px] ${
-                isActive(generalModule.path)
-                  ? 'bg-white/[0.12] text-white shadow-lg shadow-black/10'
-                  : 'text-blue-200/70 hover:bg-white/[0.06] hover:text-white'
-              }`}
-              title={generalModule.label}
-            >
-              {isActive(generalModule.path) && (
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-7 rounded-r-full bg-gradient-to-b from-gold-400 to-gold-600" />
-              )}
-              <Network className={`w-[18px] h-[18px] flex-shrink-0 ${isActive(generalModule.path) ? 'text-gold-400' : ''}`} />
-            </Link>
-          )}
           {supplementaryModules.map((item) => renderIconItem(item))}
         </nav>
         <div className="relative z-10 border-t border-white/[0.06] py-2 space-y-0.5">

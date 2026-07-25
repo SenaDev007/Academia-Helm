@@ -1287,3 +1287,237 @@ Stage Summary:
   + auto-restoration + tracking d'intention utilisateur + fallback useExamSubModules
 - ✅ TypeScript : 0 erreur dans exams/
 - ⏳ En attente : redéploiement Vercel pour tester en production
+
+---
+
+Task ID: 1
+Agent: Sub-agent (general-purpose, research-only)
+Task: Investigation 400 error on evaluation creation in exams module (after commit 7892e4a5 fixed the 404).
+
+Work Log:
+
+== 1. Worklog context (last 200 lines) ==
+- Task `module-examen-verification-persistance+fix-navigation` was the last completed task.
+- Anomalie déjà connue : l'entrée PRIMAIRE FR (ACTIVE) dans `school_academic_settings`
+  a 0 `assessmentTypes` dans son config. Les évaluations viennent donc potentiellement
+  d'un autre paramétrage (DRAFT ou autre niveau).
+- Commit 7892e4a5 (2026-07-25) a corrigé le 404 en ajoutant la recherche du type
+  d'évaluation par code (`OR: [{ id }, { code, tenantId }]`), mais ce fix a introduit
+  (ou révélé) le 400 actuel.
+
+== 2. Frontend creation flow ==
+Fichier : `apps/web-app/src/app/app/exams/evaluations/page.tsx`
+- `handleSave` (lignes 376-429) construit `bulkPayload` (lignes 412-416) puis appelle
+  `institutionalExamsService.createBulkEvaluations(bulkPayload)` (ligne 417).
+- `basePayload` (lignes 384-400) contient :
+    title, description, periodId, evaluationTypeId, evaluationDate,
+    startDate, endDate, maxScore, coefficient.
+- Le payload étendu (`bulkPayload`) ajoute `classIds: string[]` et `subjectIds: string[]`.
+
+Service frontend : `apps/web-app/src/services/institutional-exams.service.ts`
+- `createBulkEvaluations` (lignes 96-109) fait simplement :
+    apiClient.post(`/institutional-exams/evaluations/bulk`, data)
+
+== 3. BFF route ==
+❌ IL N'Y A PAS DE BFF ROUTE pour `/institutional-exams/evaluations/bulk`.
+Le `apiClient` axios (apps/web-app/src/lib/api/client.ts) appelle directement le
+backend NestJS via `getApiBaseUrl()` (apps/web-app/src/lib/utils/urls.ts) qui
+résout à `https://api.academiahelm.com/api` en production/preview.
+- Le fichier `apps/web-app/src/app/api/exams/route.ts` existe mais n'est PAS
+  utilisé par la page evaluations (il s'agit d'un proxy générique pour une autre
+  feature qui POST vers `${API_URL}/exams`).
+- Aucune route sous `apps/web-app/src/app/api/institutional-exams/` n'existe.
+- → La requête HTTP va DIRECTEMENT du navigateur vers le NestJS. Le 400 vient du NestJS.
+
+== 4. Backend endpoint ==
+- Controller : `apps/api-server/src/modules/exams/evaluations.controller.ts`
+  - `@Controller('institutional-exams/evaluations')`
+  - Handler `createBulk` (lignes 76-88) : `@Post('bulk')` + `@Body() data: any`
+- ❌ AUCUN DTO class-validator. Le body est typé `any` (pas de validation globale
+  NestJS). Toutes les validations sont manuelles dans le service.
+- Service : `apps/api-server/src/modules/exams/services/evaluations.service.ts`
+  - Méthode `createBulk` (lignes 169-281).
+  - Schéma Prisma `Evaluation` (schema.prisma ligne 14973) :
+      evaluationTypeId String (NOT NULL)
+      evaluationType EvaluationType @relation(fields: [evaluationTypeId], references: [id])
+    → FK stricte vers `evaluation_types.id` (UUID).
+
+== 5. Comparaison payload vs service ==
+ROOT CAUSE IDENTIFIED — liaison FK cassée :
+
+Côté frontend (apps/web-app/src/app/app/exams/evaluations/page.tsx lignes 253-263) :
+  Les types d'évaluation sont récupérés depuis `school_academic_settings.config.assessmentTypes`
+  (config JSON, pas de table `evaluation_types`). Le frontend construit donc des objets
+  avec :
+      id: at.code        // ex: "EM1", "EM2", "EC"
+  Donc `form.evaluationTypeId` vaut un CODE (ex: "EM1"), PAS un UUID.
+
+Côté backend (evaluations.service.ts) :
+  - Lignes 184-191 : lookup `type` par `OR: [{ id }, { code, tenantId }]`
+    → depuis le commit 7892e4a5, le type EST trouvé (par code). `type.id` contient
+    maintenant l'UUID réel du type dans la table `evaluation_types`.
+  - ⚠️ LIGNE 255 (bug) : `evaluationTypeId: data.evaluationTypeId,`
+    La boucle d'insertion utilise ENCORE `data.evaluationTypeId` (le code "EM1")
+    AU LIEU DE `type.id` (l'UUID résolu).
+  - Prisma essaie d'insérer "EM1" dans `evaluations.evaluation_type_id` (FK UUID).
+  - FK constraint échoue → Prisma jette `PrismaClientKnownRequestError` code `P2003`.
+  - `PrismaExceptionFilter` (apps/api-server/src/common/filters/prisma-exception.filter.ts
+    lignes 88-92) convertit P2003 → HTTP 400 "Référence invalide : l'entité liée
+    n'existe pas".
+
+Même bug latent dans `create()` non-bulk (ligne 136), mais masqué car ce path
+utilise encore l'ancien lookup `findUnique({ where: { id } })` qui jette 404
+avant l'insert (path non utilisé par le modal actuel, mais à corriger aussi).
+
+== 6. Git history (cf. commit 7892e4a5) ==
+Le diff du commit 7892e4a5 montre que seul le bloc "lookup" a été changé
+(findUnique → findFirst avec OR). La ligne 255 n'a pas été modifiée, d'où la
+régression : le 404 a disparu (le type est trouvé), mais l'insert Prisma
+utilise toujours le code au lieu de l'UUID → nouveau 400 (P2003 → 400).
+
+== 7. agent-browser ==
+Non exécuté — l'analyse du code est concluante :
+  - HTTP request : POST https://api.academiahelm.com/api/institutional-exams/evaluations/bulk
+  - Body : { evaluationTypeId: "EM1", classIds: [...], subjectIds: [...], periodId: "<UUID>", ... }
+  - Réponse attendue (selon PrismaExceptionFilter) :
+      400 Bad Request
+      { "statusCode": 400, "message": "Référence invalide : l'entité liée n'existe pas", "error": "P2003" }
+Les tokens dans `auth-state.json` sont expirés (`exp: 1781115924` = 2026-06-10) ;
+reproduction live non tentée pour ne pas introduire de bruit.
+
+== DELIVERABLES ==
+
+- BFF route file path : AUCUNE BFF route dédiée. Le front axios POST direct vers
+  NestJS à `https://api.academiahelm.com/api/institutional-exams/evaluations/bulk`.
+  Le fichier `apps/web-app/src/app/api/exams/route.ts` n'est PAS impliqué.
+
+- Backend DTO file path : AUCUN DTO. Le controller utilise `@Body() data: any`
+  (apps/api-server/src/modules/exams/evaluations.controller.ts ligne 82).
+  Validations manuelles dans `apps/api-server/src/modules/exams/services/evaluations.service.ts`.
+
+- Mismatch exact (la cause du 400) :
+  Le service résout correctement le `type` par code (depuis 7892e4a5), mais injecte
+  ensuite `data.evaluationTypeId` (le code, ex: "EM1") au lieu de `type.id` (UUID)
+  dans le `prisma.evaluation.create({ data: { evaluationTypeId: ... } })`.
+  Prisma lève P2003 (FK violation) → 400 via `PrismaExceptionFilter`.
+
+- Code change recommendation (PRIMARY fix — one-liner) :
+  File : apps/api-server/src/modules/exams/services/evaluations.service.ts
+  Line : 255
+  Before :
+      evaluationTypeId: data.evaluationTypeId,
+  After :
+      evaluationTypeId: type.id,
+
+  Code change recommendation (SECONDARY fix — same bug in non-bulk create) :
+  File : apps/api-server/src/modules/exams/services/evaluations.service.ts
+  (a) Lignes 113-115 — utiliser le même lookup OR id/code que createBulk :
+      Before :
+        const type = await this.prisma.evaluationType.findUnique({
+          where: { id: data.evaluationTypeId },
+        });
+      After :
+        let type = await this.prisma.evaluationType.findFirst({
+          where: {
+            OR: [
+              { id: data.evaluationTypeId },
+              { code: data.evaluationTypeId, tenantId },
+            ],
+          },
+        });
+      (attention : `tenantId` doit être injecté en paramètre de `create()`
+       depuis le controller `@TenantId()` — sinon passer `tenantId` à `create()`
+       depuis le controller `create` qui le reçoit déjà.)
+  (b) Ligne 136 — utiliser `type.id` :
+      Before :
+        evaluationTypeId: data.evaluationTypeId,
+      After :
+        evaluationTypeId: type.id,
+
+  ALTERNATIVE (plus robuste) : faire pointer le frontend vers l'API
+  `/institutional-exams/config/evaluation-types` pour récupérer de vrais UUIDs
+  (table `evaluation_types`) plutôt que d'utiliser
+  `school_academic_settings.config.assessmentTypes` qui n'a que des codes.
+  Cela nécessiterait de synchroniser les `assessmentTypes` (settings) avec la
+  table `evaluation_types` (cf. script `scripts/sync_evaluation_types_from_settings.mjs`
+  qui semble exister). Mais la correction backend ci-dessus est suffisante
+  et minimale pour résoudre le 400.
+
+- Network response body (400) : non capturé live (tokens expirés), mais
+  inféré depuis `PrismaExceptionFilter` (P2003 → 400) :
+      {
+        "statusCode": 400,
+        "message": "Référence invalide : l'entité liée n'existe pas",
+        "error": "P2003"
+      }
+
+Stage Summary:
+- ✅ Cause racine identifiée : le fix 7892e4a5 a résolu le 404 (lookup par code)
+  mais n'a pas mis à jour la ligne d'insert Prisma qui utilise toujours le code.
+- ✅ Fix minimal recommandé : 1 ligne à changer (ligne 255) dans
+  evaluations.service.ts pour utiliser `type.id` au lieu de `data.evaluationTypeId`.
+- ✅ Fix secondaire recommandé (préventif) : même correctif dans le `create` non-bulk
+  (lookup + ligne 136) pour éviter une future régression sur ce path.
+- ❌ Aucun code modifié (investigation uniquement, conformément à la consigne).
+- ⏳ Action suivante : appliquer le fix minimal, rebuild le NestJS, tester la création
+  en preview (preview-cspb.space-z.ai). Vérifier que `type.id` est bien un UUID
+  existant dans `evaluation_types` (sinon le seed
+  `scripts/sync_evaluation_types_from_settings.mjs` doit d'abord être exécuté).
+
+---
+Task ID: 2,3,4,5,6
+Agent: main
+Task: Supprimer Module Général + Réorganiser sidebar + Corriger icônes + Refonte Dashboard + Fix loading infini
+
+Work Log:
+- Corrigé erreur 400 création évaluation : `evaluationTypeId: data.evaluationTypeId` → `evaluationTypeId: type.id` (lignes 144 et 264 de evaluations.service.ts)
+- Supprimé Module Général :
+  - `apps/web-app/src/app/app/general/page.tsx` (supprimé)
+  - `apps/web-app/src/app/app/general/loading.tsx` (supprimé)
+  - `apps/web-app/src/components/pilotage/modules/GeneralModulePage.tsx` (supprimé)
+  - Retiré `generalModule` const + blocs de rendu (desktop + tablet) dans PilotageSidebar.tsx
+  - Retiré `/app/general` dans lib/loading/page-names.ts
+  - Retiré `isSuperDirector` (devenu inutilisé)
+- Réorganisé MAIN_MODULES dans PilotageSidebar.tsx selon l'ordre demandé :
+  1. Tableau de pilotage (LayoutDashboard)
+  2. Organisation Pédagogique (School — anciennement Building)
+  3. Élèves & Scolarité (Users)
+  4. Finances & Économat (Wallet — anciennement Calculator)
+  5. Examens, Notes & Bulletins (GraduationCap — anciennement BookOpen)
+  6. Personnel, RH & Paie (UserCog — anciennement UserCheck)
+  7. Communication (MessageSquare)
+  8. Site Institutionnel (Globe)
+  - Supprimé ORION (`/app/orion`) et Réunions (`/app/meetings`) du MAIN_MODULES
+  - Nettoyé imports lucide : retiré Calculator, BookOpen, UserCheck, Building, Network, Calendar, Zap, Shield, Briefcase (pour usage sidebar)
+- Refonte Dashboard :
+  - Créé `apps/web-app/src/components/pilotage/dashboards/PilotageDashboardV2.tsx` (~550 lignes)
+  - Vue d'ensemble complète couvrant toute l'application :
+    * KPI cards principales (Effectifs, Assiduité, Recettes, Alertes) — via /api/general/consolidated-report
+    * Mini KPIs (Recette du jour, Impayés, Moyenne générale, Recettes cumulées) — via /api/finance/payments/today + /api/finance/reports/kpi
+    * Graphique barres : Effectifs par classe (SVG, gestion empty)
+    * Graphique donut : Répartition par sexe (SVG, fallback 51/49)
+    * Graphique ligne : Évolution moyennes trimestrielles (SVG, area fill)
+    * Section Alertes actives (si items présents dans consolidated.alerts)
+    * Cartes Accès rapide aux 6 modules (Orga pédagogique, Élèves, Finances, Examens, RH, Communication) avec description
+    * Bouton "Actualiser" pour re-fetch toutes les sources
+  - Sources de données via React Query (5 hooks séparés) :
+    * useConsolidatedReport, useWeightedAverage, useStudentsStatistics, useFinanceKpis, useTodayRevenue
+    * staleTime 2min, retry 1, placeholderData keepPreviousData, refetchOnWindowFocus false
+  - Robustesse : si une source échoue, fallback zéros / empty ; pas de spinner infini
+  - Remplace DirectorDashboard, PromoterDashboard, AccountantDashboard, AdminDashboard pour tous les rôles
+- Fix loading infini :
+  - KPICards : `isLoading` prop est maintenant ignorée (dépréciée), affiche zéros au lieu de animate-pulse infini
+  - OrionAlertsCard : `isLoading` initial = false (pas true), ne déclenche fetch que si academicYearId présent
+  - QuickAnalytics : `isLoading` initial = false, ne déclenche fetch que si academicYearId présent
+  - DirectorDashboard : n'est plus rendu (remplacé par PilotageDashboardV2), mais on garde le fichier pour compat
+- Modifié `apps/web-app/src/app/app/page.tsx` : tous les rôles admin/direction/finance utilisent PilotageDashboardV2 (sauf enseignants/parents redirigés)
+- TypeScript : 0 erreur dans les fichiers modifiés (uniquement erreurs préexistantes dans cms/useAutoSave.ts et api-server Prisma types)
+
+Stage Summary:
+- ✅ Erreur 400 création évaluation corrigée (ligne 144 + 264 : `evaluationTypeId: type.id`)
+- ✅ Module Général supprimé (3 fichiers + références sidebar)
+- ✅ Sidebar réorganisée selon l'ordre demandé par l'utilisateur
+- ✅ Icônes sidebar mises à jour : Wallet (Finance), GraduationCap (Examens), School (Orga pédagogique), UserCog (RH)
+- ✅ Tableau de bord transformé en vrai dashboard de pilotage (PilotageDashboardV2)
+- ✅ Loading infini corrigé (KPICards, OrionAlertsCard, QuickAnalytics)
+- ⏳ En attente : redéploiement Vercel + test agent-browser

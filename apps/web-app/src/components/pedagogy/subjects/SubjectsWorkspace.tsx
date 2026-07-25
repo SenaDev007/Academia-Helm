@@ -96,7 +96,9 @@ const DEFAULT_SUBJECTS_CATALOGUE: Record<
     { name: 'Mathématiques',                             abbreviation: 'MATH', code: 'MATH-07' },
     { name: 'Physique Chimie et Technologie',            abbreviation: 'PCT',  code: 'PCT-08'  },
     { name: 'Science de la Vie et de la Terre',          abbreviation: 'SVT',  code: 'SVT-09'  },
-    { name: 'Éducation Physique et Sportive',            abbreviation: 'EPS',  code: 'EPS-10'  },
+    { name: 'Histoire-Géographie',                      abbreviation: 'HG',   code: 'HG-11'   },
+    { name: 'Philosophie',                               abbreviation: 'PHILO',code: 'PHILO-12'},
+    { name: 'Éducation Physique et Sportive',            abbreviation: 'EPS',  code: 'EPS-13'  },
   ],
 };
 

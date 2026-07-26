@@ -44,6 +44,7 @@ import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { useMyClasses } from "@/lib/query/pedagogy-hooks";
 import { MonthlyEvaluationTab } from "./MonthlyEvaluationTab";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface AttendanceRegisterTabProps {
   tenantId: string;
@@ -198,6 +199,8 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
   const [appelDate, setAppelDate] = useState(new Date().toISOString().split("T")[0]);
   const [appelSaving, setAppelSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"register" | "evaluation" | "summary" | "settings">("register");
+  // ⭐ Modal de confirmation professionnel (remplace window.confirm)
+  const { warning: confirmWarning, dialog: confirmDialog } = useConfirmDialog();
 
   // ⭐ Jours fériés du mois (paramétrables par l'enseignant)
   // Stockés sous forme de dates ISO (YYYY-MM-DD)
@@ -425,8 +428,11 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         }),
       });
       if (!res.ok) throw new Error("Erreur");
-      toast.success("✅ Registre enregistré");
-      loadRegister();
+      toast.success("✅ Registre enregistré", {
+        description: "Les modifications ont été sauvegardées. Le statut reste 'Brouillon' jusqu'à la soumission au directeur.",
+      });
+      // ⭐ Recharger le registre pour mettre à jour l'affichage
+      await loadRegister();
     } catch (e: any) {
       toast.error("Erreur", { description: e.message });
     } finally {
@@ -436,7 +442,15 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
 
   const handleSubmit = async () => {
     if (!register) return;
-    if (!confirm("Soumettre ce registre au directeur ?")) return;
+    // ⭐ Modal professionnel (remplace confirm())
+    const ok = await confirmWarning(
+      `Souhaitez-vous soumettre ce registre au directeur ?`,
+      'Soumission du registre',
+      `Classe : ${selectedClass?.className || '—'}\n` +
+      `Mois : ${MONTH_NAMES[selectedMonth]} ${selectedYear}\n\n` +
+      `Cette action est irréversible. Vous ne pourrez plus modifier le registre après la soumission.`
+    );
+    if (!ok) return;
     try {
       const res = await fetch(`/api/pedagogy-space/attendance-registers/${register.id}`, {
         method: "PUT",
@@ -444,11 +458,14 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         credentials: "include",
         body: JSON.stringify({ status: "SUBMITTED", submittedAt: new Date().toISOString() }),
       });
-      if (!res.ok) throw new Error();
-      toast.success("✅ Registre soumis");
-      loadRegister();
+      if (!res.ok) throw new Error("Échec de la soumission");
+      toast.success("✅ Registre soumis au directeur", {
+        description: "Le directeur sera notifié pour validation.",
+      });
+      // ⭐ Recharger le registre pour mettre à jour le badge (DRAFT → SUBMITTED)
+      await loadRegister();
     } catch (e: any) {
-      toast.error("Erreur", { description: e.message });
+      toast.error("Erreur lors de la soumission", { description: e.message });
     }
   };
 
@@ -607,11 +624,14 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
               Faire l'appel
             </button>
           )}
-          <button onClick={handleSave} disabled={saving || loading || !register || isReadOnly || activeTab !== "register"}
+          {/* ⭐ Bouton Enregistrer — toujours actif (sauf loading/saving/!register)
+              pour permettre la sauvegarde en attendant la soumission au directeur */}
+          <button onClick={handleSave} disabled={saving || loading || !register}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Enregistrer
           </button>
+          {/* ⭐ Bouton Soumettre — désactivé si statut n'est pas DRAFT (déjà soumis/validé) */}
           <button onClick={handleSubmit} disabled={loading || !register || register?.status !== "DRAFT" || activeTab !== "register"}
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">
             <Send className="h-4 w-4" />
@@ -1225,6 +1245,8 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
           Ce registre est verrouillé (statut: {register?.status}).
         </div>
       )}
+      {/* ⭐ Modal de confirmation professionnel (remplace window.confirm) */}
+      {confirmDialog}
     </div>
   );
 }

@@ -28,6 +28,7 @@ import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import apiClient from '@/lib/api/client';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
+import { UnlockRequestModal } from '@/components/exams/UnlockRequestModal';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -197,6 +198,8 @@ export function GradingSheet({
   const { warning, dialog: confirmDialog } = useConfirmDialog();
   // ⭐ Mode d'édition : 'readonly' par défaut, 'add' pour ajouter, 'edit' pour modifier
   const [editMode, setEditMode] = useState<'readonly' | 'add' | 'edit'>('readonly');
+  // ⭐ Modal de demande de déverrouillage (remplace prompt())
+  const [unlockModalOpen, setUnlockModalOpen] = useState(false);
 
   // ⭐ Vérifier si les notes sont verrouillées (soumises ou validées)
   // Si verrouillées, l'enseignant ne peut plus modifier — il doit demander un déverrouillage
@@ -497,23 +500,7 @@ export function GradingSheet({
                   </p>
                 </div>
                 <button
-                  onClick={() => {
-                    const reason = prompt('Justificatif de la demande de déverrouillage (obligatoire) :');
-                    if (reason && reason.trim()) {
-                      // ⭐ Envoyer la demande de déverrouillage
-                      Promise.all(
-                        group.evaluationIds.map((evId) =>
-                          apiClient.post(`/institutional-exams/evaluations/${evId}/unlock-request`, {
-                            reason: reason.trim(),
-                          }).catch(() => null)
-                        )
-                      ).then(() => {
-                        toastSuccess('Demande de déverrouillage envoyée', {
-                          description: 'L\'administration examinera votre demande.',
-                        });
-                      });
-                    }
-                  }}
+                  onClick={() => setUnlockModalOpen(true)}
                   className="px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-lg transition-colors"
                 >
                   Demander un déverrouillage
@@ -1184,6 +1171,14 @@ export function GradingSheet({
       />
     )}
     {confirmDialog}
+    {/* ⭐ Modal de demande de déverrouillage (remplace prompt()) */}
+    <UnlockRequestModal
+      open={unlockModalOpen}
+      onClose={() => setUnlockModalOpen(false)}
+      evaluationIds={group.evaluationIds}
+      className={group.className}
+      evaluationTypeName={group.evaluationTypeName}
+    />
     </>
   );
 }

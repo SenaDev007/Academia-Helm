@@ -74,7 +74,16 @@ interface GradeRow {
   studentName: string;
   matricule?: string;
   gender?: string;
-  scores: Record<string, { score: number | null; qualitativeCode: string | null; isAbsent: boolean; comment: string }>;
+  // Pour Maternelle : qualitativeCode (TS/S/PS)
+  // Pour Primaire : cm (/18) + cp (/2) + total = cm + cp
+  scores: Record<string, {
+    score: number | null;
+    cm: number | null;
+    cp: number | null;
+    qualitativeCode: string | null;
+    isAbsent: boolean;
+    comment: string;
+  }>;
   status: string;
 }
 
@@ -543,7 +552,7 @@ function TeacherGradingSheet({
   const handleScoreChange = (studentId: string, subjectId: string, value: string) => {
     setRows(prev => prev.map(row => {
       if (row.studentId !== studentId) return row;
-      const existing = row.scores[subjectId] || { score: null, qualitativeCode: null, isAbsent: false, comment: '' };
+      const existing = row.scores[subjectId] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
       let updated: any;
       if (isMaternelle) {
         updated = { ...existing, qualitativeCode: value === '' ? null : value };
@@ -551,6 +560,43 @@ function TeacherGradingSheet({
         updated = { ...existing, score: value === '' ? null : parseFloat(value) };
       }
       return { ...row, scores: { ...row.scores, [subjectId]: updated } };
+    }));
+  };
+
+  // ⭐ Primaire : gestion CM (/18) et CP (/2)
+  // CP possible uniquement si CM ≥ 10. Sinon CP = 0.
+  // Total = CM + CP (max /20)
+  const handleCmChange = (studentId: string, subjectId: string, value: string) => {
+    setRows(prev => prev.map(row => {
+      if (row.studentId !== studentId) return row;
+      const existing = row.scores[subjectId] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
+      const cm = value === '' ? null : Math.min(18, Math.max(0, parseFloat(value) || 0));
+      const cp = (cm !== null && cm >= 10) ? existing.cp : 0;
+      const total = (cm !== null ? cm : 0) + (cp !== null ? cp : 0);
+      return {
+        ...row,
+        scores: {
+          ...row.scores,
+          [subjectId]: { ...existing, cm, cp, score: total, isAbsent: false },
+        },
+      };
+    }));
+  };
+
+  const handleCpChange = (studentId: string, subjectId: string, value: string) => {
+    setRows(prev => prev.map(row => {
+      if (row.studentId !== studentId) return row;
+      const existing = row.scores[subjectId] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
+      if (existing.cm === null || existing.cm < 10) return row;
+      const cp = value === '' ? null : Math.min(2, Math.max(0, parseFloat(value) || 0));
+      const total = (existing.cm || 0) + (cp !== null ? cp : 0);
+      return {
+        ...row,
+        scores: {
+          ...row.scores,
+          [subjectId]: { ...existing, cp, score: total },
+        },
+      };
     }));
   };
 
@@ -726,13 +772,13 @@ function TeacherGradingSheet({
                         <div className="text-[9px] text-slate-400 font-normal">TS / S / PS</div>
                       </th>
                     ) : (
-                      <th key={idx} colSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[120px]">
+                      <th key={idx} colSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[180px]">
                         {subject.name}
                       </th>
                     )
                   ))}
                   {!isMaternelle && (
-                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total</th>
+                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total gén.</th>
                   )}
                   <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Seuil</th>
                 </tr>
@@ -740,7 +786,8 @@ function TeacherGradingSheet({
                   <tr className="bg-slate-50">
                     {group.subjects.map((_, idx) => (
                       <>
-                        <th key={`note-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Note /20</th>
+                        <th key={`cm-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CM /18</th>
+                        <th key={`cp-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CP /2</th>
                         <th key={`tot-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Total</th>
                       </>
                     ))}
@@ -865,27 +912,46 @@ function TeacherGradingSheet({
                         }
                         return (
                           <>
-                            <td key={`note-${subject.id}`} className="border border-slate-300 p-0">
+                            {/* ⭐ Primaire : 3 cellules CM /18 + CP /2 + Total */}
+                            <td key={`cm-${subject.id}`} className="border border-slate-300 p-0">
                               <input
                                 type="number"
-                                step="0.25"
+                                step="0.5"
                                 min="0"
-                                max="20"
-                                value={score.isAbsent ? '' : (score.score ?? '')}
-                                onChange={(e) => handleScoreChange(row.studentId, subject.id, e.target.value)}
+                                max="18"
+                                value={score.isAbsent ? '' : (score.cm ?? '')}
+                                onChange={(e) => handleCmChange(row.studentId, subject.id, e.target.value)}
                                 disabled={score.isAbsent}
                                 placeholder="—"
                                 className={cn(
                                   'w-full px-1 py-1 text-center text-xs font-bold border-0 bg-transparent',
                                   'focus:outline-none focus:ring-1 focus:ring-blue-400',
                                   score.isAbsent && 'opacity-30 cursor-not-allowed bg-red-50',
-                                  !score.isAbsent && score.score !== null && typeof score.score === 'number' &&
-                                    (Number(score.score) < 10 ? 'text-rose-600' : Number(score.score) >= 14 ? 'text-emerald-600' : 'text-slate-900')
+                                  !score.isAbsent && score.cm !== null && typeof score.cm === 'number' &&
+                                    (Number(score.cm) < 10 ? 'text-rose-600' : Number(score.cm) >= 14 ? 'text-emerald-600' : 'text-slate-900')
+                                )}
+                              />
+                            </td>
+                            <td key={`cp-${subject.id}`} className="border border-slate-300 p-0">
+                              <input
+                                type="number"
+                                step="0.25"
+                                min="0"
+                                max="2"
+                                value={score.isAbsent ? '' : (score.cp ?? '')}
+                                onChange={(e) => handleCpChange(row.studentId, subject.id, e.target.value)}
+                                disabled={score.isAbsent || (score.cm === null || score.cm < 10)}
+                                placeholder="—"
+                                title={score.cm !== null && score.cm >= 10 ? 'Critère de Perfectionnement (0, 1 ou 2)' : 'CP disponible uniquement si CM ≥ 10'}
+                                className={cn(
+                                  'w-full px-1 py-1 text-center text-xs font-bold border-0 bg-transparent',
+                                  'focus:outline-none focus:ring-1 focus:ring-blue-400',
+                                  (score.isAbsent || score.cm === null || score.cm < 10) && 'opacity-30 cursor-not-allowed bg-slate-50'
                                 )}
                               />
                             </td>
                             <td key={`tot-${subject.id}`} className="border border-slate-300 px-2 py-1 text-center font-bold bg-slate-50">
-                              {score.isAbsent ? '—' : (score.score ?? '—')}
+                              {score.isAbsent ? '—' : ((score.cm !== null || score.cp !== null) ? ((score.cm || 0) + (score.cp || 0)).toFixed(2) : '—')}
                             </td>
                           </>
                         );
@@ -921,7 +987,7 @@ function TeacherGradingSheet({
                 {filteredRows.length === 0 && (
                   <tr>
                     <td
-                      colSpan={isMaternelle ? 5 + group.subjects.length : 5 + group.subjects.length * 2 + 1}
+                      colSpan={isMaternelle ? 5 + group.subjects.length + 1 : 5 + group.subjects.length * 3 + 2}
                       className="border border-slate-300 px-4 py-8 text-center text-slate-400 text-sm"
                     >
                       Aucun élève trouvé.
@@ -948,10 +1014,13 @@ function TeacherGradingSheet({
               </ul>
             ) : (
               <ul className="space-y-0.5 ml-4">
-                <li>Saisissez la note sur 20 (ex: 15.5, 12, 8.25).</li>
-                <li><strong className="text-emerald-600">P</strong> = Présent · <strong className="text-red-600">A</strong> = Absent (toutes les matières)</li>
-                <li className="text-emerald-700">Notes ≥ 10 : admis (en vert).</li>
-                <li className="text-rose-700">Notes &lt; 10 : échec (en rouge).</li>
+                <li><strong>CM</strong> = Critère Maximal, noté sur /18</li>
+                <li><strong>CP</strong> = Critère de Perfectionnement, noté sur /2</li>
+                <li className="text-amber-700">⭐ CP disponible uniquement si CM ≥ 10/18</li>
+                <li><strong>Total</strong> = CM + CP (max /20)</li>
+                <li><strong className="text-emerald-600">P</strong> = Présent · <strong className="text-red-600">A</strong> = Absent</li>
+                <li className="text-emerald-700">CM ≥ 10 : admis (en vert).</li>
+                <li className="text-rose-700">CM &lt; 10 : échec (en rouge).</li>
               </ul>
             )}
           </div>

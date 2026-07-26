@@ -85,7 +85,17 @@ interface GradeRow {
   matricule?: string;
   gender?: string;
   // Une note par matière (subjectId → note)
-  scores: Record<string, { score: number | null; qualitativeCode: string | null; isAbsent: boolean; comment: string }>;
+  // Pour Maternelle : qualitativeCode (TS/S/PS)
+  // Pour Primaire : cm (/18) + cp (/2) + total = cm + cp
+  // Pour Secondaire : score (/20)
+  scores: Record<string, {
+    score: number | null;          // score global /20 (secondaire) ou total (primaire)
+    cm: number | null;             // Critère Maximal /18 (primaire uniquement)
+    cp: number | null;             // Critère de Perfectionnement /2 (primaire, si cm ≥ 10)
+    qualitativeCode: string | null; // TS/S/PS (maternelle)
+    isAbsent: boolean;
+    comment: string;
+  }>;
   status: string;
 }
 
@@ -582,16 +592,63 @@ function GradingSheet({
     setRows((prev) =>
       prev.map((row) => {
         if (row.studentId !== studentId) return row;
-        const existing = row.scores[subjectId] || { score: null, qualitativeCode: null, isAbsent: false, comment: '' };
+        const existing = row.scores[subjectId] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
         let updated: any;
         if (isMaternelle) {
           // Mode qualitatif : value = TS/S/PS
           updated = { ...existing, qualitativeCode: value === '' ? null : value };
         } else {
-          // Mode quantitatif : value = "12.5" → parse en number
+          // Mode quantitatif : value = "12.5" → parse en number (score global /20)
           updated = { ...existing, score: value === '' ? null : parseFloat(value) };
         }
         return { ...row, scores: { ...row.scores, [subjectId]: updated } };
+      })
+    );
+  };
+
+  // ⭐ Primaire : gestion CM (/18) et CP (/2)
+  // - CM = Critère Maximal, noté sur 18
+  // - CP = Critère de Perfectionnement, noté sur 2
+  //   ⭐ Règle : CP possible uniquement si CM ≥ 10. Sinon CP = 0.
+  // - Total = CM + CP (max /20)
+  const handleCmChange = (studentId: string, subjectId: string, value: string) => {
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.studentId !== studentId) return row;
+        const existing = row.scores[subjectId] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
+        const cm = value === '' ? null : Math.min(18, Math.max(0, parseFloat(value) || 0));
+        // Si CM < 10, forcer CP = 0
+        const cp = (cm !== null && cm >= 10) ? existing.cp : 0;
+        const total = (cm !== null ? cm : 0) + (cp !== null ? cp : 0);
+        return {
+          ...row,
+          scores: {
+            ...row.scores,
+            [subjectId]: { ...existing, cm, cp, score: total, isAbsent: false },
+          },
+        };
+      })
+    );
+  };
+
+  const handleCpChange = (studentId: string, subjectId: string, value: string) => {
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.studentId !== studentId) return row;
+        const existing = row.scores[subjectId] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
+        // ⭐ CP possible uniquement si CM ≥ 10
+        if (existing.cm === null || existing.cm < 10) {
+          return row; // Ne pas modifier
+        }
+        const cp = value === '' ? null : Math.min(2, Math.max(0, parseFloat(value) || 0));
+        const total = (existing.cm || 0) + (cp !== null ? cp : 0);
+        return {
+          ...row,
+          scores: {
+            ...row.scores,
+            [subjectId]: { ...existing, cp, score: total },
+          },
+        };
       })
     );
   };
@@ -692,7 +749,8 @@ function GradingSheet({
         total++;
         if (score.isAbsent) {
           absent++;
-        } else if (isMaternelle ? score.qualitativeCode : score.score !== null) {
+        } else if (isMaternelle ? score.qualitativeCode : (score.cm !== null)) {
+          // Pour Primaire : on compte comme "filled" si le CM est saisi
           filled++;
         }
       });
@@ -835,7 +893,7 @@ function GradingSheet({
                 <div className="bg-white border-2 border-slate-800 rounded-xl overflow-x-auto">
                   <table className="w-full border-collapse text-xs">
                     <thead>
-                      {/* Ligne 1 : N° + Nom + Sexe + Présence + Matières (colSpan=2) + Total + Seuil */}
+                      {/* Ligne 1 : N° + Nom + Sexe + Présence + Matières (colSpan=3 pour Primaire, 1 pour Maternelle) + Total + Seuil */}
                       <tr className="bg-slate-100">
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">N°</th>
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: '180px' }}>Nom et prénom</th>
@@ -848,23 +906,24 @@ function GradingSheet({
                               <div className="text-[9px] text-slate-400 font-normal">TS / S / PS</div>
                             </th>
                           ) : (
-                            <th key={idx} colSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[120px]">
+                            <th key={idx} colSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[180px]">
                               {subject.name}
                             </th>
                           )
                         ))}
                         {!isMaternelle && (
-                          <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total</th>
+                          <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total gén.</th>
                         )}
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Seuil</th>
                       </tr>
-                      {/* Ligne 2 : pour Primaire, CM/Total par matière ; pour Maternelle, ligne vide */}
+                      {/* Ligne 2 : pour Primaire, CM/18 + CP/2 + Total par matière ; pour Maternelle, ligne vide */}
                       {!isMaternelle && (
                         <tr className="bg-slate-50">
                           {group.subjects.map((_, idx) => (
                             <>
-                              <th key={`cm-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Note /20</th>
-                              <th key={`tot-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Total</th>
+                              <th key={`cm-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CM /18</th>
+                              <th key={`cp-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CP /2</th>
+                              <th key={`tot-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Total</th>
                             </>
                           ))}
                         </tr>
@@ -961,10 +1020,12 @@ function GradingSheet({
                               </div>
                             </td>
 
-                            {/* Une cellule par matière (Maternelle) ou ×2 (Primaire CM/Total) */}
+                            {/* Une cellule par matière (Maternelle: 1 cellule TS/S/PS, Primaire: 3 cellules CM/CP/Total) */}
                             {group.subjects.map((subject) => {
                               const score = row.scores[subject.id] || {
                                 score: null,
+                                cm: null,
+                                cp: null,
                                 qualitativeCode: null,
                                 isAbsent: false,
                                 comment: '',
@@ -1006,36 +1067,60 @@ function GradingSheet({
                                   </td>
                                 );
                               }
-                              // Primaire : 2 cellules (Note /20 + Total calculé)
+                              // ⭐ Primaire : 3 cellules (CM /18 + CP /2 + Total)
+                              // CM = Critère Maximal /18
+                              // CP = Critère de Perfectionnement /2 (uniquement si CM ≥ 10)
+                              // Total = CM + CP (max /20)
+                              const cmValue = score.cm;
+                              const cpValue = score.cp;
+                              const totalValue = (cmValue !== null ? cmValue : 0) + (cpValue !== null ? cpValue : 0);
+                              const cpEnabled = cmValue !== null && cmValue >= 10;
                               return (
                                 <>
-                                  <td key={`note-${subject.id}`} className="border border-slate-300 p-0">
+                                  <td key={`cm-${subject.id}`} className="border border-slate-300 p-0">
                                     <input
                                       type="number"
-                                      step="0.25"
+                                      step="0.5"
                                       min="0"
-                                      max="20"
-                                      value={score.isAbsent ? '' : (score.score ?? '')}
-                                      onChange={(e) =>
-                                        handleScoreChange(row.studentId, subject.id, e.target.value)
-                                      }
+                                      max="18"
+                                      value={score.isAbsent ? '' : (cmValue ?? '')}
+                                      onChange={(e) => handleCmChange(row.studentId, subject.id, e.target.value)}
                                       disabled={score.isAbsent}
                                       placeholder="—"
                                       className={cn(
                                         'w-full px-1 py-1 text-center text-xs font-bold border-0 bg-transparent',
                                         'focus:outline-none focus:ring-1 focus:ring-blue-400',
                                         score.isAbsent && 'opacity-30 cursor-not-allowed bg-red-50',
-                                        !score.isAbsent && score.score !== null && typeof score.score === 'number' &&
-                                          (Number(score.score) < 10
+                                        !score.isAbsent && cmValue !== null && typeof cmValue === 'number' &&
+                                          (Number(cmValue) < 10
                                             ? 'text-rose-600'
-                                            : Number(score.score) >= 14
+                                            : Number(cmValue) >= 14
                                               ? 'text-emerald-600'
                                               : 'text-slate-900')
                                       )}
                                     />
                                   </td>
+                                  <td key={`cp-${subject.id}`} className="border border-slate-300 p-0">
+                                    <input
+                                      type="number"
+                                      step="0.25"
+                                      min="0"
+                                      max="2"
+                                      value={score.isAbsent ? '' : (cpValue ?? '')}
+                                      onChange={(e) => handleCpChange(row.studentId, subject.id, e.target.value)}
+                                      disabled={score.isAbsent || !cpEnabled}
+                                      placeholder="—"
+                                      title={cpEnabled ? 'Critère de Perfectionnement (0, 1 ou 2)' : 'CP disponible uniquement si CM ≥ 10'}
+                                      className={cn(
+                                        'w-full px-1 py-1 text-center text-xs font-bold border-0 bg-transparent',
+                                        'focus:outline-none focus:ring-1 focus:ring-blue-400',
+                                        (score.isAbsent || !cpEnabled) && 'opacity-30 cursor-not-allowed bg-slate-50',
+                                        cpEnabled && cpValue !== null && typeof cpValue === 'number' && Number(cpValue) > 0 && 'text-emerald-600'
+                                      )}
+                                    />
+                                  </td>
                                   <td key={`tot-${subject.id}`} className="border border-slate-300 px-2 py-1 text-center font-bold bg-slate-50">
-                                    {score.isAbsent ? '—' : (score.score ?? '—')}
+                                    {score.isAbsent ? '—' : (cmValue !== null || cpValue !== null ? totalValue.toFixed(2) : '—')}
                                   </td>
                                 </>
                               );
@@ -1072,7 +1157,7 @@ function GradingSheet({
                       {filteredRows.length === 0 && (
                         <tr>
                           <td
-                            colSpan={isMaternelle ? 5 + group.subjects.length : 5 + group.subjects.length * 2 + 1}
+                            colSpan={isMaternelle ? 5 + group.subjects.length + 1 : 5 + group.subjects.length * 3 + 2}
                             className="border border-slate-300 px-4 py-8 text-center text-slate-400 text-sm"
                           >
                             Aucun élève trouvé.
@@ -1099,10 +1184,13 @@ function GradingSheet({
                     </ul>
                   ) : (
                     <ul className="space-y-0.5 ml-4">
-                      <li>Saisissez la note sur 20 (ex: 15.5, 12, 8.25).</li>
-                      <li>Cliquez sur la case "Absent" si l'élève n'était pas présent.</li>
-                      <li className="text-emerald-700">Notes ≥ 10 : admis (en vert).</li>
-                      <li className="text-rose-700">Notes &lt; 10 : échec (en rouge).</li>
+                      <li><strong>CM</strong> = Critère Maximal, noté sur /18</li>
+                      <li><strong>CP</strong> = Critère de Perfectionnement, noté sur /2</li>
+                      <li className="text-amber-700">⭐ CP disponible uniquement si CM ≥ 10/18</li>
+                      <li><strong>Total</strong> = CM + CP (max /20)</li>
+                      <li><strong className="text-emerald-600">P</strong> = Présent · <strong className="text-red-600">A</strong> = Absent</li>
+                      <li className="text-emerald-700">CM ≥ 10 : admis (en vert).</li>
+                      <li className="text-rose-700">CM &lt; 10 : échec (en rouge).</li>
                     </ul>
                   )}
                 </div>

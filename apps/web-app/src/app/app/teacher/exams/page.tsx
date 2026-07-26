@@ -152,7 +152,8 @@ export default function TeacherExamsPage() {
         academicYearId: academicYear.id,
         teacherId: resolvedTeacherId || user?.id,
       };
-      if (schoolLevel?.id) params.schoolLevelId = schoolLevel.id;
+      // ⭐ schoolLevelId est optionnel — si 'ALL' ou non défini, ne pas filtrer
+      if (schoolLevel?.id && schoolLevel.id !== 'ALL') params.schoolLevelId = schoolLevel.id;
       const res = await institutionalExamsService.getEvaluations(params);
       setEvaluations(Array.isArray(res) ? res : []);
     } catch (err) {

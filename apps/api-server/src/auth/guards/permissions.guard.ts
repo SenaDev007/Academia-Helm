@@ -54,7 +54,7 @@ export class PermissionsGuard implements CanActivate {
     // ⭐ Les enseignants ont accès en lecture aux évaluations (exams.read)
     // et peuvent saisir des notes (exams.manage) — ils ne voient que leurs
     // propres évaluations (filtrage par teacherId côté service).
-    const teacherRoles = ['TEACHER', 'TEACHER_RESP', 'ENSEIGNANT'];
+    const teacherRoles = ['TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'teacher'];
     if (teacherRoles.includes(user.role) &&
         requiredPermissions.every(p => p === 'exams.read' || p === 'exams.manage')) {
       return true;

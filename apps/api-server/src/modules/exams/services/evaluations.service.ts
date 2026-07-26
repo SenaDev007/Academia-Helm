@@ -51,6 +51,7 @@ export class EvaluationsService {
     if (filters.teacherId) {
       // ⭐ Le frontend envoie user.id, mais evaluations.teacherId référence Teacher.id.
       // On doit résoudre user.id → Teacher.id via email matching.
+      // (même pattern que pedagogical-space.service.ts resolveTeacherId)
       const user = await this.prisma.user.findFirst({
         where: { id: filters.teacherId, tenantId },
         select: { email: true },
@@ -61,7 +62,32 @@ export class EvaluationsService {
           select: { id: true },
         });
         if (teacher) {
-          where.teacherId = teacher.id;
+          // ⭐ Au lieu de filtrer uniquement par teacherId (qui peut être null
+          // pour les évaluations créées avant le fix), on filtre aussi par
+          // les classes assignées à l'enseignant via TeacherClassAssignment.
+          // Ça permet à l'enseignant de voir TOUTES les évaluations de SES classes,
+          // même celles où teacherId n'a pas été assigné.
+          const teacherAssignments = await this.prisma.teacherClassAssignment.findMany({
+            where: { tenantId, academicYearId, teacherId: teacher.id },
+            select: { classId: true, classSubjectId: true },
+          });
+          const teacherClassIds = Array.from(new Set(
+            teacherAssignments
+              .map((a) => a.classId)
+              .filter(Boolean) as string[]
+          ));
+
+          if (teacherClassIds.length > 0) {
+            // L'enseignant a des classes assignées → filtrer par ses classes
+            // OU par teacherId (pour les évaluations où il est directement assigné)
+            where.OR = [
+              { teacherId: teacher.id },
+              { classId: { in: teacherClassIds } },
+            ];
+          } else {
+            // Pas d'assignations → filtrer par teacherId uniquement
+            where.teacherId = teacher.id;
+          }
         } else {
           // Pas de profil Teacher → retourner vide
           where.teacherId = '__NO_TEACHER__';
@@ -263,25 +289,35 @@ export class EvaluationsService {
     // Cela génère une map `${classId}|${subjectId}` → teacherId.
 
     // Étape 1 : récupérer les ClassSubject pour les (classe × matière) demandées
+    // ⭐ ClassSubject.classId est deprecated (souvent null en production).
+    // On cherche aussi par academicClassId (la relation utilisée en production).
     const classSubjects = await this.prisma.classSubject.findMany({
       where: {
         tenantId,
-        classId: { in: data.classIds },
         subjectId: { in: data.subjectIds },
+        OR: [
+          { classId: { in: data.classIds } },
+          { academicClassId: { in: data.classIds } },
+        ],
       },
       select: {
         id: true,
         classId: true,
+        academicClassId: true,
         subjectId: true,
       },
     });
 
     // Construire une map `${classId}|${subjectId}` → classSubjectId
+    // (utilise classId OU academicClassId selon ce qui est défini)
     const classSubjectMap = new Map<string, string>();
     for (const cs of classSubjects) {
-      const key = `${cs.classId}|${cs.subjectId}`;
-      if (!classSubjectMap.has(key)) {
-        classSubjectMap.set(key, cs.id);
+      const effectiveClassId = cs.classId || cs.academicClassId;
+      if (effectiveClassId && data.classIds.includes(effectiveClassId)) {
+        const key = `${effectiveClassId}|${cs.subjectId}`;
+        if (!classSubjectMap.has(key)) {
+          classSubjectMap.set(key, cs.id);
+        }
       }
     }
 

@@ -1925,3 +1925,58 @@ Stage Summary:
 - ✅ Fix bug isAnglophone avant déclaration
 - ⏳ Déploiement Fly.io backend requis pour activer le fix élèves
 - ⏳ Ensuite: implémenter le mode secondaire (INT1/INT2/DS1/DS2 /20 avec coef)
+
+---
+Task ID: grades-refonte-registre-PA
+Agent: main
+Task: Refonte fiche saisie registre + colonne P/A + UI enseignant + notifications
+
+Work Log:
+1. Analyse du tableau registre existant (AttendanceRegisterTab onglet évaluation):
+   - 2 lignes d'en-tête: N° + Nom + Sexe + Matières (colSpan=3 CM/CP/Total) + Total général + Seuil
+   - Ligne 2: CM/18, CP/2, Total par matière
+   - Bordures slate-800, style officiel registre
+
+2. Refonte fiche saisie Primaire (apps/web-app/src/app/app/exams/grades/page.tsx):
+   - Tableau registre EXACT comme AttendanceRegisterTab
+   - 2 lignes d'en-tête: N° + Nom + Sexe + Présence + Matières (colSpan=2) + Total + Seuil
+   - Ligne 2: Note /20 + Total par matière
+   - ⭐ Colonne Présence remplace Matricule: boutons P (vert) / A (rouge)
+     * P = présent (toutes matières non absent)
+     * A = absent (toutes matières marquées absentes, score effacé)
+   - Colonne Total général (somme des notes)
+   - Colonne Seuil atteint (CheckCircle vert / XCircle rouge)
+   - Sexe affiché en badges colorés (M cyan / F pink)
+   - Bordures slate-800 pour style registre officiel
+
+3. Refonte UI enseignant (apps/web-app/src/app/app/teacher/exams/page.tsx):
+   - Utilise institutionalExamsService au lieu de fetch('/api/exams/...')
+     (anciennes routes BFF /api/exams ne fonctionnent plus — c'était le bug 'rien ne se passe')
+   - Cartes groupées comme la page admin (classId × type × period × dates)
+   - Bouton notifications (cloche) avec badge compteur rouge
+   - Panneau notifications dépliable: évaluations programmées + soumises
+     via GET /notifications?type=EVALUATION_SCHEDULED
+   - Fiche de saisie identique à la page admin (tableau registre + P/A)
+   - Boutons Sauvegarder / Soumettre
+
+4. Fix import XCircle manquant (erreur runtime 'XCircle is not defined')
+
+Test agent-browser (commits e6af73a1 + 5f0b47b1):
+- Page grades Primaire FR → cartes avec dates correctes (Du 26 juil. 2026 au 29 juil. 2026)
+- Clic carte CI A → fiche de saisie ouverte avec 9 élèves, 9 matières
+- Tableau registre: N° | NOM | SEXE | PRÉSENCE | 9 matières (× Note/20 + Total) | TOTAL | SEUIL
+- Boutons P/A visibles dans colonne Présence
+- Stats: 9 élèves, 9 matières, 0/81 notes saisies, 0% remplissage
+- Page Maternelle FR → 1 élève, 14 matières
+- Tableau: N° | NOM | SEXE | PRÉSENCE | 14 domaines (TS/S/PS) | SEUIL
+- Clic bouton TS → stats mis à jour: 1/14 notes, 7% taux remplissage ✅
+- Screenshots: download/grades-sheet-primaire.png + grades-sheet-maternelle.png
+
+Stage Summary:
+- ✅ Fiche saisie Primaire: tableau registre avec colonne P/A (P vert / A rouge)
+- ✅ Fiche saisie Maternelle: tableau registre avec TS/S/PS + colonne P/A
+- ✅ UI enseignant refondue: utilise institutionalExamsService (fix 'rien ne se passe')
+- ✅ Notifications enseignant: badge cloche + panneau dépliable
+- ✅ Total général + Seuil atteint affichés
+- ✅ Sexe affiché en badges colorés
+- ⏳ Déploiement Fly.io backend requis pour getGradingSheet (élèves)

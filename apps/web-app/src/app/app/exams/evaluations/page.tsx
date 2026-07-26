@@ -164,8 +164,12 @@ function getLevelOrderIndex(schoolLevelId?: string, levels?: any[]): number {
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   DRAFT: { label: 'Brouillon', className: 'bg-gray-100 text-gray-700 border-gray-200' },
   PLANNED: { label: 'Planifiée', className: 'bg-blue-100 text-blue-700 border-blue-200' },
-  OPEN_FOR_GRADING: { label: 'En saisie', className: 'bg-amber-100 text-amber-700 border-amber-200' },
-  SUBMITTED: { label: 'Soumise', className: 'bg-purple-100 text-purple-700 border-purple-200' },
+  // ⭐ OPEN_FOR_GRADING : l'enseignant a validé sa saisie, mais l'évaluation n'a
+  //    pas encore été soumise au directeur depuis l'Espace Pédagogique.
+  //    Badge ambre "Validée par enseignant" pour la distinguer de VALIDATED
+  //    (validation admin, badge vert emerald).
+  OPEN_FOR_GRADING: { label: 'Validée par enseignant', className: 'bg-amber-100 text-amber-700 border-amber-200' },
+  SUBMITTED: { label: 'Soumise au directeur', className: 'bg-purple-100 text-purple-700 border-purple-200' },
   VALIDATED: { label: 'Validée', className: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
   LOCKED: { label: 'Verrouillée', className: 'bg-rose-100 text-rose-700 border-rose-200' },
   CANCELLED: { label: 'Annulée', className: 'bg-red-100 text-red-700 border-red-200 line-through' },
@@ -1090,8 +1094,8 @@ export default function EvaluationsPage() {
                     <SelectItem value="ALL">Tous les statuts</SelectItem>
                     <SelectItem value="DRAFT">Brouillon</SelectItem>
                     <SelectItem value="PLANNED">Planifiée</SelectItem>
-                    <SelectItem value="OPEN_FOR_GRADING">En saisie</SelectItem>
-                    <SelectItem value="SUBMITTED">Soumise</SelectItem>
+                    <SelectItem value="OPEN_FOR_GRADING">Validée par enseignant</SelectItem>
+                    <SelectItem value="SUBMITTED">Soumise au directeur</SelectItem>
                     <SelectItem value="VALIDATED">Validée</SelectItem>
                     <SelectItem value="LOCKED">Verrouillée</SelectItem>
                     <SelectItem value="CANCELLED">Annulée</SelectItem>

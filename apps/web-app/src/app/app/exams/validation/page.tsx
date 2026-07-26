@@ -521,63 +521,6 @@ function ValidationDetailSheet({
                 </div>
               </div>
 
-              {/* Récapitulatif dynamique */}
-              {!loading && rows.length > 0 && (
-                <div className="bg-white border-2 border-slate-300 rounded-xl p-4">
-                  <h3 className="text-sm font-bold text-slate-900 uppercase mb-3">Récapitulatif de l'évaluation</h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse text-sm">
-                      <thead>
-                        <tr className="bg-slate-100">
-                          <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-left">Indicateur</th>
-                          <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-center">Garçons</th>
-                          <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-center">Filles</th>
-                          <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-center">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td className="border border-slate-300 px-3 py-2 font-semibold">Effectif total de la classe</td>
-                          <td className="border border-slate-300 px-3 py-2 text-center">{stats.totalBoys}</td>
-                          <td className="border border-slate-300 px-3 py-2 text-center">{stats.totalGirls}</td>
-                          <td className="border border-slate-300 px-3 py-2 text-center font-bold">{stats.total}</td>
-                        </tr>
-                        <tr>
-                          <td className="border border-slate-300 px-3 py-2 font-semibold">Nombre d'élèves ayant composé</td>
-                          <td className="border border-slate-300 px-3 py-2 text-center">{stats.composedBoys}</td>
-                          <td className="border border-slate-300 px-3 py-2 text-center">{stats.composedGirls}</td>
-                          <td className="border border-slate-300 px-3 py-2 text-center font-bold">{stats.composed}</td>
-                        </tr>
-                        <tr className="bg-emerald-50/50">
-                          <td className="border border-slate-300 px-3 py-2 font-semibold">Ont atteint le seuil de réussite</td>
-                          <td className="border border-slate-300 px-3 py-2 text-center text-emerald-700">{stats.reachedBoys}</td>
-                          <td className="border border-slate-300 px-3 py-2 text-center text-emerald-700">{stats.reachedGirls}</td>
-                          <td className="border border-slate-300 px-3 py-2 text-center font-bold text-emerald-700">{stats.reached}</td>
-                        </tr>
-                        <tr className="bg-red-50/50">
-                          <td className="border border-slate-300 px-3 py-2 font-semibold">N'ont pas atteint le seuil</td>
-                          <td className="border border-slate-300 px-3 py-2 text-center text-red-700">{stats.notReachedBoys}</td>
-                          <td className="border border-slate-300 px-3 py-2 text-center text-red-700">{stats.notReachedGirls}</td>
-                          <td className="border border-slate-300 px-3 py-2 text-center font-bold text-red-700">{stats.notReached}</td>
-                        </tr>
-                        <tr className="bg-blue-50/50">
-                          <td className="border border-slate-300 px-3 py-2 font-bold">% de réussite</td>
-                          <td className="border border-slate-300 px-3 py-2 text-center font-bold text-blue-700">
-                            {stats.composedBoys > 0 ? ((stats.reachedBoys / stats.composedBoys) * 100).toFixed(2) : '—'}%
-                          </td>
-                          <td className="border border-slate-300 px-3 py-2 text-center font-bold text-blue-700">
-                            {stats.composedGirls > 0 ? ((stats.reachedGirls / stats.composedGirls) * 100).toFixed(2) : '—'}%
-                          </td>
-                          <td className="border border-slate-300 px-3 py-2 text-center font-bold text-blue-800">
-                            {stats.pctReussite.toFixed(2)}%
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
               {/* Loading */}
               {loading ? (
                 <div className="flex items-center justify-center py-20">
@@ -743,6 +686,64 @@ function ValidationDetailSheet({
                   </table>
                 </div>
               )}
+
+              {/* Récapitulatif dynamique */}
+              {!loading && rows.length > 0 && (
+                <div className="bg-white border-2 border-slate-300 rounded-xl p-4">
+                  <h3 className="text-sm font-bold text-slate-900 uppercase mb-3">Récapitulatif de l'évaluation</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-sm">
+                      <thead>
+                        <tr className="bg-slate-100">
+                          <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-left">Indicateur</th>
+                          <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-center">Garçons</th>
+                          <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-center">Filles</th>
+                          <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-center">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="border border-slate-300 px-3 py-2 font-semibold">Effectif total de la classe</td>
+                          <td className="border border-slate-300 px-3 py-2 text-center">{stats.totalBoys}</td>
+                          <td className="border border-slate-300 px-3 py-2 text-center">{stats.totalGirls}</td>
+                          <td className="border border-slate-300 px-3 py-2 text-center font-bold">{stats.total}</td>
+                        </tr>
+                        <tr>
+                          <td className="border border-slate-300 px-3 py-2 font-semibold">Nombre d'élèves ayant composé</td>
+                          <td className="border border-slate-300 px-3 py-2 text-center">{stats.composedBoys}</td>
+                          <td className="border border-slate-300 px-3 py-2 text-center">{stats.composedGirls}</td>
+                          <td className="border border-slate-300 px-3 py-2 text-center font-bold">{stats.composed}</td>
+                        </tr>
+                        <tr className="bg-emerald-50/50">
+                          <td className="border border-slate-300 px-3 py-2 font-semibold">Ont atteint le seuil de réussite</td>
+                          <td className="border border-slate-300 px-3 py-2 text-center text-emerald-700">{stats.reachedBoys}</td>
+                          <td className="border border-slate-300 px-3 py-2 text-center text-emerald-700">{stats.reachedGirls}</td>
+                          <td className="border border-slate-300 px-3 py-2 text-center font-bold text-emerald-700">{stats.reached}</td>
+                        </tr>
+                        <tr className="bg-red-50/50">
+                          <td className="border border-slate-300 px-3 py-2 font-semibold">N'ont pas atteint le seuil</td>
+                          <td className="border border-slate-300 px-3 py-2 text-center text-red-700">{stats.notReachedBoys}</td>
+                          <td className="border border-slate-300 px-3 py-2 text-center text-red-700">{stats.notReachedGirls}</td>
+                          <td className="border border-slate-300 px-3 py-2 text-center font-bold text-red-700">{stats.notReached}</td>
+                        </tr>
+                        <tr className="bg-blue-50/50">
+                          <td className="border border-slate-300 px-3 py-2 font-bold">% de réussite</td>
+                          <td className="border border-slate-300 px-3 py-2 text-center font-bold text-blue-700">
+                            {stats.composedBoys > 0 ? ((stats.reachedBoys / stats.composedBoys) * 100).toFixed(2) : '—'}%
+                          </td>
+                          <td className="border border-slate-300 px-3 py-2 text-center font-bold text-blue-700">
+                            {stats.composedGirls > 0 ? ((stats.reachedGirls / stats.composedGirls) * 100).toFixed(2) : '—'}%
+                          </td>
+                          <td className="border border-slate-300 px-3 py-2 text-center font-bold text-blue-800">
+                            {stats.pctReussite.toFixed(2)}%
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
             </div>
           ),
         }}

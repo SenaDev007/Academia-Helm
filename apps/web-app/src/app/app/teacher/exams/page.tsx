@@ -340,29 +340,33 @@ export default function TeacherExamsPage() {
         <HierarchicalEvaluationList
           groups={grouped}
           onGroupClick={(group) => {
-            const canGrade = group.statuses.some(s => s === 'OPEN_FOR_GRADING' || s === 'PLANNED');
-            if (canGrade) setSelectedGroup(group);
+            // ⭐ L'enseignant peut ouvrir la fiche pour VISUALISATION même si
+            //    l'évaluation a déjà été validée (OPEN_FOR_GRADING), soumise
+            //    (SUBMITTED) ou validée par l'admin (VALIDATED).
+            //    La fiche TeacherGradingSheet passera en lecture seule automatiquement.
+            setSelectedGroup(group);
           }}
           isMaternelle={isMaternelle}
           renderStatusBadge={(g) => {
-            // ⭐ Nouveau flux :
-            //   PLANNED → OPEN_FOR_GRADING → SUBMITTED → VALIDATED
+            // ⭐ Flux : PLANNED → OPEN_FOR_GRADING → SUBMITTED → VALIDATED
             //   - PLANNED : évaluation créée par l'admin, prête à être saisie
-            //   - OPEN_FOR_GRADING : l'enseignant a validé sa saisie (bouton "Valider")
-            //     → affiché comme "Validée" côté enseignant
+            //   - OPEN_FOR_GRADING : l'enseignant a validé sa saisie (mais PAS encore
+            //     soumise au directeur) → badge ambre "Validée par enseignant"
             //   - SUBMITTED : signée et soumise au directeur depuis l'Espace Pédagogique
-            //   - VALIDATED/LOCKED : validée par l'admin
+            //     → badge violet "Soumise au directeur"
+            //   - VALIDATED/LOCKED : validée par l'admin → badge vert "Validée"
             const isPlanned = g.statuses.every(s => s === 'PLANNED' || s === 'DRAFT');
             const isValidatedByTeacher = g.statuses.some(s => s === 'OPEN_FOR_GRADING') && !isPlanned;
             const isSubmitted = g.statuses.some(s => s === 'SUBMITTED');
             const isValidated = g.statuses.every(s => s === 'VALIDATED' || s === 'LOCKED');
             const status = isValidated ? 'Validée' :
                           isSubmitted ? 'Soumise au directeur' :
-                          isValidatedByTeacher ? 'Validée' :
+                          isValidatedByTeacher ? 'Validée par enseignant' :
                           isPlanned ? 'Planifiée' : 'Planifiée';
+            // ⭐ Couleurs distinctes (cf. admin grades page)
             const color = isValidated ? 'bg-emerald-100 text-emerald-700' :
                         isSubmitted ? 'bg-purple-100 text-purple-700' :
-                        isValidatedByTeacher ? 'bg-emerald-100 text-emerald-700' :
+                        isValidatedByTeacher ? 'bg-amber-100 text-amber-700' :
                         'bg-blue-100 text-blue-700';
             return <span className={cn('text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap', color)}>{status}</span>;
           }}
@@ -389,6 +393,12 @@ function TeacherGradingSheet({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // ⭐ Lecture seule si l'évaluation n'est plus en PLANNED (déjà validée, soumise,
+  //    ou validée par l'admin). L'enseignant ne peut plus modifier les notes.
+  //    Il peut juste consulter la fiche.
+  const isPlanned = group.statuses.every(s => s === 'PLANNED' || s === 'DRAFT');
+  const isReadOnly = !isPlanned;
 
   // ── Charger les élèves + notes existantes ─────────────────────────────────
   useEffect(() => {
@@ -694,7 +704,7 @@ function TeacherGradingSheet({
             variant="outline"
             size="sm"
             onClick={() => handleSave(false)}
-            disabled={saving || loading}
+            disabled={saving || loading || isReadOnly}
             className="border-blue-200 text-blue-700 hover:bg-blue-50"
           >
             {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
@@ -703,7 +713,7 @@ function TeacherGradingSheet({
           <Button
             size="sm"
             onClick={() => handleSave(true)}
-            disabled={saving || loading}
+            disabled={saving || loading || isReadOnly}
             className="bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700"
           >
             {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />}
@@ -721,6 +731,20 @@ function TeacherGradingSheet({
           Classe : <strong>{group.className}</strong> • {group.periodName} • {dateRange}
         </div>
       </div>
+
+      {/* ⭐ Bannière lecture seule si l'évaluation a déjà été validée/soumise */}
+      {isReadOnly && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2 text-sm text-amber-800">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <span className="font-semibold">
+            {group.statuses.every(s => s === 'VALIDATED' || s === 'LOCKED')
+              ? "Cette évaluation a été validée par l'administration. Les notes sont verrouillées."
+              : group.statuses.some(s => s === 'SUBMITTED')
+              ? "Cette évaluation a été soumise au directeur. Elle est en attente de validation."
+              : "Vous avez déjà validé cette saisie. Pour modifier les notes, l'administration doit la réinitialiser."}
+          </span>
+        </div>
+      )}
 
       {/* Loading */}
       {loading ? (
@@ -822,6 +846,7 @@ function TeacherGradingSheet({
                           <button
                             type="button"
                             onClick={() => {
+                              if (isReadOnly) return;
                               setRows(prev => prev.map(r => {
                                 if (r.studentId !== row.studentId) return r;
                                 const newScores = { ...r.scores };
@@ -831,12 +856,14 @@ function TeacherGradingSheet({
                                 return { ...r, scores: newScores };
                               }));
                             }}
+                            disabled={isReadOnly}
                             title="Présent"
                             className={cn(
                               'px-2 py-1 rounded text-xs font-bold transition',
                               !Object.values(row.scores).some(s => s?.isAbsent)
                                 ? 'bg-emerald-600 text-white'
-                                : 'bg-gray-100 text-gray-600 hover:bg-emerald-100'
+                                : 'bg-gray-100 text-gray-600 hover:bg-emerald-100',
+                              isReadOnly && 'opacity-30 cursor-not-allowed'
                             )}
                           >
                             P
@@ -844,6 +871,7 @@ function TeacherGradingSheet({
                           <button
                             type="button"
                             onClick={() => {
+                              if (isReadOnly) return;
                               setRows(prev => prev.map(r => {
                                 if (r.studentId !== row.studentId) return r;
                                 const newScores = { ...r.scores };
@@ -858,12 +886,14 @@ function TeacherGradingSheet({
                                 return { ...r, scores: newScores };
                               }));
                             }}
+                            disabled={isReadOnly}
                             title="Absent"
                             className={cn(
                               'px-2 py-1 rounded text-xs font-bold transition',
                               Object.values(row.scores).some(s => s?.isAbsent)
                                 ? 'bg-red-600 text-white'
-                                : 'bg-gray-100 text-gray-600 hover:bg-red-100'
+                                : 'bg-gray-100 text-gray-600 hover:bg-red-100',
+                              isReadOnly && 'opacity-30 cursor-not-allowed'
                             )}
                           >
                             A
@@ -882,8 +912,8 @@ function TeacherGradingSheet({
                                   <button
                                     key={opt}
                                     type="button"
-                                    onClick={() => !score.isAbsent && handleScoreChange(row.studentId, subject.id, opt)}
-                                    disabled={score.isAbsent}
+                                    onClick={() => !score.isAbsent && !isReadOnly && handleScoreChange(row.studentId, subject.id, opt)}
+                                    disabled={score.isAbsent || isReadOnly}
                                     title={opt === 'TS' ? 'Très Satisfaisant' : opt === 'S' ? 'Satisfaisant' : 'Peu Satisfaisant'}
                                     className={cn(
                                       'px-2 py-1 rounded text-xs font-bold transition',
@@ -894,7 +924,7 @@ function TeacherGradingSheet({
                                             ? 'bg-blue-600 text-white'
                                             : 'bg-amber-600 text-white'
                                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
-                                      score.isAbsent && 'opacity-30 cursor-not-allowed'
+                                      (score.isAbsent || isReadOnly) && 'opacity-30 cursor-not-allowed'
                                     )}
                                   >
                                     {opt}
@@ -915,7 +945,7 @@ function TeacherGradingSheet({
                                 max="18"
                                 value={score.isAbsent ? '' : (score.cm ?? '')}
                                 onChange={(e) => handleCmChange(row.studentId, subject.id, e.target.value)}
-                                disabled={score.isAbsent}
+                                disabled={score.isAbsent || isReadOnly}
                                 placeholder="—"
                                 className={cn(
                                   'w-full px-1 py-1 text-center text-xs font-bold border-0 bg-transparent',
@@ -934,13 +964,13 @@ function TeacherGradingSheet({
                                 max="2"
                                 value={score.isAbsent ? '' : (score.cp ?? '')}
                                 onChange={(e) => handleCpChange(row.studentId, subject.id, e.target.value)}
-                                disabled={score.isAbsent || (score.cm === null || score.cm < 10)}
+                                disabled={score.isAbsent || isReadOnly || (score.cm === null || score.cm < 10)}
                                 placeholder="—"
                                 title={score.cm !== null && score.cm >= 10 ? 'Critère de Perfectionnement (0, 1 ou 2)' : 'CP disponible uniquement si CM ≥ 10'}
                                 className={cn(
                                   'w-full px-1 py-1 text-center text-xs font-bold border-0 bg-transparent',
                                   'focus:outline-none focus:ring-1 focus:ring-blue-400',
-                                  (score.isAbsent || score.cm === null || score.cm < 10) && 'opacity-30 cursor-not-allowed bg-slate-50'
+                                  (score.isAbsent || isReadOnly || score.cm === null || score.cm < 10) && 'opacity-30 cursor-not-allowed bg-slate-50'
                                 )}
                               />
                             </td>

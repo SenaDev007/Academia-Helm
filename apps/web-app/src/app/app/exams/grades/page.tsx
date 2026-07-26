@@ -38,7 +38,7 @@ import {
 } from '@/components/ui/table';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
-import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
+import { toastSuccess } from '@/lib/toast/toast-helpers';
 import apiClient from '@/lib/api/client';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
@@ -273,15 +273,11 @@ export default function GradesPage() {
   }, [grouped, searchQuery]);
 
   // ── Ouvrir la fiche de saisie pour un groupe ──────────────────────────────
+  // ⭐ L'admin peut ouvrir la fiche pour VISUALISATION même si l'évaluation a
+  //    déjà été validée par l'enseignant (OPEN_FOR_GRADING), soumise (SUBMITTED)
+  //    ou validée (VALIDATED). La fiche GradingSheet passera en mode lecture
+  //    seule automatiquement selon le statut.
   const handleOpenGroup = (group: GroupedEvaluation) => {
-    // Ne permettre la saisie que si au moins une évaluation est OPEN_FOR_GRADING
-    const canGrade = group.statuses.some((s) => s === 'OPEN_FOR_GRADING' || s === 'PLANNED');
-    if (!canGrade) {
-      toastError('Évaluations non ouvertes pour la saisie', {
-        description: 'Ouvrez les évaluations pour la saisie depuis l\'onglet Évaluations.',
-      });
-      return;
-    }
     setSelectedGroup(group);
   };
 
@@ -363,23 +359,29 @@ export default function GradesPage() {
                 onGroupClick={handleOpenGroup}
                 isMaternelle={isMaternelle}
                 renderStatusBadge={(g) => {
-                  // ⭐ Nouveau flux :
-                  //   PLANNED → OPEN_FOR_GRADING → SUBMITTED → VALIDATED
+                  // ⭐ Flux : PLANNED → OPEN_FOR_GRADING → SUBMITTED → VALIDATED
                   //   - PLANNED : évaluation créée par l'admin, prête à être saisie
-                  //   - OPEN_FOR_GRADING : l'enseignant a validé sa saisie
+                  //   - OPEN_FOR_GRADING : l'enseignant a validé sa saisie (mais PAS encore
+                  //     soumise au directeur) → badge ambre "Validée par enseignant"
                   //   - SUBMITTED : signée et soumise au directeur depuis l'Espace Pédagogique
-                  //   - VALIDATED/LOCKED : validée par l'admin
+                  //     → badge violet "Soumise au directeur"
+                  //   - VALIDATED/LOCKED : validée par l'admin → badge vert "Validée"
                   const isPlanned = g.statuses.every(s => s === 'PLANNED' || s === 'DRAFT');
                   const isValidatedByTeacher = g.statuses.some(s => s === 'OPEN_FOR_GRADING') && !isPlanned;
                   const isSubmitted = g.statuses.some(s => s === 'SUBMITTED');
                   const isValidated = g.statuses.every(s => s === 'VALIDATED' || s === 'LOCKED');
                   const status = isValidated ? 'Validée' :
                                 isSubmitted ? 'Soumise au directeur' :
-                                isValidatedByTeacher ? 'Validée' :
+                                isValidatedByTeacher ? 'Validée par enseignant' :
                                 isPlanned ? 'Planifiée' : 'Planifiée';
+                  // ⭐ Couleurs distinctes pour éviter confusion :
+                  //   - Vert emerald = VALIDATED uniquement (validation admin)
+                  //   - Ambre = OPEN_FOR_GRADING (validation enseignant, pas encore soumise)
+                  //   - Violet = SUBMITTED (soumise au directeur)
+                  //   - Bleu = PLANNED
                   const color = isValidated ? 'bg-emerald-100 text-emerald-700' :
                               isSubmitted ? 'bg-purple-100 text-purple-700' :
-                              isValidatedByTeacher ? 'bg-emerald-100 text-emerald-700' :
+                              isValidatedByTeacher ? 'bg-amber-100 text-amber-700' :
                               'bg-blue-100 text-blue-700';
                   return <span className={cn('text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap', color)}>{status}</span>;
                 }}
@@ -405,17 +407,22 @@ function EvaluationGroupCard({
 }) {
   // Statut agrégé — cohérent avec le nouveau flux :
   //   PLANNED → OPEN_FOR_GRADING → SUBMITTED → VALIDATED
-  const canGrade = group.statuses.some((s) => s === 'OPEN_FOR_GRADING' || s === 'PLANNED');
-  const isLocked = group.statuses.every((s) => s === 'VALIDATED' || s === 'LOCKED' || s === 'SUBMITTED');
-  const isCancelled = group.statuses.some((s) => s === 'CANCELLED');
+  //   ⭐ OPEN_FOR_GRADING ne signifie PAS "Saisie ouverte" — l'enseignant a déjà
+  //      validé sa saisie, donc l'évaluation est en lecture seule pour lui.
+  //      Seul PLANNED est vraiment "Saisie ouverte".
+  const isPlanned = group.statuses.every(s => s === 'PLANNED' || s === 'DRAFT');
+  const isValidatedByTeacher = group.statuses.some(s => s === 'OPEN_FOR_GRADING') && !isPlanned;
+  const isSubmitted = group.statuses.some(s => s === 'SUBMITTED');
+  const isValidated = group.statuses.every(s => s === 'VALIDATED' || s === 'LOCKED');
+  const isCancelled = group.statuses.some(s => s === 'CANCELLED');
+  const canGrade = isPlanned; // ⭐ Seul PLANNED est vraiment éditable par l'enseignant
 
-  const headerStatus = isLocked
-    ? 'Verrouillée'
-    : isCancelled
-      ? 'Annulée'
-      : canGrade
-        ? 'Saisie ouverte'
-        : 'Planifiée';
+  const headerStatus = isValidated ? 'Validée'
+    : isSubmitted ? 'Soumise au directeur'
+    : isValidatedByTeacher ? 'Validée par enseignant'
+    : isCancelled ? 'Annulée'
+    : isPlanned ? 'Saisie ouverte'
+    : 'Planifiée';
 
   const startDate = group.startDate ? new Date(group.startDate) : null;
   const endDate = group.endDate ? new Date(group.endDate) : null;

@@ -33,6 +33,7 @@ import { Badge } from '@/components/ui/badge';
 import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
 import apiClient from '@/lib/api/client';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
+import { GradingSheet } from '@/components/exams/GradingSheet';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -224,10 +225,12 @@ export default function TeacherExamsPage() {
   // ─── Si un groupe est sélectionné, afficher la fiche de saisie ──────────────
   if (selectedGroup) {
     return (
-      <TeacherGradingSheet
+      <GradingSheet
         group={selectedGroup}
         isMaternelle={isMaternelle}
-        academicYearId={academicYear?.id || ''}
+        isPrimaire={isPrimaire}
+        isSecondaire={isSecondaire}
+        scopedSubModules={null}
         onBack={() => {
           setSelectedGroup(null);
           loadEvaluations();

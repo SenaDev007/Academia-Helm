@@ -40,53 +40,69 @@ export class GradesService {
   async bulkSave(tenantId: string, academicYearId: string, evaluationId: string, grades: any[]) {
     const evaluation = await this.prisma.evaluation.findFirst({
       where: { id: evaluationId, tenantId },
+      include: { class: { select: { id: true, schoolLevelId: true } } },
     });
 
     if (!evaluation) throw new NotFoundException('Evaluation not found');
 
+    // ⭐ Vérifier que tous les students existent avant d'upsert
+    // (évite l'erreur P2003 si un studentId vient de StudentEnrollment mais
+    // n'existe pas dans la table Student)
+    const studentIds = grades.map((g) => g.studentId).filter(Boolean);
+    const validStudents = await this.prisma.student.findMany({
+      where: { id: { in: studentIds } },
+      select: { id: true },
+    });
+    const validStudentIds = new Set(validStudents.map((s) => s.id));
+
     // On utilise une transaction pour tout mettre à jour d'un coup
     return this.prisma.$transaction(
-      grades.map((g) => {
-        // ⭐ Stocker cm/cp dans le champ comment au format JSON si présents
-        // (le modèle Grade n'a pas de champs cm/cp dédiés)
-        let commentToStore = g.comment || '';
-        if (g.cm !== undefined || g.cp !== undefined) {
-          const metadata = { cm: g.cm ?? null, cp: g.cp ?? null, comment: g.comment || '' };
-          commentToStore = JSON.stringify(metadata);
-        }
+      grades
+        .filter((g) => validStudentIds.has(g.studentId)) // Skip invalid students
+        .map((g) => {
+          // ⭐ Stocker cm/cp dans le champ comment au format JSON si présents
+          let commentToStore = g.comment || '';
+          if (g.cm !== undefined || g.cp !== undefined) {
+            const metadata = { cm: g.cm ?? null, cp: g.cp ?? null, comment: g.comment || '' };
+            commentToStore = JSON.stringify(metadata);
+          }
 
-        return this.prisma.grade.upsert({
-          where: {
-            tenantId_evaluationId_studentId: {
+          return this.prisma.grade.upsert({
+            where: {
+              tenantId_evaluationId_studentId: {
+                tenantId,
+                evaluationId,
+                studentId: g.studentId,
+              }
+            },
+            update: {
+              score: g.score,
+              qualitativeCode: g.qualitativeCode,
+              isAbsent: g.isAbsent || false,
+              comment: commentToStore,
+              status: g.status || 'DRAFT',
+              updatedAt: new Date(),
+            },
+            create: {
               tenantId,
+              academicYearId,
               evaluationId,
               studentId: g.studentId,
+              classId: evaluation.classId,
+              subjectId: evaluation.subjectId,
+              // ⭐ periodId du Grade référence Quarter, pas AcademicPeriod.
+              // Ne pas copier evaluation.periodId car ils ne référencent
+              // pas la même table — laisser null pour éviter P2003.
+              periodId: null,
+              schoolLevelId: evaluation.class?.schoolLevelId || null,
+              score: g.score,
+              qualitativeCode: g.qualitativeCode,
+              isAbsent: g.isAbsent || false,
+              comment: commentToStore,
+              status: g.status || 'DRAFT',
             }
-          },
-          update: {
-            score: g.score,
-            qualitativeCode: g.qualitativeCode,
-            isAbsent: g.isAbsent || false,
-            comment: commentToStore,
-            status: g.status || 'DRAFT',
-            updatedAt: new Date(),
-          },
-          create: {
-            tenantId,
-            academicYearId,
-            evaluationId,
-            studentId: g.studentId,
-            classId: evaluation.classId,
-            subjectId: evaluation.subjectId,
-            periodId: evaluation.periodId,
-            score: g.score,
-            qualitativeCode: g.qualitativeCode,
-            isAbsent: g.isAbsent || false,
-            comment: commentToStore,
-            status: g.status || 'DRAFT',
-          }
-        });
-      })
+          });
+        })
     );
   }
 

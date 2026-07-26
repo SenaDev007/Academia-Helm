@@ -25,7 +25,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Save, Send, ChevronLeft, Calendar, Users, BookOpen, Loader2,
-  RefreshCw, Search, GraduationCap, School, AlertCircle, CheckCircle2,
+  RefreshCw, Search, GraduationCap, School, AlertCircle, CheckCircle2, XCircle,
   ClipboardList, Settings, ShieldCheck,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';

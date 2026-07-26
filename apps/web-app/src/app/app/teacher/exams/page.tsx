@@ -6,461 +6,956 @@
  * ============================================================================
  *
  * Vue "Mes évaluations" pour l'enseignant :
- *   - Liste les évaluations assignées à l'enseignant connecté
- *   - Filtrage par piste linguistique (FR / EN) si bilingue activé
- *   - Pour chaque évaluation : saisie des notes de SES élèves
+ *   - Liste les évaluations assignées à l'enseignant (via teacherId résolu côté backend)
+ *   - Notifications : évaluations programmées + soumises
+ *   - Fiche de saisie identique à celle du module Examen (registre avec P/A)
  *
- * L'enseignant ne voit QUE les évaluations qui lui sont assignées
- * (teacherId === user.id). Le backend doit imposer ce check côté serveur.
+ * Sources de données :
+ *   - GET /institutional-exams/evaluations (apiClient axios)
+ *   - GET /institutional-exams/grades/evaluation/:id
+ *   - POST /institutional-exams/grades/evaluation/:id/bulk
  *
- * Le système d'annotation s'adapte au niveau scolaire :
- *   - MATERNELLE → qualitatif (TS / S / PS)
- *   - PRIMAIRE → quantitatif /20, coef 1 partout (CM / CP)
- *   - SECONDAIRE → quantitatif /20, coef variable (Devoir / Composition)
+ * L'enseignant voit les évaluations où teacherId est assigné.
  * ============================================================================
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Loader2, FileEdit, Calendar, BookOpen, Users, Save, Send,
-  ChevronRight, AlertCircle, CheckCircle2,
+  ChevronRight, AlertCircle, CheckCircle2, Bell, XCircle,
 } from 'lucide-react';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useBilingual, BilingualTrackSelector } from '@/contexts/BilingualContext';
-import { useAcademicSettings } from '@/hooks/useAcademicSettings';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { toast } from 'sonner';
+import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
+import apiClient from '@/lib/api/client';
+import { institutionalExamsService } from '@/services/institutional-exams.service';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { cn } from '@/lib/utils';
 
-interface TeacherEvaluation {
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface Evaluation {
   id: string;
-  title: string;
+  title: string | null;
   evaluationDate: string;
-  status: string;
-  maxScore: number;
-  coefficient: number;
-  class: { id: string; name: string; schoolLevel?: { code: string; name: string } };
-  subject: { id: string; name: string; language?: string };
-  evaluationType: { id: string; name: string };
+  startDate?: string | null;
+  endDate?: string | null;
+  status: 'DRAFT' | 'PLANNED' | 'OPEN_FOR_GRADING' | 'SUBMITTED' | 'VALIDATED' | 'LOCKED' | 'CANCELLED';
+  class?: { id: string; name: string; schoolLevel?: { code: string; name: string } };
+  subject?: { id: string; name: string; language?: string };
+  evaluationType?: { id: string; name: string; code?: string };
   period?: { id: string; name: string };
   _count?: { grades: number };
 }
 
-interface ScoreEntrySchema {
-  columns: Array<{
-    key: string;
-    label: string;
-    type: 'number' | 'text' | 'qualitative';
-    max: number;
-    required: boolean;
-    includedInAverage: boolean;
-    visibleOnReportCard: boolean;
-    qualitativeOptions?: string[];
-    weight?: number;
-  }>;
-  formula: string;
+interface GroupedEvaluation {
+  classId: string;
+  className: string;
+  evaluationTypeId: string;
+  evaluationTypeName: string;
+  evaluationTypeCode?: string;
+  periodId: string;
+  periodName: string;
+  startDate: string | null;
+  endDate: string | null;
+  subjects: Array<{ id: string; name: string }>;
+  evaluationIds: string[];
+  statuses: string[];
+  firstEvaluation: Evaluation;
 }
 
-interface StudentGradeRow {
+interface GradeRow {
   studentId: string;
   studentName: string;
-  matricule: string;
-  scores: Record<string, number | string | null>;
-  computedAverage: number | null;
-  isAbsent: boolean;
-  comment: string;
+  matricule?: string;
+  gender?: string;
+  scores: Record<string, { score: number | null; qualitativeCode: string | null; isAbsent: boolean; comment: string }>;
+  status: string;
 }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatDate(d: string | null): string {
+  if (!d) return 'Date non définie';
+  try {
+    return format(new Date(d), 'd MMM yyyy', { locale: fr });
+  } catch {
+    return d;
+  }
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function TeacherExamsPage() {
   const { user } = useAppSession();
   const { academicYear, schoolLevel } = useModuleContext();
   const { isEnabled: isBilingual, currentTrack } = useBilingual();
 
-  const [evaluations, setEvaluations] = useState<TeacherEvaluation[]>([]);
+  const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedEval, setSelectedEval] = useState<TeacherEvaluation | null>(null);
-  const [schema, setSchema] = useState<ScoreEntrySchema | null>(null);
-  const [students, setStudents] = useState<StudentGradeRow[]>([]);
-  const [saving, setSaving] = useState(false);
+  const [selectedGroup, setSelectedGroup] = useState<GroupedEvaluation | null>(null);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
 
-  const teacherId = user?.id || '';
+  // Détecter le niveau scolaire depuis schoolLevel.code
+  const levelCode = (schoolLevel?.code || '').toUpperCase();
+  const isMaternelle = levelCode === 'MATERNELLE' || levelCode.includes('MATERN');
+  const isPrimaire = levelCode === 'PRIMAIRE' || levelCode.includes('PRIM');
 
-  // === Charger les évaluations de l'enseignant ===
+  // ─── Charger les évaluations de l'enseignant ──────────────────────────────
   const loadEvaluations = useCallback(async () => {
-    if (!academicYear?.id || !teacherId) return;
+    if (!academicYear?.id || !schoolLevel?.id) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const params = new URLSearchParams({
+      const params: any = {
         academicYearId: academicYear.id,
-        teacherId,
-      });
-      if (schoolLevel?.id) params.append('schoolLevelId', schoolLevel.id);
-      if (isBilingual && currentTrack) params.append('language', currentTrack);
-
-      const res = await fetch(`/api/exams/evaluations?${params.toString()}`, { credentials: 'include' });
-      const data = await res.json();
-      setEvaluations(Array.isArray(data) ? data : (data?.items || []));
+        schoolLevelId: schoolLevel.id,
+        teacherId: user?.id,
+      };
+      if (isBilingual && currentTrack) params.language = currentTrack;
+      const res = await institutionalExamsService.getEvaluations(params);
+      setEvaluations(Array.isArray(res) ? res : []);
     } catch (err) {
+      console.error('Error loading evaluations', err);
       setEvaluations([]);
     } finally {
       setLoading(false);
     }
-  }, [academicYear?.id, teacherId, schoolLevel?.id, isBilingual, currentTrack]);
+  }, [academicYear?.id, schoolLevel?.id, user?.id, isBilingual, currentTrack]);
 
   useEffect(() => { loadEvaluations(); }, [loadEvaluations]);
 
-  // === Sélectionner une évaluation → charger schéma + élèves ===
-  const selectEvaluation = async (eval_: TeacherEvaluation) => {
-    setSelectedEval(eval_);
-    setSchema(null);
-    setStudents([]);
-
+  // ─── Charger les notifications in-app ──────────────────────────────────────
+  const loadNotifications = useCallback(async () => {
+    if (!user?.id) return;
     try {
-      // Charger le schéma de saisie (adapte au niveau scolaire)
-      const schemaParams = new URLSearchParams({
-        schoolYearId: academicYear!.id,
-        classId: eval_.class.id,
-        subjectId: eval_.subject.id,
+      const res = await apiClient.get('/notifications', {
+        params: { type: 'EVALUATION_SCHEDULED', limit: 10 },
       });
-      if (schoolLevel?.code) schemaParams.append('levelCode', schoolLevel.code);
-      if (eval_.period?.id) schemaParams.append('periodId', eval_.period.id);
-
-      const schemaRes = await fetch(`/api/exams/settings/score-entry-schema?${schemaParams.toString()}`, { credentials: 'include' });
-      if (schemaRes.ok) {
-        const schemaData = await schemaRes.json();
-        setSchema(schemaData);
-      }
-
-      // Charger la grading sheet (élèves + notes existantes)
-      const sheetRes = await fetch(`/api/exams/evaluations/${eval_.id}/grading-sheet`, { credentials: 'include' });
-      if (sheetRes.ok) {
-        const sheetData = await sheetRes.json();
-        const rows: StudentGradeRow[] = (sheetData?.students || sheetData?.rows || []).map((s: any) => ({
-          studentId: s.studentId || s.id,
-          studentName: s.studentName || `${s.firstName} ${s.lastName}`,
-          matricule: s.matricule || '',
-          scores: s.scores || {},
-          computedAverage: s.computedAverage ?? null,
-          isAbsent: s.isAbsent || false,
-          comment: s.comment || '',
-        }));
-        setStudents(rows);
-      }
-    } catch (err) {
-      toast.error('Erreur lors du chargement de l\'évaluation');
+      const data = res.data;
+      const notifs = Array.isArray(data) ? data : (data?.items || data?.data || []);
+      setNotifications(notifs);
+    } catch {
+      setNotifications([]);
     }
+  }, [user?.id]);
+
+  useEffect(() => { loadNotifications(); }, [loadNotifications]);
+
+  // ─── Grouper les évaluations ─────────────────────────────────────────────────
+  const grouped = useMemo<GroupedEvaluation[]>(() => {
+    const map = new Map<string, GroupedEvaluation>();
+    for (const ev of evaluations) {
+      const classId = ev.class?.id || '_no_class';
+      const evaluationTypeId = ev.evaluationType?.id || '_no_type';
+      const periodId = ev.period?.id || '_no_period';
+      const sd = ev.startDate || ev.evaluationDate || '';
+      const ed = ev.endDate || ev.startDate || ev.evaluationDate || '';
+      const key = `${classId}|${evaluationTypeId}|${periodId}|${sd}|${ed}`;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          classId,
+          className: ev.class?.name || 'Sans classe',
+          evaluationTypeId,
+          evaluationTypeName: ev.evaluationType?.name || 'Évaluation',
+          evaluationTypeCode: ev.evaluationType?.code,
+          periodId,
+          periodName: ev.period?.name || '',
+          startDate: ev.startDate || null,
+          endDate: ev.endDate || null,
+          subjects: [],
+          evaluationIds: [],
+          statuses: [],
+          firstEvaluation: ev,
+        });
+      }
+      const g = map.get(key)!;
+      if (ev.subject && !g.subjects.find((s) => s.id === ev.subject!.id)) {
+        g.subjects.push({ id: ev.subject.id, name: ev.subject.name });
+      }
+      g.evaluationIds.push(ev.id);
+      g.statuses.push(ev.status);
+    }
+    return Array.from(map.values());
+  }, [evaluations]);
+
+  // ─── Si un groupe est sélectionné, afficher la fiche de saisie ──────────────
+  if (selectedGroup) {
+    return (
+      <TeacherGradingSheet
+        group={selectedGroup}
+        isMaternelle={isMaternelle}
+        academicYearId={academicYear?.id || ''}
+        onBack={() => {
+          setSelectedGroup(null);
+          loadEvaluations();
+        }}
+      />
+    );
+  }
+
+  // ─── Vue liste ───────────────────────────────────────────────────────────────
+  return (
+    <div className="space-y-6">
+      {/* En-tête */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <FileEdit className="w-6 h-6 text-blue-600" />
+            Mes Évaluations
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Évaluations programmées pour vos classes — {academicYear?.label || 'Année courante'}
+            {isBilingual && currentTrack && ` • Piste ${currentTrack === 'FR' ? 'francophone' : 'anglophone'}`}
+          </p>
+        </div>
+        {/* Bouton notifications */}
+        <button
+          onClick={() => setShowNotifications(!showNotifications)}
+          className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors"
+          title="Notifications évaluations"
+        >
+          <Bell className="w-5 h-5 text-gray-600" />
+          {notifications.length > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
+              {notifications.length > 9 ? '9+' : notifications.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Panneau notifications (dépliable) */}
+      {showNotifications && (
+        <Card className="border-blue-200 shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                <Bell className="w-4 h-4 text-blue-600" />
+                Notifications d'évaluations ({notifications.length})
+              </h3>
+              <Button variant="ghost" size="sm" onClick={() => setShowNotifications(false)}>
+                Fermer
+              </Button>
+            </div>
+            {notifications.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">Aucune notification</p>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {notifications.map((notif: any) => (
+                  <div
+                    key={notif.id}
+                    className={cn(
+                      'flex items-start gap-3 p-3 rounded-lg border',
+                      notif.isRead ? 'bg-gray-50 border-gray-200' : 'bg-blue-50 border-blue-200'
+                    )}
+                  >
+                    <div className={cn(
+                      'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center',
+                      notif.priority === 'HIGH' ? 'bg-amber-100' : 'bg-blue-100'
+                    )}>
+                      <Bell className="w-4 h-4 text-blue-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900">{notif.title}</p>
+                      <p className="text-xs text-gray-600 mt-0.5">{notif.body}</p>
+                      <p className="text-[10px] text-gray-400 mt-1">
+                        {notif.createdAt ? format(new Date(notif.createdAt), 'dd MMM yyyy HH:mm', { locale: fr }) : ''}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Sélecteur bilingue */}
+      {isBilingual && <BilingualTrackSelector />}
+
+      {/* Loading */}
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+          <span className="ml-2 text-gray-600">Chargement de vos évaluations...</span>
+        </div>
+      ) : grouped.length === 0 ? (
+        <Card className="border-gray-200 shadow-sm">
+          <CardContent className="py-12 text-center">
+            <FileEdit className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+            <p className="font-medium text-gray-600">Aucune évaluation assignée</p>
+            <p className="text-xs mt-1 text-gray-400">
+              {isBilingual
+                ? `Aucune évaluation sur la piste ${currentTrack === 'FR' ? 'francophone' : 'anglophone'} pour le moment.`
+                : 'Aucune évaluation ne vous est assignée pour le moment.'}
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {grouped.map((group, idx) => {
+            const canGrade = group.statuses.some(s => s === 'OPEN_FOR_GRADING' || s === 'PLANNED');
+            const isLocked = group.statuses.every(s => s === 'VALIDATED' || s === 'LOCKED' || s === 'SUBMITTED');
+            const headerStatus = isLocked
+              ? 'Soumise/Validée'
+              : canGrade ? 'Saisie ouverte' : 'Planifiée';
+
+            const startDate = group.startDate ? new Date(group.startDate) : null;
+            const endDate = group.endDate ? new Date(group.endDate) : null;
+            const sameDay = startDate && endDate &&
+              startDate.getFullYear() === endDate.getFullYear() &&
+              startDate.getMonth() === endDate.getMonth() &&
+              startDate.getDate() === endDate.getDate();
+            const dateRange = startDate
+              ? sameDay || !endDate
+                ? `Le ${format(startDate, 'd MMM yyyy', { locale: fr })}`
+                : `Du ${format(startDate, 'd MMM yyyy', { locale: fr })} au ${format(endDate, 'd MMM yyyy', { locale: fr })}`
+              : 'Date non définie';
+
+            return (
+              <button
+                key={`${group.classId}-${group.evaluationTypeId}-${idx}`}
+                onClick={() => canGrade && setSelectedGroup(group)}
+                disabled={!canGrade}
+                className={cn(
+                  'bg-white rounded-2xl border shadow-sm transition-all text-left flex flex-col',
+                  canGrade
+                    ? 'border-gray-200 hover:shadow-md hover:border-blue-300 cursor-pointer'
+                    : 'border-gray-100 opacity-60 cursor-not-allowed'
+                )}
+              >
+                {/* En-tête */}
+                <div className="px-5 py-4 bg-gradient-to-br from-blue-50 to-indigo-50/50 border-b border-blue-100">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+                        {(group.className || '?').slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="text-base font-bold text-navy-900 truncate">{group.className}</h3>
+                        <p className="text-xs text-gray-500">
+                          {group.subjects.length} matière{group.subjects.length > 1 ? 's' : ''} à évaluer
+                        </p>
+                      </div>
+                    </div>
+                    <span className={cn(
+                      'text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap',
+                      isLocked ? 'bg-emerald-100 text-emerald-700'
+                      : canGrade ? 'bg-amber-100 text-amber-700'
+                      : 'bg-blue-100 text-blue-700'
+                    )}>
+                      {headerStatus}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Corps */}
+                <div className="p-5 flex-1 space-y-3">
+                  <div>
+                    <p className="text-sm font-semibold text-navy-900">
+                      {group.evaluationTypeCode ? `[${group.evaluationTypeCode}] ` : ''}
+                      {group.evaluationTypeName}
+                    </p>
+                    {group.periodName && (
+                      <p className="text-xs text-gray-500 mt-0.5">{group.periodName}</p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center space-x-1.5 text-xs text-gray-700 bg-gray-50 rounded-lg px-3 py-2">
+                    <Calendar className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                    <span className="font-medium">{dateRange}</span>
+                  </div>
+
+                  <div className="space-y-1.5 pt-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                      Matières à évaluer
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {group.subjects.map((s) => (
+                        <span
+                          key={s.id}
+                          className="inline-flex items-center px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-medium border border-blue-100"
+                        >
+                          {s.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Mode de saisie */}
+                  <div className="flex items-center space-x-2 pt-2 border-t border-gray-100">
+                    <span className={cn(
+                      'px-2 py-0.5 rounded text-xs font-semibold',
+                      isMaternelle ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'
+                    )}>
+                      {isMaternelle ? 'TS / S / PS' : '/ 20'}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {group.evaluationIds.length} élève(s) max
+                    </span>
+                  </div>
+                </div>
+
+                {/* Pied : action */}
+                {canGrade && (
+                  <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/30">
+                    <div className="flex items-center justify-end text-xs font-semibold text-blue-600">
+                      Saisir les notes
+                      <ChevronRight className="w-4 h-4 ml-1" />
+                    </div>
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Fiche de saisie (vue détaillée) ─────────────────────────────────────────
+
+function TeacherGradingSheet({
+  group,
+  isMaternelle,
+  academicYearId,
+  onBack,
+}: {
+  group: GroupedEvaluation;
+  isMaternelle: boolean;
+  academicYearId: string;
+  onBack: () => void;
+}) {
+  const [rows, setRows] = useState<GradeRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // ── Charger les élèves + notes existantes ─────────────────────────────────
+  useEffect(() => {
+    const loadSheet = async () => {
+      if (!group.evaluationIds.length) {
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      try {
+        // Fetch la grading sheet pour chaque évaluation du groupe
+        const sheets = await Promise.all(
+          group.evaluationIds.map(async (evId) => {
+            try {
+              const response = await apiClient.get(`/institutional-exams/grades/evaluation/${evId}`);
+              return { evaluationId: evId, students: Array.isArray(response.data) ? response.data : [] };
+            } catch {
+              return { evaluationId: evId, students: [] };
+            }
+          })
+        );
+
+        // Construire la map evaluationId → subjectId
+        const evalToSubject = new Map<string, string>();
+        try {
+          const evalsRes = await institutionalExamsService.getEvaluations({
+            academicYearId,
+            schoolLevelId: group.classId,
+          });
+          const evalsWithSubject = (Array.isArray(evalsRes) ? evalsRes : []).filter(
+            (ev: Evaluation) => group.evaluationIds.includes(ev.id)
+          );
+          evalsWithSubject.forEach((ev: Evaluation) => {
+            if (ev.subject?.id) {
+              evalToSubject.set(ev.id, ev.subject.id);
+            }
+          });
+        } catch (err) {
+          console.warn('Failed to fetch evaluations for subject mapping', err);
+        }
+
+        // Fallback : associer par ordre
+        if (evalToSubject.size === 0 && group.subjects.length === group.evaluationIds.length) {
+          group.evaluationIds.forEach((evId, i) => {
+            evalToSubject.set(evId, group.subjects[i].id);
+          });
+        }
+
+        // Construire la map studentId → GradeRow
+        const studentMap = new Map<string, GradeRow>();
+        sheets.forEach(({ evaluationId, students }) => {
+          const subjectId = evalToSubject.get(evaluationId);
+          if (!subjectId) return;
+          students.forEach((student: any) => {
+            if (!studentMap.has(student.studentId)) {
+              studentMap.set(student.studentId, {
+                studentId: student.studentId,
+                studentName: student.studentName || 'Inconnu',
+                matricule: student.matricule,
+                gender: student.gender,
+                scores: {},
+                status: student.status || 'NEW',
+              });
+            }
+            const row = studentMap.get(student.studentId)!;
+            row.scores[subjectId] = {
+              score: student.score ?? null,
+              qualitativeCode: student.qualitativeCode ?? null,
+              isAbsent: student.isAbsent ?? false,
+              comment: student.comment ?? '',
+            };
+          });
+        });
+
+        // Initialiser tous les sujets pour chaque élève
+        const rowsArray = Array.from(studentMap.values());
+        rowsArray.forEach((row) => {
+          group.subjects.forEach((subject) => {
+            if (!row.scores[subject.id]) {
+              row.scores[subject.id] = { score: null, qualitativeCode: null, isAbsent: false, comment: '' };
+            }
+          });
+        });
+
+        rowsArray.sort((a, b) => a.studentName.localeCompare(b.studentName, 'fr'));
+        setRows(rowsArray);
+      } catch (err) {
+        console.error('Error loading grading sheet', err);
+        toastError('Erreur lors du chargement de la fiche de saisie');
+        setRows([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadSheet();
+  }, [group, academicYearId]);
+
+  // ── Handlers ────────────────────────────────────────────────────────────────
+
+  const handleScoreChange = (studentId: string, subjectId: string, value: string) => {
+    setRows(prev => prev.map(row => {
+      if (row.studentId !== studentId) return row;
+      const existing = row.scores[subjectId] || { score: null, qualitativeCode: null, isAbsent: false, comment: '' };
+      let updated: any;
+      if (isMaternelle) {
+        updated = { ...existing, qualitativeCode: value === '' ? null : value };
+      } else {
+        updated = { ...existing, score: value === '' ? null : parseFloat(value) };
+      }
+      return { ...row, scores: { ...row.scores, [subjectId]: updated } };
+    }));
   };
 
-  // === Mettre à jour une note ===
-  const updateScore = (studentId: string, columnKey: string, value: number | string | null) => {
-    setStudents(prev => prev.map(s =>
-      s.studentId === studentId
-        ? { ...s, scores: { ...s.scores, [columnKey]: value } }
-        : s
-    ));
-  };
-
-  // === Sauvegarder les notes ===
-  const handleSave = async (submit: boolean = false) => {
-    if (!selectedEval || !schema) return;
+  const handleSave = async (submit = false) => {
     setSaving(true);
     try {
-      const payload = {
-        grades: students.map(row => ({
-          studentId: row.studentId,
-          scores: row.scores,
-          computedAverage: row.computedAverage,
-          isAbsent: row.isAbsent,
-          comment: row.comment,
-        })),
-        formula: schema.formula,
-        submit,
-      };
-      const res = await fetch(`/api/exams/evaluations/${selectedEval.id}/grading-sheet`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error('Erreur');
-      toast.success(submit ? 'Notes soumises pour validation' : 'Brouillon enregistré');
-      if (submit) {
-        setSelectedEval(null);
-        loadEvaluations();
+      // Refetch evaluations pour résoudre evaluationId → subjectId
+      let evalsWithSubject: Evaluation[] = [];
+      try {
+        const evalsRes = await institutionalExamsService.getEvaluations({
+          academicYearId,
+          schoolLevelId: group.classId,
+        });
+        evalsWithSubject = (Array.isArray(evalsRes) ? evalsRes : []).filter(
+          (e: Evaluation) => group.evaluationIds.includes(e.id)
+        );
+      } catch (err) {
+        console.warn('Failed to fetch evaluations for save', err);
       }
-    } catch (err) {
-      toast.error("Échec de l'enregistrement");
+
+      await Promise.all(
+        group.evaluationIds.map(async (evId) => {
+          const ev = evalsWithSubject.find(e => e.id === evId);
+          const subjectId = ev?.subject?.id;
+          if (!subjectId) return;
+
+          const gradesForEval = rows
+            .filter(row => row.scores[subjectId])
+            .map(row => ({
+              studentId: row.studentId,
+              subjectId,
+              score: row.scores[subjectId].score,
+              qualitativeCode: row.scores[subjectId].qualitativeCode,
+              isAbsent: row.scores[subjectId].isAbsent,
+              comment: row.scores[subjectId].comment,
+              status: submit ? 'SUBMITTED' : 'DRAFT',
+            }));
+
+          await apiClient.post(
+            `/institutional-exams/grades/evaluation/${evId}/bulk`,
+            gradesForEval,
+          );
+        })
+      );
+
+      toastSuccess(submit ? 'Notes soumises pour validation' : 'Notes enregistrées', {
+        description: `${rows.length} élève(s) · ${group.subjects.length} matière(s)`,
+      });
+      if (submit) onBack();
+    } catch (err: any) {
+      toastError('Erreur lors de la sauvegarde', { description: err.message });
     } finally {
       setSaving(false);
     }
   };
 
-  // === Render ===
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-        <span className="ml-2 text-gray-600">Chargement de vos évaluations...</span>
-      </div>
+  const filteredRows = useMemo(() => {
+    if (!searchQuery.trim()) return rows;
+    const q = searchQuery.toLowerCase().trim();
+    return rows.filter(r =>
+      r.studentName.toLowerCase().includes(q) ||
+      (r.matricule || '').toLowerCase().includes(q)
     );
-  }
+  }, [rows, searchQuery]);
+
+  const startDate = group.startDate ? new Date(group.startDate) : null;
+  const endDate = group.endDate ? new Date(group.endDate) : null;
+  const sameDay = startDate && endDate &&
+    startDate.getFullYear() === endDate.getFullYear() &&
+    startDate.getMonth() === endDate.getMonth() &&
+    startDate.getDate() === endDate.getDate();
+  const dateRange = startDate
+    ? sameDay || !endDate
+      ? `Le ${format(startDate, 'd MMM yyyy', { locale: fr })}`
+      : `Du ${format(startDate, 'd MMM yyyy', { locale: fr })} au ${format(endDate, 'd MMM yyyy', { locale: fr })}`
+    : 'Date non définie';
 
   return (
-    <div className="space-y-6">
-      {/* En-tête */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <FileEdit className="w-6 h-6 text-blue-600" />
-          Mes Évaluations
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Évaluations programmées pour vos classes — {academicYear?.label || 'Année courante'}
-          {isBilingual && currentTrack && ` • Piste ${currentTrack === 'FR' ? 'francophone' : 'anglophone'}`}
-        </p>
+    <div className="space-y-4">
+      {/* Action Bar */}
+      <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-3">
+        <Button variant="ghost" onClick={onBack}>
+          <ChevronRight className="w-4 h-4 mr-1 rotate-180" />
+          Retour à la liste
+        </Button>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="outline" className="border-blue-200 text-blue-600 text-xs gap-1">
+            <Users className="w-3 h-3" />
+            {rows.length} élèves
+          </Badge>
+          <Badge variant="outline" className="border-emerald-200 text-emerald-600 text-xs gap-1">
+            <BookOpen className="w-3 h-3" />
+            {group.subjects.length} matières
+          </Badge>
+          <Badge variant="outline" className="border-amber-200 text-amber-600 text-xs">
+            {isMaternelle ? 'TS/S/PS' : `/20`}
+          </Badge>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleSave(false)}
+            disabled={saving || loading}
+            className="border-blue-200 text-blue-700 hover:bg-blue-50"
+          >
+            {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
+            Sauvegarder
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => handleSave(true)}
+            disabled={saving || loading}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            <Send className="w-4 h-4 mr-1" />
+            Soumettre
+          </Button>
+        </div>
       </div>
 
-      {/* Sélecteur bilingue */}
-      <BilingualTrackSelector />
+      {/* Header fiche */}
+      <div className="bg-white border-2 border-slate-800 rounded-xl p-4 text-center">
+        <h2 className="text-lg font-bold text-slate-900">
+          FICHE DE SAISIE — {group.evaluationTypeName}
+        </h2>
+        <div className="text-sm text-slate-600 mt-1">
+          Classe : <strong>{group.className}</strong> • {group.periodName} • {dateRange}
+        </div>
+      </div>
 
-      {/* Liste des évaluations */}
-      {!selectedEval ? (
-        <Card className="border-gray-200 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-md flex items-center">
-              <Calendar className="w-5 h-5 mr-2 text-blue-500" />
-              Évaluations à traiter ({evaluations.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {evaluations.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <FileEdit className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-                <p className="font-medium">Aucune évaluation assignée</p>
-                <p className="text-xs mt-1">
-                  {isBilingual
-                    ? `Aucune évaluation sur la piste ${currentTrack === 'FR' ? 'francophone' : 'anglophone'} pour le moment.`
-                    : 'Aucune évaluation ne vous est assignée pour le moment.'}
-                </p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50">
-                    <TableHead className="text-xs font-black uppercase text-gray-500">Évaluation</TableHead>
-                    <TableHead className="text-xs font-black uppercase text-gray-500">Classe</TableHead>
-                    <TableHead className="text-xs font-black uppercase text-gray-500">Matière</TableHead>
-                    <TableHead className="text-xs font-black uppercase text-gray-500">Date</TableHead>
-                    <TableHead className="text-xs font-black uppercase text-gray-500">Statut</TableHead>
-                    <TableHead className="text-xs font-black uppercase text-gray-500 text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {evaluations.map((eval_) => (
-                    <TableRow key={eval_.id} className="hover:bg-gray-50">
-                      <TableCell className="font-medium text-gray-900">
-                        {eval_.title || eval_.evaluationType?.name || 'Évaluation'}
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm">{eval_.class.name}</div>
-                        {eval_.class.schoolLevel && (
-                          <div className="text-xs text-gray-500">{eval_.class.schoolLevel.name}</div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm">{eval_.subject.name}</div>
-                        {eval_.subject.language && (
-                          <Badge variant="outline" className="text-xs mt-0.5">
-                            {eval_.subject.language === 'FR' ? 'Français' : 'English'}
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-600">
-                        {eval_.evaluationDate ? format(new Date(eval_.evaluationDate), 'dd MMM yyyy', { locale: fr }) : '—'}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={eval_.status === 'VALIDATED' ? 'default' : eval_.status === 'SUBMITTED' ? 'secondary' : 'outline'}>
-                          {eval_.status === 'PLANNED' ? 'Planifiée' :
-                           eval_.status === 'OPEN_FOR_GRADING' ? 'Ouverte' :
-                           eval_.status === 'SUBMITTED' ? 'Soumise' :
-                           eval_.status === 'VALIDATED' ? 'Validée' :
-                           eval_.status === 'LOCKED' ? 'Verrouillée' :
-                           eval_.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => selectEvaluation(eval_)}
-                          disabled={eval_.status === 'VALIDATED' || eval_.status === 'LOCKED'}
-                        >
-                          Saisir les notes
-                          <ChevronRight className="w-4 h-4 ml-1" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+      {/* Loading */}
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+          <p className="ml-3 text-sm text-gray-500">Chargement des élèves et notes…</p>
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
+          <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-600 font-medium">Aucun élève dans cette classe</p>
+          <p className="text-sm text-gray-400 mt-1">
+            Vérifiez que des élèves sont inscrits dans la classe {group.className}.
+          </p>
+        </div>
       ) : (
-        /* === Vue saisie des notes === */
-        <Card className="border-gray-200 shadow-sm">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-md flex items-center">
-                  <BookOpen className="w-5 h-5 mr-2 text-blue-500" />
-                  {selectedEval.title || selectedEval.evaluationType?.name}
-                </CardTitle>
-                <p className="text-sm text-gray-500 mt-1">
-                  {selectedEval.class.name} • {selectedEval.subject.name} •
-                  Barème /{schema?.columns?.[0]?.max || 20}
-                  {schema?.columns?.[0]?.type === 'qualitative' && ' (qualitatif TS/S/PS)'}
-                </p>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => setSelectedEval(null)}>
-                ← Retour
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {schema && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900 mb-4">
-                <strong>Formule de calcul :</strong> <code>{schema.formula}</code>
-                {schema.columns[0]?.type === 'qualitative' && (
-                  <span className="block mt-1">⭐ Mode qualitatif maternelle — cochez TS, S ou PS pour chaque domaine.</span>
+        <>
+          {/* Recherche */}
+          <div className="relative max-w-xs">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Rechercher un élève…"
+              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+            <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          </div>
+
+          {/* Tableau registre */}
+          <div className="bg-white border-2 border-slate-800 rounded-xl overflow-x-auto">
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-100">
+                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">N°</th>
+                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: '180px' }}>Nom et prénom</th>
+                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Sexe</th>
+                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-20">Présence</th>
+                  {group.subjects.map((subject, idx) => (
+                    isMaternelle ? (
+                      <th key={idx} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[100px]">
+                        {subject.name}
+                        <div className="text-[9px] text-slate-400 font-normal">TS / S / PS</div>
+                      </th>
+                    ) : (
+                      <th key={idx} colSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[120px]">
+                        {subject.name}
+                      </th>
+                    )
+                  ))}
+                  {!isMaternelle && (
+                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total</th>
+                  )}
+                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Seuil</th>
+                </tr>
+                {!isMaternelle && (
+                  <tr className="bg-slate-50">
+                    {group.subjects.map((_, idx) => (
+                      <>
+                        <th key={`note-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Note /20</th>
+                        <th key={`tot-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Total</th>
+                      </>
+                    ))}
+                  </tr>
                 )}
-              </div>
-            )}
+              </thead>
+              <tbody>
+                {filteredRows.map((row, idx) => {
+                  const totalGeneral = isMaternelle ? null : group.subjects.reduce((sum, subj) => {
+                    const s = row.scores[subj.id];
+                    return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
+                  }, 0);
+                  const seuilAtteint = isMaternelle ? null : (
+                    totalGeneral !== null && totalGeneral >= (10 * group.subjects.length * 0.5)
+                  );
 
-            {students.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <Users className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-                <p>Aucun élève trouvé dans cette classe.</p>
-              </div>
-            ) : (
-              <>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-gray-50">
-                        <TableHead className="text-xs font-black uppercase text-gray-500">Élève</TableHead>
-                        {schema?.columns.map((col) => (
-                          <TableHead key={col.key} className="text-xs font-black uppercase text-gray-500 text-center">
-                            {col.label}
-                            {col.weight && col.weight !== 1 && (
-                              <span className="block text-[10px] font-normal text-gray-400">coef {col.weight}</span>
+                  return (
+                    <tr
+                      key={row.studentId}
+                      className={cn(
+                        'hover:bg-slate-50 transition-colors',
+                        idx % 2 === 1 && 'bg-slate-50/50',
+                        Object.values(row.scores).some(s => s?.isAbsent) && 'bg-red-50/30'
+                      )}
+                    >
+                      <td className="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-600">{idx + 1}</td>
+                      <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900">{row.studentName}</td>
+                      <td className="border border-slate-300 px-2 py-1 text-center">
+                        {row.gender === 'M' ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-cyan-100 text-cyan-700">M</span>
+                        ) : row.gender === 'F' ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-pink-100 text-pink-700">F</span>
+                        ) : '—'}
+                      </td>
+                      {/* Colonne Présence P/A */}
+                      <td className="border border-slate-300 px-1 py-1 text-center">
+                        <div className="flex gap-1 justify-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRows(prev => prev.map(r => {
+                                if (r.studentId !== row.studentId) return r;
+                                const newScores = { ...r.scores };
+                                group.subjects.forEach(subj => {
+                                  newScores[subj.id] = { ...newScores[subj.id], isAbsent: false };
+                                });
+                                return { ...r, scores: newScores };
+                              }));
+                            }}
+                            title="Présent"
+                            className={cn(
+                              'px-2 py-1 rounded text-xs font-bold transition',
+                              !Object.values(row.scores).some(s => s?.isAbsent)
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-gray-100 text-gray-600 hover:bg-emerald-100'
                             )}
-                          </TableHead>
-                        ))}
-                        <TableHead className="text-xs font-black uppercase text-gray-500 text-center">Abs.</TableHead>
-                        <TableHead className="text-xs font-black uppercase text-gray-500">Appréciation</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {students.map((row) => (
-                        <TableRow key={row.studentId} className={row.isAbsent ? 'bg-amber-50/30' : ''}>
-                          <TableCell>
-                            <div className="font-medium text-sm">{row.studentName}</div>
-                            <div className="text-xs text-gray-500">{row.matricule}</div>
-                          </TableCell>
-                          {schema?.columns.map((col) => (
-                            <TableCell key={col.key} className="text-center">
-                              {col.type === 'qualitative' ? (
-                                // ⭐ Mode qualitatif maternelle : Select TS/S/PS
-                                <div className="flex gap-1 justify-center">
-                                  {col.qualitativeOptions?.map((opt) => (
-                                    <button
-                                      key={opt}
-                                      type="button"
-                                      onClick={() => updateScore(row.studentId, col.key, opt)}
-                                      className={`px-2 py-1 rounded text-xs font-bold transition ${
-                                        row.scores[col.key] === opt
-                                          ? 'bg-blue-600 text-white'
-                                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                      }`}
-                                      title={
-                                        opt === 'TS' ? 'Très Satisfaisant' :
-                                        opt === 'S' ? 'Satisfaisant' :
-                                        opt === 'PS' ? 'Peu Satisfaisant' : opt
-                                      }
-                                    >
-                                      {opt}
-                                    </button>
-                                  ))}
-                                </div>
-                              ) : (
-                                // Mode quantitatif : Input number
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max={col.max}
-                                  step="0.25"
-                                  value={row.scores[col.key] ?? ''}
-                                  onChange={(e) => updateScore(row.studentId, col.key, e.target.value === '' ? null : parseFloat(e.target.value))}
-                                  disabled={row.isAbsent}
-                                  className="w-16 px-2 py-1 text-center text-sm border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                                />
-                              )}
-                            </TableCell>
-                          ))}
-                          <TableCell className="text-center">
-                            <input
-                              type="checkbox"
-                              checked={row.isAbsent}
-                              onChange={(e) => setStudents(prev => prev.map(s =>
-                                s.studentId === row.studentId ? { ...s, isAbsent: e.target.checked } : s
-                              ))}
-                              className="w-4 h-4"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <input
-                              type="text"
-                              value={row.comment}
-                              onChange={(e) => setStudents(prev => prev.map(s =>
-                                s.studentId === row.studentId ? { ...s, comment: e.target.value } : s
-                              ))}
-                              placeholder="—"
-                              className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                          >
+                            P
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRows(prev => prev.map(r => {
+                                if (r.studentId !== row.studentId) return r;
+                                const newScores = { ...r.scores };
+                                group.subjects.forEach(subj => {
+                                  newScores[subj.id] = {
+                                    ...newScores[subj.id],
+                                    isAbsent: true,
+                                    score: null,
+                                    qualitativeCode: null,
+                                  };
+                                });
+                                return { ...r, scores: newScores };
+                              }));
+                            }}
+                            title="Absent"
+                            className={cn(
+                              'px-2 py-1 rounded text-xs font-bold transition',
+                              Object.values(row.scores).some(s => s?.isAbsent)
+                                ? 'bg-red-600 text-white'
+                                : 'bg-gray-100 text-gray-600 hover:bg-red-100'
+                            )}
+                          >
+                            A
+                          </button>
+                        </div>
+                      </td>
 
-                <div className="flex justify-end gap-2 mt-4">
-                  <Button
-                    variant="outline"
-                    onClick={() => handleSave(false)}
-                    disabled={saving}
-                  >
-                    {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                    Enregistrer (brouillon)
-                  </Button>
-                  <Button
-                    onClick={() => handleSave(true)}
-                    disabled={saving}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
-                    Soumettre pour validation
-                  </Button>
-                </div>
-              </>
+                      {/* Matières */}
+                      {group.subjects.map((subject) => {
+                        const score = row.scores[subject.id] || { score: null, qualitativeCode: null, isAbsent: false, comment: '' };
+                        if (isMaternelle) {
+                          return (
+                            <td key={subject.id} className="border border-slate-300 px-1 py-1 text-center">
+                              <div className="flex gap-1 justify-center">
+                                {['TS', 'S', 'PS'].map((opt) => (
+                                  <button
+                                    key={opt}
+                                    type="button"
+                                    onClick={() => !score.isAbsent && handleScoreChange(row.studentId, subject.id, opt)}
+                                    disabled={score.isAbsent}
+                                    title={opt === 'TS' ? 'Très Satisfaisant' : opt === 'S' ? 'Satisfaisant' : 'Peu Satisfaisant'}
+                                    className={cn(
+                                      'px-2 py-1 rounded text-xs font-bold transition',
+                                      score.qualitativeCode === opt
+                                        ? opt === 'TS'
+                                          ? 'bg-emerald-600 text-white'
+                                          : opt === 'S'
+                                            ? 'bg-blue-600 text-white'
+                                            : 'bg-amber-600 text-white'
+                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                                      score.isAbsent && 'opacity-30 cursor-not-allowed'
+                                    )}
+                                  >
+                                    {opt}
+                                  </button>
+                                ))}
+                              </div>
+                            </td>
+                          );
+                        }
+                        return (
+                          <>
+                            <td key={`note-${subject.id}`} className="border border-slate-300 p-0">
+                              <input
+                                type="number"
+                                step="0.25"
+                                min="0"
+                                max="20"
+                                value={score.isAbsent ? '' : (score.score ?? '')}
+                                onChange={(e) => handleScoreChange(row.studentId, subject.id, e.target.value)}
+                                disabled={score.isAbsent}
+                                placeholder="—"
+                                className={cn(
+                                  'w-full px-1 py-1 text-center text-xs font-bold border-0 bg-transparent',
+                                  'focus:outline-none focus:ring-1 focus:ring-blue-400',
+                                  score.isAbsent && 'opacity-30 cursor-not-allowed bg-red-50',
+                                  !score.isAbsent && score.score !== null && typeof score.score === 'number' &&
+                                    (Number(score.score) < 10 ? 'text-rose-600' : Number(score.score) >= 14 ? 'text-emerald-600' : 'text-slate-900')
+                                )}
+                              />
+                            </td>
+                            <td key={`tot-${subject.id}`} className="border border-slate-300 px-2 py-1 text-center font-bold bg-slate-50">
+                              {score.isAbsent ? '—' : (score.score ?? '—')}
+                            </td>
+                          </>
+                        );
+                      })}
+
+                      {/* Total général */}
+                      {!isMaternelle && (
+                        <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-700 bg-blue-50">
+                          {totalGeneral !== null ? totalGeneral.toFixed(2) : '—'}
+                        </td>
+                      )}
+                      {/* Seuil */}
+                      <td className="border border-slate-300 px-2 py-1 text-center">
+                        {isMaternelle ? (
+                          group.subjects.every(subj => {
+                            const s = row.scores[subj.id];
+                            return s && s.qualitativeCode;
+                          }) ? (
+                            <CheckCircle2 className="h-4 w-4 text-emerald-600 mx-auto" />
+                          ) : (
+                            <span className="text-slate-300 text-xs">—</span>
+                          )
+                        ) : seuilAtteint ? (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600 mx-auto" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-red-500 mx-auto" />
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {filteredRows.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={isMaternelle ? 5 + group.subjects.length : 5 + group.subjects.length * 2 + 1}
+                      className="border border-slate-300 px-4 py-8 text-center text-slate-400 text-sm"
+                    >
+                      Aucun élève trouvé.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Légende */}
+          <div className="bg-gray-50 rounded-xl p-3 text-xs text-gray-600">
+            <p className="font-semibold mb-1">
+              {isMaternelle
+                ? 'Légende — Évaluation qualitative (Maternelle)'
+                : 'Légende — Évaluation quantitative (Primaire)'}
+            </p>
+            {isMaternelle ? (
+              <ul className="space-y-0.5 ml-4">
+                <li><strong className="text-emerald-700">TS</strong> = Très Satisfaisant</li>
+                <li><strong className="text-blue-700">S</strong> = Satisfaisant</li>
+                <li><strong className="text-amber-700">PS</strong> = Peu Satisfaisant</li>
+                <li><strong className="text-emerald-600">P</strong> = Présent · <strong className="text-red-600">A</strong> = Absent</li>
+              </ul>
+            ) : (
+              <ul className="space-y-0.5 ml-4">
+                <li>Saisissez la note sur 20 (ex: 15.5, 12, 8.25).</li>
+                <li><strong className="text-emerald-600">P</strong> = Présent · <strong className="text-red-600">A</strong> = Absent (toutes les matières)</li>
+                <li className="text-emerald-700">Notes ≥ 10 : admis (en vert).</li>
+                <li className="text-rose-700">Notes &lt; 10 : échec (en rouge).</li>
+              </ul>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </>
       )}
     </div>
   );

@@ -831,104 +831,186 @@ function GradingSheet({
                   />
                 </div>
 
-                {/* Fiche de saisie (tableau registre) */}
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-gray-50/80 hover:bg-gray-50/80">
-                        <TableHead className="w-10 text-center text-xs font-black text-gray-400">
-                          N°
-                        </TableHead>
-                        <TableHead className="text-xs font-black text-gray-600 uppercase tracking-wider min-w-[180px]">
-                          Nom et Prénom
-                        </TableHead>
-                        <TableHead className="text-xs font-black text-gray-600 uppercase tracking-wider w-24">
-                          Matricule
-                        </TableHead>
-
-                        {/* Une colonne par matière programmée */}
-                        {group.subjects.map((subject) => (
-                          <TableHead
-                            key={subject.id}
-                            className="text-center text-xs font-black text-gray-600 uppercase tracking-wider min-w-[140px]"
-                          >
-                            <div className="flex flex-col items-center gap-0.5">
-                              <span>{subject.name}</span>
-                              <span className="text-[9px] text-gray-400 font-normal">
-                                {isMaternelle ? 'TS / S / PS' : `/20`}
-                              </span>
-                            </div>
-                          </TableHead>
+                {/* Fiche de saisie (tableau registre — comme AttendanceRegisterTab) */}
+                <div className="bg-white border-2 border-slate-800 rounded-xl overflow-x-auto">
+                  <table className="w-full border-collapse text-xs">
+                    <thead>
+                      {/* Ligne 1 : N° + Nom + Sexe + Présence + Matières (colSpan=2) + Total + Seuil */}
+                      <tr className="bg-slate-100">
+                        <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">N°</th>
+                        <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: '180px' }}>Nom et prénom</th>
+                        <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Sexe</th>
+                        <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-20">Présence</th>
+                        {group.subjects.map((subject, idx) => (
+                          isMaternelle ? (
+                            <th key={idx} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[100px]">
+                              {subject.name}
+                              <div className="text-[9px] text-slate-400 font-normal">TS / S / PS</div>
+                            </th>
+                          ) : (
+                            <th key={idx} colSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[120px]">
+                              {subject.name}
+                            </th>
+                          )
                         ))}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredRows.map((row, idx) => (
-                        <TableRow
-                          key={row.studentId}
-                          className={cn('group transition-colors hover:bg-blue-50/20')}
-                        >
-                          <TableCell className="text-center text-xs text-gray-400 font-mono">
-                            {idx + 1}
-                          </TableCell>
-                          <TableCell>
-                            <span className="font-bold text-gray-900 text-sm">
-                              {row.studentName}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-xs text-gray-500 font-mono">
-                              {row.matricule || '—'}
-                            </span>
-                          </TableCell>
+                        {!isMaternelle && (
+                          <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total</th>
+                        )}
+                        <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Seuil</th>
+                      </tr>
+                      {/* Ligne 2 : pour Primaire, CM/Total par matière ; pour Maternelle, ligne vide */}
+                      {!isMaternelle && (
+                        <tr className="bg-slate-50">
+                          {group.subjects.map((_, idx) => (
+                            <>
+                              <th key={`cm-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Note /20</th>
+                              <th key={`tot-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Total</th>
+                            </>
+                          ))}
+                        </tr>
+                      )}
+                    </thead>
+                    <tbody>
+                      {filteredRows.map((row, idx) => {
+                        // Pour Primaire : calculer le total général
+                        const totalGeneral = isMaternelle ? null : group.subjects.reduce((sum, subj) => {
+                          const s = row.scores[subj.id];
+                          return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
+                        }, 0);
+                        // Seuil de réussite : 10/20 par matière, ou total ≥ 10 × nb matières
+                        const seuilAtteint = isMaternelle ? null : (
+                          totalGeneral !== null && totalGeneral >= (10 * group.subjects.length * 0.5)
+                        );
 
-                          {/* Une cellule par matière */}
-                          {group.subjects.map((subject) => {
-                            const score = row.scores[subject.id] || {
-                              score: null,
-                              qualitativeCode: null,
-                              isAbsent: false,
-                              comment: '',
-                            };
-                            return (
-                              <TableCell key={subject.id} className="text-center py-2">
-                                {isMaternelle ? (
-                                  // ⭐ Mode qualitatif maternelle : boutons TS/S/PS
-                                  <div className="flex gap-1 justify-center">
-                                    {['TS', 'S', 'PS'].map((opt) => (
-                                      <button
-                                        key={opt}
-                                        type="button"
-                                        onClick={() =>
-                                          !score.isAbsent &&
-                                          handleScoreChange(row.studentId, subject.id, opt)
-                                        }
-                                        disabled={score.isAbsent}
-                                        title={
-                                          opt === 'TS' ? 'Très Satisfaisant' :
-                                          opt === 'S' ? 'Satisfaisant' :
-                                          'Peu Satisfaisant'
-                                        }
-                                        className={cn(
-                                          'px-2 py-1 rounded text-xs font-bold transition',
-                                          score.qualitativeCode === opt
-                                            ? opt === 'TS'
-                                              ? 'bg-emerald-600 text-white'
-                                              : opt === 'S'
-                                                ? 'bg-blue-600 text-white'
-                                                : 'bg-amber-600 text-white'
-                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
-                                          score.isAbsent && 'opacity-30 cursor-not-allowed'
-                                        )}
-                                      >
-                                        {opt}
-                                      </button>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  // ⭐ Mode quantitatif : input /20 + checkbox absent
-                                  <div className="flex items-center justify-center gap-2">
-                                    <Input
+                        return (
+                          <tr
+                            key={row.studentId}
+                            className={cn(
+                              'hover:bg-slate-50 transition-colors',
+                              idx % 2 === 1 && 'bg-slate-50/50',
+                              row.scores[group.subjects[0]?.id]?.isAbsent && 'bg-red-50/30'
+                            )}
+                          >
+                            <td className="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-600">
+                              {idx + 1}
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900">
+                              {row.studentName}
+                            </td>
+                            <td className="border border-slate-300 px-2 py-1 text-center">
+                              {row.gender === 'M' ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-cyan-100 text-cyan-700">M</span>
+                              ) : row.gender === 'F' ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-pink-100 text-pink-700">F</span>
+                              ) : '—'}
+                            </td>
+                            {/* ⭐ Colonne Présence : boutons P (vert) / A (rouge) */}
+                            <td className="border border-slate-300 px-1 py-1 text-center">
+                              <div className="flex gap-1 justify-center">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    // Marquer présent = pas absent pour toutes les matières
+                                    setRows((prev) => prev.map((r) => {
+                                      if (r.studentId !== row.studentId) return r;
+                                      const newScores = { ...r.scores };
+                                      group.subjects.forEach((subj) => {
+                                        newScores[subj.id] = { ...newScores[subj.id], isAbsent: false };
+                                      });
+                                      return { ...r, scores: newScores };
+                                    }));
+                                  }}
+                                  title="Présent"
+                                  className={cn(
+                                    'px-2 py-1 rounded text-xs font-bold transition',
+                                    !Object.values(row.scores).some((s) => s?.isAbsent)
+                                      ? 'bg-emerald-600 text-white'
+                                      : 'bg-gray-100 text-gray-600 hover:bg-emerald-100'
+                                  )}
+                                >
+                                  P
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    // Marquer absent pour toutes les matières
+                                    setRows((prev) => prev.map((r) => {
+                                      if (r.studentId !== row.studentId) return r;
+                                      const newScores = { ...r.scores };
+                                      group.subjects.forEach((subj) => {
+                                        newScores[subj.id] = {
+                                          ...newScores[subj.id],
+                                          isAbsent: true,
+                                          score: null,
+                                          qualitativeCode: null,
+                                        };
+                                      });
+                                      return { ...r, scores: newScores };
+                                    }));
+                                  }}
+                                  title="Absent"
+                                  className={cn(
+                                    'px-2 py-1 rounded text-xs font-bold transition',
+                                    Object.values(row.scores).some((s) => s?.isAbsent)
+                                      ? 'bg-red-600 text-white'
+                                      : 'bg-gray-100 text-gray-600 hover:bg-red-100'
+                                  )}
+                                >
+                                  A
+                                </button>
+                              </div>
+                            </td>
+
+                            {/* Une cellule par matière (Maternelle) ou ×2 (Primaire CM/Total) */}
+                            {group.subjects.map((subject) => {
+                              const score = row.scores[subject.id] || {
+                                score: null,
+                                qualitativeCode: null,
+                                isAbsent: false,
+                                comment: '',
+                              };
+                              if (isMaternelle) {
+                                return (
+                                  <td key={subject.id} className="border border-slate-300 px-1 py-1 text-center">
+                                    <div className="flex gap-1 justify-center">
+                                      {['TS', 'S', 'PS'].map((opt) => (
+                                        <button
+                                          key={opt}
+                                          type="button"
+                                          onClick={() =>
+                                            !score.isAbsent &&
+                                            handleScoreChange(row.studentId, subject.id, opt)
+                                          }
+                                          disabled={score.isAbsent}
+                                          title={
+                                            opt === 'TS' ? 'Très Satisfaisant' :
+                                            opt === 'S' ? 'Satisfaisant' :
+                                            'Peu Satisfaisant'
+                                          }
+                                          className={cn(
+                                            'px-2 py-1 rounded text-xs font-bold transition',
+                                            score.qualitativeCode === opt
+                                              ? opt === 'TS'
+                                                ? 'bg-emerald-600 text-white'
+                                                : opt === 'S'
+                                                  ? 'bg-blue-600 text-white'
+                                                  : 'bg-amber-600 text-white'
+                                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                                            score.isAbsent && 'opacity-30 cursor-not-allowed'
+                                          )}
+                                        >
+                                          {opt}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </td>
+                                );
+                              }
+                              // Primaire : 2 cellules (Note /20 + Total calculé)
+                              return (
+                                <>
+                                  <td key={`note-${subject.id}`} className="border border-slate-300 p-0">
+                                    <input
                                       type="number"
                                       step="0.25"
                                       min="0"
@@ -940,43 +1022,65 @@ function GradingSheet({
                                       disabled={score.isAbsent}
                                       placeholder="—"
                                       className={cn(
-                                        'w-16 h-9 text-center font-bold text-sm border-gray-200',
-                                        'focus:border-blue-400 focus:ring-1 focus:ring-blue-200',
-                                        score.isAbsent && 'opacity-30 cursor-not-allowed',
+                                        'w-full px-1 py-1 text-center text-xs font-bold border-0 bg-transparent',
+                                        'focus:outline-none focus:ring-1 focus:ring-blue-400',
+                                        score.isAbsent && 'opacity-30 cursor-not-allowed bg-red-50',
                                         !score.isAbsent && score.score !== null && typeof score.score === 'number' &&
                                           (Number(score.score) < 10
                                             ? 'text-rose-600'
                                             : Number(score.score) >= 14
                                               ? 'text-emerald-600'
-                                              : 'text-gray-900')
+                                              : 'text-slate-900')
                                       )}
                                     />
-                                    <input
-                                      type="checkbox"
-                                      checked={score.isAbsent}
-                                      onChange={(e) =>
-                                        handleAbsentToggle(row.studentId, subject.id, e.target.checked)
-                                      }
-                                      title="Absent"
-                                      className="w-4 h-4 rounded border-gray-300 text-rose-500 focus:ring-rose-300"
-                                    />
-                                  </div>
-                                )}
-                              </TableCell>
-                            );
-                          })}
-                        </TableRow>
-                      ))}
+                                  </td>
+                                  <td key={`tot-${subject.id}`} className="border border-slate-300 px-2 py-1 text-center font-bold bg-slate-50">
+                                    {score.isAbsent ? '—' : (score.score ?? '—')}
+                                  </td>
+                                </>
+                              );
+                            })}
+
+                            {/* Total général (Primaire uniquement) */}
+                            {!isMaternelle && (
+                              <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-700 bg-blue-50">
+                                {totalGeneral !== null ? totalGeneral.toFixed(2) : '—'}
+                              </td>
+                            )}
+                            {/* Seuil atteint */}
+                            <td className="border border-slate-300 px-2 py-1 text-center">
+                              {isMaternelle ? (
+                                // Pour maternelle : afficher un check si tous les domaines ont une annotation
+                                group.subjects.every((subj) => {
+                                  const s = row.scores[subj.id];
+                                  return s && s.qualitativeCode;
+                                }) ? (
+                                  <CheckCircle2 className="h-4 w-4 text-emerald-600 mx-auto" />
+                                ) : (
+                                  <span className="text-slate-300 text-xs">—</span>
+                                )
+                              ) : seuilAtteint ? (
+                                <CheckCircle2 className="h-4 w-4 text-emerald-600 mx-auto" />
+                              ) : (
+                                <XCircle className="h-4 w-4 text-red-500 mx-auto" />
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
 
                       {filteredRows.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={group.subjects.length + 3} className="text-center py-12 text-gray-400 text-sm">
+                        <tr>
+                          <td
+                            colSpan={isMaternelle ? 5 + group.subjects.length : 5 + group.subjects.length * 2 + 1}
+                            className="border border-slate-300 px-4 py-8 text-center text-slate-400 text-sm"
+                          >
                             Aucun élève trouvé.
-                          </TableCell>
-                        </TableRow>
+                          </td>
+                        </tr>
                       )}
-                    </TableBody>
-                  </Table>
+                    </tbody>
+                  </table>
                 </div>
 
                 {/* Légende */}

@@ -2049,3 +2049,89 @@ Stage Summary:
 - ✅ "impossible de charger les établissements" identifié dans apps/web-app/src/components/portal/SchoolSearch.tsx:234 (rendu sur /portal main domain) — symptôme lié à Issue B (timeout backend Fly.io)
 - ✅ Issue B : backend sur Fly.io (pas Railway), aucun fly.toml dans le repo → auto_stop_machines=true par défaut → cold start matinal
 - ⏳ Fixes à appliquer par agent d'implémentation (pas fait — investigation only)
+
+---
+Task ID: etapes-2-3-4-dynamic-eval
+Agent: main
+Task: Étapes 2-3-4 : Validation enseignant → Espace Pédagogique dynamique → soumission directeur
+
+Work Log:
+1. Analyse du problème :
+   - L'onglet "Évaluation mensuelle" dans Espace Pédagogique (AttendanceRegisterTab.tsx)
+     utilisait un modèle LOCAL (pedagogy-space/monthly-evaluations) AVEC hardcoded :
+     * "Seuil de réussite" input
+     * "Configurer les matières" button + modale showSubjectConfig
+   - Le bouton "Soumettre" du Module Examen enseignant ne propageait RIEN vers
+     l'Espace Pédagogique : il sauvegardait juste les grades avec status='SUBMITTED'
+     (sur le Grade, pas sur l'Evaluation) — l'Evaluation restait PLANNED/OPEN_FOR_GRADING.
+   - Aucune récupération dynamique des données saisies par l'enseignant.
+
+2. Étape 2A — Correction TeacherGradingSheet (apps/web-app/src/app/app/teacher/exams/page.tsx) :
+   - Bouton "Soumettre" → "Valider" (icône CheckCircle, couleur emerald).
+   - handleSave(submit=true) :
+     * Sauvegarde les grades avec status='DRAFT' (au lieu de 'SUBMITTED').
+     * Appelle POST /institutional-exams/evaluations/:id/open pour chaque evaluationId
+       → PLANNED → OPEN_FOR_GRADING (validation de l'enseignant).
+     * Gère l'idempotence (si déjà OPEN_FOR_GRADING, ignore l'erreur 400).
+   - Confirmation window.confirm avant validation.
+   - Toast : "Notes validées — disponibles dans l'Espace Pédagogique".
+   - Statut badge mis à jour : PLANNED → "Planifiée" / OPEN_FOR_GRADING → "Validée" /
+     SUBMITTED → "Soumise au directeur" / VALIDATED → "Validée" (au lieu de "Saisie ouverte").
+
+3. Étape 3A — Nouveau composant MonthlyEvaluationTab (apps/web-app/src/components/pedagogy/production/MonthlyEvaluationTab.tsx, 460+ lignes) :
+   - Récupère DYNAMIQUEMENT les évaluations depuis /institutional-exams/evaluations
+     filtrées par classId + academicYearId + status (OPEN_FOR_GRADING,SUBMITTED,VALIDATED).
+   - Filtre par mois/année (basé sur evaluationDate).
+   - Groupe les évaluations par (classId × evaluationTypeId × periodId × dates).
+   - Pour chaque groupe : fetch les grades via /institutional-exams/grades/evaluation/:id.
+   - Affiche le même tableau que la saisie :
+     * Maternelle : colonnes TS/S/PS (qualitatif)
+     * Primaire : colonnes CM/18, CP/2, Total (quantitatif)
+   - Calcule les statistiques : effectif, ayant composé, ont atteint seuil, % réussite (G/F/Total).
+   - Affiche les signatures (Titulaire + Directeur).
+   - Bouton "Soumettre au directeur" → appelle PATCH /evaluations/:id/submit (OPEN_FOR_GRADING → SUBMITTED).
+   - Quand RIEN n'est soumis → message clair : "Aucune évaluation validée par l'enseignant
+     pour cette classe ce mois-ci" + procédure en 4 étapes.
+
+4. Étape 3A — Refonte AttendanceRegisterTab.tsx :
+   - Remplacé le bloc "PAGE 2 — Évaluation mensuelle" (300+ lignes de code en dur)
+     par un appel au nouveau composant <MonthlyEvaluationTab ... />.
+   - Supprimé la modale showSubjectConfig (9620 chars).
+   - Nettoyé le code mort : 5 state declarations + 10 fonctions non utilisées
+     (handleSubmitEvaluation, loadAvailableSubjects, openSubjectConfig,
+     addAvailableSubject, addCustomSubject, removeSubject, handleSaveSubjects,
+     updateStudentScore, handleSaveEvaluation + dérivés subjectsConfig/studentScores).
+   - Fichier réduit de 81196 → 73145 chars (-10%).
+
+5. Étape 3B — Signature obligatoire + soumission directeur :
+   - SignatureCanvas pour le Titulaire (disabled si allSubmitted ou allValidated).
+   - Signature du Directeur désactivée (sera apposée après validation admin).
+   - Bouton "Soumettre au directeur" DISABLED tant que la signature n'est pas posée.
+   - Confirmation window.confirm avant soumission.
+   - Appel PATCH /institutional-exams/evaluations/:id/submit pour chaque evaluationId
+     du groupe → status OPEN_FOR_GRADING → SUBMITTED.
+   - Toast "Évaluation soumise au directeur".
+
+6. Étape 4 — Cohérence admin ↔ enseignant :
+   - Page admin (grades/page.tsx) : renderStatusBadge mis à jour
+     PLANNED → "Planifiée" / OPEN_FOR_GRADING → "Validée" / SUBMITTED → "Soumise au directeur".
+   - Page enseignant (teacher/exams/page.tsx) : même logique de statut.
+   - Validation page (validation/page.tsx) : reste "À valider" (filtre status=SUBMITTED).
+   - Backend evaluations.service.ts : accepte maintenant les statuses séparés par virgule
+     (ex: 'OPEN_FOR_GRADING,SUBMITTED,VALIDATED') → where.status = { in: [...] }.
+
+7. Vérifications :
+   - TypeScript : 0 erreur sur les fichiers modifiés
+     (MonthlyEvaluationTab, AttendanceRegisterTab, teacher/exams, exams/grades, exams/validation).
+   - Imports nettoyés (Send supprimé du teacher page, Plus/Trash2 supprimés du AttendanceRegisterTab).
+
+Stage Summary:
+- ✅ Étape 2 : "Soumettre" → "Valider" dans Module Examen enseignant + admin
+- ✅ Étape 3 : Évaluation mensuelle dynamique depuis /institutional-exams/evaluations
+  (suppression du modèle local hardcoded)
+- ✅ Étape 3B : Signature obligatoire + soumission au directeur via /evaluations/:id/submit
+- ✅ Étape 4 : Statut "Validée" (au lieu de "Saisie ouverte") après validation enseignant
+- ✅ Message clair quand rien n'est encore soumis
+- ✅ Backend : /evaluations accepte statuses séparés par virgule
+- ⏳ Déploiement Railway requis pour activer le fix backend (statuses séparés par virgule)
+- ⏳ Test navigateur recommandé pour valider le flux complet

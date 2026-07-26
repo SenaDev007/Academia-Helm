@@ -21,8 +21,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Loader2, FileEdit, Calendar, BookOpen, Users, Save, Send,
-  ChevronRight, AlertCircle, CheckCircle2, Bell, XCircle,
+  Loader2, FileEdit, Calendar, BookOpen, Users, Save,
+  ChevronRight, AlertCircle, CheckCircle2, Bell, XCircle, CheckCircle,
 } from 'lucide-react';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -345,11 +345,25 @@ export default function TeacherExamsPage() {
           }}
           isMaternelle={isMaternelle}
           renderStatusBadge={(g) => {
-            const canEdit = g.statuses.some(s => s === 'OPEN_FOR_GRADING' || s === 'PLANNED');
+            // ⭐ Nouveau flux :
+            //   PLANNED → OPEN_FOR_GRADING → SUBMITTED → VALIDATED
+            //   - PLANNED : évaluation créée par l'admin, prête à être saisie
+            //   - OPEN_FOR_GRADING : l'enseignant a validé sa saisie (bouton "Valider")
+            //     → affiché comme "Validée" côté enseignant
+            //   - SUBMITTED : signée et soumise au directeur depuis l'Espace Pédagogique
+            //   - VALIDATED/LOCKED : validée par l'admin
+            const isPlanned = g.statuses.every(s => s === 'PLANNED' || s === 'DRAFT');
+            const isValidatedByTeacher = g.statuses.some(s => s === 'OPEN_FOR_GRADING') && !isPlanned;
             const isSubmitted = g.statuses.some(s => s === 'SUBMITTED');
             const isValidated = g.statuses.every(s => s === 'VALIDATED' || s === 'LOCKED');
-            const status = isValidated ? 'Validée' : isSubmitted ? 'Soumise' : canEdit ? 'Saisie ouverte' : 'Planifiée';
-            const color = isValidated ? 'bg-emerald-100 text-emerald-700' : isSubmitted ? 'bg-purple-100 text-purple-700' : canEdit ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700';
+            const status = isValidated ? 'Validée' :
+                          isSubmitted ? 'Soumise au directeur' :
+                          isValidatedByTeacher ? 'Validée' :
+                          isPlanned ? 'Planifiée' : 'Planifiée';
+            const color = isValidated ? 'bg-emerald-100 text-emerald-700' :
+                        isSubmitted ? 'bg-purple-100 text-purple-700' :
+                        isValidatedByTeacher ? 'bg-emerald-100 text-emerald-700' :
+                        'bg-blue-100 text-blue-700';
             return <span className={cn('text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap', color)}>{status}</span>;
           }}
         />
@@ -529,6 +543,16 @@ function TeacherGradingSheet({
   };
 
   const handleSave = async (submit = false) => {
+    // ⭐ Si on valide, demander confirmation à l'enseignant
+    if (submit) {
+      const ok = window.confirm(
+        `Valider la saisie des notes de ${group.className} ?\n\n` +
+        `Les notes seront transmises à l'Espace Pédagogique pour signature\n` +
+        `et soumission au directeur. Vous ne pourrez plus les modifier.\n\n` +
+        `Continuer ?`
+      );
+      if (!ok) return;
+    }
     setSaving(true);
     try {
       // Refetch evaluations pour résoudre evaluationId → subjectId
@@ -545,6 +569,7 @@ function TeacherGradingSheet({
         console.warn('Failed to fetch evaluations for save', err);
       }
 
+      // 1. Sauvegarder les notes (grades)
       await Promise.all(
         group.evaluationIds.map(async (evId) => {
           const ev = evalsWithSubject.find(e => e.id === evId);
@@ -562,18 +587,57 @@ function TeacherGradingSheet({
               qualitativeCode: row.scores[subjectId].qualitativeCode,
               isAbsent: row.scores[subjectId].isAbsent,
               comment: row.scores[subjectId].comment,
-              status: submit ? 'SUBMITTED' : 'DRAFT',
+              // ⭐ On reste en DRAFT côté grade ; c'est l'évaluation qui passe à OPEN_FOR_GRADING
+              status: 'DRAFT',
             }));
-
-          await apiClient.post(
-            `/institutional-exams/grades/evaluation/${evId}/bulk`,
-            gradesForEval,
-          );
+          if (gradesForEval.length === 0) return;
+          try {
+            await apiClient.post(
+              `/institutional-exams/grades/evaluation/${evId}/bulk`,
+              gradesForEval,
+            );
+          } catch (err: any) {
+            console.error(`Failed to save evaluation ${evId}:`, err.response?.data || err.message);
+            throw err;
+          }
         })
       );
 
-      toastSuccess(submit ? 'Notes soumises pour validation' : 'Notes enregistrées', {
-        description: `${rows.length} élève(s) · ${group.subjects.length} matière(s)`,
+      // 2. Si validation : ouvrir l'évaluation (PLANNED → OPEN_FOR_GRADING)
+      //    Cela signifie que l'enseignant a validé sa saisie. Les notes sont
+      //    ensuite disponibles dans l'Espace Pédagogique (Registre d'appel →
+      //    Évaluation mensuelle) pour signature et soumission au directeur.
+      if (submit) {
+        const submitErrors: string[] = [];
+        await Promise.all(
+          group.evaluationIds.map(async (evId) => {
+            try {
+              // ⭐ /open accepte PLANNED ou DRAFT → OPEN_FOR_GRADING
+              // ⭐ /open est idempotent : si déjà OPEN_FOR_GRADING, ne fait rien
+              //    (le backend lèverait une erreur si on l'appelait 2x, donc on catch)
+              await apiClient.post(`/institutional-exams/evaluations/${evId}/open`);
+            } catch (err: any) {
+              // Si l'erreur est « doit être PLANNED ou DRAFT », c'est que l'évaluation
+              // est déjà ouverte → on ignore l'erreur (idempotence)
+              const msg = err.response?.data?.message || err.message || '';
+              if (msg.includes('doit être') || msg.includes('already') || err.response?.status === 400) {
+                console.warn(`Evaluation ${evId} déjà ouverte, ignoré`);
+                return;
+              }
+              console.error(`Failed to validate evaluation ${evId}:`, err.response?.data || err.message);
+              submitErrors.push(evId);
+            }
+          })
+        );
+        if (submitErrors.length > 0) {
+          throw new Error(`Échec de la validation pour ${submitErrors.length} évaluation(s). Vérifiez la console.`);
+        }
+      }
+
+      toastSuccess(submit ? 'Notes validées' : 'Notes enregistrées', {
+        description: submit
+          ? 'Les notes sont disponibles dans l\'Espace Pédagogique pour signature et soumission au directeur.'
+          : `${rows.length} élève(s) · ${group.subjects.length} matière(s)`,
       });
       if (submit) onBack();
     } catch (err: any) {
@@ -640,10 +704,10 @@ function TeacherGradingSheet({
             size="sm"
             onClick={() => handleSave(true)}
             disabled={saving || loading}
-            className="bg-blue-600 hover:bg-blue-700 text-white border-blue-700"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700"
           >
-            <Send className="w-4 h-4 mr-1" />
-            Soumettre
+            {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-1" />}
+            Valider
           </Button>
         </div>
       </div>

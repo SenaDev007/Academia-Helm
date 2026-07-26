@@ -363,11 +363,24 @@ export default function GradesPage() {
                 onGroupClick={handleOpenGroup}
                 isMaternelle={isMaternelle}
                 renderStatusBadge={(g) => {
-                  const canEdit = g.statuses.some(s => s === 'OPEN_FOR_GRADING' || s === 'PLANNED');
+                  // ⭐ Nouveau flux :
+                  //   PLANNED → OPEN_FOR_GRADING → SUBMITTED → VALIDATED
+                  //   - PLANNED : évaluation créée par l'admin, prête à être saisie
+                  //   - OPEN_FOR_GRADING : l'enseignant a validé sa saisie
+                  //   - SUBMITTED : signée et soumise au directeur depuis l'Espace Pédagogique
+                  //   - VALIDATED/LOCKED : validée par l'admin
+                  const isPlanned = g.statuses.every(s => s === 'PLANNED' || s === 'DRAFT');
+                  const isValidatedByTeacher = g.statuses.some(s => s === 'OPEN_FOR_GRADING') && !isPlanned;
                   const isSubmitted = g.statuses.some(s => s === 'SUBMITTED');
                   const isValidated = g.statuses.every(s => s === 'VALIDATED' || s === 'LOCKED');
-                  const status = isValidated ? 'Validée' : isSubmitted ? 'Soumise' : canEdit ? 'Saisie ouverte' : 'Planifiée';
-                  const color = isValidated ? 'bg-emerald-100 text-emerald-700' : isSubmitted ? 'bg-purple-100 text-purple-700' : canEdit ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700';
+                  const status = isValidated ? 'Validée' :
+                                isSubmitted ? 'Soumise au directeur' :
+                                isValidatedByTeacher ? 'Validée' :
+                                isPlanned ? 'Planifiée' : 'Planifiée';
+                  const color = isValidated ? 'bg-emerald-100 text-emerald-700' :
+                              isSubmitted ? 'bg-purple-100 text-purple-700' :
+                              isValidatedByTeacher ? 'bg-emerald-100 text-emerald-700' :
+                              'bg-blue-100 text-blue-700';
                   return <span className={cn('text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap', color)}>{status}</span>;
                 }}
               />
@@ -390,7 +403,8 @@ function EvaluationGroupCard({
   isMaternelle: boolean;
   onClick: () => void;
 }) {
-  // Statut agrégé
+  // Statut agrégé — cohérent avec le nouveau flux :
+  //   PLANNED → OPEN_FOR_GRADING → SUBMITTED → VALIDATED
   const canGrade = group.statuses.some((s) => s === 'OPEN_FOR_GRADING' || s === 'PLANNED');
   const isLocked = group.statuses.every((s) => s === 'VALIDATED' || s === 'LOCKED' || s === 'SUBMITTED');
   const isCancelled = group.statuses.some((s) => s === 'CANCELLED');

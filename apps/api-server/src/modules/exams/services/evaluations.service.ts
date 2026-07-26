@@ -45,7 +45,15 @@ export class EvaluationsService {
 
     if (filters.schoolLevelId) where.class = { schoolLevelId: filters.schoolLevelId };
     if (filters.classId) where.classId = filters.classId;
-    if (filters.status) where.status = filters.status;
+    // ⭐ Accepter les statuses séparés par virgule (ex: 'OPEN_FOR_GRADING,SUBMITTED')
+    if (filters.status) {
+      const statuses = String(filters.status).split(',').map(s => s.trim()).filter(Boolean);
+      if (statuses.length === 1) {
+        where.status = statuses[0];
+      } else if (statuses.length > 1) {
+        where.status = { in: statuses };
+      }
+    }
     if (filters.periodId) where.periodId = filters.periodId;
     if (filters.subjectId) where.subjectId = filters.subjectId;
     if (filters.teacherId) {

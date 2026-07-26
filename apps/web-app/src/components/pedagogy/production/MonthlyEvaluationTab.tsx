@@ -288,43 +288,79 @@ export function MonthlyEvaluationTab({
   }, [isMaternelle, isPrimaire]);
 
   // ─── Statistiques par groupe ────────────────────────────────────────────────
+  // ⭐ Logique de calcul du seuil de réussite (selon exigence utilisateur) :
+  //    moyenne = totalGeneral / nb_matières_évaluées
+  //    seuil fixé = 10/20 (Primaire/Secondaire)
+  //    seuil atteint si moyenne ≥ 10
+  //    Pour Maternelle : seuil atteint si appréciation = "Très Satisfaisant" ou "Satisfaisant"
+  //    "Ayant composé" = l'élève n'était PAS absent à toutes les matières
+  //      (i.e. il a participé à au moins une matière — pas la même chose qu'avoir un total > 0)
   const computeStats = useCallback((group: GroupedEvaluation, rows: GradeRow[], sortedSubjects: Array<{ id: string; name: string }>) => {
     let totalG = 0, totalF = 0;
     let composeG = 0, composeF = 0;
     let atteintG = 0, atteintF = 0;
-    // Seuil de réussite = 50% du total max possible
-    // Pour Primaire : 10/20 par matière → seuil = 10 × nb matières
-    const seuilReussite = sortedSubjects.length * 10;
+    // Seuil fixé (affiché dans le tableau) : 10/20 par matière
+    const seuilFixe = 10;
 
     for (const row of rows) {
       const sexe = (row.gender || '').toUpperCase();
-      let tot = 0;
-      if (isMaternelle) {
-        // Maternelle : seuil atteint si (TS + S) ≥ la plupart
-        const appreciation = computeAppreciationGlobale(row.scores, sortedSubjects);
-        if (appreciation === 'Très Satisfaisant' || appreciation === 'Satisfaisant') {
-          tot = seuilReussite; // counts as "atteint"
+      let hasComposed = false; // l'élève a participé à au moins une matière
+      let totalGeneral = 0;
+      let nbMatieresEvaluees = 0; // matières où l'élève n'était pas absent
+
+      for (const subj of sortedSubjects) {
+        const s = row.scores[subj.id];
+        if (!s) continue;
+        if (s.isAbsent) continue; // absent → ne compte pas
+        // L'élève a composé s'il a au moins une note (non absent) dans une matière
+        if (isMaternelle) {
+          if (s.qualitativeCode) {
+            hasComposed = true;
+            nbMatieresEvaluees++;
+          }
+        } else if (isSecondaire) {
+          if (s.score !== null && s.score !== undefined) {
+            hasComposed = true;
+            nbMatieresEvaluees++;
+            totalGeneral += s.score;
+          }
+        } else {
+          // Primaire : CM + CP
+          if (s.cm !== null || s.cp !== null) {
+            hasComposed = true;
+            nbMatieresEvaluees++;
+            totalGeneral += (s.cm ?? 0) + (s.cp ?? 0);
+          }
         }
-      } else {
-        // Primaire : total général
-        tot = sortedSubjects.reduce((sum, subj) => {
-          const s = row.scores[subj.id];
-          if (!s || s.isAbsent) return sum;
-          const cm = s.cm ?? 0;
-          const cp = s.cp ?? 0;
-          return sum + cm + cp;
-        }, 0);
       }
+
+      // ⭐ Moyenne = totalGeneral / nb_matières_évaluées
+      //    (chaque matière est sur 20, donc la moyenne est sur 20)
+      //    Si l'élève n'a composé à aucune matière → moyenne = 0
+      const moyenne = nbMatieresEvaluees > 0 ? totalGeneral / nbMatieresEvaluees : 0;
+
+      // ⭐ Seuil atteint :
+      //    - Primaire/Secondaire : moyenne >= 10
+      //    - Maternelle : appréciation globale = Très Satisfaisant ou Satisfaisant
+      let aAtteintSeuil = false;
+      if (isMaternelle) {
+        const appreciation = computeAppreciationGlobale(row.scores, sortedSubjects);
+        aAtteintSeuil = (appreciation === 'Très Satisfaisant' || appreciation === 'Satisfaisant');
+      } else {
+        aAtteintSeuil = hasComposed && moyenne >= seuilFixe;
+      }
+
       if (sexe === 'M' || sexe === 'G' || sexe === 'MALE') {
         totalG++;
-        if (tot > 0) composeG++;
-        if (tot >= seuilReussite) atteintG++;
+        if (hasComposed) composeG++;
+        if (aAtteintSeuil) atteintG++;
       } else if (sexe === 'F' || sexe === 'FEMALE') {
         totalF++;
-        if (tot > 0) composeF++;
-        if (tot >= seuilReussite) atteintF++;
+        if (hasComposed) composeF++;
+        if (aAtteintSeuil) atteintF++;
       }
     }
+
     const totalC = totalG + totalF;
     const composeC = composeG + composeF;
     const atteintC = atteintG + atteintF;
@@ -332,13 +368,17 @@ export function MonthlyEvaluationTab({
       effectifG: totalG, effectifF: totalF, effectifTotal: totalC,
       ayantComposeG: composeG, ayantComposeF: composeF, ayantComposeTotal: composeC,
       ayantAtteintSeuilG: atteintG, ayantAtteintSeuilF: atteintF, ayantAtteintSeuilTotal: atteintC,
-      nAyantPasAtteintG: totalG - atteintG, nAyantPasAtteintF: totalF - atteintF, nAyantPasAtteintTotal: totalC - atteintC,
-      pourcentageReussiteG: totalG > 0 ? (atteintG / totalG) * 100 : 0,
-      pourcentageReussiteF: totalF > 0 ? (atteintF / totalF) * 100 : 0,
-      pourcentageReussiteTotal: totalC > 0 ? (atteintC / totalC) * 100 : 0,
-      seuilReussite,
+      nAyantPasAtteintG: composeG - atteintG, // ⭐ base = ayant composé (pas effectif total)
+      nAyantPasAtteintF: composeF - atteintF,
+      nAyantPasAtteintTotal: composeC - atteintC,
+      // ⭐ Pourcentage de réussite = (ayant atteint le seuil / ayant composé) × 100
+      //    (base = ayant composé, car on ne peut pas réussir sans avoir composé)
+      pourcentageReussiteG: composeG > 0 ? (atteintG / composeG) * 100 : 0,
+      pourcentageReussiteF: composeF > 0 ? (atteintF / composeF) * 100 : 0,
+      pourcentageReussiteTotal: composeC > 0 ? (atteintC / composeC) * 100 : 0,
+      seuilFixe,
     };
-  }, [isMaternelle]);
+  }, [isMaternelle, isSecondaire]);
 
   // ─── Soumettre au directeur ─────────────────────────────────────────────────
   const handleSubmitToDirector = async (group: GroupedEvaluation) => {
@@ -614,18 +654,41 @@ export function MonthlyEvaluationTab({
                 </thead>
                 <tbody>
                   {rows.map((row, idx) => {
-                    // ⭐ Calculs IDENTIQUES à GradingSheet.tsx
-                    const totalGeneral = isMaternelle ? null : sortedSubjects.reduce((sum, subj) => {
+                    // ⭐ Calculs IDENTIQUES au récapitulatif (computeStats)
+                    //    moyenne = totalGeneral / nb_matières_évaluées
+                    //    seuil atteint si moyenne >= 10 (Primaire/Secondaire)
+                    let totalGeneral = 0;
+                    let nbMatieresEvaluees = 0;
+                    let hasComposed = false;
+                    for (const subj of sortedSubjects) {
                       const s = row.scores[subj.id];
-                      if (!s || s.isAbsent) return sum;
-                      // Primaire : CM + CP ; Secondaire : score
-                      if (isSecondaire) return sum + (typeof s.score === 'number' ? s.score : 0);
-                      const cm = s.cm ?? 0;
-                      const cp = s.cp ?? 0;
-                      return sum + cm + cp;
-                    }, 0);
+                      if (!s || s.isAbsent) continue;
+                      if (isMaternelle) {
+                        if (s.qualitativeCode) {
+                          hasComposed = true;
+                          nbMatieresEvaluees++;
+                        }
+                      } else if (isSecondaire) {
+                        if (s.score !== null && s.score !== undefined) {
+                          hasComposed = true;
+                          nbMatieresEvaluees++;
+                          totalGeneral += s.score;
+                        }
+                      } else {
+                        // Primaire : CM + CP
+                        if (s.cm !== null || s.cp !== null) {
+                          hasComposed = true;
+                          nbMatieresEvaluees++;
+                          totalGeneral += (s.cm ?? 0) + (s.cp ?? 0);
+                        }
+                      }
+                    }
+                    const moyenne = nbMatieresEvaluees > 0 ? totalGeneral / nbMatieresEvaluees : 0;
+                    // ⭐ Seuil atteint :
+                    //    - Primaire/Secondaire : moyenne >= 10
+                    //    - Maternelle : appréciation = Très Satisfaisant ou Satisfaisant
                     const seuilAtteint = isMaternelle ? null : (
-                      totalGeneral !== null && totalGeneral >= (10 * sortedSubjects.length * 0.5)
+                      hasComposed && moyenne >= 10
                     );
                     // ⭐ Calcul du rang avec formatRang (comme GradingSheet)
                     const rang = (() => {
@@ -764,7 +827,7 @@ export function MonthlyEvaluationTab({
                         {/* Total général */}
                         {!isMaternelle && !isSecondaire && (
                           <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-700 bg-blue-50">
-                            {totalGeneral !== null ? totalGeneral.toFixed(2) : '—'}
+                            {hasComposed ? totalGeneral.toFixed(2) : '—'}
                           </td>
                         )}
                         {/* Rang */}
@@ -792,7 +855,9 @@ export function MonthlyEvaluationTab({
                               const appreciation = computeAppreciationGlobale(row.scores, sortedSubjects);
                               return appreciation === 'Peu Satisfaisant' ? '✓' : '';
                             }
-                            return !seuilAtteint && totalGeneral !== null ? '✓' : '';
+                            // ⭐ "Non" si l'élève a composé mais n'a pas atteint le seuil
+                            //    (si l'élève n'a pas composé, on n'affiche ni Oui ni Non)
+                            return hasComposed && !seuilAtteint ? '✓' : '';
                           })()}
                         </td>
                         {/* Appréciation globale (Maternelle) */}

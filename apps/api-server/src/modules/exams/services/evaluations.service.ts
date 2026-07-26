@@ -48,7 +48,29 @@ export class EvaluationsService {
     if (filters.status) where.status = filters.status;
     if (filters.periodId) where.periodId = filters.periodId;
     if (filters.subjectId) where.subjectId = filters.subjectId;
-    if (filters.teacherId) where.teacherId = filters.teacherId;
+    if (filters.teacherId) {
+      // ⭐ Le frontend envoie user.id, mais evaluations.teacherId référence Teacher.id.
+      // On doit résoudre user.id → Teacher.id via email matching.
+      const user = await this.prisma.user.findFirst({
+        where: { id: filters.teacherId, tenantId },
+        select: { email: true },
+      });
+      if (user?.email) {
+        const teacher = await this.prisma.teacher.findFirst({
+          where: { email: user.email, tenantId },
+          select: { id: true },
+        });
+        if (teacher) {
+          where.teacherId = teacher.id;
+        } else {
+          // Pas de profil Teacher → retourner vide
+          where.teacherId = '__NO_TEACHER__';
+        }
+      } else {
+        // User non trouvé → peut-être que teacherId est déjà un Teacher.id
+        where.teacherId = filters.teacherId;
+      }
+    }
     if (filters.evaluationTypeId) where.evaluationTypeId = filters.evaluationTypeId;
     if (filters.language) {
       // ⭐ Filtrage dynamique par piste linguistique (FR/EN).

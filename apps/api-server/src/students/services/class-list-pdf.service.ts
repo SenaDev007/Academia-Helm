@@ -980,7 +980,7 @@ ${data.pageBreakAfter ? '<div style="page-break-after: always;"></div>' : ''}
 
       if (profile?.schoolName) {
         const apiBaseUrl = this.configService.get<string>('APP_PUBLIC_URL')
-          || 'https://academia-helm-api.fly.dev';
+          || 'https://api.academiahelm.com';
         const logoUrl = profile.logoUrl
           ? `${apiBaseUrl}/api/tenants/${tenantId}/logo`
           : null;

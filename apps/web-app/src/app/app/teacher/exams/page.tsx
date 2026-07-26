@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { useBilingual, BilingualTrackSelector } from '@/contexts/BilingualContext';
+import { useBilingual } from '@/contexts/BilingualContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -130,7 +130,9 @@ export default function TeacherExamsPage() {
         schoolLevelId: schoolLevel.id,
         teacherId: user?.id,
       };
-      if (isBilingual && currentTrack) params.language = currentTrack;
+      // ⭐ Ne pas filtrer par language — l'enseignant a une seule piste
+      // et ses évaluations sont déjà spécifiques à sa piste.
+      // if (isBilingual && currentTrack) params.language = currentTrack;
       const res = await institutionalExamsService.getEvaluations(params);
       setEvaluations(Array.isArray(res) ? res : []);
     } catch (err) {
@@ -289,8 +291,7 @@ export default function TeacherExamsPage() {
         </Card>
       )}
 
-      {/* Sélecteur bilingue */}
-      {isBilingual && <BilingualTrackSelector />}
+      {/* Pas de sélecteur bilingue — l'enseignant a une seule piste linguistique */}
 
       {/* Loading */}
       {loading ? (
@@ -715,7 +716,7 @@ function TeacherGradingSheet({
             size="sm"
             onClick={() => handleSave(true)}
             disabled={saving || loading}
-            className="bg-blue-600 hover:bg-blue-700"
+            className="bg-blue-600 hover:bg-blue-700 text-white border-blue-700"
           >
             <Send className="w-4 h-4 mr-1" />
             Soumettre

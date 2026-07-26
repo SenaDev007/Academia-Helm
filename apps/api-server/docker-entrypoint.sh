@@ -11,7 +11,7 @@ set -e
 #
 # Les migrations sont appliquées manuellement sur Neon via scripts SQL.
 # Si une nouvelle migration doit être appliquée, utiliser :
-#   fly ssh console -C "npx prisma migrate deploy --schema=prisma/schema.prisma"
+#   railway run npx prisma migrate deploy --schema=prisma/schema.prisma
 # ============================================================================
 
 echo "▶️  Skipping Prisma migrations (applied manually on Neon)"

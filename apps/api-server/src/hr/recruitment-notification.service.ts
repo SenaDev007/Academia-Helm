@@ -100,7 +100,7 @@ export class RecruitmentNotificationService {
         // Ça permet à Gmail/Outlook de charger l'image comme une URL normale
         // au lieu d'un base64 volumineux (115KB) qui est souvent bloqué.
         const apiBaseUrl = this.configService.get<string>('APP_PUBLIC_URL')
-          || 'https://academia-helm-api.fly.dev';
+          || 'https://api.academiahelm.com';
         const logoUrl = profile.logoUrl
           ? `${apiBaseUrl}/api/tenants/${tenantId}/logo`
           : null;

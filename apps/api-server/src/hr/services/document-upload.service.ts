@@ -159,7 +159,7 @@ export class DocumentUploadService {
       if (profile?.schoolName) {
         // Utiliser l'URL publique du logo au lieu du base64 (Gmail/Outlook bloquent les base64 volumineux)
         const apiBaseUrl = this.config.get<string>('APP_PUBLIC_URL')
-          || 'https://academia-helm-api.fly.dev';
+          || 'https://api.academiahelm.com';
         const logoUrl = profile.logoUrl
           ? `${apiBaseUrl}/api/tenants/${tenantId}/logo`
           : null;

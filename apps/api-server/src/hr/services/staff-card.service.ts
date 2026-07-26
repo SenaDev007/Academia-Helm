@@ -734,7 +734,7 @@ ${d.schoolLogo ? `<img src="${d.schoolLogo}" alt="${d.schoolName}" style="max-he
         select: { schoolName: true, logoUrl: true },
       });
       if (profile?.schoolName) {
-        const apiBaseUrl = this.config.get<string>('APP_PUBLIC_URL') || 'https://academia-helm-api.fly.dev';
+        const apiBaseUrl = this.config.get<string>('APP_PUBLIC_URL') || 'https://api.academiahelm.com';
         const logoUrl = profile.logoUrl ? `${apiBaseUrl}/api/tenants/${tenantId}/logo` : null;
         return { schoolName: profile.schoolName, schoolLogo: logoUrl };
       }

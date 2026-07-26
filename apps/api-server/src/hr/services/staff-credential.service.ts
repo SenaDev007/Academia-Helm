@@ -664,7 +664,7 @@ IMPORTANT : Ce mot de passe est temporaire. Veuillez le modifier dès votre prem
 
       if (profile?.schoolName) {
         const apiBaseUrl = this.config.get<string>('APP_PUBLIC_URL')
-          || 'https://academia-helm-api.fly.dev';
+          || 'https://api.academiahelm.com';
         const logoUrl = profile.logoUrl
           ? `${apiBaseUrl}/api/tenants/${tenantId}/logo`
           : null;

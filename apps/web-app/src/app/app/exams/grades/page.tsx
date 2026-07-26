@@ -120,6 +120,42 @@ function getClassOrderIndex(name: string): number {
   return CLASS_ORDER.length;
 }
 
+// ⭐ Ordre des matières pour le PRIMAIRE (selon le registre d'appel)
+const PRIMAIRE_SUBJECT_ORDER = [
+  'COMMUNICATION ORALE',
+  'DICTEE', 'DICTÉE',
+  'PRODUCTION D\'ECRITS', 'PRODUCTION D\'ÉCRITS', 'EXPRESSION ECRITE', 'EXPRESSION ÉCRITE',
+  'LECTURE', 'COMPREHENSION DE L\'ECRIT', 'COMPRÉHENSION DE L\'ÉCRIT',
+  'MATHEMATIQUES', 'MATHÉMATIQUES', 'MATH',
+  'EDUCATION SCIENTIFIQUE ET TECHNOLOGIQUE', 'ÉDUCATION SCIENTIFIQUE ET TECHNOLOGIQUE',
+  'EDUCATION SOCIALE', 'ÉDUCATION SOCIALE',
+  'EDUCATION ARTISTIQUE ARTS PLASTIQUES', 'ÉDUCATION ARTISTIQUE ARTS PLASTIQUES', 'EA PLASTIQUE',
+  'EDUCATION ARTISTIQUE ARTS VIVANTS', 'ÉDUCATION ARTISTIQUE ARTS VIVANTS', 'EA VIVANT',
+  'EDUCATION PHYSIQUE ET SPORTIVE', 'ÉDUCATION PHYSIQUE ET SPORTIVE', 'EPS',
+];
+
+// ⭐ Ordre des matières pour la MATERNELLE (selon le registre d'appel)
+const MATERNELLE_SUBJECT_ORDER = [
+  'EDUCATION POUR LA SANTE', 'ÉDUCATION POUR LA SANTÉ', 'EDUCATION POUR LA SANTE ET L\'ENVIRONNEMENT',
+  'EDUCATION A DES REFLEXES DE SANTE', 'ÉDUCATION À DES RÉFLEXES DE SANTÉ',
+  'EXPRESSION ORALE', 'LANGAGE', 'POESIE', 'CHANT', 'COMPTINE', 'CONTE',
+  'EXPRESSION CORPORELLE',
+  'EXPRESSION PLASTIQUE', 'DESSIN', 'PEINTURE', 'COLORIAGE',
+  'EVEIL SCIENTIFIQUE', 'ÉVEIL SCIENTIFIQUE', 'EVEIL SCIENTIFIQUE ET TECHNOLOGIQUE',
+  'PRE-LECTURE', 'PRÉ-LECTURE', 'PRELECTURE', 'PRÉLECTURE',
+  'PRE-MATHEMATIQUE', 'PRÉ-MATHÉMATIQUE', 'PREMATHEMATIQUE', 'PRÉMATHÉMATIQUE',
+  'PRE-ECRITURE', 'PRÉ-ÉCRITURE', 'PREECRITURE', 'PRÉÉCRITURE',
+];
+
+function getSubjectOrderIndex(name: string, isMaternelle: boolean, isPrimaire: boolean): number {
+  const upper = (name || '').toUpperCase().trim();
+  const order = isMaternelle ? MATERNELLE_SUBJECT_ORDER : isPrimaire ? PRIMAIRE_SUBJECT_ORDER : [];
+  for (let i = 0; i < order.length; i++) {
+    if (upper === order[i] || upper.includes(order[i])) return i;
+  }
+  return order.length; // matières inconnues à la fin
+}
+
 function formatDate(d: string | null): string {
   if (!d) return 'Date non définie';
   try {
@@ -485,6 +521,14 @@ function GradingSheet({
   const [searchQuery, setSearchQuery] = useState('');
   const { academicYear } = useModuleContext();
 
+  // ⭐ Trier les matières selon l'ordre pédagogique (Primaire/Maternelle)
+  const sortedSubjects = useMemo(() => {
+    return [...group.subjects].sort((a, b) =>
+      getSubjectOrderIndex(a.name, isMaternelle, isPrimaire) -
+      getSubjectOrderIndex(b.name, isMaternelle, isPrimaire)
+    );
+  }, [group.subjects, isMaternelle, isPrimaire]);
+
   // ── Charger les élèves + notes existantes pour chaque évaluation ─────────
   useEffect(() => {
     const loadSheet = async () => {
@@ -748,10 +792,11 @@ function GradingSheet({
 
   // ── Stats ──────────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
-    if (rows.length === 0) return { filled: 0, total: 0, absent: 0 };
+    if (rows.length === 0) return { filled: 0, total: 0, absent: 0, studentsAbsent: 0 };
     let filled = 0;
-    let absent = 0;
+    let absent = 0;  // absences par matière (1 élève × 1 matière = 1 absence)
     let total = 0;
+    const absentStudentIds = new Set<string>();  // élèves avec au moins 1 absence
     rows.forEach((row) => {
       group.subjects.forEach((subject) => {
         const score = row.scores[subject.id];
@@ -759,13 +804,13 @@ function GradingSheet({
         total++;
         if (score.isAbsent) {
           absent++;
+          absentStudentIds.add(row.studentId);
         } else if (isMaternelle ? score.qualitativeCode : (score.score !== null || score.cm !== null)) {
-          // Pour Primaire : on compte comme "filled" si le CM est saisi
           filled++;
         }
       });
     });
-    return { filled, total, absent };
+    return { filled, total, absent, studentsAbsent: absentStudentIds.size };
   }, [rows, group.subjects, isMaternelle]);
 
   // ── Rendu ──────────────────────────────────────────────────────────────────
@@ -830,9 +875,9 @@ function GradingSheet({
                   size="sm"
                   onClick={() => handleSave(true)}
                   disabled={saving || loading}
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className="bg-blue-600 hover:bg-blue-700 text-white border-blue-700"
                 >
-                  <Send className="w-4 h-4 mr-1" />
+                  {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Send className="w-4 h-4 mr-1" />}
                   Soumettre
                 </Button>
               </div>
@@ -859,8 +904,9 @@ function GradingSheet({
                 </Card>
                 <Card className="border-none shadow-sm bg-rose-50">
                   <CardContent className="p-4">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Absents</p>
-                    <p className="text-2xl font-black mt-1 text-rose-700">{stats.absent}</p>
+                    <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Absents (élèves)</p>
+                    <p className="text-2xl font-black mt-1 text-rose-700">{stats.studentsAbsent}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{stats.absent} absence(s) par matière</p>
                   </CardContent>
                 </Card>
                 <Card className="border-none shadow-sm bg-violet-50">
@@ -909,7 +955,7 @@ function GradingSheet({
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: '180px' }}>Nom et prénom</th>
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Sexe</th>
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-20">Présence</th>
-                        {group.subjects.map((subject, idx) => (
+                        {sortedSubjects.map((subject, idx) => (
                           isMaternelle ? (
                             <th key={idx} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[100px]">
                               {subject.name}
@@ -936,7 +982,7 @@ function GradingSheet({
                       {/* Ligne 2 : pour Primaire uniquement, CM/18 + CP/2 + Total par matière */}
                       {!isMaternelle && !isSecondaire && (
                         <tr className="bg-slate-50">
-                          {group.subjects.map((_, idx) => (
+                          {sortedSubjects.map((_, idx) => (
                             <>
                               <th key={`cm-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CM /18</th>
                               <th key={`cp-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CP /2</th>
@@ -949,13 +995,13 @@ function GradingSheet({
                     <tbody>
                       {filteredRows.map((row, idx) => {
                         // Pour Primaire et Secondaire : calculer le total général
-                        const totalGeneral = isMaternelle ? null : group.subjects.reduce((sum, subj) => {
+                        const totalGeneral = isMaternelle ? null : sortedSubjects.reduce((sum, subj) => {
                           const s = row.scores[subj.id];
                           return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
                         }, 0);
                         // Seuil de réussite : 10/20 par matière, ou total ≥ 10 × nb matières
                         const seuilAtteint = isMaternelle ? null : (
-                          totalGeneral !== null && totalGeneral >= (10 * group.subjects.length * 0.5)
+                          totalGeneral !== null && totalGeneral >= (10 * sortedSubjects.length * 0.5)
                         );
 
                         return (
@@ -964,7 +1010,7 @@ function GradingSheet({
                             className={cn(
                               'hover:bg-slate-50 transition-colors',
                               idx % 2 === 1 && 'bg-slate-50/50',
-                              row.scores[group.subjects[0]?.id]?.isAbsent && 'bg-red-50/30'
+                              row.scores[sortedSubjects[0]?.id]?.isAbsent && 'bg-red-50/30'
                             )}
                           >
                             <td className="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-600">
@@ -990,7 +1036,7 @@ function GradingSheet({
                                     setRows((prev) => prev.map((r) => {
                                       if (r.studentId !== row.studentId) return r;
                                       const newScores = { ...r.scores };
-                                      group.subjects.forEach((subj) => {
+                                      sortedSubjects.forEach((subj) => {
                                         newScores[subj.id] = { ...newScores[subj.id], isAbsent: false };
                                       });
                                       return { ...r, scores: newScores };
@@ -1013,7 +1059,7 @@ function GradingSheet({
                                     setRows((prev) => prev.map((r) => {
                                       if (r.studentId !== row.studentId) return r;
                                       const newScores = { ...r.scores };
-                                      group.subjects.forEach((subj) => {
+                                      sortedSubjects.forEach((subj) => {
                                         newScores[subj.id] = {
                                           ...newScores[subj.id],
                                           isAbsent: true,
@@ -1037,8 +1083,7 @@ function GradingSheet({
                               </div>
                             </td>
 
-                            {/* Une cellule par matière (Maternelle: TS/S/PS, Secondaire: Note /20, Primaire: CM/CP/Total) */}
-                            {group.subjects.map((subject) => {
+                            {sortedSubjects.map((subject) => {
                               const score = row.scores[subject.id] || {
                                 score: null,
                                 cm: null,
@@ -1181,7 +1226,7 @@ function GradingSheet({
                             <td className="border border-slate-300 px-2 py-1 text-center">
                               {isMaternelle ? (
                                 // Pour maternelle : afficher un check si tous les domaines ont une annotation
-                                group.subjects.every((subj) => {
+                                sortedSubjects.every((subj) => {
                                   const s = row.scores[subj.id];
                                   return s && s.qualitativeCode;
                                 }) ? (

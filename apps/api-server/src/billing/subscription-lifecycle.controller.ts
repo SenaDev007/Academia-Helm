@@ -397,7 +397,7 @@ export class SubscriptionLifecycleController {
       const paymentResult = await this.fedapayService.createTransaction({
         amount,
         description: `Option bilingue - ${sub.billingCycle === 'YEARLY' ? 'Annuel' : 'Mensuel'}`,
-        callback_url: `${process.env.APP_PUBLIC_URL || 'https://academia-helm-api.fly.dev'}/api/billing/fedapay/webhook`,
+        callback_url: `${process.env.APP_PUBLIC_URL || 'https://api.academiahelm.com'}/api/billing/fedapay/webhook`,
         customer: {
           email: body.customer.email,
           firstname: body.customer.firstname || '',

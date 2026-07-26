@@ -1980,3 +1980,72 @@ Stage Summary:
 - ✅ Total général + Seuil atteint affichés
 - ✅ Sexe affiché en badges colorés
 - ⏳ Déploiement Fly.io backend requis pour getGradingSheet (élèves)
+
+---
+Task ID: 1
+Agent: Sub-agent (Investigation only — pas de modification de code)
+Task: Investigation Issue A (erreur "No QueryClient set" sur sous-domaine école) + Issue B (Railway/Fly.io cold start matinal)
+
+Work Log:
+1. Lecture worklog.md (contexte déploiement → backend sur Fly.io, app name `academia-helm-api`).
+
+2. Issue A — Recherche QueryClientProvider dans apps/web-app/src/ :
+   - apps/web-app/src/providers/QueryProvider.tsx → wrapper réutilisable (utilise getQueryClient singleton)
+   - apps/web-app/src/lib/query/query-client.ts → singleton QueryClient (cache 1 min, gc 30 min)
+   - 4 endroits utilisent QueryProvider :
+     * apps/web-app/src/app/app/layout-client.tsx (routes authentifiées /app/*)
+     * apps/web-app/src/app/platform/admin-layout-client.tsx (routes /platform/*)
+     * apps/web-app/src/app/portal/page.tsx (page /portal — wrap avec QueryClient LOCAL portalQueryClient défini en module-scope, lignes 56-69 + 452)
+   - ⚠️ Root layout apps/web-app/src/app/layout.tsx ne wrap PAS dans QueryProvider (seulement I18nWrapper + ToastContainer + ServiceWorkerCleanup).
+   - (auth)/layout.tsx et (public)/layout.tsx ne wrap pas non plus.
+
+3. Issue A — Routing du sous-domaine école :
+   - apps/web-app/src/middleware.ts (751 lignes) :
+     * Subdomain `cspeb-eveildafriqueeducation.academiahelm.com/` → rewrite vers `/school-portal` (InstitutionalWebsite)
+     * `/portal` sur un sous-domaine d'école SANS session → redirect vers academiahelm.com/portal (main domain, qui a QueryClientProvider)
+     * `/portal` sur un sous-domaine d'école AVEC session → laisse passer (rendu via /portal/page.tsx qui a son propre QueryClientProvider ✓)
+     * `/school-portal/portal` est dans schoolSubdomainPublicRoutes → accessible sans session
+   - apps/web-app/src/components/portal/InstitutionalWebsite.tsx (line 652) :
+     `<a href="/school-portal/portal">Portail</a>` — CTA qui envoie l'utilisateur du site institutionnel vers /school-portal/portal
+
+4. ⭐ ROOT CAUSE Issue A — Manque QueryClientProvider sur /school-portal/portal :
+   - apps/web-app/src/app/school-portal/portal/page.tsx (server component) → rend <TenantPortalSelection>
+   - apps/web-app/src/components/portal/TenantPortalSelection.tsx (client component, line 278) → rend <BeninMap>
+   - apps/web-app/src/components/portal/BeninMap.tsx (line 301) → `useSchoolsMap()` → apps/web-app/src/lib/hooks/use-schools-map.ts (line 60-68) → `usePublicSchools()` → apps/web-app/src/lib/query/use-public-schools.ts (line 105) → `useQuery()` de @tanstack/react-query
+   - ⚠️ AUCUN QueryClientProvider dans la chaîne /school-portal/portal/page.tsx → TenantPortalSelection → BeninMap → useQuery → CRASH "No QueryClient set, use QueryClientProvider to set one"
+   - C'est confirmé par le commentaire explicite dans apps/web-app/src/app/portal/page.tsx (lines 56-59) : "Sans ce wrapper local, usePublicSchools() (utilisé par SchoolSearch et BeninMap via useSchoolsMap) crashe avec 'No QueryClient set'." → Ce warning n'a pas été appliqué à /school-portal/portal !
+
+5. "impossible de charger les établissements" — localisation :
+   - apps/web-app/src/components/portal/SchoolSearch.tsx:234 → message affiché quand usePublicSchools() retourne une erreur
+   - SchoolSearch est rendu UNIQUEMENT dans apps/web-app/src/app/portal/page.tsx (line 777)
+   - Ce message apparaît donc sur /portal (main domain) — probablement 2e symptôme lié à Issue B :
+     BFF /api/public/schools/list → backend Fly.io cold → timeout → usePublicSchools error → SchoolSearch affiche "Impossible de charger les établissements"
+   - Autres occurrences (différentes) :
+     * apps/web-app/src/app/jobs/CareersContent.tsx:393 et :836 (page /jobs main domain, n'utilise PAS React Query)
+     * apps/web-app/src/components/platform/modules/ModulesWorkspace.tsx:263 ("Impossible de charger la liste des établissements" — admin only)
+
+6. Issue B — Vérification infrastructure backend :
+   - apps/api-server/railway.toml — présent mais INUTILISÉ (vestige), startCommand `node --max-old-space-size=1536 dist/main.js`, restartPolicyType ON_FAILURE, maxRetries 3
+   - apps/api-server/render.yaml — présent mais INUTILISÉ (vestige)
+   - apps/api-server/Dockerfile — utilisé par Fly.io (et potentiellement Railway) : CMD `["node", "--max-old-space-size=1536", "dist/main.js"]`, EXPOSE 3000, ENTRYPOINT [] (docker-entrypoint.sh skip migrations)
+   - apps/api-server/docker-entrypoint.sh — confirme Fly.io : `fly ssh console -C "npx prisma migrate deploy"` (line 14)
+   - worklog.md : ~20 références à "Déployer le backend sur Fly.io" avec commande `flyctl deploy -a academia-helm-api`
+   - ⚠️ AUCUN fly.toml trouvé dans le repo (Glob **/fly*.toml vide) → Fly.io utilise la configuration par défaut
+   - Configuration Fly.io par défaut : `auto_stop_machines = true` → la machine s'arrête après ~5 min d'inactivité → cold start au prochain request (~30-60s)
+   - Pattern matinal : la nuit (peu de trafic) → machine auto-stops → le matin le 1er user déclenche le cold start
+   - Cron jobs @nestjs/schedule identifiés (11 jobs) : plusieurs s'exécutent la nuit (2 AM, midnight, 23:59) et le matin (7 AM, 8 AM, 9 AM) — peuvent aggraver le pattern si la machine est déjà arrêtée (les crons ne tournent pas quand elle est stopped)
+
+7. Recommandations (PAS appliquées — investigation only) :
+   - Issue A fix : wrapper <TenantPortalSelection> dans <QueryProvider> (soit dans apps/web-app/src/app/school-portal/portal/page.tsx en transformant en client component, soit — préférable — dans TenantPortalSelection.tsx lui-même en l'entourant de <QueryProvider>). Le pattern existe déjà dans apps/web-app/src/app/portal/page.tsx (lignes 56-69 + 452). Alternative globale : déplacer le QueryProvider dans le root layout apps/web-app/src/app/layout.tsx pour qu'il soit disponible sur TOUTES les routes (mais cela peut impacter le bundle size et nécessite de tester les pages publiques qui n'utilisent pas React Query).
+   - Issue B fix : créer apps/api-server/fly.toml avec :
+       [http_service]
+         auto_stop_machines = false
+         min_machines_running = 1
+     Ou alternative `fly scale count 1 --max-per-region 1 --no-autostop` via CLI
+   - Note : il faudra aussi vérifier si le plan Fly.io actuel (Hobby plan $5/mo ou pay-as-you-go) autorise l'always-on ; sinon payer pour une machine always-on. Le user mentionne "Railway paid plan" — probable confusion ; le backend est sur Fly.io. Si réellement sur Railway : Railway Pro plan services ne dorment pas par défaut ; vérifier la config Railway du dashboard (Services > Settings > Sleep).
+
+Stage Summary:
+- ✅ Issue A root cause identifiée : /school-portal/portal/page.tsx (et TenantPortalSelection) manquent QueryClientProvider, mais rendent <BeninMap> qui appelle useQuery() via useSchoolsMap() → usePublicSchools() → crash "No QueryClient set"
+- ✅ "impossible de charger les établissements" identifié dans apps/web-app/src/components/portal/SchoolSearch.tsx:234 (rendu sur /portal main domain) — symptôme lié à Issue B (timeout backend Fly.io)
+- ✅ Issue B : backend sur Fly.io (pas Railway), aucun fly.toml dans le repo → auto_stop_machines=true par défaut → cold start matinal
+- ⏳ Fixes à appliquer par agent d'implémentation (pas fait — investigation only)

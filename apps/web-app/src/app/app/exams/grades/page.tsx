@@ -147,6 +147,7 @@ export default function GradesPage() {
   const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
   const isMaternelle = scopeLevel === 'MATERNELLE';
   const isPrimaire = scopeLevel === 'PRIMAIRE';
+  const isSecondaire = scopeLevel === 'SECONDAIRE';
 
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -253,6 +254,7 @@ export default function GradesPage() {
         group={selectedGroup}
         isMaternelle={isMaternelle}
         isPrimaire={isPrimaire}
+        isSecondaire={isSecondaire}
         scopedSubModules={scopedSubModules}
         onBack={() => setSelectedGroup(null)}
       />
@@ -298,8 +300,8 @@ export default function GradesPage() {
                 {isMaternelle
                   ? 'Qualitatif (TS / S / PS) — Évaluation maternelle'
                   : isPrimaire
-                    ? 'Quantitatif (/20) — Évaluation primaire'
-                    : 'Quantitatif (/20) avec coefficients — Évaluation secondaire'}
+                    ? 'Quantitatif (/20) avec CM + CP — Évaluation primaire'
+                    : 'Quantitatif (/20) — Évaluation secondaire'}
               </p>
             </div>
 
@@ -466,12 +468,14 @@ function GradingSheet({
   group,
   isMaternelle,
   isPrimaire,
+  isSecondaire,
   scopedSubModules,
   onBack,
 }: {
   group: GroupedEvaluation;
   isMaternelle: boolean;
   isPrimaire: boolean;
+  isSecondaire: boolean;
   scopedSubModules: any;
   onBack: () => void;
 }) {
@@ -755,7 +759,7 @@ function GradingSheet({
         total++;
         if (score.isAbsent) {
           absent++;
-        } else if (isMaternelle ? score.qualitativeCode : (score.cm !== null)) {
+        } else if (isMaternelle ? score.qualitativeCode : (score.score !== null || score.cm !== null)) {
           // Pour Primaire : on compte comme "filled" si le CM est saisi
           filled++;
         }
@@ -899,7 +903,7 @@ function GradingSheet({
                 <div className="bg-white border-2 border-slate-800 rounded-xl overflow-x-auto">
                   <table className="w-full border-collapse text-xs">
                     <thead>
-                      {/* Ligne 1 : N° + Nom + Sexe + Présence + Matières (colSpan=3 pour Primaire, 1 pour Maternelle) + Total + Seuil */}
+                      {/* Ligne 1 : N° + Nom + Sexe + Présence + Matières + Total + Seuil */}
                       <tr className="bg-slate-100">
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">N°</th>
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: '180px' }}>Nom et prénom</th>
@@ -911,19 +915,26 @@ function GradingSheet({
                               {subject.name}
                               <div className="text-[9px] text-slate-400 font-normal">TS / S / PS</div>
                             </th>
+                          ) : isSecondaire ? (
+                            // ⭐ Secondaire : 1 seule colonne Note /20
+                            <th key={idx} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[80px]">
+                              {subject.name}
+                              <div className="text-[9px] text-slate-400 font-normal">Note /20</div>
+                            </th>
                           ) : (
+                            // ⭐ Primaire : 3 sous-colonnes CM/CP/Total (colSpan=3)
                             <th key={idx} colSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[180px]">
                               {subject.name}
                             </th>
                           )
                         ))}
-                        {!isMaternelle && (
+                        {!isMaternelle && !isSecondaire && (
                           <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total gén.</th>
                         )}
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Seuil</th>
                       </tr>
-                      {/* Ligne 2 : pour Primaire, CM/18 + CP/2 + Total par matière ; pour Maternelle, ligne vide */}
-                      {!isMaternelle && (
+                      {/* Ligne 2 : pour Primaire uniquement, CM/18 + CP/2 + Total par matière */}
+                      {!isMaternelle && !isSecondaire && (
                         <tr className="bg-slate-50">
                           {group.subjects.map((_, idx) => (
                             <>
@@ -937,7 +948,7 @@ function GradingSheet({
                     </thead>
                     <tbody>
                       {filteredRows.map((row, idx) => {
-                        // Pour Primaire : calculer le total général
+                        // Pour Primaire et Secondaire : calculer le total général
                         const totalGeneral = isMaternelle ? null : group.subjects.reduce((sum, subj) => {
                           const s = row.scores[subj.id];
                           return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
@@ -1026,7 +1037,7 @@ function GradingSheet({
                               </div>
                             </td>
 
-                            {/* Une cellule par matière (Maternelle: 1 cellule TS/S/PS, Primaire: 3 cellules CM/CP/Total) */}
+                            {/* Une cellule par matière (Maternelle: TS/S/PS, Secondaire: Note /20, Primaire: CM/CP/Total) */}
                             {group.subjects.map((subject) => {
                               const score = row.scores[subject.id] || {
                                 score: null,
@@ -1070,6 +1081,34 @@ function GradingSheet({
                                         </button>
                                       ))}
                                     </div>
+                                  </td>
+                                );
+                              }
+                              if (isSecondaire) {
+                                // ⭐ Secondaire : 1 seule cellule Note /20
+                                return (
+                                  <td key={subject.id} className="border border-slate-300 p-0">
+                                    <input
+                                      type="number"
+                                      step="0.25"
+                                      min="0"
+                                      max="20"
+                                      value={score.isAbsent ? '' : (score.score ?? '')}
+                                      onChange={(e) => handleScoreChange(row.studentId, subject.id, e.target.value)}
+                                      disabled={score.isAbsent}
+                                      placeholder="—"
+                                      className={cn(
+                                        'w-full px-1 py-1 text-center text-xs font-bold border-0 bg-transparent',
+                                        'focus:outline-none focus:ring-1 focus:ring-blue-400',
+                                        score.isAbsent && 'opacity-30 cursor-not-allowed bg-red-50',
+                                        !score.isAbsent && score.score !== null && typeof score.score === 'number' &&
+                                          (Number(score.score) < 10
+                                            ? 'text-rose-600'
+                                            : Number(score.score) >= 14
+                                              ? 'text-emerald-600'
+                                              : 'text-slate-900')
+                                      )}
+                                    />
                                   </td>
                                 );
                               }
@@ -1132,8 +1171,8 @@ function GradingSheet({
                               );
                             })}
 
-                            {/* Total général (Primaire uniquement) */}
-                            {!isMaternelle && (
+                            {/* Total général (Primaire et Secondaire) */}
+                            {!isMaternelle && !isSecondaire && (
                               <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-700 bg-blue-50">
                                 {totalGeneral !== null ? totalGeneral.toFixed(2) : '—'}
                               </td>
@@ -1163,7 +1202,7 @@ function GradingSheet({
                       {filteredRows.length === 0 && (
                         <tr>
                           <td
-                            colSpan={isMaternelle ? 5 + group.subjects.length + 1 : 5 + group.subjects.length * 3 + 2}
+                            colSpan={isMaternelle ? 5 + group.subjects.length + 1 : isSecondaire ? 5 + group.subjects.length + 1 : 5 + group.subjects.length * 3 + 2}
                             className="border border-slate-300 px-4 py-8 text-center text-slate-400 text-sm"
                           >
                             Aucun élève trouvé.
@@ -1179,7 +1218,9 @@ function GradingSheet({
                   <p className="font-semibold mb-1">
                     {isMaternelle
                       ? 'Légende — Évaluation qualitative (Maternelle)'
-                      : 'Légende — Évaluation quantitative (Primaire)'}
+                      : isSecondaire
+                        ? 'Légende — Évaluation quantitative (Secondaire)'
+                        : 'Légende — Évaluation quantitative (Primaire)'}
                   </p>
                   {isMaternelle ? (
                     <ul className="space-y-0.5 ml-4">
@@ -1187,6 +1228,13 @@ function GradingSheet({
                       <li><strong className="text-blue-700">S</strong> = Satisfaisant</li>
                       <li><strong className="text-amber-700">PS</strong> = Peu Satisfaisant</li>
                       <li className="mt-1 text-gray-500">Réussite : (TS + S) ≥ seuil fixé par l'établissement.</li>
+                    </ul>
+                  ) : isSecondaire ? (
+                    <ul className="space-y-0.5 ml-4">
+                      <li>Saisissez la note sur /20 (ex: 15.5, 12, 8.25).</li>
+                      <li><strong className="text-emerald-600">P</strong> = Présent · <strong className="text-red-600">A</strong> = Absent</li>
+                      <li className="text-emerald-700">Notes ≥ 10 : admis (en vert).</li>
+                      <li className="text-rose-700">Notes &lt; 10 : échec (en rouge).</li>
                     </ul>
                   ) : (
                     <ul className="space-y-0.5 ml-4">

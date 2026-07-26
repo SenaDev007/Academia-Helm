@@ -26,6 +26,7 @@ import TenantHeader from '@/components/portal/TenantHeader';
 import TenantFooter from '@/components/ui/footer-column';
 import FloatingEduParticles from '@/components/ui/FloatingEduParticles';
 import LogoCircle from '@/components/ui/LogoCircle';
+import { QueryProvider } from '@/providers/QueryProvider';
 import { extractTenantSlug } from '@/lib/tenant/constants';
 import { resolveTenantColors } from '@/lib/tenant/use-tenant-colors';
 import { type DepartmentData } from '@/data/benin-departments';
@@ -187,6 +188,7 @@ export default function TenantPortalSelection({
   }
 
   return (
+    <QueryProvider>
     <div className="min-h-screen bg-white flex flex-col">
       {/* ═══ NAVBAR (CDC 3.1) — pas de bouton Portail car on est DÉJÀ sur la page portail ═══ */}
       <TenantHeader
@@ -422,5 +424,6 @@ export default function TenantPortalSelection({
         tenantSlug={slug}
       />
     </div>
+    </QueryProvider>
   );
 }

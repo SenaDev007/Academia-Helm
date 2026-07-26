@@ -115,6 +115,7 @@ export default function TeacherExamsPage() {
   const levelCode = (schoolLevel?.code || '').toUpperCase();
   const isMaternelle = levelCode === 'MATERNELLE' || levelCode.includes('MATERN');
   const isPrimaire = levelCode === 'PRIMAIRE' || levelCode.includes('PRIM');
+  const isSecondaire = levelCode === 'SECONDAIRE' || levelCode.includes('SECOND');
 
   // ─── Charger les évaluations de l'enseignant ──────────────────────────────
   const loadEvaluations = useCallback(async () => {

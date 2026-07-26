@@ -63,9 +63,9 @@ export default function ExamsDashboardPage() {
         ]);
 
         setKpi(kpiRes);
-        setCompletionData(completionRes);
-        setAlerts(alertsRes);
-        setOrionInsights(orionRes);
+        setCompletionData(Array.isArray(completionRes) ? completionRes : []);
+        setAlerts(Array.isArray(alertsRes) ? alertsRes : []);
+        setOrionInsights(Array.isArray(orionRes) ? orionRes : []);
       } catch (error) {
         console.error('Failed to load dashboard data', error);
       } finally {

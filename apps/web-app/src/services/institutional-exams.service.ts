@@ -338,13 +338,15 @@ export const institutionalExamsService = {
   },
 
   async getOrionInsights(schoolLevelId: string, academicYearId: string) {
-    if (!networkDetectionService.isConnected()) return null;
+    if (!networkDetectionService.isConnected()) return [];
     try {
       const response = await apiClient.get(`/institutional-exams/dashboard/orion-insights?schoolLevelId=${schoolLevelId}&academicYearId=${academicYearId}`);
-      return response.data;
+      return Array.isArray(response.data) ? response.data : [];
     } catch (error: any) {
-      if (error.isOffline) return null;
-      throw error;
+      if (error.isOffline) return [];
+      // Ne pas crasher si l'API orion-insights n'existe pas ou échoue
+      console.warn('[getOrionInsights] Error:', error.message);
+      return [];
     }
   }
 };

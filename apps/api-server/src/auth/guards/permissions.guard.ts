@@ -51,6 +51,15 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
+    // ⭐ Les enseignants ont accès en lecture aux évaluations (exams.read)
+    // et peuvent saisir des notes (exams.manage) — ils ne voient que leurs
+    // propres évaluations (filtrage par teacherId côté service).
+    const teacherRoles = ['TEACHER', 'TEACHER_RESP', 'ENSEIGNANT'];
+    if (teacherRoles.includes(user.role) &&
+        requiredPermissions.every(p => p === 'exams.read' || p === 'exams.manage')) {
+      return true;
+    }
+
     // Use permissions already extracted by JwtStrategy (cached with user) — no DB query needed
     const userPermissions: Set<string> = new Set(user.permissions || []);
 

@@ -339,13 +339,14 @@ const SAISIEMASTER_MODULES = [
 ];
 
 const SUPPLEMENTARY_MODULES = [
-  { path: '/app/library', label: 'Bibliothèque', icon: Library, featureCode: 'LIBRARY' },
-  { path: '/app/transport', label: 'Transport', icon: Bus, featureCode: 'TRANSPORT' },
   { path: '/app/canteen', label: 'Cantine', icon: UtensilsCrossed, featureCode: 'CANTEEN' },
-  { path: '/app/infirmary', label: 'Infirmerie', icon: HeartPulse, featureCode: 'INFIRMARY' },
-  { path: '/app/qhse', label: 'QHSE', icon: ShieldCheck, featureCode: 'QHSE' },
   { path: '/app/educast', label: 'EduCast', icon: Radio, featureCode: 'EDUCAST' },
   { path: '/app/shop', label: 'Boutique', icon: ShoppingBag, featureCode: 'SHOP' },
+  // ⭐ Modules masqués temporairement — seront réactivés lors des mises à jour futures
+  // { path: '/app/library', label: 'Bibliothèque', icon: Library, featureCode: 'LIBRARY' },
+  // { path: '/app/transport', label: 'Transport', icon: Bus, featureCode: 'TRANSPORT' },
+  // { path: '/app/infirmary', label: 'Infirmerie', icon: HeartPulse, featureCode: 'INFIRMARY' },
+  // { path: '/app/qhse', label: 'QHSE', icon: ShieldCheck, featureCode: 'QHSE' },
 ];
 
 export default function PilotageSidebar({

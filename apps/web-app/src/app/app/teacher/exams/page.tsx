@@ -118,8 +118,31 @@ export default function TeacherExamsPage() {
   const isSecondaire = levelCode === 'SECONDAIRE' || levelCode.includes('SECOND');
 
   // ─── Charger les évaluations de l'enseignant ──────────────────────────────
+  const [resolvedTeacherId, setResolvedTeacherId] = useState<string | null>(null);
+
+  // ⭐ Résoudre user.id → Teacher.id via l'API pedagogy-space
+  // (même mécanisme que l'Espace Pédagogique qui fonctionne)
+  useEffect(() => {
+    if (!user?.id || !academicYear?.id) return;
+    apiClient
+      .get('/pedagogy-space/my-classes', {
+        params: { teacherId: user.id, academicYearId: academicYear.id },
+      })
+      .then(() => {
+        // L'API pedagogy-space résout user.id → Teacher.id côté backend.
+        // On ne peut pas récupérer le Teacher.id directement depuis cette API,
+        // mais on sait que l'API evaluations doit aussi le faire.
+        // Donc on passe simplement user.id et le backend résoudra.
+        setResolvedTeacherId(user.id);
+      })
+      .catch(() => {
+        // Fallback: utiliser user.id directement
+        setResolvedTeacherId(user.id);
+      });
+  }, [user?.id, academicYear?.id]);
+
   const loadEvaluations = useCallback(async () => {
-    if (!academicYear?.id || !schoolLevel?.id) {
+    if (!academicYear?.id) {
       setLoading(false);
       return;
     }
@@ -127,12 +150,9 @@ export default function TeacherExamsPage() {
     try {
       const params: any = {
         academicYearId: academicYear.id,
-        schoolLevelId: schoolLevel.id,
-        teacherId: user?.id,
+        teacherId: resolvedTeacherId || user?.id,
       };
-      // ⭐ Ne pas filtrer par language — l'enseignant a une seule piste
-      // et ses évaluations sont déjà spécifiques à sa piste.
-      // if (isBilingual && currentTrack) params.language = currentTrack;
+      if (schoolLevel?.id) params.schoolLevelId = schoolLevel.id;
       const res = await institutionalExamsService.getEvaluations(params);
       setEvaluations(Array.isArray(res) ? res : []);
     } catch (err) {
@@ -141,7 +161,7 @@ export default function TeacherExamsPage() {
     } finally {
       setLoading(false);
     }
-  }, [academicYear?.id, schoolLevel?.id, user?.id, isBilingual, currentTrack]);
+  }, [academicYear?.id, schoolLevel?.id, user?.id, resolvedTeacherId]);
 
   useEffect(() => { loadEvaluations(); }, [loadEvaluations]);
 

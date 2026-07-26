@@ -7,32 +7,42 @@
  *
  * Cette API remplace l'ancien modèle local (pedagogy-space/monthly-evaluations).
  * Elle récupère dynamiquement les évaluations validées par l'enseignant depuis
- * le Module Examen (status=OPEN_FOR_GRADING ou SUBMITTED).
+ * le Module Examen (status=OPEN_FOR_GRADING ou SUBMITTED ou VALIDATED).
+ *
+ * ⭐ Le tableau affiché est EXACTEMENT le même que celui du Module Examen
+ *    (GradingSheet.tsx) — mêmes colonnes, mêmes couleurs, mêmes calculs :
+ *    N° | Nom | Sexe | Présence | [Matières CM/CP/Total ou TS/S/PS] |
+ *    Total gén. | Rang | Seuil fixé | Seuil atteint Oui/Non |
+ *    Appréciation globale (Maternelle) | Observation
  *
  * Flux :
  *   1. L'admin crée une évaluation (Module Examen → Évaluations) → status=PLANNED
  *   2. L'enseignant saisit les notes + clique "Valider" (Module Examen → Saisie
- *      des notes) → status=OPEN_FOR_GRADING (les notes sont validées par l'enseignant)
+ *      des notes) → status=OPEN_FOR_GRADING (notes validées par l'enseignant)
  *   3. L'enseignant ouvre l'Espace Pédagogique → Registre d'Appel → Évaluation
  *      mensuelle : cette page récupère dynamiquement les évaluations OPEN_FOR_GRADING
- *      + affiche le même tableau (matières × élèves × scores)
+ *      + affiche le même tableau que le Module Examen (read-only)
  *   4. L'enseignant signe + clique "Soumettre au directeur" → status=SUBMITTED
  *   5. L'admin valide → status=VALIDATED (verrouillé)
  *
- * Lorsque RIEN n'est encore soumis → message clair "Aucune évaluation validée
- * par l'enseignant pour cette classe ce mois-ci".
+ * Lorsque RIEN n'est encore soumis → message clair.
  * ============================================================================
  */
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
-  Loader2, FileText, AlertCircle, CheckCircle2, XCircle,
-  Send, RefreshCw, Calendar, BookOpen, Users, Lock,
+  Loader2, FileText, AlertCircle, CheckCircle2,
+  Send, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
 import apiClient from "@/lib/api/client";
-import { institutionalExamsService } from "@/services/institutional-exams.service";
+// ⭐ Import des helpers partagés avec GradingSheet pour calculs identiques
+import {
+  formatRang,
+  computeAppreciationGlobale,
+  getSubjectOrderIndex,
+} from "@/components/exams/GradingSheet";
 
 const MONTH_NAMES = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
   "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
@@ -69,12 +79,11 @@ interface Evaluation {
   _count?: { grades: number };
 }
 
+// ⭐ Format IDENTIQUE au backend GradesService.getGradingSheet()
 interface GradeRow {
   studentId: string;
   matricule?: string;
   studentName: string;
-  firstName?: string;
-  lastName?: string;
   gender?: string;
   scores: Record<string, {
     score: number | null;
@@ -100,43 +109,12 @@ interface GroupedEvaluation {
   evaluationIds: string[];
   statuses: string[];
   firstEvaluation: Evaluation;
-  // Grades fetched per evaluation (evaluationId → GradeRow[])
+  // Grades fetched per evaluation (evaluationId → students with grades)
   gradesByEvaluation: Record<string, any[]>;
 }
 
 function cn(...classes: (string | false | undefined)[]) {
   return classes.filter(Boolean).join(" ");
-}
-
-function formatDateFR(dateStr: string): string {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
-}
-
-// ─── Helpers pour les notes ─────────────────────────────────────────────────
-
-// Calcule le total d'une matière pour un élève
-function computeTotal(score: { cm?: number | null; cp?: number | null; score?: number | null } | undefined): number {
-  if (!score) return 0;
-  // Si on a cm + cp (primaire), on les utilise
-  if (score.cm !== null && score.cm !== undefined && score.cp !== null && score.cp !== undefined) {
-    return (score.cm || 0) + (score.cp || 0);
-  }
-  // Sinon on utilise score directement
-  return score.score || 0;
-}
-
-// Calcule le total général d'un élève (somme des totaux par matière, modulo coef)
-function computeTotalGeneral(row: GradeRow, subjects: Array<{ id: string; coefficient?: number }>): number {
-  let total = 0;
-  for (const subj of subjects) {
-    const score = row.scores[subj.id];
-    if (!score || score.isAbsent) continue;
-    const t = computeTotal(score);
-    total += t * (subj.coefficient || 1);
-  }
-  return total;
 }
 
 // ─── Composant principal ────────────────────────────────────────────────────
@@ -162,6 +140,12 @@ export function MonthlyEvaluationTab({
   // Signatures par groupe (groupKey → { teacher, director })
   const [signatures, setSignatures] = useState<Record<string, { teacher: string | null; director: string | null }>>({});
 
+  // ─── Déterminer isPrimaire vs isSecondaire ────────────────────────────────
+  // Pour l'instant on suppose Primaire si pas Maternelle.
+  // TODO: passer isSecondaire en prop si on veut gérer le secondaire ici aussi.
+  const isPrimaire = !isMaternelle;
+  const isSecondaire = false;
+
   // ─── Charger les évaluations validées par l'enseignant pour cette classe ────
   const loadEvaluations = useCallback(async () => {
     if (!classId || !academicYearId) {
@@ -173,31 +157,21 @@ export function MonthlyEvaluationTab({
     setError(null);
     try {
       // ⭐ Récupérer TOUTES les évaluations de cette classe pour cette année académique
-      // Puis on filtrera côté client par status et par mois
+      // avec les statuts OPEN_FOR_GRADING, SUBMITTED, VALIDATED
+      // (pas de filtre par mois — on veut toutes les évaluations validées par l'enseignant)
       const response = await apiClient.get(`/institutional-exams/evaluations`, {
         params: {
           academicYearId,
           classId,
-          // ⭐ On veut les évaluations validées par l'enseignant (OPEN_FOR_GRADING)
-          //    et celles déjà soumises au directeur (SUBMITTED)
-          //    ainsi que celles validées par l'admin (VALIDATED)
-          status: 'OPEN_FOR_GRADING,SUBMITTED,VALIDATED',
+          status: 'OPEN_FOR_GRADING,SUBMITTED,VALIDATED,LOCKED',
         },
       });
       const allEvaluations: Evaluation[] = Array.isArray(response.data) ? response.data : [];
 
-      // ⭐ Filtrer par mois/année (basé sur evaluationDate)
-      const monthStart = new Date(selectedYear, selectedMonth - 1, 1);
-      const monthEnd = new Date(selectedYear, selectedMonth, 0, 23, 59, 59);
-      const filtered = allEvaluations.filter(ev => {
-        const d = new Date(ev.evaluationDate || ev.startDate || ev.endDate || '');
-        return d >= monthStart && d <= monthEnd;
-      });
-
       // ⭐ Grouper par (classId × evaluationTypeId × periodId × startDate × endDate)
       //    Identique à HierarchicalEvaluationList pour rester cohérent
       const groupMap = new Map<string, GroupedEvaluation>();
-      for (const ev of filtered) {
+      for (const ev of allEvaluations) {
         const key = `${ev.class?.id || classId}__${ev.evaluationType?.id || ''}__${ev.period?.id || ''}__${ev.startDate || ''}__${ev.endDate || ''}`;
         if (!groupMap.has(key)) {
           groupMap.set(key, {
@@ -243,6 +217,13 @@ export function MonthlyEvaluationTab({
         groupsWithGrades.push({ ...g, gradesByEvaluation });
       }
 
+      // ⭐ Trier les groupes par date (plus récent en premier)
+      groupsWithGrades.sort((a, b) => {
+        const da = new Date(a.startDate || a.firstEvaluation.evaluationDate || 0).getTime();
+        const db = new Date(b.startDate || b.firstEvaluation.evaluationDate || 0).getTime();
+        return db - da;
+      });
+
       setGroups(groupsWithGrades);
     } catch (err: any) {
       console.error('Erreur lors du chargement des évaluations:', err);
@@ -251,13 +232,15 @@ export function MonthlyEvaluationTab({
     } finally {
       setLoading(false);
     }
-  }, [classId, academicYearId, selectedMonth, selectedYear, className]);
+  }, [classId, academicYearId, className]);
 
   useEffect(() => {
     loadEvaluations();
   }, [loadEvaluations]);
 
   // ─── Construire les lignes d'élèves pour un groupe ────────────────────────
+  // Format IDENTIQUE au backend : studentId, studentName, matricule, gender,
+  // score, cm, cp, qualitativeCode, isAbsent, comment, status
   const buildRows = useCallback((group: GroupedEvaluation): GradeRow[] => {
     const rowMap = new Map<string, GradeRow>();
     for (const evId of group.evaluationIds) {
@@ -269,59 +252,69 @@ export function MonthlyEvaluationTab({
         const studentId = grade.studentId || grade.student?.id;
         if (!studentId) continue;
         if (!rowMap.has(studentId)) {
-          const firstName = grade.student?.firstName || grade.firstName || '';
-          const lastName = grade.student?.lastName || grade.lastName || '';
+          // ⭐ Le backend retourne studentName + matricule + gender directement
           rowMap.set(studentId, {
             studentId,
-            matricule: grade.student?.matricule || grade.matricule || '',
-            studentName: `${lastName} ${firstName}`.trim(),
-            firstName,
-            lastName,
-            gender: grade.student?.gender || grade.gender || '',
+            matricule: grade.matricule || grade.student?.matricule || '',
+            studentName: grade.studentName || `${grade.student?.lastName || ''} ${grade.student?.firstName || ''}`.trim(),
+            gender: grade.gender || grade.student?.gender || '',
             scores: {},
           });
         }
         const row = rowMap.get(studentId)!;
-        // ⭐ Les grades sont stockés avec cm/cp dans comment JSON côté backend
-        //    (voir grades.service.ts bulkSave)
-        let cm: number | null = grade.cm ?? null;
-        let cp: number | null = grade.cp ?? null;
-        // Si cm/cp ne sont pas dans le grade directement, essayer de les parser depuis comment
-        if ((cm === null || cp === null) && grade.comment) {
-          try {
-            const parsed = typeof grade.comment === 'string' ? JSON.parse(grade.comment) : grade.comment;
-            if (cm === null && parsed?.cm !== undefined) cm = parsed.cm;
-            if (cp === null && parsed?.cp !== undefined) cp = parsed.cp;
-          } catch { /* ignore */ }
-        }
+        // ⭐ cm/cp sont déjà parsés par le backend (GradesService.getGradingSheet)
         row.scores[subjectId] = {
           score: grade.score ?? null,
-          cm,
-          cp,
+          cm: grade.cm ?? null,
+          cp: grade.cp ?? null,
           qualitativeCode: grade.qualitativeCode || null,
           isAbsent: grade.isAbsent || false,
           comment: grade.comment,
         };
       }
     }
-    // Trier par nom
+    // Trier par nom (comme dans GradingSheet)
     return Array.from(rowMap.values()).sort((a, b) =>
       a.studentName.localeCompare(b.studentName, 'fr')
     );
   }, []);
 
+  // ─── Trier les matières comme dans GradingSheet ─────────────────────────────
+  const sortSubjects = useCallback((subjects: Array<{ id: string; name: string }>) => {
+    return [...subjects].sort((a, b) =>
+      getSubjectOrderIndex(a.name, isMaternelle, isPrimaire) -
+      getSubjectOrderIndex(b.name, isMaternelle, isPrimaire)
+    );
+  }, [isMaternelle, isPrimaire]);
+
   // ─── Statistiques par groupe ────────────────────────────────────────────────
-  const computeStats = useCallback((group: GroupedEvaluation, rows: GradeRow[]) => {
+  const computeStats = useCallback((group: GroupedEvaluation, rows: GradeRow[], sortedSubjects: Array<{ id: string; name: string }>) => {
     let totalG = 0, totalF = 0;
     let composeG = 0, composeF = 0;
     let atteintG = 0, atteintF = 0;
-    // Seuil de réussite = 50% du score max total (somme des maxScore par matière)
-    // Pour Primaire : 10/20 par défaut (mais calculé sur total général / (nb matières × 20))
-    const seuilReussite = group.subjects.length * 10; // 10/20 par matière
+    // Seuil de réussite = 50% du total max possible
+    // Pour Primaire : 10/20 par matière → seuil = 10 × nb matières
+    const seuilReussite = sortedSubjects.length * 10;
 
     for (const row of rows) {
       const sexe = (row.gender || '').toUpperCase();
-      const tot = computeTotalGeneral(row, group.subjects);
+      let tot = 0;
+      if (isMaternelle) {
+        // Maternelle : seuil atteint si (TS + S) ≥ la plupart
+        const appreciation = computeAppreciationGlobale(row.scores, sortedSubjects);
+        if (appreciation === 'Très Satisfaisant' || appreciation === 'Satisfaisant') {
+          tot = seuilReussite; // counts as "atteint"
+        }
+      } else {
+        // Primaire : total général
+        tot = sortedSubjects.reduce((sum, subj) => {
+          const s = row.scores[subj.id];
+          if (!s || s.isAbsent) return sum;
+          const cm = s.cm ?? 0;
+          const cp = s.cp ?? 0;
+          return sum + cm + cp;
+        }, 0);
+      }
       if (sexe === 'M' || sexe === 'G' || sexe === 'MALE') {
         totalG++;
         if (tot > 0) composeG++;
@@ -335,20 +328,17 @@ export function MonthlyEvaluationTab({
     const totalC = totalG + totalF;
     const composeC = composeG + composeF;
     const atteintC = atteintG + atteintF;
-    const nAtteintC = totalC - atteintC;
-    const nAtteintG = totalG - atteintG;
-    const nAtteintF = totalF - atteintF;
     return {
       effectifG: totalG, effectifF: totalF, effectifTotal: totalC,
       ayantComposeG: composeG, ayantComposeF: composeF, ayantComposeTotal: composeC,
       ayantAtteintSeuilG: atteintG, ayantAtteintSeuilF: atteintF, ayantAtteintSeuilTotal: atteintC,
-      nAyantPasAtteintG: nAtteintG, nAyantPasAtteintF: nAtteintF, nAyantPasAtteintTotal: nAtteintC,
+      nAyantPasAtteintG: totalG - atteintG, nAyantPasAtteintF: totalF - atteintF, nAyantPasAtteintTotal: totalC - atteintC,
       pourcentageReussiteG: totalG > 0 ? (atteintG / totalG) * 100 : 0,
       pourcentageReussiteF: totalF > 0 ? (atteintF / totalF) * 100 : 0,
       pourcentageReussiteTotal: totalC > 0 ? (atteintC / totalC) * 100 : 0,
       seuilReussite,
     };
-  }, []);
+  }, [isMaternelle]);
 
   // ─── Soumettre au directeur ─────────────────────────────────────────────────
   const handleSubmitToDirector = async (group: GroupedEvaluation) => {
@@ -369,8 +359,6 @@ export function MonthlyEvaluationTab({
     if (!ok) return;
     setSubmitting(group.key);
     try {
-      // Appeler /submit sur chaque évaluation du groupe
-      // ⭐ Transition : OPEN_FOR_GRADING → SUBMITTED
       const errors: string[] = [];
       await Promise.all(
         group.evaluationIds.map(async (evId) => {
@@ -378,7 +366,6 @@ export function MonthlyEvaluationTab({
             await apiClient.patch(`/institutional-exams/evaluations/${evId}/submit`);
           } catch (err: any) {
             const msg = err.response?.data?.message || err.message || '';
-            // Si déjà SUBMITTED, on ignore
             if (msg.includes('doit être') || err.response?.status === 400) {
               console.warn(`Evaluation ${evId} déjà soumise ou statut invalide, ignoré`);
               return;
@@ -394,7 +381,6 @@ export function MonthlyEvaluationTab({
       toast.success("Évaluation soumise au directeur", {
         description: "Vous pouvez suivre la validation dans le Module Examen.",
       });
-      // Recharger les évaluations
       await loadEvaluations();
     } catch (err: any) {
       toast.error("Erreur lors de la soumission", { description: err.message });
@@ -442,11 +428,11 @@ export function MonthlyEvaluationTab({
             <FileText className="h-8 w-8 text-blue-500" />
           </div>
           <h3 className="text-lg font-bold text-slate-900 mb-2">
-            Aucune évaluation validée pour {MONTH_NAMES[selectedMonth]} {selectedYear}
+            Aucune évaluation validée pour cette classe
           </h3>
           <p className="text-sm text-slate-600 mb-4">
             Aucune évaluation n'a encore été saisie et validée par l'enseignant pour la classe
-            <strong> {className}</strong> ce mois-ci.
+            <strong> {className}</strong>.
           </p>
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
             <p className="text-sm font-semibold text-blue-800 mb-2">Procédure :</p>
@@ -475,7 +461,7 @@ export function MonthlyEvaluationTab({
       <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between">
         <div>
           <h3 className="text-base font-bold text-slate-900">
-            Évaluations validées par l'enseignant — {MONTH_NAMES[selectedMonth]} {selectedYear}
+            Évaluations validées par l'enseignant
           </h3>
           <p className="text-xs text-slate-500 mt-1">
             {groups.length} évaluation(s) · Classe : {className}
@@ -493,7 +479,8 @@ export function MonthlyEvaluationTab({
       {/* Pour chaque groupe d'évaluations */}
       {groups.map((group) => {
         const rows = buildRows(group);
-        const stats = computeStats(group, rows);
+        const sortedSubjects = sortSubjects(group.subjects);
+        const stats = computeStats(group, rows, sortedSubjects);
         const sig = signatures[group.key] || { teacher: null, director: null };
         const allSubmitted = group.statuses.every(s => s === 'SUBMITTED' || s === 'VALIDATED' || s === 'LOCKED');
         const allValidated = group.statuses.every(s => s === 'VALIDATED' || s === 'LOCKED');
@@ -517,7 +504,8 @@ export function MonthlyEvaluationTab({
                 {group.firstEvaluation.title || `ÉVALUATION MENSUELLE — ${group.evaluationTypeName}`}
               </h2>
               <div className="text-sm text-slate-600 mt-1">
-                Classe : <strong>{group.className}</strong> — {group.periodName || MONTH_NAMES[selectedMonth]} {selectedYear}
+                Classe : <strong>{group.className}</strong>
+                {group.periodName && ` — ${group.periodName}`}
               </div>
               <div className="text-xs text-slate-500 mt-1">
                 {dateRange} · {group.evaluationTypeName}
@@ -573,97 +561,269 @@ export function MonthlyEvaluationTab({
               )}
             </div>
 
-            {/* Tableau d'évaluation : matières × CM/CP/Total (Primaire) ou TS/S/PS (Maternelle) */}
+            {/* ⭐ Tableau IDENTIQUE au Module Examen (GradingSheet) — read-only */}
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-100">
                     <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">N°</th>
-                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "180px" }}>Nom et prénom</th>
+                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: '180px' }}>Nom et prénom</th>
                     <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Sexe</th>
-                    {group.subjects.map((subj, idx) => (
+                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-20">Présence</th>
+                    {sortedSubjects.map((subject, idx) => (
                       isMaternelle ? (
-                        <th key={idx} rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center" style={{ minWidth: "80px" }}>
-                          {subj.name}
+                        <th key={idx} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[100px]">
+                          {subject.name}
+                          <div className="text-[9px] text-slate-400 font-normal">TS / S / PS</div>
+                        </th>
+                      ) : isSecondaire ? (
+                        <th key={idx} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[80px]">
+                          {subject.name}
+                          <div className="text-[9px] text-slate-400 font-normal">Note /20</div>
                         </th>
                       ) : (
-                        <th key={idx} colSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center">
-                          {subj.name}
+                        <th key={idx} colSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[180px]">
+                          {subject.name}
                         </th>
                       )
                     ))}
-                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total général</th>
-                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Seuil atteint</th>
+                    {!isMaternelle && !isSecondaire && (
+                      <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total gén.</th>
+                    )}
+                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Rang</th>
+                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Seuil fixé</th>
+                    <th colSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-24">Seuil atteint</th>
+                    {isMaternelle && (
+                      <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-32">Appréciation globale</th>
+                    )}
+                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-32">Observation</th>
                   </tr>
-                  {!isMaternelle && (
+                  {!isSecondaire && (
                     <tr className="bg-slate-50">
-                      {group.subjects.flatMap((_, idx) => ([
-                        <th key={`cm-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CM /18</th>,
-                        <th key={`cp-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CP /2</th>,
-                        <th key={`tot-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Total</th>,
-                      ]))}
+                      {!isMaternelle && sortedSubjects.map((_, idx) => (
+                        <>
+                          <th key={`cm-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CM /18</th>
+                          <th key={`cp-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CP /2</th>
+                          <th key={`tot-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Total</th>
+                        </>
+                      ))}
+                      <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Oui</th>
+                      <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Non</th>
                     </tr>
                   )}
                 </thead>
                 <tbody>
-                  {rows.map((student, sIdx) => {
-                    const totalGeneral = computeTotalGeneral(student, group.subjects);
-                    const seuilAtteint = totalGeneral >= stats.seuilReussite;
+                  {rows.map((row, idx) => {
+                    // ⭐ Calculs IDENTIQUES à GradingSheet.tsx
+                    const totalGeneral = isMaternelle ? null : sortedSubjects.reduce((sum, subj) => {
+                      const s = row.scores[subj.id];
+                      if (!s || s.isAbsent) return sum;
+                      // Primaire : CM + CP ; Secondaire : score
+                      if (isSecondaire) return sum + (typeof s.score === 'number' ? s.score : 0);
+                      const cm = s.cm ?? 0;
+                      const cp = s.cp ?? 0;
+                      return sum + cm + cp;
+                    }, 0);
+                    const seuilAtteint = isMaternelle ? null : (
+                      totalGeneral !== null && totalGeneral >= (10 * sortedSubjects.length * 0.5)
+                    );
+                    // ⭐ Calcul du rang avec formatRang (comme GradingSheet)
+                    const rang = (() => {
+                      const sortedByTotal = [...rows]
+                        .map((r) => ({
+                          id: r.studentId,
+                          total: sortedSubjects.reduce((sum, subj) => {
+                            const s = r.scores[subj.id];
+                            if (!s || s.isAbsent) return sum;
+                            if (isMaternelle) {
+                              if (s.qualitativeCode === 'TS') return sum + 3;
+                              if (s.qualitativeCode === 'S') return sum + 2;
+                              if (s.qualitativeCode === 'PS') return sum + 1;
+                              return sum;
+                            }
+                            if (isSecondaire) return sum + (typeof s.score === 'number' ? s.score : 0);
+                            const cm = s.cm ?? 0;
+                            const cp = s.cp ?? 0;
+                            return sum + cm + cp;
+                          }, 0),
+                        }))
+                        .sort((a, b) => b.total - a.total);
+                      return sortedByTotal.findIndex((r) => r.id === row.studentId) + 1;
+                    })();
+
                     return (
-                      <tr key={student.studentId || sIdx} className={cn("hover:bg-slate-50", sIdx % 2 === 1 && "bg-slate-50/50")}>
-                        <td className="border border-slate-300 px-2 py-1 text-center font-semibold">{sIdx + 1}</td>
-                        <td className="border border-slate-300 px-2 py-1 font-medium">{student.studentName}</td>
+                      <tr
+                        key={row.studentId}
+                        className={cn(
+                          'hover:bg-slate-50 transition-colors',
+                          idx % 2 === 1 && 'bg-slate-50/50',
+                          Object.values(row.scores).some(s => s?.isAbsent) && 'bg-red-50/30'
+                        )}
+                      >
+                        <td className="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-600">{idx + 1}</td>
+                        <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900">{row.studentName}</td>
                         <td className="border border-slate-300 px-2 py-1 text-center">
-                          {student.gender?.startsWith('F') ? 'F' : 'M'}
+                          {row.gender === 'M' || row.gender === 'MALE' ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-cyan-100 text-cyan-700">M</span>
+                          ) : row.gender === 'F' || row.gender === 'FEMALE' ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-pink-100 text-pink-700">F</span>
+                          ) : '—'}
                         </td>
-                        {group.subjects.map((subj, subIdx) => {
-                          const score = student.scores[subj.id];
-                          if (isMaternelle) {
-                            // Maternelle : afficher TS/S/PS qualitatif
-                            const code = score?.qualitativeCode;
-                            const codeColor = code === 'TS' ? 'bg-emerald-100 text-emerald-700 font-bold' :
-                                              code === 'S' ? 'bg-blue-100 text-blue-700 font-bold' :
-                                              code === 'PS' ? 'bg-amber-100 text-amber-700 font-bold' :
-                                              'text-slate-400';
+                        {/* Colonne Présence (read-only display) */}
+                        <td className="border border-slate-300 px-1 py-1 text-center">
+                          {(() => {
+                            const allPresent = !Object.values(row.scores).some((s) => s?.isAbsent);
+                            const allAbsent = sortedSubjects.every((subj) => row.scores[subj.id]?.isAbsent);
+                            const isMixed = !allPresent && !allAbsent;
                             return (
-                              <td key={`s${sIdx}-q${subIdx}`} className="border border-slate-300 px-2 py-1 text-center">
-                                <span className={cn("inline-block px-2 py-0.5 rounded text-[10px]", codeColor)}>
-                                  {code || '—'}
+                              <div className="flex gap-0.5 justify-center items-center">
+                                <span className={cn(
+                                  'px-2 py-1 rounded text-xs font-bold',
+                                  allPresent ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-500'
+                                )}>P</span>
+                                <span className={cn(
+                                  'px-2 py-1 rounded text-xs font-bold',
+                                  allAbsent ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-500'
+                                )}>A</span>
+                                {isMixed && (
+                                  <span className="text-[9px] font-bold text-amber-600 ml-0.5" title="Présence mixte">⚠</span>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </td>
+                        {/* Matières (read-only display) */}
+                        {sortedSubjects.map((subject) => {
+                          const score = row.scores[subject.id] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
+                          if (isMaternelle) {
+                            // Maternelle : TS/S/PS en badges colorés
+                            return (
+                              <td key={subject.id} className="border border-slate-300 px-1 py-1 text-center">
+                                {score.isAbsent ? (
+                                  <span className="text-xs text-red-500">—</span>
+                                ) : score.qualitativeCode ? (
+                                  <span className={cn(
+                                    'inline-block px-2 py-1 rounded text-xs font-bold',
+                                    score.qualitativeCode === 'TS' && 'bg-emerald-600 text-white',
+                                    score.qualitativeCode === 'S' && 'bg-blue-600 text-white',
+                                    score.qualitativeCode === 'PS' && 'bg-amber-600 text-white',
+                                  )}>
+                                    {score.qualitativeCode}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-slate-400">—</span>
+                                )}
+                              </td>
+                            );
+                          }
+                          if (isSecondaire) {
+                            // Secondaire : note /20
+                            return (
+                              <td key={subject.id} className="border border-slate-300 px-1 py-1 text-center">
+                                <span className={cn(
+                                  'text-xs font-bold',
+                                  score.isAbsent && 'text-red-500',
+                                  !score.isAbsent && score.score !== null && typeof score.score === 'number' &&
+                                    (Number(score.score) < 10 ? 'text-rose-600' : Number(score.score) >= 14 ? 'text-emerald-600' : 'text-slate-900')
+                                )}>
+                                  {score.isAbsent ? '—' : (score.score ?? '—')}
                                 </span>
                               </td>
                             );
                           }
-                          // Primaire : CM / CP / Total
+                          // Primaire : CM/CP/Total (read-only display)
+                          const cmValue = score.cm ?? null;
+                          const cpValue = score.cp ?? null;
+                          const totalValue = (cmValue !== null ? cmValue : 0) + (cpValue !== null ? cpValue : 0);
                           return (
                             <>
-                              <td key={`s${sIdx}-cm${subIdx}`} className="border border-slate-300 px-2 py-1 text-center">
-                                {score?.cm ?? '—'}
+                              <td key={`cm-${subject.id}`} className="border border-slate-300 px-1 py-1 text-center">
+                                <span className={cn(
+                                  'text-xs font-bold',
+                                  score.isAbsent && 'text-red-500',
+                                  !score.isAbsent && cmValue !== null && typeof cmValue === 'number' &&
+                                    (Number(cmValue) < 10 ? 'text-rose-600' : Number(cmValue) >= 14 ? 'text-emerald-600' : 'text-slate-900')
+                                )}>
+                                  {score.isAbsent ? '—' : (cmValue ?? '—')}
+                                </span>
                               </td>
-                              <td key={`s${sIdx}-cp${subIdx}`} className="border border-slate-300 px-2 py-1 text-center">
-                                {score?.cp ?? '—'}
+                              <td key={`cp-${subject.id}`} className="border border-slate-300 px-1 py-1 text-center">
+                                <span className={cn(
+                                  'text-xs font-bold',
+                                  (score.isAbsent || cmValue === null || cmValue < 10) ? 'text-slate-400' : 'text-slate-900'
+                                )}>
+                                  {score.isAbsent ? '—' : (cpValue ?? '—')}
+                                </span>
                               </td>
-                              <td key={`s${sIdx}-tot${subIdx}`} className="border border-slate-300 px-2 py-1 text-center font-bold bg-slate-50">
-                                {score ? computeTotal(score) : '—'}
+                              <td key={`tot-${subject.id}`} className="border border-slate-300 px-2 py-1 text-center font-bold bg-slate-50">
+                                {score.isAbsent ? '—' : (cmValue !== null || cpValue !== null ? Number(totalValue).toFixed(2) : '—')}
                               </td>
                             </>
                           );
                         })}
-                        <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-700 bg-blue-50">
-                          {totalGeneral}
+                        {/* Total général */}
+                        {!isMaternelle && !isSecondaire && (
+                          <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-700 bg-blue-50">
+                            {totalGeneral !== null ? totalGeneral.toFixed(2) : '—'}
+                          </td>
+                        )}
+                        {/* Rang */}
+                        <td className="border border-slate-300 px-2 py-1 text-center font-bold text-slate-700">
+                          {formatRang(rang, row.gender)}
                         </td>
-                        <td className="border border-slate-300 px-2 py-1 text-center">
-                          {seuilAtteint ? (
-                            <CheckCircle2 className="h-4 w-4 text-emerald-600 mx-auto" />
-                          ) : (
-                            <XCircle className="h-4 w-4 text-red-500 mx-auto" />
-                          )}
+                        {/* Seuil fixé */}
+                        <td className="border border-slate-300 px-2 py-1 text-center text-slate-600 font-semibold">
+                          {isMaternelle ? 'S' : '10'}
+                        </td>
+                        {/* Seuil atteint Oui */}
+                        <td className="border border-slate-300 px-1 py-1 text-center">
+                          {(() => {
+                            if (isMaternelle) {
+                              const appreciation = computeAppreciationGlobale(row.scores, sortedSubjects);
+                              return (appreciation === 'Très Satisfaisant' || appreciation === 'Satisfaisant') ? '✓' : '';
+                            }
+                            return seuilAtteint ? '✓' : '';
+                          })()}
+                        </td>
+                        {/* Seuil atteint Non */}
+                        <td className="border border-slate-300 px-1 py-1 text-center">
+                          {(() => {
+                            if (isMaternelle) {
+                              const appreciation = computeAppreciationGlobale(row.scores, sortedSubjects);
+                              return appreciation === 'Peu Satisfaisant' ? '✓' : '';
+                            }
+                            return !seuilAtteint && totalGeneral !== null ? '✓' : '';
+                          })()}
+                        </td>
+                        {/* Appréciation globale (Maternelle) */}
+                        {isMaternelle && (
+                          <td className="border border-slate-300 px-2 py-1 text-center font-bold">
+                            <span className={cn(
+                              'text-xs',
+                              computeAppreciationGlobale(row.scores, sortedSubjects) === 'Très Satisfaisant' && 'text-emerald-600',
+                              computeAppreciationGlobale(row.scores, sortedSubjects) === 'Satisfaisant' && 'text-blue-600',
+                              computeAppreciationGlobale(row.scores, sortedSubjects) === 'Peu Satisfaisant' && 'text-amber-600',
+                            )}>
+                              {computeAppreciationGlobale(row.scores, sortedSubjects)}
+                            </span>
+                          </td>
+                        )}
+                        {/* Observation */}
+                        <td className="border border-slate-300 px-2 py-1 text-center text-xs text-slate-600">
+                          {(() => {
+                            const firstSubj = sortedSubjects[0];
+                            return firstSubj ? (row.scores[firstSubj.id]?.comment || '—') : '—';
+                          })()}
                         </td>
                       </tr>
                     );
                   })}
                   {rows.length === 0 && (
                     <tr>
-                      <td colSpan={isMaternelle ? 4 + group.subjects.length + 2 : 4 + group.subjects.length * 3 + 2} className="border border-slate-300 px-4 py-8 text-center text-slate-400 text-sm">
+                      <td
+                        colSpan={isMaternelle ? 10 + group.subjects.length : isSecondaire ? 9 + group.subjects.length : 10 + group.subjects.length * 3}
+                        className="border border-slate-300 px-4 py-8 text-center text-slate-400 text-sm"
+                      >
                         Aucun élève dans cette classe.
                       </td>
                     </tr>

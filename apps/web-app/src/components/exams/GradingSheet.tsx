@@ -25,6 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
+import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import apiClient from '@/lib/api/client';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import { format } from 'date-fns';
@@ -193,6 +194,7 @@ export function GradingSheet({
   const [searchQuery, setSearchQuery] = useState('');
   const { academicYear } = useModuleContext();
   const [presenceModalStudent, setPresenceModalStudent] = useState<GradeRow | null>(null);
+  const { warning, dialog: confirmDialog } = useConfirmDialog();
 
   // ⭐ Vérifier si les notes sont verrouillées (soumises ou validées)
   // Si verrouillées, l'enseignant ne peut plus modifier — il doit demander un déverrouillage
@@ -339,6 +341,7 @@ export function GradingSheet({
   const handleSave = async (submit = false) => {
     setSaving(true);
     try {
+      // 1. Sauvegarder les notes
       await Promise.all(
         group.evaluationIds.map(async (evId) => {
           const evIndex = group.evaluationIds.indexOf(evId);
@@ -369,6 +372,21 @@ export function GradingSheet({
           }
         })
       );
+
+      // 2. Si soumission : changer le statut de l'évaluation à SUBMITTED
+      if (submit) {
+        await Promise.all(
+          group.evaluationIds.map(async (evId) => {
+            try {
+              await apiClient.patch(`/institutional-exams/evaluations/${evId}/submit`);
+            } catch (err: any) {
+              console.error(`Failed to submit evaluation ${evId}:`, err.response?.data || err.message);
+              // Ne pas bloquer si une évaluation échoue — les notes sont déjà sauvées
+            }
+          })
+        );
+      }
+
       toastSuccess(submit ? 'Notes soumises pour validation' : 'Notes enregistrées', {
         description: `${rows.length} élève(s) · ${group.subjects.length} matière(s)`,
       });
@@ -388,6 +406,15 @@ export function GradingSheet({
       (r.matricule || '').toLowerCase().includes(q)
     );
   }, [rows, searchQuery]);
+
+  // ⭐ Pagination automatique : 100 élèves par page
+  const PAGE_SIZE = 100;
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.ceil(filteredRows.length / PAGE_SIZE);
+  const paginatedRows = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredRows.slice(start, start + PAGE_SIZE);
+  }, [filteredRows, currentPage]);
 
   const stats = useMemo(() => {
     if (rows.length === 0) return { filled: 0, total: 0, absent: 0, studentsAbsent: 0 };
@@ -505,7 +532,17 @@ export function GradingSheet({
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => handleSave(true)}
+                  onClick={async () => {
+                    const ok = await warning(
+                      `Soumettre les notes de ${group.className} pour validation ?\n\n` +
+                      `Évaluation : ${group.evaluationTypeName}\n` +
+                      `${rows.length} élève(s) · ${group.subjects.length} matière(s)\n\n` +
+                      `⚠️ Après soumission, les notes seront verrouillées. Pour les modifier, vous devrez demander un déverrouillage à l'administration.`,
+                      'Soumettre pour validation',
+                      'Cette action rendra les notes non modifiables jusqu\'à validation par l\'administration.'
+                    );
+                    if (ok) handleSave(true);
+                  }}
                   disabled={saving || loading || isLocked}
                   className="bg-blue-600 hover:bg-blue-700 text-white border-blue-700"
                 >
@@ -627,7 +664,7 @@ export function GradingSheet({
                       )}
                     </thead>
                     <tbody>
-                      {filteredRows.map((row, idx) => {
+                      {paginatedRows.map((row, idx) => {
                         const totalGeneral = isMaternelle ? null : sortedSubjects.reduce((sum, subj) => {
                           const s = row.scores[subj.id];
                           return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
@@ -914,6 +951,33 @@ export function GradingSheet({
                     </tbody>
                   </table>
                 </div>
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between px-4 py-3 bg-white border border-gray-200 rounded-xl">
+                    <p className="text-xs text-gray-500">
+                      Page {currentPage} sur {totalPages} — {filteredRows.length} élève(s) au total
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                        className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      >
+                        ← Précédent
+                      </button>
+                      <span className="px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 rounded-lg">
+                        {currentPage} / {totalPages}
+                      </span>
+                      <button
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Suivant →
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {/* Légende */}
                 <div className="bg-gray-50 rounded-xl p-3 text-xs text-gray-600">
                   <p className="font-semibold mb-1">
@@ -1032,6 +1096,7 @@ export function GradingSheet({
         }}
       />
     )}
+    {confirmDialog}
     </>
   );
 }

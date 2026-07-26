@@ -26,7 +26,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Save, Send, ChevronLeft, Calendar, Users, BookOpen, Loader2,
   RefreshCw, Search, GraduationCap, School, AlertCircle, CheckCircle2, XCircle,
-  ClipboardList, Settings, ShieldCheck,
+  ClipboardList, Settings, ShieldCheck, Settings2, X,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -520,6 +520,8 @@ function GradingSheet({
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const { academicYear } = useModuleContext();
+  // ⭐ Modal présence par matière
+  const [presenceModalStudent, setPresenceModalStudent] = useState<GradeRow | null>(null);
 
   // ⭐ Trier les matières selon l'ordre pédagogique (Primaire/Maternelle)
   const sortedSubjects = useMemo(() => {
@@ -550,32 +552,16 @@ function GradingSheet({
           })
         );
 
-        // Construire la map evaluationId → subjectId
+        // ⭐ Construire la map evaluationId → subjectId
+        // Le mapping est direct : evaluationIds[i] → subjects[i]
+        // (garanti par la construction du group dans le useMemo du parent)
         const evalToSubject = new Map<string, string>();
-        // Refetch les évaluations avec leur subject via institutionalExamsService
-        try {
-          const evalsRes = await institutionalExamsService.getEvaluations({
-            academicYearId: academicYear?.id || '',
-            schoolLevelId: group.classId,
-          });
-          const evalsWithSubject = (Array.isArray(evalsRes) ? evalsRes : []).filter(
-            (ev: Evaluation) => group.evaluationIds.includes(ev.id)
-          );
-          evalsWithSubject.forEach((ev: Evaluation) => {
-            if (ev.subject?.id) {
-              evalToSubject.set(ev.id, ev.subject.id);
-            }
-          });
-        } catch (err) {
-          console.warn('Failed to fetch evaluations for subject mapping', err);
-        }
-
-        // Fallback : si on n'arrive pas à résoudre, on associe par ordre
-        if (evalToSubject.size === 0 && group.subjects.length === group.evaluationIds.length) {
-          group.evaluationIds.forEach((evId, i) => {
-            evalToSubject.set(evId, group.subjects[i].id);
-          });
-        }
+        group.evaluationIds.forEach((evId, idx) => {
+          const subjectId = group.subjects[idx]?.id;
+          if (subjectId) {
+            evalToSubject.set(evId, subjectId);
+          }
+        });
 
         // Construire la map studentId → GradeRow
         const studentMap = new Map<string, GradeRow>();
@@ -726,28 +712,29 @@ function GradingSheet({
   const handleSave = async (submit = false) => {
     setSaving(true);
     try {
-      // Refetch les évaluations pour résoudre evaluationId → subjectId
-      let evalsWithSubject: Evaluation[] = [];
-      try {
-        const evalsRes = await institutionalExamsService.getEvaluations({
-          academicYearId: academicYear?.id || '',
-          schoolLevelId: group.classId,
-        });
-        evalsWithSubject = (Array.isArray(evalsRes) ? evalsRes : []).filter(
-          (e: Evaluation) => group.evaluationIds.includes(e.id)
-        );
-      } catch (err) {
-        console.warn('Failed to fetch evaluations for save', err);
-      }
-
-      // Sauvegarder chaque évaluation du groupe séparément
+      // ⭐ Sauvegarder chaque évaluation du groupe séparément.
+      // Le backend utilise evaluation.subjectId (pas besoin de le résoudre côté frontend).
+      // On envoie TOUS les élèves pour chaque évaluation — le backend crée
+      // un Grade par (evaluation × student) avec le bon subjectId.
       await Promise.all(
         group.evaluationIds.map(async (evId) => {
-          const ev = evalsWithSubject.find((e) => e.id === evId);
-          const subjectId = ev?.subject?.id;
-          if (!subjectId) return;
+          // Pour cette évaluation, trouver le subjectId correspondant.
+          // Le mapping evaluationId → subjectId vient du load initial
+          // (chaque évaluation a un subjectId dans evaluation.subject.id).
+          // Comme on n'a pas directement accès aux evaluations originales ici,
+          // on construit un mapping à partir du premier élément du group.
+          // ⭐ En pratique, chaque évaluation du groupe a UN subjectId unique.
+          // On les a dans l'ordre : evaluationIds[0] → subjects[0], etc.
+          // (garanti par la construction du group dans le useMemo)
+          const evIndex = group.evaluationIds.indexOf(evId);
+          const subjectId = group.subjects[evIndex]?.id;
 
-          // Filtrer les grades pour ce sujet
+          if (!subjectId) {
+            console.warn(`No subjectId found for evaluation ${evId}, skipping`);
+            return;
+          }
+
+          // Envoyer tous les élèves avec leur note pour cette matière
           const gradesForEval = rows
             .filter((row) => row.scores[subjectId])
             .map((row) => ({
@@ -762,10 +749,21 @@ function GradingSheet({
               status: submit ? 'SUBMITTED' : 'DRAFT',
             }));
 
-          await apiClient.post(
-            `/institutional-exams/grades/evaluation/${evId}/bulk`,
-            gradesForEval,
-          );
+          if (gradesForEval.length === 0) {
+            console.warn(`No grades to save for evaluation ${evId} (subject ${subjectId})`);
+            return;
+          }
+
+          try {
+            const response = await apiClient.post(
+              `/institutional-exams/grades/evaluation/${evId}/bulk`,
+              gradesForEval,
+            );
+            console.log(`[handleSave] Evaluation ${evId}: ${gradesForEval.length} grades saved`, response.data);
+          } catch (err: any) {
+            console.error(`[handleSave] Failed to save evaluation ${evId}:`, err.response?.data || err.message);
+            throw err;
+          }
         })
       );
 
@@ -830,17 +828,22 @@ function GradingSheet({
     : 'Date non définie';
 
   return (
+    <>
     <ModuleContainer
-      header={{
-        title: `Fiche de saisie — ${group.evaluationTypeName}`,
-        description: `${group.className} · ${group.periodName} · ${dateRange}`,
-        icon: 'clipboardList',
-      }}
       subModules={{ modules: scopedSubModules, activeModuleId: 'grades' }}
       content={{
         layout: 'full',
         children: (
           <div className="space-y-4">
+            {/* ⭐ Titre de la fiche à l'intérieur de l'onglet */}
+            <div className="bg-white border-2 border-slate-800 rounded-xl p-4 text-center">
+              <h2 className="text-lg font-bold text-slate-900">
+                FICHE DE SAISIE DES NOTES — {group.evaluationTypeName}
+              </h2>
+              <div className="text-sm text-slate-600 mt-1">
+                Classe : <strong>{group.className}</strong> • {group.periodName} • {dateRange}
+              </div>
+            </div>
             {/* Action Bar */}
             <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-3">
               <Button variant="ghost" onClick={onBack}>
@@ -1026,61 +1029,93 @@ function GradingSheet({
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-pink-100 text-pink-700">F</span>
                               ) : '—'}
                             </td>
-                            {/* ⭐ Colonne Présence : boutons P (vert) / A (rouge) */}
+                            {/* ⭐ Colonne Présence : P/A global + bouton Détailler pour par-matière */}
                             <td className="border border-slate-300 px-1 py-1 text-center">
-                              <div className="flex gap-1 justify-center">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    // Marquer présent = pas absent pour toutes les matières
-                                    setRows((prev) => prev.map((r) => {
-                                      if (r.studentId !== row.studentId) return r;
-                                      const newScores = { ...r.scores };
-                                      sortedSubjects.forEach((subj) => {
-                                        newScores[subj.id] = { ...newScores[subj.id], isAbsent: false };
-                                      });
-                                      return { ...r, scores: newScores };
-                                    }));
-                                  }}
-                                  title="Présent"
-                                  className={cn(
-                                    'px-2 py-1 rounded text-xs font-bold transition',
-                                    !Object.values(row.scores).some((s) => s?.isAbsent)
-                                      ? 'bg-emerald-600 text-white'
-                                      : 'bg-gray-100 text-gray-600 hover:bg-emerald-100'
-                                  )}
-                                >
-                                  P
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    // Marquer absent pour toutes les matières
-                                    setRows((prev) => prev.map((r) => {
-                                      if (r.studentId !== row.studentId) return r;
-                                      const newScores = { ...r.scores };
-                                      sortedSubjects.forEach((subj) => {
-                                        newScores[subj.id] = {
-                                          ...newScores[subj.id],
-                                          isAbsent: true,
-                                          score: null,
-                                          qualitativeCode: null,
-                                        };
-                                      });
-                                      return { ...r, scores: newScores };
-                                    }));
-                                  }}
-                                  title="Absent"
-                                  className={cn(
-                                    'px-2 py-1 rounded text-xs font-bold transition',
-                                    Object.values(row.scores).some((s) => s?.isAbsent)
-                                      ? 'bg-red-600 text-white'
-                                      : 'bg-gray-100 text-gray-600 hover:bg-red-100'
-                                  )}
-                                >
-                                  A
-                                </button>
-                              </div>
+                              {(() => {
+                                // Calculer l'état agrégé
+                                const allPresent = !Object.values(row.scores).some((s) => s?.isAbsent);
+                                const allAbsent = sortedSubjects.every((subj) => row.scores[subj.id]?.isAbsent);
+                                const isMixed = !allPresent && !allAbsent;
+                                return (
+                                  <div className="flex gap-0.5 justify-center items-center">
+                                    {/* P = tout présent */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setRows((prev) => prev.map((r) => {
+                                          if (r.studentId !== row.studentId) return r;
+                                          const newScores = { ...r.scores };
+                                          sortedSubjects.forEach((subj) => {
+                                            newScores[subj.id] = { ...newScores[subj.id], isAbsent: false };
+                                          });
+                                          return { ...r, scores: newScores };
+                                        }));
+                                      }}
+                                      title="Présent (toutes matières)"
+                                      className={cn(
+                                        'px-2 py-1 rounded text-xs font-bold transition',
+                                        allPresent
+                                          ? 'bg-emerald-600 text-white'
+                                          : isMixed
+                                            ? 'bg-gray-100 text-gray-600 hover:bg-emerald-100'
+                                            : 'bg-gray-100 text-gray-600 hover:bg-emerald-100'
+                                      )}
+                                    >
+                                      P
+                                    </button>
+                                    {/* A = tout absent */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setRows((prev) => prev.map((r) => {
+                                          if (r.studentId !== row.studentId) return r;
+                                          const newScores = { ...r.scores };
+                                          sortedSubjects.forEach((subj) => {
+                                            newScores[subj.id] = {
+                                              ...newScores[subj.id],
+                                              isAbsent: true,
+                                              score: null,
+                                              qualitativeCode: null,
+                                            };
+                                          });
+                                          return { ...r, scores: newScores };
+                                        }));
+                                      }}
+                                      title="Absent (toutes matières)"
+                                      className={cn(
+                                        'px-2 py-1 rounded text-xs font-bold transition',
+                                        allAbsent
+                                          ? 'bg-red-600 text-white'
+                                          : isMixed
+                                            ? 'bg-gray-100 text-gray-600 hover:bg-red-100'
+                                            : 'bg-gray-100 text-gray-600 hover:bg-red-100'
+                                      )}
+                                    >
+                                      A
+                                    </button>
+                                    {/* ⭐ Bouton Détailler : ouvre le modal par matière */}
+                                    <button
+                                      type="button"
+                                      onClick={() => setPresenceModalStudent(row)}
+                                      title="Détailler la présence par matière"
+                                      className={cn(
+                                        'px-1.5 py-1 rounded text-xs transition',
+                                        isMixed
+                                          ? 'bg-amber-500 text-white'
+                                          : 'bg-gray-100 text-gray-500 hover:bg-amber-100'
+                                      )}
+                                    >
+                                      <Settings2 className="w-3 h-3" />
+                                    </button>
+                                    {/* Badge mixte */}
+                                    {isMixed && (
+                                      <span className="text-[9px] font-bold text-amber-600 ml-0.5" title="Présence mixte — cliquez sur l'icône pour détailler">
+                                        ⚠
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </td>
 
                             {sortedSubjects.map((subject) => {
@@ -1299,5 +1334,228 @@ function GradingSheet({
         ),
       }}
     />
+
+    {/* ⭐ Modal Présence par matière */}
+    {presenceModalStudent && (
+      <PresenceModal
+        student={presenceModalStudent}
+        subjects={sortedSubjects}
+        onClose={() => setPresenceModalStudent(null)}
+        onUpdate={(studentId, subjectId, isAbsent) => {
+          setRows((prev) => prev.map((r) => {
+            if (r.studentId !== studentId) return r;
+            const existing = r.scores[subjectId] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
+            return {
+              ...r,
+              scores: {
+                ...r.scores,
+                [subjectId]: {
+                  ...existing,
+                  isAbsent,
+                  // Si absent, effacer les notes
+                  ...(isAbsent ? { score: null, cm: null, cp: null, qualitativeCode: null } : {}),
+                },
+              },
+            };
+          }));
+          // Mettre à jour le modal avec les nouvelles données
+          setPresenceModalStudent((prev) => {
+            if (!prev || prev.studentId !== studentId) return prev;
+            const existing = prev.scores[subjectId] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
+            return {
+              ...prev,
+              scores: {
+                ...prev.scores,
+                [subjectId]: {
+                  ...existing,
+                  isAbsent,
+                  ...(isAbsent ? { score: null, cm: null, cp: null, qualitativeCode: null } : {}),
+                },
+              },
+            };
+          });
+        }}
+        onAllPresent={(studentId) => {
+          setRows((prev) => prev.map((r) => {
+            if (r.studentId !== studentId) return r;
+            const newScores = { ...r.scores };
+            sortedSubjects.forEach((subj) => {
+              newScores[subj.id] = { ...newScores[subj.id], isAbsent: false };
+            });
+            return { ...r, scores: newScores };
+          }));
+          setPresenceModalStudent((prev) => {
+            if (!prev || prev.studentId !== studentId) return prev;
+            const newScores = { ...prev.scores };
+            sortedSubjects.forEach((subj) => {
+              newScores[subj.id] = { ...newScores[subj.id], isAbsent: false };
+            });
+            return { ...prev, scores: newScores };
+          });
+        }}
+        onAllAbsent={(studentId) => {
+          setRows((prev) => prev.map((r) => {
+            if (r.studentId !== studentId) return r;
+            const newScores = { ...r.scores };
+            sortedSubjects.forEach((subj) => {
+              newScores[subj.id] = {
+                ...newScores[subj.id],
+                isAbsent: true,
+                score: null,
+                cm: null,
+                cp: null,
+                qualitativeCode: null,
+              };
+            });
+            return { ...r, scores: newScores };
+          }));
+          setPresenceModalStudent((prev) => {
+            if (!prev || prev.studentId !== studentId) return prev;
+            const newScores = { ...prev.scores };
+            sortedSubjects.forEach((subj) => {
+              newScores[subj.id] = {
+                ...newScores[subj.id],
+                isAbsent: true,
+                score: null,
+                cm: null,
+                cp: null,
+                qualitativeCode: null,
+              };
+            });
+            return { ...prev, scores: newScores };
+          });
+        }}
+      />
+    )}
+    </>
+  );
+}
+
+// ─── Modal Présence par matière ───────────────────────────────────────────────
+
+function PresenceModal({
+  student,
+  subjects,
+  onClose,
+  onUpdate,
+  onAllPresent,
+  onAllAbsent,
+}: {
+  student: GradeRow;
+  subjects: Array<{ id: string; name: string }>;
+  onClose: () => void;
+  onUpdate: (studentId: string, subjectId: string, isAbsent: boolean) => void;
+  onAllPresent: (studentId: string) => void;
+  onAllAbsent: (studentId: string) => void;
+}) {
+  const absentCount = subjects.filter((s) => student.scores[s.id]?.isAbsent).length;
+  const presentCount = subjects.length - absentCount;
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* En-tête */}
+        <div className="px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              Présence par matière
+            </h3>
+            <p className="text-sm text-blue-100 mt-0.5">{student.studentName}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/20 transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Résumé */}
+        <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+          <div className="flex gap-4 text-xs">
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
+              {presentCount} présent{presentCount > 1 ? 's' : ''}
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full bg-red-500"></span>
+              {absentCount} absent{absentCount > 1 ? 's' : ''}
+            </span>
+            <span className="text-gray-400">/ {subjects.length} matière{subjects.length > 1 ? 's' : ''}</span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => onAllPresent(student.studentId)}
+              className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
+            >
+              Tout présent
+            </button>
+            <button
+              onClick={() => onAllAbsent(student.studentId)}
+              className="px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
+            >
+              Tout absent
+            </button>
+          </div>
+        </div>
+
+        {/* Liste des matières */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {subjects.map((subject) => {
+            const score = student.scores[subject.id];
+            const isAbsent = score?.isAbsent ?? false;
+            return (
+              <div
+                key={subject.id}
+                className={cn(
+                  'flex items-center justify-between p-3 rounded-xl border transition-colors',
+                  isAbsent ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <BookOpen className={cn('w-4 h-4', isAbsent ? 'text-red-400' : 'text-emerald-500')} />
+                  <span className="text-sm font-medium text-gray-900">{subject.name}</span>
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => onUpdate(student.studentId, subject.id, false)}
+                    className={cn(
+                      'px-3 py-1.5 rounded-lg text-xs font-bold transition',
+                      !isAbsent
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-500 hover:bg-emerald-100'
+                    )}
+                  >
+                    P
+                  </button>
+                  <button
+                    onClick={() => onUpdate(student.studentId, subject.id, true)}
+                    className={cn(
+                      'px-3 py-1.5 rounded-lg text-xs font-bold transition',
+                      isAbsent
+                        ? 'bg-red-600 text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-500 hover:bg-red-100'
+                    )}
+                  >
+                    A
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Pied */}
+        <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+          >
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

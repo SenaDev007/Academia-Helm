@@ -43,16 +43,16 @@ export const EXAMS_SUB_MODULES = [
     icon: FileEdit
   },
   {
-    id: 'registre',
-    label: 'Registre des notes',
-    href: '/app/exams/registre',
-    icon: ClipboardList
-  },
-  {
     id: 'validation',
     label: 'Validation',
     href: '/app/exams/validation',
     icon: CheckSquare
+  },
+  {
+    id: 'registre',
+    label: 'Registre des notes',
+    href: '/app/exams/registre',
+    icon: ClipboardList
   },
   {
     id: 'averages',

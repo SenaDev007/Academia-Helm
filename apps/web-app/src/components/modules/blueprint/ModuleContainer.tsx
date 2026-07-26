@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
 
 interface ModuleContainerProps {
   /** Configuration du header */
-  header: ModuleHeaderProps;
+  header?: ModuleHeaderProps;
   /** Configuration de la navigation sous-modules */
   subModules?: {
     modules?: SubModule[];
@@ -43,14 +43,16 @@ export default function ModuleContainer({
 }: ModuleContainerProps) {
   return (
     <div className={cn('flex flex-col space-y-6 animate-in fade-in duration-700', className)}>
-      {/* 1. Header du module */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <ModuleHeader {...header} />
-      </motion.div>
+      {/* 1. Header du module (seulement s'il est défini) */}
+      {header && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <ModuleHeader {...header} />
+        </motion.div>
+      )}
 
       {/* 2. Navigation des sous-modules (si présente) */}
       {subModules && (

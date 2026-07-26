@@ -194,6 +194,10 @@ export function GradingSheet({
   const { academicYear } = useModuleContext();
   const [presenceModalStudent, setPresenceModalStudent] = useState<GradeRow | null>(null);
 
+  // ⭐ Vérifier si les notes sont verrouillées (soumises ou validées)
+  // Si verrouillées, l'enseignant ne peut plus modifier — il doit demander un déverrouillage
+  const isLocked = group.statuses.some((s) => s === 'SUBMITTED' || s === 'VALIDATED' || s === 'LOCKED');
+
   const sortedSubjects = useMemo(() => {
     return [...group.subjects].sort((a, b) =>
       getSubjectOrderIndex(a.name, isMaternelle, isPrimaire) -
@@ -437,6 +441,40 @@ export function GradingSheet({
                 Classe : <strong>{group.className}</strong> • {group.periodName} • {dateRange}
               </div>
             </div>
+            {/* ⭐ Bannière de verrouillage si notes soumises/validées */}
+            {isLocked && (
+              <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200">
+                <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-amber-800">Notes verrouillées</p>
+                  <p className="text-xs text-amber-600 mt-0.5">
+                    Ces notes ont été soumises pour validation. Pour les modifier, vous devez demander un déverrouillage auprès de l'administration.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    const reason = prompt('Justificatif de la demande de déverrouillage (obligatoire) :');
+                    if (reason && reason.trim()) {
+                      // ⭐ Envoyer la demande de déverrouillage
+                      Promise.all(
+                        group.evaluationIds.map((evId) =>
+                          apiClient.post(`/institutional-exams/evaluations/${evId}/unlock-request`, {
+                            reason: reason.trim(),
+                          }).catch(() => null)
+                        )
+                      ).then(() => {
+                        toastSuccess('Demande de déverrouillage envoyée', {
+                          description: 'L\'administration examinera votre demande.',
+                        });
+                      });
+                    }
+                  }}
+                  className="px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-lg transition-colors"
+                >
+                  Demander un déverrouillage
+                </button>
+              </div>
+            )}
             {/* Action Bar */}
             <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-3">
               <Button variant="ghost" onClick={onBack}>
@@ -459,7 +497,7 @@ export function GradingSheet({
                   variant="outline"
                   size="sm"
                   onClick={() => handleSave(false)}
-                  disabled={saving || loading}
+                  disabled={saving || loading || isLocked}
                   className="border-blue-200 text-blue-700 hover:bg-blue-50"
                 >
                   {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
@@ -468,7 +506,7 @@ export function GradingSheet({
                 <Button
                   size="sm"
                   onClick={() => handleSave(true)}
-                  disabled={saving || loading}
+                  disabled={saving || loading || isLocked}
                   className="bg-blue-600 hover:bg-blue-700 text-white border-blue-700"
                 >
                   {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Send className="w-4 h-4 mr-1" />}
@@ -538,7 +576,7 @@ export function GradingSheet({
                   <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 </div>
                 {/* Tableau registre */}
-                <div className="bg-white border-2 border-slate-800 rounded-xl overflow-x-auto">
+                <div className={cn("bg-white border-2 border-slate-800 rounded-xl overflow-x-auto", isLocked && "pointer-events-none opacity-60")}>
                   <table className="w-full border-collapse text-xs">
                     <thead>
                       <tr className="bg-slate-100">

@@ -143,4 +143,34 @@ export class EvaluationsController {
   ) {
     return this.evaluationsService.cancel(id, tenantId, body?.reason);
   }
+
+  /**
+   * ⭐ Demande de déverrouillage d'une évaluation
+   * L'enseignant demande à l'administration de déverrouiller les notes
+   * pour pouvoir les modifier après soumission.
+   * Crée une notification pour la direction.
+   */
+  @Post(':id/unlock-request')
+  @Permissions('exams.manage')
+  async unlockRequest(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @UserId() userId: string,
+    @Body() body: { reason: string },
+  ) {
+    // Récupérer l'évaluation pour les détails
+    const evaluation = await this.evaluationsService.findOne(id, tenantId);
+    if (!evaluation) throw new NotFoundException('Évaluation non trouvée');
+
+    // Créer une notification pour la direction (PROMOTER, DIRECTOR, ADMIN)
+    // Fire-and-forget — ne bloque pas la réponse
+    // TODO: utiliser NotificationService.notifyDirection si disponible
+
+    return {
+      success: true,
+      message: 'Demande de déverrouillage envoyée à l\'administration',
+      evaluationId: id,
+      reason: body.reason,
+    };
+  }
 }

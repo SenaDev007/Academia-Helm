@@ -46,7 +46,8 @@ import { useExamSubModules, useExamScope } from '../layout';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from "@/lib/utils";
-import { GradingSheet } from "@/components/exams/GradingSheet";
+import { GradingSheet, type GroupedEvaluation } from "@/components/exams/GradingSheet";
+import { HierarchicalEvaluationList } from "@/components/exams/HierarchicalEvaluationList";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -357,16 +358,19 @@ export default function GradesPage() {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                {filteredGroups.map((group, idx) => (
-                  <EvaluationGroupCard
-                    key={`${group.classId}-${group.evaluationTypeId}-${idx}`}
-                    group={group}
-                    isMaternelle={isMaternelle}
-                    onClick={() => handleOpenGroup(group)}
-                  />
-                ))}
-              </div>
+              <HierarchicalEvaluationList
+                groups={filteredGroups}
+                onGroupClick={handleOpenGroup}
+                filterFn={(g) => g.statuses.some(s => s === 'OPEN_FOR_GRADING' || s === 'PLANNED')}
+                isMaternelle={isMaternelle}
+                renderStatusBadge={(g) => {
+                  const canGrade = g.statuses.some(s => s === 'OPEN_FOR_GRADING' || s === 'PLANNED');
+                  const isLocked = g.statuses.every(s => s === 'SUBMITTED' || s === 'VALIDATED' || s === 'LOCKED');
+                  const status = isLocked ? 'Soumise' : canGrade ? 'Saisie ouverte' : 'Planifiée';
+                  const color = isLocked ? 'bg-emerald-100 text-emerald-700' : canGrade ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700';
+                  return <span className={cn('text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap', color)}>{status}</span>;
+                }}
+              />
             )}
           </div>
         ),

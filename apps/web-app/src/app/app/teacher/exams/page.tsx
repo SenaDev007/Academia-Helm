@@ -34,6 +34,7 @@ import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
 import apiClient from '@/lib/api/client';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import { GradingSheet } from '@/components/exams/GradingSheet';
+import { HierarchicalEvaluationList } from '@/components/exams/HierarchicalEvaluationList';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -336,123 +337,22 @@ export default function TeacherExamsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {grouped.map((group, idx) => {
+        <HierarchicalEvaluationList
+          groups={grouped}
+          onGroupClick={(group) => {
             const canGrade = group.statuses.some(s => s === 'OPEN_FOR_GRADING' || s === 'PLANNED');
-            const isLocked = group.statuses.every(s => s === 'VALIDATED' || s === 'LOCKED' || s === 'SUBMITTED');
-            const headerStatus = isLocked
-              ? 'Soumise/Validée'
-              : canGrade ? 'Saisie ouverte' : 'Planifiée';
-
-            const startDate = group.startDate ? new Date(group.startDate) : null;
-            const endDate = group.endDate ? new Date(group.endDate) : null;
-            const sameDay = startDate && endDate &&
-              startDate.getFullYear() === endDate.getFullYear() &&
-              startDate.getMonth() === endDate.getMonth() &&
-              startDate.getDate() === endDate.getDate();
-            const dateRange = startDate
-              ? sameDay || !endDate
-                ? `Le ${format(startDate, 'd MMM yyyy', { locale: fr })}`
-                : `Du ${format(startDate, 'd MMM yyyy', { locale: fr })} au ${format(endDate, 'd MMM yyyy', { locale: fr })}`
-              : 'Date non définie';
-
-            return (
-              <button
-                key={`${group.classId}-${group.evaluationTypeId}-${idx}`}
-                onClick={() => canGrade && setSelectedGroup(group)}
-                disabled={!canGrade}
-                className={cn(
-                  'bg-white rounded-2xl border shadow-sm transition-all text-left flex flex-col',
-                  canGrade
-                    ? 'border-gray-200 hover:shadow-md hover:border-blue-300 cursor-pointer'
-                    : 'border-gray-100 opacity-60 cursor-not-allowed'
-                )}
-              >
-                {/* En-tête */}
-                <div className="px-5 py-4 bg-gradient-to-br from-blue-50 to-indigo-50/50 border-b border-blue-100">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center space-x-3 min-w-0">
-                      <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
-                        {(group.className || '?').slice(0, 2).toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="text-base font-bold text-navy-900 truncate">{group.className}</h3>
-                        <p className="text-xs text-gray-500">
-                          {group.subjects.length} matière{group.subjects.length > 1 ? 's' : ''} à évaluer
-                        </p>
-                      </div>
-                    </div>
-                    <span className={cn(
-                      'text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap',
-                      isLocked ? 'bg-emerald-100 text-emerald-700'
-                      : canGrade ? 'bg-amber-100 text-amber-700'
-                      : 'bg-blue-100 text-blue-700'
-                    )}>
-                      {headerStatus}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Corps */}
-                <div className="p-5 flex-1 space-y-3">
-                  <div>
-                    <p className="text-sm font-semibold text-navy-900">
-                      {group.evaluationTypeCode ? `[${group.evaluationTypeCode}] ` : ''}
-                      {group.evaluationTypeName}
-                    </p>
-                    {group.periodName && (
-                      <p className="text-xs text-gray-500 mt-0.5">{group.periodName}</p>
-                    )}
-                  </div>
-
-                  <div className="flex items-center space-x-1.5 text-xs text-gray-700 bg-gray-50 rounded-lg px-3 py-2">
-                    <Calendar className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-                    <span className="font-medium">{dateRange}</span>
-                  </div>
-
-                  <div className="space-y-1.5 pt-1">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                      Matières à évaluer
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {group.subjects.map((s) => (
-                        <span
-                          key={s.id}
-                          className="inline-flex items-center px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-medium border border-blue-100"
-                        >
-                          {s.name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Mode de saisie */}
-                  <div className="flex items-center space-x-2 pt-2 border-t border-gray-100">
-                    <span className={cn(
-                      'px-2 py-0.5 rounded text-xs font-semibold',
-                      isMaternelle ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'
-                    )}>
-                      {isMaternelle ? 'TS / S / PS' : '/ 20'}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {group.evaluationIds.length} élève(s) max
-                    </span>
-                  </div>
-                </div>
-
-                {/* Pied : action */}
-                {canGrade && (
-                  <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/30">
-                    <div className="flex items-center justify-end text-xs font-semibold text-blue-600">
-                      Saisir les notes
-                      <ChevronRight className="w-4 h-4 ml-1" />
-                    </div>
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
+            if (canGrade) setSelectedGroup(group);
+          }}
+          filterFn={(g) => g.statuses.some(s => s === 'OPEN_FOR_GRADING' || s === 'PLANNED')}
+          isMaternelle={isMaternelle}
+          renderStatusBadge={(g) => {
+            const canGrade = g.statuses.some(s => s === 'OPEN_FOR_GRADING' || s === 'PLANNED');
+            const isLocked = g.statuses.every(s => s === 'SUBMITTED' || s === 'VALIDATED' || s === 'LOCKED');
+            const status = isLocked ? 'Soumise' : canGrade ? 'Saisie ouverte' : 'Planifiée';
+            const color = isLocked ? 'bg-emerald-100 text-emerald-700' : canGrade ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700';
+            return <span className={cn('text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap', color)}>{status}</span>;
+          }}
+        />
       )}
     </div>
   );

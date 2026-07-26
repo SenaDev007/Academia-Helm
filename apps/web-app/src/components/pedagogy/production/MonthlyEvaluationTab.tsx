@@ -32,11 +32,12 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Loader2, FileText, AlertCircle, CheckCircle2,
-  Send, RefreshCw,
+  Send, RefreshCw, Printer,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
 import apiClient from "@/lib/api/client";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 // ⭐ Import des helpers partagés avec GradingSheet pour calculs identiques
 import {
   formatRang,
@@ -117,6 +118,17 @@ function cn(...classes: (string | false | undefined)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
+// ⭐ Échapper le HTML pour éviter les injections dans le PDF imprimable
+function escapeHtml(text: string): string {
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // ─── Composant principal ────────────────────────────────────────────────────
 
 export function MonthlyEvaluationTab({
@@ -139,12 +151,41 @@ export function MonthlyEvaluationTab({
   const [submitting, setSubmitting] = useState<string | null>(null); // group.key being submitted
   // Signatures par groupe (groupKey → { teacher, director })
   const [signatures, setSignatures] = useState<Record<string, { teacher: string | null; director: string | null }>>({});
+  // ⭐ Modal de confirmation professionnel (remplace window.confirm)
+  const { warning: confirmWarning, dialog: confirmDialog } = useConfirmDialog();
+  // ⭐ Infos école (pour export PDF)
+  const [schoolInfo, setSchoolInfo] = useState<{
+    name: string;
+    logoUrl: string | null;
+    address: string;
+    phone: string;
+    email: string;
+  } | null>(null);
 
   // ─── Déterminer isPrimaire vs isSecondaire ────────────────────────────────
   // Pour l'instant on suppose Primaire si pas Maternelle.
   // TODO: passer isSecondaire en prop si on veut gérer le secondaire ici aussi.
   const isPrimaire = !isMaternelle;
   const isSecondaire = false;
+
+  // ─── Charger les infos de l'école (pour export PDF) ─────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/settings/identity', { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          setSchoolInfo({
+            name: data.schoolName || data.name || data.tenantName || 'Établissement scolaire',
+            logoUrl: data.logoUrl || data.logo || null,
+            address: data.address || data.schoolAddress || '',
+            phone: data.phone || data.schoolPhone || '',
+            email: data.email || data.schoolEmail || '',
+          });
+        }
+      } catch { /* silent */ }
+    })();
+  }, []);
 
   // ─── Charger les évaluations validées par l'enseignant pour cette classe ────
   const loadEvaluations = useCallback(async () => {
@@ -389,12 +430,14 @@ export function MonthlyEvaluationTab({
       });
       return;
     }
-    const ok = window.confirm(
-      `Soumettre cette évaluation au directeur ?\n\n` +
+    // ⭐ Modal professionnel (remplace window.confirm)
+    const ok = await confirmWarning(
+      `Souhaitez-vous soumettre cette évaluation au directeur ?`,
+      'Soumission au directeur',
       `Classe : ${group.className}\n` +
       `Période : ${group.periodName || '—'}\n` +
       `Type : ${group.evaluationTypeName}\n\n` +
-      `Cette action est irréversible.`
+      `Cette action est irréversible. Vous ne pourrez plus modifier les notes après la soumission.`
     );
     if (!ok) return;
     setSubmitting(group.key);
@@ -427,6 +470,240 @@ export function MonthlyEvaluationTab({
     } finally {
       setSubmitting(null);
     }
+  };
+
+  // ─── Export PDF (génère un PDF imprimable avec en-tête école, tableau,
+  //    récapitulatif et signatures) ───────────────────────────────────────────
+  const handleExportPDF = (group: GroupedEvaluation) => {
+    const rows = buildRows(group);
+    const sortedSubjects = sortSubjects(group.subjects);
+    const stats = computeStats(group, rows, sortedSubjects);
+    const sig = signatures[group.key] || { teacher: null, director: null };
+    const startDate = group.startDate ? new Date(group.startDate) : null;
+    const endDate = group.endDate ? new Date(group.endDate) : null;
+    const sameDay = startDate && endDate &&
+      startDate.getFullYear() === endDate.getFullYear() &&
+      startDate.getMonth() === endDate.getMonth() &&
+      startDate.getDate() === endDate.getDate();
+    const dateRange = startDate
+      ? sameDay || !endDate
+        ? `Le ${startDate.toLocaleDateString('fr-FR')}`
+        : `Du ${startDate.toLocaleDateString('fr-FR')} au ${endDate.toLocaleDateString('fr-FR')}`
+      : 'Date non définie';
+
+    // ⭐ Ouvrir une fenêtre d'impression avec le HTML du PDF
+    const printWindow = window.open('', '_blank', 'width=1100,height=900');
+    if (!printWindow) {
+      toast.error("Impossible d'ouvrir la fenêtre d'impression", {
+        description: "Veuillez autoriser les popups pour ce site.",
+      });
+      return;
+    }
+
+    // ⭐ Couleurs du design system
+    const N = '#0b2f73', B = '#1d4fa5', G = '#f5b335';
+    const SCHOOL_NAME = schoolInfo?.name || 'Établissement scolaire';
+    const SCHOOL_LOGO = schoolInfo?.logoUrl || '';
+    const SCHOOL_ADDR = schoolInfo?.address || '';
+    const SCHOOL_PHONE = schoolInfo?.phone || '';
+    const SCHOOL_EMAIL = schoolInfo?.email || '';
+
+    // ⭐ Construire les en-têtes du tableau (2 lignes avec rowSpan/colSpan)
+    const matiereHeader = sortedSubjects.map((subj) => {
+      if (isMaternelle) {
+        return `<th rowspan="2" class="matiere-th" style="min-width:80px">${escapeHtml(subj.name)}<div class="sub">TS/S/PS</div></th>`;
+      }
+      return `<th colspan="3" class="matiere-th" style="min-width:180px">${escapeHtml(subj.name)}</th>`;
+    }).join('');
+    const subHeader = !isMaternelle && !isSecondaire ? sortedSubjects.map((_, idx) => `
+      <th class="sub-th">CM /18</th>
+      <th class="sub-th">CP /2</th>
+      <th class="sub-th">Total</th>
+    `).join('') : '';
+
+    // ⭐ Construire les lignes du tableau
+    const rowsHtml = rows.map((row, idx) => {
+      let totalGeneral = 0;
+      let nbMatieresEvaluees = 0;
+      let hasComposed = false;
+      for (const subj of sortedSubjects) {
+        const s = row.scores[subj.id];
+        if (!s || s.isAbsent) continue;
+        if (isMaternelle) {
+          if (s.qualitativeCode) { hasComposed = true; nbMatieresEvaluees++; }
+        } else if (isSecondaire) {
+          if (s.score !== null) { hasComposed = true; nbMatieresEvaluees++; totalGeneral += s.score || 0; }
+        } else {
+          if (s.cm !== null || s.cp !== null) {
+            hasComposed = true; nbMatieresEvaluees++;
+            totalGeneral += (s.cm ?? 0) + (s.cp ?? 0);
+          }
+        }
+      }
+      const moyenne = nbMatieresEvaluees > 0 ? totalGeneral / nbMatieresEvaluees : 0;
+      const seuilAtteint = isMaternelle ? null : (hasComposed && moyenne >= 10);
+
+      // Cellules matières
+      const cells = sortedSubjects.map((subj) => {
+        const score = row.scores[subj.id] || { cm: null, cp: null, score: null, qualitativeCode: null, isAbsent: false };
+        if (isMaternelle) {
+          const code = score.isAbsent ? '—' : (score.qualitativeCode || '—');
+          return `<td class="cell center">${escapeHtml(code)}</td>`;
+        }
+        if (isSecondaire) {
+          const v = score.isAbsent ? '—' : (score.score ?? '—');
+          return `<td class="cell center">${escapeHtml(String(v))}</td>`;
+        }
+        const cm = score.isAbsent ? '—' : (score.cm ?? '—');
+        const cp = score.isAbsent ? '—' : (score.cp ?? '—');
+        const total = score.isAbsent ? '—' : ((score.cm !== null || score.cp !== null) ? ((score.cm || 0) + (score.cp || 0)).toFixed(2) : '—');
+        return `<td class="cell center">${escapeHtml(String(cm))}</td><td class="cell center">${escapeHtml(String(cp))}</td><td class="cell center bold bg-slate">${escapeHtml(String(total))}</td>`;
+      }).join('');
+
+      const totalGenCell = !isMaternelle && !isSecondaire
+        ? `<td class="cell center bold blue-bg">${hasComposed ? totalGeneral.toFixed(2) : '—'}</td>`
+        : '';
+      const seuilFixe = isMaternelle ? 'S' : '10';
+      const ouiCell = isMaternelle
+        ? '<td class="cell center"></td>'
+        : `<td class="cell center">${seuilAtteint ? '✓' : ''}</td>`;
+      const nonCell = isMaternelle
+        ? '<td class="cell center"></td>'
+        : `<td class="cell center">${hasComposed && !seuilAtteint ? '✓' : ''}</td>`;
+
+      return `<tr style="background:${idx % 2 === 1 ? '#f8fafc' : '#fff'}">
+        <td class="cell center">${idx + 1}</td>
+        <td class="cell">${escapeHtml(row.studentName)}</td>
+        <td class="cell center">${escapeHtml((row.gender || '').startsWith('F') ? 'F' : 'M')}</td>
+        ${cells}
+        ${totalGenCell}
+        <td class="cell center"></td>
+        <td class="cell center">${seuilFixe}</td>
+        ${ouiCell}
+        ${nonCell}
+      </tr>`;
+    }).join('');
+
+    // ⭐ Section récapitulatif
+    const statsHtml = `
+      <table class="stats-table">
+        <thead><tr>
+          <th>Indicateur</th><th>Garçons</th><th>Filles</th><th>Total</th>
+        </tr></thead>
+        <tbody>
+          <tr><td class="bold">Effectif total de la classe</td>
+            <td class="center">${stats.effectifG}</td><td class="center">${stats.effectifF}</td><td class="center bold">${stats.effectifTotal}</td></tr>
+          <tr><td class="bold">Nombre d'élèves ayant composé</td>
+            <td class="center">${stats.ayantComposeG || '—'}</td><td class="center">${stats.ayantComposeF || '—'}</td><td class="center bold">${stats.ayantComposeTotal || '—'}</td></tr>
+          <tr style="background:#ecfdf5"><td class="bold">Ont atteint le seuil de réussite</td>
+            <td class="center" style="color:#047857">${stats.ayantAtteintSeuilG || '—'}</td><td class="center" style="color:#047857">${stats.ayantAtteintSeuilF || '—'}</td><td class="center bold" style="color:#047857">${stats.ayantAtteintSeuilTotal || '—'}</td></tr>
+          <tr style="background:#fef2f2"><td class="bold">N'ont pas atteint le seuil</td>
+            <td class="center" style="color:#b91c1c">${stats.nAyantPasAtteintG || '—'}</td><td class="center" style="color:#b91c1c">${stats.nAyantPasAtteintF || '—'}</td><td class="center bold" style="color:#b91c1c">${stats.nAyantPasAtteintTotal || '—'}</td></tr>
+          <tr style="background:#eff6ff"><td class="bold">% de réussite</td>
+            <td class="center bold" style="color:#1d4ed8">${stats.pourcentageReussiteG.toFixed(2)}%</td>
+            <td class="center bold" style="color:#1d4ed8">${stats.pourcentageReussiteF.toFixed(2)}%</td>
+            <td class="center bold" style="color:#1e40af">${stats.pourcentageReussiteTotal.toFixed(2)}%</td></tr>
+        </tbody>
+      </table>
+    `;
+
+    // ⭐ Section signatures
+    const signaturesHtml = `
+      <div class="signatures">
+        <div class="sig-block">
+          <div class="sig-label">Le Titulaire de la classe</div>
+          <div class="sig-name">${escapeHtml(teacherName || 'Nom du titulaire')} — Signature</div>
+          ${sig.teacher
+            ? `<div class="sig-img"><img src="${sig.teacher}" alt="Signature Titulaire" style="max-height:80px" /></div>`
+            : `<div class="sig-placeholder">Signature en attente</div>`}
+        </div>
+        <div class="sig-block">
+          <div class="sig-label">Le Directeur / La Directrice</div>
+          <div class="sig-name">${escapeHtml(directorName || 'Nom du directeur')} — Signature et cachet</div>
+          ${sig.director
+            ? `<div class="sig-img"><img src="${sig.director}" alt="Signature Directeur" style="max-height:80px" /></div>`
+            : `<div class="sig-placeholder">Signature en attente</div>`}
+        </div>
+      </div>
+    `;
+
+    printWindow.document.write(`<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8">
+<title>Évaluation mensuelle — ${escapeHtml(group.className)}</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Arial', sans-serif; padding: 20px; font-size: 11px; color: #1e293b; }
+.header { text-align: center; margin-bottom: 12px; border-bottom: 3px solid ${G}; padding-bottom: 10px; }
+.header .logo { max-height: 60px; margin: 0 auto 8px; display: block; }
+.header h1 { color: ${N}; font-size: 14px; }
+.header h2 { font-size: 11px; color: ${B}; margin-top: 3px; }
+.header .school-info { font-size: 9px; color: #64748b; margin-top: 3px; }
+.eval-info { text-align: center; margin: 12px 0; }
+.eval-info h2 { color: ${N}; font-size: 13px; }
+.eval-info p { font-size: 10px; color: #475569; margin-top: 2px; }
+table.notes { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+table.notes th, table.notes td { border: 1px solid #cbd5e1; padding: 3px 5px; font-size: 9px; }
+.matiere-th { background: ${N}; color: #fff; font-weight: bold; text-align: center; padding: 4px 2px; font-size: 9px; }
+.sub-th { background: #f1f5f9; color: #475569; font-weight: bold; font-size: 8px; padding: 2px; }
+.cell { padding: 3px 4px; font-size: 9px; }
+.center { text-align: center; }
+.bold { font-weight: bold; }
+.blue-bg { background: #eff6ff; color: #1d4fa5; }
+.bg-slate { background: #f8fafc; }
+table.stats-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+table.stats-table th { background: ${N}; color: #fff; padding: 5px 8px; font-size: 9px; font-weight: bold; text-align: center; }
+table.stats-table td { border: 1px solid #cbd5e1; padding: 4px 8px; font-size: 9px; }
+.signatures { display: flex; justify-content: space-between; margin-top: 30px; gap: 30px; }
+.sig-block { flex: 1; }
+.sig-label { font-weight: bold; font-size: 10px; color: ${N}; }
+.sig-name { font-size: 9px; color: #64748b; margin-bottom: 8px; }
+.sig-img { border: 1px solid #cbd5e1; padding: 4px; min-height: 80px; text-align: center; }
+.sig-placeholder { border: 1px dashed #cbd5e1; padding: 20px; text-align: center; color: #94a3b8; font-style: italic; }
+@media print { body { padding: 10px; } .no-print { display: none; } }
+.btn-print { display: block; margin: 10px auto 20px; padding: 8px 16px; background: ${N}; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px; }
+</style></head><body>
+<div class="header">
+  ${SCHOOL_LOGO ? `<img src="${SCHOOL_LOGO}" class="logo" alt="Logo" />` : ''}
+  <h1>${escapeHtml(SCHOOL_NAME)}</h1>
+  ${SCHOOL_ADDR || SCHOOL_PHONE || SCHOOL_EMAIL ? `<h2>${escapeHtml([SCHOOL_ADDR, SCHOOL_PHONE, SCHOOL_EMAIL].filter(Boolean).join(' · '))}</h2>` : ''}
+  <div class="school-info">Évaluation mensuelle — Année académique ${new Date().getFullYear()}</div>
+</div>
+<button class="btn-print no-print" onclick="window.print()">🖨️ Imprimer / Enregistrer en PDF</button>
+<div class="eval-info">
+  <h2>${escapeHtml(group.firstEvaluation.title || `ÉVALUATION MENSUELLE — ${group.evaluationTypeName}`)}</h2>
+  <p>Classe : <strong>${escapeHtml(group.className)}</strong>${group.periodName ? ` — ${escapeHtml(group.periodName)}` : ''}</p>
+  <p>${escapeHtml(dateRange)} · ${escapeHtml(group.evaluationTypeName)}</p>
+  <p style="font-size:9px;color:#64748b;font-style:italic;margin-top:4px">NB : Pour chaque épreuve, l'élève évalué(e) n'aura de bonus de perfectionnement que lorsqu'il(elle) aura atteint la maîtrise minimale fixée.</p>
+</div>
+<table class="notes">
+  <thead>
+    <tr>
+      <th rowspan="2">N°</th>
+      <th rowspan="2">Nom et prénom</th>
+      <th rowspan="2">Sexe</th>
+      ${matiereHeader}
+      ${!isMaternelle && !isSecondaire ? '<th rowspan="2">Total gén.</th>' : ''}
+      <th rowspan="2">Rang</th>
+      <th rowspan="2">Seuil fixé</th>
+      <th colspan="2">Seuil atteint</th>
+    </tr>
+    <tr>
+      ${subHeader}
+      <th>Oui</th><th>Non</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${rowsHtml || `<tr><td colspan="${isMaternelle ? 10 + sortedSubjects.length : 10 + sortedSubjects.length * 3}" class="center" style="padding:20px;color:#94a3b8">Aucun élève</td></tr>`}
+  </tbody>
+</table>
+<h3 style="color:${N};font-size:11px;margin-bottom:6px">Récapitulatif de l'évaluation</h3>
+${statsHtml}
+${signaturesHtml}
+<script>
+  window.onload = function() { setTimeout(function() { window.print(); }, 300); };
+</script>
+</body></html>`);
+    printWindow.document.close();
   };
 
   // ─── Rendu ──────────────────────────────────────────────────────────────────
@@ -584,21 +861,33 @@ export function MonthlyEvaluationTab({
                   ? "Cette évaluation a été validée par l'administration."
                   : "Vous devez signer avant de soumettre au directeur."}
               </span>
-              {!allSubmitted && !allValidated && (
+              <div className="ml-auto flex items-center gap-2">
+                {/* ⭐ Bouton Export PDF — visible pour tous les statuts */}
                 <button
-                  onClick={() => handleSubmitToDirector(group)}
-                  disabled={submitting === group.key || !sig.teacher || isReadOnly}
-                  className="ml-auto flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
-                  title={!sig.teacher ? "Signature obligatoire avant soumission" : "Soumettre au directeur"}
+                  onClick={() => handleExportPDF(group)}
+                  className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700"
+                  title="Exporter en PDF (imprimable)"
                 >
-                  {submitting === group.key ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                  {sig.teacher ? "Soumettre au directeur" : "Signature requise"}
+                  <Printer className="h-4 w-4" />
+                  Export PDF
                 </button>
-              )}
+                {/* ⭐ Bouton Soumettre au directeur — masqué si déjà soumis/validé */}
+                {!allSubmitted && !allValidated && (
+                  <button
+                    onClick={() => handleSubmitToDirector(group)}
+                    disabled={submitting === group.key || !sig.teacher || isReadOnly}
+                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                    title={!sig.teacher ? "Signature obligatoire avant soumission" : "Soumettre au directeur"}
+                  >
+                    {submitting === group.key ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
+                    {sig.teacher ? "Soumettre au directeur" : "Signature requise"}
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* ⭐ Tableau IDENTIQUE au Module Examen (GradingSheet) — read-only */}
@@ -1027,6 +1316,8 @@ export function MonthlyEvaluationTab({
           </div>
         );
       })}
+      {/* ⭐ Modal de confirmation professionnel (remplace window.confirm) */}
+      {confirmDialog}
     </div>
   );
 }

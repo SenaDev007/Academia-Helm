@@ -35,9 +35,9 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   ClipboardList, Loader2, Save, RefreshCw, Send, Lock,
-  ChevronLeft, Calendar, FileText, BookOpen, BarChart3,
-  CheckCircle2, XCircle, Clock, Printer, Settings, AlertCircle,
-  X, FileSpreadsheet, CalendarCheck,
+  FileText, BookOpen, BarChart3,
+  CheckCircle2, XCircle, Clock, Settings, AlertCircle,
+  X, CalendarCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
@@ -174,14 +174,13 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
 
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>("");
-  // ⭐ Mois et année VERROUILLÉS sur le mois courant (date du jour).
-  // L'enseignant ne peut plus modifier le mois/année — le système reconnaît
-  // automatiquement le mois en cours (ex: Juillet 2026) et charge le bon registre.
-  // Raisonnement : si on est en juillet 2026, on veut travailler sur le registre
-  // de juillet 2026, pas sur un mois passé ou futur.
+  // ⭐ Mois et année SÉLECTIONNABLES (dégrisés) — par défaut sur le mois courant.
+  // L'enseignant peut switcher vers un mois passé pour consulter un registre
+  // précédent (ex: corriger une mauvaise saisie, ou vérifier les absences
+  // d'un élève sur un mois antérieur).
   const today = new Date();
-  const [selectedMonth] = useState<number>(today.getMonth() + 1); // 1-12, verrouillé
-  const [selectedYear] = useState<number>(today.getFullYear());    // verrouillé
+  const [selectedMonth, setSelectedMonth] = useState<number>(today.getMonth() + 1); // 1-12
+  const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
 
   const [register, setRegister] = useState<any>(null);
   const [students, setStudents] = useState<any[]>([]);
@@ -564,18 +563,30 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Mois (auto)</label>
-          <div className="px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm font-bold min-w-[150px] text-slate-700 flex items-center gap-2">
-            <Calendar className="h-3.5 w-3.5 text-slate-400" />
-            {MONTH_NAMES[selectedMonth]}
-          </div>
+          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Mois</label>
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(parseInt(e.target.value, 10))}
+            className="px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-bold min-w-[150px] text-slate-700 flex items-center gap-2 hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200 cursor-pointer"
+          >
+            {MONTHS.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Année (auto)</label>
-          <div className="px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm font-bold w-[100px] text-slate-700">
-            {selectedYear}
-          </div>
+          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Année</label>
+          <select
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
+            className="px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-bold w-[110px] text-slate-700 hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200 cursor-pointer"
+          >
+            {/* ⭐ Liste d'années : année courante -2 à +1 (permet consultation registres passés) */}
+            {[today.getFullYear() - 2, today.getFullYear() - 1, today.getFullYear(), today.getFullYear() + 1].map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
         </div>
 
         <div className="flex-1" />
@@ -606,20 +617,13 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
             <Send className="h-4 w-4" />
             Soumettre
           </button>
-          {/* ⭐ Boutons Export Excel + PDF */}
+          {/* ⭐ Bouton Export PDF uniquement (Excel supprimé) */}
           {register && (
-            <>
-              <button onClick={() => handleExport("excel")} disabled={!!exporting}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50">
-                {exporting === "excel" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-                Export Excel
-              </button>
-              <button onClick={() => handleExport("pdf")} disabled={!!exporting}
-                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50">
-                {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                Export PDF
+            <button onClick={() => handleExport("pdf")} disabled={!!exporting}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50">
+              {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+              Export PDF
             </button>
-            </>
           )}
         </div>
       </div>

@@ -54,12 +54,13 @@ export default function ValidationPage() {
 
   useEffect(() => {
     async function loadData() {
-      if (!schoolLevel?.id || !academicYear?.id) return;
+      if (!academicYear?.id) return;
       try {
         setLoading(true);
-        // ⭐ Passe le paramètre language au service (filtrage côté API)
+        // ⭐ schoolLevelId optionnel — si 'ALL' ou non défini, ne pas filtrer
+        const schoolLevelId = (schoolLevel?.id && schoolLevel.id !== 'ALL') ? schoolLevel.id : undefined;
         const res = await institutionalExamsService.getPendingValidations(
-          schoolLevel.id,
+          schoolLevelId || '',
           academicYear.id,
           scopeLang || undefined,
         );
@@ -71,7 +72,7 @@ export default function ValidationPage() {
       }
     }
     loadData();
-  }, [schoolLevel, academicYear, !!scopeLang, scopeLang]);
+  }, [academicYear, schoolLevel, scopeLang]);
 
   const handleApprove = async () => {
     try {

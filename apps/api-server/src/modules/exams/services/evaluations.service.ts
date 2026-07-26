@@ -577,19 +577,19 @@ export class EvaluationsService {
 
     if (!evaluation) throw new NotFoundException('Évaluation non trouvée');
 
-    if (evaluation.status !== 'OPEN_FOR_GRADING') {
+    // ⭐ Accepter la soumission depuis OPEN_FOR_GRADING ou PLANNED
+    // (les évaluations créées sont en PLANNED par défaut)
+    if (!['OPEN_FOR_GRADING', 'PLANNED'].includes(evaluation.status)) {
       throw new BadRequestException(
-        `L'évaluation doit être ouverte à la saisie pour être soumise. Statut actuel: ${evaluation.status}`
+        `L'évaluation doit être ouverte à la saisie ou planifiée pour être soumise. Statut actuel: ${evaluation.status}`
       );
     }
 
-    // Vérifier que toutes les notes sont saisies
-    const studentCount = await this.prisma.classStudent.count({
-      where: { classId: evaluation.classId, academicYearId: evaluation.academicYearId }
-    });
-
-    if (evaluation.grades.length < studentCount) {
-      throw new BadRequestException(`Saisie incomplète : ${evaluation.grades.length}/${studentCount} notes saisies.`);
+    // ⭐ Ne pas bloquer si toutes les notes ne sont pas saisies —
+    // l'enseignant peut soumettre partiellement. On vérifie juste qu'il y a
+    // au moins une note saisie.
+    if (evaluation.grades.length === 0) {
+      throw new BadRequestException('Aucune note saisie. Saisissez au moins une note avant de soumettre.');
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -600,24 +600,59 @@ export class EvaluationsService {
       });
 
       // 2. Créer le lot de validation (si pas déjà existant)
+      // ⭐ GradeValidationBatch.periodId référence Quarter (non-nullable).
+      // On doit trouver un Quarter correspondant à l'AcademicPeriod de l'évaluation.
       const existingBatch = await tx.gradeValidationBatch.findFirst({
         where: { evaluationId: evaluation.id }
       });
 
       if (!existingBatch) {
-        await tx.gradeValidationBatch.create({
-          data: {
-            tenantId: evaluation.tenantId,
-            academicYearId: evaluation.academicYearId,
-            periodId: evaluation.periodId,
-            evaluationId: evaluation.id,
-            classId: evaluation.classId,
-            subjectId: evaluation.subjectId,
-            status: 'PENDING',
-            submittedById: evaluation.createdBy || 'SYSTEM',
-            submittedAt: new Date(),
-          },
+        // Chercher un Quarter pour cette année scolaire
+        const quarter = await tx.quarter.findFirst({
+          where: { tenantId: evaluation.tenantId, academicYearId: evaluation.academicYearId },
         });
+
+        if (quarter) {
+          await tx.gradeValidationBatch.create({
+            data: {
+              tenantId: evaluation.tenantId,
+              academicYearId: evaluation.academicYearId,
+              periodId: quarter.id,
+              evaluationId: evaluation.id,
+              classId: evaluation.classId,
+              subjectId: evaluation.subjectId,
+              status: 'PENDING',
+              submittedById: evaluation.createdBy || 'SYSTEM',
+              submittedAt: new Date(),
+            },
+          });
+        } else {
+          // Pas de Quarter → créer un Quarter par défaut pour cette année
+          const newQuarter = await tx.quarter.create({
+            data: {
+              tenantId: evaluation.tenantId,
+              academicYearId: evaluation.academicYearId,
+              name: 'Trimestre 1',
+              number: 1,
+              startDate: new Date(),
+              endDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+              isCurrent: true,
+            },
+          });
+          await tx.gradeValidationBatch.create({
+            data: {
+              tenantId: evaluation.tenantId,
+              academicYearId: evaluation.academicYearId,
+              periodId: newQuarter.id,
+              evaluationId: evaluation.id,
+              classId: evaluation.classId,
+              subjectId: evaluation.subjectId,
+              status: 'PENDING',
+              submittedById: evaluation.createdBy || 'SYSTEM',
+              submittedAt: new Date(),
+            },
+          });
+        }
       }
 
       return updatedEval;

@@ -22,15 +22,17 @@ export class ValidationService {
    * Récupère les lots de validation en attente
    */
   async getPendingBatches(tenantId: string, academicYearId: string, schoolLevelId: string) {
+    const where: any = {
+      tenantId,
+      academicYearId,
+      status: 'PENDING',
+    };
+    // ⭐ Ne filtrer par schoolLevelId que s'il est défini et pas 'ALL'
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
+      where.evaluation = { class: { schoolLevelId } };
+    }
     return this.prisma.gradeValidationBatch.findMany({
-      where: {
-        tenantId,
-        academicYearId,
-        status: 'PENDING',
-        evaluation: {
-            class: { schoolLevelId }
-        }
-      },
+      where,
       include: {
         evaluation: {
           include: {

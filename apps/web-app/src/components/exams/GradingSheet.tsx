@@ -17,7 +17,7 @@ import { useEffect, useState, useMemo } from 'react';
 import {
   Save, Send, ChevronLeft, Calendar, Users, BookOpen, Loader2,
   Search, School, AlertCircle, CheckCircle2, XCircle,
-  Settings, Settings2, X,
+  Settings, Settings2, X, Plus, Pencil, Lock,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -195,10 +195,18 @@ export function GradingSheet({
   const { academicYear } = useModuleContext();
   const [presenceModalStudent, setPresenceModalStudent] = useState<GradeRow | null>(null);
   const { warning, dialog: confirmDialog } = useConfirmDialog();
+  // ⭐ Mode d'édition : 'readonly' par défaut, 'add' pour ajouter, 'edit' pour modifier
+  const [editMode, setEditMode] = useState<'readonly' | 'add' | 'edit'>('readonly');
 
   // ⭐ Vérifier si les notes sont verrouillées (soumises ou validées)
   // Si verrouillées, l'enseignant ne peut plus modifier — il doit demander un déverrouillage
   const isLocked = group.statuses.some((s) => s === 'SUBMITTED' || s === 'VALIDATED' || s === 'LOCKED');
+  // ⭐ canEdit = pas verrouillé ET mode édition actif
+  const canEdit = !isLocked && editMode !== 'readonly';
+  // ⭐ canAdd = pas verrouillé ET mode 'add' (seulement les champs vides sont éditables)
+  const canAdd = !isLocked && editMode === 'add';
+  // ⭐ canModify = pas verrouillé ET mode 'edit' (tous les champs sont éditables)
+  const canModify = !isLocked && editMode === 'edit';
 
   const sortedSubjects = useMemo(() => {
     return [...group.subjects].sort((a, b) =>
@@ -504,10 +512,52 @@ export function GradingSheet({
             )}
             {/* Action Bar */}
             <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-3">
-              <Button variant="ghost" onClick={onBack}>
-                <ChevronLeft className="w-4 h-4 mr-1" />
-                Retour à la liste
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" onClick={onBack}>
+                  <ChevronLeft className="w-4 h-4 mr-1" />
+                  Retour à la liste
+                </Button>
+                {/* ⭐ Boutons Mode édition */}
+                {!isLocked && (
+                  <div className="flex items-center gap-1 ml-2">
+                    <button
+                      onClick={() => setEditMode('add')}
+                      disabled={editMode === 'add' || saving || loading}
+                      className={cn(
+                        'flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors',
+                        editMode === 'add'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                      )}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Ajouter
+                    </button>
+                    <button
+                      onClick={() => setEditMode('edit')}
+                      disabled={editMode === 'edit' || saving || loading}
+                      className={cn(
+                        'flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors',
+                        editMode === 'edit'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
+                      )}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      Modifier
+                    </button>
+                    {editMode !== 'readonly' && (
+                      <button
+                        onClick={() => setEditMode('readonly')}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 transition-colors"
+                      >
+                        <Lock className="w-3.5 h-3.5" />
+                        Verrouiller
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="outline" className="border-blue-200 text-blue-600 text-xs gap-1">
                   <Users className="w-3 h-3" />
@@ -524,7 +574,7 @@ export function GradingSheet({
                   variant="outline"
                   size="sm"
                   onClick={() => handleSave(false)}
-                  disabled={saving || loading || isLocked}
+                  disabled={saving || loading || isLocked || editMode === 'readonly'}
                   className="border-blue-200 text-blue-700 hover:bg-blue-50"
                 >
                   {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
@@ -543,7 +593,7 @@ export function GradingSheet({
                     );
                     if (ok) handleSave(true);
                   }}
-                  disabled={saving || loading || isLocked}
+                  disabled={saving || loading || isLocked || editMode === 'readonly'}
                   className="bg-blue-600 hover:bg-blue-700 text-white border-blue-700"
                 >
                   {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Send className="w-4 h-4 mr-1" />}
@@ -613,7 +663,10 @@ export function GradingSheet({
                   <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 </div>
                 {/* Tableau registre */}
-                <div className={cn("bg-white border-2 border-slate-800 rounded-xl overflow-x-auto", isLocked && "pointer-events-none opacity-60")}>
+                <div className={cn(
+                  "bg-white border-2 border-slate-800 rounded-xl overflow-x-auto",
+                  (isLocked || editMode === 'readonly') && "pointer-events-none opacity-70"
+                )}>
                   <table className="w-full border-collapse text-xs">
                     <thead>
                       <tr className="bg-slate-100">

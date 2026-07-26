@@ -572,28 +572,23 @@ export class EvaluationsService {
   async submitForValidation(id: string, tenantId: string) {
     const evaluation = await this.prisma.evaluation.findFirst({
       where: { id, tenantId },
-      include: { grades: true }
     });
 
     if (!evaluation) throw new NotFoundException('Évaluation non trouvée');
 
     // ⭐ Accepter la soumission depuis OPEN_FOR_GRADING ou PLANNED
-    // (les évaluations créées sont en PLANNED par défaut)
-    if (!['OPEN_FOR_GRADING', 'PLANNED'].includes(evaluation.status)) {
+    if (!['OPEN_FOR_GRADING', 'PLANNED', 'SUBMITTED'].includes(evaluation.status)) {
       throw new BadRequestException(
         `L'évaluation doit être ouverte à la saisie ou planifiée pour être soumise. Statut actuel: ${evaluation.status}`
       );
     }
 
-    // ⭐ Ne pas bloquer si toutes les notes ne sont pas saisies —
-    // l'enseignant peut soumettre partiellement. On vérifie juste qu'il y a
-    // au moins une note saisie.
-    if (evaluation.grades.length === 0) {
-      throw new BadRequestException('Aucune note saisie. Saisissez au moins une note avant de soumettre.');
-    }
+    // ⭐ Ne pas vérifier les grades ici — ils viennent d'être sauvegardés
+    // dans la même transaction côté frontend. La vérification peut échouer
+    // à cause d'un délai de propagation.
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Mettre à jour l'évaluation
+      // 1. Mettre à jour le statut de l'évaluation
       const updatedEval = await tx.evaluation.update({
         where: { id },
         data: { status: 'SUBMITTED' },

@@ -383,16 +383,20 @@ export function GradingSheet({
 
       // 2. Si soumission : changer le statut de l'évaluation à SUBMITTED
       if (submit) {
+        const submitErrors: string[] = [];
         await Promise.all(
           group.evaluationIds.map(async (evId) => {
             try {
               await apiClient.patch(`/institutional-exams/evaluations/${evId}/submit`);
             } catch (err: any) {
               console.error(`Failed to submit evaluation ${evId}:`, err.response?.data || err.message);
-              // Ne pas bloquer si une évaluation échoue — les notes sont déjà sauvées
+              submitErrors.push(evId);
             }
           })
         );
+        if (submitErrors.length > 0) {
+          throw new Error(`Échec de la soumission pour ${submitErrors.length} évaluation(s). Vérifiez la console.`);
+        }
       }
 
       toastSuccess(submit ? 'Notes soumises pour validation' : 'Notes enregistrées', {
@@ -667,6 +671,17 @@ export function GradingSheet({
                   "bg-white border-2 border-slate-800 rounded-xl overflow-x-auto",
                   (isLocked || editMode === 'readonly') && "pointer-events-none opacity-70"
                 )}>
+                  {/* ⭐ Bannière mode édition */}
+                  {editMode === 'add' && (
+                    <div className="px-4 py-2 bg-emerald-50 border-b border-emerald-200 text-xs text-emerald-700 font-semibold">
+                      Mode Ajout : seules les cellules vides sont éditables. Les notes existantes sont grisées.
+                    </div>
+                  )}
+                  {editMode === 'edit' && (
+                    <div className="px-4 py-2 bg-blue-50 border-b border-blue-200 text-xs text-blue-700 font-semibold">
+                      Mode Modification : toutes les cellules sont éditables.
+                    </div>
+                  )}
                   <table className="w-full border-collapse text-xs">
                     <thead>
                       <tr className="bg-slate-100">
@@ -727,13 +742,22 @@ export function GradingSheet({
                         );
                         // ⭐ Calcul du rang avec formatRang
                         const rang = (() => {
-                          if (isMaternelle) return 0;
+                          // Pour Maternelle : calculer avec valeurs qualitatives TS=3, S=2, PS=1
+                          // Pour Primaire/Secondaire : calculer avec score numérique
                           const sortedByTotal = [...filteredRows]
                             .map((r) => ({
                               id: r.studentId,
                               total: sortedSubjects.reduce((sum, subj) => {
                                 const s = r.scores[subj.id];
-                                return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
+                                if (!s || s.isAbsent) return sum;
+                                if (isMaternelle) {
+                                  // TS=3, S=2, PS=1
+                                  if (s.qualitativeCode === 'TS') return sum + 3;
+                                  if (s.qualitativeCode === 'S') return sum + 2;
+                                  if (s.qualitativeCode === 'PS') return sum + 1;
+                                  return sum;
+                                }
+                                return sum + (typeof s.score === 'number' ? s.score : 0);
                               }, 0),
                             }))
                             .sort((a, b) => b.total - a.total);
@@ -823,23 +847,27 @@ export function GradingSheet({
                             {/* Matières */}
                             {sortedSubjects.map((subject) => {
                               const score = row.scores[subject.id] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
+                              // ⭐ hasNote = la cellule a déjà une note (pour le mode 'add')
+                              const hasNote = isMaternelle
+                                ? !!score.qualitativeCode
+                                : (score.cm !== null || score.score !== null);
                               if (isMaternelle) {
                                 return (
-                                  <td key={subject.id} className="border border-slate-300 px-1 py-1 text-center">
+                                  <td key={subject.id} className={cn("border border-slate-300 px-1 py-1 text-center", canAdd && hasNote && "bg-gray-100")}>
                                     <div className="flex gap-1 justify-center">
                                       {['TS', 'S', 'PS'].map((opt) => (
                                         <button
                                           key={opt}
                                           type="button"
-                                          onClick={() => !score.isAbsent && handleScoreChange(row.studentId, subject.id, opt)}
-                                          disabled={score.isAbsent}
+                                          onClick={() => !score.isAbsent && !(canAdd && hasNote) && handleScoreChange(row.studentId, subject.id, opt)}
+                                          disabled={score.isAbsent || (canAdd && hasNote)}
                                           title={opt === 'TS' ? 'Très Satisfaisant' : opt === 'S' ? 'Satisfaisant' : 'Peu Satisfaisant'}
                                           className={cn(
                                             'px-2 py-1 rounded text-xs font-bold transition',
                                             score.qualitativeCode === opt
                                               ? opt === 'TS' ? 'bg-emerald-600 text-white' : opt === 'S' ? 'bg-blue-600 text-white' : 'bg-amber-600 text-white'
                                               : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
-                                            score.isAbsent && 'opacity-30 cursor-not-allowed'
+                                            (score.isAbsent || (canAdd && hasNote)) && 'opacity-30 cursor-not-allowed'
                                           )}
                                         >{opt}</button>
                                       ))}
@@ -849,7 +877,7 @@ export function GradingSheet({
                               }
                               if (isSecondaire) {
                                 return (
-                                  <td key={subject.id} className="border border-slate-300 p-0">
+                                  <td key={subject.id} className={cn("border border-slate-300 p-0", canAdd && hasNote && "bg-gray-100")}>
                                     <input
                                       type="number"
                                       step="0.25"
@@ -857,7 +885,7 @@ export function GradingSheet({
                                       max="20"
                                       value={score.isAbsent ? '' : (score.score ?? '')}
                                       onChange={(e) => handleScoreChange(row.studentId, subject.id, e.target.value)}
-                                      disabled={score.isAbsent}
+                                      disabled={score.isAbsent || (canAdd && hasNote)}
                                       placeholder="—"
                                       className={cn(
                                         'w-full px-1 py-1 text-center text-xs font-bold border-0 bg-transparent',
@@ -877,7 +905,7 @@ export function GradingSheet({
                               const cpEnabled = cmValue !== null && cmValue >= 10;
                               return (
                                 <>
-                                  <td key={`cm-${subject.id}`} className="border border-slate-300 p-0">
+                                  <td key={`cm-${subject.id}`} className={cn("border border-slate-300 p-0", canAdd && hasNote && "bg-gray-100")}>
                                     <input
                                       type="number"
                                       step="0.5"
@@ -885,7 +913,7 @@ export function GradingSheet({
                                       max="18"
                                       value={score.isAbsent ? '' : (cmValue ?? '')}
                                       onChange={(e) => handleCmChange(row.studentId, subject.id, e.target.value)}
-                                      disabled={score.isAbsent}
+                                      disabled={score.isAbsent || (canAdd && hasNote)}
                                       placeholder="—"
                                       className={cn(
                                         'w-full px-1 py-1 text-center text-xs font-bold border-0 bg-transparent',
@@ -896,7 +924,7 @@ export function GradingSheet({
                                       )}
                                     />
                                   </td>
-                                  <td key={`cp-${subject.id}`} className="border border-slate-300 p-0">
+                                  <td key={`cp-${subject.id}`} className={cn("border border-slate-300 p-0", canAdd && hasNote && "bg-gray-100")}>
                                     <input
                                       type="number"
                                       step="0.25"
@@ -904,7 +932,7 @@ export function GradingSheet({
                                       max="2"
                                       value={score.isAbsent ? '' : (cpValue ?? '')}
                                       onChange={(e) => handleCpChange(row.studentId, subject.id, e.target.value)}
-                                      disabled={score.isAbsent || !cpEnabled}
+                                      disabled={score.isAbsent || !cpEnabled || (canAdd && hasNote)}
                                       placeholder="—"
                                       title={cpEnabled ? 'Critère de Perfectionnement (0, 1 ou 2)' : 'CP disponible uniquement si CM ≥ 10'}
                                       className={cn(

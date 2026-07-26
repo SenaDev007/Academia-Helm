@@ -343,13 +343,13 @@ export default function TeacherExamsPage() {
             const canGrade = group.statuses.some(s => s === 'OPEN_FOR_GRADING' || s === 'PLANNED');
             if (canGrade) setSelectedGroup(group);
           }}
-          filterFn={(g) => g.statuses.some(s => s === 'OPEN_FOR_GRADING' || s === 'PLANNED')}
           isMaternelle={isMaternelle}
           renderStatusBadge={(g) => {
-            const canGrade = g.statuses.some(s => s === 'OPEN_FOR_GRADING' || s === 'PLANNED');
-            const isLocked = g.statuses.every(s => s === 'SUBMITTED' || s === 'VALIDATED' || s === 'LOCKED');
-            const status = isLocked ? 'Soumise' : canGrade ? 'Saisie ouverte' : 'Planifiée';
-            const color = isLocked ? 'bg-emerald-100 text-emerald-700' : canGrade ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700';
+            const canEdit = g.statuses.some(s => s === 'OPEN_FOR_GRADING' || s === 'PLANNED');
+            const isSubmitted = g.statuses.some(s => s === 'SUBMITTED');
+            const isValidated = g.statuses.every(s => s === 'VALIDATED' || s === 'LOCKED');
+            const status = isValidated ? 'Validée' : isSubmitted ? 'Soumise' : canEdit ? 'Saisie ouverte' : 'Planifiée';
+            const color = isValidated ? 'bg-emerald-100 text-emerald-700' : isSubmitted ? 'bg-purple-100 text-purple-700' : canEdit ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700';
             return <span className={cn('text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap', color)}>{status}</span>;
           }}
         />

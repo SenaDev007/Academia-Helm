@@ -381,26 +381,32 @@ export function GradingSheet({
         })
       );
 
-      // 2. Si soumission : changer le statut de l'évaluation à SUBMITTED
+      // 2. Si validation : changer le statut de l'évaluation à OPEN_FOR_GRADING
+      //    (les notes sont validées par l'enseignant — pas encore soumises au directeur)
+      //    La soumission au directeur se fera depuis l'Espace Pédagogique
       if (submit) {
         const submitErrors: string[] = [];
         await Promise.all(
           group.evaluationIds.map(async (evId) => {
             try {
-              await apiClient.patch(`/institutional-exams/evaluations/${evId}/submit`);
+              // ⭐ Ouvrir pour saisie = validation de l'enseignant
+              // Le statut passe à OPEN_FOR_GRADING (les notes sont saisies et validées)
+              await apiClient.post(`/institutional-exams/evaluations/${evId}/open`);
             } catch (err: any) {
-              console.error(`Failed to submit evaluation ${evId}:`, err.response?.data || err.message);
+              console.error(`Failed to validate evaluation ${evId}:`, err.response?.data || err.message);
               submitErrors.push(evId);
             }
           })
         );
         if (submitErrors.length > 0) {
-          throw new Error(`Échec de la soumission pour ${submitErrors.length} évaluation(s). Vérifiez la console.`);
+          throw new Error(`Échec de la validation pour ${submitErrors.length} évaluation(s). Vérifiez la console.`);
         }
       }
 
-      toastSuccess(submit ? 'Notes soumises pour validation' : 'Notes enregistrées', {
-        description: `${rows.length} élève(s) · ${group.subjects.length} matière(s)`,
+      toastSuccess(submit ? 'Notes validées' : 'Notes enregistrées', {
+        description: submit
+          ? 'Les notes sont disponibles dans l\'Espace Pédagogique pour soumission au directeur.'
+          : `${rows.length} élève(s) · ${group.subjects.length} matière(s)`,
       });
       if (submit) onBack();
     } catch (err: any) {
@@ -588,20 +594,20 @@ export function GradingSheet({
                   size="sm"
                   onClick={async () => {
                     const ok = await warning(
-                      `Soumettre les notes de ${group.className} pour validation ?\n\n` +
+                      `Valider la saisie des notes de ${group.className} ?\n\n` +
                       `Évaluation : ${group.evaluationTypeName}\n` +
                       `${rows.length} élève(s) · ${group.subjects.length} matière(s)\n\n` +
-                      `⚠️ Après soumission, les notes seront verrouillées. Pour les modifier, vous devrez demander un déverrouillage à l'administration.`,
-                      'Soumettre pour validation',
-                      'Cette action rendra les notes non modifiables jusqu\'à validation par l\'administration.'
+                      `Les notes validées seront disponibles dans l'Espace Pédagogique pour soumission au directeur.`,
+                      'Valider la saisie',
+                      'Les notes seront verrouillées pour modification depuis ce module. La soumission finale se fait depuis l\'Espace Pédagogique.'
                     );
                     if (ok) handleSave(true);
                   }}
                   disabled={saving || loading || isLocked || editMode === 'readonly'}
                   className="bg-blue-600 hover:bg-blue-700 text-white border-blue-700"
                 >
-                  {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Send className="w-4 h-4 mr-1" />}
-                  Soumettre
+                  {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1" />}
+                  Valider
                 </Button>
               </div>
             </div>

@@ -46,8 +46,16 @@ export class GradesService {
 
     // On utilise une transaction pour tout mettre à jour d'un coup
     return this.prisma.$transaction(
-      grades.map((g) => 
-        this.prisma.grade.upsert({
+      grades.map((g) => {
+        // ⭐ Stocker cm/cp dans le champ comment au format JSON si présents
+        // (le modèle Grade n'a pas de champs cm/cp dédiés)
+        let commentToStore = g.comment || '';
+        if (g.cm !== undefined || g.cp !== undefined) {
+          const metadata = { cm: g.cm ?? null, cp: g.cp ?? null, comment: g.comment || '' };
+          commentToStore = JSON.stringify(metadata);
+        }
+
+        return this.prisma.grade.upsert({
           where: {
             tenantId_evaluationId_studentId: {
               tenantId,
@@ -59,7 +67,8 @@ export class GradesService {
             score: g.score,
             qualitativeCode: g.qualitativeCode,
             isAbsent: g.isAbsent || false,
-            comment: g.comment,
+            comment: commentToStore,
+            status: g.status || 'DRAFT',
             updatedAt: new Date(),
           },
           create: {
@@ -73,11 +82,11 @@ export class GradesService {
             score: g.score,
             qualitativeCode: g.qualitativeCode,
             isAbsent: g.isAbsent || false,
-            comment: g.comment,
-            status: 'DRAFT',
+            comment: commentToStore,
+            status: g.status || 'DRAFT',
           }
-        })
-      )
+        });
+      })
     );
   }
 
@@ -140,15 +149,33 @@ export class GradesService {
 
     return students.map(student => {
       const grade = existingGrades.find(g => g.studentId === student.id);
+
+      // ⭐ Parser cm/cp depuis le champ comment (stocké en JSON)
+      let cm: number | null = null;
+      let cp: number | null = null;
+      let comment = grade?.comment ?? '';
+      if (comment && comment.startsWith('{') && comment.includes('"cm"')) {
+        try {
+          const parsed = JSON.parse(comment);
+          cm = parsed.cm ?? null;
+          cp = parsed.cp ?? null;
+          comment = parsed.comment ?? '';
+        } catch {
+          // Si le JSON est invalide, garder le comment tel quel
+        }
+      }
+
       return {
         studentId: student.id,
         studentName: `${student.lastName} ${student.firstName}`.trim(),
         matricule: student.matricule ?? null,
         gender: student.gender ?? null,
         score: grade?.score ?? null,
+        cm,
+        cp,
         qualitativeCode: grade?.qualitativeCode ?? null,
         isAbsent: grade?.isAbsent ?? false,
-        comment: grade?.comment ?? '',
+        comment,
         status: grade?.status ?? 'NEW',
       };
     });

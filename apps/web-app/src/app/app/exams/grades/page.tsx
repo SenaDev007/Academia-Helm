@@ -549,6 +549,8 @@ function GradingSheet({
             const row = studentMap.get(student.studentId)!;
             row.scores[subjectId] = {
               score: student.score ?? null,
+              cm: student.cm ?? null,
+              cp: student.cp ?? null,
               qualitativeCode: student.qualitativeCode ?? null,
               isAbsent: student.isAbsent ?? false,
               comment: student.comment ?? '',
@@ -563,6 +565,8 @@ function GradingSheet({
             if (!row.scores[subject.id]) {
               row.scores[subject.id] = {
                 score: null,
+                cm: null,
+                cp: null,
                 qualitativeCode: null,
                 isAbsent: false,
                 comment: '',
@@ -702,6 +706,8 @@ function GradingSheet({
               studentId: row.studentId,
               subjectId,
               score: row.scores[subjectId].score,
+              cm: row.scores[subjectId].cm,
+              cp: row.scores[subjectId].cp,
               qualitativeCode: row.scores[subjectId].qualitativeCode,
               isAbsent: row.scores[subjectId].isAbsent,
               comment: row.scores[subjectId].comment,
@@ -1071,8 +1077,8 @@ function GradingSheet({
                               // CM = Critère Maximal /18
                               // CP = Critère de Perfectionnement /2 (uniquement si CM ≥ 10)
                               // Total = CM + CP (max /20)
-                              const cmValue = score.cm;
-                              const cpValue = score.cp;
+                              const cmValue = score.cm ?? null;
+                              const cpValue = score.cp ?? null;
                               const totalValue = (cmValue !== null ? cmValue : 0) + (cpValue !== null ? cpValue : 0);
                               const cpEnabled = cmValue !== null && cmValue >= 10;
                               return (
@@ -1120,7 +1126,7 @@ function GradingSheet({
                                     />
                                   </td>
                                   <td key={`tot-${subject.id}`} className="border border-slate-300 px-2 py-1 text-center font-bold bg-slate-50">
-                                    {score.isAbsent ? '—' : (cmValue !== null || cpValue !== null ? totalValue.toFixed(2) : '—')}
+                                    {score.isAbsent ? '—' : (cmValue !== null || cpValue !== null ? Number(totalValue).toFixed(2) : '—')}
                                   </td>
                                 </>
                               );

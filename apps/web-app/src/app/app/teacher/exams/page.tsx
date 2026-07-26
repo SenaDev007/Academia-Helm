@@ -516,6 +516,8 @@ function TeacherGradingSheet({
             const row = studentMap.get(student.studentId)!;
             row.scores[subjectId] = {
               score: student.score ?? null,
+              cm: student.cm ?? null,
+              cp: student.cp ?? null,
               qualitativeCode: student.qualitativeCode ?? null,
               isAbsent: student.isAbsent ?? false,
               comment: student.comment ?? '',
@@ -528,7 +530,7 @@ function TeacherGradingSheet({
         rowsArray.forEach((row) => {
           group.subjects.forEach((subject) => {
             if (!row.scores[subject.id]) {
-              row.scores[subject.id] = { score: null, qualitativeCode: null, isAbsent: false, comment: '' };
+              row.scores[subject.id] = { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
             }
           });
         });
@@ -629,6 +631,8 @@ function TeacherGradingSheet({
               studentId: row.studentId,
               subjectId,
               score: row.scores[subjectId].score,
+              cm: row.scores[subjectId].cm,
+              cp: row.scores[subjectId].cp,
               qualitativeCode: row.scores[subjectId].qualitativeCode,
               isAbsent: row.scores[subjectId].isAbsent,
               comment: row.scores[subjectId].comment,
@@ -951,7 +955,7 @@ function TeacherGradingSheet({
                               />
                             </td>
                             <td key={`tot-${subject.id}`} className="border border-slate-300 px-2 py-1 text-center font-bold bg-slate-50">
-                              {score.isAbsent ? '—' : ((score.cm !== null || score.cp !== null) ? ((score.cm || 0) + (score.cp || 0)).toFixed(2) : '—')}
+                              {score.isAbsent ? '—' : ((score.cm != null || score.cp != null) ? Number((score.cm || 0) + (score.cp || 0)).toFixed(2) : '—')}
                             </td>
                           </>
                         );

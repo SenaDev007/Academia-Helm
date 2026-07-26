@@ -980,9 +980,15 @@ function GradingSheet({
                         {!isMaternelle && !isSecondaire && (
                           <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total gén.</th>
                         )}
-                        <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Seuil</th>
+                        <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Rang</th>
+                        <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Seuil fixé</th>
+                        <th colSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-24">Seuil atteint</th>
+                        {isMaternelle && (
+                          <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-32">Appréciation globale</th>
+                        )}
+                        <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-32">Observation</th>
                       </tr>
-                      {/* Ligne 2 : pour Primaire uniquement, CM/18 + CP/2 + Total par matière */}
+                      {/* Ligne 2 : pour Primaire, CM/18 + CP/2 + Total par matière ; Seuil atteint Oui/Non */}
                       {!isMaternelle && !isSecondaire && (
                         <tr className="bg-slate-50">
                           {sortedSubjects.map((_, idx) => (
@@ -992,6 +998,8 @@ function GradingSheet({
                               <th key={`tot-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Total</th>
                             </>
                           ))}
+                          <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Oui</th>
+                          <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Non</th>
                         </tr>
                       )}
                     </thead>
@@ -1257,23 +1265,95 @@ function GradingSheet({
                                 {totalGeneral !== null ? totalGeneral.toFixed(2) : '—'}
                               </td>
                             )}
-                            {/* Seuil atteint */}
-                            <td className="border border-slate-300 px-2 py-1 text-center">
-                              {isMaternelle ? (
-                                // Pour maternelle : afficher un check si tous les domaines ont une annotation
-                                sortedSubjects.every((subj) => {
-                                  const s = row.scores[subj.id];
-                                  return s && s.qualitativeCode;
-                                }) ? (
-                                  <CheckCircle2 className="h-4 w-4 text-emerald-600 mx-auto" />
-                                ) : (
-                                  <span className="text-slate-300 text-xs">—</span>
-                                )
-                              ) : seuilAtteint ? (
-                                <CheckCircle2 className="h-4 w-4 text-emerald-600 mx-auto" />
-                              ) : (
-                                <XCircle className="h-4 w-4 text-red-500 mx-auto" />
-                              )}
+                            {/* Rang (calculé automatiquement par total général décroissant) */}
+                            <td className="border border-slate-300 px-2 py-1 text-center font-bold text-slate-700">
+                              {(() => {
+                                if (isMaternelle) return '—';
+                                // Calculer le rang : trier les élèves par total décroissant
+                                const sortedByTotal = [...filteredRows]
+                                  .map((r) => ({
+                                    id: r.studentId,
+                                    total: sortedSubjects.reduce((sum, subj) => {
+                                      const s = r.scores[subj.id];
+                                      return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
+                                    }, 0),
+                                  }))
+                                  .sort((a, b) => b.total - a.total);
+                                const rank = sortedByTotal.findIndex((r) => r.id === row.studentId) + 1;
+                                return rank > 0 ? rank : '—';
+                              })()}
+                            </td>
+                            {/* Seuil de réussite fixé (10/20 par défaut) */}
+                            <td className="border border-slate-300 px-2 py-1 text-center text-slate-600">
+                              10
+                            </td>
+                            {/* Seuil atteint : Oui / Non (automatique) */}
+                            <td className="border border-slate-300 px-1 py-1 text-center">
+                              {(() => {
+                                if (isMaternelle) {
+                                  // Maternelle : réussite si (TS + S) ≥ seuil
+                                  const allAnnotated = sortedSubjects.every((subj) => {
+                                    const s = row.scores[subj.id];
+                                    return s && s.qualitativeCode;
+                                  });
+                                  return allAnnotated ? '✓' : '';
+                                }
+                                return seuilAtteint ? '✓' : '';
+                              })()}
+                            </td>
+                            <td className="border border-slate-300 px-1 py-1 text-center">
+                              {(() => {
+                                if (isMaternelle) {
+                                  const allAnnotated = sortedSubjects.every((subj) => {
+                                    const s = row.scores[subj.id];
+                                    return s && s.qualitativeCode;
+                                  });
+                                  return !allAnnotated && Object.values(row.scores).some(s => s?.qualitativeCode) ? '✓' : '';
+                                }
+                                return !seuilAtteint && totalGeneral !== null ? '✓' : '';
+                              })()}
+                            </td>
+                            {/* Appréciation globale (Maternelle uniquement) */}
+                            {isMaternelle && (
+                              <td className="border border-slate-300 p-0">
+                                <input
+                                  type="text"
+                                  value={row.scores[sortedSubjects[0]?.id]?.comment || ''}
+                                  onChange={(e) => {
+                                    const subjId = sortedSubjects[0]?.id;
+                                    if (!subjId) return;
+                                    setRows(prev => prev.map(r => {
+                                      if (r.studentId !== row.studentId) return r;
+                                      const existing = r.scores[subjId] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
+                                      return { ...r, scores: { ...r.scores, [subjId]: { ...existing, comment: e.target.value } } };
+                                    }));
+                                  }}
+                                  placeholder="—"
+                                  className="w-full px-1 py-1 text-center text-xs border-0 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                />
+                              </td>
+                            )}
+                            {/* Observation */}
+                            <td className="border border-slate-300 p-0">
+                              <input
+                                type="text"
+                                value={(() => {
+                                  // Récupérer le commentaire du premier sujet
+                                  const firstSubj = sortedSubjects[0];
+                                  return firstSubj ? (row.scores[firstSubj.id]?.comment || '') : '';
+                                })()}
+                                onChange={(e) => {
+                                  const subjId = sortedSubjects[0]?.id;
+                                  if (!subjId) return;
+                                  setRows(prev => prev.map(r => {
+                                    if (r.studentId !== row.studentId) return r;
+                                    const existing = r.scores[subjId] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
+                                    return { ...r, scores: { ...r.scores, [subjId]: { ...existing, comment: e.target.value } } };
+                                  }));
+                                }}
+                                placeholder="—"
+                                className="w-full px-1 py-1 text-center text-xs border-0 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-400"
+                              />
                             </td>
                           </tr>
                         );
@@ -1282,7 +1362,7 @@ function GradingSheet({
                       {filteredRows.length === 0 && (
                         <tr>
                           <td
-                            colSpan={isMaternelle ? 5 + group.subjects.length + 1 : isSecondaire ? 5 + group.subjects.length + 1 : 5 + group.subjects.length * 3 + 2}
+                            colSpan={isMaternelle ? 5 + group.subjects.length + 6 : isSecondaire ? 5 + group.subjects.length + 5 : 5 + group.subjects.length * 3 + 6}
                             className="border border-slate-300 px-4 py-8 text-center text-slate-400 text-sm"
                           >
                             Aucun élève trouvé.

@@ -1189,20 +1189,40 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         </div>
       )}
 
-      {/* === PAGE 2 — Évaluation certificative mensuelle === */}
+      {/* === PAGE 2 — Évaluation mensuelle dynamique === */}
       {activeTab === "evaluation" && evaluation && (
         <div className="bg-white border-2 border-slate-800 rounded-xl p-6 space-y-4">
-          {/* En-tête */}
+          {/* En-tête dynamique */}
           <div className="text-center border-b border-slate-300 pb-3">
             <h2 className="text-lg font-bold text-slate-900">
-              ÉVALUATION CERTIFICATIVE MENSUELLE N° {evaluation.evaluationNumber || "—"}
+              {evaluation.title || `ÉVALUATION MENSUELLE — ${MONTH_NAMES[selectedMonth]} ${selectedYear}`}
             </h2>
             <div className="text-sm text-slate-600 mt-1">
-              Mois de <strong>{MONTH_NAMES[selectedMonth]}</strong> {selectedYear} — Étape N° {evaluation.etapeNumber || "—"}
+              Classe : <strong>{selectedClass?.className || '—'}</strong> — {MONTH_NAMES[selectedMonth]} {selectedYear}
+              {evaluation.evaluationNumber && ` — Évaluation N° ${evaluation.evaluationNumber}`}
+              {evaluation.etapeNumber && ` — Étape N° ${evaluation.etapeNumber}`}
             </div>
             <p className="text-xs text-slate-500 mt-1 italic">
               NB : Pour chaque épreuve, l'élève évalué(e) n'aura de bonus de perfectionnement que lorsqu'il(elle) aura atteint la maîtrise minimale fixée.
             </p>
+            {/* ⭐ Badge de statut dynamique */}
+            <div className="mt-2">
+              {evaluation.status === 'DRAFT' && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-700">
+                  Brouillon — Saisie en cours
+                </span>
+              )}
+              {evaluation.status === 'SUBMITTED' && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
+                  Soumise au directeur — En attente de validation
+                </span>
+              )}
+              {evaluation.status === 'VALIDATED' && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
+                  Validée par la direction
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Sélection du seuil de réussite + Bouton config matières */}
@@ -1224,16 +1244,42 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
               Configurer les matières ({subjectsConfig.length})
             </button>
 
-            {/* Bouton soumettre */}
+            {/* ⭐ Bouton soumettre au directeur — conditionnel selon statut + signature */}
             {evaluation.status === "DRAFT" && (
-              <button onClick={handleSubmitEvaluation} disabled={saving}
-                className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">
+              <button
+                onClick={async () => {
+                  // ⭐ Vérifier que la signature est présente
+                  if (!teacherSignature) {
+                    toast.error("Signature obligatoire", {
+                      description: "Vous devez signer avant de soumettre au directeur.",
+                    });
+                    return;
+                  }
+                  if (!confirm("Soumettre cette évaluation au directeur ? Cette action est irréversible.")) return;
+                  await handleSubmitEvaluation();
+                }}
+                disabled={saving || !teacherSignature}
+                className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                title={!teacherSignature ? "Signature obligatoire avant soumission" : "Soumettre au directeur"}
+              >
                 <Send className="h-4 w-4" />
-                Soumettre au directeur
+                {teacherSignature ? "Soumettre au directeur" : "Signature requise"}
               </button>
             )}
+            {evaluation.status === "SUBMITTED" && (
+              <span className="inline-flex items-center gap-1 px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-semibold">
+                <AlertCircle className="h-4 w-4" />
+                En attente de validation par la direction
+              </span>
+            )}
+            {evaluation.status === "VALIDATED" && (
+              <span className="inline-flex items-center gap-1 px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-semibold">
+                <CheckCircle2 className="h-4 w-4" />
+                Validée — Notes verrouillées
+              </span>
+            )}
 
-            <button onClick={handleSaveEvaluation} disabled={saving || isReadOnly}
+            <button onClick={handleSaveEvaluation} disabled={saving || isReadOnly || evaluation.status !== 'DRAFT'}
               className="ml-auto flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Enregistrer

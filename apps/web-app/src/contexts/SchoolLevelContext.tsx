@@ -13,6 +13,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useAppSessionOptional } from '@/contexts/AppSessionContext';
 
 export interface SchoolLevel {
   id: string;
@@ -61,6 +62,10 @@ const SchoolLevelContext = createContext<SchoolLevelContextType | undefined>(und
 
 export function SchoolLevelProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
+  const session = useAppSessionOptional();
+  const userRole = session?.user?.role;
+  const userId = session?.user?.id;
+  const userAccreditations = session?.user?.accreditations;
   const [currentLevel, setCurrentLevelState] = useState<SchoolLevel | null>(null);
   const [availableLevels, setAvailableLevels] = useState<SchoolLevel[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -108,9 +113,60 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
         setAvailableLevels(withAll);
 
         const savedLevelId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_ID) : null;
-        const selectedLevel = savedLevelId
-          ? withAll.find((l) => l.id === savedLevelId) || withAll[0]
-          : withAll[0];
+
+        // ⭐ Auto-sélection du niveau pour les enseignants :
+        //    Si l'utilisateur est un enseignant (TEACHER/TEACHER_RESP) et qu'il n'a pas
+        //    de niveau sauvegardé (ou "ALL"), on déduit son niveau depuis ses
+        //    accreditations ou on fetch ses classes assignées.
+        let autoSelectedLevel: SchoolLevel | null = null;
+        const isTeacher = userRole === 'TEACHER' || userRole === 'TEACHER_RESP' || userRole === 'teacher';
+
+        if (isTeacher && (!savedLevelId || savedLevelId === 'ALL') && activeLevels.length > 0) {
+          // 1. Essayons d'abord les accreditations du user
+          if (userAccreditations && userAccreditations.length > 0) {
+            // Prendre la première accreditation qui correspond à un niveau actif
+            for (const acc of userAccreditations) {
+              const match = activeLevels.find((l) => l.code === acc);
+              if (match) {
+                autoSelectedLevel = match;
+                break;
+              }
+            }
+          }
+
+          // 2. Si pas d'accreditation, fetch /api/pedagogy-space/my-classes pour déduire le niveau
+          if (!autoSelectedLevel && userId) {
+            try {
+              const academicYearId = typeof window !== 'undefined'
+                ? localStorage.getItem('academicYearId') || ''
+                : '';
+              if (academicYearId) {
+                const classesRes = await fetch(
+                  `/api/pedagogy-space/my-classes?teacherId=${userId}&academicYearId=${academicYearId}`,
+                  { credentials: 'include' }
+                );
+                if (classesRes.ok) {
+                  const classesData = await classesRes.json();
+                  const classes = Array.isArray(classesData) ? classesData : (classesData?.data || []);
+                  // Prendre le schoolLevelCode de la première classe
+                  if (classes.length > 0) {
+                    const firstClass = classes[0];
+                    const slCode = firstClass.schoolLevel?.code || firstClass.physicalClass?.schoolLevel?.code || '';
+                    if (slCode) {
+                      autoSelectedLevel = activeLevels.find((l) => l.code === slCode) || null;
+                    }
+                  }
+                }
+              }
+            } catch {
+              // Silent fallback
+            }
+          }
+        }
+
+        const selectedLevel = autoSelectedLevel
+          || (savedLevelId ? withAll.find((l) => l.id === savedLevelId) || null : null)
+          || withAll[0];
 
         if (selectedLevel) {
           const previousLevelId = currentLevel?.id;
@@ -142,7 +198,7 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [currentLevel?.id, invalidateQueriesForLevelChange]);
+  }, [currentLevel?.id, invalidateQueriesForLevelChange, userRole, userId, userAccreditations]);
 
   useEffect(() => {
     loadSchoolLevels();

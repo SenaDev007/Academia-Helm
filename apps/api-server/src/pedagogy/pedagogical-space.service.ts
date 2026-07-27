@@ -3667,6 +3667,203 @@ export class PedagogicalSpaceService {
     return updated[0];
   }
 
+  /**
+   * ⭐ Permet au directeur d'ajouter ses observations (par section + générale)
+   *    et d'apposer sa signature, puis de valider la fiche pédagogique.
+   *
+   * Body :
+   *   - directorSectionObservations: Record<string, string> — observations par section
+   *     (ex: { phase_preparatoire: "...", deroulement: "...", retour_projection: "..." })
+   *   - directorObservation: string — observation générale (HTML riche)
+   *   - directorSignature: string (base64) — signature du directeur (obligatoire pour VALIDATED)
+   *   - action: 'VALIDATED' | 'REJECTED'
+   *   - rejectionReason?: string
+   *   - validatedBy?: string
+   */
+  async directorUpdatePedagogicalFiche(
+    tenantId: string,
+    ficheId: string,
+    body: {
+      directorSectionObservations?: Record<string, string>;
+      directorObservation?: string;
+      directorSignature?: string;
+      action: 'VALIDATED' | 'REJECTED';
+      rejectionReason?: string;
+      validatedBy?: string;
+    },
+  ) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "primary_pedagogical_fiches" WHERE "id" = $1 AND "tenantId" = $2`,
+      ficheId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Fiche pédagogique non trouvée');
+    }
+    const fiche = existing[0];
+    if (fiche.status !== 'SUBMITTED') {
+      throw new BadRequestException(`La fiche doit être en statut SUBMITTED (actuel: ${fiche.status})`);
+    }
+
+    // ⭐ Si VALIDATED, la signature du directeur est obligatoire
+    if (body.action === 'VALIDATED' && !body.directorSignature) {
+      throw new BadRequestException('La signature du directeur est obligatoire pour valider');
+    }
+
+    // ⭐ Mettre à jour la fiche avec les observations + signature + statut
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "primary_pedagogical_fiches"
+       SET "status" = $3,
+           "directorSignature" = $4,
+           "directorSignatureDate" = CASE WHEN $3 = 'VALIDATED' THEN NOW() ELSE "directorSignatureDate" END,
+           "directorObservation" = $5,
+           "directorSectionObservations" = $6::jsonb,
+           "validatedAt" = CASE WHEN $3 = 'VALIDATED' THEN NOW() ELSE "validatedAt" END,
+           "validatedBy" = $7,
+           "rejectionReason" = $8,
+           "updatedAt" = NOW()
+       WHERE "id" = $1 AND "tenantId" = $2`,
+      ficheId, tenantId,
+      body.action,
+      body.directorSignature || null,
+      body.directorObservation || null,
+      JSON.stringify(body.directorSectionObservations || {}),
+      body.validatedBy || null,
+      body.action === 'REJECTED' ? (body.rejectionReason || null) : null,
+    );
+
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "primary_pedagogical_fiches" WHERE "id" = $1`,
+      ficheId,
+    );
+
+    // ⭐ Notifier l'enseignant de la décision
+    this.notifyTeacherOfFicheDecision(
+      tenantId, fiche.classId, fiche.teacherId, body.action, fiche.sheetType, fiche.lessonDate,
+    ).catch((err) => this.logger.error('Teacher notification error:', err));
+
+    this.logger.log(`✅ Fiche pédagogique ${ficheId} ${body.action}`);
+    return updated[0];
+  }
+
+  /**
+   * ⭐ Notifie l'enseignant de la décision du directeur sur sa fiche pédagogique.
+   */
+  private async notifyTeacherOfFicheDecision(
+    tenantId: string,
+    classId: string,
+    teacherId: string,
+    action: string,
+    sheetType: string,
+    lessonDate: Date | null,
+  ) {
+    let className = '—';
+    try {
+      const cls: any = await this.prisma.$queryRawUnsafe(
+        `SELECT name FROM "classes" WHERE "id" = $1`, classId,
+      );
+      if (cls && cls.length > 0) className = cls[0].name || '—';
+    } catch { /* silent */ }
+
+    let schoolName = 'Établissement scolaire';
+    try {
+      const profile: any = await this.prisma.$queryRawUnsafe(
+        `SELECT "schoolName" FROM "tenant_identity_profiles"
+         WHERE "tenantId" = $1 AND "isActive" = true LIMIT 1`,
+        tenantId,
+      );
+      if (profile && profile.length > 0) schoolName = profile[0].schoolName || schoolName;
+    } catch { /* silent */ }
+
+    let teacher: any = null;
+    try {
+      const teacherRow: any = await this.prisma.$queryRawUnsafe(
+        `SELECT t.*, u.email, u.phone, u."firstName", u."lastName"
+         FROM "teachers" t
+         LEFT JOIN "users" u ON u.email = t.email
+         WHERE t.id = $1 LIMIT 1`,
+        teacherId,
+      );
+      if (teacherRow && teacherRow.length > 0) teacher = teacherRow[0];
+    } catch (err: any) {
+      this.logger.warn(`Failed to fetch teacher: ${err.message}`);
+    }
+
+    if (!teacher || !teacher.email) {
+      this.logger.warn(`Aucun email trouvé pour l'enseignant ${teacherId}`);
+      return;
+    }
+
+    const sheetTypeLabels: Record<string, string> = {
+      MATH: 'Mathématiques', FRANCAIS: 'Français', EST: 'Éduc. Scientifique & Tech.',
+      ES: 'Éducation Sociale', EA: 'Éducation Artistique',
+    };
+    const dateLabel = lessonDate ? new Date(lessonDate).toLocaleDateString('fr-FR') : '—';
+    const actionLabel = action === 'VALIDATED' ? 'validée' : 'rejetée';
+    const actionColor = action === 'VALIDATED' ? '#10b981' : '#ef4444';
+
+    const emailSubject = `[${schoolName}] Fiche pédagogique ${actionLabel} — ${sheetTypeLabels[sheetType] || sheetType} — ${className}`;
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: ${actionColor}; color: white; padding: 20px; text-align: center;">
+          <h1 style="margin: 0; font-size: 18px;">${schoolName}</h1>
+          <p style="margin: 5px 0 0; font-size: 12px; opacity: 0.9;">Fiche pédagogique ${actionLabel}</p>
+        </div>
+        <div style="padding: 20px;">
+          <h2 style="color: ${actionColor}; font-size: 16px;">Bonjour ${teacher.firstName || ''} ${teacher.lastName || ''},</h2>
+          <p style="font-size: 14px; line-height: 1.5;">
+            Votre fiche pédagogique a été <strong style="color: ${actionColor};">${actionLabel}</strong> par le directeur :
+          </p>
+          <table style="width: 100%; margin: 15px 0; border-collapse: collapse;">
+            <tr><td style="padding: 5px; border-bottom: 1px solid #eee; font-weight: bold;">Classe :</td><td style="padding: 5px; border-bottom: 1px solid #eee;">${className}</td></tr>
+            <tr><td style="padding: 5px; border-bottom: 1px solid #eee; font-weight: bold;">Type :</td><td style="padding: 5px; border-bottom: 1px solid #eee;">${sheetTypeLabels[sheetType] || sheetType}</td></tr>
+            <tr><td style="padding: 5px; border-bottom: 1px solid #eee; font-weight: bold;">Date du cours :</td><td style="padding: 5px; border-bottom: 1px solid #eee;">${dateLabel}</td></tr>
+            <tr><td style="padding: 5px; border-bottom: 1px solid #eee; font-weight: bold;">Décision :</td><td style="padding: 5px; border-bottom: 1px solid #eee; color: ${actionColor}; font-weight: bold;">${actionLabel.toUpperCase()}</td></tr>
+          </table>
+          <p style="font-size: 14px; line-height: 1.5;">
+            Connectez-vous à la plateforme pour consulter les observations du directeur
+            dans <strong>Espace Pédagogique → Fiches Pédagogiques</strong>.
+          </p>
+        </div>
+      </div>
+    `;
+    const smsMessage = `${schoolName}: Votre fiche pedagogique (${sheetTypeLabels[sheetType] || sheetType}, ${className}, ${dateLabel}) a ete ${actionLabel}e par le directeur.`;
+
+    try {
+      await this.emailService.sendCategorized({
+        tenantId, category: 'PEDAGOGIE', subCategory: 'FICHE_DECISION',
+        module: 'pedagogy' as any, to: teacher.email,
+        toName: `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim(),
+        recipientType: 'ENSEIGNANT', recipientId: teacherId,
+        subject: emailSubject, html: emailHtml, text: smsMessage,
+        fromName: schoolName, triggeredBy: 'STAFF',
+        relatedEntityId: classId, relatedEntityType: 'PedagogicalFiche',
+      } as any);
+    } catch (err: any) {
+      this.logger.warn(`Email to teacher failed: ${err.message}`);
+    }
+
+    if (teacher.phone) {
+      try {
+        const phone = teacher.phone.startsWith('+') ? teacher.phone : `+229${teacher.phone.replace(/^0/, '')}`;
+        await this.whatsappService.sendCategorized({
+          tenantId, category: 'PEDAGOGIE', subCategory: 'FICHE_DECISION',
+          module: 'pedagogy' as any, to: phone,
+          toName: `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim(),
+          recipientType: 'ENSEIGNANT', recipientId: teacherId,
+          message: smsMessage, triggeredBy: 'STAFF',
+          relatedEntityId: classId, relatedEntityType: 'PedagogicalFiche',
+        } as any);
+      } catch (err: any) {
+        this.logger.warn(`WhatsApp to teacher failed: ${err.message}`);
+      }
+      try {
+        await this.smsService.sendSMS(teacher.phone, smsMessage);
+      } catch (err: any) {
+        this.logger.warn(`SMS to teacher failed: ${err.message}`);
+      }
+    }
+  }
+
   /// Récupère tous les registres d'appel soumis (en attente de validation).
   async getPendingAttendanceRegisters(tenantId: string, academicYearId: string) {
     return this.prisma.$queryRawUnsafe(

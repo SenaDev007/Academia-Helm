@@ -738,6 +738,23 @@ export class PedagogicalSpaceController {
     );
   }
 
+  // ⭐ Mise à jour directeur : observations + signature + validation fiche pédagogique
+  @Put('director/fiches/:id/director-update')
+  async directorUpdatePedagogicalFiche(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: {
+      directorSectionObservations?: Record<string, string>;
+      directorObservation?: string;
+      directorSignature?: string;
+      action: 'VALIDATED' | 'REJECTED';
+      rejectionReason?: string;
+      validatedBy?: string;
+    },
+  ) {
+    return this.service.directorUpdatePedagogicalFiche(tenantId, id, body);
+  }
+
   // --- Registres d'appel ---
 
   @Get('director/pending-registers')

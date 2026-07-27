@@ -547,6 +547,24 @@ function PendingFichesTab({ tenantId, academicYearId, userId, refreshKey, onRefr
     } catch { toast.error("Erreur"); }
   };
 
+  // ⭐ Si une fiche est sélectionnée, afficher la vue détaillée in-page
+  if (selected) {
+    return (
+      <PedagogicalFicheDirectorDetail
+        fiche={selected}
+        userId={userId}
+        onBack={() => setSelected(null)}
+        onValidated={() => {
+          setSelected(null);
+          onRefresh();
+          refetch();
+          queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "pending-fiches"] });
+          queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "dashboard"] });
+        }}
+      />
+    );
+  }
+
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>;
 
   if (items.length === 0) {
@@ -558,91 +576,117 @@ function PendingFichesTab({ tenantId, academicYearId, userId, refreshKey, onRefr
     );
   }
 
+  // ⭐ Hiérarchisation : par classe → mois → semaine → jour
+  const monthNames = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+    'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+  const dayNames = ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+
+  // Grouper par classe
+  const groupedByClass: Record<string, any[]> = {};
+  for (const item of items) {
+    const key = item.classNameResolved || 'Sans classe';
+    if (!groupedByClass[key]) groupedByClass[key] = [];
+    groupedByClass[key].push(item);
+  }
+  const classNames = Object.keys(groupedByClass).sort();
+
+  // Pour chaque classe, grouper par mois
+  const groupedByMonth: Record<string, Record<string, Record<string, any[]>>> = {};
+  for (const cn of classNames) {
+    groupedByMonth[cn] = {};
+    for (const item of groupedByClass[cn]) {
+      const dateField = item.lessonDate || item.adminDate;
+      const d = dateField ? new Date(dateField) : new Date();
+      const monthKey = `${monthNames[d.getMonth() + 1]} ${d.getFullYear()}`;
+      if (!groupedByMonth[cn][monthKey]) groupedByMonth[cn][monthKey] = {};
+      // Grouper par semaine (numéro de semaine)
+      const weekKey = `Semaine ${item.adminWeek || Math.ceil(d.getDate() / 7)}`;
+      if (!groupedByMonth[cn][monthKey][weekKey]) groupedByMonth[cn][monthKey][weekKey] = [];
+      groupedByMonth[cn][monthKey][weekKey].push(item);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-bold text-slate-900">Fiches Pédagogiques en attente</h3>
-          <p className="text-sm text-slate-500">{items.length} soumission(s)</p>
+          <p className="text-sm text-slate-500">{items.length} soumission(s) · {classNames.length} classe(s)</p>
         </div>
         <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg"><RefreshCw className="h-4 w-4" /></button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {items.map(item => {
-          const sheetConfig = SHEET_TYPE_LABELS[item.sheetType] || { label: item.sheetType, icon: FileText, color: "bg-slate-100" };
-          const Icon = sheetConfig.icon;
-          return (
-            <div key={item.id} className="p-4 rounded-xl border border-slate-200 bg-white">
-              <div className="flex items-start justify-between mb-2">
-                <div className={cn("flex items-center gap-2 px-2 py-1 rounded text-xs font-bold", sheetConfig.color)}>
-                  <Icon className="h-3 w-3" />
-                  {sheetConfig.label}
-                </div>
-                <span className="text-xs text-slate-400">S{item.weekNumber || "—"}</span>
-              </div>
-              <p className="font-medium text-slate-900 text-sm">
-                {item.competence ? item.competence.slice(0, 80) + "..." : "—"}
-              </p>
-              <p className="text-xs text-slate-500 mt-1">
-                Classe: <strong>{item.classNameResolved || "—"}</strong>
-              </p>
-              <p className="text-xs text-slate-500">
-                {item.teacherFirstName} {item.teacherLastName} · {formatDateFR(item.lessonDate)}
-              </p>
-              <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-100">
-                <button onClick={() => handleView(item)}
-                  className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
-                  <Eye className="h-3 w-3" /> Voir
-                </button>
-                <button onClick={() => setModalItem(item)}
-                  className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
-                  <CheckCircle2 className="h-3 w-3" /> Traiter
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {selected && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold">Fiche Pédagogique — {SHEET_TYPE_LABELS[selected.sheetType]?.label || selected.sheetType}</h3>
-              <button onClick={() => setSelected(null)} className="p-1 hover:bg-slate-100 rounded"><X className="h-5 w-5" /></button>
-            </div>
-            <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-3">
-                <div><strong>Classe:</strong> {selected.classNameResolved || "—"}</div>
-                <div><strong>Enseignant:</strong> {selected.teacherFirstName} {selected.teacherLastName}</div>
-                <div><strong>Date:</strong> {formatDateFR(selected.lessonDate)}</div>
-                <div><strong>Semaine:</strong> S{selected.weekNumber} — T{selected.trimester}</div>
-                <div><strong>Durée:</strong> {selected.durationMinutes} min</div>
-                <div><strong>Effectif:</strong> {selected.totalStudents} ({selected.boysCount}G / {selected.girlsCount}F)</div>
-                <div><strong>Présents:</strong> {selected.totalPresent} (G{selected.boysPresent}/F{selected.girlsPresent})</div>
-                <div><strong>Absents:</strong> {selected.totalAbsent}</div>
-              </div>
-              <div><strong>Compétence:</strong> <div className="mt-1 text-slate-700">{selected.competence || "—"}</div></div>
-              <div><strong>Habileté:</strong> <div className="mt-1 text-slate-700">{selected.habilete || "—"}</div></div>
-              <div><strong>Prérequis:</strong> <div className="mt-1 text-slate-700">{selected.prealable || "—"}</div></div>
-              <div><strong>Contenu:</strong> <div className="mt-1 text-slate-700">{selected.contenu || "—"}</div></div>
-              <div><strong>Méthodes:</strong> <div className="mt-1 text-slate-700">{selected.methodes || "—"}</div></div>
-              <div><strong>Moyens didactiques:</strong> <div className="mt-1 text-slate-700">{selected.moyensDidactiques || "—"}</div></div>
-              <div><strong>Évaluation:</strong> <div className="mt-1 text-slate-700">{selected.evaluation || "—"}</div></div>
-              <div><strong>Référence:</strong> <div className="mt-1 text-slate-700">{selected.reference || "—"}</div></div>
-              {selected.deroulement && (
-                <div>
-                  <strong>Déroulement:</strong>
-                  <pre className="whitespace-pre-wrap mt-1 text-xs bg-slate-50 p-3 rounded-lg">
-                    {JSON.stringify(typeof selected.deroulement === "string" ? JSON.parse(selected.deroulement) : selected.deroulement, null, 2)}
-                  </pre>
-                </div>
-              )}
-            </div>
+      {/* ⭐ Hiérarchisé par classe → mois → semaine → jour */}
+      {classNames.map((className) => (
+        <div key={className} className="space-y-3">
+          <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg">
+            <FileText className="h-4 w-4 text-slate-600" />
+            <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">{className}</h4>
+            <span className="ml-auto text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-full">
+              {groupedByClass[className].length}
+            </span>
           </div>
+          {/* Sous-groupement par mois */}
+          {Object.keys(groupedByMonth[className]).map(monthKey => (
+            <div key={monthKey} className="space-y-2 pl-4">
+              <div className="flex items-center gap-2 px-2 py-1 bg-blue-50 rounded">
+                <Calendar className="h-3 w-3 text-blue-600" />
+                <span className="text-xs font-bold text-blue-700 uppercase tracking-wide">{monthKey}</span>
+              </div>
+              {/* Sous-groupement par semaine */}
+              {Object.keys(groupedByMonth[className][monthKey]).map(weekKey => (
+                <div key={weekKey} className="space-y-2 pl-4">
+                  <div className="flex items-center gap-2 px-2 py-1 bg-emerald-50 rounded">
+                    <Clock className="h-3 w-3 text-emerald-600" />
+                    <span className="text-xs font-bold text-emerald-700">{weekKey}</span>
+                    <span className="ml-auto text-xs text-emerald-500">
+                      {groupedByMonth[className][monthKey][weekKey].length} fiche(s)
+                    </span>
+                  </div>
+                  {/* Liste des fiches du jour */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pl-4">
+                    {groupedByMonth[className][monthKey][weekKey].map(item => {
+                      const sheetConfig = SHEET_TYPE_LABELS[item.sheetType] || { label: item.sheetType, icon: FileText, color: "bg-slate-100" };
+                      const Icon = sheetConfig.icon;
+                      const dateField = item.lessonDate || item.adminDate;
+                      const dayLabel = dateField ? dayNames[new Date(dateField).getDay()] : '—';
+                      return (
+                        <div key={item.id} className="p-4 rounded-xl border border-slate-200 bg-white">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className={cn("flex items-center gap-2 px-2 py-1 rounded text-xs font-bold", sheetConfig.color)}>
+                              <Icon className="h-3 w-3" /> {sheetConfig.label}
+                            </div>
+                            <span className="text-xs text-slate-400">{dayLabel}</span>
+                          </div>
+                          <p className="text-sm text-slate-600 line-clamp-2">
+                            {item.competence ? item.competence.replace(/<[^>]*>/g, '').substring(0, 80) + "..." : "—"}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            {item.teacherFirstName} {item.teacherLastName}
+                            {" · "}{dateField ? formatDateFR(dateField) : '—'}
+                          </p>
+                          <div className="flex items-center gap-2 mt-3">
+                            <button onClick={() => handleView(item)}
+                              className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
+                              <Eye className="h-3 w-3" /> Voir
+                            </button>
+                            <button onClick={() => setModalItem(item)}
+                              className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
+                              <CheckCircle2 className="h-3 w-3" /> Traiter
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
-      )}
+      ))}
+
+      {/* ⭐ L'ancien modal a été remplacé par la vue in-page PedagogicalFicheDirectorDetail */}
 
       <ValidationModal
         open={!!modalItem}
@@ -1918,4 +1962,75 @@ function AttendanceRegisterDirectorDetail({
     </div>
   );
 }
+// ============================================================================
+// PedagogicalFicheDirectorDetail
+// ============================================================================
 
+const SHEET_TYPE_HEADERS: Record<string, { label: string; bg: string }> = {
+  MATH: { label: "MATHÉMATIQUE", bg: "bg-blue-50 border-blue-300" },
+  FRANCAIS: { label: "FRANÇAIS", bg: "bg-emerald-50 border-emerald-300" },
+  EST: { label: "ÉDUCATION SCIENTIFIQUE ET TECHNOLOGIQUE", bg: "bg-purple-50 border-purple-300" },
+  ES: { label: "ÉDUCATION SOCIALE", bg: "bg-amber-50 border-amber-300" },
+  EA: { label: "ÉDUCATION ARTISTIQUE", bg: "bg-pink-50 border-pink-300" },
+};
+
+function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: { fiche: any; userId: string; onBack: () => void; onValidated: () => void; }) {
+  const [saving, setSaving] = useState(false);
+  const [directorSignature, setDirectorSignature] = useState<string | null>(fiche.directorSignature || null);
+  const [directorGeneralObservation, setDirectorGeneralObservation] = useState<string>(fiche.directorObservation || "");
+  const [sectionObservations, setSectionObservations] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let existing = fiche.directorSectionObservations;
+    if (typeof existing === "string") { try { existing = JSON.parse(existing); } catch { existing = {}; } }
+    setSectionObservations(existing || {});
+  }, [fiche.id]);
+
+  const isAlreadyValidated = fiche.status === "VALIDATED";
+  const isAlreadyRejected = fiche.status === "REJECTED";
+  const sheetConfig = SHEET_TYPE_HEADERS[fiche.sheetType] || { label: fiche.sheetType, bg: "bg-slate-50 border-slate-300" };
+  let deroulement: any[] = [];
+  if (fiche.deroulement) { if (typeof fiche.deroulement === "string") { try { deroulement = JSON.parse(fiche.deroulement); } catch { deroulement = []; } } else if (Array.isArray(fiche.deroulement)) { deroulement = fiche.deroulement; } }
+
+  const handleValidate = async (action: "VALIDATED" | "REJECTED") => {
+    if (action === "VALIDATED" && !directorSignature) { toast.error("Signature obligatoire"); return; }
+    if (!window.confirm(action === "VALIDATED" ? "Valider cette fiche ?" : "Rejeter cette fiche ?")) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/pedagogy-space/director/fiches/" + fiche.id + "/director-update", { method: "PUT", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ directorSectionObservations: sectionObservations, directorObservation: directorGeneralObservation, directorSignature, action, validatedBy: userId }) });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      toast.success(action === "VALIDATED" ? "Fiche validée" : "Fiche rejetée");
+      onValidated();
+    } catch (err: any) { toast.error("Erreur", { description: err.message }); } finally { setSaving(false); }
+  };
+
+  const renderField = (label: string, value: string | null | undefined) => (
+    <div className="mb-3"><label className="block text-xs font-bold text-slate-600 uppercase mb-1">{label}</label><div className="text-sm text-slate-800 min-h-[40px] p-2 bg-slate-50 rounded border border-slate-200">{value ? <div dangerouslySetInnerHTML={{ __html: value }} /> : <span className="text-slate-300">—</span>}</div></div>
+  );
+  const renderObs = (key: string, label: string) => (
+    <div className="mb-3 bg-red-50/30 p-2 rounded border border-red-200"><label className="block text-xs font-bold text-red-700 uppercase mb-1">{label} (rouge)</label><textarea value={sectionObservations[key] || ""} onChange={(e) => setSectionObservations(prev => ({ ...prev, [key]: e.target.value }))} disabled={saving || isAlreadyValidated} placeholder="Observation..." className="w-full px-2 py-1 text-xs text-red-700 font-semibold border border-red-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-red-400 resize-none" style={{ minHeight: "50px" }} /></div>
+  );
+  const fmt = (d: string | Date) => d ? new Date(d).toLocaleDateString("fr-FR") : "—";
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-3">
+        <button onClick={onBack} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg"><ChevronRight className="w-4 h-4 rotate-180" /> Retour</button>
+        <div className="flex items-center gap-2">
+          {isAlreadyValidated && <span className="px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-bold">Validé</span>}
+          {isAlreadyRejected && <span className="px-3 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-bold">Rejeté</span>}
+          {!isAlreadyValidated && !isAlreadyRejected && (<><button onClick={() => handleValidate("REJECTED")} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />} Rejeter</button><button onClick={() => handleValidate("VALIDATED")} disabled={saving || !directorSignature} className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} {directorSignature ? "Valider" : "Signature requise"}</button></>)}
+        </div>
+      </div>
+      <div className={cn("bg-white border-2 rounded-xl p-4 text-center", sheetConfig.bg)}><h2 className="text-lg font-bold text-slate-900">FICHE DE {sheetConfig.label}</h2><div className="text-sm text-slate-600 mt-1">Classe : <strong>{fiche.classNameResolved || "—"}</strong> · Enseignant : {fiche.teacherFirstName} {fiche.teacherLastName}</div><div className="text-xs text-slate-500 mt-1">Date : <strong>{fmt(fiche.lessonDate)}</strong>{fiche.adminWeek ? " · S" + fiche.adminWeek : ""}{fiche.trimester ? " · T" + fiche.trimester : ""} · Statut : <strong>{fiche.status}</strong></div></div>
+      <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3"><h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">I- Éléments de planification</h3>{renderField("Compétences disciplinaires", fiche.competence)}{renderField("Compétences transversales", fiche.habilete)}{renderField("Compétences transdisciplinaires", fiche.prealable)}{renderField("Connaissances et techniques", fiche.contenu)}{renderField("Stratégie objet d'apprentissage", fiche.methodes)}{renderField("Stratégie d'enseignement", fiche.moyensDidactiques)}{renderField("Matériel", fiche.evaluation)}{renderObs("phase_preparatoire", "Observation — Phase préparatoire")}</div>
+      <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3"><h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">II- Déroulement</h3>{deroulement.length > 0 ? (<div className="overflow-x-auto"><table className="w-full border-collapse text-xs"><thead><tr className="bg-slate-100"><th className="border border-slate-300 px-2 py-1 text-left w-12">N°</th><th className="border border-slate-300 px-2 py-1 text-left">Consignes</th><th className="border border-slate-300 px-2 py-1 text-left">Résultats</th></tr></thead><tbody>{deroulement.map((step: any, idx: number) => (<tr key={idx}><td className="border border-slate-300 px-2 py-1 text-center font-bold">{idx + 1}</td><td className="border border-slate-300 px-2 py-1">{step.consignes || step.activiteEnseignant ? <div dangerouslySetInnerHTML={{ __html: step.consignes || step.activiteEnseignant }} /> : <span className="text-slate-300">—</span>}</td><td className="border border-slate-300 px-2 py-1">{step.resultats || step.activiteEleves ? <div dangerouslySetInnerHTML={{ __html: step.resultats || step.activiteEleves }} /> : <span className="text-slate-300">—</span>}</td></tr>))}</tbody></table></div>) : <p className="text-sm text-slate-400 italic">Aucune étape.</p>}{renderObs("deroulement", "Observation — Déroulement")}</div>
+      <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3"><h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">III- Retour et projection</h3>{renderField("Objectivation", (fiche as any).objectivation)}{renderField("Évaluation", (fiche as any).evalRetour || fiche.evaluation)}{renderField("Projection", (fiche as any).projection)}{renderField("Référence", fiche.reference)}{renderObs("retour_projection", "Observation — Retour et projection")}</div>
+      <div className="bg-white border-2 border-red-300 rounded-xl p-4 space-y-3"><h3 className="text-sm font-bold text-red-700 uppercase">Observation générale du directeur</h3><RichTextEditor value={directorGeneralObservation} onChange={(html) => setDirectorGeneralObservation(html)} disabled={saving || isAlreadyValidated} placeholder="Observations générales..." minHeight="100px" /></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6 border-t-2 border-slate-300">
+        <div className="space-y-2"><div className="text-sm font-bold text-slate-800">Le Maître / La Maîtresse</div>{fiche.teacherSignature ? <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2"><img src={fiche.teacherSignature} alt="Sig" className="max-h-24 mx-auto" /></div> : <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center text-xs text-slate-400 italic">Non signé</div>}</div>
+        <div className="space-y-2"><div className="flex items-center justify-between"><div><div className="text-sm font-bold text-slate-800">Le Directeur</div><div className="text-xs text-slate-500">{isAlreadyValidated ? "" : "(obligatoire)"}</div></div>{directorSignature && <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">Signé</span>}</div>{directorSignature ? <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2 relative"><img src={directorSignature} alt="Sig" className="max-h-24 mx-auto" />{!isAlreadyValidated && <button type="button" onClick={() => setDirectorSignature(null)} className="absolute top-1 right-1 text-xs text-red-500">Effacer</button>}</div> : <SignatureCanvas width={400} height={120} disabled={saving || isAlreadyValidated} placeholder="Signature (obligatoire)" onSignatureChange={(data) => setDirectorSignature(data)} />}</div>
+      </div>
+    </div>
+  );
+}

@@ -2626,6 +2626,28 @@ export class PedagogicalSpaceService {
           } else {
             results.monthlyEvaluation = { id: e.id, status: e.status, skipped: true };
           }
+        } else {
+          // ⭐ Si pas de monthly_evaluation trouvée, chercher dans evaluations (Module Examen)
+          // et mettre le statut à SUBMITTED
+          const examEvals: any = await this.prisma.$queryRawUnsafe(
+            `SELECT e.id FROM "evaluations" e
+             WHERE e."tenantId" = $1 AND e."academicYearId" = $2
+             AND e."classId" = $3
+             AND EXTRACT(MONTH FROM COALESCE(e."startDate", e."evaluationDate")) = $4
+             AND EXTRACT(YEAR FROM COALESCE(e."startDate", e."evaluationDate")) = $5
+             AND e."status" IN ('OPEN_FOR_GRADING', 'PLANNED')
+             `,
+            tenantId, academicYearId, classId, month, year,
+          );
+          if (examEvals && examEvals.length > 0) {
+            for (const ev of examEvals) {
+              await this.prisma.$executeRawUnsafe(
+                `UPDATE "evaluations" SET "status" = 'SUBMITTED', "submittedAt" = NOW() WHERE "id" = $1`,
+                ev.id,
+              );
+            }
+            results.monthlyEvaluation = { id: examEvals[0].id, status: 'SUBMITTED', source: 'EXAM', count: examEvals.length };
+          }
         }
       } catch (err: any) {
         results.errors.push({ entity: 'monthlyEvaluation', error: err.message });
@@ -4252,6 +4274,7 @@ export class PedagogicalSpaceService {
       pendingFiches,
       pendingRegisters,
       pendingEvaluations,
+      pendingExamEvaluations,
       pendingWeeklyLogs,
       pendingWeeklySummaries,
       pendingCahierTests,
@@ -4274,6 +4297,12 @@ export class PedagogicalSpaceService {
       ),
       this.prisma.$queryRawUnsafe(
         `SELECT COUNT(*)::int as count FROM "monthly_evaluations"
+         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'`,
+        tenantId, academicYearId,
+      ),
+      // ⭐ Aussi compter les évaluations du Module Examen
+      this.prisma.$queryRawUnsafe(
+        `SELECT COUNT(*)::int as count FROM "evaluations"
          WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "status" = 'SUBMITTED'`,
         tenantId, academicYearId,
       ),
@@ -4301,7 +4330,7 @@ export class PedagogicalSpaceService {
     }, {} as Record<string, number>);
     const fichesCount = Object.values(fichesByType).reduce((s, c) => s + (c as number), 0);
     const registersCount = pendingRegisters[0]?.count || 0;
-    const evaluationsCount = pendingEvaluations[0]?.count || 0;
+    const evaluationsCount = (pendingEvaluations[0]?.count || 0) + (pendingExamEvaluations[0]?.count || 0);
     const weeklyLogsCount = pendingWeeklyLogs[0]?.count || 0;
     const weeklySummariesCount = pendingWeeklySummaries[0]?.count || 0;
     const cahierTestsCount = pendingCahierTests[0]?.count || 0;

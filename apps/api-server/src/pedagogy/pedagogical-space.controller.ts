@@ -31,6 +31,7 @@ import {
 } from '@nestjs/common';
 import { PedagogicalSpaceService } from './pedagogical-space.service';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { AcademicYearId } from '../common/decorators/academic-year-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -412,6 +413,56 @@ export class PedagogicalSpaceController {
     @Param('id') id: string,
   ) {
     return this.service.submitCahierJournal(tenantId, id);
+  }
+
+  // ===========================================================================
+  // ⭐ SOUMISSION UNIFIÉE — registre + évaluation mensuelle + cahier journal
+  // ===========================================================================
+
+  @Post('submit-unified')
+  @HttpCode(HttpStatus.OK)
+  async submitUnified(
+    @TenantId() tenantId: string,
+    @AcademicYearId() academicYearId: string,
+    @Body() body: {
+      teacherId: string;
+      classId: string;
+      month: number;
+      year: number;
+      weekStartDate?: string;
+    },
+  ) {
+    return this.service.submitUnified(
+      tenantId,
+      academicYearId,
+      body.teacherId,
+      body.classId,
+      body.month,
+      body.year,
+      body.weekStartDate,
+    );
+  }
+
+  @Post('notify-director')
+  @HttpCode(HttpStatus.OK)
+  async notifyDirector(
+    @TenantId() tenantId: string,
+    @Body() body: {
+      classId: string;
+      month: number;
+      year: number;
+      channels?: string[];
+      teacherId?: string;
+    },
+  ) {
+    return this.service.notifyDirector(
+      tenantId,
+      body.classId,
+      body.month,
+      body.year,
+      body.channels || ['email', 'whatsapp', 'sms'],
+      body.teacherId,
+    );
   }
 
   // ===========================================================================

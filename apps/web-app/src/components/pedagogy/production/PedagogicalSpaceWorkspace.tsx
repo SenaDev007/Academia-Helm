@@ -33,7 +33,7 @@ import { toast } from "sonner";
 import {
   BookOpen, CalendarCheck, CalendarDays, FileText,
   Users, Loader2, ChevronRight, RefreshCw, ClipboardList, FileSpreadsheet,
-  ClipboardCheck, Book, Package,
+  ClipboardCheck, Book, Package, Send, Bell,
 } from "lucide-react";
 
 import { MyClassesTab } from "./MyClassesTab";
@@ -47,6 +47,7 @@ import { CahierDeTestTab } from "./CahierDeTestTab";
 import { HomeworkTab } from "./HomeworkTab";
 import { GlobalLibraryHub } from "@/components/pedagogy/library/GlobalLibraryHub";
 import MaterialsWorkspace from "@/components/pedagogy/materials/MaterialsWorkspace";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
 // ⭐ Ordre des onglets demandé par l'utilisateur :
 //   1. Mes Classes

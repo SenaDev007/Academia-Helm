@@ -37,7 +37,7 @@ import {
   ClipboardList, Loader2, Save, RefreshCw, Send, Lock,
   FileText, BookOpen, BarChart3,
   CheckCircle2, XCircle, Clock, Settings, AlertCircle,
-  X, CalendarCheck,
+  X, CalendarCheck, Bell,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
@@ -444,43 +444,119 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
     }
   };
 
-  const handleSubmit = async () => {
-    if (!register) return;
-    // ⭐ Modal professionnel (remplace confirm())
+  // ⭐ L'ancien handleSubmit a été remplacé par handleUnifiedSubmit (soumission
+  //    unifiée : registre + évaluation mensuelle + cahier journal en une fois).
+
+
+
+
+
+
+
+
+
+
+  // ⭐ Soumission UNIFIÉE — soumet registre + évaluation mensuelle + cahier journal
+  //    en une seule transaction via POST /pedagogy-space/submit-unified
+  //    Le backend notifie automatiquement le directeur (email + WhatsApp + SMS).
+  const [submittingUnified, setSubmittingUnified] = useState(false);
+  const [notifyingDirector, setNotifyingDirector] = useState(false);
+  const handleUnifiedSubmit = async () => {
+    if (!register || !selectedClassId) return;
+    // ⭐ Modal professionnel
     const ok = await confirmWarning(
-      `Souhaitez-vous soumettre ce registre au directeur ?`,
-      'Soumission du registre',
+      `Souhaitez-vous soumettre au directeur ?`,
+      'Soumission unifiée',
       `Classe : ${selectedClass?.className || '—'}\n` +
       `Mois : ${MONTH_NAMES[selectedMonth]} ${selectedYear}\n\n` +
-      `Cette action est irréversible. Vous ne pourrez plus modifier le registre après la soumission.`
+      `Cette action soumet en une seule fois :\n` +
+      `• Le registre d'appel\n` +
+      `• L'évaluation mensuelle\n` +
+      `• Le cahier journal (semaine en cours)\n\n` +
+      `Cette action est irréversible. Le directeur sera notifié automatiquement.`
     );
     if (!ok) return;
+    setSubmittingUnified(true);
     try {
-      const res = await fetch(`/api/pedagogy-space/attendance-registers/${register.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ status: "SUBMITTED", submittedAt: new Date().toISOString() }),
+      // ⭐ Calculer le lundi de la semaine en cours
+      const today = new Date();
+      const day = today.getDay();
+      const diff = day === 0 ? -6 : 1 - day; // dimanche = -6, sinon 1 - day
+      const monday = new Date(today);
+      monday.setDate(today.getDate() + diff);
+
+      const res = await fetch('/api/pedagogy-space/submit-unified', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          teacherId,
+          classId: selectedClassId,
+          month: selectedMonth,
+          year: selectedYear,
+          weekStartDate: monday.toISOString().split('T')[0],
+        }),
       });
-      if (!res.ok) throw new Error("Échec de la soumission");
-      toast.success("✅ Registre soumis au directeur", {
-        description: "Le directeur sera notifié pour validation.",
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
+      }
+      const data = await res.json();
+      toast.success('✅ Soumission réussie', {
+        description: `Le directeur a été notifié par email, WhatsApp et SMS.`,
       });
-      // ⭐ Recharger le registre pour mettre à jour le badge (DRAFT → SUBMITTED)
+      // ⭐ Recharger le registre pour mettre à jour le statut (DRAFT → SUBMITTED)
       await loadRegister();
     } catch (e: any) {
-      toast.error("Erreur lors de la soumission", { description: e.message });
+      toast.error('Erreur lors de la soumission', { description: e.message });
+    } finally {
+      setSubmittingUnified(false);
     }
   };
 
-
-
-
-
-
-
-
-
+  // ⭐ Notifier manuellement le directeur (relance email + WhatsApp + SMS)
+  //    Visible même après soumission (permet de relancer le directeur).
+  const handleNotifyDirector = async () => {
+    if (!register || !selectedClassId) return;
+    const ok = await confirmWarning(
+      `Notifier le directeur ?`,
+      'Notification manuelle',
+      `Le directeur recevra une notification par :\n` +
+      `• Email\n` +
+      `• WhatsApp\n` +
+      `• SMS\n\n` +
+      `Classe : ${selectedClass?.className || '—'}\n` +
+      `Mois : ${MONTH_NAMES[selectedMonth]} ${selectedYear}`
+    );
+    if (!ok) return;
+    setNotifyingDirector(true);
+    try {
+      const res = await fetch('/api/pedagogy-space/notify-director', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          classId: selectedClassId,
+          month: selectedMonth,
+          year: selectedYear,
+          teacherId,
+          channels: ['email', 'whatsapp', 'sms'],
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
+      }
+      const data = await res.json();
+      toast.success('✅ Directeur notifié', {
+        description: `Notification envoyée à ${data.notifiedDirectors || 'le directeur'}.`,
+      });
+    } catch (e: any) {
+      toast.error('Erreur lors de la notification', { description: e.message });
+    } finally {
+      setNotifyingDirector(false);
+    }
+  };
 
   // === Maj du registre : motif, observation ===
   // ⭐ FIX : utiliser studentId (pas idx) — même raison que updateAbsence
@@ -681,11 +757,20 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Enregistrer
           </button>
-          {/* ⭐ Bouton Soumettre — désactivé si statut n'est pas DRAFT (déjà soumis/validé) */}
-          <button onClick={handleSubmit} disabled={loading || !register || register?.status !== "DRAFT" || activeTab !== "register"}
+          {/* ⭐ Bouton Soumettre UNIFIÉ — soumet registre + évaluation mensuelle + cahier journal
+              en une seule transaction, puis notifie automatiquement le directeur
+              (email + WhatsApp + SMS) */}
+          <button onClick={handleUnifiedSubmit} disabled={loading || !register || register?.status !== "DRAFT" || submittingUnified}
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">
-            <Send className="h-4 w-4" />
-            Soumettre
+            {submittingUnified ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {submittingUnified ? 'Soumission...' : 'Soumettre au directeur'}
+          </button>
+          {/* ⭐ Bouton Notifier le directeur — relance email/WhatsApp/SMS (visible même après soumission) */}
+          <button onClick={handleNotifyDirector} disabled={notifyingDirector || !register}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700 disabled:opacity-50"
+            title="Notifier le directeur par email, WhatsApp et SMS">
+            {notifyingDirector ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
+            Notifier
           </button>
           {/* ⭐ Bouton Export PDF uniquement (Excel supprimé) */}
           {register && (

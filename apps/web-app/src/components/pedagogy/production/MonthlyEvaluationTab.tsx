@@ -764,21 +764,15 @@ export function MonthlyEvaluationTab({
                   {exportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
                   {exportingPdf ? 'Génération...' : 'Export PDF'}
                 </button>
-                {/* ⭐ Bouton Soumettre au directeur — masqué si déjà soumis/validé */}
+                {/* ⭐ Bouton Soumettre au directeur SUPPRIMÉ — désormais géré par le
+                    bouton unifié dans l'en-tête du registre d'appel (qui soumet
+                    registre + évaluation mensuelle + cahier journal en une fois) */}
                 {!allSubmitted && !allValidated && (
-                  <button
-                    onClick={() => handleSubmitToDirector(group)}
-                    disabled={submitting === group.key || !sig.teacher || isReadOnly}
-                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
-                    title={!sig.teacher ? "Signature obligatoire avant soumission" : "Soumettre au directeur"}
-                  >
-                    {submitting === group.key ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Send className="h-4 w-4" />
-                    )}
-                    {sig.teacher ? "Soumettre au directeur" : "Signature requise"}
-                  </button>
+                  <span className="text-xs text-amber-700 bg-amber-100 px-3 py-2 rounded-lg font-semibold">
+                    {!sig.teacher
+                      ? "⚠ Signature requise avant soumission (bouton unifié en haut)"
+                      : "✓ Prêt pour soumission (bouton unifié en haut)"}
+                  </span>
                 )}
               </div>
             </div>

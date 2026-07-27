@@ -390,45 +390,64 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
     );
   }
 
+  // ⭐ Catégoriser par classe
+  const grouped = items.reduce((acc: Record<string, any[]>, item: any) => {
+    const key = item.classNameResolved || item.className || 'Sans classe';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+  const classNames = Object.keys(grouped).sort();
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-bold text-slate-900">Cahiers Journal en attente</h3>
-          <p className="text-sm text-slate-500">{items.length} soumission(s)</p>
+          <p className="text-sm text-slate-500">{items.length} soumission(s) · {classNames.length} classe(s)</p>
         </div>
-        <button onClick={load} className="p-2 hover:bg-slate-100 rounded-lg"><RefreshCw className="h-4 w-4" /></button>
+        <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg"><RefreshCw className="h-4 w-4" /></button>
       </div>
 
-      <div className="space-y-3">
-        {items.map(item => (
-          <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white">
-            <div>
-              <p className="font-medium text-slate-900">
-                Semaine du {formatDateFR(item.weekStartDate)} au {formatDateFR(item.weekEndDate)}
-              </p>
-              <p className="text-xs text-slate-500 mt-1">
-                Classe: <strong>{item.classNameResolved || item.className || "—"}</strong>
-                {" · "}
-                Enseignant: {item.teacherFirstName} {item.teacherLastName}
-              </p>
-              <p className="text-xs text-slate-400 mt-1">
-                Soumis le {formatDateTimeFR(item.submittedAt)}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => handleView(item)}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
-                <Eye className="h-3 w-3" /> Voir
-              </button>
-              <button onClick={() => setModalItem(item)}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
+      {/* ⭐ Groupé par classe */}
+      {classNames.map((className) => (
+        <div key={className} className="space-y-2">
+          <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg">
+            <FileSpreadsheet className="h-4 w-4 text-slate-600" />
+            <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">{className}</h4>
+            <span className="ml-auto text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-full">
+              {grouped[className].length}
+            </span>
+          </div>
+          <div className="space-y-2 pl-4">
+            {grouped[className].map(item => (
+              <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white">
+                <div>
+                  <p className="font-medium text-slate-900">
+                    Semaine du {formatDateFR(item.weekStartDate)} au {formatDateFR(item.weekEndDate)}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Enseignant: {item.teacherFirstName} {item.teacherLastName}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Soumis le {formatDateTimeFR(item.submittedAt)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => handleView(item)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
+                    <Eye className="h-3 w-3" /> Voir
+                  </button>
+                  <button onClick={() => setModalItem(item)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
                 <CheckCircle2 className="h-3 w-3" /> Traiter
               </button>
-            </div>
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </div>
+      ))}
 
       {selected && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -662,48 +681,67 @@ function PendingRegistersTab({ tenantId, academicYearId, userId, refreshKey, onR
     );
   }
 
+  // ⭐ Catégoriser par classe
+  const grouped = items.reduce((acc: Record<string, any[]>, item: any) => {
+    const key = item.classNameResolved || item.className || 'Sans classe';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+  const classNames = Object.keys(grouped).sort();
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-bold text-slate-900">Registres d'Appel en attente</h3>
-          <p className="text-sm text-slate-500">{items.length} soumission(s)</p>
+          <p className="text-sm text-slate-500">{items.length} soumission(s) · {classNames.length} classe(s)</p>
         </div>
-        <button onClick={load} className="p-2 hover:bg-slate-100 rounded-lg"><RefreshCw className="h-4 w-4" /></button>
+        <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg"><RefreshCw className="h-4 w-4" /></button>
       </div>
 
-      <div className="space-y-3">
-        {items.map(item => (
-          <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white">
-            <div>
-              <p className="font-medium text-slate-900">
-                Registre de {MONTH_NAMES[item.month] || item.month} {item.year}
-              </p>
-              <p className="text-xs text-slate-500 mt-1">
-                Classe: <strong>{item.classNameResolved || "—"}</strong>
-                {" · "}
-                {item.teacherFirstName} {item.teacherLastName}
-              </p>
-              <div className="flex items-center gap-3 mt-1 text-xs">
-                <span className="text-emerald-600 font-semibold">Présences: {item.pourcentagePresences ?? "—"}%</span>
-                <span className="text-red-600 font-semibold">Absences: {item.pourcentageAbsences ?? "—"}%</span>
-                <span className="text-slate-500">Demi-j: {item.demiJourneeMois ?? "—"}</span>
-              </div>
-              <p className="text-xs text-slate-400 mt-1">Soumis le {formatDateTimeFR(item.submittedAt)}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => handleView(item)}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
-                <Eye className="h-3 w-3" /> Voir
-              </button>
-              <button onClick={() => setModalItem(item)}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
-                <CheckCircle2 className="h-3 w-3" /> Traiter
-              </button>
-            </div>
+      {/* ⭐ Groupé par classe */}
+      {classNames.map((className) => (
+        <div key={className} className="space-y-2">
+          <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg">
+            <ClipboardList className="h-4 w-4 text-slate-600" />
+            <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">{className}</h4>
+            <span className="ml-auto text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-full">
+              {grouped[className].length}
+            </span>
           </div>
-        ))}
-      </div>
+          <div className="space-y-2 pl-4">
+            {grouped[className].map(item => (
+              <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white">
+                <div>
+                  <p className="font-medium text-slate-900">
+                    Registre de {MONTH_NAMES[item.month] || item.month} {item.year}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {item.teacherFirstName} {item.teacherLastName}
+                  </p>
+                  <div className="flex items-center gap-3 mt-1 text-xs">
+                    <span className="text-emerald-600 font-semibold">Présences: {item.pourcentagePresences ?? "—"}%</span>
+                    <span className="text-red-600 font-semibold">Absences: {item.pourcentageAbsences ?? "—"}%</span>
+                    <span className="text-slate-500">Demi-j: {item.demiJourneeMois ?? "—"}</span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">Soumis le {formatDateTimeFR(item.submittedAt)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => handleView(item)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
+                    <Eye className="h-3 w-3" /> Voir
+                  </button>
+                  <button onClick={() => setModalItem(item)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
+                    <CheckCircle2 className="h-3 w-3" /> Traiter
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
 
       {selected && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -831,48 +869,67 @@ function PendingEvaluationsTab({ tenantId, academicYearId, userId, refreshKey, o
     );
   }
 
+  // ⭐ Catégoriser par classe
+  const grouped = items.reduce((acc: Record<string, any[]>, item: any) => {
+    const key = item.classNameResolved || item.className || 'Sans classe';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+  const classNames = Object.keys(grouped).sort();
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-bold text-slate-900">Évaluations Mensuelles en attente</h3>
-          <p className="text-sm text-slate-500">{items.length} soumission(s)</p>
+          <p className="text-sm text-slate-500">{items.length} soumission(s) · {classNames.length} classe(s)</p>
         </div>
-        <button onClick={load} className="p-2 hover:bg-slate-100 rounded-lg"><RefreshCw className="h-4 w-4" /></button>
+        <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg"><RefreshCw className="h-4 w-4" /></button>
       </div>
 
-      <div className="space-y-3">
-        {items.map(item => (
-          <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white">
-            <div>
-              <p className="font-medium text-slate-900">
-                Évaluation N°{item.evaluationNumber || "—"} — {MONTH_NAMES[item.registerMonth || item.month] || "—"} {item.registerYear || item.year}
-              </p>
-              <p className="text-xs text-slate-500 mt-1">
-                Classe: <strong>{item.classNameResolved || "—"}</strong>
-                {" · "}
-                {item.teacherFirstName} {item.teacherLastName}
-              </p>
-              <div className="flex items-center gap-3 mt-1 text-xs">
-                <span className="text-blue-600 font-semibold">% réussite total: {item.pourcentageReussiteTotal?.toFixed?.(1) ?? item.pourcentageReussiteTotal ?? "—"}%</span>
-                <span className="text-emerald-600">Atteint: {item.ayantAtteintSeuilTotal ?? "—"}/{item.ayantComposeTotal ?? "—"}</span>
-                <span className="text-slate-500">Seuil: {item.seuilReussite ?? 10}/20</span>
-              </div>
-              <p className="text-xs text-slate-400 mt-1">Soumis le {formatDateTimeFR(item.submittedAt)}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => handleView(item)}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
-                <Eye className="h-3 w-3" /> Voir
-              </button>
-              <button onClick={() => setModalItem(item)}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
-                <CheckCircle2 className="h-3 w-3" /> Traiter
-              </button>
-            </div>
+      {/* ⭐ Groupé par classe */}
+      {classNames.map((className) => (
+        <div key={className} className="space-y-2">
+          <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg">
+            <BookOpen className="h-4 w-4 text-slate-600" />
+            <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">{className}</h4>
+            <span className="ml-auto text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-full">
+              {grouped[className].length}
+            </span>
           </div>
-        ))}
-      </div>
+          <div className="space-y-2 pl-4">
+            {grouped[className].map(item => (
+              <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white">
+                <div>
+                  <p className="font-medium text-slate-900">
+                    Évaluation N°{item.evaluationNumber || "—"} — {MONTH_NAMES[item.registerMonth || item.month] || "—"} {item.registerYear || item.year}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {item.teacherFirstName} {item.teacherLastName}
+                  </p>
+                  <div className="flex items-center gap-3 mt-1 text-xs">
+                    <span className="text-blue-600 font-semibold">% réussite total: {item.pourcentageReussiteTotal?.toFixed?.(1) ?? item.pourcentageReussiteTotal ?? "—"}%</span>
+                    <span className="text-emerald-600">Atteint: {item.ayantAtteintSeuilTotal ?? "—"}/{item.ayantComposeTotal ?? "—"}</span>
+                    <span className="text-slate-500">Seuil: {item.seuilReussite ?? 10}/20</span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">Soumis le {formatDateTimeFR(item.submittedAt)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => handleView(item)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
+                    <Eye className="h-3 w-3" /> Voir
+                  </button>
+                  <button onClick={() => setModalItem(item)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
+                    <CheckCircle2 className="h-3 w-3" /> Traiter
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
 
       {selected && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">

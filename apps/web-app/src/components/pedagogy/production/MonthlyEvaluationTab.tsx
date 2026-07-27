@@ -194,7 +194,6 @@ export function MonthlyEvaluationTab({
     try {
       // ⭐ Récupérer TOUTES les évaluations de cette classe pour cette année académique
       // avec les statuts OPEN_FOR_GRADING, SUBMITTED, VALIDATED
-      // (pas de filtre par mois — on veut toutes les évaluations validées par l'enseignant)
       const response = await apiClient.get(`/institutional-exams/evaluations`, {
         params: {
           academicYearId,
@@ -204,10 +203,22 @@ export function MonthlyEvaluationTab({
       });
       const allEvaluations: Evaluation[] = Array.isArray(response.data) ? response.data : [];
 
+      // ⭐ FILTRER par mois/année (basé sur evaluationDate ou startDate ou endDate)
+      //    Le sélecteur mois/année du registre d'appel filtre maintenant aussi
+      //    les évaluations mensuelles affichées.
+      const monthStart = new Date(selectedYear, selectedMonth - 1, 1);
+      const monthEnd = new Date(selectedYear, selectedMonth, 0, 23, 59, 59);
+      const filtered = allEvaluations.filter(ev => {
+        const dateStr = ev.evaluationDate || ev.startDate || ev.endDate;
+        if (!dateStr) return false;
+        const d = new Date(dateStr);
+        return d >= monthStart && d <= monthEnd;
+      });
+
       // ⭐ Grouper par (classId × evaluationTypeId × periodId × startDate × endDate)
       //    Identique à HierarchicalEvaluationList pour rester cohérent
       const groupMap = new Map<string, GroupedEvaluation>();
-      for (const ev of allEvaluations) {
+      for (const ev of filtered) {
         const key = `${ev.class?.id || classId}__${ev.evaluationType?.id || ''}__${ev.period?.id || ''}__${ev.startDate || ''}__${ev.endDate || ''}`;
         if (!groupMap.has(key)) {
           groupMap.set(key, {
@@ -268,7 +279,7 @@ export function MonthlyEvaluationTab({
     } finally {
       setLoading(false);
     }
-  }, [classId, academicYearId, className]);
+  }, [classId, academicYearId, className, selectedMonth, selectedYear]);
 
   useEffect(() => {
     loadEvaluations();
@@ -637,11 +648,12 @@ export function MonthlyEvaluationTab({
             <FileText className="h-8 w-8 text-blue-500" />
           </div>
           <h3 className="text-lg font-bold text-slate-900 mb-2">
-            Aucune évaluation validée pour cette classe
+            Aucune évaluation pour {MONTH_NAMES[selectedMonth]} {selectedYear}
           </h3>
           <p className="text-sm text-slate-600 mb-4">
             Aucune évaluation n'a encore été saisie et validée par l'enseignant pour la classe
-            <strong> {className}</strong>.
+            <strong> {className}</strong> pour le mois de
+            <strong> {MONTH_NAMES[selectedMonth]} {selectedYear}</strong>.
           </p>
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
             <p className="text-sm font-semibold text-blue-800 mb-2">Procédure :</p>
@@ -652,6 +664,9 @@ export function MonthlyEvaluationTab({
               <li>L'évaluation validée apparaît ici automatiquement pour signature et soumission au directeur.</li>
             </ol>
           </div>
+          <p className="text-xs text-slate-500 mt-4">
+            💡 Vous pouvez changer le mois/année dans le sélecteur en haut pour consulter les évaluations d'un autre mois.
+          </p>
           <button
             onClick={loadEvaluations}
             className="mt-4 flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 mx-auto"
@@ -670,7 +685,7 @@ export function MonthlyEvaluationTab({
       <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between">
         <div>
           <h3 className="text-base font-bold text-slate-900">
-            Évaluations validées par l'enseignant
+            Évaluations validées par l'enseignant — {MONTH_NAMES[selectedMonth]} {selectedYear}
           </h3>
           <p className="text-xs text-slate-500 mt-1">
             {groups.length} évaluation(s) · Classe : {className}

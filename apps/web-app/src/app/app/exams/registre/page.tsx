@@ -19,7 +19,7 @@
  * ============================================================================
  */
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Loader2, ClipboardList, Download, AlertCircle, FileText,
@@ -429,8 +429,6 @@ function RegistreContent() {
     </div>
   );
 }
-
-import { useMemo } from 'react';
 
 export default function RegistrePage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);

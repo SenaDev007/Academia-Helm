@@ -250,7 +250,7 @@ function getStudentMatricule(t: TransactionRow): string {
   return t.studentAccount?.student?.matricule || '—';
 }
 
-function getMinistryName(schoolLevel?: string): string {
+export function getMinistryName(schoolLevel?: string): string {
   if (schoolLevel === 'SECONDAIRE' || schoolLevel === 'Secondaire') {
     return "Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes";
   }

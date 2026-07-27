@@ -45,6 +45,8 @@ import { useAppSession } from "@/contexts/AppSessionContext";
 import { useMyClasses } from "@/lib/query/pedagogy-hooks";
 import { MonthlyEvaluationTab } from "./MonthlyEvaluationTab";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useModuleContext } from "@/hooks/useModuleContext";
+import { exportAttendanceRegisterToPdf } from "@/lib/exports/pedagogy-exports";
 
 interface AttendanceRegisterTabProps {
   tenantId: string;
@@ -168,6 +170,8 @@ const ABSENCE_MARKS = [
 
 export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: AttendanceRegisterTabProps) {
   const { user } = useAppSession();
+  // ⭐ Contexte module (pour tenant + schoolLevel dans le PDF)
+  const { tenant, schoolLevel } = useModuleContext();
   // ⭐ Noms pour les signatures (auto-récupérés depuis la session)
   const teacherName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : '';
   // Le nom du directeur sera récupéré depuis le tenant/settings
@@ -194,7 +198,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [exporting, setExporting] = useState<string | null>(null); // null | 'excel' | 'pdf'
+  const [exporting, setExporting] = useState<string | null>(null); // null | 'pdf'
   const [showAppelModal, setShowAppelModal] = useState(false);
   const [appelDate, setAppelDate] = useState(new Date().toISOString().split("T")[0]);
   const [appelSaving, setAppelSaving] = useState(false);
@@ -533,29 +537,75 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
   // ⭐ demi-jours du mois = valeur individuelle (pas × nb élèves)
   const demiJourneeMois = calculateDemiJourneesMois(selectedMonth, selectedYear, holidays);
 
-  // ⭐ Export Excel / PDF
-  const handleExport = async (format: "excel" | "pdf") => {
+  // ⭐ Export PDF professionnel (même template que module Finance)
+  //    Utilise jsPDF + autotable + drawOfficialHeader (drapeau Bénin + République
+  //    + Ministère + école + logo) + drawFooter + pagination automatique.
+  const handleExport = async (format: "pdf") => {
     if (!register || exporting) return;
     setExporting(format);
     try {
-      const res = await fetch(
-        `/api/pedagogy-space/attendance-registers/${register.id}/export?format=${format}`,
-        { credentials: "include" }
-      );
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const ext = format === "excel" ? "csv" : "pdf";
-      a.download = `Registre_Appel_${MONTH_NAMES[selectedMonth]}_${selectedYear}.${ext}`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success(`✅ ${format === "excel" ? "Excel" : "PDF"} exporté`);
+      // ⭐ Header école (même structure que module Finance)
+      const header = {
+        schoolName: tenant?.name || 'Établissement scolaire',
+        schoolLogoUrl: tenant?.id ? `/api/tenants/${tenant.id}/logo` : null,
+        schoolAddress: tenant?.address || null,
+        schoolPhone: tenant?.phone || null,
+        schoolEmail: tenant?.email || null,
+        schoolLevel: schoolLevel?.code || (register.schoolLevelCode as string) || 'PRIMAIRE',
+      };
+
+      // ⭐ Stats récapitulatives
+      const totalAbs = students.reduce((sum, s) => sum + (s.totalAbsences || 0), 0);
+      const totalPoss = students.reduce((sum, s) => sum + (s.totalPresencesPossibles || 0), 0);
+      const totalEff = students.reduce((sum, s) => sum + (s.totalPresenceEffectif || 0), 0);
+      const recap = {
+        demiJourneeMois,
+        totalEleves: students.length,
+        totalPresencesPossibles: totalPoss,
+        totalAbsences: totalAbs,
+        totalPresencesEffectives: totalEff,
+        pourcentagePresences: totalPoss > 0 ? Math.round((totalEff / totalPoss) * 10000) / 100 : 0,
+        pourcentageAbsences: totalPoss > 0 ? Math.round((totalAbs / totalPoss) * 10000) / 100 : 0,
+      };
+
+      // ⭐ Lignes d'élèves au format attendu par le PDF
+      const studentRows = students.map((s: any, idx: number) => ({
+        numero: s.numero || idx + 1,
+        nom: s.nom || '',
+        prenom: s.prenom || '',
+        sexe: s.sexe || 'M',
+        absences: s.absences || [],
+        motif: s.motif || '',
+        totalPresencesPossibles: s.totalPresencesPossibles || 0,
+        totalAbsences: s.totalAbsences || 0,
+        totalPresenceEffectif: s.totalPresenceEffectif || 0,
+        observation: s.observation || '',
+      }));
+
+      const boysCount = students.filter((s: any) => (s.sexe || '').toUpperCase() === 'M').length;
+      const girlsCount = students.filter((s: any) => (s.sexe || '').toUpperCase() === 'F').length;
+
+      await exportAttendanceRegisterToPdf({
+        header,
+        className: selectedClass?.className || '',
+        monthLabel: MONTH_NAMES[selectedMonth],
+        year: selectedYear,
+        students: studentRows,
+        recap,
+        signatures: {
+          teacherName,
+          directorName,
+          teacherSignature,
+          directorSignature,
+        },
+        holidays,
+        boysCount,
+        girlsCount,
+      });
+
+      toast.success('✅ PDF exporté avec en-tête officiel');
     } catch (e: any) {
+      console.error('Erreur export PDF:', e);
       toast.error("Erreur d'export", { description: e.message });
     } finally {
       setExporting(null);

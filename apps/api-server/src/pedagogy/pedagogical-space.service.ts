@@ -3868,10 +3868,12 @@ export class PedagogicalSpaceService {
   /// Récupère tous les registres d'appel soumis (en attente de validation).
   async getPendingAttendanceRegisters(tenantId: string, academicYearId: string) {
     return this.prisma.$queryRawUnsafe(
-      `SELECT ar.*, c."name" as "classNameResolved", t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+      `SELECT ar.*, c."name" as "classNameResolved", t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName",
+              sl."code" as "schoolLevelCode"
        FROM "attendance_registers" ar
        LEFT JOIN "classes" c ON c."id" = ar."classId"
        LEFT JOIN "teachers" t ON t."id" = ar."teacherId"
+       LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
        WHERE ar."tenantId" = $1 AND ar."academicYearId" = $2 AND ar."status" = 'SUBMITTED'
        ORDER BY ar."submittedAt" DESC`,
       tenantId, academicYearId,
@@ -4643,10 +4645,12 @@ export class PedagogicalSpaceService {
   async getAttendanceRegisterDetail(tenantId: string, registerId: string) {
     const result: any = await this.prisma.$queryRawUnsafe(
       `SELECT ar.*, c."name" as "classNameResolved",
-              t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+              t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName",
+              sl."code" as "schoolLevelCode", sl."name" as "schoolLevelName"
        FROM "attendance_registers" ar
        LEFT JOIN "classes" c ON c."id" = ar."classId"
        LEFT JOIN "teachers" t ON t."id" = ar."teacherId"
+       LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
        WHERE ar."id" = $1 AND ar."tenantId" = $2`,
       registerId, tenantId,
     );

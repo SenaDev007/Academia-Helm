@@ -980,106 +980,7 @@ function PendingEvaluationsTab({ tenantId, academicYearId, userId, refreshKey, o
         </div>
       ))}
 
-      {selected && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold">Évaluation — {selected.classNameResolved}</h3>
-              <button onClick={() => setSelected(null)} className="p-1 hover:bg-slate-100 rounded"><X className="h-5 w-5" /></button>
-            </div>
-            <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-3 gap-3">
-                <div><strong>N° Éval:</strong> {selected.evaluationNumber || "—"}</div>
-                <div><strong>Étape:</strong> {selected.etapeNumber || "—"}</div>
-                <div><strong>Seuil réussite:</strong> {selected.seuilReussite ?? 10}/20</div>
-              </div>
-
-              {(() => {
-                let subjects = selected.subjectsConfig;
-                if (typeof subjects === "string") {
-                  try { subjects = JSON.parse(subjects); } catch { subjects = []; }
-                }
-                if (!Array.isArray(subjects)) subjects = [];
-
-                let scores = selected.studentScores;
-                if (typeof scores === "string") {
-                  try { scores = JSON.parse(scores); } catch { scores = []; }
-                }
-                if (!Array.isArray(scores)) scores = [];
-
-                return (
-                  <div>
-                    <strong>Scores par élève ({scores.length} élèves, {subjects.length} matière(s)):</strong>
-                    <div className="overflow-x-auto mt-2 border border-slate-200 rounded-lg">
-                      <table className="w-full text-xs">
-                        <thead className="bg-slate-100">
-                          <tr>
-                            <th className="px-2 py-1 text-left">N°</th>
-                            <th className="px-2 py-1 text-left">Nom</th>
-                            <th className="px-2 py-1 text-center">Sexe</th>
-                            {subjects.map((subj: any, idx: number) => (
-                              <th key={idx} className="px-2 py-1 text-center" colSpan={3}>
-                                {subj.subjectName}
-                              </th>
-                            ))}
-                            <th className="px-2 py-1 text-center">Total</th>
-                            <th className="px-2 py-1 text-center">Seuil</th>
-                          </tr>
-                          <tr className="bg-slate-50">
-                            <th colSpan={3}></th>
-                            {subjects.flatMap((_: any, idx: number) => ([
-                              <th key={`cm-${idx}`} className="px-1 py-1 text-center text-[10px]">CM</th>,
-                              <th key={`cp-${idx}`} className="px-1 py-1 text-center text-[10px]">CP</th>,
-                              <th key={`t-${idx}`} className="px-1 py-1 text-center text-[10px]">Tot</th>,
-                            ]))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {scores.map((s: any, idx: number) => (
-                            <tr key={s.studentId || idx} className="hover:bg-slate-50">
-                              <td className="px-2 py-1">{s.numero || idx + 1}</td>
-                              <td className="px-2 py-1">{s.nom} {s.prenom}</td>
-                              <td className="px-2 py-1 text-center">{s.sexe}</td>
-                              {subjects.flatMap((subj: any, subIdx: number) => {
-                                const sc = s.scores?.[subIdx] || {};
-                                return ([
-                                  <td key={`s${idx}-cm${subIdx}`} className="px-1 py-1 text-center">{sc.cm ?? "—"}</td>,
-                                  <td key={`s${idx}-cp${subIdx}`} className="px-1 py-1 text-center">{sc.cp ?? "—"}</td>,
-                                  <td key={`s${idx}-t${subIdx}`} className="px-1 py-1 text-center font-bold">{sc.total ?? "—"}</td>,
-                                ]);
-                              })}
-                              <td className="px-2 py-1 text-center font-bold text-blue-700">{s.totalGeneral ?? "—"}</td>
-                              <td className="px-2 py-1 text-center">
-                                {(s.totalGeneral ?? 0) >= (selected.seuilReussite ?? 10) ? (
-                                  <CheckCircle2 className="h-4 w-4 text-emerald-600 mx-auto" />
-                                ) : (
-                                  <XCircle className="h-4 w-4 text-red-500 mx-auto" />
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <div className="p-3 bg-slate-50 rounded-lg">
-                <strong>Récapitulatif:</strong>
-                <div className="grid grid-cols-3 gap-3 mt-2 text-xs">
-                  <div>Effectif: {selected.effectifTotalClasse ?? "—"} ({selected.effectifTotalGarcons ?? "—"}G / {selected.effectifTotalFilles ?? "—"}F)</div>
-                  <div>Ayant composé: {selected.ayantComposeTotal ?? "—"} ({selected.ayantComposeG ?? "—"}G / {selected.ayantComposeF ?? "—"}F)</div>
-                  <div>Atteint seuil: {selected.ayantAtteintSeuilTotal ?? "—"} ({selected.ayantAtteintSeuilG ?? "—"}G / {selected.ayantAtteintSeuilF ?? "—"}F)</div>
-                  <div className="text-blue-600 font-bold">% Réussite: {selected.pourcentageReussiteTotal?.toFixed?.(1) ?? "—"}%</div>
-                  <div className="text-blue-600">G: {selected.pourcentageReussiteG?.toFixed?.(1) ?? "—"}%</div>
-                  <div className="text-blue-600">F: {selected.pourcentageReussiteF?.toFixed?.(1) ?? "—"}%</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Modal remplacé par vue in-page MonthlyEvaluationDirectorDetail */}
 
       <ValidationModal
         open={!!modalItem}
@@ -1134,6 +1035,24 @@ function PendingCahierTestsTab({ tenantId, academicYearId, userId, refreshKey, o
       setSelected(data);
     } catch { toast.error("Erreur"); }
   };
+
+  // ⭐ Si une évaluation est sélectionnée, afficher la vue détaillée in-page
+  if (selected) {
+    return (
+      <MonthlyEvaluationDirectorDetail
+        evaluation={selected}
+        userId={userId}
+        onBack={() => setSelected(null)}
+        onValidated={() => {
+          setSelected(null);
+          onRefresh();
+          refetch();
+          queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "pending-evaluations"] });
+          queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "dashboard"] });
+        }}
+      />
+    );
+  }
 
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>;
 
@@ -1764,13 +1683,20 @@ function AttendanceRegisterDirectorDetail({
   const [saving, setSaving] = useState(false);
   const [directorSignature, setDirectorSignature] = useState<string | null>(register.directorSignature || null);
 
-  // ⭐ Parser les studentsData
+  // ⭐ Parser les studentsData (peut venir comme string JSON, array, ou objet PostgreSQL)
   let students: any[] = [];
   if (register.studentsData) {
     if (typeof register.studentsData === "string") {
-      try { students = JSON.parse(register.studentsData); } catch { students = []; }
+      try {
+        const parsed = JSON.parse(register.studentsData);
+        students = Array.isArray(parsed) ? parsed : (parsed?.data || []);
+      } catch { students = []; }
     } else if (Array.isArray(register.studentsData)) {
       students = register.studentsData;
+    } else if (typeof register.studentsData === "object") {
+      // Objet PostgreSQL JSONB — peut avoir une structure {data: [...]} ou être direct
+      const data = register.studentsData;
+      students = Array.isArray(data) ? data : (data?.data || data?.students || []);
     }
   }
 
@@ -2061,6 +1987,160 @@ function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6 border-t-2 border-slate-300">
         <div className="space-y-2"><div className="text-sm font-bold text-slate-800">Le Maître / La Maîtresse</div>{fiche.teacherSignature ? <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2"><img src={fiche.teacherSignature} alt="Sig" className="max-h-24 mx-auto" /></div> : <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center text-xs text-slate-400 italic">Non signé</div>}</div>
         <div className="space-y-2"><div className="flex items-center justify-between"><div><div className="text-sm font-bold text-slate-800">Le Directeur</div><div className="text-xs text-slate-500">{isAlreadyValidated ? "" : "(obligatoire)"}</div></div>{directorSignature && <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">Signé</span>}</div>{directorSignature ? <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2 relative"><img src={directorSignature} alt="Sig" className="max-h-24 mx-auto" />{!isAlreadyValidated && <button type="button" onClick={() => setDirectorSignature(null)} className="absolute top-1 right-1 text-xs text-red-500">Effacer</button>}</div> : <SignatureCanvas width={400} height={120} disabled={saving || isAlreadyValidated} placeholder="Signature (obligatoire)" onSignatureChange={(data) => setDirectorSignature(data)} />}</div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// MonthlyEvaluationDirectorDetail — Vue in-page évaluation mensuelle
+// ============================================================================
+
+function MonthlyEvaluationDirectorDetail({ evaluation, userId, onBack, onValidated }: { evaluation: any; userId: string; onBack: () => void; onValidated: () => void; }) {
+  const [saving, setSaving] = useState(false);
+  const [directorSignature, setDirectorSignature] = useState<string | null>(evaluation.directorSignature || null);
+
+  // Parser subjectsConfig et studentScores
+  let subjects: any[] = [];
+  if (evaluation.subjectsConfig) {
+    if (typeof evaluation.subjectsConfig === "string") { try { subjects = JSON.parse(evaluation.subjectsConfig); } catch { subjects = []; } }
+    else if (Array.isArray(evaluation.subjectsConfig)) { subjects = evaluation.subjectsConfig; }
+  }
+  let scores: any[] = [];
+  if (evaluation.studentScores) {
+    if (typeof evaluation.studentScores === "string") { try { scores = JSON.parse(evaluation.studentScores); } catch { scores = []; } }
+    else if (Array.isArray(evaluation.studentScores)) { scores = evaluation.studentScores; }
+  }
+
+  const isAlreadyValidated = evaluation.status === "VALIDATED";
+  const isAlreadyRejected = evaluation.status === "REJECTED";
+  const isMaternelle = (evaluation.schoolLevelCode || "").toUpperCase() === "MATERNELLE";
+  const monthLabel = MONTH_NAMES[evaluation.registerMonth || evaluation.month || 1] || "—";
+  const year = evaluation.registerYear || evaluation.year || "—";
+
+  const handleValidate = async (action: "VALIDATED" | "REJECTED") => {
+    if (action === "VALIDATED" && !directorSignature) { toast.error("Signature obligatoire"); return; }
+    if (!window.confirm(action === "VALIDATED" ? "Valider cette évaluation ?" : "Rejeter cette évaluation ?")) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/pedagogy-space/director/attendance-registers/" + evaluation.attendanceRegisterId + "/director-update", {
+        method: "PUT", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify({ directorSignature, action, validatedBy: userId }),
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      toast.success(action === "VALIDATED" ? "Évaluation validée" : "Évaluation rejetée");
+      onValidated();
+    } catch (err: any) { toast.error("Erreur", { description: err.message }); } finally { setSaving(false); }
+  };
+
+  const formatDate = (d: string | Date) => d ? new Date(d).toLocaleDateString("fr-FR") : "—";
+
+  return (
+    <div className="space-y-4">
+      {/* Action bar */}
+      <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-3">
+        <button onClick={onBack} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg">
+          <ChevronRight className="w-4 h-4 rotate-180" /> Retour à la liste
+        </button>
+        <div className="flex items-center gap-2">
+          {isAlreadyValidated && <span className="px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-bold">Validé</span>}
+          {isAlreadyRejected && <span className="px-3 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-bold">Rejeté</span>}
+          {!isAlreadyValidated && !isAlreadyRejected && (<>
+            <button onClick={() => handleValidate("REJECTED")} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />} Rejeter</button>
+            <button onClick={() => handleValidate("VALIDATED")} disabled={saving || !directorSignature} className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} {directorSignature ? "Valider" : "Signature requise"}</button>
+          </>)}
+        </div>
+      </div>
+
+      {/* En-tête */}
+      <div className="bg-white border-2 border-slate-800 rounded-xl p-4 text-center">
+        <h2 className="text-lg font-bold text-slate-900">ÉVALUATION MENSUELLE — {monthLabel} {year}</h2>
+        <div className="text-sm text-slate-600 mt-1">Classe : <strong>{evaluation.classNameResolved || "—"}</strong> · Enseignant : {evaluation.teacherFirstName} {evaluation.teacherLastName}</div>
+        <div className="text-xs text-slate-500 mt-1">Statut : <strong>{evaluation.status}</strong> · Seuil : {evaluation.seuilReussite ?? 10}/20</div>
+        <p className="text-xs text-slate-500 mt-1 italic">NB : Pour chaque épreuve, l'élève évalué(e) n'aura de bonus de perfectionnement que lorsqu'il(elle) aura atteint la maîtrise minimale fixée.</p>
+      </div>
+
+      {/* Tableau des notes */}
+      <div className="bg-white border-2 border-slate-800 rounded-xl p-4">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-100">
+                <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">N°</th>
+                <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: "180px" }}>Nom et prénom</th>
+                <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Sexe</th>
+                {subjects.map((subj: any, idx: number) => (
+                  isMaternelle ? (
+                    <th key={idx} rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[80px]">{subj.subjectName}<div className="text-[9px] text-slate-400 font-normal">TS/S/PS</div></th>
+                  ) : (
+                    <th key={idx} colSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[180px]">{subj.subjectName}</th>
+                  )
+                ))}
+                {!isMaternelle && <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total gén.</th>}
+                <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Rang</th>
+                <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Seuil</th>
+                <th colSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-24">Seuil atteint</th>
+                {isMaternelle && <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-32">Appréciation</th>}
+              </tr>
+              {!isMaternelle && (
+                <tr className="bg-slate-50">
+                  {subjects.map((_: any, idx: number) => (<><th key={"cm-"+idx} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CM/18</th><th key={"cp-"+idx} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CP/2</th><th key={"t-"+idx} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Total</th></>))}
+                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Oui</th>
+                  <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Non</th>
+                </tr>
+              )}
+            </thead>
+            <tbody>
+              {scores.length === 0 ? (
+                <tr><td colSpan={isMaternelle ? 10 + subjects.length : 10 + subjects.length * 3} className="border border-slate-300 px-4 py-8 text-center text-slate-400 text-sm">Aucune note saisie.</td></tr>
+              ) : scores.map((s: any, idx: number) => {
+                const totalGeneral = s.totalGeneral || 0;
+                const seuilAtteint = totalGeneral >= (evaluation.seuilReussite ?? 10);
+                return (
+                  <tr key={s.studentId || idx} className={cn("hover:bg-slate-50", idx % 2 === 1 && "bg-slate-50/50")}>
+                    <td className="border border-slate-300 px-2 py-1 text-center font-semibold">{idx + 1}</td>
+                    <td className="border border-slate-300 px-2 py-1 font-medium">{s.nom} {s.prenom}</td>
+                    <td className="border border-slate-300 px-2 py-1 text-center">{s.sexe}</td>
+                    {subjects.map((subj: any, subIdx: number) => {
+                      const sc = s.scores?.[subIdx] || {};
+                      if (isMaternelle) {
+                        const code = sc.qualitativeCode;
+                        return <td key={subIdx} className="border border-slate-300 px-2 py-1 text-center"><span className={cn("inline-block px-2 py-0.5 rounded text-[10px] font-bold", code === "TS" ? "bg-emerald-600 text-white" : code === "S" ? "bg-blue-600 text-white" : code === "PS" ? "bg-amber-600 text-white" : "text-slate-400")}>{code || "—"}</span></td>;
+                      }
+                      return <><td key={"cm"+subIdx} className="border border-slate-300 px-2 py-1 text-center">{sc.cm ?? "—"}</td><td key={"cp"+subIdx} className="border border-slate-300 px-2 py-1 text-center">{sc.cp ?? "—"}</td><td key={"t"+subIdx} className="border border-slate-300 px-2 py-1 text-center font-bold bg-slate-50">{sc.total ?? "—"}</td></>;
+                    })}
+                    {!isMaternelle && <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-700 bg-blue-50">{totalGeneral.toFixed(2)}</td>}
+                    <td className="border border-slate-300 px-2 py-1 text-center font-bold">{idx + 1}{idx === 0 ? "er" : "ème"}</td>
+                    <td className="border border-slate-300 px-2 py-1 text-center">{isMaternelle ? "S" : "10"}</td>
+                    <td className="border border-slate-300 px-1 py-1 text-center">{seuilAtteint ? "✓" : ""}</td>
+                    <td className="border border-slate-300 px-1 py-1 text-center">{!seuilAtteint && totalGeneral > 0 ? "✓" : ""}</td>
+                    {isMaternelle && <td className="border border-slate-300 px-2 py-1 text-center font-bold text-xs">{s.appreciation || "—"}</td>}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Récapitulatif */}
+      <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3">
+        <h3 className="text-sm font-bold text-slate-900 uppercase">Récapitulatif</h3>
+        <div className="overflow-x-auto"><table className="w-full border-collapse text-sm">
+          <thead><tr className="bg-slate-100"><th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-left">Indicateur</th><th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-center">Garçons</th><th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-center">Filles</th><th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-center">Total</th></tr></thead>
+          <tbody>
+            <tr><td className="border border-slate-300 px-3 py-2 font-semibold">Effectif total</td><td className="border border-slate-300 px-3 py-2 text-center">{evaluation.effectifTotalGarcons ?? "—"}</td><td className="border border-slate-300 px-3 py-2 text-center">{evaluation.effectifTotalFilles ?? "—"}</td><td className="border border-slate-300 px-3 py-2 text-center font-bold">{evaluation.effectifTotalClasse ?? "—"}</td></tr>
+            <tr><td className="border border-slate-300 px-3 py-2 font-semibold">Ayant composé</td><td className="border border-slate-300 px-3 py-2 text-center">{evaluation.ayantComposeG ?? "—"}</td><td className="border border-slate-300 px-3 py-2 text-center">{evaluation.ayantComposeF ?? "—"}</td><td className="border border-slate-300 px-3 py-2 text-center font-bold">{evaluation.ayantComposeTotal ?? "—"}</td></tr>
+            <tr className="bg-emerald-50/50"><td className="border border-slate-300 px-3 py-2 font-semibold">Ont atteint le seuil</td><td className="border border-slate-300 px-3 py-2 text-center text-emerald-700">{evaluation.ayantAtteintSeuilG ?? "—"}</td><td className="border border-slate-300 px-3 py-2 text-center text-emerald-700">{evaluation.ayantAtteintSeuilF ?? "—"}</td><td className="border border-slate-300 px-3 py-2 text-center font-bold text-emerald-700">{evaluation.ayantAtteintSeuilTotal ?? "—"}</td></tr>
+            <tr className="bg-blue-50/50"><td className="border border-slate-300 px-3 py-2 font-bold">% de réussite</td><td className="border border-slate-300 px-3 py-2 text-center font-bold text-blue-700">{evaluation.pourcentageReussiteG?.toFixed?.(2) ?? "—"}%</td><td className="border border-slate-300 px-3 py-2 text-center font-bold text-blue-700">{evaluation.pourcentageReussiteF?.toFixed?.(2) ?? "—"}%</td><td className="border border-slate-300 px-3 py-2 text-center font-bold text-blue-800">{evaluation.pourcentageReussiteTotal?.toFixed?.(2) ?? "—"}%</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+
+      {/* Signatures */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6 border-t-2 border-slate-300">
+        <div className="space-y-2"><div className="text-sm font-bold text-slate-800">Le Titulaire</div>{evaluation.teacherSignature ? <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2"><img src={evaluation.teacherSignature} alt="Sig" className="max-h-24 mx-auto" /></div> : <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center text-xs text-slate-400 italic">Non signé</div>}</div>
+        <div className="space-y-2"><div className="text-sm font-bold text-slate-800">Le Directeur {isAlreadyValidated ? "" : "(obligatoire)"}</div>{directorSignature ? <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2 relative"><img src={directorSignature} alt="Sig" className="max-h-24 mx-auto" />{!isAlreadyValidated && <button type="button" onClick={() => setDirectorSignature(null)} className="absolute top-1 right-1 text-xs text-red-500">Effacer</button>}</div> : <SignatureCanvas width={400} height={120} disabled={saving || isAlreadyValidated} placeholder="Signature (obligatoire)" onSignatureChange={(data) => setDirectorSignature(data)} />}</div>
       </div>
     </div>
   );

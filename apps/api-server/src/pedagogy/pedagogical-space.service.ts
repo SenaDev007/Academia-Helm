@@ -2208,24 +2208,32 @@ export class PedagogicalSpaceService {
     // ⭐ Récupérer les infos école
     let schoolName = 'Établissement scolaire';
     try {
-      const profile: any = await this.prisma.tenantIdentityProfile?.findFirst({
-        where: { tenantId, isActive: true },
-        select: { schoolName: true },
-      });
-      if (profile) schoolName = profile.schoolName || schoolName;
+      const profile: any = await this.prisma.$queryRawUnsafe(
+        `SELECT "schoolName" FROM "tenant_identity_profiles"
+         WHERE "tenantId" = $1 AND "isActive" = true LIMIT 1`,
+        tenantId,
+      );
+      if (profile && profile.length > 0) schoolName = profile[0].schoolName || schoolName;
     } catch { /* silent */ }
 
     const formatDate = (d: Date) => new Date(d).toLocaleDateString('fr-FR');
     const weekLabel = `Semaine du ${formatDate(weekStartDate)} au ${formatDate(weekEndDate)}`;
     const daysLabel = days.length === 5 ? 'toute la semaine' : days.join(', ');
 
-    // ⭐ Récupérer les directeurs
-    const directorRoles = ['PROMOTER', 'SCHOOL_OWNER', 'DIRECTOR', 'DIRECTEUR_GENERAL',
-      'DIRECTEUR_ETAPE', 'DIRECTEUR_PEDAGOGIQUE', 'ADMIN', 'SUPER_ADMIN', 'PLATFORM_OWNER'];
-    const directors: any[] = await this.prisma.user.findMany({
-      where: { tenantId, role: { in: directorRoles }, isActive: true },
-      select: { id: true, firstName: true, lastName: true, email: true, phone: true, role: true },
-    }).catch(() => []);
+    // ⭐ Récupérer les directeurs (queryRawUnsafe pour éviter les erreurs Prisma client)
+    let directors: any[] = [];
+    try {
+      const directorRoles = ['PROMOTER', 'SCHOOL_OWNER', 'DIRECTOR', 'DIRECTEUR_GENERAL',
+        'DIRECTEUR_ETAPE', 'DIRECTEUR_PEDAGOGIQUE', 'ADMIN', 'SUPER_ADMIN', 'PLATFORM_OWNER'];
+      directors = await this.prisma.$queryRawUnsafe(
+        `SELECT id, "firstName", "lastName", email, phone, role
+         FROM "users"
+         WHERE "tenantId" = $1 AND role = ANY($2::text[]) AND "isActive" = true`,
+        tenantId, directorRoles,
+      );
+    } catch (err: any) {
+      this.logger.warn(`Failed to fetch directors: ${err.message}`);
+    }
 
     if (directors.length === 0) {
       this.logger.warn(`Aucun directeur trouvé pour tenant ${tenantId}`);
@@ -2345,62 +2353,70 @@ export class PedagogicalSpaceService {
       errors: [],
     };
 
-    // ⭐ 1. Registre d'appel (status DRAFT → SUBMITTED)
+    // ⭐ Protection globale : si une erreur inattendue se produit, on la catch
+    //    pour éviter une 500 non gérée.
     try {
-      const registers: any = await this.prisma.$queryRawUnsafe(
-        `SELECT * FROM "attendance_registers"
-         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "classId" = $3
-         AND "month" = $4 AND "year" = $5 LIMIT 1`,
-        tenantId, academicYearId, classId, month, year,
-      );
-      if (registers && registers.length > 0) {
-        const r = registers[0];
-        if (r.status === 'DRAFT') {
-          await this.prisma.$executeRawUnsafe(
-            `UPDATE "attendance_registers" SET "status" = 'SUBMITTED', "submittedAt" = NOW() WHERE "id" = $1`,
-            r.id,
-          );
-          const updated: any = await this.prisma.$queryRawUnsafe(
-            `SELECT * FROM "attendance_registers" WHERE "id" = $1`, r.id,
-          );
-          results.attendanceRegister = { id: r.id, status: 'SUBMITTED', className: r.classNameResolved };
-        } else {
-          results.attendanceRegister = { id: r.id, status: r.status, skipped: true };
+      // ⭐ 1. Registre d'appel (status DRAFT → SUBMITTED)
+      try {
+        const registers: any = await this.prisma.$queryRawUnsafe(
+          `SELECT * FROM "attendance_registers"
+           WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "classId" = $3
+           AND "month" = $4 AND "year" = $5 LIMIT 1`,
+          tenantId, academicYearId, classId, month, year,
+        );
+        if (registers && registers.length > 0) {
+          const r = registers[0];
+          if (r.status === 'DRAFT') {
+            await this.prisma.$executeRawUnsafe(
+              `UPDATE "attendance_registers" SET "status" = 'SUBMITTED', "submittedAt" = NOW() WHERE "id" = $1`,
+              r.id,
+            );
+            results.attendanceRegister = { id: r.id, status: 'SUBMITTED', className: r.classNameResolved };
+          } else {
+            results.attendanceRegister = { id: r.id, status: r.status, skipped: true };
+          }
         }
+      } catch (err: any) {
+        results.errors.push({ entity: 'attendanceRegister', error: err.message });
       }
-    } catch (err: any) {
-      results.errors.push({ entity: 'attendanceRegister', error: err.message });
+
+      // ⭐ 2. Évaluation mensuelle liée au registre (status DRAFT → SUBMITTED)
+      try {
+        const evals: any = await this.prisma.$queryRawUnsafe(
+          `SELECT me.* FROM "monthly_evaluations" me
+           JOIN "attendance_registers" ar ON ar."id" = me."attendanceRegisterId"
+           WHERE ar."tenantId" = $1 AND ar."academicYearId" = $2 AND ar."classId" = $3
+           AND ar."month" = $4 AND ar."year" = $5 LIMIT 1`,
+          tenantId, academicYearId, classId, month, year,
+        );
+        if (evals && evals.length > 0) {
+          const e = evals[0];
+          if (e.status === 'DRAFT') {
+            await this.prisma.$executeRawUnsafe(
+              `UPDATE "monthly_evaluations" SET "status" = 'SUBMITTED', "submittedAt" = NOW() WHERE "id" = $1`,
+              e.id,
+            );
+            results.monthlyEvaluation = { id: e.id, status: 'SUBMITTED' };
+          } else {
+            results.monthlyEvaluation = { id: e.id, status: e.status, skipped: true };
+          }
+        }
+      } catch (err: any) {
+        results.errors.push({ entity: 'monthlyEvaluation', error: err.message });
+      }
+    } catch (outerErr: any) {
+      this.logger.error('Erreur inattendue dans submitUnified:', outerErr);
+      results.errors.push({ entity: 'global', error: outerErr.message });
     }
 
-    // ⭐ 2. Évaluation mensuelle liée au registre (status DRAFT → SUBMITTED)
-    try {
-      const evals: any = await this.prisma.$queryRawUnsafe(
-        `SELECT me.* FROM "monthly_evaluations" me
-         JOIN "attendance_registers" ar ON ar."id" = me."attendanceRegisterId"
-         WHERE ar."tenantId" = $1 AND ar."academicYearId" = $2 AND ar."classId" = $3
-         AND ar."month" = $4 AND ar."year" = $5 LIMIT 1`,
-        tenantId, academicYearId, classId, month, year,
-      );
-      if (evals && evals.length > 0) {
-        const e = evals[0];
-        if (e.status === 'DRAFT') {
-          await this.prisma.$executeRawUnsafe(
-            `UPDATE "monthly_evaluations" SET "status" = 'SUBMITTED', "submittedAt" = NOW() WHERE "id" = $1`,
-            e.id,
-          );
-          results.monthlyEvaluation = { id: e.id, status: 'SUBMITTED' };
-        } else {
-          results.monthlyEvaluation = { id: e.id, status: e.status, skipped: true };
-        }
-      }
-    } catch (err: any) {
-      results.errors.push({ entity: 'monthlyEvaluation', error: err.message });
-    }
-
-    // ⭐ 3. Notifications au directeur (fire-and-forget)
+    // ⭐ 3. Notifications au directeur (fire-and-forget, TRÈS défensif)
     //    Note : le cahier journal n'est PAS inclus ici — il est soumis séparément.
-    this.notifyDirectorsOfSubmission(tenantId, academicYearId, classId, month, year, results)
-      .catch((err) => this.logger.error('Notification error:', err));
+    try {
+      this.notifyDirectorsOfSubmission(tenantId, academicYearId, classId, month, year, results)
+        .catch((err) => this.logger.error('Notification error:', err));
+    } catch (notifErr: any) {
+      this.logger.error('Failed to start notification:', notifErr);
+    }
 
     return results;
   }
@@ -2431,13 +2447,14 @@ export class PedagogicalSpaceService {
     let schoolName = 'Établissement scolaire';
     let schoolLogoUrl: string | null = null;
     try {
-      const profile: any = await this.prisma.tenantIdentityProfile?.findFirst({
-        where: { tenantId, isActive: true },
-        select: { schoolName: true, logoUrl: true },
-      });
-      if (profile) {
-        schoolName = profile.schoolName || schoolName;
-        schoolLogoUrl = profile.logoUrl || null;
+      const profile: any = await this.prisma.$queryRawUnsafe(
+        `SELECT "schoolName", "logoUrl" FROM "tenant_identity_profiles"
+         WHERE "tenantId" = $1 AND "isActive" = true LIMIT 1`,
+        tenantId,
+      );
+      if (profile && profile.length > 0) {
+        schoolName = profile[0].schoolName || schoolName;
+        schoolLogoUrl = profile[0].logoUrl || null;
       }
     } catch { /* silent */ }
 
@@ -2446,12 +2463,21 @@ export class PedagogicalSpaceService {
     const monthLabel = monthNames[month] || '—';
 
     // ⭐ Récupérer les directeurs (utilisateurs avec role direction)
-    const directorRoles = ['PROMOTER', 'SCHOOL_OWNER', 'DIRECTOR', 'DIRECTEUR_GENERAL',
-      'DIRECTEUR_ETAPE', 'DIRECTEUR_PEDAGOGIQUE', 'ADMIN', 'SUPER_ADMIN', 'PLATFORM_OWNER'];
-    const directors: any[] = await this.prisma.user.findMany({
-      where: { tenantId, role: { in: directorRoles }, isActive: true },
-      select: { id: true, firstName: true, lastName: true, email: true, phone: true, role: true },
-    }).catch(() => []);
+    //    Utilisation de $queryRawUnsafe pour éviter les erreurs si le client
+    //    Prisma n'est pas à jour avec le modèle User.
+    let directors: any[] = [];
+    try {
+      const directorRoles = ['PROMOTER', 'SCHOOL_OWNER', 'DIRECTOR', 'DIRECTEUR_GENERAL',
+        'DIRECTEUR_ETAPE', 'DIRECTEUR_PEDAGOGIQUE', 'ADMIN', 'SUPER_ADMIN', 'PLATFORM_OWNER'];
+      directors = await this.prisma.$queryRawUnsafe(
+        `SELECT id, "firstName", "lastName", email, phone, role
+         FROM "users"
+         WHERE "tenantId" = $1 AND role = ANY($2::text[]) AND "isActive" = true`,
+        tenantId, directorRoles,
+      );
+    } catch (err: any) {
+      this.logger.warn(`Failed to fetch directors: ${err.message}`);
+    }
 
     if (directors.length === 0) {
       this.logger.warn(`Aucun directeur trouvé pour tenant ${tenantId} — notification skipped`);

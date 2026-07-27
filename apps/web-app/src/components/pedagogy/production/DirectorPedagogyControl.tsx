@@ -451,29 +451,57 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
 
       {selected && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
+          <div className="bg-white rounded-2xl shadow-xl max-w-6xl w-full max-h-[95vh] overflow-y-auto p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold">Cahier Journal — {selected.classNameResolved}</h3>
+              <div>
+                <h3 className="text-lg font-bold">Cahier Journal — {selected.classNameResolved}</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  Semaine du {formatDateFR(selected.weekStartDate)} au {formatDateFR(selected.weekEndDate)}
+                  {" · "}Statut: <strong>{selected.status}</strong>
+                </p>
+              </div>
               <button onClick={() => setSelected(null)} className="p-1 hover:bg-slate-100 rounded"><X className="h-5 w-5" /></button>
             </div>
-            <div className="space-y-3 text-sm">
-              <div><strong>Semaine:</strong> {formatDateFR(selected.weekStartDate)} au {formatDateFR(selected.weekEndDate)}</div>
-              <div><strong>Statut:</strong> {selected.status}</div>
-              <div><strong>Observations:</strong> <pre className="whitespace-pre-wrap mt-1">{selected.observations || "—"}</pre></div>
-              {(() => {
-                let entries = selected.entries;
-                if (typeof entries === "string") {
-                  try { entries = JSON.parse(entries); } catch { entries = {}; }
-                }
-                return (
-                  <div>
-                    <strong>Contenu de la grille:</strong>
-                    <pre className="whitespace-pre-wrap mt-1 text-xs bg-slate-50 p-3 rounded-lg max-h-96 overflow-y-auto">
-                      {JSON.stringify(entries, null, 2)}
-                    </pre>
+
+            {/* ⭐ Grille du cahier journal (read-only, identique à l'enseignant) */}
+            <CahierJournalReadOnlyView journal={selected} />
+
+            {/* Observations générales */}
+            {selected.observations && (
+              <div className="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                <strong className="text-sm text-slate-700">Observations :</strong>
+                <p className="text-sm text-slate-600 mt-1 whitespace-pre-wrap">{selected.observations}</p>
+              </div>
+            )}
+
+            {/* Signatures */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6 border-t-2 border-slate-300 mt-4">
+              <div className="space-y-2">
+                <div className="text-sm font-bold text-slate-800">Le Titulaire de la classe</div>
+                <div className="text-xs text-slate-500">{selected.teacherFirstName} {selected.teacherLastName} — Signature</div>
+                {selected.teacherSignature ? (
+                  <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
+                    <img src={selected.teacherSignature} alt="Signature Titulaire" className="max-h-20 mx-auto" />
                   </div>
-                );
-              })()}
+                ) : (
+                  <div className="border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-xl p-4 text-center text-xs text-slate-400 italic">
+                    Non signé
+                  </div>
+                )}
+              </div>
+              <div className="space-y-2">
+                <div className="text-sm font-bold text-slate-800">Le Directeur / La Directrice</div>
+                <div className="text-xs text-slate-500">Signature et cachet</div>
+                {selected.directorSignature ? (
+                  <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
+                    <img src={selected.directorSignature} alt="Signature Directeur" className="max-h-20 mx-auto" />
+                  </div>
+                ) : (
+                  <div className="border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-xl p-4 text-center text-xs text-slate-400 italic">
+                    Non signé
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1260,6 +1288,122 @@ function PendingCahierTestsTab({ tenantId, academicYearId, userId, refreshKey, o
         onValidate={handleValidate}
         title={`Cahier de test — ${modalItem?.testTitle || ""}`}
       />
+    </div>
+  );
+}
+
+// ============================================================================
+// ⭐ CahierJournalReadOnlyView — Vue en lecture seule du cahier journal
+//    (identique à la grille de l'enseignant, mais en read-only pour le directeur)
+// ============================================================================
+
+const CJ_DAYS = [
+  { id: 1, key: "lundi", label: "LUNDI" },
+  { id: 2, key: "mardi", label: "MARDI" },
+  { id: 3, key: "mercredi", label: "MERCREDI" },
+  { id: 4, key: "jeudi", label: "JEUDI" },
+  { id: 5, key: "vendredi", label: "VENDREDI" },
+] as const;
+
+function CahierJournalReadOnlyView({ journal }: { journal: any }) {
+  // ⭐ Parser les entries (peut être string JSON ou objet)
+  let entries: Record<string, Record<string, string>> = {};
+  if (journal.entries) {
+    if (typeof journal.entries === "string") {
+      try { entries = JSON.parse(journal.entries); } catch { entries = {}; }
+    } else {
+      entries = journal.entries;
+    }
+  }
+
+  // ⭐ Collecter toutes les colonnes (matières/groupes) depuis les entries
+  const allColumns = new Set<string>();
+  for (const day of CJ_DAYS) {
+    const dayEntries = entries[day.key] || {};
+    for (const key of Object.keys(dayEntries)) {
+      if (key !== "observations") allColumns.add(key);
+    }
+  }
+  const columns = Array.from(allColumns);
+
+  // ⭐ Si aucune colonne trouvée, afficher un message
+  if (columns.length === 0) {
+    return (
+      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 text-center text-sm text-slate-500">
+        Aucune saisie dans ce cahier journal.
+      </div>
+    );
+  }
+
+  // ⭐ Répartir les colonnes en 2 pages (recto = première moitié, verso = seconde moitié)
+  const halfIdx = Math.ceil(columns.length / 2);
+  const rectoCols = columns.slice(0, halfIdx);
+  const versoCols = columns.slice(halfIdx);
+
+  const renderPage = (pageCols: string[], pageTitle: string) => (
+    <div className="mb-6">
+      <div className="mb-2 text-xs font-bold text-slate-500 uppercase tracking-wider">{pageTitle}</div>
+      <div className="overflow-x-auto border border-slate-300 rounded-lg">
+        <table className="w-full border-collapse min-w-[900px]">
+          <thead>
+            <tr className="bg-slate-100">
+              <th className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase w-16 sticky left-0 bg-slate-100 z-10">
+                JOURS
+              </th>
+              {pageCols.map((col) => (
+                <th key={col} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top" style={{ minWidth: "180px" }}>
+                  {col}
+                </th>
+              ))}
+              <th className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top" style={{ minWidth: "160px" }}>
+                OBSERVATIONS
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {CJ_DAYS.map((day) => {
+              const weekStart = new Date(journal.weekStartDate);
+              const dayDate = new Date(weekStart.getTime() + (day.id - 1) * 86400000);
+              return (
+                <tr key={day.key} className="hover:bg-slate-50">
+                  <td className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase bg-slate-50 sticky left-0 z-10">
+                    {day.label}
+                    <div className="text-[10px] text-slate-400 mt-1 font-normal">
+                      {dayDate.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}
+                    </div>
+                  </td>
+                  {pageCols.map((col) => {
+                    const content = entries[day.key]?.[col] || '';
+                    return (
+                      <td key={col} className="border border-slate-300 px-2 py-1 text-xs text-slate-700 align-top" style={{ minHeight: "60px" }}>
+                        {content ? (
+                          <div dangerouslySetInnerHTML={{ __html: content }} />
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td className="border border-slate-300 px-2 py-1 text-xs text-slate-700 align-top">
+                    {entries[day.key]?.observations ? (
+                      <div dangerouslySetInnerHTML={{ __html: entries[day.key].observations }} />
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      {rectoCols.length > 0 && renderPage(rectoCols, "Page 1 — Recto")}
+      {versoCols.length > 0 && renderPage(versoCols, "Page 2 — Verso")}
     </div>
   );
 }

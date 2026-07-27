@@ -471,20 +471,13 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
       `Mois : ${MONTH_NAMES[selectedMonth]} ${selectedYear}\n\n` +
       `Cette action soumet en une seule fois :\n` +
       `• Le registre d'appel\n` +
-      `• L'évaluation mensuelle\n` +
-      `• Le cahier journal (semaine en cours)\n\n` +
-      `Cette action est irréversible. Le directeur sera notifié automatiquement.`
+      `• L'évaluation mensuelle\n\n` +
+      `Cette action est irréversible. Le directeur sera notifié automatiquement.\n` +
+      `(Le cahier journal est soumis séparément depuis son onglet dédié.)`
     );
     if (!ok) return;
     setSubmittingUnified(true);
     try {
-      // ⭐ Calculer le lundi de la semaine en cours
-      const today = new Date();
-      const day = today.getDay();
-      const diff = day === 0 ? -6 : 1 - day; // dimanche = -6, sinon 1 - day
-      const monday = new Date(today);
-      monday.setDate(today.getDate() + diff);
-
       const res = await fetch('/api/pedagogy-space/submit-unified', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -494,7 +487,6 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
           classId: selectedClassId,
           month: selectedMonth,
           year: selectedYear,
-          weekStartDate: monday.toISOString().split('T')[0],
         }),
       });
       if (!res.ok) {

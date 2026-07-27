@@ -2053,7 +2053,8 @@ export class PedagogicalSpaceService {
 
   /**
    * ⭐ Soumission unifiée : soumet en une fois le registre d'appel + l'évaluation
-   *    mensuelle + le cahier journal pour une classe/mois/semaine donnés.
+   *    mensuelle pour une classe/mois donnés.
+   *    (Le cahier journal est soumis SÉPARÉMENT via submitCahierJournal.)
    *    Retourne la liste des entités soumises + celles déjà soumises (skip).
    */
   async submitUnified(
@@ -2063,12 +2064,10 @@ export class PedagogicalSpaceService {
     classId: string,
     month: number,
     year: number,
-    weekStartDate?: string,
   ) {
     const results: any = {
       attendanceRegister: null,
       monthlyEvaluation: null,
-      cahierJournal: null,
       errors: [],
     };
 
@@ -2124,33 +2123,8 @@ export class PedagogicalSpaceService {
       results.errors.push({ entity: 'monthlyEvaluation', error: err.message });
     }
 
-    // ⭐ 3. Cahier journal (semaine en cours) — si weekStartDate fourni
-    if (weekStartDate) {
-      try {
-        const journals: any = await this.prisma.$queryRawUnsafe(
-          `SELECT * FROM "cahier_journal_entries"
-           WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "classId" = $3
-           AND "weekStartDate" = $4 LIMIT 1`,
-          tenantId, academicYearId, classId, new Date(weekStartDate),
-        );
-        if (journals && journals.length > 0) {
-          const j = journals[0];
-          if (j.status === 'DRAFT') {
-            await this.prisma.$executeRawUnsafe(
-              `UPDATE "cahier_journal_entries" SET "status" = 'SUBMITTED', "submittedAt" = NOW() WHERE "id" = $1`,
-              j.id,
-            );
-            results.cahierJournal = { id: j.id, status: 'SUBMITTED' };
-          } else {
-            results.cahierJournal = { id: j.id, status: j.status, skipped: true };
-          }
-        }
-      } catch (err: any) {
-        results.errors.push({ entity: 'cahierJournal', error: err.message });
-      }
-    }
-
-    // ⭐ 4. Notifications au directeur (fire-and-forget)
+    // ⭐ 3. Notifications au directeur (fire-and-forget)
+    //    Note : le cahier journal n'est PAS inclus ici — il est soumis séparément.
     this.notifyDirectorsOfSubmission(tenantId, academicYearId, classId, month, year, results)
       .catch((err) => this.logger.error('Notification error:', err));
 
@@ -2214,7 +2188,8 @@ export class PedagogicalSpaceService {
     const submittedEntities: string[] = [];
     if (results.attendanceRegister) submittedEntities.push('Registre d\'appel');
     if (results.monthlyEvaluation) submittedEntities.push('Évaluation mensuelle');
-    if (results.cahierJournal) submittedEntities.push('Cahier journal');
+    // Note : le cahier journal n'est PAS soumis via submitUnified — il a son propre
+    // endpoint submitCahierJournal qui notifie séparément.
     const entityList = submittedEntities.length > 0
       ? submittedEntities.join(', ')
       : 'aucune entité';
@@ -2333,8 +2308,8 @@ export class PedagogicalSpaceService {
       channels: { email: { sent: 0, failed: 0 }, whatsapp: { sent: 0, failed: 0 }, sms: { sent: 0, failed: 0 } },
     };
 
-    // Réutilise la logique de notification
-    const fakeResults = { attendanceRegister: { status: 'SUBMITTED' }, monthlyEvaluation: { status: 'SUBMITTED' }, cahierJournal: null };
+    // Réutilise la logique de notification (registre + évaluation mensuelle)
+    const fakeResults = { attendanceRegister: { status: 'SUBMITTED' }, monthlyEvaluation: { status: 'SUBMITTED' } };
     // Pour la notif manuelle, on envoie même si déjà soumis
     await this.notifyDirectorsOfSubmission(tenantId, '', classId, month, year, fakeResults);
 

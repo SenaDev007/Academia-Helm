@@ -24,6 +24,7 @@ import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import { useAppSession } from "@/contexts/AppSessionContext";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface CahierJournalTabProps {
   tenantId: string;
@@ -110,6 +111,8 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // ⭐ Modal de confirmation professionnel (remplace confirm())
+  const { warning: confirmWarning, dialog: confirmDialog } = useConfirmDialog();
   // Matières dynamiques chargées depuis la base de données
   const [dynamicSubjects, setDynamicSubjects] = useState<any[]>([]);
 
@@ -343,11 +346,34 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
     }
   };
 
-  // === Soumission au directeur ===
-  // ⭐ La soumission du cahier journal est désormais gérée par le bouton unifié
-  //    dans l'en-tête du registre d'appel (qui soumet registre + évaluation
-  //    mensuelle + cahier journal en une seule transaction).
-  //    Ancien handleSubmit supprimé.
+  // === Soumission au directeur (cahier journal SOUMIS SÉPARÉMENT du registre) ===
+  const handleSubmit = async () => {
+    if (!journal) return;
+    // ⭐ Modal professionnel (remplace confirm())
+    const ok = await confirmWarning(
+      `Souhaitez-vous soumettre ce cahier journal au directeur ?`,
+      'Soumission cahier journal',
+      `Classe : ${journal.classNameResolved || journal.className || '—'}\n` +
+      `Semaine du ${new Date(journal.weekStartDate).toLocaleDateString('fr-FR')}\n\n` +
+      `Cette action est irréversible. Le directeur sera notifié pour validation.\n` +
+      `(Le registre d'appel et l'évaluation mensuelle sont soumis séparément.)`
+    );
+    if (!ok) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/pedagogy-space/cahier-journal/${journal.id}/submit`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Erreur");
+      toast.success("✅ Cahier journal soumis au directeur");
+      loadJournal();
+    } catch (e: any) {
+      toast.error("Erreur", { description: e.message });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   // === Navigation entre semaines ===
   const prevWeek = () => {
@@ -439,14 +465,16 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Enregistrer
           </button>
-          {/* ⭐ Bouton Soumettre SUPPRIMÉ — désormais géré par le bouton unifié
-              dans l'en-tête du registre d'appel (qui soumet registre + évaluation
-              mensuelle + cahier journal en une fois). */}
-          {journal && journal.status === "DRAFT" && (
-            <span className="text-xs text-amber-700 bg-amber-100 px-3 py-2 rounded-lg font-semibold">
-              ✓ Prêt pour soumission (bouton unifié en haut du registre d'appel)
-            </span>
-          )}
+          {/* ⭐ Bouton Soumettre le cahier journal (séparé du registre + évaluation) */}
+          <button
+            onClick={handleSubmit}
+            disabled={submitting || loading || !journal || journal.status !== "DRAFT"}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            Soumettre
+          </button>
+          {/* ⭐ Badge statut si déjà soumis/validé */}
           {journal && journal.status !== "DRAFT" && (
             <span className="text-xs text-emerald-700 bg-emerald-100 px-3 py-2 rounded-lg font-semibold">
               {journal.status === 'SUBMITTED' ? '✓ Soumis au directeur' : journal.status === 'VALIDATED' ? '✓ Validé' : journal.status}
@@ -740,6 +768,8 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
           Ce cahier journal est verrouillé (statut: {journal?.status}). Vous ne pouvez plus le modifier.
         </div>
       )}
+      {/* ⭐ Modal de confirmation professionnel (remplace confirm()) */}
+      {confirmDialog}
     </div>
   );
 }

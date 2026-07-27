@@ -416,7 +416,7 @@ export class PedagogicalSpaceController {
   }
 
   // ===========================================================================
-  // ⭐ SOUMISSION UNIFIÉE — registre + évaluation mensuelle + cahier journal
+  // ⭐ SOUMISSION UNIFIÉE — registre + évaluation mensuelle (cahier journal séparé)
   // ===========================================================================
 
   @Post('submit-unified')
@@ -429,7 +429,6 @@ export class PedagogicalSpaceController {
       classId: string;
       month: number;
       year: number;
-      weekStartDate?: string;
     },
   ) {
     return this.service.submitUnified(
@@ -439,7 +438,6 @@ export class PedagogicalSpaceController {
       body.classId,
       body.month,
       body.year,
-      body.weekStartDate,
     );
   }
 

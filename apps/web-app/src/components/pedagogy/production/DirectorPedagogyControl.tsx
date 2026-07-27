@@ -2054,9 +2054,18 @@ function MonthlyEvaluationDirectorDetail({ evaluation, userId, onBack, onValidat
 
       {/* En-tête */}
       <div className="bg-white border-2 border-slate-800 rounded-xl p-4 text-center">
-        <h2 className="text-lg font-bold text-slate-900">ÉVALUATION MENSUELLE — {monthLabel} {year}</h2>
-        <div className="text-sm text-slate-600 mt-1">Classe : <strong>{evaluation.classNameResolved || "—"}</strong> · Enseignant : {evaluation.teacherFirstName} {evaluation.teacherLastName}</div>
-        <div className="text-xs text-slate-500 mt-1">Statut : <strong>{evaluation.status}</strong> · Seuil : {evaluation.seuilReussite ?? 10}/20</div>
+        <h2 className="text-lg font-bold text-slate-900">
+          {evaluation.title || evaluation.evaluationTypeName || "ÉVALUATION MENSUELLE"} — {monthLabel} {year}
+        </h2>
+        <div className="text-sm text-slate-600 mt-1">
+          Classe : <strong>{evaluation.classNameResolved || "—"}</strong>
+          {" · "}Enseignant : {evaluation.teacherFirstName} {evaluation.teacherLastName}
+        </div>
+        <div className="text-xs text-slate-500 mt-1">
+          Statut : <strong>{evaluation.status}</strong>
+          {" · "}Seuil de réussite : {evaluation.seuilReussite ?? 10}/20
+          {evaluation.evaluationTypeName && " · Type : " + evaluation.evaluationTypeName}
+        </div>
         <p className="text-xs text-slate-500 mt-1 italic">NB : Pour chaque épreuve, l'élève évalué(e) n'aura de bonus de perfectionnement que lorsqu'il(elle) aura atteint la maîtrise minimale fixée.</p>
       </div>
 

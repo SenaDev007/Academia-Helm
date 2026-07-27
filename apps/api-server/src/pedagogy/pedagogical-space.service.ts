@@ -4160,17 +4160,45 @@ export class PedagogicalSpaceService {
   }
 
   /// Récupère toutes les évaluations mensuelles soumises (en attente de validation).
+  /// ⭐ Inclut les évaluations du Module Examen (institutional-exams) avec status=SUBMITTED
   async getPendingMonthlyEvaluations(tenantId: string, academicYearId: string) {
-    return this.prisma.$queryRawUnsafe(
+    // 1. Évaluations depuis le module Examen (institutional-exams)
+    const examEvals: any = await this.prisma.$queryRawUnsafe(
+      `SELECT e.id, e.title, e.status, e.submittedAt, e.validatedAt, e.classId,
+              e.evaluationDate, e.startDate, e.endDate,
+              e."evaluationTypeId", et."name" as "evaluationTypeName",
+              c."name" as "classNameResolved",
+              sl."code" as "schoolLevelCode",
+              t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName",
+              e."academicYearId", e.tenantId,
+              EXTRACT(MONTH FROM COALESCE(e."startDate", e."evaluationDate"))::int as "month",
+              EXTRACT(YEAR FROM COALESCE(e."startDate", e."evaluationDate"))::int as "year",
+              'EXAM' as "source"
+       FROM "evaluations" e
+       LEFT JOIN "classes" c ON c."id" = e."classId"
+       LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
+       LEFT JOIN "teachers" t ON t."id" = e."teacherId"
+       LEFT JOIN "evaluation_types" et ON et."id" = e."evaluationTypeId"
+       WHERE e."tenantId" = $1 AND e."academicYearId" = $2 AND e."status" = 'SUBMITTED'
+       ORDER BY e."submittedAt" DESC`,
+      tenantId, academicYearId,
+    );
+
+    // 2. Évaluations depuis l'ancien système pedagogy-space (monthly_evaluations)
+    const pedagogyEvals: any = await this.prisma.$queryRawUnsafe(
       `SELECT me.*, c."name" as "classNameResolved",
-              ar."month" as "registerMonth", ar."year" as "registerYear"
+              ar."month" as "registerMonth", ar."year" as "registerYear",
+              'PEDAGOGY' as "source"
        FROM "monthly_evaluations" me
        LEFT JOIN "attendance_registers" ar ON ar."id" = me."attendanceRegisterId"
        LEFT JOIN "classes" c ON c."id" = me."classId"
        WHERE me."tenantId" = $1 AND me."academicYearId" = $2 AND me."status" = 'SUBMITTED'
        ORDER BY me."submittedAt" DESC`,
       tenantId, academicYearId,
-    );
+    ).catch(() => []);
+
+    // Combiner les deux listes
+    return [...(examEvals || []), ...(pedagogyEvals || [])];
   }
 
   /// Valide ou rejette une évaluation mensuelle.
@@ -4589,11 +4617,125 @@ export class PedagogicalSpaceService {
 
   /// Récupère le détail d'une évaluation avec ses matières et scores (vue direction).
   async getMonthlyEvaluationDetail(tenantId: string, evaluationId: string) {
+    // ⭐ D'abord chercher dans le module Examen (evaluations + grades)
+    const examEval: any = await this.prisma.$queryRawUnsafe(
+      `SELECT e.*, c."name" as "classNameResolved",
+              sl."code" as "schoolLevelCode", sl."name" as "schoolLevelName",
+              t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName",
+              et."name" as "evaluationTypeName",
+              EXTRACT(MONTH FROM COALESCE(e."startDate", e."evaluationDate"))::int as "registerMonth",
+              EXTRACT(YEAR FROM COALESCE(e."startDate", e."evaluationDate"))::int as "registerYear",
+              'EXAM' as "source"
+       FROM "evaluations" e
+       LEFT JOIN "classes" c ON c."id" = e."classId"
+       LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
+       LEFT JOIN "teachers" t ON t."id" = e."teacherId"
+       LEFT JOIN "evaluation_types" et ON et."id" = e."evaluationTypeId"
+       WHERE e."id" = $1 AND e."tenantId" = $2`,
+      evaluationId, tenantId,
+    );
+
+    if (examEval && examEval.length > 0) {
+      const evalData = examEval[0];
+
+      // ⭐ Récupérer les grades (notes des élèves) depuis le module Examen
+      const grades: any = await this.prisma.$queryRawUnsafe(
+        `SELECT g.*, s."firstName", s."lastName", s."matricule", s."gender"
+         FROM "grades" g
+         LEFT JOIN "students" s ON s."id" = g."studentId"
+         WHERE g."evaluationId" = $1 AND g."tenantId" = $2
+         ORDER BY s."lastName", s."firstName"`,
+        evaluationId, tenantId,
+      ).catch(() => []);
+
+      // ⭐ Récupérer les matières (subjects) de cette évaluation
+      // Les évaluations du module Examen sont groupées par (classId × evaluationTypeId × periodId × dates)
+      // On récupère toutes les évaluations du même groupe pour avoir les matières
+      const groupedEvals: any = await this.prisma.$queryRawUnsafe(
+        `SELECT e.id, e."subjectId", sub."name" as "subjectName"
+         FROM "evaluations" e
+         LEFT JOIN "subjects" sub ON sub."id" = e."subjectId"
+         WHERE e."tenantId" = $1 AND e."classId" = $2
+         AND e."evaluationTypeId" = $3
+         AND COALESCE(e."startDate", e."evaluationDate") = COALESCE($4::timestamp, e."startDate", e."evaluationDate")
+         AND e."status" IN ('SUBMITTED', 'VALIDATED', 'LOCKED')`,
+        tenantId, evalData.classId, evalData.evaluationTypeId,
+        evalData.startDate || evalData.evaluationDate,
+      ).catch(() => []);
+
+      // ⭐ Construire subjectsConfig et studentScores au format attendu par le frontend
+      const subjectsConfig = (groupedEvals || []).map((e: any) => ({
+        subjectId: e.subjectId,
+        subjectName: e.subjectName || 'Matière',
+      }));
+
+      // Grouper les grades par étudiant
+      const studentMap = new Map<string, any>();
+      for (const g of (grades || [])) {
+        const studentId = g.studentId;
+        if (!studentMap.has(studentId)) {
+          studentMap.set(studentId, {
+            studentId,
+            nom: g.lastName || '',
+            prenom: g.firstName || '',
+            sexe: (g.gender || '').startsWith('F') ? 'F' : 'M',
+            scores: [],
+            totalGeneral: 0,
+          });
+        }
+        const student = studentMap.get(studentId);
+
+        // Parser cm/cp depuis comment si présent
+        let cm = g.cm ?? null;
+        let cp = g.cp ?? null;
+        if ((cm === null || cp === null) && g.comment) {
+          try {
+            const parsed = typeof g.comment === 'string' ? JSON.parse(g.comment) : g.comment;
+            if (cm === null && parsed?.cm !== undefined) cm = parsed.cm;
+            if (cp === null && parsed?.cp !== undefined) cp = parsed.cp;
+          } catch { /* ignore */ }
+        }
+
+        const total = (cm !== null ? cm : 0) + (cp !== null ? cp : 0);
+        student.scores.push({
+          subjectId: g.subjectId,
+          cm,
+          cp,
+          total,
+          qualitativeCode: g.qualitativeCode || null,
+          isAbsent: g.isAbsent || false,
+        });
+        if (!g.isAbsent) {
+          student.totalGeneral += total;
+        }
+      }
+
+      const studentScores = Array.from(studentMap.values());
+
+      return {
+        ...evalData,
+        subjectsConfig: JSON.stringify(subjectsConfig),
+        studentScores: JSON.stringify(studentScores),
+        seuilReussite: 10,
+        // Stats
+        effectifTotalClasse: studentScores.length,
+        effectifTotalGarcons: studentScores.filter(s => s.sexe === 'M').length,
+        effectifTotalFilles: studentScores.filter(s => s.sexe === 'F').length,
+        ayantComposeTotal: studentScores.filter(s => s.scores.some(sc => !sc.isAbsent)).length,
+        ayantAtteintSeuilTotal: studentScores.filter(s => s.totalGeneral >= 10).length,
+        pourcentageReussiteTotal: studentScores.length > 0
+          ? (studentScores.filter(s => s.totalGeneral >= 10).length / studentScores.length) * 100
+          : 0,
+      };
+    }
+
+    // ⭐ Fallback : chercher dans l'ancien système pedagogy-space
     const evalResult: any = await this.prisma.$queryRawUnsafe(
       `SELECT me.*, c."name" as "classNameResolved",
               ar."month" as "registerMonth", ar."year" as "registerYear",
               ar."id" as "registerId", ar."teacherId" as "registerTeacherId",
-              t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName"
+              t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName",
+              'PEDAGOGY' as "source"
        FROM "monthly_evaluations" me
        LEFT JOIN "attendance_registers" ar ON ar."id" = me."attendanceRegisterId"
        LEFT JOIN "classes" c ON c."id" = me."classId"

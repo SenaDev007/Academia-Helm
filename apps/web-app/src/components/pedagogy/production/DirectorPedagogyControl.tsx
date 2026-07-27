@@ -691,6 +691,24 @@ function PendingRegistersTab({ tenantId, academicYearId, userId, refreshKey, onR
     } catch { toast.error("Erreur"); }
   };
 
+  // ⭐ Si un registre est sélectionné, afficher la vue détaillée in-page
+  if (selected) {
+    return (
+      <AttendanceRegisterDirectorDetail
+        register={selected}
+        userId={userId}
+        onBack={() => setSelected(null)}
+        onValidated={() => {
+          setSelected(null);
+          onRefresh();
+          refetch();
+          queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "pending-registers"] });
+          queryClient.invalidateQueries({ queryKey: ["pedagogy", "director", "dashboard"] });
+        }}
+      />
+    );
+  }
+
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>;
 
   if (items.length === 0) {
@@ -764,73 +782,8 @@ function PendingRegistersTab({ tenantId, academicYearId, userId, refreshKey, onR
         </div>
       ))}
 
-      {selected && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold">Registre d'Appel — {selected.classNameResolved}</h3>
-              <button onClick={() => setSelected(null)} className="p-1 hover:bg-slate-100 rounded"><X className="h-5 w-5" /></button>
-            </div>
-            <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-3">
-                <div><strong>Période:</strong> {MONTH_NAMES[selected.month]} {selected.year}</div>
-                <div><strong>Statut:</strong> {selected.status}</div>
-                <div><strong>Demi-journées du mois:</strong> {selected.demiJourneeMois ?? "—"}</div>
-                <div><strong>Présences possibles:</strong> {selected.presencePossibleMois ?? "—"}</div>
-                <div><strong>Total absences:</strong> {selected.totalAbsencesMois ?? "—"}</div>
-                <div><strong>Présences effectives:</strong> {selected.totalPresencesEffectivesMois ?? "—"}</div>
-                <div><strong>% Présences:</strong> {selected.pourcentagePresences ?? "—"}%</div>
-                <div><strong>% Absences:</strong> {selected.pourcentageAbsences ?? "—"}%</div>
-              </div>
-              {selected.arreteDate && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                  <strong>Registre arrêté le:</strong> {formatDateTimeFR(selected.arreteDate)} à {selected.arreteHeure}
-                  <div className="mt-1 text-xs">
-                    Effectif du jour: {selected.effectifJourFilles ?? "—"} filles, {selected.effectifJourGarcons ?? "—"} garçons
-                  </div>
-                </div>
-              )}
-              <div>
-                <strong>Liste des élèves ({Array.isArray(typeof selected.studentsData === "string" ? JSON.parse(selected.studentsData || "[]") : selected.studentsData) ?
-                  (typeof selected.studentsData === "string" ? JSON.parse(selected.studentsData || "[]") : selected.studentsData).length : 0}):</strong>
-                <div className="mt-2 max-h-96 overflow-y-auto border border-slate-200 rounded-lg">
-                  <table className="w-full text-xs">
-                    <thead className="bg-slate-100 sticky top-0">
-                      <tr>
-                        <th className="px-2 py-1 text-left">N°</th>
-                        <th className="px-2 py-1 text-left">Nom</th>
-                        <th className="px-2 py-1 text-center">Sexe</th>
-                        <th className="px-2 py-1 text-center">Abs.</th>
-                        <th className="px-2 py-1 text-center">Poss.</th>
-                        <th className="px-2 py-1 text-center">Eff.</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(() => {
-                        let students = selected.studentsData;
-                        if (typeof students === "string") {
-                          try { students = JSON.parse(students); } catch { students = []; }
-                        }
-                        if (!Array.isArray(students)) students = [];
-                        return students.map((s: any, i: number) => (
-                          <tr key={s.studentId || i} className="hover:bg-slate-50">
-                            <td className="px-2 py-1">{s.numero || i + 1}</td>
-                            <td className="px-2 py-1">{s.nom} {s.prenom}</td>
-                            <td className="px-2 py-1 text-center">{s.sexe}</td>
-                            <td className="px-2 py-1 text-center text-red-600">{s.totalAbsences ?? 0}</td>
-                            <td className="px-2 py-1 text-center">{s.totalPresencesPossibles ?? 0}</td>
-                            <td className="px-2 py-1 text-center text-emerald-600">{s.totalPresenceEffectif ?? 0}</td>
-                          </tr>
-                        ));
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ⭐ L'ancien modal a été remplacé par la vue in-page AttendanceRegisterDirectorDetail
+          (rendue au début du composant quand `selected` est défini) */}
 
       <ValidationModal
         open={!!modalItem}
@@ -1567,6 +1520,254 @@ function CahierJournalDirectorDetail({
         </div>
 
         {/* Signature Directeur (éditable si pas encore validé) */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-bold text-slate-800">Le Directeur / La Directrice</div>
+              <div className="text-xs text-slate-500">Signature et cachet {isAlreadyValidated ? '' : '(obligatoire)'}</div>
+            </div>
+            {directorSignature && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
+                <CheckCircle2 className="h-3 w-3" /> Signé
+              </span>
+            )}
+          </div>
+          {directorSignature ? (
+            <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2 relative">
+              <img src={directorSignature} alt="Signature Directeur" className="max-h-24 mx-auto" />
+              {!isAlreadyValidated && (
+                <button
+                  type="button"
+                  onClick={() => setDirectorSignature(null)}
+                  className="absolute top-1 right-1 text-xs text-red-500 hover:underline"
+                >
+                  Effacer
+                </button>
+              )}
+            </div>
+          ) : (
+            <SignatureCanvas
+              width={400}
+              height={120}
+              disabled={saving || isAlreadyValidated}
+              placeholder="Signature du Directeur (obligatoire pour valider)"
+              onSignatureChange={(data) => setDirectorSignature(data)}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// ⭐ AttendanceRegisterDirectorDetail — Vue in-page du registre d'appel + évaluation
+// ============================================================================
+
+function AttendanceRegisterDirectorDetail({
+  register,
+  userId,
+  onBack,
+  onValidated,
+}: {
+  register: any;
+  userId: string;
+  onBack: () => void;
+  onValidated: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [directorSignature, setDirectorSignature] = useState<string | null>(register.directorSignature || null);
+
+  // ⭐ Parser les studentsData
+  let students: any[] = [];
+  if (register.studentsData) {
+    if (typeof register.studentsData === "string") {
+      try { students = JSON.parse(register.studentsData); } catch { students = []; }
+    } else if (Array.isArray(register.studentsData)) {
+      students = register.studentsData;
+    }
+  }
+
+  const isAlreadyValidated = register.status === 'VALIDATED';
+  const isAlreadyRejected = register.status === 'REJECTED';
+
+  const handleValidate = async (action: 'VALIDATED' | 'REJECTED') => {
+    if (action === 'VALIDATED' && !directorSignature) {
+      toast.error("Signature obligatoire", {
+        description: "Vous devez signer avant de valider le registre + évaluation.",
+      });
+      return;
+    }
+    const ok = window.confirm(
+      action === 'VALIDATED'
+        ? `Valider ce registre + évaluation ?\n\nL'enseignant recevra une notification (email + WhatsApp + SMS) avec votre décision et votre signature.`
+        : `Rejeter ce registre + évaluation ?\n\nL'enseignant recevra une notification de rejet.`
+    );
+    if (!ok) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/pedagogy-space/director/attendance-registers/${register.id}/director-update`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          directorSignature,
+          action,
+          validatedBy: userId,
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
+      }
+      toast.success(action === 'VALIDATED' ? '✅ Registre + évaluation validés' : 'Registre + évaluation rejetés', {
+        description: action === 'VALIDATED'
+          ? "L'enseignant a été notifié et recevra la version validée avec votre signature."
+          : "L'enseignant a été notifié du rejet.",
+      });
+      onValidated();
+    } catch (err: any) {
+      toast.error('Erreur lors de la validation', { description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* ⭐ Action bar */}
+      <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-3">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg"
+        >
+          <ChevronRight className="w-4 w-4 rotate-180" />
+          Retour à la liste
+        </button>
+        <div className="flex items-center gap-2">
+          {isAlreadyValidated && (
+            <span className="px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-bold">✓ Validé</span>
+          )}
+          {isAlreadyRejected && (
+            <span className="px-3 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-bold">✗ Rejeté</span>
+          )}
+          {!isAlreadyValidated && !isAlreadyRejected && (
+            <>
+              <button
+                onClick={() => handleValidate('REJECTED')}
+                disabled={saving}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                Rejeter
+              </button>
+              <button
+                onClick={() => handleValidate('VALIDATED')}
+                disabled={saving || !directorSignature}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                title={!directorSignature ? "Signature obligatoire" : "Valider"}
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                {directorSignature ? 'Valider' : 'Signature requise'}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ⭐ En-tête du registre */}
+      <div className="bg-white border-2 border-slate-800 rounded-xl p-4 text-center">
+        <h2 className="text-lg font-bold text-slate-900">
+          REGISTRE D'APPEL — {register.classNameResolved || '—'}
+        </h2>
+        <div className="text-sm text-slate-600 mt-1">
+          Mois de <strong>{MONTH_NAMES[register.month]} {register.year}</strong>
+          {" · "}Statut : <strong>{register.status}</strong>
+        </div>
+        <div className="text-xs text-slate-500 mt-1">
+          Demi-journées du mois : <strong>{register.demiJourneeMois ?? '—'}</strong>
+          {" · "}Effectif : <strong>{students.length}</strong> élèves
+        </div>
+      </div>
+
+      {/* ⭐ Tableau des élèves */}
+      <div className="bg-white border-2 border-slate-800 rounded-xl p-4">
+        <h3 className="text-sm font-bold text-slate-900 uppercase mb-3">Liste des élèves</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-100">
+                <th className="border border-slate-300 px-2 py-1 text-left">N°</th>
+                <th className="border border-slate-300 px-2 py-1 text-left">Nom et prénom</th>
+                <th className="border border-slate-300 px-2 py-1 text-center">Sexe</th>
+                <th className="border border-slate-300 px-2 py-1 text-center">T. Poss.</th>
+                <th className="border border-slate-300 px-2 py-1 text-center">T. Abs.</th>
+                <th className="border border-slate-300 px-2 py-1 text-center">T. Eff.</th>
+                <th className="border border-slate-300 px-2 py-1 text-left">Observation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {students.map((s: any, i: number) => (
+                <tr key={s.studentId || i} className="hover:bg-slate-50">
+                  <td className="border border-slate-300 px-2 py-1">{s.numero || i + 1}</td>
+                  <td className="border border-slate-300 px-2 py-1 font-medium">{s.nom} {s.prenom}</td>
+                  <td className="border border-slate-300 px-2 py-1 text-center">{s.sexe}</td>
+                  <td className="border border-slate-300 px-2 py-1 text-center">{s.totalPresencesPossibles ?? 0}</td>
+                  <td className="border border-slate-300 px-2 py-1 text-center text-red-600 font-semibold">{s.totalAbsences ?? 0}</td>
+                  <td className="border border-slate-300 px-2 py-1 text-center text-emerald-600 font-semibold">{s.totalPresenceEffectif ?? 0}</td>
+                  <td className="border border-slate-300 px-2 py-1 text-slate-500">{s.observation || '—'}</td>
+                </tr>
+              ))}
+              {students.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="border border-slate-300 px-4 py-8 text-center text-slate-400">
+                    Aucun élève dans ce registre.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ⭐ Récapitulatif */}
+      <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3">
+        <h3 className="text-sm font-bold text-slate-900 uppercase">Récapitulatif du mois</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+          <div className="bg-slate-50 p-3 rounded-lg">
+            <div className="text-xs text-slate-500">Présences possibles</div>
+            <div className="text-lg font-bold text-slate-700">{register.presencePossibleMois ?? '—'}</div>
+          </div>
+          <div className="bg-red-50 p-3 rounded-lg">
+            <div className="text-xs text-red-500">Total absences</div>
+            <div className="text-lg font-bold text-red-700">{register.totalAbsencesMois ?? '—'}</div>
+          </div>
+          <div className="bg-emerald-50 p-3 rounded-lg">
+            <div className="text-xs text-emerald-500">Présences effectives</div>
+            <div className="text-lg font-bold text-emerald-700">{register.totalPresencesEffectivesMois ?? '—'}</div>
+          </div>
+          <div className="bg-blue-50 p-3 rounded-lg">
+            <div className="text-xs text-blue-500">% Présences</div>
+            <div className="text-lg font-bold text-blue-700">{register.pourcentagePresences ?? '—'}%</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ⭐ Signatures */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6 border-t-2 border-slate-300">
+        <div className="space-y-2">
+          <div className="text-sm font-bold text-slate-800">Le Titulaire de la classe</div>
+          <div className="text-xs text-slate-500">Signature</div>
+          {register.teacherSignature ? (
+            <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
+              <img src={register.teacherSignature} alt="Signature Titulaire" className="max-h-24 mx-auto" />
+            </div>
+          ) : (
+            <div className="border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-xl p-4 text-center text-xs text-slate-400 italic">
+              Non signé par l'enseignant
+            </div>
+          )}
+        </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <div>

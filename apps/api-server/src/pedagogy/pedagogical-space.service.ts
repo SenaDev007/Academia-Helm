@@ -3735,6 +3735,230 @@ export class PedagogicalSpaceService {
     return updated[0];
   }
 
+  /**
+   * ⭐ Permet au directeur d'ajouter ses observations + signature + valider
+   *    un registre d'appel ET son évaluation mensuelle associée.
+   *
+   * Body :
+   *   - directorSignature: string (base64) — signature du directeur (obligatoire pour VALIDATED)
+   *   - directorObservation: string — observation générale du directeur
+   *   - action: 'VALIDATED' | 'REJECTED'
+   *   - rejectionReason?: string
+   *   - validatedBy: string (userId du directeur)
+   */
+  async directorUpdateAttendanceRegister(
+    tenantId: string,
+    registerId: string,
+    body: {
+      directorSignature?: string;
+      directorObservation?: string;
+      action: 'VALIDATED' | 'REJECTED';
+      rejectionReason?: string;
+      validatedBy?: string;
+    },
+  ) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "attendance_registers" WHERE "id" = $1 AND "tenantId" = $2`,
+      registerId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Registre non trouvé');
+    }
+    const register = existing[0];
+    if (register.status !== 'SUBMITTED') {
+      throw new BadRequestException(`Le registre doit être en statut SUBMITTED (actuel: ${register.status})`);
+    }
+
+    // ⭐ Si VALIDATED, la signature du directeur est obligatoire
+    if (body.action === 'VALIDATED' && !body.directorSignature) {
+      throw new BadRequestException('La signature du directeur est obligatoire pour valider');
+    }
+
+    // ⭐ Mettre à jour le registre d'appel
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "attendance_registers"
+       SET "status" = $3,
+           "directorSignature" = $4,
+           "directeurSignatureDate" = CASE WHEN $3 = 'VALIDATED' THEN NOW() ELSE "directeurSignatureDate" END,
+           "validatedAt" = CASE WHEN $3 = 'VALIDATED' THEN NOW() ELSE "validatedAt" END,
+           "validatedBy" = $5,
+           "rejectionReason" = $6,
+           "updatedAt" = NOW()
+       WHERE "id" = $1 AND "tenantId" = $2`,
+      registerId, tenantId,
+      body.action,
+      body.directorSignature || null,
+      body.validatedBy || null,
+      body.action === 'REJECTED' ? (body.rejectionReason || null) : null,
+    );
+
+    // ⭐ Mettre à jour l'évaluation mensuelle associée (même statut)
+    try {
+      const evals: any = await this.prisma.$queryRawUnsafe(
+        `SELECT id FROM "monthly_evaluations" WHERE "attendanceRegisterId" = $1 LIMIT 1`,
+        registerId,
+      );
+      if (evals && evals.length > 0) {
+        await this.prisma.$executeRawUnsafe(
+          `UPDATE "monthly_evaluations"
+           SET "status" = $2,
+               "directorSignature" = $3,
+               "directorSignatureDate" = CASE WHEN $2 = 'VALIDATED' THEN NOW() ELSE "directorSignatureDate" END,
+               "validatedAt" = CASE WHEN $2 = 'VALIDATED' THEN NOW() ELSE "validatedAt" END,
+               "validatedBy" = $4,
+               "rejectionReason" = $5,
+               "updatedAt" = NOW()
+           WHERE "id" = $1`,
+          evals[0].id,
+          body.action,
+          body.directorSignature || null,
+          body.validatedBy || null,
+          body.action === 'REJECTED' ? (body.rejectionReason || null) : null,
+        );
+      }
+    } catch (err: any) {
+      this.logger.warn(`Failed to update monthly evaluation: ${err.message}`);
+    }
+
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "attendance_registers" WHERE "id" = $1`,
+      registerId,
+    );
+
+    // ⭐ Rafraîchir le tableau de relevés mensuels si validé
+    if (body.action === 'VALIDATED' && updated[0]) {
+      try {
+        await this.refreshMonthlySummary(tenantId, updated[0].academicYearId, updated[0].classId);
+      } catch (e) {
+        this.logger.warn(`⚠️ Impossible de rafraîchir le tableau de relevés: ${e.message}`);
+      }
+    }
+
+    // ⭐ Notifier l'enseignant de la décision
+    this.notifyTeacherOfRegisterDecision(
+      tenantId, register.classId, register.teacherId, body.action, register.month, register.year,
+    ).catch((err) => this.logger.error('Teacher notification error:', err));
+
+    this.logger.log(`✅ Registre + évaluation ${registerId} ${body.action}`);
+    return updated[0];
+  }
+
+  /**
+   * ⭐ Notifie l'enseignant de la décision du directeur sur son registre + évaluation.
+   */
+  private async notifyTeacherOfRegisterDecision(
+    tenantId: string,
+    classId: string,
+    teacherId: string,
+    action: string,
+    month: number,
+    year: number,
+  ) {
+    let className = '—';
+    try {
+      const cls: any = await this.prisma.$queryRawUnsafe(
+        `SELECT name FROM "classes" WHERE "id" = $1`, classId,
+      );
+      if (cls && cls.length > 0) className = cls[0].name || '—';
+    } catch { /* silent */ }
+
+    let schoolName = 'Établissement scolaire';
+    try {
+      const profile: any = await this.prisma.$queryRawUnsafe(
+        `SELECT "schoolName" FROM "tenant_identity_profiles"
+         WHERE "tenantId" = $1 AND "isActive" = true LIMIT 1`,
+        tenantId,
+      );
+      if (profile && profile.length > 0) schoolName = profile[0].schoolName || schoolName;
+    } catch { /* silent */ }
+
+    let teacher: any = null;
+    try {
+      const teacherRow: any = await this.prisma.$queryRawUnsafe(
+        `SELECT t.*, u.email, u.phone, u."firstName", u."lastName"
+         FROM "teachers" t
+         LEFT JOIN "users" u ON u.email = t.email
+         WHERE t.id = $1 LIMIT 1`,
+        teacherId,
+      );
+      if (teacherRow && teacherRow.length > 0) teacher = teacherRow[0];
+    } catch (err: any) {
+      this.logger.warn(`Failed to fetch teacher: ${err.message}`);
+    }
+
+    if (!teacher || !teacher.email) {
+      this.logger.warn(`Aucun email trouvé pour l'enseignant ${teacherId}`);
+      return;
+    }
+
+    const monthNames = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+      'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+    const monthLabel = monthNames[month] || '—';
+    const actionLabel = action === 'VALIDATED' ? 'validé' : 'rejeté';
+    const actionColor = action === 'VALIDATED' ? '#10b981' : '#ef4444';
+
+    const emailSubject = `[${schoolName}] Registre + évaluation ${actionLabel} — ${className} — ${monthLabel} ${year}`;
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: ${actionColor}; color: white; padding: 20px; text-align: center;">
+          <h1 style="margin: 0; font-size: 18px;">${schoolName}</h1>
+          <p style="margin: 5px 0 0; font-size: 12px; opacity: 0.9;">Registre + évaluation ${actionLabel}</p>
+        </div>
+        <div style="padding: 20px;">
+          <h2 style="color: ${actionColor}; font-size: 16px;">Bonjour ${teacher.firstName || ''} ${teacher.lastName || ''},</h2>
+          <p style="font-size: 14px; line-height: 1.5;">
+            Votre registre d'appel et évaluation mensuelle ont été <strong style="color: ${actionColor};">${actionLabel}</strong>s par le directeur :
+          </p>
+          <table style="width: 100%; margin: 15px 0; border-collapse: collapse;">
+            <tr><td style="padding: 5px; border-bottom: 1px solid #eee; font-weight: bold;">Classe :</td><td style="padding: 5px; border-bottom: 1px solid #eee;">${className}</td></tr>
+            <tr><td style="padding: 5px; border-bottom: 1px solid #eee; font-weight: bold;">Mois :</td><td style="padding: 5px; border-bottom: 1px solid #eee;">${monthLabel} ${year}</td></tr>
+            <tr><td style="padding: 5px; border-bottom: 1px solid #eee; font-weight: bold;">Décision :</td><td style="padding: 5px; border-bottom: 1px solid #eee; color: ${actionColor}; font-weight: bold;">${actionLabel.toUpperCase()}</td></tr>
+          </table>
+          <p style="font-size: 14px; line-height: 1.5;">
+            Connectez-vous à la plateforme pour consulter les détails dans
+            <strong>Espace Pédagogique → Registre d'Appel</strong>.
+          </p>
+        </div>
+      </div>
+    `;
+    const smsMessage = `${schoolName}: Votre registre + evaluation (${className}, ${monthLabel} ${year}) a ete ${actionLabel} par le directeur.`;
+
+    try {
+      await this.emailService.sendCategorized({
+        tenantId, category: 'PEDAGOGIE', subCategory: 'REGISTER_DECISION',
+        module: 'pedagogy' as any, to: teacher.email,
+        toName: `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim(),
+        recipientType: 'ENSEIGNANT', recipientId: teacherId,
+        subject: emailSubject, html: emailHtml, text: smsMessage,
+        fromName: schoolName, triggeredBy: 'STAFF',
+        relatedEntityId: classId, relatedEntityType: 'AttendanceRegister',
+      } as any);
+    } catch (err: any) {
+      this.logger.warn(`Email to teacher failed: ${err.message}`);
+    }
+
+    if (teacher.phone) {
+      try {
+        const phone = teacher.phone.startsWith('+') ? teacher.phone : `+229${teacher.phone.replace(/^0/, '')}`;
+        await this.whatsappService.sendCategorized({
+          tenantId, category: 'PEDAGOGIE', subCategory: 'REGISTER_DECISION',
+          module: 'pedagogy' as any, to: phone,
+          toName: `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim(),
+          recipientType: 'ENSEIGNANT', recipientId: teacherId,
+          message: smsMessage, triggeredBy: 'STAFF',
+          relatedEntityId: classId, relatedEntityType: 'AttendanceRegister',
+        } as any);
+      } catch (err: any) {
+        this.logger.warn(`WhatsApp to teacher failed: ${err.message}`);
+      }
+      try {
+        await this.smsService.sendSMS(teacher.phone, smsMessage);
+      } catch (err: any) {
+        this.logger.warn(`SMS to teacher failed: ${err.message}`);
+      }
+    }
+  }
+
   /// Récupère toutes les évaluations mensuelles soumises (en attente de validation).
   async getPendingMonthlyEvaluations(tenantId: string, academicYearId: string) {
     return this.prisma.$queryRawUnsafe(

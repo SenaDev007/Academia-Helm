@@ -773,6 +773,22 @@ export class PedagogicalSpaceController {
     );
   }
 
+  // ⭐ Mise à jour directeur : observations + signature + validation registre + évaluation
+  @Put('director/attendance-registers/:id/director-update')
+  async directorUpdateAttendanceRegister(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: {
+      directorSignature?: string;
+      directorObservation?: string;
+      action: 'VALIDATED' | 'REJECTED';
+      rejectionReason?: string;
+      validatedBy?: string;
+    },
+  ) {
+    return this.service.directorUpdateAttendanceRegister(tenantId, id, body);
+  }
+
   // --- Évaluations mensuelles ---
 
   @Get('director/pending-evaluations')

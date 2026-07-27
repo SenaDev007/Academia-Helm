@@ -287,7 +287,12 @@ function ExamLayoutInner({ children }: { children: React.ReactNode }) {
   const { isEnabled: isBilingual } = useBilingual();
 
   const levelCode = searchParams.get('level') || '';
+  // ⭐ Fallback sur sessionStorage si l'URL perd temporairement les params
+  const sessionLevelCode = typeof window !== 'undefined' ? (sessionStorage.getItem('exams_selected_level') || '') : '';
+  const resolvedLevelCode = levelCode || sessionLevelCode;
   const language = searchParams.get('lang') || (isBilingual ? '' : 'FR');
+  const sessionLangCode = typeof window !== 'undefined' ? (sessionStorage.getItem('exams_selected_lang') || '') : '';
+  const resolvedLanguage = language || sessionLangCode || 'FR';
 
   // ⭐ Référence pour savoir si c'est le premier render (pour éviter les boucles)
   const hasRestoredRef = useRef(false);
@@ -299,7 +304,7 @@ function ExamLayoutInner({ children }: { children: React.ReactNode }) {
   const userIntentRef = useRef<'initial' | 'selecting' | 'in_module'>('initial');
 
   const [step, setStep] = useState<'level' | 'language' | 'content'>(
-    levelCode ? (isBilingual && !language ? 'language' : 'content') : 'level'
+    resolvedLevelCode ? (isBilingual && !resolvedLanguage ? 'language' : 'content') : 'level'
   );
 
   // ─── Auto-restoration depuis sessionStorage ────────────────────────────────
@@ -347,11 +352,11 @@ function ExamLayoutInner({ children }: { children: React.ReactNode }) {
       writeSessionSelection(levelCode, language);
     }
 
-    if (levelCode) {
+    if (resolvedLevelCode) {
       if (!isBilingual) {
         setStep('content');
         userIntentRef.current = 'in_module';
-      } else if (language) {
+      } else if (resolvedLanguage) {
         setStep('content');
         userIntentRef.current = 'in_module';
       } else {
@@ -371,7 +376,7 @@ function ExamLayoutInner({ children }: { children: React.ReactNode }) {
         setStep('level');
       }
     }
-  }, [levelCode, language, isBilingual]);
+  }, [levelCode, resolvedLevelCode, language, resolvedLanguage, isBilingual]);
 
   const handleLevelSelect = (level: string) => {
     userIntentRef.current = 'selecting';
@@ -430,14 +435,14 @@ function ExamLayoutInner({ children }: { children: React.ReactNode }) {
 
   // === Étape 3 : Contenu du module avec scope bar ===
   const levelLabel = (availableLevels || []).find((l: any) =>
-    (l.code || '').toUpperCase() === levelCode
-  )?.label || levelCode;
+    (l.code || '').toUpperCase() === resolvedLevelCode
+  )?.label || resolvedLevelCode;
 
   return (
-    <ExamScopeContext.Provider value={{ levelCode, language, levelLabel }}>
+    <ExamScopeContext.Provider value={{ levelCode: resolvedLevelCode, language: resolvedLanguage, levelLabel }}>
       <ScopeBar
         levelLabel={levelLabel}
-        language={language}
+        language={resolvedLanguage}
         onChangeLevel={handleChangeLevel}
         onChangeLanguage={handleChangeLanguage}
       />

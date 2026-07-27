@@ -31,7 +31,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
-import { useExamSubModules } from '../layout';
+import { useExamSubModules, useExamScope } from '../layout';
 import apiClient from '@/lib/api/client';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import { cn } from '@/lib/utils';
@@ -48,10 +48,11 @@ function getTrimester(month: number): string {
 
 function RegistreContent() {
   const searchParams = useSearchParams();
-  const { academicYear, schoolLevel } = useModuleContext();
+  const { academicYear } = useModuleContext();
+  const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
 
-  const levelCode = searchParams.get('level') || schoolLevel?.code || '';
-  const language = searchParams.get('lang') || 'FR';
+  const levelCode = scopeLevel || searchParams.get('level') || '';
+  const language = scopeLang || searchParams.get('lang') || 'FR';
 
   const [loading, setLoading] = useState(true);
   const [classes, setClasses] = useState<any[]>([]);
@@ -64,27 +65,41 @@ function RegistreContent() {
 
   // ── Charger les classes du niveau ──────────────────────────────────────────
   const loadClasses = useCallback(async () => {
-    if (!schoolLevel?.id && !schoolLevel?.schoolLevelId) return;
-    const slId = schoolLevel?.schoolLevelId || schoolLevel?.id;
+    if (!levelCode) return;
     try {
-      const res = await fetch(`/api/classes?schoolLevelId=${slId}`, { credentials: 'include' });
+      // Récupérer les classes filtrées par niveau scolaire
+      const res = await fetch(`/api/classes?level=${levelCode}`, { credentials: 'include' });
       const data = await res.json();
-      setClasses(Array.isArray(data) ? data : (data?.items || []));
+      const list = Array.isArray(data) ? data : (data?.items || data?.data || []);
+      setClasses(list);
     } catch {
-      setClasses([]);
+      // Fallback : récupérer toutes les classes et filtrer côté client
+      try {
+        const res = await fetch(`/api/classes`, { credentials: 'include' });
+        const data = await res.json();
+        const allClasses = Array.isArray(data) ? data : (data?.items || data?.data || []);
+        // Filtrer par schoolLevel.code
+        setClasses(allClasses.filter((c: any) => {
+          const code = (c.schoolLevel?.code || c.schoolLevelCode || '').toUpperCase();
+          return code === levelCode.toUpperCase();
+        }));
+      } catch {
+        setClasses([]);
+      }
     }
-  }, [schoolLevel]);
+  }, [levelCode]);
 
   // ── Charger les évaluations VALIDÉES ───────────────────────────────────────
   const loadEvaluations = useCallback(async () => {
     if (!academicYear?.id || !selectedClassId) return;
     setLoading(true);
     try {
-      // Récupérer les évaluations validées pour cette classe
+      // ⭐ Utiliser apiClient (inclut les headers d'auth + tenant)
       const response = await apiClient.get(`/institutional-exams/evaluations`, {
         params: {
           academicYearId: academicYear.id,
           classId: selectedClassId,
+          // ⭐ Accepter les statuses séparés par virgule
           status: 'VALIDATED,LOCKED',
         },
       });

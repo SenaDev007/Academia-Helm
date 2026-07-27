@@ -2048,8 +2048,233 @@ export class PedagogicalSpaceService {
   }
 
   // ===========================================================================
-  // ⭐ SOUMISSION CAHIER JOURNAL + FICHES PÉDAGOGIQUES (séparée du registre)
+  // ⭐ MISE À JOUR DIRECTEUR — observations + signature + validation cahier journal
   // ===========================================================================
+
+  /**
+   * ⭐ Permet au directeur d'ajouter ses observations (par jour + générale)
+   *    et d'apposer sa signature, puis de valider le cahier journal.
+   *
+   * Body :
+   *   - directorObservations: Record<string, string> — observations par jour
+   *     (ex: { lundi: "Bien", mardi: "..." }) — stockées en rouge côté frontend
+   *   - directorGeneralObservation: string — observation générale de la semaine (HTML)
+   *   - directorSignature: string (base64) — signature du directeur (obligatoire pour valider)
+   *   - action: 'VALIDATED' | 'REJECTED'
+   *   - rejectionReason?: string
+   */
+  async directorUpdateCahierJournal(
+    tenantId: string,
+    journalId: string,
+    body: {
+      directorObservations?: Record<string, string>;
+      directorGeneralObservation?: string;
+      directorSignature?: string;
+      action: 'VALIDATED' | 'REJECTED';
+      rejectionReason?: string;
+    },
+  ) {
+    const existing: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1 AND "tenantId" = $2`,
+      journalId, tenantId,
+    );
+    if (!existing || existing.length === 0) {
+      throw new NotFoundException('Cahier journal non trouvé');
+    }
+    const journal = existing[0];
+    if (journal.status !== 'SUBMITTED') {
+      throw new BadRequestException(`Le cahier journal doit être en statut SUBMITTED pour être validé (actuel: ${journal.status})`);
+    }
+
+    // ⭐ Si VALIDATED, la signature du directeur est obligatoire
+    if (body.action === 'VALIDATED' && !body.directorSignature) {
+      throw new BadRequestException('La signature du directeur est obligatoire pour valider');
+    }
+
+    // ⭐ Mettre à jour les observations + signature + statut
+    const status = body.action; // VALIDATED ou REJECTED
+    const directorSignature = body.directorSignature || null;
+    const directorGeneralObservation = body.directorGeneralObservation || null;
+    const rejectionReason = body.rejectionReason || null;
+    const directorValidatedAt = body.action === 'VALIDATED' ? new Date() : null;
+
+    // ⭐ Stocker les observations par jour dans le JSON entries
+    //    On ajoute une clé spéciale "directorObservations" dans entries
+    let entries = journal.entries;
+    if (typeof entries === 'string') {
+      try { entries = JSON.parse(entries); } catch { entries = {}; }
+    }
+    if (!entries || typeof entries !== 'object') entries = {};
+    // Ajouter les observations du directeur dans chaque jour
+    if (body.directorObservations) {
+      for (const [dayKey, obs] of Object.entries(body.directorObservations)) {
+        if (!entries[dayKey]) entries[dayKey] = {};
+        entries[dayKey].directorObservation = obs;
+      }
+    }
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "cahier_journal_entries"
+       SET "entries" = $3::jsonb,
+           "directorSignature" = $4,
+           "observations" = COALESCE($5, "observations"),
+           "status" = $6,
+           "directorValidatedAt" = COALESCE($7, "directorValidatedAt"),
+           "rejectionReason" = $8,
+           "validatedAt" = CASE WHEN $6 = 'VALIDATED' THEN NOW() ELSE "validatedAt" END,
+           "updatedAt" = NOW()
+       WHERE "id" = $1 AND "tenantId" = $2`,
+      journalId, tenantId,
+      JSON.stringify(entries),
+      directorSignature,
+      directorGeneralObservation,
+      status,
+      directorValidatedAt,
+      rejectionReason,
+    );
+
+    const updated: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1`,
+      journalId,
+    );
+
+    // ⭐ Notifier l'enseignant que le cahier journal a été validé/rejeté
+    this.notifyTeacherOfCahierJournalDecision(tenantId, journal.classId, journal.teacherId, status, journal.weekStartDate)
+      .catch((err) => this.logger.error('Teacher notification error:', err));
+
+    return updated[0];
+  }
+
+  /**
+   * ⭐ Notifie l'enseignant de la décision du directeur sur son cahier journal.
+   */
+  private async notifyTeacherOfCahierJournalDecision(
+    tenantId: string,
+    classId: string,
+    teacherId: string,
+    action: string,
+    weekStartDate: Date,
+  ) {
+    let className = '—';
+    try {
+      const cls: any = await this.prisma.$queryRawUnsafe(
+        `SELECT name FROM "classes" WHERE "id" = $1`, classId,
+      );
+      if (cls && cls.length > 0) className = cls[0].name || '—';
+    } catch { /* silent */ }
+
+    let schoolName = 'Établissement scolaire';
+    try {
+      const profile: any = await this.prisma.$queryRawUnsafe(
+        `SELECT "schoolName" FROM "tenant_identity_profiles"
+         WHERE "tenantId" = $1 AND "isActive" = true LIMIT 1`,
+        tenantId,
+      );
+      if (profile && profile.length > 0) schoolName = profile[0].schoolName || schoolName;
+    } catch { /* silent */ }
+
+    // ⭐ Récupérer l'enseignant (User via teacherId)
+    let teacher: any = null;
+    try {
+      // teacherId peut être un User.id ou un Teacher.id — on cherche par Teacher puis User
+      const teacherRow: any = await this.prisma.$queryRawUnsafe(
+        `SELECT t.*, u.email, u.phone, u."firstName", u."lastName"
+         FROM "teachers" t
+         LEFT JOIN "users" u ON u.email = t.email
+         WHERE t.id = $1 LIMIT 1`,
+        teacherId,
+      );
+      if (teacherRow && teacherRow.length > 0) teacher = teacherRow[0];
+    } catch (err: any) {
+      this.logger.warn(`Failed to fetch teacher: ${err.message}`);
+    }
+
+    if (!teacher || !teacher.email) {
+      this.logger.warn(`Aucun email trouvé pour l'enseignant ${teacherId}`);
+      return;
+    }
+
+    const weekLabel = new Date(weekStartDate).toLocaleDateString('fr-FR');
+    const actionLabel = action === 'VALIDATED' ? 'validé' : 'rejeté';
+    const actionColor = action === 'VALIDATED' ? '#10b981' : '#ef4444';
+
+    const emailSubject = `[${schoolName}] Cahier journal ${actionLabel} — ${className} — ${weekLabel}`;
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: ${actionColor}; color: white; padding: 20px; text-align: center;">
+          <h1 style="margin: 0; font-size: 18px;">${schoolName}</h1>
+          <p style="margin: 5px 0 0; font-size: 12px; opacity: 0.9;">Cahier journal ${actionLabel}</p>
+        </div>
+        <div style="padding: 20px;">
+          <h2 style="color: ${actionColor}; font-size: 16px;">Bonjour ${teacher.firstName || ''} ${teacher.lastName || ''},</h2>
+          <p style="font-size: 14px; line-height: 1.5;">
+            Votre cahier journal a été <strong style="color: ${actionColor};">${actionLabel}</strong> par le directeur :
+          </p>
+          <table style="width: 100%; margin: 15px 0; border-collapse: collapse;">
+            <tr><td style="padding: 5px; border-bottom: 1px solid #eee; font-weight: bold;">Classe :</td><td style="padding: 5px; border-bottom: 1px solid #eee;">${className}</td></tr>
+            <tr><td style="padding: 5px; border-bottom: 1px solid #eee; font-weight: bold;">Semaine du :</td><td style="padding: 5px; border-bottom: 1px solid #eee;">${weekLabel}</td></tr>
+            <tr><td style="padding: 5px; border-bottom: 1px solid #eee; font-weight: bold;">Décision :</td><td style="padding: 5px; border-bottom: 1px solid #eee; color: ${actionColor}; font-weight: bold;">${actionLabel.toUpperCase()}</td></tr>
+          </table>
+          <p style="font-size: 14px; line-height: 1.5;">
+            Connectez-vous à la plateforme pour consulter les observations du directeur
+            dans <strong>Espace Pédagogique → Cahier Journal</strong>.
+          </p>
+        </div>
+      </div>
+    `;
+    const smsMessage = `${schoolName}: Votre cahier journal (${className}, semaine du ${weekLabel}) a ete ${actionLabel} par le directeur.`;
+
+    try {
+      await this.emailService.sendCategorized({
+        tenantId,
+        category: 'PEDAGOGIE',
+        subCategory: 'CAHIER_JOURNAL_DECISION',
+        module: 'pedagogy' as any,
+        to: teacher.email,
+        toName: `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim(),
+        recipientType: 'ENSEIGNANT',
+        recipientId: teacherId,
+        subject: emailSubject,
+        html: emailHtml,
+        text: smsMessage,
+        fromName: schoolName,
+        triggeredBy: 'STAFF',
+        relatedEntityId: classId,
+        relatedEntityType: 'CahierJournal',
+      } as any);
+    } catch (err: any) {
+      this.logger.warn(`Email to teacher failed: ${err.message}`);
+    }
+
+    if (teacher.phone) {
+      try {
+        const phone = teacher.phone.startsWith('+') ? teacher.phone : `+229${teacher.phone.replace(/^0/, '')}`;
+        await this.whatsappService.sendCategorized({
+          tenantId,
+          category: 'PEDAGOGIE',
+          subCategory: 'CAHIER_JOURNAL_DECISION',
+          module: 'pedagogy' as any,
+          to: phone,
+          toName: `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim(),
+          recipientType: 'ENSEIGNANT',
+          recipientId: teacherId,
+          message: smsMessage,
+          triggeredBy: 'STAFF',
+          relatedEntityId: classId,
+          relatedEntityType: 'CahierJournal',
+        } as any);
+      } catch (err: any) {
+        this.logger.warn(`WhatsApp to teacher failed: ${err.message}`);
+      }
+
+      try {
+        await this.smsService.sendSMS(teacher.phone, smsMessage);
+      } catch (err: any) {
+        this.logger.warn(`SMS to teacher failed: ${err.message}`);
+      }
+    }
+  }
+
 
   /**
    * ⭐ Soumet le cahier journal + les fiches pédagogiques associées.

@@ -28,7 +28,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Loader2, RefreshCw, CheckCircle2, XCircle, Send, Clock,
   FileText, BookOpen, ClipboardList, FileSpreadsheet, AlertTriangle,
-  ChevronRight, X, Eye, Sigma, FlaskConical, Users, Palette, Award,
+  ChevronRight, X, Eye, Sigma, FlaskConical, Users, Palette, Award, Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -40,6 +40,8 @@ import {
   useEvaluationDetail, useCahierTexteDetail,
 } from "@/lib/query/pedagogy-hooks";
 import { pedagogySpaceService } from "@/services/pedagogy-space.service";
+import { RichTextEditor } from "@/components/ui/RichTextEditor";
+import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
 
 interface DirectorPedagogyControlProps {
   tenantId: string;
@@ -379,6 +381,22 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
     } catch { toast.error("Erreur lors du chargement"); }
   };
 
+  // ⭐ Si un cahier journal est sélectionné, afficher la vue détaillée in-page
+  //    (pas un modal — identique à l'interface enseignant)
+  if (selected) {
+    return (
+      <CahierJournalDirectorDetail
+        journal={selected}
+        onBack={() => setSelected(null)}
+        onValidated={() => {
+          setSelected(null);
+          onRefresh();
+          refetch();
+        }}
+      />
+    );
+  }
+
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-slate-300" /></div>;
 
   if (items.length === 0) {
@@ -390,7 +408,9 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
     );
   }
 
-  // ⭐ Catégoriser par classe
+  // ⭐ Hiérarchisation : par classe → mois → semaine
+  const monthNames = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+    'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
   const grouped = items.reduce((acc: Record<string, any[]>, item: any) => {
     const key = item.classNameResolved || item.className || 'Sans classe';
     if (!acc[key]) acc[key] = [];
@@ -398,6 +418,21 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
     return acc;
   }, {});
   const classNames = Object.keys(grouped).sort();
+
+  // ⭐ Trier par semaine (plus récente en premier) + grouper par mois
+  const groupedByMonth: Record<string, Record<string, any[]>> = {};
+  for (const cn of classNames) {
+    grouped[cn].sort((a: any, b: any) => {
+      return new Date(b.weekStartDate).getTime() - new Date(a.weekStartDate).getTime();
+    });
+    groupedByMonth[cn] = {};
+    for (const item of grouped[cn]) {
+      const d = new Date(item.weekStartDate);
+      const monthKey = `${monthNames[d.getMonth() + 1]} ${d.getFullYear()}`;
+      if (!groupedByMonth[cn][monthKey]) groupedByMonth[cn][monthKey] = [];
+      groupedByMonth[cn][monthKey].push(item);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -409,9 +444,9 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
         <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg"><RefreshCw className="h-4 w-4" /></button>
       </div>
 
-      {/* ⭐ Groupé par classe */}
+      {/* ⭐ Hiérarchisé par classe → mois → semaine */}
       {classNames.map((className) => (
-        <div key={className} className="space-y-2">
+        <div key={className} className="space-y-3">
           <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg">
             <FileSpreadsheet className="h-4 w-4 text-slate-600" />
             <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">{className}</h4>
@@ -419,93 +454,51 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
               {grouped[className].length}
             </span>
           </div>
-          <div className="space-y-2 pl-4">
-            {grouped[className].map(item => (
-              <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white">
-                <div>
-                  <p className="font-medium text-slate-900">
-                    Semaine du {formatDateFR(item.weekStartDate)} au {formatDateFR(item.weekEndDate)}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Enseignant: {item.teacherFirstName} {item.teacherLastName}
-                  </p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Soumis le {formatDateTimeFR(item.submittedAt)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => handleView(item)}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
-                    <Eye className="h-3 w-3" /> Voir
-                  </button>
-                  <button onClick={() => setModalItem(item)}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
-                <CheckCircle2 className="h-3 w-3" /> Traiter
-              </button>
-                </div>
+          {/* ⭐ Sous-groupement par mois */}
+          {Object.keys(groupedByMonth[className]).map(monthKey => (
+            <div key={monthKey} className="space-y-2 pl-4">
+              <div className="flex items-center gap-2 px-2 py-1 bg-blue-50 rounded">
+                <Calendar className="h-3 w-3 text-blue-600" />
+                <span className="text-xs font-bold text-blue-700 uppercase tracking-wide">{monthKey}</span>
+                <span className="ml-auto text-xs text-blue-500">
+                  {groupedByMonth[className][monthKey].length} semaine(s)
+                </span>
               </div>
-            ))}
-          </div>
+              {/* ⭐ Semaines du mois */}
+              <div className="space-y-2 pl-4">
+                {groupedByMonth[className][monthKey].map(item => (
+                  <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white">
+                    <div>
+                      <p className="font-medium text-slate-900">
+                        Semaine du {formatDateFR(item.weekStartDate)} au {formatDateFR(item.weekEndDate)}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Enseignant: {item.teacherFirstName} {item.teacherLastName}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Soumis le {formatDateTimeFR(item.submittedAt)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => handleView(item)}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
+                        <Eye className="h-3 w-3" /> Voir
+                      </button>
+                      <button onClick={() => setModalItem(item)}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100">
+                        <CheckCircle2 className="h-3 w-3" /> Traiter
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       ))}
 
-      {selected && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-6xl w-full max-h-[95vh] overflow-y-auto p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-lg font-bold">Cahier Journal — {selected.classNameResolved}</h3>
-                <p className="text-sm text-slate-500 mt-1">
-                  Semaine du {formatDateFR(selected.weekStartDate)} au {formatDateFR(selected.weekEndDate)}
-                  {" · "}Statut: <strong>{selected.status}</strong>
-                </p>
-              </div>
-              <button onClick={() => setSelected(null)} className="p-1 hover:bg-slate-100 rounded"><X className="h-5 w-5" /></button>
-            </div>
-
-            {/* ⭐ Grille du cahier journal (read-only, identique à l'enseignant) */}
-            <CahierJournalReadOnlyView journal={selected} />
-
-            {/* Observations générales */}
-            {selected.observations && (
-              <div className="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                <strong className="text-sm text-slate-700">Observations :</strong>
-                <p className="text-sm text-slate-600 mt-1 whitespace-pre-wrap">{selected.observations}</p>
-              </div>
-            )}
-
-            {/* Signatures */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6 border-t-2 border-slate-300 mt-4">
-              <div className="space-y-2">
-                <div className="text-sm font-bold text-slate-800">Le Titulaire de la classe</div>
-                <div className="text-xs text-slate-500">{selected.teacherFirstName} {selected.teacherLastName} — Signature</div>
-                {selected.teacherSignature ? (
-                  <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
-                    <img src={selected.teacherSignature} alt="Signature Titulaire" className="max-h-20 mx-auto" />
-                  </div>
-                ) : (
-                  <div className="border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-xl p-4 text-center text-xs text-slate-400 italic">
-                    Non signé
-                  </div>
-                )}
-              </div>
-              <div className="space-y-2">
-                <div className="text-sm font-bold text-slate-800">Le Directeur / La Directrice</div>
-                <div className="text-xs text-slate-500">Signature et cachet</div>
-                {selected.directorSignature ? (
-                  <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
-                    <img src={selected.directorSignature} alt="Signature Directeur" className="max-h-20 mx-auto" />
-                  </div>
-                ) : (
-                  <div className="border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-xl p-4 text-center text-xs text-slate-400 italic">
-                    Non signé
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ⭐ L'ancien modal a été remplacé par la vue in-page CahierJournalDirectorDetail
+          (rendue au début du composant quand `selected` est défini) */}
 
       <ValidationModal
         open={!!modalItem}
@@ -1293,8 +1286,12 @@ function PendingCahierTestsTab({ tenantId, academicYearId, userId, refreshKey, o
 }
 
 // ============================================================================
-// ⭐ CahierJournalReadOnlyView — Vue en lecture seule du cahier journal
-//    (identique à la grille de l'enseignant, mais en read-only pour le directeur)
+// ⭐ CahierJournalDirectorDetail — Vue détaillée in-page (pas un modal)
+//    Identique à l'interface enseignant, mais avec :
+//    - Observations directeur par jour (en rouge)
+//    - Observation générale de la semaine (éditeur riche)
+//    - Signature directeur obligatoire
+//    - Bouton Valider / Rejeter
 // ============================================================================
 
 const CJ_DAYS = [
@@ -1305,8 +1302,21 @@ const CJ_DAYS = [
   { id: 5, key: "vendredi", label: "VENDREDI" },
 ] as const;
 
-function CahierJournalReadOnlyView({ journal }: { journal: any }) {
-  // ⭐ Parser les entries (peut être string JSON ou objet)
+function CahierJournalDirectorDetail({
+  journal,
+  onBack,
+  onValidated,
+}: {
+  journal: any;
+  onBack: () => void;
+  onValidated: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [directorSignature, setDirectorSignature] = useState<string | null>(journal.directorSignature || null);
+  const [directorGeneralObservation, setDirectorGeneralObservation] = useState<string>(journal.observations || "");
+  const [directorObservations, setDirectorObservations] = useState<Record<string, string>>({});
+
+  // ⭐ Parser les entries
   let entries: Record<string, Record<string, string>> = {};
   if (journal.entries) {
     if (typeof journal.entries === "string") {
@@ -1316,29 +1326,77 @@ function CahierJournalReadOnlyView({ journal }: { journal: any }) {
     }
   }
 
+  // ⭐ Initialiser les observations du directeur depuis les entries existantes
+  useEffect(() => {
+    const obs: Record<string, string> = {};
+    for (const day of CJ_DAYS) {
+      const dayEntry = entries[day.key];
+      if (dayEntry?.directorObservation) {
+        obs[day.key] = dayEntry.directorObservation;
+      }
+    }
+    setDirectorObservations(obs);
+  }, [journal.id]);
+
   // ⭐ Collecter toutes les colonnes (matières/groupes) depuis les entries
   const allColumns = new Set<string>();
   for (const day of CJ_DAYS) {
     const dayEntries = entries[day.key] || {};
     for (const key of Object.keys(dayEntries)) {
-      if (key !== "observations") allColumns.add(key);
+      if (key !== "observations" && key !== "directorObservation") allColumns.add(key);
     }
   }
   const columns = Array.from(allColumns);
 
-  // ⭐ Si aucune colonne trouvée, afficher un message
-  if (columns.length === 0) {
-    return (
-      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 text-center text-sm text-slate-500">
-        Aucune saisie dans ce cahier journal.
-      </div>
-    );
-  }
-
-  // ⭐ Répartir les colonnes en 2 pages (recto = première moitié, verso = seconde moitié)
+  // ⭐ Répartir en 2 pages
   const halfIdx = Math.ceil(columns.length / 2);
   const rectoCols = columns.slice(0, halfIdx);
   const versoCols = columns.slice(halfIdx);
+
+  const formatDate = (d: string | Date) => new Date(d).toLocaleDateString('fr-FR');
+
+  const handleValidate = async (action: 'VALIDATED' | 'REJECTED') => {
+    if (action === 'VALIDATED' && !directorSignature) {
+      toast.error("Signature obligatoire", {
+        description: "Vous devez signer avant de valider le cahier journal.",
+      });
+      return;
+    }
+    const ok = window.confirm(
+      action === 'VALIDATED'
+        ? `Valider ce cahier journal ?\n\nL'enseignant recevra une notification (email + WhatsApp + SMS) avec votre décision et votre signature.`
+        : `Rejeter ce cahier journal ?\n\nL'enseignant recevra une notification de rejet.`
+    );
+    if (!ok) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/pedagogy-space/cahier-journal/${journal.id}/director-update`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          directorObservations,
+          directorGeneralObservation,
+          directorSignature,
+          action,
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
+      }
+      toast.success(action === 'VALIDATED' ? '✅ Cahier journal validé' : 'Cahier journal rejeté', {
+        description: action === 'VALIDATED'
+          ? "L'enseignant a été notifié et recevra la version validée avec votre signature."
+          : "L'enseignant a été notifié du rejet.",
+      });
+      onValidated();
+    } catch (err: any) {
+      toast.error('Erreur lors de la validation', { description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const renderPage = (pageCols: string[], pageTitle: string) => (
     <div className="mb-6">
@@ -1355,8 +1413,8 @@ function CahierJournalReadOnlyView({ journal }: { journal: any }) {
                   {col}
                 </th>
               ))}
-              <th className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top" style={{ minWidth: "160px" }}>
-                OBSERVATIONS
+              <th className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top bg-amber-50" style={{ minWidth: "160px" }}>
+                OBS. DIRECTEUR <span className="text-red-600">(rouge)</span>
               </th>
             </tr>
           </thead>
@@ -1384,12 +1442,16 @@ function CahierJournalReadOnlyView({ journal }: { journal: any }) {
                       </td>
                     );
                   })}
-                  <td className="border border-slate-300 px-2 py-1 text-xs text-slate-700 align-top">
-                    {entries[day.key]?.observations ? (
-                      <div dangerouslySetInnerHTML={{ __html: entries[day.key].observations }} />
-                    ) : (
-                      <span className="text-slate-300">—</span>
-                    )}
+                  {/* ⭐ Colonne observation directeur (éditable, texte rouge) */}
+                  <td className="border border-slate-300 p-0 bg-red-50/30">
+                    <textarea
+                      value={directorObservations[day.key] || ''}
+                      onChange={(e) => setDirectorObservations(prev => ({ ...prev, [day.key]: e.target.value }))}
+                      disabled={saving}
+                      placeholder="Observation du directeur..."
+                      className="w-full h-full px-2 py-1 text-xs text-red-700 font-semibold border-0 bg-transparent focus:outline-none focus:ring-1 focus:ring-red-400 resize-none"
+                      style={{ minHeight: "60px" }}
+                    />
                   </td>
                 </tr>
               );
@@ -1400,10 +1462,148 @@ function CahierJournalReadOnlyView({ journal }: { journal: any }) {
     </div>
   );
 
+  const isAlreadyValidated = journal.status === 'VALIDATED';
+  const isAlreadyRejected = journal.status === 'REJECTED';
+
   return (
-    <div>
-      {rectoCols.length > 0 && renderPage(rectoCols, "Page 1 — Recto")}
-      {versoCols.length > 0 && renderPage(versoCols, "Page 2 — Verso")}
+    <div className="space-y-4">
+      {/* ⭐ Action bar */}
+      <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-3">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg"
+        >
+          <ChevronRight className="w-4 h-4 rotate-180" />
+          Retour à la liste
+        </button>
+        <div className="flex items-center gap-2">
+          {isAlreadyValidated && (
+            <span className="px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-bold">
+              ✓ Validé
+            </span>
+          )}
+          {isAlreadyRejected && (
+            <span className="px-3 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-bold">
+              ✗ Rejeté
+            </span>
+          )}
+          {!isAlreadyValidated && !isAlreadyRejected && (
+            <>
+              <button
+                onClick={() => handleValidate('REJECTED')}
+                disabled={saving}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                Rejeter
+              </button>
+              <button
+                onClick={() => handleValidate('VALIDATED')}
+                disabled={saving || !directorSignature}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                title={!directorSignature ? "Signature obligatoire" : "Valider"}
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                {directorSignature ? 'Valider' : 'Signature requise'}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ⭐ En-tête du cahier journal (identique à l'enseignant) */}
+      <div className="bg-white border-2 border-slate-800 rounded-xl p-4 text-center">
+        <h2 className="text-lg font-bold text-slate-900">
+          CAHIER JOURNAL — {journal.classNameResolved || journal.className || '—'}
+        </h2>
+        <div className="text-sm text-slate-600 mt-1">
+          Semaine du <strong>{formatDate(journal.weekStartDate)}</strong> au <strong>{formatDate(journal.weekEndDate)}</strong>
+        </div>
+        <div className="text-xs text-slate-500 mt-1">
+          Enseignant : {journal.teacherFirstName} {journal.teacherLastName}
+          {" · "}Statut : <strong>{journal.status}</strong>
+        </div>
+      </div>
+
+      {/* ⭐ Pages 1 + 2 (Recto + Verso) */}
+      {columns.length === 0 ? (
+        <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 text-center text-sm text-slate-500">
+          Aucune saisie dans ce cahier journal.
+        </div>
+      ) : (
+        <>
+          {rectoCols.length > 0 && renderPage(rectoCols, "Page 1 — Recto")}
+          {versoCols.length > 0 && renderPage(versoCols, "Page 2 — Verso")}
+        </>
+      )}
+
+      {/* ⭐ Observation générale de la semaine (éditeur riche) */}
+      <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3">
+        <h3 className="text-sm font-bold text-slate-900 uppercase">Observation générale de la semaine</h3>
+        <RichTextEditor
+          value={directorGeneralObservation}
+          onChange={(html) => setDirectorGeneralObservation(html)}
+          disabled={saving || isAlreadyValidated}
+          placeholder="Saisissez vos observations générales pour cette semaine..."
+          minHeight="120px"
+        />
+      </div>
+
+      {/* ⭐ Signatures */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6 border-t-2 border-slate-300">
+        {/* Signature Titulaire (read-only) */}
+        <div className="space-y-2">
+          <div className="text-sm font-bold text-slate-800">Le Titulaire de la classe</div>
+          <div className="text-xs text-slate-500">{journal.teacherFirstName} {journal.teacherLastName} — Signature</div>
+          {journal.teacherSignature ? (
+            <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
+              <img src={journal.teacherSignature} alt="Signature Titulaire" className="max-h-24 mx-auto" />
+            </div>
+          ) : (
+            <div className="border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-xl p-4 text-center text-xs text-slate-400 italic">
+              Non signé par l'enseignant
+            </div>
+          )}
+        </div>
+
+        {/* Signature Directeur (éditable si pas encore validé) */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-bold text-slate-800">Le Directeur / La Directrice</div>
+              <div className="text-xs text-slate-500">Signature et cachet {isAlreadyValidated ? '' : '(obligatoire)'}</div>
+            </div>
+            {directorSignature && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
+                <CheckCircle2 className="h-3 w-3" /> Signé
+              </span>
+            )}
+          </div>
+          {directorSignature ? (
+            <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2 relative">
+              <img src={directorSignature} alt="Signature Directeur" className="max-h-24 mx-auto" />
+              {!isAlreadyValidated && (
+                <button
+                  type="button"
+                  onClick={() => setDirectorSignature(null)}
+                  className="absolute top-1 right-1 text-xs text-red-500 hover:underline"
+                >
+                  Effacer
+                </button>
+              )}
+            </div>
+          ) : (
+            <SignatureCanvas
+              width={400}
+              height={120}
+              disabled={saving || isAlreadyValidated}
+              placeholder="Signature du Directeur (obligatoire pour valider)"
+              onSignatureChange={(data) => setDirectorSignature(data)}
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
+

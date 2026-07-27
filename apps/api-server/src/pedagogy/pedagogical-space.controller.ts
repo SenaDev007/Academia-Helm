@@ -428,6 +428,23 @@ export class PedagogicalSpaceController {
     return this.service.submitCahierJournalWithFiches(tenantId, id, body?.dayRange);
   }
 
+  // ⭐ Mise à jour directeur : observations + signature + validation cahier journal
+  //    Body : { directorObservations?, directorGeneralObservation?, directorSignature?, action, rejectionReason? }
+  @Put('cahier-journal/:id/director-update')
+  async directorUpdateCahierJournal(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: {
+      directorObservations?: Record<string, string>;
+      directorGeneralObservation?: string;
+      directorSignature?: string;
+      action: 'VALIDATED' | 'REJECTED';
+      rejectionReason?: string;
+    },
+  ) {
+    return this.service.directorUpdateCahierJournal(tenantId, id, body);
+  }
+
   // ===========================================================================
   // ⭐ SOUMISSION UNIFIÉE — registre + évaluation mensuelle (cahier journal séparé)
   // ===========================================================================

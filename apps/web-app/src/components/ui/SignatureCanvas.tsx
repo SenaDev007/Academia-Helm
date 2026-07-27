@@ -19,7 +19,9 @@ export function SignatureCanvas({
   placeholder = 'Signez ici avec votre souris ou doigt',
 }: SignatureCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
+  // ⭐ Utiliser useRef au lieu de useState pour isDrawing
+  //    → évite les stale closures et permet le multi-strokes
+  const isDrawingRef = useRef(false);
   const [hasSignature, setHasSignature] = useState(false);
 
   const getContext = useCallback(() => {
@@ -40,21 +42,31 @@ export function SignatureCanvas({
     ctx.lineJoin = 'round';
   }, [getContext]);
 
-  const getPos = (e: React.MouseEvent | React.TouchEvent) => {
+  const getPos = (e: React.MouseEvent | React.TouchEvent | MouseEvent | TouchEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    if ('touches' in e) {
-      return {
-        x: (e.touches[0].clientX - rect.left) * scaleX,
-        y: (e.touches[0].clientY - rect.top) * scaleY,
-      };
+
+    // Handle both React events and native events
+    let clientX: number, clientY: number;
+    if ('touches' in e && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else if ('changedTouches' in e && e.changedTouches.length > 0) {
+      clientX = e.changedTouches[0].clientX;
+      clientY = e.changedTouches[0].clientY;
+    } else if ('clientX' in e) {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    } else {
+      return { x: 0, y: 0 };
     }
+
     return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY,
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
     };
   };
 
@@ -66,11 +78,11 @@ export function SignatureCanvas({
     const pos = getPos(e);
     ctx.beginPath();
     ctx.moveTo(pos.x, pos.y);
-    setIsDrawing(true);
+    isDrawingRef.current = true;
   };
 
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!isDrawing || disabled) return;
+    if (!isDrawingRef.current || disabled) return;
     e.preventDefault();
     const ctx = getContext();
     if (!ctx) return;
@@ -79,16 +91,61 @@ export function SignatureCanvas({
     ctx.stroke();
   };
 
-  const stopDrawing = () => {
-    if (!isDrawing) return;
-    setIsDrawing(false);
+  const stopDrawing = useCallback(() => {
+    if (!isDrawingRef.current) return;
+    isDrawingRef.current = false;
     const canvas = canvasRef.current;
     if (canvas) {
       setHasSignature(true);
       const data = canvas.toDataURL('image/png');
       onSignatureChange?.(data);
     }
-  };
+  }, [onSignatureChange]);
+
+  // ⭐ Écouteurs globaux pour capter mouseup/touchend même en dehors du canvas
+  //    → permet à l'utilisateur de relâcher la souris n'importe où
+  useEffect(() => {
+    if (disabled) return;
+
+    const handleGlobalMouseUp = () => {
+      if (isDrawingRef.current) {
+        stopDrawing();
+      }
+    };
+
+    const handleGlobalTouchEnd = (e: TouchEvent) => {
+      if (isDrawingRef.current) {
+        e.preventDefault();
+        stopDrawing();
+      }
+    };
+
+    // ⭐ Écouteur global mousemove pour continuer à dessiner même en dehors du canvas
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      if (!isDrawingRef.current) return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = (e.clientX - rect.left) * scaleX;
+      const y = (e.clientY - rect.top) * scaleY;
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    };
+
+    document.addEventListener('mouseup', handleGlobalMouseUp);
+    document.addEventListener('touchend', handleGlobalTouchEnd);
+    document.addEventListener('mousemove', handleGlobalMouseMove);
+
+    return () => {
+      document.removeEventListener('mouseup', handleGlobalMouseUp);
+      document.removeEventListener('touchend', handleGlobalTouchEnd);
+      document.removeEventListener('mousemove', handleGlobalMouseMove);
+    };
+  }, [disabled, stopDrawing]);
 
   const clear = () => {
     const canvas = canvasRef.current;
@@ -119,11 +176,8 @@ export function SignatureCanvas({
           style={{ maxHeight: height }}
           onMouseDown={startDrawing}
           onMouseMove={draw}
-          onMouseUp={stopDrawing}
-          onMouseLeave={stopDrawing}
           onTouchStart={startDrawing}
           onTouchMove={draw}
-          onTouchEnd={stopDrawing}
         />
         {!hasSignature && !disabled && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">

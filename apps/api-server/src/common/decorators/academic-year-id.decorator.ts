@@ -2,23 +2,25 @@
  * ============================================================================
  * ACADEMIC YEAR ID DECORATOR
  * ============================================================================
- * 
+ *
  * Décorateur pour extraire academic_year_id depuis la requête.
- * 
+ *
  * Priorité d'extraction :
  * 1. Contexte résolu (request.context.academicYearId)
  * 2. Request property (request.academicYearId)
  * 3. Header (X-Academic-Year-ID)
  * 4. Query param (academicYearId)
  * 5. Body (academicYearId)
- * 
+ *
+ * ⭐ Si non trouvé, retourne null (au lieu de throw) pour permettre au
+ *    contrôleur de gérer l'erreur avec un message plus explicite.
  * ============================================================================
  */
 
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 
 export const AcademicYearId = createParamDecorator(
-  (data: unknown, ctx: ExecutionContext): string => {
+  (data: unknown, ctx: ExecutionContext): string | null => {
     const request = ctx.switchToHttp().getRequest();
 
     // Priorité 1 : Depuis le contexte résolu
@@ -46,7 +48,8 @@ export const AcademicYearId = createParamDecorator(
       return request.body.academicYearId as string;
     }
 
-    throw new Error('Academic Year ID not found in request context');
+    // ⭐ Retourner null au lieu de throw — le contrôleur peut vérifier
+    return null;
   },
 );
 

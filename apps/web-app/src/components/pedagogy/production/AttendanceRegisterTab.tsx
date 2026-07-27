@@ -483,6 +483,7 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
+          academicYearId,
           teacherId,
           classId: selectedClassId,
           month: selectedMonth,

@@ -453,7 +453,7 @@ export class PedagogicalSpaceController {
   @HttpCode(HttpStatus.OK)
   async submitUnified(
     @TenantId() tenantId: string,
-    @AcademicYearId() academicYearId: string,
+    @AcademicYearId() academicYearId: string | null,
     @Body() body: {
       teacherId: string;
       classId: string;
@@ -461,9 +461,14 @@ export class PedagogicalSpaceController {
       year: number;
     },
   ) {
+    // ⭐ academicYearId peut venir du décorateur (header/query/body) ou du body directement
+    const resolvedAcademicYearId = academicYearId || (body as any).academicYearId;
+    if (!resolvedAcademicYearId) {
+      throw new BadRequestException('academicYearId est requis');
+    }
     return this.service.submitUnified(
       tenantId,
-      academicYearId,
+      resolvedAcademicYearId,
       body.teacherId,
       body.classId,
       body.month,

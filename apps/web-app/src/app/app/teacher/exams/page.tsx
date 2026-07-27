@@ -114,10 +114,16 @@ export default function TeacherExamsPage() {
   const [showNotifications, setShowNotifications] = useState(false);
 
   // Détecter le niveau scolaire depuis schoolLevel.code
+  // ⭐ Fallback : si schoolLevel est null ou 'ALL', déduire depuis les évaluations
   const levelCode = (schoolLevel?.code || '').toUpperCase();
-  const isMaternelle = levelCode === 'MATERNELLE' || levelCode.includes('MATERN');
-  const isPrimaire = levelCode === 'PRIMAIRE' || levelCode.includes('PRIM');
-  const isSecondaire = levelCode === 'SECONDAIRE' || levelCode.includes('SECOND');
+  // ⭐ Déduire le niveau depuis les classes des évaluations si pas de schoolLevel valide
+  const evalLevelCode = evaluations.length > 0
+    ? (evaluations[0]?.class?.schoolLevel?.code || '').toUpperCase()
+    : '';
+  const effectiveLevelCode = (levelCode && levelCode !== 'ALL') ? levelCode : evalLevelCode;
+  const isMaternelle = effectiveLevelCode === 'MATERNELLE' || effectiveLevelCode.includes('MATERN');
+  const isPrimaire = effectiveLevelCode === 'PRIMAIRE' || effectiveLevelCode.includes('PRIM');
+  const isSecondaire = effectiveLevelCode === 'SECONDAIRE' || effectiveLevelCode.includes('SECOND');
 
   // ─── Charger les évaluations de l'enseignant ──────────────────────────────
   const [resolvedTeacherId, setResolvedTeacherId] = useState<string | null>(null);

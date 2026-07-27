@@ -2048,8 +2048,282 @@ export class PedagogicalSpaceService {
   }
 
   // ===========================================================================
-  // SOUMISSION UNIFIÉE — registre + évaluation mensuelle + cahier journal
+  // ⭐ SOUMISSION CAHIER JOURNAL + FICHES PÉDAGOGIQUES (séparée du registre)
   // ===========================================================================
+
+  /**
+   * ⭐ Soumet le cahier journal + les fiches pédagogiques associées.
+   *
+   * Schéma utilisateur :
+   *   - L'enseignant peut soumettre le cahier journal + toutes les fiches
+   *     pédagogiques de la semaine (lundi → vendredi)
+   *   - Ou bien, s'il n'a fait que lundi/mardi/mercredi, il soumet le cahier
+   *     journal + les fiches pédagogiques de ces 3 jours, puis plus tard il
+   *     soumettra les 2 jours restants (jeudi, vendredi)
+   *
+   * Paramètres :
+   *   - journalId : ID du cahier journal
+   *   - dayRange : tableau des jours à soumettre, ex: ['lundi', 'mardi', 'mercredi']
+   *                (si vide ou non fourni → tous les jours lundi→vendredi)
+   *
+   * Étapes :
+   *   1. Vérifier que le cahier journal existe et est en DRAFT
+   *   2. Récupérer les fiches pédagogiques du tenant+teacher+class dont la date
+   *      (adminDate ou lessonDate) tombe dans la semaine et correspond aux jours
+   *      demandés
+   *   3. Soumettre le cahier journal (DRAFT → SUBMITTED)
+   *   4. Soumettre les fiches pédagogiques trouvées (DRAFT → SUBMITTED)
+   *   5. Notifier le directeur (email + WhatsApp + SMS) — fire-and-forget
+   */
+  async submitCahierJournalWithFiches(
+    tenantId: string,
+    journalId: string,
+    dayRange?: string[],
+  ) {
+    // ─── 1. Charger le cahier journal ───
+    const journalRows: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1 AND "tenantId" = $2`,
+      journalId, tenantId,
+    );
+    if (!journalRows || journalRows.length === 0) {
+      throw new NotFoundException('Cahier journal non trouvé');
+    }
+    const journal = journalRows[0];
+    if (journal.status !== 'DRAFT') {
+      throw new BadRequestException(`Cahier déjà soumis (statut: ${journal.status})`);
+    }
+
+    // ─── 2. Déterminer les jours à soumettre ───
+    const ALL_DAYS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'];
+    const days = (dayRange && dayRange.length > 0) ? dayRange : ALL_DAYS;
+    // Mapper jour → numéro de jour de la semaine (1=lundi, ..., 5=vendredi)
+    const dayToNum: Record<string, number> = {
+      lundi: 1, mardi: 2, mercredi: 3, jeudi: 4, vendredi: 5,
+    };
+    const dayNums = days.map(d => dayToNum[d.toLowerCase()]).filter(n => n !== undefined);
+
+    // ─── 3. Calculer la plage de dates pour les fiches ───
+    const weekStart = new Date(journal.weekStartDate);
+    const weekEnd = new Date(journal.weekEndDate);
+
+    // ─── 4. Récupérer les fiches pédagogiques de la semaine (DRAFT uniquement) ───
+    let submittedFiches: any[] = [];
+    let skippedFiches: any[] = [];
+    try {
+      const fiches: any = await this.prisma.$queryRawUnsafe(
+        `SELECT * FROM "primary_pedagogical_fiches"
+         WHERE "tenantId" = $1
+         AND "academicYearId" = $2
+         AND "teacherId" = $3
+         AND "classId" = $4
+         AND "status" = 'DRAFT'
+         AND ("adminDate" IS NOT NULL OR "lessonDate" IS NOT NULL)`,
+        tenantId, journal.academicYearId, journal.teacherId, journal.classId,
+      );
+
+      // Filtrer par plage de dates + jour de la semaine
+      const fichesToSubmit = (fiches || []).filter((f: any) => {
+        const dateStr = f.adminDate || f.lessonDate;
+        if (!dateStr) return false;
+        const d = new Date(dateStr);
+        // Vérifier que la date est dans la semaine
+        if (d < weekStart || d > weekEnd) return false;
+        // Vérifier que le jour de la semaine correspond à dayRange
+        const dayNum = d.getDay(); // 0=dim, 1=lun, ..., 5=ven, 6=sam
+        return dayNums.includes(dayNum);
+      });
+
+      // ─── 5. Soumettre chaque fiche (DRAFT → SUBMITTED) ───
+      for (const fiche of fichesToSubmit) {
+        try {
+          await this.prisma.$executeRawUnsafe(
+            `UPDATE "primary_pedagogical_fiches"
+             SET "status" = 'SUBMITTED', "submittedAt" = NOW(), "updatedAt" = NOW()
+             WHERE "id" = $1`,
+            fiche.id,
+          );
+          submittedFiches.push({ id: fiche.id, sheetType: fiche.sheetType, date: fiche.adminDate || fiche.lessonDate });
+        } catch (err: any) {
+          skippedFiches.push({ id: fiche.id, error: err.message });
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`Failed to fetch fiches for cahier journal ${journalId}: ${err.message}`);
+    }
+
+    // ─── 6. Soumettre le cahier journal (DRAFT → SUBMITTED) ───
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "cahier_journal_entries"
+       SET "status" = 'SUBMITTED', "submittedAt" = NOW(), "updatedAt" = NOW()
+       WHERE "id" = $1`,
+      journalId,
+    );
+
+    const updatedJournal: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1`,
+      journalId,
+    );
+
+    // ─── 7. Notifier le directeur (fire-and-forget) ───
+    this.notifyDirectorsOfCahierJournalSubmission(
+      tenantId,
+      journal.academicYearId,
+      journal.classId,
+      journal.weekStartDate,
+      journal.weekEndDate,
+      days,
+      submittedFiches.length,
+    ).catch((err) => this.logger.error('Cahier journal notification error:', err));
+
+    return {
+      cahierJournal: { id: journalId, status: 'SUBMITTED', weekStartDate: journal.weekStartDate },
+      submittedFiches,
+      skippedFiches,
+      daysCovered: days,
+      totalFiches: submittedFiches.length,
+    };
+  }
+
+  /**
+   * ⭐ Notifie le directeur de la soumission du cahier journal + fiches pédagogiques.
+   */
+  private async notifyDirectorsOfCahierJournalSubmission(
+    tenantId: string,
+    academicYearId: string,
+    classId: string,
+    weekStartDate: Date,
+    weekEndDate: Date,
+    days: string[],
+    fichesCount: number,
+  ) {
+    // ⭐ Récupérer la classe (nom)
+    let className = '—';
+    try {
+      const cls: any = await this.prisma.$queryRawUnsafe(
+        `SELECT name FROM "classes" WHERE "id" = $1`, classId,
+      );
+      if (cls && cls.length > 0) className = cls[0].name || '—';
+    } catch { /* silent */ }
+
+    // ⭐ Récupérer les infos école
+    let schoolName = 'Établissement scolaire';
+    try {
+      const profile: any = await this.prisma.tenantIdentityProfile?.findFirst({
+        where: { tenantId, isActive: true },
+        select: { schoolName: true },
+      });
+      if (profile) schoolName = profile.schoolName || schoolName;
+    } catch { /* silent */ }
+
+    const formatDate = (d: Date) => new Date(d).toLocaleDateString('fr-FR');
+    const weekLabel = `Semaine du ${formatDate(weekStartDate)} au ${formatDate(weekEndDate)}`;
+    const daysLabel = days.length === 5 ? 'toute la semaine' : days.join(', ');
+
+    // ⭐ Récupérer les directeurs
+    const directorRoles = ['PROMOTER', 'SCHOOL_OWNER', 'DIRECTOR', 'DIRECTEUR_GENERAL',
+      'DIRECTEUR_ETAPE', 'DIRECTEUR_PEDAGOGIQUE', 'ADMIN', 'SUPER_ADMIN', 'PLATFORM_OWNER'];
+    const directors: any[] = await this.prisma.user.findMany({
+      where: { tenantId, role: { in: directorRoles }, isActive: true },
+      select: { id: true, firstName: true, lastName: true, email: true, phone: true, role: true },
+    }).catch(() => []);
+
+    if (directors.length === 0) {
+      this.logger.warn(`Aucun directeur trouvé pour tenant ${tenantId}`);
+      return;
+    }
+
+    const emailSubject = `[${schoolName}] Cahier journal soumis — ${className} — ${weekLabel}`;
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #0b2f73; color: white; padding: 20px; text-align: center;">
+          <h1 style="margin: 0; font-size: 18px;">${schoolName}</h1>
+          <p style="margin: 5px 0 0; font-size: 12px; opacity: 0.9;">Soumission cahier journal + fiches pédagogiques</p>
+        </div>
+        <div style="padding: 20px;">
+          <h2 style="color: #0b2f73; font-size: 16px;">Bonjour,</h2>
+          <p style="font-size: 14px; line-height: 1.5;">
+            Un cahier journal vient d'être soumis par un enseignant :
+          </p>
+          <table style="width: 100%; margin: 15px 0; border-collapse: collapse;">
+            <tr><td style="padding: 5px; border-bottom: 1px solid #eee; font-weight: bold;">Classe :</td><td style="padding: 5px; border-bottom: 1px solid #eee;">${className}</td></tr>
+            <tr><td style="padding: 5px; border-bottom: 1px solid #eee; font-weight: bold;">Période :</td><td style="padding: 5px; border-bottom: 1px solid #eee;">${weekLabel}</td></tr>
+            <tr><td style="padding: 5px; border-bottom: 1px solid #eee; font-weight: bold;">Jours couverts :</td><td style="padding: 5px; border-bottom: 1px solid #eee;">${daysLabel}</td></tr>
+            <tr><td style="padding: 5px; border-bottom: 1px solid #eee; font-weight: bold;">Fiches pédagogiques :</td><td style="padding: 5px; border-bottom: 1px solid #eee;">${fichesCount} fiche(s) soumise(s)</td></tr>
+          </table>
+          <p style="font-size: 14px; line-height: 1.5;">
+            Veuillez vous connecter à la plateforme pour valider ces documents
+            dans <strong>Espace Pédagogique → Validation Pédagogique</strong>.
+          </p>
+          <div style="background: #f8fafc; padding: 15px; border-radius: 5px; margin-top: 20px;">
+            <p style="margin: 0; font-size: 12px; color: #64748b;">
+              Ceci est un message automatique envoyé par Academia Helm.<br/>
+              Date : ${new Date().toLocaleString('fr-FR')}
+            </p>
+          </div>
+        </div>
+      </div>
+    `;
+    const smsMessage = `${schoolName}: Cahier journal soumis - ${className} (${weekLabel}). Jours: ${daysLabel}. ${fichesCount} fiche(s). Connectez-vous pour valider.`;
+
+    for (const director of directors) {
+      const directorName = `${director.firstName || ''} ${director.lastName || ''}`.trim() || 'Directeur';
+
+      if (director.email) {
+        try {
+          await this.emailService.sendCategorized({
+            tenantId,
+            category: 'PEDAGOGIE',
+            subCategory: 'CAHIER_JOURNAL_SUBMISSION',
+            module: 'pedagogy' as any,
+            to: director.email,
+            toName: directorName,
+            recipientType: 'STAFF',
+            recipientId: director.id,
+            subject: emailSubject,
+            html: emailHtml,
+            text: smsMessage,
+            fromName: schoolName,
+            triggeredBy: 'SYSTEM',
+            relatedEntityId: classId,
+            relatedEntityType: 'CahierJournal',
+          } as any);
+        } catch (err: any) {
+          this.logger.warn(`Email failed for ${director.email}: ${err.message}`);
+        }
+      }
+
+      if (director.phone) {
+        try {
+          const phone = director.phone.startsWith('+') ? director.phone : `+229${director.phone.replace(/^0/, '')}`;
+          await this.whatsappService.sendCategorized({
+            tenantId,
+            category: 'PEDAGOGIE',
+            subCategory: 'CAHIER_JOURNAL_SUBMISSION',
+            module: 'pedagogy' as any,
+            to: phone,
+            toName: directorName,
+            recipientType: 'STAFF',
+            recipientId: director.id,
+            message: smsMessage,
+            triggeredBy: 'SYSTEM',
+            relatedEntityId: classId,
+            relatedEntityType: 'CahierJournal',
+          } as any);
+        } catch (err: any) {
+          this.logger.warn(`WhatsApp failed for ${director.phone}: ${err.message}`);
+        }
+
+        try {
+          await this.smsService.sendSMS(director.phone, smsMessage);
+        } catch (err: any) {
+          this.logger.warn(`SMS failed for ${director.phone}: ${err.message}`);
+        }
+      }
+    }
+
+    this.logger.log(`Notifications cahier journal envoyées à ${directors.length} directeur(s) pour ${className}`);
+  }
+
 
   /**
    * ⭐ Soumission unifiée : soumet en une fois le registre d'appel + l'évaluation

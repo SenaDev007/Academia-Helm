@@ -415,6 +415,19 @@ export class PedagogicalSpaceController {
     return this.service.submitCahierJournal(tenantId, id);
   }
 
+  // ⭐ Soumission cahier journal + fiches pédagogiques (séparée du registre)
+  //    Body : { dayRange?: string[] } — ex: ['lundi', 'mardi', 'mercredi']
+  //    Si dayRange absent → soumet toute la semaine (lundi→vendredi)
+  @Post('cahier-journal/:id/submit-with-fiches')
+  @HttpCode(HttpStatus.OK)
+  async submitCahierJournalWithFiches(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: { dayRange?: string[] },
+  ) {
+    return this.service.submitCahierJournalWithFiches(tenantId, id, body?.dayRange);
+  }
+
   // ===========================================================================
   // ⭐ SOUMISSION UNIFIÉE — registre + évaluation mensuelle (cahier journal séparé)
   // ===========================================================================

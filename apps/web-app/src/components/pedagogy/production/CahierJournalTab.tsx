@@ -16,7 +16,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   NotebookPen, Loader2, Save, RefreshCw, Send, Lock, Calendar,
-  ChevronLeft, ChevronRight, CheckCircle2, XCircle, Clock,
+  ChevronLeft, ChevronRight, CheckCircle2, XCircle, Clock, X, AlertCircle,
   FileSpreadsheet, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -113,6 +113,9 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
   const [submitting, setSubmitting] = useState(false);
   // ⭐ Modal de confirmation professionnel (remplace confirm())
   const { warning: confirmWarning, dialog: confirmDialog } = useConfirmDialog();
+  // ⭐ Modal de sélection des jours (cahier journal + fiches pédagogiques)
+  const [showDaySelectionModal, setShowDaySelectionModal] = useState(false);
+  const [selectedDays, setSelectedDays] = useState<string[]>(['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi']);
   // Matières dynamiques chargées depuis la base de données
   const [dynamicSubjects, setDynamicSubjects] = useState<any[]>([]);
 
@@ -346,33 +349,67 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
     }
   };
 
-  // === Soumission au directeur (cahier journal SOUMIS SÉPARÉMENT du registre) ===
-  const handleSubmit = async () => {
+  // === Soumission au directeur (cahier journal + fiches pédagogiques associées) ===
+  //    Ouvre un modal de sélection des jours à soumettre :
+  //      - Soit toute la semaine (lundi → vendredi)
+  //      - Soit un sous-ensemble (ex: lundi, mardi, mercredi)
+  //    Puis soumet le cahier journal + les fiches pédagogiques des jours
+  //    sélectionnés en une seule transaction.
+  const handleSubmit = () => {
     if (!journal) return;
-    // ⭐ Modal professionnel (remplace confirm())
+    setShowDaySelectionModal(true);
+  };
+
+  // ⭐ Confirme et soumet le cahier journal + fiches pédagogiques
+  const confirmSubmitWithFiches = async () => {
+    if (!journal) return;
     const ok = await confirmWarning(
-      `Souhaitez-vous soumettre ce cahier journal au directeur ?`,
-      'Soumission cahier journal',
+      `Confirmer la soumission ?`,
+      'Soumission cahier journal + fiches',
       `Classe : ${journal.classNameResolved || journal.className || '—'}\n` +
-      `Semaine du ${new Date(journal.weekStartDate).toLocaleDateString('fr-FR')}\n\n` +
-      `Cette action est irréversible. Le directeur sera notifié pour validation.\n` +
-      `(Le registre d'appel et l'évaluation mensuelle sont soumis séparément.)`
+      `Semaine du ${new Date(journal.weekStartDate).toLocaleDateString('fr-FR')}\n` +
+      `Jours sélectionnés : ${selectedDays.length === 5 ? 'Toute la semaine' : selectedDays.join(', ')}\n\n` +
+      `Cette action soumet :\n` +
+      `• Le cahier journal\n` +
+      `• Les fiches pédagogiques des jours sélectionnés\n\n` +
+      `Le directeur sera notifié par email, WhatsApp et SMS.\n` +
+      `Cette action est irréversible.`
     );
     if (!ok) return;
+    setShowDaySelectionModal(false);
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/pedagogy-space/cahier-journal/${journal.id}/submit`, {
+      const res = await fetch(`/api/pedagogy-space/cahier-journal/${journal.id}/submit-with-fiches`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
+        body: JSON.stringify({
+          dayRange: selectedDays,
+        }),
       });
-      if (!res.ok) throw new Error("Erreur");
-      toast.success("✅ Cahier journal soumis au directeur");
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
+      }
+      const data = await res.json();
+      toast.success("✅ Cahier journal soumis au directeur", {
+        description: `${data.totalFiches || 0} fiche(s) pédagogique(s) soumise(s) — le directeur a été notifié.`,
+      });
       loadJournal();
     } catch (e: any) {
-      toast.error("Erreur", { description: e.message });
+      toast.error("Erreur lors de la soumission", { description: e.message });
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // ⭐ Bascule la sélection d'un jour
+  const toggleDay = (day: string) => {
+    setSelectedDays(prev =>
+      prev.includes(day)
+        ? prev.filter(d => d !== day)
+        : [...prev, day]
+    );
   };
 
   // === Navigation entre semaines ===
@@ -770,6 +807,112 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
       )}
       {/* ⭐ Modal de confirmation professionnel (remplace confirm()) */}
       {confirmDialog}
+
+      {/* ⭐ Modal de sélection des jours (cahier journal + fiches pédagogiques) */}
+      {showDaySelectionModal && journal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Soumettre au directeur</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  Cahier journal + fiches pédagogiques
+                </p>
+              </div>
+              <button
+                onClick={() => setShowDaySelectionModal(false)}
+                className="p-1 hover:bg-slate-100 rounded"
+              >
+                <X className="h-5 w-5 text-slate-500" />
+              </button>
+            </div>
+
+            {/* Infos contexte */}
+            <div className="bg-slate-50 rounded-lg p-3 text-sm text-slate-700 space-y-1">
+              <div><strong>Classe :</strong> {journal.classNameResolved || journal.className || '—'}</div>
+              <div><strong>Semaine :</strong> du {new Date(journal.weekStartDate).toLocaleDateString('fr-FR')} au {new Date(journal.weekEndDate).toLocaleDateString('fr-FR')}</div>
+            </div>
+
+            {/* Sélection des jours */}
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">
+                Jours à soumettre <span className="text-red-500">*</span>
+              </label>
+              <p className="text-xs text-slate-500 mb-3">
+                Sélectionnez les jours à inclure dans cette soumission.
+                Les fiches pédagogiques des jours sélectionnés seront automatiquement
+                soumises avec le cahier journal.
+              </p>
+              <div className="grid grid-cols-5 gap-2">
+                {[
+                  { key: 'lundi', label: 'Lun' },
+                  { key: 'mardi', label: 'Mar' },
+                  { key: 'mercredi', label: 'Mer' },
+                  { key: 'jeudi', label: 'Jeu' },
+                  { key: 'vendredi', label: 'Ven' },
+                ].map(day => (
+                  <button
+                    key={day.key}
+                    onClick={() => toggleDay(day.key)}
+                    className={cn(
+                      "px-3 py-2 rounded-lg text-sm font-semibold transition-all",
+                      selectedDays.includes(day.key)
+                        ? "bg-emerald-600 text-white border-2 border-emerald-700"
+                        : "bg-white text-slate-600 border-2 border-slate-200 hover:border-emerald-300"
+                    )}
+                  >
+                    {day.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 mt-3">
+                <button
+                  onClick={() => setSelectedDays(['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'])}
+                  className="text-xs font-semibold text-blue-700 hover:underline"
+                >
+                  Tout sélectionner
+                </button>
+                <span className="text-slate-300">·</span>
+                <button
+                  onClick={() => setSelectedDays([])}
+                  className="text-xs font-semibold text-slate-500 hover:underline"
+                >
+                  Tout désélectionner
+                </button>
+              </div>
+            </div>
+
+            {/* Avertissement */}
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800">
+                Cette action soumet le cahier journal et les fiches pédagogiques des
+                jours sélectionnés. Le directeur sera notifié par email, WhatsApp et SMS.
+                Cette action est irréversible.
+              </p>
+            </div>
+
+            {/* Boutons */}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                onClick={() => setShowDaySelectionModal(false)}
+                disabled={submitting}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={confirmSubmitWithFiches}
+                disabled={submitting || selectedDays.length === 0}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {submitting ? 'Soumission...' : 'Soumettre'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

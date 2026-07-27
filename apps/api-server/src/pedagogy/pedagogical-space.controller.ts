@@ -48,13 +48,16 @@ export class PedagogicalSpaceController {
   @Get('my-classes')
   async getMyClasses(
     @TenantId() tenantId: string,
+    @AcademicYearId() academicYearIdFromDecorator: string | null,
     @Query('teacherId') teacherId: string,
     @Query('academicYearId') academicYearId: string,
   ) {
-    if (!teacherId || !academicYearId) {
+    // ⭐ academicYearId peut venir du query param OU du décorateur (header/body)
+    const resolvedAcademicYearId = academicYearId || academicYearIdFromDecorator;
+    if (!teacherId || !resolvedAcademicYearId) {
       throw new BadRequestException('teacherId et academicYearId sont requis');
     }
-    return this.service.getMyClasses(tenantId, teacherId, academicYearId);
+    return this.service.getMyClasses(tenantId, teacherId, resolvedAcademicYearId);
   }
 
   // ─── APPEL JOURNALIER ─────────────────────────────────────────────────────

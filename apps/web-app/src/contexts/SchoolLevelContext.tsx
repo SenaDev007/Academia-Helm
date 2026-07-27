@@ -137,24 +137,28 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
           // 2. Si pas d'accreditation, fetch /api/pedagogy-space/my-classes pour déduire le niveau
           if (!autoSelectedLevel && userId) {
             try {
+              // ⭐ Récupérer l'academicYearId depuis localStorage (clé 'currentAcademicYearId')
               const academicYearId = typeof window !== 'undefined'
-                ? localStorage.getItem('academicYearId') || ''
+                ? (localStorage.getItem('currentAcademicYearId') || localStorage.getItem('academicYearId') || '')
                 : '';
-              if (academicYearId) {
-                const classesRes = await fetch(
-                  `/api/pedagogy-space/my-classes?teacherId=${userId}&academicYearId=${academicYearId}`,
-                  { credentials: 'include' }
-                );
-                if (classesRes.ok) {
-                  const classesData = await classesRes.json();
-                  const classes = Array.isArray(classesData) ? classesData : (classesData?.data || []);
-                  // Prendre le schoolLevelCode de la première classe
-                  if (classes.length > 0) {
-                    const firstClass = classes[0];
-                    const slCode = firstClass.schoolLevel?.code || firstClass.physicalClass?.schoolLevel?.code || '';
-                    if (slCode) {
-                      autoSelectedLevel = activeLevels.find((l) => l.code === slCode) || null;
-                    }
+              // ⭐ Si pas d'academicYearId, on fait quand même le fetch — le backend
+              //    peut utiliser l'année par défaut depuis le header X-Academic-Year-ID
+              const url = academicYearId
+                ? `/api/pedagogy-space/my-classes?teacherId=${userId}&academicYearId=${academicYearId}`
+                : `/api/pedagogy-space/my-classes?teacherId=${userId}`;
+              const classesRes = await fetch(url, { credentials: 'include' });
+              if (classesRes.ok) {
+                const classesData = await classesRes.json();
+                const classes = Array.isArray(classesData) ? classesData : (classesData?.data || []);
+                // Prendre le schoolLevelCode de la première classe
+                if (classes.length > 0) {
+                  const firstClass = classes[0];
+                  const slCode = firstClass.schoolLevel?.code
+                    || firstClass.physicalClass?.schoolLevel?.code
+                    || firstClass.schoolLevelCode
+                    || '';
+                  if (slCode) {
+                    autoSelectedLevel = activeLevels.find((l) => l.code === slCode) || null;
                   }
                 }
               }

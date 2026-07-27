@@ -114,7 +114,12 @@ export default function TeacherExamsPage() {
   const [showNotifications, setShowNotifications] = useState(false);
 
   // Détecter le niveau scolaire depuis schoolLevel.code
-  const levelCode = (schoolLevel?.code || '').toUpperCase();
+  // ⭐ Si schoolLevel est null ou 'ALL', déduire depuis les évaluations (BDD)
+  const ctxLevelCode = (schoolLevel?.code || '').toUpperCase();
+  const evalLevelCode = evaluations.length > 0
+    ? (evaluations[0]?.class?.schoolLevel?.code || '').toUpperCase()
+    : '';
+  const levelCode = (ctxLevelCode && ctxLevelCode !== 'ALL') ? ctxLevelCode : evalLevelCode;
   const isMaternelle = levelCode === 'MATERNELLE' || levelCode.includes('MATERN');
   const isPrimaire = levelCode === 'PRIMAIRE' || levelCode.includes('PRIM');
   const isSecondaire = levelCode === 'SECONDAIRE' || levelCode.includes('SECOND');

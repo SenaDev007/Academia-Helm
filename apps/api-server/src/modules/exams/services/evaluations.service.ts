@@ -126,11 +126,7 @@ export class EvaluationsService {
     return this.prisma.evaluation.findMany({
       where,
       include: {
-        class: {
-          include: {
-            schoolLevel: true,
-          },
-        },
+        class: true,
         subject: true,
         evaluationType: true,
         period: true,

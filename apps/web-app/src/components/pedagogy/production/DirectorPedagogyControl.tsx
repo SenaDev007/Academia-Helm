@@ -408,9 +408,13 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
     );
   }
 
-  // ⭐ Hiérarchisation : par classe → mois → semaine
-  const monthNames = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
-    'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+  // ⭐ Hiérarchisation : par classe → trimestre
+  const getTrimester = (month: number): string => {
+    if (month >= 9 || month === 12) return 'Trimestre 1';
+    if (month >= 1 && month <= 3) return 'Trimestre 2';
+    if (month >= 4 && month <= 6) return 'Trimestre 3';
+    return 'Vacances (été)';
+  };
   const grouped = items.reduce((acc: Record<string, any[]>, item: any) => {
     const key = item.classNameResolved || item.className || 'Sans classe';
     if (!acc[key]) acc[key] = [];
@@ -419,18 +423,14 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
   }, {});
   const classNames = Object.keys(grouped).sort();
 
-  // ⭐ Trier par semaine (plus récente en premier) + grouper par mois
-  const groupedByMonth: Record<string, Record<string, any[]>> = {};
+  // ⭐ Grouper par trimestre pour chaque classe
+  const groupedByTrimester: Record<string, Record<string, any[]>> = {};
   for (const cn of classNames) {
-    grouped[cn].sort((a: any, b: any) => {
-      return new Date(b.weekStartDate).getTime() - new Date(a.weekStartDate).getTime();
-    });
-    groupedByMonth[cn] = {};
+    groupedByTrimester[cn] = {};
     for (const item of grouped[cn]) {
-      const d = new Date(item.weekStartDate);
-      const monthKey = `${monthNames[d.getMonth() + 1]} ${d.getFullYear()}`;
-      if (!groupedByMonth[cn][monthKey]) groupedByMonth[cn][monthKey] = [];
-      groupedByMonth[cn][monthKey].push(item);
+      const trimester = getTrimester(item.month || 1);
+      if (!groupedByTrimester[cn][trimester]) groupedByTrimester[cn][trimester] = [];
+      groupedByTrimester[cn][trimester].push(item);
     }
   }
 
@@ -444,7 +444,7 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
         <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg"><RefreshCw className="h-4 w-4" /></button>
       </div>
 
-      {/* ⭐ Hiérarchisé par classe → mois → semaine */}
+      {/* ⭐ Hiérarchisé par classe → trimestre */}
       {classNames.map((className) => (
         <div key={className} className="space-y-3">
           <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg">
@@ -454,19 +454,19 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
               {grouped[className].length}
             </span>
           </div>
-          {/* ⭐ Sous-groupement par mois */}
-          {Object.keys(groupedByMonth[className]).map(monthKey => (
-            <div key={monthKey} className="space-y-2 pl-4">
-              <div className="flex items-center gap-2 px-2 py-1 bg-blue-50 rounded">
-                <Calendar className="h-3 w-3 text-blue-600" />
-                <span className="text-xs font-bold text-blue-700 uppercase tracking-wide">{monthKey}</span>
-                <span className="ml-auto text-xs text-blue-500">
-                  {groupedByMonth[className][monthKey].length} semaine(s)
+          {/* ⭐ Sous-groupement par trimestre */}
+          {Object.keys(groupedByTrimester[className]).map(trimester => (
+            <div key={trimester} className="space-y-2 pl-4">
+              <div className="flex items-center gap-2 px-2 py-1 bg-indigo-50 rounded">
+                <Calendar className="h-3 w-3 text-indigo-600" />
+                <span className="text-xs font-bold text-indigo-700 uppercase tracking-wide">{trimester}</span>
+                <span className="ml-auto text-xs text-indigo-500">
+                  {groupedByTrimester[className][trimester].length} soumission(s)
                 </span>
               </div>
-              {/* ⭐ Semaines du mois */}
+              {/* ⭐ Registres du trimestre */}
               <div className="space-y-2 pl-4">
-                {groupedByMonth[className][monthKey].map(item => (
+                {groupedByTrimester[className][trimester].map(item => (
                   <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white">
                     <div>
                       <p className="font-medium text-slate-900">
@@ -887,7 +887,13 @@ function PendingEvaluationsTab({ tenantId, academicYearId, userId, refreshKey, o
     );
   }
 
-  // ⭐ Catégoriser par classe
+  // ⭐ Hiérarchisation : par classe → trimestre
+  const getTrimester = (month: number): string => {
+    if (month >= 9 || month === 12) return 'Trimestre 1';
+    if (month >= 1 && month <= 3) return 'Trimestre 2';
+    if (month >= 4 && month <= 6) return 'Trimestre 3';
+    return 'Vacances (été)';
+  };
   const grouped = items.reduce((acc: Record<string, any[]>, item: any) => {
     const key = item.classNameResolved || item.className || 'Sans classe';
     if (!acc[key]) acc[key] = [];
@@ -895,6 +901,18 @@ function PendingEvaluationsTab({ tenantId, academicYearId, userId, refreshKey, o
     return acc;
   }, {});
   const classNames = Object.keys(grouped).sort();
+
+  // ⭐ Grouper par trimestre pour chaque classe
+  const groupedByTrimester: Record<string, Record<string, any[]>> = {};
+  for (const cn of classNames) {
+    groupedByTrimester[cn] = {};
+    for (const item of grouped[cn]) {
+      const m = item.registerMonth || item.month || 1;
+      const trimester = getTrimester(m);
+      if (!groupedByTrimester[cn][trimester]) groupedByTrimester[cn][trimester] = [];
+      groupedByTrimester[cn][trimester].push(item);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -906,9 +924,9 @@ function PendingEvaluationsTab({ tenantId, academicYearId, userId, refreshKey, o
         <button onClick={() => refetch()} className="p-2 hover:bg-slate-100 rounded-lg"><RefreshCw className="h-4 w-4" /></button>
       </div>
 
-      {/* ⭐ Groupé par classe */}
+      {/* ⭐ Hiérarchisé par classe → trimestre */}
       {classNames.map((className) => (
-        <div key={className} className="space-y-2">
+        <div key={className} className="space-y-3">
           <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg">
             <BookOpen className="h-4 w-4 text-slate-600" />
             <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wide">{className}</h4>
@@ -916,8 +934,19 @@ function PendingEvaluationsTab({ tenantId, academicYearId, userId, refreshKey, o
               {grouped[className].length}
             </span>
           </div>
-          <div className="space-y-2 pl-4">
-            {grouped[className].map(item => (
+          {/* ⭐ Sous-groupement par trimestre */}
+          {Object.keys(groupedByTrimester[className]).map(trimester => (
+            <div key={trimester} className="space-y-2 pl-4">
+              <div className="flex items-center gap-2 px-2 py-1 bg-indigo-50 rounded">
+                <Calendar className="h-3 w-3 text-indigo-600" />
+                <span className="text-xs font-bold text-indigo-700 uppercase tracking-wide">{trimester}</span>
+                <span className="ml-auto text-xs text-indigo-500">
+                  {groupedByTrimester[className][trimester].length} soumission(s)
+                </span>
+              </div>
+              {/* ⭐ Évaluations du trimestre */}
+              <div className="space-y-2 pl-4">
+                {groupedByTrimester[className][trimester].map(item => (
               <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white">
                 <div>
                   <p className="font-medium text-slate-900">
@@ -944,8 +973,10 @@ function PendingEvaluationsTab({ tenantId, academicYearId, userId, refreshKey, o
                   </button>
                 </div>
               </div>
-            ))}
-          </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       ))}
 

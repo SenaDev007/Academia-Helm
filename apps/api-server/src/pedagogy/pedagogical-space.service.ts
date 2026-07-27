@@ -2605,13 +2605,14 @@ export class PedagogicalSpaceService {
         results.errors.push({ entity: 'attendanceRegister', error: err.message });
       }
 
-      // ⭐ 2. Évaluation mensuelle liée au registre (status DRAFT → SUBMITTED)
+      // ⭐ 2. Évaluation mensuelle (status DRAFT → SUBMITTED)
+      //    Recherche directe par classId + month + year (sans JOIN sur attendanceRegisterId)
       try {
         const evals: any = await this.prisma.$queryRawUnsafe(
           `SELECT me.* FROM "monthly_evaluations" me
-           JOIN "attendance_registers" ar ON ar."id" = me."attendanceRegisterId"
-           WHERE ar."tenantId" = $1 AND ar."academicYearId" = $2 AND ar."classId" = $3
-           AND ar."month" = $4 AND ar."year" = $5 LIMIT 1`,
+           WHERE me."tenantId" = $1 AND me."academicYearId" = $2
+           AND me."classId" = $3 AND me."month" = $4 AND me."year" = $5
+           LIMIT 1`,
           tenantId, academicYearId, classId, month, year,
         );
         if (evals && evals.length > 0) {

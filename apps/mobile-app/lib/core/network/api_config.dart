@@ -94,12 +94,33 @@ class ApiConfig {
 
   // ── Settings Endpoints ───────────────────────────────────────────────
 
+  static const String settings = '/settings';
+  static const String settingsGeneral = '/settings/general';
+  static const String settingsAcademicYear = '/settings/academic-years';
+  static const String settingsClasses = '/settings/classes';
+  static const String settingsSubjects = '/settings/subjects';
+  static const String settingsRoles = '/settings/roles';
   static const String settingsPermissions = '/settings/permissions';
   static const String settingsFeatureFlags = '/settings/feature-flags';
   static const String settingsSecurity = '/settings/security';
   static const String settingsBilling = '/settings/billing';
   static const String settingsCommunication = '/settings/communication';
   static const String settingsSeals = '/settings/seals';
+
+  // ── Exams Endpoints ──────────────────────────────────────────────────
+
+  static const String institutionalExams = '/exams/institutional';
+  static const String examSaveGrades = '/exams/grades/save';
+  static const String examGrades = '/exams/grades';
+  static const String examBulletins = '/exams/bulletins';
+  static const String examCouncils = '/exams/councils';
+  static const String examConfig = '/exams/config';
+
+  static String examEvaluationById(String id) => '/exams/evaluations/$id';
+  static String examGradesByEvaluation(String evaluationId) => '/exams/evaluations/$evaluationId/grades';
+  static String examBulletinByClass(String classId) => '/exams/bulletins/class/$classId';
+  static String examCouncilById(String id) => '/exams/councils/$id';
+  static String examDashboard(String academicYearId) => '/exams/dashboard/$academicYearId';
 }
 
 /// Enum representing the API environment.

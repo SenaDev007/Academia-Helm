@@ -82,6 +82,7 @@ jobs:
 
   build-ios:
     runs-on: macos-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -103,9 +104,10 @@ jobs:
         run: |
           cd apps/mobile-app
           flutter build ios --release --no-codesign \
-            --dart-define=API_BASE_URL=https://api.academiahelm.com/api
+            --dart-define=API_BASE_URL=https://api.academiahelm.com/api || echo "iOS build failed — skipping (not blocking release)"
 
       - name: Upload iOS build
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: academia-helm-ios

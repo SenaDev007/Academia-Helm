@@ -48,6 +48,8 @@ import '../../features/schedule/pages/schedule_screen.dart';
 import '../../features/parents/pages/children_screen.dart';
 // ⭐ P1-6: Écran Faire l'appel (enseignant)
 import '../../features/attendance/pages/take_attendance_screen.dart';
+// ⭐ P1-7: Écran Saisir les notes (enseignant)
+import '../../features/grades/pages/grade_entry_screen.dart';
 
 // ── Navigation Destinations ───────────────────────────────────────────
 
@@ -391,6 +393,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (context, state) {
               final classId = state.pathParameters['classId'] ?? '';
               return TakeAttendanceScreen(classId: classId);
+            },
+          ),
+
+          // ⭐ P1-7: Saisir les notes (enseignant)
+          GoRoute(
+            path: '/grade-entry/:evaluationId',
+            name: 'gradeEntry',
+            builder: (context, state) {
+              final evaluationId = state.pathParameters['evaluationId'] ?? '';
+              return GradeEntryScreen(evaluationId: evaluationId);
             },
           ),
 

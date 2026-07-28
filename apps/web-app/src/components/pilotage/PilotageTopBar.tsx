@@ -28,6 +28,7 @@ import AcademicTrackSelector from './AcademicTrackSelector';
 import { useOffline, useSyncStatus } from '@/hooks/useOffline';
 import InAppReviewModal from '@/components/reviews/InAppReviewModal';
 import NotificationDropdown from '@/components/notifications/NotificationDropdown';
+import { DesktopUpdateBadge } from '@/components/header/DesktopUpdateBadge';
 import type { User, Tenant } from '@/types';
 
 interface SchoolIdentity {
@@ -342,6 +343,9 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
 
             {/* Notifications in-app (cloche avec dropdown) — admissions, candidatures, etc. */}
             <NotificationDropdown />
+
+            {/* ── Bouton "Télécharger l'app desktop" — visible UNIQUEMENT par le PROMOTER ── */}
+            <DesktopUpdateBadge userRole={user.role} />
 
             {/* Alertes ORION */}
             {orionAlertsCount > 0 && (

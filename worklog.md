@@ -2742,3 +2742,94 @@ Stage Summary:
 - ⬜ Desktop: nécessite Rust + WebView2 pour build (documentation fournie)
 - ⬜ Mobile: nécessite Flutter SDK pour build (documentation fournie)
 - ⬜ Mobile: features parent/teacher/school à implémenter (scaffold créé)
+
+---
+Task ID: tauri-auto-update-sqlite-offline-and-desktop-badge
+Agent: main
+Task: 4 points — (1) Tauri auto-update, (2) bouton download desktop dans header promoteur, (3) SQLite local desktop + sync Neon, (4) vérifier palette couleurs identique
+
+Work Log:
+1. **Tauri auto-update + URL distante**:
+   - tauri.conf.json:
+     * Ajouté section `plugins.updater` avec endpoint releases.academiahelm.com
+     * `createUpdaterArtifacts: true` dans bundle
+     * Fenêtre charge `https://app.academiahelm.com/desktop` (URL distante)
+     * PAS de rebuild à chaque mise à jour web — l'app desktop charge le web distant
+   - Cargo.toml: ajouté tauri-plugin-updater, tauri-plugin-sql (sqlite), tauri-plugin-store, tauri-plugin-notification, log
+   - lib.rs:
+     * Vérification auto des mises à jour au démarrage (async spawn)
+     * Notification native si mise à jour disponible
+     * Plugin SQL avec migrations SQLite automatiques
+   - capabilities/default.json: permissions updater + sql + store + notification
+
+2. **Bouton download desktop dans header (promoteur uniquement)**:
+   - apps/web-app/src/components/header/DesktopUpdateBadge.tsx (NEW):
+     * Visible UNIQUEMENT si userRole === 'PROMOTER'
+     * Masqué si déjà dans Tauri (window.__TAURI__ détecté)
+     * Bouton "Desktop" + badge "!" si mise à jour disponible
+     * Modal de téléchargement avec avantages (offline, sync, auto-update)
+     * Détection automatique de l'environnement (web vs desktop)
+   - PilotageTopBar.tsx: import + intégration du badge après NotificationDropdown
+
+3. **Base de données locale SQLite + sync Neon (desktop)**:
+   - apps/desktop/src-tauri/migrations/001_init_offline_cache.sql (NEW):
+     * Tables de cache: cached_students, cached_classes, cached_student_accounts,
+       cached_transactions, cached_report_cards, cached_cahier_journal
+     * Table sync_meta (last_online_sync, last_offline_action, db_version, tenant_id)
+     * Table pending_sync_queue (file d'attente pour écritures offline)
+       - Fields: id, tenant_id, entity_type, entity_id, operation, endpoint, method,
+         payload_json, created_at, retry_count, last_error, status
+   - apps/web-app/src/lib/offline/offline-sync.ts (NEW, ~350 lignes):
+     * Service frontend de synchronisation SQLite ↔ Neon
+     * Détection Tauri (isDesktopApp())
+     * Gestion online/offline (event listeners)
+     * readFromCache / writeToCache / readAllFromCache
+     * enqueueSync (ajoute écriture à la queue)
+     * syncPendingQueue (push la queue vers API quand online)
+     * offlineAwareCall (wrapper: online → API direct, offline → queue)
+     * initOfflineSync (à appeler au démarrage)
+   - Stratégie: SQLite = cache (jamais source de vérité), Neon = source unique
+   - Sync automatique au retour de connexion (event 'online')
+
+4. **Base de données locale Flutter (mobile)**:
+   - Vérification: apps/mobile-app/lib/core/offline/offline_service.dart existe déjà (1040 lignes!)
+     * Utilise Hive (NoSQL) pour le stockage local
+     * Outbox pattern pour écritures offline
+     * File de synchronisation avec retry
+     * Gestion cache avec TTL
+     * 30+ types d'entités synchronisables (student, teacher, exam, grade, etc.)
+   - Vérification: apps/mobile-app/lib/core/sync/ contient déjà:
+     * offline_sync_queue.dart
+     * sync_status_provider.dart
+     * sync_event.dart
+     * realtime_sync.dart
+   - ✅ Le mobile a déjà une infrastructure offline complète — pas besoin d'ajouter SQLite
+     (Hive suffit pour le use case mobile)
+
+5. **Vérification palette couleurs identique**:
+   - Web: NAVY=#0b2f73, BLUE=#1d4fa5, GOLD=#f5b335 (LoginPage.tsx + desktop/page.tsx)
+   - Desktop: même page /desktop → même palette ✅
+   - Mobile: AHColors.navy=0xFF0B2F73, AHColors.blue=0xFF1D4FA5, AHColors.gold=0xFFF5B335 ✅
+   - Les 3 plateformes utilisent exactement la même palette Academia Helm
+
+6. **GitHub Actions build-desktop.yml mis à jour**:
+   - Génération automatique de la paire de clés Tauri si non configurée
+   - Build avec TAURI_PRIVATE_KEY + TAURI_KEY_PASSWORD (secrets)
+   - Génération de latest.json pour l'auto-updater
+   - Upload des artifacts signés (.msi.zip + .msi.zip.sig)
+   - Création de la GitHub Release avec latest.json
+
+7. **Suppression du projet Flutter dupliqué**:
+   - apps/mobile/ supprimé (créé par erreur dans le commit précédent)
+   - Le projet Flutter officiel est apps/mobile-app/ (déjà complet)
+
+Stage Summary:
+- ✅ Tauri auto-update configuré (vérification au démarrage + notification native)
+- ✅ URL distante: l'app desktop charge le web distant — PAS de rebuild à chaque fois
+- ✅ Bouton "Desktop" dans le header (visible uniquement par PROMOTER)
+- ✅ Base SQLite locale embarquée dans Tauri (tauri-plugin-sql)
+- ✅ Service offline-sync.ts (frontend) — cache + queue + sync automatique
+- ✅ Migration SQLite 001_init_offline_cache.sql (6 tables cache + sync_meta + queue)
+- ✅ Mobile: infrastructure offline déjà complète (Hive + outbox pattern, 1040 lignes)
+- ✅ Palette couleurs identique web/desktop/mobile (Navy/Blue/Gold)
+- ✅ GitHub Actions: build + signature + latest.json pour auto-updater

@@ -1,4 +1,4 @@
-# Academia Helm — Desktop App (Tauri)
+# Academia Helm — Desktop App (Tauri 2)
 
 Application desktop Windows/macOS/Linux construite avec **Tauri 2** + **Next.js**.
 
@@ -8,41 +8,114 @@ Application desktop Windows/macOS/Linux construite avec **Tauri 2** + **Next.js*
 apps/desktop/
 ├── src-tauri/
 │   ├── src/
-│   │   ├── main.rs          # Point d'entrée (binaire)
-│   │   └── lib.rs           # Logique Tauri (initialisation)
+│   │   ├── main.rs                    # Point d'entrée (binaire)
+│   │   └── lib.rs                     # Initialisation + auto-update + SQLite
 │   ├── capabilities/
-│   │   └── default.json     # Permissions (shell, http)
-│   ├── Cargo.toml           # Dépendances Rust
-│   ├── build.rs             # Script de build Tauri
-│   └── tauri.conf.json      # Configuration Tauri
-└── README.md                # Ce fichier
+│   │   └── default.json               # Permissions (shell, http, updater, sql, store, notification)
+│   ├── migrations/
+│   │   └── 001_init_offline_cache.sql # Schéma SQLite local (cache + sync queue)
+│   ├── Cargo.toml                     # Dépendances Rust (tauri 2 + plugins)
+│   ├── build.rs                       # Script de build Tauri
+│   └── tauri.conf.json                # Config Tauri (fenêtre + auto-updater)
+└── README.md
 ```
 
-Le frontend est le **même** que l'app web (`apps/web-app/`) — pas de recodage.
-Tauri encapsule le Next.js dans une fenêtre native (WebView2 sur Windows).
+## Fonctionnalités
 
-## Flux utilisateur
+### ✅ Auto-update automatique
+- L'app vérifie les mises à jour au démarrage (endpoint `https://releases.academiahelm.com/desktop/...`)
+- Si une mise à jour est disponible → notification native + badge dans le header web (promoteur uniquement)
+- Installation en un clic (mode `passive` sur Windows)
 
-1. **Premier lancement** : l'utilisateur voit la page `/desktop` qui affiche un sélecteur d'école
-2. L'utilisateur recherche son école (par nom, ville, pays)
-3. Il sélectionne son école → sauvegardée dans `localStorage`
-4. Redirection automatique vers la page de connexion de l'école (`/app?tenant={slug}`)
-5. L'utilisateur se connecte avec ses identifiants existants
-6. **Lancements suivants** : redirection automatique vers la dernière école utilisée
+### ✅ Base de données locale SQLite (offline-first)
+- **SQLite** embarqué dans l'app (via `tauri-plugin-sql`)
+- Cache local pour toutes les entités (élèves, classes, finances, bulletins, cahier journal)
+- **File d'attente de synchronisation** (`pending_sync_queue`) pour les écritures offline
+- Sync automatique avec **Neon PostgreSQL** (via API NestJS) quand la connexion est rétablie
 
-### Prérequis
-- L'école doit déjà avoir un compte sur la version web (academiahelm.com)
-- L'utilisateur doit déjà avoir ses identifiants (créés par l'administration)
+### ✅ URL distante (pas de rebuild à chaque fois)
+- L'app desktop charge `https://app.academiahelm.com/desktop` (URL distante)
+- **AUCUN rebuild Tauri nécessaire** quand le web est mis à jour
+- L'utilisateur voit toujours la dernière version du web
+- Le binaire Tauri (.exe) ne change QUE pour les mises à jour natives (Rust, plugins, config)
+
+## Flux de synchronisation SQLite ↔ Neon
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              APP DESKTOP (Tauri + WebView2)                  │
+│                                                              │
+│   Frontend Next.js ←→ Tauri SQL Plugin ←→ SQLite local       │
+│                          │                  │                │
+│                          │  Cache tables    │  Sync Queue    │
+│                          │  (read-only)     │  (write        │
+│                          │                  │   pending)     │
+│                          ▼                  ▼                │
+│                    ┌──────────────────────────────┐          │
+│                    │  offline-sync.ts (frontend)  │          │
+│                    │  - readFromCache()           │          │
+│                    │  - writeToCache()            │          │
+│                    │  - enqueueSync()             │          │
+│                    │  - syncPendingQueue()        │          │
+│                    └──────────────┬───────────────┘          │
+│                                   │ (quand online)           │
+└───────────────────────────────────┼──────────────────────────┘
+                                    ▼
+┌─────────────────────────────────────────────────────────────┐
+│              API NestJS (api.academiahelm.com)                │
+│                          │                                   │
+│                          ▼                                   │
+│                 Neon PostgreSQL                              │
+│                 (source de vérité)                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Stratégie
+1. **ONLINE** : lectures/écritures → API NestJS → Neon. Les résultats sont mis en cache dans SQLite.
+2. **OFFLINE** : lectures depuis SQLite. Écritures dans `pending_sync_queue`.
+3. **RECONNEXION** : push de la queue vers l'API → confirmation → clear queue.
+
+⚠️ **SQLite n'est JAMAIS la source de vérité** — c'est un cache. Neon PostgreSQL reste la source unique.
+
+## Configuration auto-update
+
+### 1. Générer la paire de clés Tauri
+```bash
+cd apps/desktop/src-tauri
+cargo tauri signer generate -w ~/.tauri/academia-helm.key
+```
+→ Sauvegarder la clé privée dans GitHub Secrets : `TAURI_UPDATER_PRIVATE_KEY`
+→ Sauvegarder le mot de passe : `TAURI_UPDATER_KEY_PASSWORD`
+→ Copier la clé publique dans `tauri.conf.json` → `plugins.updater.pubkey`
+
+### 2. Héberger les releases
+Les releases sont publiées sur `https://releases.academiahelm.com/desktop/` :
+```
+releases.academiahelm.com/
+├── desktop/
+│   ├── windows-x86_64/
+│   │   ├── academia-helm_1.0.0.msi.zip
+│   │   ├── academia-helm_1.0.0.msi.zip.sig
+│   │   └── latest.json
+│   ├── darwin-aarch64/
+│   │   ├── academia-helm_1.0.0.app.tar.gz
+│   │   └── academia-helm_1.0.0.app.tar.gz.sig
+│   └── ...
+```
+
+### 3. Badge web pour le promoteur
+Le composant `DesktopUpdateBadge` (dans `apps/web-app/src/components/header/`) :
+- Visible **uniquement** par le rôle `PROMOTER`
+- Affiché dans le `PilotageTopBar`
+- Bouton "Desktop" + badge "!" si mise à jour disponible
+- Modal de téléchargement avec avantages de l'app desktop
 
 ## Prérequis pour le build
 
 ### Windows
-1. **Microsoft Visual Studio C++ Build Tools** : https://visualstudio.microsoft.com/visual-cpp-build-tools/
-2. **WebView2** (préinstallé sur Windows 11, sinon) : https://developer.microsoft.com/microsoft-edge/webview2/
-3. **Rust** : https://rustup.rs/
-   ```powershell
-   winget install Rustlang.Rustup
-   ```
+1. **Microsoft Visual Studio C++ Build Tools**
+2. **WebView2** (préinstallé sur Windows 11)
+3. **Rust** : `winget install Rustlang.Rustup`
 
 ### macOS
 ```bash
@@ -50,127 +123,32 @@ xcode-select --install
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-### Linux
-```bash
-sudo apt update
-sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-## Installation
+## Build
 
 ```bash
-# À la racine du monorepo
 cd apps/desktop
-npm install  # ou: cargo install tauri-cli --version "^2.0.0"
+cargo tauri build
 
-# Mode développement (hot reload)
-npm run tauri dev
-# ou: cargo tauri dev
-
-# Build production (.exe / .msi sur Windows)
-npm run tauri build
-# ou: cargo tauri build
+# En production avec auto-update signé :
+TAURI_PRIVATE_KEY=~/.tauri/academia-helm.key \
+TAURI_KEY_PASSWORD=your_password \
+cargo tauri build
 ```
 
-## Build pour Windows depuis n'importe quel OS
+→ Output : `src-tauri/target/release/bundle/` (.msi, .exe, .dmg)
 
-### Option A — Build local sur Windows
-1. Cloner le repo sur une machine Windows
-2. Installer les prérequis (voir ci-dessus)
-3. `cd apps/desktop && npm run tauri build`
-4. L'exécutable est dans `src-tauri/target/release/bundle/`
+## GitHub Actions CI
 
-### Option B — GitHub Actions CI (recommandé)
-Le workflow `.github/workflows/build-desktop.yml` build automatiquement
-l'app desktop sur push de tags `v*`.
-
-### Option C — Cross-compilation depuis Linux
-```bash
-# Installer la cible Windows
-rustup target add x86_64-pc-windows-gnu
-# Build (limité — WebView2 nécessite Windows pour le runtime)
-cargo build --target x86_64-pc-windows-gnu
-```
-⚠️ La cross-compilation Tauri vers Windows est limitée. Préférez GitHub Actions ou un build natif Windows.
-
-## Configuration
-
-### Variables d'environnement (frontend)
-
-Le frontend Next.js doit être buildé en mode statique pour Tauri.
-Ajouter dans `apps/web-app/next.config.ts` :
-
-```ts
-// Pour le build statique Tauri
-output: 'export',  // Active quand NEXT_PUBLIC_TAURI=true
-```
-
-Ou utiliser le mode `devUrl` (recommandé) qui charge depuis localhost:3000
-en développement et depuis les fichiers statiques en production.
-
-### URL de l'API backend
-
-Le frontend utilise les variables d'environnement existantes :
-- `NEXT_PUBLIC_API_URL` ou `NEXT_PUBLIC_APP_URL` pour l'API NestJS
-- En production desktop, l'API est sur `https://api.academiahelm.com`
-
-## Personnalisation
-
-### Icônes
-Remplacer les fichiers dans `src-tauri/icons/` :
-- `icon.ico` (Windows)
-- `icon.icns` (macOS)
-- `32x32.png`, `128x128.png`, `128x128@2x.png`
-
-Générer depuis un PNG :
-```bash
-cd src-tauri
-cargo tauri icon path/to/icon.png
-```
-
-### Titre de la fenêtre
-Dans `tauri.conf.json` → `app.windows[0].title`
-
-### Taille de la fenêtre
-Dans `tauri.conf.json` → `app.windows[0].width` / `height` / `minWidth` / `minHeight`
-
-## Distribution
-
-### Windows
-- `.msi` (Windows Installer) — installation silencieuse possible
-- `.exe` (NSIS) — installateur avec UI
-- Code signing recommandé (certificat EV ou OV)
-
-### macOS
-- `.dmg` (disk image)
-- Code signing obligatoire (Apple Developer ID)
-- Notarization requis pour distribution
-
-### Linux
-- `.deb` (Debian/Ubuntu)
-- `.AppImage` (universel)
-- `.rpm` (Fedora/RHEL)
+Le workflow `.github/workflows/build-desktop.yml` :
+- Trigger : push de tag `v*`
+- Build Windows (.msi + .exe) + macOS (.dmg)
+- Génère `latest.json` pour l'auto-updater
+- Crée une GitHub Release avec les artifacts
 
 ## Sécurité
 
-- **CSP** : configuré dans `tauri.conf.json` → `app.security.csp`
-- **Permissions** : `capabilities/default.json` limite les accès natifs
-- **Pas d'accès système** : l'app n'accède pas aux fichiers locaux, caméra, micro
-- **HTTPS only** : toutes les connexions API sont en HTTPS
-
-## Troubleshooting
-
-### "WebView2 not found" sur Windows
-Installer WebView2 Runtime : https://developer.microsoft.com/microsoft-edge/webview2/
-
-### Écran blanc au lancement
-- Vérifier que le frontend est buildé : `cd ../web-app && npm run build`
-- Vérifier `tauri.conf.json` → `build.frontendDist` pointe vers `../out`
-
-### Erreur de compilation Rust
-```bash
-rustup update
-cargo clean
-cargo build
-```
+- **CSP** strict dans `tauri.conf.json`
+- **Permissions** limitées dans `capabilities/default.json`
+- **Pas d'accès système** (fichiers, caméra, micro)
+- **HTTPS only** pour toutes les connexions API
+- **SQLite** stocké dans le répertoire app data de l'utilisateur (sandboxé)

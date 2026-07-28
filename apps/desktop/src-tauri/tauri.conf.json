@@ -50,7 +50,19 @@
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
       }
-    }
+    },
+    "createUpdaterArtifacts": true
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://releases.academiahelm.com/desktop/{{target}}/{{arch}}/{{current_version}}"
+      ],
+      "pubkey": "PUBKEY_PLACEHOLDER_REPLACE_WITH_GENERATED_KEY",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
 }

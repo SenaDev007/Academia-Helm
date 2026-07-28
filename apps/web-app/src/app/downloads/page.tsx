@@ -32,7 +32,7 @@
 import { useState, useEffect } from "react";
 import {
   Download, CheckCircle2, AlertCircle, ChevronRight,
-  Calendar, Tag, Shield, Zap, WifiOff, RefreshCw, FileCode,
+  Calendar, Tag, Shield, Zap, WifiOff, RefreshCw, FileCode, Loader2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
@@ -108,6 +108,35 @@ const DEFAULT_RELEASE: Release = {
     },
   ],
 };
+
+// ── Hook: vérifie si un fichier de téléchargement existe (HEAD request) ──
+// Retourne true si le fichier est disponible, false si 404
+function useFileAvailability(url: string): { available: boolean; checking: boolean } {
+  const [available, setAvailable] = useState(false);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function check() {
+      try {
+        const response = await fetch(url, { method: "HEAD", redirect: "follow" });
+        if (!cancelled) {
+          setAvailable(response.ok);
+          setChecking(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setAvailable(false);
+          setChecking(false);
+        }
+      }
+    }
+    check();
+    return () => { cancelled = true; };
+  }, [url]);
+
+  return { available, checking };
+}
 
 // ── Hook: récupère la dernière release depuis releases.academiahelm.com ──
 
@@ -546,25 +575,11 @@ function DesktopDownloads({
                   assets.map((asset) => {
                     const fileFormat = detectFileFormat(asset.name);
                     return (
-                    <a
+                    <DownloadLink
                       key={asset.name}
-                      href={asset.downloadUrl}
-                      className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
-                    >
-                      <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-                        {/* Icône du format de fichier (.msi, .exe, .dmg, .apk) */}
-                        {fileFormat && (
-                          <FileFormatIcon format={fileFormat} size={32} className="hidden sm:flex" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs sm:text-sm font-semibold text-[#0b2f73] truncate">
-                            {asset.name}
-                          </p>
-                          <p className="text-[10px] sm:text-xs text-slate-500">{asset.size}</p>
-                        </div>
-                      </div>
-                      <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 group-hover:text-[#f5b335] group-hover:translate-y-0.5 transition-all flex-shrink-0" />
-                    </a>
+                      asset={asset}
+                      fileFormat={fileFormat}
+                    />
                     );
                   })
                 )}
@@ -637,19 +652,14 @@ function MobileDownloads({
             </a>
 
             {/* APK direct */}
-            <a
-              href={release.assets.find((a) => a.platform === "android")?.downloadUrl || "#"}
-              className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
-            >
-              <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-                <FileFormatIcon format="apk" size={32} className="hidden sm:flex" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs sm:text-sm font-semibold text-[#0b2f73]">Télécharger l'APK</p>
-                  <p className="text-[10px] sm:text-xs text-slate-500">~25 MB — Installation manuelle</p>
-                </div>
-              </div>
-              <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 group-hover:text-[#f5b335] transition-all flex-shrink-0" />
-            </a>
+            {/* APK direct — avec vérification de disponibilité */}
+            {(() => {
+              const apkAsset = release.assets.find((a) => a.platform === "android");
+              if (!apkAsset) return null;
+              return (
+                <DownloadLink asset={apkAsset} fileFormat="apk" />
+              );
+            })()}
           </div>
         </div>
 
@@ -708,6 +718,64 @@ function MobileDownloads({
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Composant: Lien de téléchargement avec vérification de disponibilité ──
+
+function DownloadLink({
+  asset,
+  fileFormat,
+}: {
+  asset: ReleaseAsset;
+  fileFormat: ReturnType<typeof detectFileFormat>;
+}) {
+  const { available, checking } = useFileAvailability(asset.downloadUrl);
+
+  if (checking) {
+    return (
+      <div className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200">
+        <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+          {fileFormat && <FileFormatIcon format={fileFormat} size={32} className="hidden sm:flex" />}
+          <div className="flex-1 min-w-0">
+            <p className="text-xs sm:text-sm font-semibold text-slate-400 truncate">{asset.name}</p>
+            <p className="text-[10px] sm:text-xs text-slate-400">Vérification...</p>
+          </div>
+        </div>
+        <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-300 animate-spin flex-shrink-0" />
+      </div>
+    );
+  }
+
+  if (!available) {
+    return (
+      <div className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200 opacity-70">
+        <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+          {fileFormat && <FileFormatIcon format={fileFormat} size={32} className="hidden sm:flex" />}
+          <div className="flex-1 min-w-0">
+            <p className="text-xs sm:text-sm font-semibold text-slate-500 truncate">{asset.name}</p>
+            <p className="text-[10px] sm:text-xs text-amber-600 font-semibold">Bientôt disponible</p>
+          </div>
+        </div>
+        <AlertCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400 flex-shrink-0" />
+      </div>
+    );
+  }
+
+  return (
+    <a
+      href={asset.downloadUrl}
+      className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
+    >
+      <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+        {fileFormat && <FileFormatIcon format={fileFormat} size={32} className="hidden sm:flex" />}
+        <div className="flex-1 min-w-0">
+          <p className="text-xs sm:text-sm font-semibold text-[#0b2f73] truncate">{asset.name}</p>
+          <p className="text-[10px] sm:text-xs text-slate-500">{asset.size}</p>
+        </div>
+      </div>
+      <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 group-hover:text-[#f5b335] group-hover:translate-y-0.5 transition-all flex-shrink-0" />
+    </a>
   );
 }
 

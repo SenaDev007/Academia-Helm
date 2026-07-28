@@ -2833,3 +2833,98 @@ Stage Summary:
 - ✅ Mobile: infrastructure offline déjà complète (Hive + outbox pattern, 1040 lignes)
 - ✅ Palette couleurs identique web/desktop/mobile (Navy/Blue/Gold)
 - ✅ GitHub Actions: build + signature + latest.json pour auto-updater
+
+---
+Task ID: transparent-offline-sync-neon-to-local
+Agent: main
+Task: Synchronisation descendante transparente Neon → local (desktop + mobile) — sans modifier le CRUD existant
+
+Work Log:
+1. **Backend NestJS — Module sync (READ-ONLY, non intrusif)**:
+   - apps/api-server/src/sync/sync.service.ts (NEW):
+     * Méthode getDelta(tenantId, since) → SELECT WHERE updatedAt > since
+     * Couvre 27 tables: students, enrollments, guardians, admissions, classes,
+       schoolLevels, subjects, schedules, cahierJournal, pedagogicalFiches,
+       homeworkEntries, pedagogicalTaskStudents, studentAccounts, financeTransactions,
+       feeStructures, feeArrears, feeInstallments, recoveryReminders, financeExpenses,
+       evaluations, grades, reportCards, reportCardItems, quarters,
+       attendanceRecords, attendanceRegisters
+     * Utilise Prisma ORM (pas de $queryRawUnsafe) — propre et typé
+     * Retourne { syncToken, entities: {...}, stats: { totalEntities } }
+     * ⚠️ READ-ONLY — aucune modification du CRUD existant
+   - apps/api-server/src/sync/sync.controller.ts (NEW):
+     * GET /api/sync/delta?since=ISO_DATE → retourne les changements
+     * GET /api/sync/token → retourne le syncToken courant
+     * @UseGuards(JwtAuthGuard) — authentifié
+   - apps/api-server/src/sync/sync.module.ts (NEW)
+   - app.module.ts: SyncModule enregistré (import + providers)
+
+2. **BFF Routes Next.js**:
+   - apps/web-app/src/app/api/sync/delta/route.ts (NEW):
+     * Proxy vers backend /api/sync/delta
+     * Forward le JWT via getProxyAuthHeaders
+   - apps/web-app/src/app/api/sync/token/route.ts (NEW)
+
+3. **Frontend — Sync Worker (60s + bouton manuel)**:
+   - apps/web-app/src/lib/offline/sync-worker.ts (NEW, ~220 lignes):
+     * startSyncWorker() → démarre le worker au chargement de l'app
+     * Première sync immédiate (2s après démarrage)
+     * Sync périodique toutes les 60 secondes
+     * Sync au retour de connexion (event 'online')
+     * performSync() → appelle /api/sync/delta → updateLocalCache()
+     * manualSync() → déclenche une sync immédiate (bouton)
+     * onSyncStatusChange() → abonnement pour le bouton
+     * updateLocalCache() → INSERT OR REPLACE dans SQLite pour chaque entité
+     * Gestion du syncToken (last_sync_token dans sync_meta)
+   - apps/web-app/src/hooks/useSyncWorker.ts (NEW):
+     * Hook useSyncWorker() → démarre/arrête le worker dans PilotageLayout
+     * No-op sur le web (isDesktopApp() check)
+   - apps/web-app/src/components/header/SyncButton.tsx (NEW):
+     * Bouton "Synchroniser" dans le header
+     * Visible uniquement dans l'app desktop (Tauri)
+     * États: Idle (vert) / Syncing (spinner) / Offline (orange) / Error (rouge)
+     * Affiche le temps écoulé depuis la dernière sync
+     * Clic → manualSync() + toast de confirmation
+   - PilotageTopBar.tsx: import + intégration du SyncButton
+   - PilotageLayout.tsx: useSyncWorker() pour démarrer le worker
+
+4. **Migration SQLite étendue**:
+   - apps/desktop/src-tauri/migrations/001_init_offline_cache.sql:
+     * AVANT: 6 tables de cache (students, classes, student_accounts, transactions, report_cards, cahier_journal)
+     * APRÈS: 27 tables de cache couvrant TOUS les modules:
+       - Module Élève: students, student_enrollments, guardians, student_guardians, admissions
+       - Module Pédagogie: classes, school_levels, subjects, schedules, cahier_journal,
+         pedagogical_fiches, homework_entries, pedagogical_task_students
+       - Module Finance: student_accounts, transactions, fee_structures, fee_arrears,
+         fee_installments, recovery_reminders, finance_expenses
+       - Module Évaluations: evaluations, grades, report_cards, report_card_items, quarters
+       - Module Présences: attendance_records, attendance_registers
+     * pending_sync_queue conservé (écritures offline)
+     * sync_meta: ajout de last_sync_token
+     * db_version bumpé à 2
+
+5. **Mobile Flutter — SyncDeltaService**:
+   - apps/mobile-app/lib/core/sync/sync_delta_service.dart (NEW, ~220 lignes):
+     * Singleton SyncDeltaService.instance
+     * start() → démarre le worker (60s + au retour de connexion)
+     * performSync() → GET /api/sync/delta → updateLocalCache (Hive)
+     * manualSync() → bouton "Synchroniser"
+     * Mapping entityType → boxName Hive (27 types)
+     * Stockage du syncToken dans FlutterSecureStorage
+   - Le offline_service.dart existant (1040 lignes) gère déjà:
+     * Outbox pattern (écritures offline → queue)
+     * Sync ascendante (queue → API quand online)
+     * 30+ types d'entités
+   - Les deux services sont complémentaires:
+     * sync_delta_service → sync DESCENDANTE (Neon → Hive, read-only)
+     * offline_service → sync ASCENDANTE (Hive queue → Neon, écritures offline)
+
+Stage Summary:
+- ✅ Endpoint /api/sync/delta READ-ONLY créé (27 tables, Prisma ORM)
+- ✅ AUCUNE modification du CRUD existant — le sync module est isolé
+- ✅ Sync worker 60s + bouton "Synchroniser" dans le header
+- ✅ Migration SQLite étendue (27 tables de cache)
+- ✅ Sync descendante transparente: Neon alimente le cache local automatiquement
+- ✅ Sync ascendante: file d'attente pour écritures offline (déjà en place)
+- ✅ Mobile: SyncDeltaService créé (consomme /api/sync/delta)
+- ✅ Stratégie respectée: Neon = source de vérité, local = cache miroir

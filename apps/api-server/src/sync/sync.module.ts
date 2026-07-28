@@ -1,28 +1,12 @@
 import { Module } from '@nestjs/common';
-import { AuthModule } from '../auth/auth.module';
-import { SyncService } from './sync.service';
-import { SchemaValidatorService } from './schema-validator.service';
 import { SyncController } from './sync.controller';
-import { PrismaService } from '../database/prisma.service';
-import { OfflineSyncService } from './services/offline-sync.service';
-import { ConflictDetectionService } from './services/conflict-detection.service';
+import { SyncService } from './sync.service';
+import { DatabaseModule } from '../database/database.module';
 
 @Module({
-  imports: [AuthModule],
-  providers: [
-    SyncService,
-    SchemaValidatorService,
-    PrismaService,
-    OfflineSyncService,
-    ConflictDetectionService,
-  ],
+  imports: [DatabaseModule],
   controllers: [SyncController],
-  exports: [
-    SyncService,
-    SchemaValidatorService,
-    OfflineSyncService,
-    ConflictDetectionService,
-  ],
+  providers: [SyncService],
+  exports: [SyncService],
 })
 export class SyncModule {}
-

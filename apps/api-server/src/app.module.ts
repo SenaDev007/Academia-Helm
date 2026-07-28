@@ -269,7 +269,7 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     ScolariteModule,
     FinancesModule,
     ParentPortalModule,
-    
+
     // Synthesis module (Module général de synthèse - Lecture seule)
     SynthesisModule,
     AccessRequestsModule,

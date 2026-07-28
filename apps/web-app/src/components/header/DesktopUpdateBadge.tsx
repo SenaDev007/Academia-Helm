@@ -76,10 +76,11 @@ export function DesktopUpdateBadge({
     latestVersion !== currentDesktopVersion;
 
   const handleDownload = () => {
-    const url = downloadUrl || "https://releases.academiahelm.com/desktop/latest";
+    // Rediriger vers la page /downloads (page publique moderne)
+    const url = downloadUrl || "/downloads";
     window.open(url, "_blank");
     toast.success("Téléchargement", {
-      description: "L'installateur desktop va être téléchargé.",
+      description: "Redirection vers la page de téléchargement...",
     });
   };
 

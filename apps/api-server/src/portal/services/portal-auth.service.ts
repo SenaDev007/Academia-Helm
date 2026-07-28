@@ -575,6 +575,20 @@ export class PortalAuthService {
 
   /**
    * Étape commune finale : créer la session, générer le JWT, mettre à jour lastLogin.
+   *
+   * ⚠️ IMPORTANT — Affichage du nom du parent :
+   * On utilise guardian.firstName / guardian.lastName (le vrai nom du parent
+   * tel qu'enregistré lors de l'inscription de l'enfant) et NON user.firstName /
+   * user.lastName (qui peut être le nom d'un enseignant si l'utilisateur est
+   * à la fois enseignant et parent, et que son compte User a été créé pour
+   * l'enseignant avec le même email).
+   *
+   * Cas concret : M. Saliou Akpaki est enseignant ET parent d'élève.
+   * Son compte User (role=TEACHER) a email=saliou@example.com.
+   * Son Guardian (parent de l'élève) a aussi email=saliou@example.com.
+   * Quand il se connecte via le portail PARENT, on doit afficher son nom
+   * de PARENT (Guardian), pas son nom d'enseignant (User).
+   * → On override user.firstName/lastName avec guardian.firstName/lastName.
    */
   private async finalizeParentLogin(
     user: any,
@@ -601,12 +615,21 @@ export class PortalAuthService {
       data: { lastLogin: new Date() },
     });
 
+    // ⭐ Override du nom : utiliser le nom du Guardian (parent) et non du User
+    // (qui peut être un enseignant partageant le même email).
+    // Si le Guardian n'a pas de firstName/lastName, on garde le nom du User.
+    const displayName = {
+      firstName: guardian.firstName || user.firstName || '',
+      lastName: guardian.lastName || user.lastName || '',
+    };
+
     return {
       user: {
         id: user.id,
         email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        // ⭐ Nom du parent (Guardian) prioritaire sur le nom du User
+        firstName: displayName.firstName,
+        lastName: displayName.lastName,
         role: user.role,
         tenantId: user.tenantId,
       },
@@ -614,6 +637,9 @@ export class PortalAuthService {
         id: guardian.id,
         phone: guardian.phone,
         email: guardian.email,
+        // Inclure aussi le nom du guardian pour le frontend
+        firstName: guardian.firstName || '',
+        lastName: guardian.lastName || '',
       },
       token,
       sessionId: session.id,

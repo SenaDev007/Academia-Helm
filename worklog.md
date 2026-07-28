@@ -2585,3 +2585,75 @@ Stage Summary:
   - Variable NVIDIA_API_KEY déjà configurée sur Railway (api-server) ✅
   - Vérifier que NVIDIA_API_KEY est aussi configurée sur Vercel (web-app) pour les routes BFF
   - Optionnel: supprimer les anciennes variables OPENROUTER_* si plus utilisées
+
+---
+Task ID: delete-voice-migrate-websearch-fix-parent-name
+Agent: main
+Task: 3 actions — (1) Supprimer Voice Service TTS/ASR, (2) Migrer Web Search vers DuckDuckGo HTTP, (3) Corriger le nom du parent qui affichait le nom de l'enseignant
+
+Work Log:
+
+1. **Suppression Voice Service (SARA TTS/ASR)**:
+   - Fichiers supprimés:
+     * apps/api-server/src/sara/voice.service.ts (322 lignes — TTS + ASR via z-ai-web-dev-sdk)
+     * apps/web-app/src/components/ai/voice/ (3 fichiers: VoiceButton.tsx, VoiceMode.tsx, index.ts)
+     * apps/web-app/src/hooks/useVoiceRecorder.ts (359 lignes)
+     * apps/web-app/src/hooks/useVoicePlayback.ts (217 lignes)
+   - Fichiers modifiés:
+     * apps/api-server/src/sara/sara.module.ts: retiré import VoiceService + des providers/exports
+     * apps/api-server/src/sara/sara.controller.ts: retiré import VoiceService + injection +
+       supprimé 3 endpoints (POST /sara/voice/transcribe, /sara/voice/speak, /sara/voice/chat)
+       → fichier réduit de 449 à 253 lignes
+     * apps/web-app/src/lib/api/sara.ts: supprimé types VoiceTranscribeResponse,
+       VoiceSpeakResponse, VoiceChatResponse + 3 méthodes API (voiceTranscribe, voiceSpeak,
+       voiceChat) → fichier réduit de 314 à 221 lignes
+   - ⚠️ Non touché: apps/api-server/src/communication/services/voice.service.ts (Twilio OTP —
+     totalement différent, à conserver)
+
+2. **Migration Web Search vers DuckDuckGo HTTP**:
+   - apps/api-server/src/common/services/web-search.service.ts REECRIT:
+     * AVANT: execFile('z-ai', ['function', '--name', 'web_search', '--args', ...])
+       → nécessitait le package z-ai-web-dev-sdk installé globalement
+     * APRES: fetch() natif vers https://lite.duckduckgo.com/lite/?q=...
+       → gratuit, sans clé API, sans dépendance SDK
+     * Parsing HTML DuckDuckGo Lite (regex pour result-link + result-snippet)
+     * Méthodes conservées: search(query, num) + searchForPrompt(query, num)
+     * Interface WebSearchResult conservée (champs identiques)
+   - apps/api-server/src/ai/tools/tool-definitions-web-search.ts REECRIT:
+     * AVANT: fonction executeWebSearch() dupliquée (appel CLI z-ai)
+     * APRES: factory createWebSearchTool(webSearchService) — injection propre
+     * Version bumpée à 2.0.0
+   - apps/api-server/src/ai/ai.module.ts:
+     * Import createWebSearchTool (au lieu de webSearchTool)
+     * Import WebSearchService (depuis common/services)
+     * Injection dans le constructor
+     * this.toolRegistry.register(createWebSearchTool(this.webSearchService))
+   - Le function calling NVIDIA GLM-5.2 décide autonomously quand appeler web_search
+     → le backend exécute la recherche via WebSearchService (DuckDuckGo)
+   - apps/api-server/package.json: retiré "z-ai-web-dev-sdk": "^0.0.18"
+   - ✅ Plus AUCUNE référence à z-ai-web-dev-sdk dans le codebase
+
+3. **Correction du nom du parent (affichait le nom de l'enseignant)**:
+   - Problème: un utilisateur peut être à la fois enseignant ET parent d'élève.
+     Son compte User (role=TEACHER) a email=X. Son Guardian (parent de l'élève)
+     a aussi email=X. Quand il se connecte via le portail PARENT, le système
+     trouvait le User par email → affichait le nom de l'enseignant au lieu du
+     nom du parent.
+   - Fix dans apps/api-server/src/portal/services/portal-auth.service.ts:
+     * Méthode finalizeParentLogin(): override user.firstName/lastName avec
+       guardian.firstName/lastName (le vrai nom du parent)
+     * Si le Guardian n'a pas de firstName/lastName, fallback sur user.firstName/lastName
+     * Ajout de guardian.firstName/lastName dans la réponse (pour le frontend)
+   - Cas concret résolu: M. Saliou Akpaki (enseignant) se connecte via portail
+     PARENT → le portail affiche maintenant le nom du Guardian (parent) et non
+     le nom de l'enseignant (User)
+   - La route BFF /api/portal/auth/parent/route.ts propage automatiquement
+     le nom corrigé (elle lit data.user.firstName/lastName qui vient du backend)
+
+Stage Summary:
+- ✅ Voice Service TTS/ASR complètement supprimé (backend + frontend)
+- ✅ Web Search migré de z-ai CLI vers DuckDuckGo HTTP (gratuit, sans SDK)
+- ✅ z-ai-web-dev-sdk retiré du package.json (plus aucune dépendance SDK ZAI)
+- ✅ Function calling NVIDIA GLM-5.2 reste opérationnel pour web_search
+- ✅ Nom du parent corrigé: affiche le nom du Guardian (pas de l'enseignant)
+- ✅ TypeScript compile sans erreur (web-app)

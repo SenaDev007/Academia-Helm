@@ -41,7 +41,8 @@ import {
   createSettingTools,
 } from './tools/tool-definitions-extended';
 import { createSaraProductTools } from './tools/tool-definitions-sara';
-import { webSearchTool } from './tools/tool-definitions-web-search';
+import { createWebSearchTool } from './tools/tool-definitions-web-search';
+import { WebSearchService } from '../common/services/web-search.service';
 import { AIController } from './ai.controller';
 
 @Module({
@@ -54,6 +55,7 @@ export class AIModule implements OnModuleInit {
   constructor(
     private readonly toolRegistry: ToolRegistry,
     private readonly prisma: PrismaService,
+    private readonly webSearchService: WebSearchService,
   ) {}
 
   /**
@@ -99,7 +101,8 @@ export class AIModule implements OnModuleInit {
     this.toolRegistry.registerMany(createSaraProductTools());
 
     // ─── Web Search Tool (SARA + ORION) ───
-    // Recherche Internet en temps réel via z-ai CLI
-    this.toolRegistry.register(webSearchTool);
+    // ⭐ Recherche Internet en temps réel via DuckDuckGo HTTP
+    // GLM-5.2 décide autonomously quand appeler cet outil via function calling
+    this.toolRegistry.register(createWebSearchTool(this.webSearchService));
   }
 }

@@ -1,8 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-
-const execFileAsync = promisify(execFile);
 
 /**
  * Résultat d'une recherche web
@@ -18,15 +14,23 @@ export interface WebSearchResult {
 
 /**
  * ============================================================================
- * WEB SEARCH SERVICE — Recherche Internet via z-ai CLI
+ * WEB SEARCH SERVICE — Recherche Internet via DuckDuckGo HTML
  * ============================================================================
  *
- * Utilise le CLI `z-ai` (SDK z-ai-web-dev-sdk) pour effectuer des recherches
- * web en temps réel. Permet à SARA d'enrichir ses réponses avec des données
- * du web (concurrents, tendances éducatives, actualités, etc.).
+ * ⭐ Migration depuis z-ai CLI vers une implémentation autonome.
  *
- * Le CLI est installé globalement : /usr/local/bin/z-ai
- * Commande : z-ai function --name "web_search" --args '{"query": "...", "num": N}'
+ * Utilise DuckDuckGo HTML (lite.duckduckgo.com) — gratuit, sans clé API,
+ * sans limite de taux restrictive. Le parsing HTML est simple et robuste.
+ *
+ * Ce service est utilisé par :
+ *   - SARA (enrichissement de prompt avant l'appel GLM-5.2)
+ *   - Le tool registry (function calling `web_search` — GLM-5.2 décide
+ *     autonomously quand appeler cet outil)
+ *
+ * L'ancienne implémentation utilisait `execFile('z-ai', ['function', ...])`
+ * qui nécessitait le package z-ai-web-dev-sdk. Désormais, c'est un simple
+ * fetch() HTTP — plus de dépendance SDK externe.
+ * ============================================================================
  */
 @Injectable()
 export class WebSearchService {
@@ -41,32 +45,116 @@ export class WebSearchService {
    */
   async search(query: string, num: number = 5): Promise<WebSearchResult[]> {
     try {
-      const args = JSON.stringify({ query, num: Math.min(num, 10) });
+      const maxResults = Math.min(num, 10);
+      this.logger.log(`Web search: "${query}" (max ${maxResults} results)`);
 
-      const { stdout, stderr } = await execFileAsync(
-        'z-ai',
-        ['function', '--name', 'web_search', '--args', args],
-        {
-          timeout: 15000, // 15 secondes max
-          maxBuffer: 1024 * 1024, // 1MB buffer
+      // ⭐ Utiliser DuckDuckGo HTML Lite (gratuit, pas de clé API, pas de JS)
+      const url = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Accept: 'text/html,application/xhtml+xml',
+          'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
         },
-      );
+        signal: AbortSignal.timeout(15000), // 15s timeout
+      });
 
-      // Le CLI affiche des lignes de log avant le JSON — on extrait le JSON
-      const jsonStart = stdout.indexOf('[');
-      if (jsonStart === -1) {
-        this.logger.warn('No JSON array found in web search output');
+      if (!response.ok) {
+        this.logger.warn(`Web search HTTP ${response.status} for "${query}"`);
         return [];
       }
 
-      const jsonStr = stdout.slice(jsonStart);
-      const results: WebSearchResult[] = JSON.parse(jsonStr);
+      const html = await response.text();
+      const results = this.parseDuckDuckGoLite(html, maxResults);
 
       this.logger.log(`Web search "${query}" → ${results.length} results`);
       return results;
     } catch (error: any) {
       this.logger.warn(`Web search failed for "${query}": ${error?.message}`);
       return [];
+    }
+  }
+
+  /**
+   * Parse le HTML de DuckDuckGo Lite pour extraire les résultats
+   */
+  private parseDuckDuckGoLite(html: string, maxResults: number): WebSearchResult[] {
+    const results: WebSearchResult[] = [];
+
+    try {
+      // DuckDuckGo Lite utilise un tableau simple avec des liens
+      // Pattern: <a href="URL" class="result-link">TITLE</a>
+      // Suivi d'un <td class="result-snippet">SNIPPET</td>
+
+      // Extraire tous les liens de résultats
+      const linkPattern =
+        /<a[^>]*href="([^"]+)"[^>]*class="result-link"[^>]*>(.*?)<\/a>/gis;
+      const snippetPattern =
+        /<td[^>]*class="result-snippet"[^>]*>(.*?)<\/td>/gis;
+
+      const links: { url: string; name: string }[] = [];
+      let match: RegExpExecArray | null;
+
+      while ((match = linkPattern.exec(html)) !== null) {
+        const url = match[1];
+        const name = this.stripHtml(match[2]).trim();
+        if (url && name && !url.startsWith('javascript:')) {
+          links.push({ url, name });
+        }
+      }
+
+      const snippets: string[] = [];
+      while ((match = snippetPattern.exec(html)) !== null) {
+        snippets.push(this.stripHtml(match[1]).trim());
+      }
+
+      // Combiner liens + snippets
+      for (let i = 0; i < Math.min(links.length, maxResults); i++) {
+        const link = links[i];
+        const snippet = snippets[i] || '';
+        const hostName = this.extractHostName(link.url);
+
+        results.push({
+          url: link.url,
+          name: link.name,
+          snippet: snippet.substring(0, 300), // Limiter la longueur du snippet
+          host_name: hostName,
+          rank: i + 1,
+          date: new Date().toISOString(),
+        });
+      }
+    } catch (error: any) {
+      this.logger.warn(`Failed to parse DuckDuckGo HTML: ${error?.message}`);
+    }
+
+    return results;
+  }
+
+  /**
+   * Retire les balises HTML d'une chaîne
+   */
+  private stripHtml(html: string): string {
+    return html
+      .replace(/<[^>]*>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&nbsp;/g, ' ')
+      .trim();
+  }
+
+  /**
+   * Extrait le nom d'hôte depuis une URL
+   */
+  private extractHostName(url: string): string {
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname.replace(/^www\./, '');
+    } catch {
+      return url.substring(0, 50);
     }
   }
 

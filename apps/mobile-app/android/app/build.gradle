@@ -24,12 +24,12 @@ if (flutterVersionName == null) {
 
 android {
     namespace "io.academiahelm.mobile"
-    compileSdk 34
+    compileSdk 35
 
     defaultConfig {
         applicationId "io.academiahelm.mobile"
         minSdk 24          // Android 7.0+ (supports 99%+ of devices)
-        targetSdk 34       // Android 14
+        targetSdk 35       // Android 15
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         multiDexEnabled true

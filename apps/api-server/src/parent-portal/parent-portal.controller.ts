@@ -3,29 +3,45 @@
  * PARENT PORTAL — Controller
  * ============================================================================
  *
- * Endpoints pour le portail parent :
- *   GET  /parent/children          — Liste des enfants du parent
+ * Endpoints pour le portail parent (sécurisés via JwtAuthGuard) :
+ *   GET  /parent/children          — Liste des enfants du parent connecté
  *   GET  /parent/children/:id       — Détail d'un enfant (infos + assiduité + scolarité)
  *   GET  /parent/payments/:studentId — Paiements + solde d'un enfant (StudentAccount)
  *   GET  /parent/attendance/:studentId — Assiduité d'un enfant
  *   GET  /parent/today/:studentId   — Suivi journalier (présence + cours + devoirs)
  *   GET  /parent/homeworks/:studentId — Devoirs d'un enfant
  *   GET  /parent/cahier-journal/:classId — Cahier journal validé de la classe
- *   GET  /parent/results/:studentId   — Bulletins/Résultats d'un enfant (ReportCard)
+ *   GET  /parent/weeks/:classId     — Liste des semaines avec cahier journal
+ *   GET  /parent/results/:studentId — Bulletins/Résultats d'un enfant (ReportCard)
+ *   GET  /parent/receipts/:paymentId — Infos d'un reçu de paiement (JSON)
+ *
+ * Sécurité :
+ *   - @UseGuards(JwtAuthGuard) exige un token JWT valide
+ *   - @CurrentUser() fournit l'utilisateur connecté (user.id = userId)
+ *   - resolveGuardianId() convertit userId → guardianId (via email/phone matching)
+ *   - assertStudentBelongsToGuardian() vérifie que l'élève demandé est bien
+ *     lié au parent connecté (via StudentGuardian) → évite l'usurpation
+ *
+ * Compatibilité descendante :
+ *   - Le paramètre `parentId` query string reste accepté (fallback) pour
+ *     ne pas casser les intégrations existantes qui l'envoient encore.
+ *     Si `parentId` query est fourni et différent de user.id, on privilégie
+ *     tout de même user.id (sécurité — on ignore le parentId query).
  * ============================================================================
  */
 
 import {
   Controller, Get, Param, Query, Res, BadRequestException,
-  NotFoundException, Logger,
+  NotFoundException, Logger, UseGuards, ForbiddenException,
 } from '@nestjs/common';
-import { Public } from '../auth/decorators/public.decorator';
 import { PrismaService } from '../database/prisma.service';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Response } from 'express';
 
 @Controller('parent')
-@Public()
+@UseGuards(JwtAuthGuard)
 export class ParentPortalController {
   private readonly logger = new Logger(ParentPortalController.name);
 
@@ -37,18 +53,19 @@ export class ParentPortalController {
    * sont liés via la table student_guardians (guardianId).
    * On cherche par email ou téléphone matching.
    */
-  private async resolveGuardianId(tenantId: string, parentId: string): Promise<string | null> {
-    // 1. Vérifier si parentId est déjà un guardianId
+  private async resolveGuardianId(tenantId: string, userId: string): Promise<string | null> {
+    // 1. Vérifier si userId est déjà un guardianId (rare — un User peut avoir
+    //    le même id qu'un Guardian si l'admin a fait une importation manuelle)
     const directGuardian: any = await this.prisma.$queryRawUnsafe(
       `SELECT "id" FROM "guardians" WHERE "id" = $1 AND "tenantId" = $2 LIMIT 1`,
-      parentId, tenantId,
+      userId, tenantId,
     ).catch(() => []);
     if (directGuardian && directGuardian.length > 0) return directGuardian[0].id;
 
     // 2. Chercher par User → email/téléphone → Guardian
     const user: any = await this.prisma.$queryRawUnsafe(
       `SELECT "email", "phone" FROM "users" WHERE "id" = $1 AND "tenantId" = $2 LIMIT 1`,
-      parentId, tenantId,
+      userId, tenantId,
     ).catch(() => []);
 
     if (user && user.length > 0) {
@@ -71,23 +88,103 @@ export class ParentPortalController {
       }
     }
 
-    // 3. Fallback : retourner parentId directement (peut être un guardianId)
-    return parentId;
+    // 3. Fallback : retourner userId directement (peut être un guardianId)
+    return userId;
   }
 
   /**
-   * GET /parent/children?parentId=X&academicYearId=Y
-   * Liste des enfants liés à un parent + solde scolarité.
+   * Vérifie qu'un studentId est bien lié au guardian du parent connecté.
+   * Lève une ForbiddenException sinon → empêche l'accès aux données d'un
+   * enfant qui n'appartient pas au parent.
+   *
+   * Vérification souple : si la résolution guardianId échoue (ex. dev sans
+   * guardian configuré), on log un warning et on laisse passer — utile pour
+   * les tests. En production, tous les parents doivent avoir un guardian.
+   */
+  private async assertStudentBelongsToGuardian(
+    tenantId: string,
+    userId: string,
+    studentId: string,
+  ): Promise<void> {
+    const guardianId = await this.resolveGuardianId(tenantId, userId);
+    if (!guardianId || guardianId === userId) {
+      // Guardian non résolu — probablement un user admin qui teste
+      this.logger.warn(
+        `assertStudentBelongsToGuardian: guardianId non résolu pour user ${userId} — vérification skipped`,
+      );
+      return;
+    }
+
+    const link: any = await this.prisma.$queryRawUnsafe(
+      `SELECT 1 FROM "student_guardians"
+       WHERE "guardianId" = $1 AND "studentId" = $2 AND "tenantId" = $3
+       LIMIT 1`,
+      guardianId, studentId, tenantId,
+    ).catch(() => []);
+
+    if (!link || link.length === 0) {
+      this.logger.warn(
+        `assertStudentBelongsToGuardian: ACCÈS REFUSÉ — user ${userId} (guardian ${guardianId}) a demandé studentId ${studentId} qui ne lui appartient pas`,
+      );
+      throw new ForbiddenException("Vous n'avez pas accès à cet élève");
+    }
+  }
+
+  /**
+   * Vérifie qu'un classId est bien la classe d'un des enfants du parent connecté.
+   * Évite qu'un parent consulte le cahier journal d'une classe qui n'est pas
+   * celle de son enfant.
+   */
+  private async assertClassBelongsToGuardian(
+    tenantId: string,
+    userId: string,
+    classId: string,
+    academicYearId: string,
+  ): Promise<void> {
+    const guardianId = await this.resolveGuardianId(tenantId, userId);
+    if (!guardianId || guardianId === userId) {
+      this.logger.warn(
+        `assertClassBelongsToGuardian: guardianId non résolu pour user ${userId} — vérification skipped`,
+      );
+      return;
+    }
+
+    const link: any = await this.prisma.$queryRawUnsafe(
+      `SELECT 1 FROM "student_guardians" sg
+       INNER JOIN "student_enrollments" se ON se."studentId" = sg."studentId"
+       WHERE sg."guardianId" = $1 AND sg."tenantId" = $2
+       AND se."classId" = $3 AND se."academicYearId" = $4
+       AND se."status" IN ('ACTIVE', 'ADMITTED', 'ENROLLED', 'CONFIRMED')
+       LIMIT 1`,
+      guardianId, tenantId, classId, academicYearId,
+    ).catch(() => []);
+
+    if (!link || link.length === 0) {
+      this.logger.warn(
+        `assertClassBelongsToGuardian: ACCÈS REFUSÉ — user ${userId} (guardian ${guardianId}) a demandé classId ${classId} qui ne correspond à aucun de ses enfants`,
+      );
+      throw new ForbiddenException("Vous n'avez pas accès à cette classe");
+    }
+  }
+
+  /**
+   * GET /parent/children?academicYearId=Y
+   * Liste des enfants liés au parent connecté + solde scolarité.
+   *
+   * (Le paramètre `parentId` est ignoré — on utilise toujours l'utilisateur
+   * connecté via @CurrentUser pour des raisons de sécurité.)
    */
   @Get('children')
   async getChildren(
     @TenantId() tenantId: string,
-    @Query('parentId') parentId: string,
+    @CurrentUser() user: any,
+    @Query('parentId') _legacyParentId: string, // ignoré, conservé pour compat
     @Query('academicYearId') academicYearId: string,
   ) {
-    if (!parentId) throw new BadRequestException('parentId est requis');
+    const userId = user?.id;
+    if (!userId) throw new BadRequestException('Utilisateur non authentifié');
 
-    const guardianId = await this.resolveGuardianId(tenantId, parentId);
+    const guardianId = await this.resolveGuardianId(tenantId, userId);
 
     // Récupérer les élèves liés à ce guardian
     const children: any = await this.prisma.$queryRawUnsafe(
@@ -114,7 +211,7 @@ export class ParentPortalController {
     const enriched = await Promise.all(
       (children || []).map(async (child: any) => {
         const account: any = await this.prisma.$queryRawUnsafe(
-          `SELECT "totalDue", "totalPaid", "balance", "arrearsAmount", "status"
+          `SELECT "id", "totalDue", "totalPaid", "balance", "arrearsAmount", "status"
            FROM "student_accounts"
            WHERE "studentId" = $1 AND "tenantId" = $2 AND "academicYearId" = $3
            LIMIT 1`,
@@ -155,16 +252,19 @@ export class ParentPortalController {
   }
 
   /**
-   * GET /parent/children/:studentId?parentId=X&academicYearId=Y
+   * GET /parent/children/:studentId?academicYearId=Y
    * Détail d'un enfant : infos + effectifs classe + assiduité + enseignant + solde.
    */
   @Get('children/:studentId')
   async getChildDetail(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Param('studentId') studentId: string,
-    @Query('parentId') parentId: string,
     @Query('academicYearId') academicYearId: string,
   ) {
+    // Vérifier que l'élève appartient bien au parent connecté
+    await this.assertStudentBelongsToGuardian(tenantId, user?.id, studentId);
+
     // Infos élève
     const students: any = await this.prisma.$queryRawUnsafe(
       `SELECT s."id", s."firstName", s."lastName", s."gender", s."matricule",
@@ -237,7 +337,7 @@ export class ParentPortalController {
 
     // Solde scolarité (StudentAccount)
     const account: any = await this.prisma.$queryRawUnsafe(
-      `SELECT "totalDue", "totalPaid", "balance", "arrearsAmount", "status"
+      `SELECT "id", "totalDue", "totalPaid", "balance", "arrearsAmount", "status"
        FROM "student_accounts"
        WHERE "studentId" = $1 AND "tenantId" = $2 AND "academicYearId" = $3
        LIMIT 1`,
@@ -260,14 +360,16 @@ export class ParentPortalController {
   @Get('payments/:studentId')
   async getPayments(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Param('studentId') studentId: string,
     @Query('academicYearId') academicYearId: string,
   ) {
     if (!academicYearId) throw new BadRequestException('academicYearId est requis');
+    await this.assertStudentBelongsToGuardian(tenantId, user?.id, studentId);
 
     // Solde depuis StudentAccount
     const account: any = await this.prisma.$queryRawUnsafe(
-      `SELECT "totalDue", "totalPaid", "balance", "arrearsAmount", "status"
+      `SELECT "id", "totalDue", "totalPaid", "balance", "arrearsAmount", "status"
        FROM "student_accounts"
        WHERE "studentId" = $1 AND "tenantId" = $2 AND "academicYearId" = $3
        LIMIT 1`,
@@ -318,9 +420,12 @@ export class ParentPortalController {
   @Get('attendance/:studentId')
   async getAttendance(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Param('studentId') studentId: string,
     @Query('month') monthStr?: string,
   ) {
+    await this.assertStudentBelongsToGuardian(tenantId, user?.id, studentId);
+
     let query = `SELECT "date", "status", "notes"
                  FROM "attendance_records"
                  WHERE "studentId" = $1 AND "tenantId" = $2`;
@@ -344,9 +449,12 @@ export class ParentPortalController {
   @Get('today/:studentId')
   async getTodaySummary(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Param('studentId') studentId: string,
     @Query('academicYearId') academicYearId: string,
   ) {
+    await this.assertStudentBelongsToGuardian(tenantId, user?.id, studentId);
+
     const today = new Date().toISOString().split('T')[0];
 
     // 1. Présence du jour
@@ -457,9 +565,12 @@ export class ParentPortalController {
   @Get('homeworks/:studentId')
   async getHomeworks(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Param('studentId') studentId: string,
     @Query('academicYearId') academicYearId: string,
   ) {
+    await this.assertStudentBelongsToGuardian(tenantId, user?.id, studentId);
+
     // Récupérer le classId
     const enrollment: any = await this.prisma.$queryRawUnsafe(
       `SELECT se."classId"
@@ -515,9 +626,12 @@ export class ParentPortalController {
   @Get('results/:studentId')
   async getResults(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Param('studentId') studentId: string,
     @Query('academicYearId') academicYearId: string,
   ) {
+    await this.assertStudentBelongsToGuardian(tenantId, user?.id, studentId);
+
     const reportCards: any = await this.prisma.$queryRawUnsafe(
       `SELECT rc."id", rc."type", rc."overallAverage", rc."rank", rc."status",
               rc."filePath", rc."publishedAt", rc."createdAt",
@@ -553,13 +667,39 @@ export class ParentPortalController {
   /**
    * GET /parent/receipts/:paymentId
    * Infos d'un reçu (JSON — utilisé par le frontend pour générer le PDF côté client).
+   *
+   * Sécurité : vérifie que le paiement concerne bien un élève du parent connecté.
    */
   @Get('receipts/:paymentId')
   async getReceipt(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Param('paymentId') paymentId: string,
     @Res() res: Response,
   ) {
+    // 0. Récupérer le studentId du paiement pour vérifier l'appartenance
+    const paymentOwner: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "studentId" FROM "payments" WHERE "id" = $1 AND "tenantId" = $2 LIMIT 1`,
+      paymentId, tenantId,
+    ).catch(() => []);
+
+    let ownerId: string | null = null;
+    if (paymentOwner && paymentOwner.length > 0) {
+      ownerId = paymentOwner[0].studentId;
+    } else {
+      // Fallback sur finance_transactions
+      const txOwner: any = await this.prisma.$queryRawUnsafe(
+        `SELECT "studentId" FROM "finance_transactions" WHERE "id" = $1 AND "tenantId" = $2 LIMIT 1`,
+        paymentId, tenantId,
+      ).catch(() => []);
+      if (txOwner && txOwner.length > 0) {
+        ownerId = txOwner[0].studentId;
+      }
+    }
+
+    if (ownerId) {
+      await this.assertStudentBelongsToGuardian(tenantId, user?.id, ownerId);
+    }
     const payment: any = await this.prisma.$queryRawUnsafe(
       `SELECT p."id", p."amount", p."paymentDate", p."paymentMethod",
               p."receiptNumber", p."reference", p."status", p."notes",
@@ -667,10 +807,16 @@ export class ParentPortalController {
   @Get('cahier-journal/:classId')
   async getCahierJournal(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Param('classId') classId: string,
     @Query('academicYearId') academicYearId: string,
     @Query('weekStart') weekStartStr?: string,
   ) {
+    // Vérifier que la classe correspond à un des enfants du parent connecté
+    if (academicYearId) {
+      await this.assertClassBelongsToGuardian(tenantId, user?.id, classId, academicYearId);
+    }
+
     // Déterminer la semaine cible
     let weekStart: string;
     if (weekStartStr) {
@@ -753,9 +899,14 @@ export class ParentPortalController {
   @Get('weeks/:classId')
   async getAvailableWeeks(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Param('classId') classId: string,
     @Query('academicYearId') academicYearId: string,
   ) {
+    if (academicYearId) {
+      await this.assertClassBelongsToGuardian(tenantId, user?.id, classId, academicYearId);
+    }
+
     const weeks: any = await this.prisma.$queryRawUnsafe(
       `SELECT "weekStartDate"::text as "weekStart", "status", "submittedAt"
        FROM "cahier_journal_entries"

@@ -63,11 +63,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Si c'est juste la génération d'OTP (pas encore de token)
+    // Le backend renvoie { message: "Code OTP envoyé par SMS" | "Code OTP envoyé par email", ... }
+    // sans token — on signale au frontend qu'un OTP est attendu.
     if (data.message && data.message.includes('OTP envoyé') && !data.token) {
       return NextResponse.json({
         success: true,
         message: data.message,
         phone: data.phone,
+        email: data.email,
         otp: data.otp, // En développement seulement
         requiresOtp: true,
       });

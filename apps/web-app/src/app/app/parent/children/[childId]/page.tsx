@@ -35,6 +35,7 @@ import {
   exportBulletinToPdf,
   type SchoolHeader,
 } from "@/lib/exports/parent-exports";
+import { openFedaPayCheckout } from "@/lib/parent/fedapay-checkout";
 
 type Tab = "today" | "payments" | "results" | "attendance";
 
@@ -434,6 +435,8 @@ function PaymentsTab({
   schoolHeader: SchoolHeader;
 }) {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [paying, setPaying] = useState(false);
+  const { academicYear } = useModuleContext();
 
   if (!paymentsData) {
     return (
@@ -445,6 +448,59 @@ function PaymentsTab({
   }
 
   const formatXOF = (amount: number) => new Intl.NumberFormat("fr-FR").format(amount) + " FCFA";
+
+  // ── Lancer le paiement FedaPay ──
+  // Récupère le studentAccountId depuis l'objet `child` (renvoyé par /parent/children).
+  // L'amount est le solde restant à payer.
+  const handlePayNow = async () => {
+    const studentAccountId = child?.account?.id;
+    if (!studentAccountId) {
+      toast.error("Compte élève introuvable", {
+        description: "Impossible de déterminer le compte à débiter. Contactez l'administration.",
+      });
+      return;
+    }
+    if (!academicYear?.id) {
+      toast.error("Année scolaire introuvable");
+      return;
+    }
+    if (paymentsData.totalRemaining <= 0) {
+      toast.info("Scolarité déjà à jour");
+      return;
+    }
+
+    setPaying(true);
+    try {
+      const result = await openFedaPayCheckout({
+        amount: paymentsData.totalRemaining,
+        studentAccountId,
+        academicYearId: academicYear.id,
+        studentFirstName: child.firstName,
+        studentLastName: child.lastName,
+        studentMatricule: child.matricule,
+      });
+
+      if (result.success) {
+        toast.success("Paiement confirmé", {
+          description: `Reçu ${result.receiptNumber} généré. Référence : ${result.reference}.`,
+        });
+        // Recharger les données de paiement pour afficher le nouveau solde
+        // (le parent peut cliquer sur le bouton "Rafraîchir" en haut)
+        setTimeout(() => window.location.reload(), 1500);
+      } else if (result.error) {
+        // Si annulation, juste un toast info (pas d'erreur)
+        if (result.error.includes("annulé")) {
+          toast.info("Paiement annulé");
+        } else {
+          toast.error("Échec du paiement", { description: result.error });
+        }
+      }
+    } catch (e: any) {
+      toast.error("Erreur", { description: e.message });
+    } finally {
+      setPaying(false);
+    }
+  };
 
   const downloadReceipt = async (paymentId: string) => {
     setDownloadingId(paymentId);
@@ -522,15 +578,26 @@ function PaymentsTab({
           <div>
             <p className="font-semibold text-blue-900">Payer les frais de scolarité</p>
             <p className="text-sm text-blue-700">Restant : {formatXOF(paymentsData.totalRemaining)}</p>
+            <p className="text-xs text-blue-500 mt-0.5">
+              Paiement sécurisé via FedaPay (Mobile Money / Carte bancaire)
+            </p>
           </div>
           <button
-            onClick={() => toast.info("Paiement en ligne bientôt disponible", {
-              description: "L'intégration FedaPay/FeexPay est en cours de finalisation.",
-            })}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 inline-flex items-center gap-2"
+            onClick={handlePayNow}
+            disabled={paying}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <CreditCard className="h-4 w-4" />
-            Payer maintenant
+            {paying ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Paiement en cours...
+              </>
+            ) : (
+              <>
+                <CreditCard className="h-4 w-4" />
+                Payer maintenant
+              </>
+            )}
           </button>
         </div>
       )}

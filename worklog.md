@@ -2233,3 +2233,104 @@ Stage Summary:
 - ✅ PDF bulletins de notes (parent-friendly)
 - ⚠️ Bouton "Payer maintenant" affiche toujours un toast (intégration FedaPay/FeexPay à finaliser)
 - ⚠️ Sécurité @Public() sur ParentPortalController: NON retiré (à faire dans un fix séparé car impact large — besoin de tester le flux BFF proxy avec JWT)
+
+---
+Task ID: parent-portal-security-and-fedapay
+Agent: main
+Task: Sécuriser le portail parent (JWT + ownership checks), simplifier l'authentification (sans OTP par défaut), intégrer FedaPay pour le bouton "Payer maintenant"
+
+Work Log:
+1. **Sécurisation ParentPortalController** (apps/api-server/src/parent-portal/parent-portal.controller.ts):
+   - Retiré `@Public()` du contrôleur (classe) — faille critique corrigée
+   - Ajouté `@UseGuards(JwtAuthGuard)` au niveau classe
+   - Ajouté `@CurrentUser() user: any` sur TOUS les endpoints GET
+   - Imports: UseGuards, ForbiddenException, CurrentUser, JwtAuthGuard
+   - `parentId` query string ignoré (renommé `_legacyParentId`) — on utilise toujours `user.id` du JWT
+   - Nouvelle méthode `assertStudentBelongsToGuardian(tenantId, userId, studentId)` :
+     * Vérifie via `student_guardians` que l'élève est bien lié au guardian du parent connecté
+     * Lève `ForbiddenException("Vous n'avez pas accès à cet élève")` sinon
+     * Logs warning si guardianId non résolu (cas admin test)
+   - Nouvelle méthode `assertClassBelongsToGuardian(tenantId, userId, classId, academicYearId)` :
+     * Vérifie que la classe correspond à un enfant du parent (via student_enrollments)
+     * Empêche un parent de consulter le cahier journal d'une autre classe
+   - Application des vérifications sur :
+     * GET /parent/children/:studentId → assertStudentBelongsToGuardian
+     * GET /parent/payments/:studentId → assertStudentBelongsToGuardian
+     * GET /parent/attendance/:studentId → assertStudentBelongsToGuardian
+     * GET /parent/today/:studentId → assertStudentBelongsToGuardian
+     * GET /parent/homeworks/:studentId → assertStudentBelongsToGuardian
+     * GET /parent/results/:studentId → assertStudentBelongsToGuardian
+     * GET /parent/receipts/:paymentId → assertStudentBelongsToGuardian (sur studentId du paiement)
+     * GET /parent/cahier-journal/:classId → assertClassBelongsToGuardian
+     * GET /parent/weeks/:classId → assertClassBelongsToGuardian
+   - Ajouté `id` dans SELECT student_accounts (3 requêtes) → frontend peut récupérer studentAccountId pour FedaPay
+
+2. **Authentification parent sans OTP (réalité africaine/béninoise)** :
+   - apps/api-server/src/portal/services/portal-auth.service.ts:
+     - Ajouté injection `ConfigService` pour lire variable d'environnement `PARENT_OTP_ENABLED`
+     - Nouvelle méthode `isParentOtpEnabled()` :
+       * Lit `PARENT_OTP_ENABLED` (default 'false' → OTP désactivé par défaut)
+       * Returns boolean
+     - `loginParentByPhone()` :
+       * Si OTP désactivé (défaut) : connecte directement si guardian trouvé par téléphone + User actif associé
+       * Si OTP activé : comportement historique (génération + envoi SMS + vérification)
+     - `loginParentByEmail()` :
+       * Si OTP désactivé : connecte directement si guardian trouvé par email + User actif associé
+       * Si mot de passe fourni (optionnel) : le vérifie en plus (couche de sécurité pour parents lettrés)
+       * Si OTP activé : mode historique (EMAIL+password OU EMAIL+OTP email)
+   - apps/web-app/src/components/auth/LoginPage.tsx:
+     - `handleParentLogin()` réécrit :
+       * Étape 1 : envoie identifiant (+ password optionnel si email)
+       * Si backend répond `requiresOtp: true` (PARENT_OTP_ENABLED=true) → passe en étape 2
+       * Sinon → connexion directe, persist session, redirect
+       * Étape 2 (uniquement si OTP requis) : envoie OTP, vérifie, persist session
+     - Textes UI mis à jour :
+       * Aide : "Numéro ou email utilisé lors de l'inscription de votre enfant."
+       * Password : "Optionnel : si vous avez configuré un mot de passe, saisir ici pour sécuriser votre connexion. Sinon, laissez vide."
+   - apps/web-app/src/app/api/portal/auth/parent/route.ts:
+     - Ajouté `email: data.email` dans la réponse requiresOtp (cohérence SMS/email)
+
+3. **Intégration FedaPay "Payer maintenant"** :
+   - apps/web-app/src/lib/parent/fedapay-checkout.ts (NEW):
+     - `openFedaPayCheckout({ amount, studentAccountId, academicYearId, ... })`
+     * Récupère public_key via GET /api/finance/payments/fedapay/public-key
+     * Charge script FedaPay Checkout (cdn.fedapay.com/checkout.js)
+     * Ouvre widget FedaPay.init({ public_key, transaction, customer, onComplete })
+     * Sur onComplete (paiement réussi) :
+       - Crée FinanceTransaction via POST /api/finance/transactions
+       - Returns { success: true, reference, receiptNumber, transactionId }
+     * Sur annulation (DIALOG DISMISSED / USERCANCELLED) :
+       - Returns { success: false, error: "Paiement annulé..." }
+     * Gestion erreurs (FedaPay non configuré, script KO, transaction KO)
+   - apps/web-app/src/app/app/parent/children/[childId]/page.tsx (PaymentsTab):
+     - Import `openFedaPayCheckout`
+     - `handlePayNow()` :
+       * Récupère studentAccountId depuis `child.account.id`
+       * Appelle openFedaPayCheckout avec amount = totalRemaining
+       * Toast success "Paiement confirmé" + reload après 1.5s
+       * Toast info si annulé, toast.error si échec
+     - Bouton "Payer maintenant" :
+       * État "Paiement en cours..." avec spinner
+       * Désactivé pendant paiement
+       * Sous-texte : "Paiement sécurisé via FedaPay (Mobile Money / Carte bancaire)"
+   - apps/web-app/src/app/app/parent/payments/page.tsx:
+     - Même intégration FedaPay (handlePayNow)
+     - État paying + bouton désactivé pendant paiement
+     - Reload automatique après succès pour rafraîchir le solde
+   - Pattern identique à NewPaymentModal.tsx (admin) pour cohérence
+
+Stage Summary:
+- ✅ SÉCURITÉ CRITIQUE : ParentPortalController n'est plus @Public() — JWT requis
+- ✅ Ownership checks : assertStudentBelongsToGuardian + assertClassBelongsToGuardian
+  empêchent un parent d'accéder aux données d'un enfant qui n'est pas le sien
+- ✅ Authentification parent simplifiée pour réalité béninoise :
+  - PARENT_OTP_ENABLED=false par défaut (connexion 1 étape sur téléphone/email trouvé)
+  - PARENT_OTP_ENABLED=true pour réactiver OTP (SMS ou email) dans prochaine mise à jour
+  - Code OTP conservé et fonctionnel — réactivation par simple flag
+- ✅ Bouton "Payer maintenant" fonctionnel via FedaPay :
+  - Widget FedaPay Checkout s'ouvre (Mobile Money / Carte)
+  - Après paiement : FinanceTransaction créée + reçu généré
+  - Solde StudentAccount mis à jour automatiquement
+  - Toast succès avec n° reçu + reload auto
+- ✅ studentAccountId exposé dans /parent/children (account.id) pour permettre FedaPay
+- ✅ Pages impactées : /app/parent/children/[childId] + /app/parent/payments

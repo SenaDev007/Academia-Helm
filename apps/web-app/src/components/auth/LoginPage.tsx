@@ -1098,38 +1098,42 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     const isEmailMode = rawIdentifier.includes('@');
     const identifierType: 'PHONE' | 'EMAIL' = isEmailMode ? 'EMAIL' : 'PHONE';
 
-    // ── Mode EMAIL + password (1 étape, pas d'OTP) ──
-    if (isEmailMode && parentCredentials.password && !parentOtpSent) {
-      const response = await fetchWithTimeout('/api/portal/auth/parent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenantId: tenantIdForApi,
-          identifierType: 'EMAIL',
-          email: rawIdentifier,
-          password: parentCredentials.password,
-          portal_type: 'PARENT',
-          turnstileToken: turnstileToken || undefined,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || data.error || 'Identifiants invalides');
+    // ── Étape 2 : vérification OTP (uniquement si l'API a demandé un OTP) ──
+    // Cette branche ne s'exécute que si PARENT_OTP_ENABLED=true côté backend.
+    // Par défaut (false), on reste en connexion directe 1 étape.
+    if (parentOtpSent && parentCredentials.otp) {
+      const verifyPayload: Record<string, unknown> = {
+        tenantId: tenantIdForApi,
+        identifierType,
+        otp: parentCredentials.otp,
+        portal_type: 'PARENT',
+        turnstileToken: turnstileToken || undefined,
+      };
+      if (isEmailMode) {
+        verifyPayload.email = rawIdentifier;
+      } else {
+        verifyPayload.phone = rawIdentifier;
       }
 
-      persistClientSession({
-        accessToken: data.accessToken,
-        portalSessionId: data.portalSessionId,
-        user: data.user,
-        tenant: data.tenant,
-        portalType: 'PARENT',
-        expiresAt: data.expiresAt,
+      const verifyResponse = await fetchWithTimeout('/api/portal/auth/parent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(verifyPayload),
       });
-
+      const verifyData = await verifyResponse.json();
+      if (!verifyResponse.ok || !verifyData.success) {
+        throw new Error(verifyData.message || verifyData.error || 'Code OTP invalide');
+      }
+      persistClientSession({
+        accessToken: verifyData.accessToken,
+        portalSessionId: verifyData.portalSessionId,
+        user: verifyData.user,
+        tenant: verifyData.tenant,
+        portalType: 'PARENT',
+        expiresAt: verifyData.expiresAt,
+      });
       const redirectUrl = getTenantRedirectUrl({
-        tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
+        tenantSlug: tenantSlug || verifyData.tenant?.slug || verifyData.tenant?.id,
         tenantId: tenantIdForApi,
         path: redirectPath,
         portalType: 'PARENT',
@@ -1139,66 +1143,50 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       return;
     }
 
-    // ── Mode OTP (PHONE → SMS ; EMAIL → email) ──
-    if (!parentOtpSent) {
-      const bodyPayload: Record<string, unknown> = {
-        tenantId: tenantIdForApi,
-        identifierType,
-        portal_type: 'PARENT',
-        turnstileToken: turnstileToken || undefined,
-      };
-      if (isEmailMode) {
-        bodyPayload.email = rawIdentifier;
-      } else {
-        bodyPayload.phone = rawIdentifier;
-      }
-
-      const response = await fetchWithTimeout('/api/portal/auth/parent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyPayload),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || data.error || "Erreur lors de l'envoi du code OTP");
-      }
-
-      if (data.otp) {
-        setParentOtpCode(data.otp);
-      }
-
-      setParentOtpSent(true);
-      return;
-    }
-
-    // ── Vérification OTP ──
-    const verifyPayload: Record<string, unknown> = {
+    // ── Étape 1 : connexion directe (sans OTP par défaut) ──
+    // On envoie l'identifiant (+ mot de passe optionnel si mode email).
+    // Le backend répond soit avec un token (connexion réussie), soit avec
+    // requiresOtp=true (si PARENT_OTP_ENABLED=true côté backend).
+    const loginPayload: Record<string, unknown> = {
       tenantId: tenantIdForApi,
       identifierType,
-      otp: parentCredentials.otp,
       portal_type: 'PARENT',
       turnstileToken: turnstileToken || undefined,
     };
     if (isEmailMode) {
-      verifyPayload.email = rawIdentifier;
+      loginPayload.email = rawIdentifier;
+      // Le mot de passe est optionnel — il n'est envoyé que si l'utilisateur
+      // l'a rempli (couche de sécurité supplémentaire pour les parents lettrés).
+      if (parentCredentials.password) {
+        loginPayload.password = parentCredentials.password;
+      }
     } else {
-      verifyPayload.phone = rawIdentifier;
+      loginPayload.phone = rawIdentifier;
     }
 
     const response = await fetchWithTimeout('/api/portal/auth/parent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(verifyPayload),
+      body: JSON.stringify(loginPayload),
     });
 
     const data = await response.json();
 
     if (!response.ok || !data.success) {
-      throw new Error(data.message || data.error || 'Code OTP invalide');
+      throw new Error(data.message || data.error || 'Identifiants invalides');
     }
 
+    // Si le backend demande un OTP (PARENT_OTP_ENABLED=true côté backend),
+    // on passe en étape 2.
+    if (data.requiresOtp) {
+      if (data.otp) {
+        setParentOtpCode(data.otp);
+      }
+      setParentOtpSent(true);
+      return;
+    }
+
+    // Connexion réussie — persister la session et rediriger
     persistClientSession({
       accessToken: data.accessToken,
       portalSessionId: data.portalSessionId,
@@ -2223,11 +2211,15 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                       <p className="mt-1 text-xs text-slate-500">
                         {isEmailIdentifier
                           ? 'Email utilisé lors de l\'inscription de votre enfant.'
-                          : 'Numéro utilisé lors de l\'inscription de votre enfant. Vous pouvez aussi saisir votre adresse email.'}
+                          : 'Numéro ou email utilisé lors de l\'inscription de votre enfant.'}
                       </p>
                     </div>
 
-                    {/* ── Mode EMAIL + mot de passe (optionnel, 1 étape, alternative à l'OTP) ── */}
+                    {/* ── Mode EMAIL + mot de passe (optionnel) ──
+                        Affiché uniquement en mode email. Le mot de passe est
+                        optionnel : si le parent en a configuré un, il peut
+                        l'utiliser comme couche de sécurité supplémentaire.
+                        Sinon, la connexion se fait juste sur l'email. */}
                     <AnimatePresence>
                       {isEmailIdentifier && !parentOtpSent && (
                         <motion.div
@@ -2272,8 +2264,8 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                             </button>
                           </div>
                           <p className="mt-1 text-xs text-slate-500">
-                            Saisissez votre mot de passe pour vous connecter directement,
-                            ou laissez vide pour recevoir un code OTP par email.
+                            Optionnel : si vous avez configuré un mot de passe, saisir
+                            ici pour sécuriser votre connexion. Sinon, laissez vide.
                           </p>
                         </motion.div>
                       )}

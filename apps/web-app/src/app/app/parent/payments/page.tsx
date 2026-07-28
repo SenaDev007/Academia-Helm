@@ -2,7 +2,7 @@
 
 /**
  * Parent Portal — Paiements
- * Solde total (dû/payé/restant) + historique des paiements + reçus.
+ * Solde total (dû/payé/restant) + historique des paiements + reçus + paiement en ligne FedaPay.
  */
 
 import { useState, useEffect, useCallback } from "react";
@@ -13,12 +13,15 @@ import {
   TrendingUp, TrendingDown, Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
+import { openFedaPayCheckout } from "@/lib/parent/fedapay-checkout";
 
 export default function ParentPaymentsPage() {
   const { user } = useAppSession();
   const { academicYear } = useModuleContext();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [paying, setPaying] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<string>("");
 
   // Charger les enfants d'abord
@@ -62,7 +65,60 @@ export default function ParentPaymentsPage() {
     return new Intl.NumberFormat('fr-FR').format(amount) + ' FCFA';
   };
 
+  // Trouver l'enfant sélectionné pour récupérer le studentAccountId
+  const selectedChild = children.find((c) => c.id === selectedStudent);
+
+  // ── Lancer le paiement FedaPay ──
+  const handlePayNow = async () => {
+    const studentAccountId = selectedChild?.account?.id;
+    if (!studentAccountId) {
+      toast.error("Compte élève introuvable", {
+        description: "Impossible de déterminer le compte à débiter. Contactez l'administration.",
+      });
+      return;
+    }
+    if (!academicYear?.id) {
+      toast.error("Année scolaire introuvable");
+      return;
+    }
+    if (!data || data.totalRemaining <= 0) {
+      toast.info("Scolarité déjà à jour");
+      return;
+    }
+
+    setPaying(true);
+    try {
+      const result = await openFedaPayCheckout({
+        amount: data.totalRemaining,
+        studentAccountId,
+        academicYearId: academicYear.id,
+        studentFirstName: selectedChild?.firstName,
+        studentLastName: selectedChild?.lastName,
+        studentMatricule: selectedChild?.matricule,
+      });
+
+      if (result.success) {
+        toast.success("Paiement confirmé", {
+          description: `Reçu ${result.receiptNumber} généré. Référence : ${result.reference}.`,
+        });
+        // Recharger les données pour afficher le nouveau solde
+        setTimeout(() => loadPayments(), 1500);
+      } else if (result.error) {
+        if (result.error.includes("annulé")) {
+          toast.info("Paiement annulé");
+        } else {
+          toast.error("Échec du paiement", { description: result.error });
+        }
+      }
+    } catch (e: any) {
+      toast.error("Erreur", { description: e.message });
+    } finally {
+      setPaying(false);
+    }
+  };
+
   const downloadReceipt = async (paymentId: string) => {
+    setDownloadingId(paymentId);
     try {
       const res = await fetch(`/api/parent/receipts/${paymentId}`, { credentials: "include" });
       if (!res.ok) throw new Error("Erreur");
@@ -73,6 +129,8 @@ export default function ParentPaymentsPage() {
       });
     } catch (e: any) {
       toast.error("Erreur", { description: e.message });
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -138,12 +196,26 @@ export default function ParentPaymentsPage() {
               <div>
                 <p className="font-semibold text-blue-900">Payer les frais de scolarité</p>
                 <p className="text-sm text-blue-700">Restant : {formatXOF(data.totalRemaining)}</p>
+                <p className="text-xs text-blue-500 mt-0.5">
+                  Paiement sécurisé via FedaPay (Mobile Money / Carte bancaire)
+                </p>
               </div>
               <button
-                onClick={() => toast.info("Paiement en ligne bientôt disponible")}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700"
+                onClick={handlePayNow}
+                disabled={paying}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Payer maintenant
+                {paying ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Paiement en cours...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="h-4 w-4" />
+                    Payer maintenant
+                  </>
+                )}
               </button>
             </div>
           )}
@@ -177,9 +249,14 @@ export default function ParentPaymentsPage() {
                         <td className="px-4 py-3 text-center">
                           <button
                             onClick={() => downloadReceipt(p.id)}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100"
+                            disabled={downloadingId === p.id}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50"
                           >
-                            <Download className="h-3 w-3" />
+                            {downloadingId === p.id ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Download className="h-3 w-3" />
+                            )}
                             Reçu
                           </button>
                         </td>

@@ -14,6 +14,7 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../database/prisma.service';
@@ -40,7 +41,29 @@ export class PortalAuthService {
     private readonly portalSessionService: PortalSessionService,
     private readonly smsService: SmsService,
     private readonly emailService: EmailService,
+    private readonly configService: ConfigService,
   ) {}
+
+  /**
+   * Indique si l'authentification parent exige un code OTP.
+   *
+   * Comportement actuel (par défaut, pour la première version — réalité
+   * africaine / béninoise) : OTP DÉSACTIVÉ.
+   * Le parent saisit juste son numéro de téléphone ou son email — s'il est
+   * trouvé dans la table guardians (avec un User actif associé), le système
+   * donne l'accès immédiatement sans demander de code OTP.
+   *
+   * Pour réactiver l'OTP dans une prochaine mise à jour :
+   *   - mettre la variable d'environnement PARENT_OTP_ENABLED=true
+   *   - OU modifier la valeur par défaut ci-dessous à `true`
+   *
+   * Le code OTP (génération, envoi SMS/email, vérification) reste implémenté
+   * dans loginParentByPhone / loginParentByEmail — il sera réactivé
+   * automatiquement quand ce flag passera à true.
+   */
+  private isParentOtpEnabled(): boolean {
+    return this.configService.get<string>('PARENT_OTP_ENABLED', 'false').toLowerCase() === 'true';
+  }
 
   /**
    * Résout le tenant par id (UUID) ou par slug.
@@ -330,7 +353,14 @@ export class PortalAuthService {
   }
 
   /**
-   * Connexion parent par téléphone + OTP SMS (comportement historique).
+   * Connexion parent par téléphone — sans OTP si PARENT_OTP_ENABLED=false (défaut).
+   *
+   * Si OTP désactivé (par défaut, réalité béninoise) :
+   *   - Si le guardian est trouvé par téléphone ET a un User actif → connexion immédiate
+   *   - Sinon → erreur "Numéro non trouvé" ou "Compte non configuré"
+   *
+   * Si OTP activé (PARENT_OTP_ENABLED=true) :
+   *   - Comportement historique : génération + envoi SMS + vérification
    */
   private async loginParentByPhone(
     dto: ParentPortalLoginDto,
@@ -362,6 +392,22 @@ export class PortalAuthService {
         status: 'active',
       },
     }) : null;
+
+    // ── Mode OTP désactivé (défaut, première version) ──
+    // On connecte directement le parent si son téléphone est dans la DB
+    // et qu'un User actif lui est associé.
+    if (!this.isParentOtpEnabled()) {
+      if (!user) {
+        throw new UnauthorizedException(
+          'Compte parent non configuré. Contactez l\'administration de l\'école pour activer votre compte.',
+        );
+      }
+      this.logger.log(`Connexion parent (sans OTP) — guardian ${guardian.id}, user ${user.id}, phone ${dto.phone}`);
+      return this.finalizeParentLogin(user, guardian, tenantId, PortalType.PARENT, ipAddress, userAgent);
+    }
+
+    // ── Mode OTP activé (PARENT_OTP_ENABLED=true) ──
+    // Comportement historique avec envoi + vérification OTP.
 
     // Si pas d'OTP fourni, générer et envoyer
     if (!dto.otp) {
@@ -399,7 +445,16 @@ export class PortalAuthService {
   }
 
   /**
-   * Connexion parent par email — deux modes : OTP email ou mot de passe.
+   * Connexion parent par email — sans OTP si PARENT_OTP_ENABLED=false (défaut).
+   *
+   * Si OTP désactivé :
+   *   - Si le guardian est trouvé par email ET a un User actif → connexion immédiate
+   *   - Si un mot de passe est fourni, on le vérifie (couche supplémentaire
+   *     pour les parents lettrés qui ont configuré un mot de passe)
+   *
+   * Si OTP activé :
+   *   - Mode 1 : EMAIL + password (1 étape)
+   *   - Mode 2 : EMAIL + OTP par email
    */
   private async loginParentByEmail(
     dto: ParentPortalLoginDto,
@@ -438,7 +493,28 @@ export class PortalAuthService {
       throw new UnauthorizedException('Compte parent non configuré pour cet email');
     }
 
-    // ── Mode 1 : password (connexion directe, 1 étape) ──
+    // ── Mode OTP désactivé (défaut) ──
+    // Connexion directe, éventuellement sécurisée par mot de passe si fourni.
+    if (!this.isParentOtpEnabled()) {
+      // Si un mot de passe est fourni, on le vérifie (couche supplémentaire
+      // de sécurité optionnelle pour les parents qui en ont configuré un).
+      if (dto.password) {
+        if (!user.passwordHash) {
+          throw new UnauthorizedException('Mot de passe non configuré. Laissez le champ vide pour vous connecter sans mot de passe.');
+        }
+        const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
+        if (!isPasswordValid) {
+          throw new UnauthorizedException('Identifiants invalides');
+        }
+      }
+      // Si pas de mot de passe fourni → connexion directe (comme pour le téléphone)
+      this.logger.log(`Connexion parent (sans OTP) — guardian ${guardian.id}, user ${user.id}, email ${normalizedEmail}`);
+      return this.finalizeParentLogin(user, guardian, tenantId, PortalType.PARENT, ipAddress, userAgent);
+    }
+
+    // ── Mode OTP activé (PARENT_OTP_ENABLED=true) ──
+
+    // Mode 1 : password (connexion directe, 1 étape)
     if (dto.password) {
       if (!user.passwordHash) {
         throw new UnauthorizedException('Mot de passe non configuré. Utilisez plutôt le code OTP.');
@@ -450,7 +526,7 @@ export class PortalAuthService {
       return this.finalizeParentLogin(user, guardian, tenantId, PortalType.PARENT, ipAddress, userAgent);
     }
 
-    // ── Mode 2 : OTP par email ──
+    // Mode 2 : OTP par email
     if (!dto.otp) {
       const otp = this.generateOTP();
       await this.storeParentOtp(tenantId, `email:${normalizedEmail}`, otp);

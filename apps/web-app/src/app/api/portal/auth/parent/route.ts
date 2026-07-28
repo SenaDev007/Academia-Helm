@@ -119,6 +119,8 @@ export async function POST(request: NextRequest) {
         tenant,
         token: data.token,
         expiresAt,
+        // ⭐ Portail choisi à la connexion — prévaut sur user.role pour la redirection
+        portalType: 'PARENT' as const,
       };
 
       // Stocker la session dans les cookies

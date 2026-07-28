@@ -122,6 +122,20 @@ export interface AuthSession {
   tenant: Tenant;
   token: string;
   expiresAt: string;
+  /**
+   * Portail choisi à la connexion (PARENT / TEACHER / SCHOOL / PLATFORM / PUBLIC).
+   *
+   * ⚠️ IMPORTANT : ce champ prévaut sur `user.role` pour la décision de redirection
+   * post-connexion. Permet à un enseignant qui est aussi parent d'élève d'atterrir
+   * sur /app/parent s'il s'est connecté via le portail PARENT, même si son
+   * user.role en DB est 'TEACHER'.
+   *
+   * Positionné par :
+   *   - api/portal/auth/parent/route.ts → 'PARENT'
+   *   - api/portal/auth/teacher/route.ts → 'TEACHER'
+   *   - api/auth/login/route.ts → non positionné (comportement legacy basé sur role)
+   */
+  portalType?: PortalType;
 }
 
 export interface ApiError {

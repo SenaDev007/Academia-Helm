@@ -299,6 +299,40 @@ export function canRoleUsePortal(role: string, portal: PortalType): boolean {
 }
 
 /**
+ * ⭐ Résout le portail effectif pour la redirection post-connexion.
+ *
+ * RÈGLE : le portail CHOISI à la connexion (`session.portalType` ou `user.portal`)
+ * prévaut sur le portail théorique associé au rôle (`getPortalForRole(role)`).
+ *
+ * Cas d'usage : un enseignant qui est aussi parent d'élève se connecte via le
+ * portail PARENT (avec son téléphone/email). Son user.role en DB est 'TEACHER',
+ * mais il a explicitement choisi PARENT à la connexion → on doit l'envoyer sur
+ * /app/parent, pas sur /app/teacher.
+ *
+ * @param role            user.role en DB (ex: 'TEACHER', 'PARENT', 'DIRECTOR')
+ * @param chosenPortal    portail choisi à la connexion (session.portalType ou user.portal)
+ * @returns le portail effectif à utiliser pour la redirection
+ */
+export function getEffectivePortal(
+  role: string,
+  chosenPortal?: string | null,
+): PortalType {
+  if (chosenPortal) {
+    const p = String(chosenPortal).toUpperCase() as PortalType;
+    if (
+      p === 'PLATFORM' ||
+      p === 'SCHOOL' ||
+      p === 'TEACHER' ||
+      p === 'PARENT' ||
+      p === 'PUBLIC'
+    ) {
+      return p;
+    }
+  }
+  return getPortalForRole(role);
+}
+
+/**
  * Retourne l'entrée complète d'un rôle (permissions, accreditations, etc.)
  */
 export function getRoleEntry(role: string): RolePortalEntry | undefined {

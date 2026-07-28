@@ -2432,3 +2432,63 @@ Stage Summary:
   empêche un parent d'accéder aux reçus d'autres élèves
 - ✅ Composants partagés réutilisables (ParentPaymentHistory, PaymentSuccessBanner)
   → facilitera la maintenance future (1 seul endroit à modifier)
+
+---
+Task ID: fix-portal-redirect-teacher-parent
+Agent: main
+Task: Corriger la redirection portail — un enseignant qui est aussi parent doit atterrir sur /app/parent s'il se connecte via le portail PARENT (pas /app/teacher)
+
+Work Log:
+1. **Audit via sous-agent Explore**:
+   - Cause racine identifiée:
+     * app/layout.tsx (lignes 62-82) et app/page.tsx (lignes 34-44) utilisent
+       `teacherRoles.includes(user.role)` comme SEUL critère de redirection
+     * Ignorent complètement `user.portal` (positionné par les routes d'auth)
+       et le query param `?portal=parent` (ajouté par getTenantRedirectUrl)
+   - Scénario cassé: user avec role='TEACHER' en DB (parce qu'il est enseignant)
+     ET qui est aussi parent d'élève, se connecte via portail PARENT → atterrit
+     sur /app/teacher au lieu de /app/parent
+
+2. **Ajout champ portalType à AuthSession** (types/index.ts):
+   - Nouveau champ optionnel `portalType?: PortalType`
+   - Documenté: prévaut sur user.role pour la décision de redirection
+   - Positionné par api/portal/auth/parent (→ 'PARENT') et teacher (→ 'TEACHER')
+   - Non positionné par /api/auth/login (comportement legacy pour admin/directeur)
+
+3. **Positionnement portalType dans les routes d'auth**:
+   - api/portal/auth/parent/route.ts: session.portalType = 'PARENT' as const
+   - api/portal/auth/teacher/route.ts: session.portalType = 'TEACHER' as const
+   - Le cookie academia_session contient maintenant cette info
+
+4. **Nouveau helper getEffectivePortal** (lib/auth/role-portal-map.ts):
+   - Signature: getEffectivePortal(role, chosenPortal?) → PortalType
+   - RÈGLE: le portail CHOISI à la connexion prévaut sur le rôle DB
+   - Si chosenPortal est valide (PLATFORM/SCHOOL/TEACHER/PARENT/PUBLIC) → le retourner
+   - Sinon → fallback sur getPortalForRole(role) (comportement legacy)
+   - Permet à un TEACHER connecté via portail PARENT d'aller sur /app/parent
+
+5. **Refonte redirection app/layout.tsx** (lignes 62-96):
+   - Import getEffectivePortal depuis role-portal-map
+   - Remplacement de la logique basée uniquement sur user.role:
+     * AVANT: if (teacherRoles.includes(user.role)) redirect('/app/teacher')
+     * APRÈS: const effectivePortal = getEffectivePortal(user.role,
+              session.portalType || user.portal)
+              if (effectivePortal === 'PARENT') redirect('/app/parent')
+              else if (effectivePortal === 'TEACHER') redirect('/app/teacher')
+   - Si effectivePortal est SCHOOL/PLATFORM/PUBLIC → rend PilotageLayout
+     (cas normal pour un admin/directeur)
+
+6. **Refonte redirection app/page.tsx** (lignes 34-59):
+   - Même refonte que app/layout.tsx
+   - Utilise getEffectivePortal pour décider PARENT vs TEACHER vs dashboard
+
+Stage Summary:
+- ✅ Bug corrigé: un enseignant qui est aussi parent d'élève et qui se connecte
+  via le portail PARENT atterrit maintenant sur /app/parent (pas /app/teacher)
+- ✅ Le portail CHOISI à la connexion (session.portalType) prévaut sur user.role
+- ✅ Comportement legacy préservé pour les autres cas:
+  - TEACHER via portail TEACHER → /app/teacher ✓
+  - PARENT via portail PARENT → /app/parent ✓
+  - DIRECTOR/ADMIN via portail SCHOOL → /app (dashboard) ✓
+- ✅ Helper getEffectivePortal réutilisable et testable
+- ✅ Documentation ajoutée dans types/index.ts (champ portalType)

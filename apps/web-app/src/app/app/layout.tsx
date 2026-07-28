@@ -19,6 +19,7 @@ import dynamic from 'next/dynamic';
 import { headers } from 'next/headers';
 import { getServerSession } from '@/lib/auth/session';
 import { isReservedSubdomain } from '@/lib/tenant/constants';
+import { getEffectivePortal } from '@/lib/auth/role-portal-map';
 import { ModalProvider } from '@/components/modules/blueprint/modals/ModalProvider';
 import AppLayoutClient from './layout-client';
 import type { User, Tenant } from '@/types';
@@ -61,6 +62,12 @@ export default async function AppLayout({
 
   // ⭐ Rediriger les enseignants et parents vers leurs portails dédiés
   // AVANT de rendre le PilotageLayout (qui contient la sidebar école).
+  //
+  // ⚠️ IMPORTANT : on utilise `getEffectivePortal()` qui fait gagner le portail
+  // CHOISI à la connexion (session.portalType / user.portal) sur le rôle DB.
+  // Cela permet à un enseignant qui est aussi parent d'élève de se connecter
+  // via le portail PARENT et d'atterrir sur /app/parent, même si son user.role
+  // en DB est 'TEACHER'.
   const teacherRoles = ['teacher', 'TEACHER', 'TEACHER_RESP', 'ENSEIGNANT'];
   const parentRoles = ['PARENT', 'STUDENT', 'PARENT_PRIMARY', 'LEGAL_GUARDIAN', 'FINANCIAL_RESPONSIBLE'];
   const isTeacherOrParent = teacherRoles.includes(user.role) || parentRoles.includes(user.role);
@@ -73,12 +80,19 @@ export default async function AppLayout({
   const isOnDedicatedPortal = reqUrl.includes('/app/teacher') || reqUrl.includes('/app/parent');
 
   if (isTeacherOrParent && !isOnDedicatedPortal) {
-    // Rediriger vers le portail dédié
-    if (teacherRoles.includes(user.role)) {
-      redirect('/app/teacher');
-    } else {
+    // ⭐ Résoudre le portail effectif : portalType de session > user.portal > role-based fallback
+    const effectivePortal = getEffectivePortal(
+      user.role,
+      (session as any)?.portalType || (user as any)?.portal,
+    );
+
+    if (effectivePortal === 'PARENT') {
       redirect('/app/parent');
+    } else if (effectivePortal === 'TEACHER') {
+      redirect('/app/teacher');
     }
+    // Si effectivePortal est SCHOOL/PLATFORM/PUBLIC → on rend le PilotageLayout
+    // (cas normal pour un admin/directeur qui se connecte via portail école).
   }
 
   // ⭐ Pour les routes /app/teacher et /app/parent, on rend directement

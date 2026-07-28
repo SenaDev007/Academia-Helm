@@ -1005,12 +1005,13 @@ class OfflineService {
     await _cacheBox!.clear();
 
     // Fermer et supprimer les boxes de collections
-    // Note: On ne peut pas supprimer des boxes ouvertes,
-    // donc on les vide individuellement
-    for (final box in Hive.boxNames) {
-      if (box.startsWith('ah_') && box != 'ah_outbox' && box != 'ah_cache') {
+    // Utiliser une liste explicite de boxes connues (Hive.boxNames n'existe pas
+    // sans hive_flutter, on utilise Hive.openBoxes qui liste les boxes ouvertes)
+    final openBoxNames = Hive.openBoxes.map((b) => b.name).toList();
+    for (final boxName in openBoxNames) {
+      if (boxName.startsWith('ah_') && boxName != 'ah_outbox' && boxName != 'ah_cache') {
         try {
-          final collectionBox = await Hive.openBox(box);
+          final collectionBox = Hive.box(boxName);
           await collectionBox.clear();
         } catch (_) {
           // Ignorer les erreurs

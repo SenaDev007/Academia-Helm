@@ -61,6 +61,7 @@ dependencies:
   collection: ^1.18.0
   rxdart: ^0.28.0
   async: ^2.11.0
+  share_plus: ^10.0.0
 
 dev_dependencies:
   flutter_test:

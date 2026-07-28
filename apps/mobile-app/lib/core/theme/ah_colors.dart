@@ -113,4 +113,14 @@ class AHColors {
   // ── Transparent ───────────────────────────────────────────────────────
 
   static const Color transparent = Color(0x00000000);
+
+  // ── Shimmer Animation Colors ──────────────────────────────────────────
+
+  static const Color shimmerBase = Color(0xFFE2E8F0);
+  static const Color shimmerHighlight = Color(0xFFF1F5F9);
+  static const Color shimmerGold = Color(0xFFF5B335);
+
+  // ── Border (compatibility alias) ──────────────────────────────────────
+
+  static const Color border = Color(0xFFCBD5E1);
 }

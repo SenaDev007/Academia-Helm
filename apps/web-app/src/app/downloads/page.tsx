@@ -72,44 +72,44 @@ const DEFAULT_RELEASE: Release = {
   version: "1.0.0",
   date: new Date().toISOString(),
   notes: [
-    "Application desktop Windows, macOS et Linux (Tauri 2)",
-    "Application mobile Android et iOS (Flutter)",
-    "Base de données locale SQLite pour le mode hors connexion",
-    "Synchronisation automatique avec Neon PostgreSQL toutes les 60 secondes",
+    "Application desktop Windows, macOS et Linux",
+    "Application mobile Android et iOS",
+    "Base de données locale pour le mode hors connexion",
+    "Synchronisation automatique avec la base de données principale toutes les 60 secondes",
     "Bouton « Synchroniser » manuel dans le cockpit digital",
-    "Auto-update : notification native au démarrage si mise à jour disponible",
+    "Mise à jour automatique au démarrage de l'application",
     "Même interface que la version web — pas de recodage",
-    "Sécurité renforcée : JWT + vérification d'appartenance sur tous les endpoints",
+    "Sécurité renforcée",
   ],
   assets: [
     {
       name: "Academia-Helm-1.0.0-windows-setup.exe",
-      downloadUrl: "https://github.com/SenaDev007/Academia-Helm/releases/latest/download/Academia-Helm-1.0.0-windows-setup.exe",
+      downloadUrl: "https://releases.academiahelm.com/desktop/windows/Academia-Helm-1.0.0-windows-setup.exe",
       size: "~10 MB",
       platform: "windows",
     },
     {
       name: "Academia-Helm-1.0.0-windows.msi",
-      downloadUrl: "https://github.com/SenaDev007/Academia-Helm/releases/latest/download/Academia-Helm-1.0.0-windows.msi",
+      downloadUrl: "https://releases.academiahelm.com/desktop/windows/Academia-Helm-1.0.0-windows.msi",
       size: "~12 MB",
       platform: "windows",
     },
     {
       name: "Academia-Helm-1.0.0-macos.dmg",
-      downloadUrl: "https://github.com/SenaDev007/Academia-Helm/releases/latest/download/Academia-Helm-1.0.0-macos.dmg",
+      downloadUrl: "https://releases.academiahelm.com/desktop/macos/Academia-Helm-1.0.0-macos.dmg",
       size: "~15 MB",
       platform: "macos",
     },
     {
       name: "Academia-Helm-1.0.0-android.apk",
-      downloadUrl: "https://github.com/SenaDev007/Academia-Helm/releases/latest/download/Academia-Helm-1.0.0-android.apk",
+      downloadUrl: "https://releases.academiahelm.com/mobile/android/Academia-Helm-1.0.0-android.apk",
       size: "~25 MB",
       platform: "android",
     },
   ],
 };
 
-// ── Hook: récupère la dernière release depuis GitHub API ──
+// ── Hook: récupère la dernière release depuis releases.academiahelm.com ──
 
 function useLatestRelease(): { release: Release; loading: boolean } {
   const [release, setRelease] = useState<Release>(DEFAULT_RELEASE);
@@ -118,15 +118,16 @@ function useLatestRelease(): { release: Release; loading: boolean } {
   useEffect(() => {
     async function fetchLatestRelease() {
       try {
+        // Récupère les infos de la dernière version depuis releases.academiahelm.com
         const response = await fetch(
-          "https://api.github.com/repos/SenaDev007/Academia-Helm/releases/latest",
+          "https://releases.academiahelm.com/api/latest",
         );
 
-        if (!response.ok) throw new Error("GitHub API error");
+        if (!response.ok) throw new Error("Releases API error");
 
         const data = await response.json();
 
-        // Construire les assets depuis la réponse GitHub
+        // Construire les assets depuis la réponse
         const assets: ReleaseAsset[] = (data.assets || []).map((asset: any) => {
           const name = asset.name as string;
           let platform: ReleaseAsset["platform"] = "windows";
@@ -139,28 +140,28 @@ function useLatestRelease(): { release: Release; loading: boolean } {
 
           return {
             name,
-            downloadUrl: asset.browser_download_url,
+            downloadUrl: asset.download_url || asset.url,
             size: asset.size ? `${Math.round(asset.size / 1024 / 1024)} MB` : "—",
             platform,
           };
         });
 
-        // Parser les notes de version (body markdown → lignes)
-        const notesRaw = data.body || "";
+        // Parser les notes de version
+        const notesRaw = data.body || data.notes || "";
         const notes = notesRaw
           .split("\n")
           .map((line: string) => line.replace(/^[-•*\s]+/, "").trim())
           .filter((line: string) => line.length > 0 && !line.startsWith("#"));
 
         setRelease({
-          version: data.tag_name?.replace(/^v/, "") || DEFAULT_RELEASE.version,
-          date: data.published_at || data.created_at || new Date().toISOString(),
+          version: data.version || data.tag_name?.replace(/^v/, "") || DEFAULT_RELEASE.version,
+          date: data.date || data.published_at || new Date().toISOString(),
           notes: notes.length > 0 ? notes : DEFAULT_RELEASE.notes,
           assets: assets.length > 0 ? assets : DEFAULT_RELEASE.assets,
         });
       } catch (error) {
         // Fallback silencieux sur les valeurs par défaut
-        console.warn("[downloads] Could not fetch GitHub release, using defaults");
+        console.warn("[downloads] Could not fetch latest release, using defaults");
       } finally {
         setLoading(false);
       }
@@ -335,12 +336,12 @@ export default function DownloadsPage() {
             <FeatureCard
               icon={RefreshCw}
               title="Sync automatique"
-              description="Synchronisation toutes les 60 secondes avec la base centrale Neon. Vos données sont toujours à jour."
+              description="Synchronisation toutes les 60 secondes avec la base principale. Vos données sont toujours à jour."
             />
             <FeatureCard
               icon={Shield}
               title="Sécurisé"
-              description="Authentification JWT, chiffrement, vérification d'appartenance. Même sécurité que la version web."
+              description="Authentification sécurisée. Même niveau de sécurité que la version web."
             />
           </div>
         </div>
@@ -436,15 +437,15 @@ export default function DownloadsPage() {
             />
             <FaqItem
               question="Puis-je travailler sans connexion internet ?"
-              answer="Oui. L'application desktop embarque une base SQLite locale qui se synchronise avec Neon PostgreSQL toutes les 60 secondes quand vous êtes en ligne. Hors ligne, vos écritures sont mises en file d'attente et synchronisées au retour de la connexion."
+              answer="Oui. L'application stocke vos données localement sur votre ordinateur. Quand vous êtes en ligne, tout se synchronise automatiquement toutes les 60 secondes avec la base principale. Hors ligne, vos actions sont sauvegardées et synchronisées dès le retour de la connexion."
             />
             <FaqItem
               question="Mes données sont-elles les mêmes sur web, desktop et mobile ?"
-              answer="Oui, exactement. Neon PostgreSQL est la source de vérité unique. L'application desktop et l'application mobile sont des miroirs qui se synchronisent automatiquement."
+              answer="Oui, exactement. La base de données principale est unique. L'application desktop et l'application mobile se synchronisent automatiquement avec elle. Vos données sont toujours les mêmes partout."
             />
             <FaqItem
               question="Quelles sont les configurations requises ?"
-              answer="Desktop : Windows 10/11 64-bit, macOS 11+, ou Linux. Mobile : Android 8.0+ ou iOS 14+. WebView2 est requis sur Windows (préinstallé sur Windows 11)."
+              answer="Desktop : Windows 10/11 64-bit, macOS 11+, ou Linux. Mobile : Android 8.0+ ou iOS 14+."
             />
           </div>
         </div>

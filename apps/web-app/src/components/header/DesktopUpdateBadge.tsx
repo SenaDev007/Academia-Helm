@@ -76,7 +76,7 @@ export function DesktopUpdateBadge({
     latestVersion !== currentDesktopVersion;
 
   const handleDownload = () => {
-    // Rediriger vers la page /downloads (page publique moderne)
+    // Rediriger vers la page de téléchargement publique
     const url = downloadUrl || "/downloads";
     window.open(url, "_blank");
     toast.success("Téléchargement", {

@@ -710,9 +710,9 @@ export function GradingSheet({
                         )}
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-32">Observation</th>
                       </tr>
-                      {!isSecondaire && !isMaternelle && (
+                      {!isSecondaire && (
                         <tr className="bg-slate-50">
-                          {sortedSubjects.map((_, idx) => (
+                          {!isMaternelle && sortedSubjects.map((_, idx) => (
                             <>
                               <th key={`cm-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CM /18</th>
                               <th key={`cp-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CP /2</th>

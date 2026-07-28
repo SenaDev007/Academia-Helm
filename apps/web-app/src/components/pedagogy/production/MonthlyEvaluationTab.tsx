@@ -803,12 +803,12 @@ export function MonthlyEvaluationTab({
                     <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-20">Présence</th>
                     {sortedSubjects.map((subject, idx) => (
                       isMaternelle ? (
-                        <th key={idx} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[100px]">
+                        <th key={idx} rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[100px]">
                           {subject.name}
                           <div className="text-[9px] text-slate-400 font-normal">TS / S / PS</div>
                         </th>
                       ) : isSecondaire ? (
-                        <th key={idx} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[80px]">
+                        <th key={idx} rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[80px]">
                           {subject.name}
                           <div className="text-[9px] text-slate-400 font-normal">Note /20</div>
                         </th>
@@ -829,14 +829,16 @@ export function MonthlyEvaluationTab({
                     )}
                     <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-32">Observation</th>
                   </tr>
-                  {!isSecondaire && (
+                  {!isSecondaire && !isMaternelle && (
                     <tr className="bg-slate-50">
-                      {!isMaternelle && sortedSubjects.map((_, idx) => (
-                        <>
-                          <th key={`cm-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CM /18</th>
-                          <th key={`cp-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CP /2</th>
-                          <th key={`tot-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Total</th>
-                        </>
+                      {sortedSubjects.map((_, idx) => (
+                        <th key={`cm-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CM /18</th>
+                      ))}
+                      {sortedSubjects.map((_, idx) => (
+                        <th key={`cp-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CP /2</th>
+                      ))}
+                      {sortedSubjects.map((_, idx) => (
+                        <th key={`tot-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Total</th>
                       ))}
                       <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Oui</th>
                       <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Non</th>

@@ -26,6 +26,11 @@ jobs:
           cd apps/mobile-app
           flutter pub get
 
+      - name: Generate code (freezed/json_serializable)
+        run: |
+          cd apps/mobile-app
+          dart run build_runner build --delete-conflicting-outputs
+
       - name: Build APK (release)
         run: |
           cd apps/mobile-app
@@ -99,6 +104,11 @@ jobs:
         run: |
           cd apps/mobile-app
           flutter pub get
+
+      - name: Generate code (freezed/json_serializable)
+        run: |
+          cd apps/mobile-app
+          dart run build_runner build --delete-conflicting-outputs
 
       - name: Build iOS (no codesign)
         run: |

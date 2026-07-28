@@ -50,6 +50,12 @@ import '../../features/parents/pages/children_screen.dart';
 import '../../features/attendance/pages/take_attendance_screen.dart';
 // ⭐ P1-7: Écran Saisir les notes (enseignant)
 import '../../features/grades/pages/grade_entry_screen.dart';
+// ⭐ P1-8: Écran Bulletin (parent)
+import '../../features/parents/pages/bulletin_screen.dart';
+// ⭐ P1-9: Écran Cahier de texte (parent)
+import '../../features/parents/pages/child_journal_screen.dart';
+// ⭐ P1-10: Écran Initier paiement (parent)
+import '../../features/parents/pages/initiate_payment_screen.dart';
 
 // ── Navigation Destinations ───────────────────────────────────────────
 
@@ -404,6 +410,27 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               final evaluationId = state.pathParameters['evaluationId'] ?? '';
               return GradeEntryScreen(evaluationId: evaluationId);
             },
+          ),
+
+          // ⭐ P1-8: Bulletin (parent)
+          GoRoute(
+            path: '/bulletin',
+            name: 'bulletin',
+            builder: (context, state) => const BulletinScreen(),
+          ),
+
+          // ⭐ P1-9: Cahier de texte (parent)
+          GoRoute(
+            path: '/child-journal',
+            name: 'childJournal',
+            builder: (context, state) => const ChildJournalScreen(),
+          ),
+
+          // ⭐ P1-10: Initier paiement (parent)
+          GoRoute(
+            path: '/initiate-payment',
+            name: 'initiatePayment',
+            builder: (context, state) => const InitiatePaymentScreen(),
           ),
 
           GoRoute(

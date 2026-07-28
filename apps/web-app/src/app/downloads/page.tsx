@@ -5,27 +5,36 @@
  * PAGE DE TÉLÉCHARGEMENT — Academia Helm Desktop + Mobile
  * ============================================================================
  *
- * Page publique moderne qui présente :
- *   - L'app desktop Windows/macOS/Linux (Tauri)
- *   - L'app mobile iOS/Android (Flutter)
- *   - Les dernières mises à jour disponibles
- *   - Le changelog
+ * Page publique qui partage EXACTEMENT le même style que le landing page :
+ *   - Header <Header /> depuis @/components/ui/header-1
+ *   - Footer <Footer2 /> depuis @/components/ui/footer-2
+ *   - Logo <LogoCircle /> depuis @/components/ui/LogoCircle
+ *   - Palette : Navy #0b2f73, Blue #1d4fa5, Gold #f5b335
+ *   - Font : Inter (chargée globalement via layout.tsx)
+ *   - Keywords : "Plateforme de pilotage éducatif", "Cockpit digital"
  *
- * URL : /downloads
- *
- * Design : palette Academia Helm (Navy/Blue/Gold), moderne, glassmorphism,
- * animations subtiles, responsive.
+ * Sections :
+ *   1. Hero — gradient navy + badge or + titre + sous-titre
+ *   2. Sélecteur Desktop / Mobile (onglets)
+ *   3. Cartes de téléchargement (Windows/macOS/Linux ou Android/iOS)
+ *   4. Fonctionnalités (4 feature cards)
+ *   5. Changelog (dernière version)
+ *   6. FAQ
  * ============================================================================
  */
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
-  Download, CheckCircle2, AlertCircle,
-  Loader2, ChevronRight, Calendar, Tag, Github, Shield, Zap, WifiOff,
-  RefreshCw, FileCode,
+  Download, CheckCircle2, AlertCircle, ChevronRight,
+  Calendar, Tag, Shield, Zap, WifiOff, RefreshCw, FileCode,
 } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+
+// ── Composants partagés du landing page ──
+import { Header } from "@/components/ui/header-1";
+import { Footer2 } from "@/components/ui/footer-2";
+import { LogoCircle } from "@/components/ui/LogoCircle";
 import {
   PlatformIcon,
   PLATFORM_COLORS,
@@ -33,11 +42,14 @@ import {
   PLATFORM_REQUIREMENTS,
 } from "@/components/icons/PlatformIcon";
 
-// ── Palette Academia Helm ──
+// ── Palette Academia Helm (identique au landing page) ──
 const NAVY = "#0b2f73";
+const NAVY_DARK = "#0a1d3f";
+const NAVY_MID = "#103e91";
 const BLUE = "#1d4fa5";
 const GOLD = "#f5b335";
-const EMERALD = "#0d7c66";
+const GOLD_HOVER = "#f7c359";
+const GOLD_LIGHT = "#ffd166";
 
 // ── Types ──
 
@@ -55,61 +67,48 @@ interface Release {
   assets: ReleaseAsset[];
 }
 
-// ── Releases statiques (sera enrichi par GitHub API plus tard) ──
-// TODO: remplacer par fetch depuis GitHub API /repos/SenaDev007/Academia-Helm/releases
+// ── Release actuelle ──
 
 const LATEST_RELEASE: Release = {
   version: "1.0.0",
   date: "2026-07-28",
   notes: [
-    "Application desktop Windows (Tauri 2) avec auto-update",
-    "Base de données locale SQLite pour mode hors connexion",
-    "Synchronisation automatique avec Neon PostgreSQL (toutes les 60s)",
-    "Bouton 'Synchroniser' manuel dans le header",
-    "Application mobile Flutter (iOS + Android)",
-    "Même UI que la version web — pas de recodage",
-    "Sécurité : JWT + ownership checks sur tous les endpoints",
+    "Application desktop Windows, macOS et Linux (Tauri 2)",
+    "Application mobile Android et iOS (Flutter)",
+    "Base de données locale SQLite pour le mode hors connexion",
+    "Synchronisation automatique avec Neon PostgreSQL toutes les 60 secondes",
+    "Bouton « Synchroniser » manuel dans le cockpit digital",
+    "Auto-update : notification native au démarrage si mise à jour disponible",
+    "Même interface que la version web — pas de recodage",
+    "Sécurité renforcée : JWT + vérification d'appartenance sur tous les endpoints",
   ],
   assets: [
     {
-      name: "Academia-Helm-Setup-1.0.0.exe",
-      downloadUrl: "https://github.com/SenaDev007/Academia-Helm/releases/latest/download/Academia-Helm-Setup-1.0.0.exe",
+      name: "Academia-Helm-1.0.0-windows-setup.exe",
+      downloadUrl: "https://github.com/SenaDev007/Academia-Helm/releases/latest/download/Academia-Helm-1.0.0-windows-setup.exe",
       size: "~10 MB",
       platform: "windows",
     },
     {
-      name: "Academia-Helm-1.0.0.msi",
-      downloadUrl: "https://github.com/SenaDev007/Academia-Helm/releases/latest/download/Academia-Helm-1.0.0.msi",
+      name: "Academia-Helm-1.0.0-windows.msi",
+      downloadUrl: "https://github.com/SenaDev007/Academia-Helm/releases/latest/download/Academia-Helm-1.0.0-windows.msi",
       size: "~12 MB",
       platform: "windows",
     },
     {
-      name: "Academia-Helm-1.0.0.dmg",
-      downloadUrl: "https://github.com/SenaDev007/Academia-Helm/releases/latest/download/Academia-Helm-1.0.0.dmg",
+      name: "Academia-Helm-1.0.0-macos.dmg",
+      downloadUrl: "https://github.com/SenaDev007/Academia-Helm/releases/latest/download/Academia-Helm-1.0.0-macos.dmg",
       size: "~15 MB",
       platform: "macos",
     },
     {
-      name: "Academia-Helm-1.0.0.apk",
-      downloadUrl: "https://github.com/SenaDev007/Academia-Helm/releases/latest/download/Academia-Helm-1.0.0.apk",
+      name: "Academia-Helm-1.0.0-android.apk",
+      downloadUrl: "https://github.com/SenaDev007/Academia-Helm/releases/latest/download/Academia-Helm-1.0.0-android.apk",
       size: "~25 MB",
-      platform: "android",
-    },
-    {
-      name: "Academia-Helm-1.0.0.aab",
-      downloadUrl: "https://github.com/SenaDev007/Academia-Helm/releases/latest/download/Academia-Helm-1.0.0.aab",
-      size: "~22 MB",
       platform: "android",
     },
   ],
 };
-
-const PREVIOUS_RELEASES: Release[] = [
-  // TODO: récupérer depuis GitHub API
-];
-
-// ── Mapping plateforme → config (utilise les icônes officielles) ──
-// Plus besoin de PLATFORM_CONFIG — on utilise PlatformIcon + PLATFORM_COLORS/LABELS/REQUIREMENTS
 
 // ── Composant principal ──
 
@@ -117,62 +116,54 @@ export default function DownloadsPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<"desktop" | "mobile">("desktop");
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-      {/* ── Header ── */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center">
-              <span className="text-white font-bold text-sm">AH</span>
-            </div>
-            <span className="font-bold text-slate-900">Academia Helm</span>
-          </Link>
-          <Link
-            href="/"
-            className="text-sm text-slate-600 hover:text-slate-900 font-medium"
-          >
-            ← Retour au site
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-screen overflow-x-hidden bg-white text-slate-900">
+      {/* ── Header (identique au landing page) ── */}
+      <Header />
+
+      {/* Espace pour le header fixe */}
+      <div className="h-16 md:h-18" />
 
       {/* ── Hero ── */}
       <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-800" />
+        {/* Fond gradient Navy (identique au hero du landing page) */}
+        <div className="absolute inset-0 bg-gradient-to-br from-[#0b2f73] via-[#103e91] to-[#1d4fa5]" />
         <div className="absolute inset-0 opacity-20" style={{
           backgroundImage: "radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 80%, white 1px, transparent 1px)",
           backgroundSize: "50px 50px",
         }} />
 
-        <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center">
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24 text-center">
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 backdrop-blur-sm text-white text-xs font-semibold mb-6">
+            {/* Badge or */}
+            <div className="inline-flex items-center gap-2 rounded-full bg-[#f5b335]/20 border border-[#f5b335]/30 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#f5b335] mb-6">
               <Download className="w-3.5 h-3.5" />
               Téléchargements
             </div>
 
-            <h1 className="text-3xl sm:text-5xl font-bold text-white mb-4">
-              Academia Helm
-              <span className="block text-blue-200 text-lg sm:text-2xl font-medium mt-2">
-                Application Desktop & Mobile
-              </span>
+            {/* Logo Academia Helm */}
+            <div className="flex justify-center mb-6">
+              <LogoCircle size={72} animated={true} />
+            </div>
+
+            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold text-white leading-[1.15] tracking-tight mb-4">
+              Academia<span className="text-amber-300 ml-2">Helm</span>
             </h1>
 
-            <p className="text-blue-100 text-base sm:text-lg max-w-2xl mx-auto mb-8">
-              Téléchargez l'application Academia Helm pour Windows, macOS, Android et iOS.
-              Accès plus rapide, mode hors connexion, synchronisation automatique.
+            <p className="text-base md:text-lg text-blue-100 max-w-2xl mx-auto mb-6">
+              Téléchargez le cockpit digital de votre établissement.
+              Application desktop et mobile, mode hors connexion, synchronisation automatique.
             </p>
 
             {/* Version actuelle */}
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white text-sm">
-              <Tag className="w-4 h-4" />
+            <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white text-sm">
+              <Tag className="w-4 h-4 text-[#f5b335]" />
               <span className="font-semibold">Version {LATEST_RELEASE.version}</span>
-              <span className="opacity-60">•</span>
-              <Calendar className="w-4 h-4" />
+              <span className="opacity-40">•</span>
+              <Calendar className="w-4 h-4 text-[#f5b335]" />
               <span>{new Date(LATEST_RELEASE.date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</span>
             </div>
           </motion.div>
@@ -180,13 +171,13 @@ export default function DownloadsPage() {
       </section>
 
       {/* ── Sélecteur Desktop / Mobile ── */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 -mt-8 relative z-10">
-        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-2 grid grid-cols-2 gap-2">
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 relative z-10">
+        <div className="bg-white rounded-2xl shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] border border-slate-200/80 p-2 grid grid-cols-2 gap-2">
           <button
             onClick={() => setSelectedPlatform("desktop")}
-            className={`flex items-center justify-center gap-2 py-4 rounded-xl font-semibold transition-all ${
+            className={`flex items-center justify-center gap-2 py-4 rounded-xl font-semibold transition-all duration-300 ${
               selectedPlatform === "desktop"
-                ? "bg-gradient-to-r from-blue-600 to-indigo-700 text-white shadow-lg"
+                ? "bg-[#0b2f73] text-white shadow-lg"
                 : "text-slate-600 hover:bg-slate-50"
             }`}
           >
@@ -195,9 +186,9 @@ export default function DownloadsPage() {
           </button>
           <button
             onClick={() => setSelectedPlatform("mobile")}
-            className={`flex items-center justify-center gap-2 py-4 rounded-xl font-semibold transition-all ${
+            className={`flex items-center justify-center gap-2 py-4 rounded-xl font-semibold transition-all duration-300 ${
               selectedPlatform === "mobile"
-                ? "bg-gradient-to-r from-blue-600 to-indigo-700 text-white shadow-lg"
+                ? "bg-[#0b2f73] text-white shadow-lg"
                 : "text-slate-600 hover:bg-slate-50"
             }`}
           >
@@ -208,62 +199,93 @@ export default function DownloadsPage() {
       </section>
 
       {/* ── Section téléchargements ── */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
-        {selectedPlatform === "desktop" ? (
-          <DesktopDownloads release={LATEST_RELEASE} />
-        ) : (
-          <MobileDownloads release={LATEST_RELEASE} />
-        )}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-20">
+        <AnimatePresence mode="wait">
+          {selectedPlatform === "desktop" ? (
+            <motion.div
+              key="desktop"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              <DesktopDownloads release={LATEST_RELEASE} />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="mobile"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              <MobileDownloads release={LATEST_RELEASE} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </section>
 
       {/* ── Fonctionnalités ── */}
-      <section className="bg-white py-16">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 text-center mb-12">
-            Pourquoi utiliser l'application desktop/mobile ?
-          </h2>
+      <section className="bg-[#0a1d3f] py-20 md:py-28 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-10" style={{
+          backgroundImage: "radial-gradient(circle at 30% 20%, #f5b335 1px, transparent 1px)",
+          backgroundSize: "40px 40px",
+        }} />
+
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 rounded-full bg-[#f5b335]/20 border border-[#f5b335]/30 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#f5b335] mb-4">
+              Avantages
+            </div>
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-white leading-[1.15] tracking-tight">
+              Pourquoi utiliser l'application desktop et mobile ?
+            </h2>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             <FeatureCard
               icon={Zap}
               title="Accès plus rapide"
-              description="Lancez Academia Helm en un clic depuis votre bureau. Pas besoin d'ouvrir un navigateur."
-              color={GOLD}
+              description="Lancez le cockpit digital en un clic depuis votre bureau. Pas besoin d'ouvrir un navigateur."
             />
             <FeatureCard
               icon={WifiOff}
               title="Mode hors connexion"
               description="Travaillez sans internet. Les données sont stockées localement et synchronisées au retour de la connexion."
-              color={EMERALD}
             />
             <FeatureCard
               icon={RefreshCw}
               title="Sync automatique"
               description="Synchronisation toutes les 60 secondes avec la base centrale Neon. Vos données sont toujours à jour."
-              color={BLUE}
             />
             <FeatureCard
               icon={Shield}
               title="Sécurisé"
-              description="Authentification JWT, chiffrement, ownership checks. Même sécurité que la version web."
-              color={NAVY}
+              description="Authentification JWT, chiffrement, vérification d'appartenance. Même sécurité que la version web."
             />
           </div>
         </div>
       </section>
 
       {/* ── Changelog ── */}
-      <section className="bg-slate-50 py-16">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6">
-          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 text-center mb-2">
-            Dernières mises à jour
-          </h2>
-          <p className="text-slate-500 text-center mb-12">
-            Version {LATEST_RELEASE.version} — {new Date(LATEST_RELEASE.date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
-          </p>
+      <section className="bg-white py-20 md:py-28">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 rounded-full bg-[#0b2f73]/10 border border-[#0b2f73]/15 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#0b2f73] mb-4">
+              <FileCode className="w-3.5 h-3.5" />
+              Mises à jour
+            </div>
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-[#0b2f73] leading-[1.15] tracking-tight mb-2">
+              Dernières nouveautés
+            </h2>
+            <p className="text-slate-500">
+              Version {LATEST_RELEASE.version} — {new Date(LATEST_RELEASE.date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
+            </p>
+          </div>
 
-          <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 text-white">
+          <div className="rounded-3xl border border-slate-200/80 bg-white shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] overflow-hidden">
+            {/* En-tête navy */}
+            <div className="bg-gradient-to-r from-[#0b2f73] to-[#1d4fa5] p-6 text-white">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-xl font-bold">Version {LATEST_RELEASE.version}</h3>
@@ -271,67 +293,59 @@ export default function DownloadsPage() {
                     {new Date(LATEST_RELEASE.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
                   </p>
                 </div>
-                <span className="px-3 py-1 rounded-full bg-white/20 text-xs font-bold">
+                <span className="px-3 py-1 rounded-full bg-[#f5b335] text-[#0b2f73] text-xs font-bold">
                   DERNIÈRE
                 </span>
               </div>
             </div>
 
-            <div className="p-6">
-              <h4 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                <FileCode className="w-4 h-4 text-blue-600" />
+            {/* Notes de version */}
+            <div className="p-6 md:p-8">
+              <h4 className="font-semibold text-[#0b2f73] mb-4 flex items-center gap-2">
+                <FileCode className="w-4 h-4 text-[#f5b335]" />
                 Nouveautés
               </h4>
               <ul className="space-y-3">
                 {LATEST_RELEASE.notes.map((note, i) => (
                   <li key={i} className="flex items-start gap-3">
                     <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                    <span className="text-slate-700 text-sm">{note}</span>
+                    <span className="text-slate-700 text-sm md:text-base">{note}</span>
                   </li>
                 ))}
               </ul>
             </div>
           </div>
-
-          {/* Lien vers GitHub pour les versions précédentes */}
-          <div className="text-center mt-8">
-            <a
-              href="https://github.com/SenaDev007/Academia-Helm/releases"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900 border border-slate-300 rounded-lg hover:bg-slate-100 transition-all"
-            >
-              <Github className="w-4 h-4" />
-              Voir toutes les versions sur GitHub
-              <ChevronRight className="w-4 h-4" />
-            </a>
-          </div>
         </div>
       </section>
 
       {/* ── FAQ ── */}
-      <section className="bg-white py-16">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6">
-          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 text-center mb-12">
-            Questions fréquentes
-          </h2>
+      <section className="bg-[#F7F9FC] py-20 md:py-28">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 rounded-full bg-[#0b2f73]/10 border border-[#0b2f73]/15 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#0b2f73] mb-4">
+              FAQ
+            </div>
+            <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-[#0b2f73] leading-[1.15] tracking-tight">
+              Questions fréquentes
+            </h2>
+          </div>
 
-          <div className="space-y-6">
+          <div className="space-y-4">
             <FaqItem
-              question="Dois-je avoir un compte pour utiliser l'app desktop ?"
-              answer="Oui. L'école doit déjà avoir un compte créé sur la version web. Au premier lancement de l'app desktop, vous recherchez votre école puis vous connectez avec vos identifiants existants."
+              question="Dois-je avoir un compte pour utiliser l'application desktop ?"
+              answer="Oui. L'établissement doit déjà avoir un compte créé sur la version web. Au premier lancement de l'application desktop, vous recherchez votre établissement puis vous connectez avec vos identifiants existants."
             />
             <FaqItem
-              question="L'app desktop met-elle à jour automatiquement ?"
-              answer="Oui. L'app vérifie les mises à jour au démarrage et affiche une notification si une nouvelle version est disponible. L'installation se fait en un clic."
+              question="L'application desktop met-elle à jour automatiquement ?"
+              answer="Oui. L'application vérifie les mises à jour au démarrage et affiche une notification si une nouvelle version est disponible. L'installation se fait en un clic."
             />
             <FaqItem
               question="Puis-je travailler sans connexion internet ?"
-              answer="Oui. L'app desktop embarque une base SQLite locale qui se synchronise avec Neon PostgreSQL toutes les 60 secondes quand vous êtes en ligne. Hors ligne, vos écritures sont mises en file d'attente et synchronisées au retour de la connexion."
+              answer="Oui. L'application desktop embarque une base SQLite locale qui se synchronise avec Neon PostgreSQL toutes les 60 secondes quand vous êtes en ligne. Hors ligne, vos écritures sont mises en file d'attente et synchronisées au retour de la connexion."
             />
             <FaqItem
               question="Mes données sont-elles les mêmes sur web, desktop et mobile ?"
-              answer="Oui, exactement. Neon PostgreSQL est la source de vérité unique. L'app desktop et l'app mobile sont des miroirs qui se synchronisent automatiquement."
+              answer="Oui, exactement. Neon PostgreSQL est la source de vérité unique. L'application desktop et l'application mobile sont des miroirs qui se synchronisent automatiquement."
             />
             <FaqItem
               question="Quelles sont les configurations requises ?"
@@ -341,23 +355,27 @@ export default function DownloadsPage() {
         </div>
       </section>
 
-      {/* ── Footer ── */}
-      <footer className="bg-slate-900 text-slate-400 py-12">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 text-center">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center">
-              <span className="text-white font-bold text-sm">AH</span>
-            </div>
-            <span className="font-bold text-white">Academia Helm</span>
-          </div>
-          <p className="text-sm">
-            © 2026 Academia Helm. Tous droits réservés.
+      {/* ── CTA final ── */}
+      <section className="bg-gradient-to-br from-[#0b2f73] via-[#103e91] to-[#1d4fa5] py-16 md:py-20">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white leading-[1.15] tracking-tight mb-4">
+            Passez au pilotage scolaire nouvelle génération
+          </h2>
+          <p className="text-blue-100 text-base md:text-lg mb-8 max-w-2xl mx-auto">
+            Équipez votre établissement d'un système fiable, élégant et prêt pour la croissance.
           </p>
-          <p className="text-xs mt-2 text-slate-500">
-            Plateforme de gestion scolaire pour établissements africains
-          </p>
+          <Link
+            href="/portal"
+            className="inline-flex items-center gap-2 bg-[#f5b335] text-[#0b2f73] hover:bg-[#f7c359] px-6 py-3 rounded-xl font-bold min-h-[48px] shadow-lg shadow-[#f5b335]/20 transition-all duration-200 hover:-translate-y-0.5"
+          >
+            Accéder au portail
+            <ChevronRight className="w-5 h-5" />
+          </Link>
         </div>
-      </footer>
+      </section>
+
+      {/* ── Footer (identique au landing page) ── */}
+      <Footer2 />
     </div>
   );
 }
@@ -369,7 +387,6 @@ function DesktopDownloads({ release }: { release: Release }) {
     (a) => a.platform === "windows" || a.platform === "macos" || a.platform === "linux",
   );
 
-  // Grouper par plateforme
   const byPlatform = desktopAssets.reduce((acc, asset) => {
     if (!acc[asset.platform]) acc[asset.platform] = [];
     acc[asset.platform].push(asset);
@@ -378,8 +395,12 @@ function DesktopDownloads({ release }: { release: Release }) {
 
   return (
     <div>
-      <div className="text-center mb-10">
-        <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-2">
+      <div className="text-center mb-12">
+        <div className="inline-flex items-center gap-2 rounded-full bg-[#0b2f73]/10 border border-[#0b2f73]/15 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#0b2f73] mb-4">
+          <PlatformIcon platform="windows" size={14} />
+          Desktop
+        </div>
+        <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-[#0b2f73] leading-[1.15] tracking-tight mb-2">
           Télécharger pour Desktop
         </h2>
         <p className="text-slate-500">
@@ -397,7 +418,7 @@ function DesktopDownloads({ release }: { release: Release }) {
           return (
             <div
               key={platform}
-              className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden hover:shadow-xl transition-shadow"
+              className="rounded-3xl border border-slate-200/80 bg-white overflow-hidden shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] hover:shadow-[0_24px_60px_-20px_rgba(11,47,115,0.30)] hover:border-[#0b2f73]/30 transition-all duration-300"
             >
               {/* En-tête plateforme avec icône officielle */}
               <div
@@ -414,24 +435,22 @@ function DesktopDownloads({ release }: { release: Release }) {
                 {assets.length === 0 ? (
                   <div className="text-center py-6">
                     <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                    <p className="text-sm text-slate-400">
-                      Bientôt disponible
-                    </p>
+                    <p className="text-sm text-slate-400">Bientôt disponible</p>
                   </div>
                 ) : (
                   assets.map((asset) => (
                     <a
                       key={asset.name}
                       href={asset.downloadUrl}
-                      className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all group"
+                      className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-900 truncate">
+                        <p className="text-sm font-semibold text-[#0b2f73] truncate">
                           {asset.name}
                         </p>
                         <p className="text-xs text-slate-500">{asset.size}</p>
                       </div>
-                      <Download className="w-4 h-4 text-slate-400 group-hover:text-blue-600 group-hover:translate-y-0.5 transition-all flex-shrink-0" />
+                      <Download className="w-4 h-4 text-slate-400 group-hover:text-[#f5b335] group-hover:translate-y-0.5 transition-all flex-shrink-0" />
                     </a>
                   ))
                 )}
@@ -449,8 +468,12 @@ function DesktopDownloads({ release }: { release: Release }) {
 function MobileDownloads({ release }: { release: Release }) {
   return (
     <div>
-      <div className="text-center mb-10">
-        <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-2">
+      <div className="text-center mb-12">
+        <div className="inline-flex items-center gap-2 rounded-full bg-[#0b2f73]/10 border border-[#0b2f73]/15 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#0b2f73] mb-4">
+          <PlatformIcon platform="android" size={14} />
+          Mobile
+        </div>
+        <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-[#0b2f73] leading-[1.15] tracking-tight mb-2">
           Télécharger pour Mobile
         </h2>
         <p className="text-slate-500">
@@ -460,7 +483,7 @@ function MobileDownloads({ release }: { release: Release }) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto">
         {/* Android */}
-        <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden hover:shadow-xl transition-shadow">
+        <div className="rounded-3xl border border-slate-200/80 bg-white overflow-hidden shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] hover:shadow-[0_24px_60px_-20px_rgba(11,47,115,0.30)] hover:border-[#0b2f73]/30 transition-all duration-300">
           <div
             className="p-6 text-white"
             style={{ background: `linear-gradient(135deg, ${PLATFORM_COLORS.android}, ${PLATFORM_COLORS.android}DD)` }}
@@ -474,36 +497,36 @@ function MobileDownloads({ release }: { release: Release }) {
             {/* Play Store */}
             <a
               href="https://play.google.com/store/apps/details?id=com.academiahelm.mobile"
-              className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/50 transition-all group"
+              className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
             >
               <div className="flex items-center gap-3 flex-1 min-w-0">
                 <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
                   <PlatformIcon platform="google-play" size={18} className="text-emerald-600" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">{PLATFORM_LABELS["google-play"]}</p>
+                  <p className="text-sm font-semibold text-[#0b2f73]">{PLATFORM_LABELS["google-play"]}</p>
                   <p className="text-xs text-slate-500">Recommandé</p>
                 </div>
               </div>
-              <Download className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 transition-all flex-shrink-0" />
+              <Download className="w-4 h-4 text-slate-400 group-hover:text-[#f5b335] transition-all flex-shrink-0" />
             </a>
 
             {/* APK direct */}
             <a
               href={release.assets.find((a) => a.platform === "android")?.downloadUrl || "#"}
-              className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/50 transition-all group"
+              className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
             >
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-900">Télécharger l'APK</p>
+                <p className="text-sm font-semibold text-[#0b2f73]">Télécharger l'APK</p>
                 <p className="text-xs text-slate-500">~25 MB — Installation manuelle</p>
               </div>
-              <Download className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 transition-all flex-shrink-0" />
+              <Download className="w-4 h-4 text-slate-400 group-hover:text-[#f5b335] transition-all flex-shrink-0" />
             </a>
           </div>
         </div>
 
         {/* iOS */}
-        <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden hover:shadow-xl transition-shadow">
+        <div className="rounded-3xl border border-slate-200/80 bg-white overflow-hidden shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] hover:shadow-[0_24px_60px_-20px_rgba(11,47,115,0.30)] hover:border-[#0b2f73]/30 transition-all duration-300">
           <div
             className="p-6 text-white"
             style={{ background: `linear-gradient(135deg, #1a1a1a, #333)` }}
@@ -517,24 +540,24 @@ function MobileDownloads({ release }: { release: Release }) {
             {/* App Store */}
             <a
               href="https://apps.apple.com/app/academia-helm/idXXXXXXXX"
-              className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-slate-400 hover:bg-slate-50 transition-all group"
+              className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
             >
               <div className="flex items-center gap-3 flex-1 min-w-0">
                 <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
                   <PlatformIcon platform="app-store" size={18} className="text-slate-700" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">{PLATFORM_LABELS["app-store"]}</p>
+                  <p className="text-sm font-semibold text-[#0b2f73]">{PLATFORM_LABELS["app-store"]}</p>
                   <p className="text-xs text-slate-500">Recommandé</p>
                 </div>
               </div>
-              <Download className="w-4 h-4 text-slate-400 group-hover:text-slate-700 transition-all flex-shrink-0" />
+              <Download className="w-4 h-4 text-slate-400 group-hover:text-[#f5b335] transition-all flex-shrink-0" />
             </a>
 
             {/* TestFlight */}
             <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-200 opacity-60">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-900">TestFlight</p>
+                <p className="text-sm font-semibold text-[#0b2f73]">TestFlight</p>
                 <p className="text-xs text-slate-500">Bientôt disponible</p>
               </div>
               <AlertCircle className="w-4 h-4 text-slate-400 flex-shrink-0" />
@@ -544,14 +567,14 @@ function MobileDownloads({ release }: { release: Release }) {
       </div>
 
       {/* Note d'info */}
-      <div className="mt-8 max-w-3xl mx-auto bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
-        <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+      <div className="mt-8 max-w-3xl mx-auto bg-[#0b2f73]/5 border border-[#0b2f73]/15 rounded-xl p-4 flex items-start gap-3">
+        <AlertCircle className="w-5 h-5 text-[#0b2f73] flex-shrink-0 mt-0.5" />
         <div>
-          <p className="text-sm font-semibold text-blue-900">Avant de commencer</p>
-          <p className="text-xs text-blue-700 mt-1">
-            L'application mobile vous guidera pour rechercher votre école au premier lancement.
-            Votre école doit déjà avoir un compte Academia Helm. Si ce n'est pas le cas,
-            contactez l'administration de votre école.
+          <p className="text-sm font-semibold text-[#0b2f73]">Avant de commencer</p>
+          <p className="text-xs text-slate-600 mt-1">
+            L'application mobile vous guidera pour rechercher votre établissement au premier lancement.
+            Votre établissement doit déjà avoir un compte Academia Helm. Si ce n'est pas le cas,
+            contactez l'administration de votre établissement.
           </p>
         </div>
       </div>
@@ -565,23 +588,18 @@ function FeatureCard({
   icon: Icon,
   title,
   description,
-  color,
 }: {
   icon: any;
   title: string;
   description: string;
-  color: string;
 }) {
   return (
-    <div className="bg-white rounded-2xl p-6 shadow-md border border-slate-100 hover:shadow-lg transition-shadow">
-      <div
-        className="w-12 h-12 rounded-xl flex items-center justify-center mb-4"
-        style={{ backgroundColor: `${color}20` }}
-      >
-        <Icon className="w-6 h-6" style={{ color }} />
+    <div className="rounded-2xl bg-white/[0.04] border border-white/10 backdrop-blur-sm p-6 hover:bg-white/[0.08] transition-all duration-300">
+      <div className="w-12 h-12 rounded-xl bg-[#f5b335]/20 flex items-center justify-center mb-4">
+        <Icon className="w-6 h-6 text-[#f5b335]" />
       </div>
-      <h3 className="font-bold text-slate-900 mb-2">{title}</h3>
-      <p className="text-sm text-slate-500 leading-relaxed">{description}</p>
+      <h3 className="font-bold text-white mb-2">{title}</h3>
+      <p className="text-sm text-blue-100/70 leading-relaxed">{description}</p>
     </div>
   );
 }
@@ -590,14 +608,14 @@ function FaqItem({ question, answer }: { question: string; answer: string }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="border border-slate-200 rounded-xl overflow-hidden">
+    <div className="border border-slate-200/80 rounded-xl overflow-hidden bg-white shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)]">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between gap-4 px-5 py-4 text-left hover:bg-slate-50 transition-colors"
+        className="w-full flex items-center justify-between gap-4 px-5 py-4 text-left hover:bg-slate-50 transition-colors duration-200"
       >
-        <span className="font-semibold text-slate-900 text-sm">{question}</span>
+        <span className="font-semibold text-[#0b2f73] text-sm md:text-base">{question}</span>
         <ChevronRight
-          className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+          className={`w-4 h-4 text-[#f5b335] flex-shrink-0 transition-transform duration-300 ${open ? "rotate-90" : ""}`}
         />
       </button>
       {open && (

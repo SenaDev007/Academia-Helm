@@ -210,12 +210,12 @@ const _adminActions = [
 const _teacherActions = [
   QuickAction(label: 'Mes élèves', icon: Icons.school, route: '/students'),
   QuickAction(label: 'Notes', icon: Icons.grade, route: '/grades'),
-  QuickAction(label: 'Présence', icon: Icons.check_circle, route: '/absences'),
+  QuickAction(label: 'Faire l\'appel', icon: Icons.check_circle, route: '/absences'),
   QuickAction(label: 'Emploi du temps', icon: Icons.schedule, route: '/schedule'),
 ];
 
 const _parentActions = [
-  QuickAction(label: 'Mes enfants', icon: Icons.child_care, route: '/students'),
+  QuickAction(label: 'Mes enfants', icon: Icons.child_care, route: '/children'),
   QuickAction(label: 'Bulletins', icon: Icons.grade, route: '/grades'),
   QuickAction(label: 'Paiements', icon: Icons.payment, route: '/payments'),
   QuickAction(label: 'Absences', icon: Icons.event_busy, route: '/absences'),

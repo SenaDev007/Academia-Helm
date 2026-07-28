@@ -44,6 +44,10 @@ import '../../features/messages/pages/messages_list_screen.dart';
 import '../../features/messages/pages/message_detail_screen.dart';
 import '../../features/absences/pages/absences_list_screen.dart';
 import '../../features/schedule/pages/schedule_screen.dart';
+// ⭐ P0-2: Écran Mes Enfants pour le portail Parent
+import '../../features/parents/pages/children_screen.dart';
+// ⭐ P1-6: Écran Faire l'appel (enseignant)
+import '../../features/attendance/pages/take_attendance_screen.dart';
 
 // ── Navigation Destinations ───────────────────────────────────────────
 
@@ -192,7 +196,7 @@ const List<AdaptiveDestination> _parentDestinations = [
     icon: Icons.child_care_outlined,
     selectedIcon: Icons.child_care,
     label: 'Mes enfants',
-    path: '/students',
+    path: '/children',
   ),
   AdaptiveDestination(
     icon: Icons.grade_outlined,
@@ -313,6 +317,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             },
           ),
 
+          // ⭐ P0-2: Route Mes Enfants (portail Parent)
+          GoRoute(
+            path: '/children',
+            name: 'children',
+            builder: (context, state) => const ChildrenScreen(),
+          ),
+
           // ⭐ P0-1: Routes orphelines maintenant câblées
           // Grades (notes / bulletins)
           GoRoute(
@@ -371,6 +382,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: '/schedule',
             name: 'schedule',
             builder: (context, state) => const ScheduleScreen(),
+          ),
+
+          // ⭐ P1-6: Faire l'appel (enseignant)
+          GoRoute(
+            path: '/take-attendance/:classId',
+            name: 'takeAttendance',
+            builder: (context, state) {
+              final classId = state.pathParameters['classId'] ?? '';
+              return TakeAttendanceScreen(classId: classId);
+            },
           ),
 
           GoRoute(

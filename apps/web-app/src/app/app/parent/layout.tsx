@@ -29,6 +29,7 @@ import {
   LayoutDashboard, Users, CreditCard, FileText,
   CalendarCheck, MessageSquare, Folder, Loader2, Heart,
   Building2, Phone, Mail, MapPin, GraduationCap, LogOut, Menu, X,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LogoutModal } from "@/components/auth/LogoutModal";
@@ -36,6 +37,7 @@ import { LogoutModal } from "@/components/auth/LogoutModal";
 const PARENT_MODULES = [
   { path: "/app/parent", label: "Tableau de bord", icon: LayoutDashboard },
   { path: "/app/parent/children", label: "Mes Enfants", icon: Users },
+  { path: "/app/parent/cahier-journal", label: "Cahier journal", icon: BookOpen },
   { path: "/app/parent/payments", label: "Paiements", icon: CreditCard },
   { path: "/app/parent/results", label: "Bulletins", icon: FileText },
   { path: "/app/parent/attendance", label: "Présences", icon: CalendarCheck },

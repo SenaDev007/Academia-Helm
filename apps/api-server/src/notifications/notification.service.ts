@@ -488,4 +488,152 @@ export class NotificationService {
       );
     }
   }
+
+  /**
+   * ═══ Notifie les parents d'élèves d'une classe qu'un nouveau devoir a été donné ═══
+   *
+   * Cas d'usage : depuis pedagogical-workspace-prisma.service lorsqu'un enseignant
+   * ajoute un devoir (homework) à une séance de cahier journal.
+   *
+   * Résolution des destinataires :
+   *   1. Récupère tous les StudentEnrollment actifs pour la classe (academicYear courant)
+   *   2. Pour chaque student → StudentGuardian (isPrimary = true en priorité)
+   *   3. Pour chaque Guardian → cherche un User avec email matching
+   *   4. Si User trouvé → crée une notification in-app + push web
+   *
+   * Fire-and-forget — ne lève jamais d'erreur bloquante.
+   */
+  async notifyParentsNewHomework(
+    classId: string,
+    tenantId: string,
+    subjectLabel: string,
+    homeworkDescription: string,
+  ) {
+    try {
+      // 1. Récupérer les élèves actifs de la classe
+      const enrollments = await this.prisma.studentEnrollment.findMany({
+        where: {
+          tenantId,
+          classId,
+          status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'CONFIRMED'] },
+        },
+        select: { studentId: true },
+      });
+
+      if (enrollments.length === 0) {
+        this.logger.log(
+          `notifyParentsNewHomework: aucun élève dans la classe ${classId} — aucune notification`,
+        );
+        return;
+      }
+
+      const studentIds = enrollments.map((e) => e.studentId);
+
+      // 2. Récupérer les guardians principaux de ces élèves
+      const guardians = await this.prisma.studentGuardian.findMany({
+        where: {
+          studentId: { in: studentIds },
+          tenantId,
+          // isPrimary en priorité — si pas de primary, on prend tous
+        },
+        select: {
+          studentId: true,
+          guardianId: true,
+          isPrimary: true,
+          guardian: { select: { id: true, email: true, firstName: true, lastName: true, phone: true } },
+        },
+      });
+
+      if (guardians.length === 0) {
+        this.logger.log(
+          `notifyParentsNewHomework: aucun guardian pour ${studentIds.length} élève(s) de la classe ${classId}`,
+        );
+        return;
+      }
+
+      // Ne garder que le guardian principal par élève (ou le premier si pas de primary)
+      const primaryByStudent = new Map<string, typeof guardians[number]>();
+      for (const g of guardians) {
+        const existing = primaryByStudent.get(g.studentId);
+        if (!existing) {
+          primaryByStudent.set(g.studentId, g);
+        } else if (!existing.isPrimary && g.isPrimary) {
+          primaryByStudent.set(g.studentId, g);
+        }
+      }
+
+      // 3. Résoudre les User par email matching
+      const guardianEmails = Array.from(primaryByStudent.values())
+        .map((g) => g.guardian.email)
+        .filter((e): e is string => !!e);
+
+      if (guardianEmails.length === 0) {
+        this.logger.log(
+          `notifyParentsNewHomework: aucun guardian avec email pour la classe ${classId}`,
+        );
+        return;
+      }
+
+      const users = await this.prisma.user.findMany({
+        where: {
+          email: { in: guardianEmails },
+          tenantId,
+          status: 'active',
+        },
+        select: { id: true, email: true },
+      });
+
+      if (users.length === 0) {
+        this.logger.log(
+          `notifyParentsNewHomework: aucun User actif correspondant aux ${guardianEmails.length} email(s) de guardian`,
+        );
+        return;
+      }
+
+      // 4. Créer une notification par parent
+      const title = `Nouveau devoir — ${subjectLabel}`;
+      const body = homeworkDescription
+        ? (homeworkDescription.length > 120
+            ? homeworkDescription.substring(0, 117) + '…'
+            : homeworkDescription)
+        : 'Un nouveau devoir a été ajouté pour votre enfant.';
+
+      const notifications = await Promise.all(
+        users.map((u) =>
+          this
+            .create({
+              tenantId,
+              recipientId: u.id,
+              type: 'NEW_HOMEWORK',
+              title,
+              body,
+              priority: 'MEDIUM',
+              data: {
+                url: '/app/parent',
+                classId,
+                subject: subjectLabel,
+              },
+              relatedEntityType: 'HomeworkEntry',
+              relatedEntityId: null,
+            })
+            .catch((e) => {
+              this.logger.error(
+                `notifyParentsNewHomework: create notif failed for user ${u.id}: ${e.message}`,
+              );
+              return null;
+            }),
+        ),
+      );
+
+      const created = notifications.filter(Boolean);
+      this.logger.log(
+        `notifyParentsNewHomework: ${created.length} notification(s) créée(s) pour la classe ${classId} (${users.length} parents)`,
+      );
+    } catch (err: any) {
+      this.logger.error(
+        `notifyParentsNewHomework failed: ${err.message}`,
+        err.stack,
+      );
+    }
+  }
 }

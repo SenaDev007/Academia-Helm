@@ -552,7 +552,7 @@ export class ParentPortalController {
 
   /**
    * GET /parent/receipts/:paymentId
-   * Infos d'un reçu (JSON — le PDF sera généré par le module finance).
+   * Infos d'un reçu (JSON — utilisé par le frontend pour générer le PDF côté client).
    */
   @Get('receipts/:paymentId')
   async getReceipt(
@@ -562,18 +562,74 @@ export class ParentPortalController {
   ) {
     const payment: any = await this.prisma.$queryRawUnsafe(
       `SELECT p."id", p."amount", p."paymentDate", p."paymentMethod",
-              p."receiptNumber", p."reference", p."status",
+              p."receiptNumber", p."reference", p."status", p."notes",
+              p."feeName",
               s."firstName", s."lastName", s."matricule",
-              t."name" as "tenantName"
+              t."name" as "tenantName", t."logoUrl", t."address", t."phone", t."email",
+              se."classId", c."name" as "className",
+              sl."name" as "levelName"
        FROM "payments" p
        INNER JOIN "students" s ON s."id" = p."studentId"
        LEFT JOIN "tenants" t ON t."id" = p."tenantId"
+       LEFT JOIN "student_enrollments" se ON se."studentId" = s."id"
+         AND se."tenantId" = p."tenantId"
+         AND se."academicYearId" = p."academicYearId"
+       LEFT JOIN "classes" c ON c."id" = se."classId"
+       LEFT JOIN "school_levels" sl ON sl."id" = se."schoolLevelId"
        WHERE p."id" = $1 AND p."tenantId" = $2 LIMIT 1`,
       paymentId, tenantId,
     ).catch(() => []);
 
     if (!payment || payment.length === 0) {
-      throw new NotFoundException('Paiement non trouvé');
+      // Fallback sur FinanceTransaction si pas dans la table `payments`
+      const tx: any = await this.prisma.$queryRawUnsafe(
+        `SELECT ft."id", ft."amount", ft."createdAt" as "paymentDate",
+                ft."paymentMethod", ft."receiptNumber", ft."reference",
+                ft."status", ft."notes", ft."type",
+                s."firstName", s."lastName", s."matricule",
+                t."name" as "tenantName", t."logoUrl", t."address", t."phone", t."email",
+                se."classId", c."name" as "className",
+                sl."name" as "levelName"
+         FROM "finance_transactions" ft
+         INNER JOIN "students" s ON s."id" = ft."studentId"
+         LEFT JOIN "tenants" t ON t."id" = ft."tenantId"
+         LEFT JOIN "student_enrollments" se ON se."studentId" = s."id"
+           AND se."tenantId" = ft."tenantId"
+           AND se."academicYearId" = ft."academicYearId"
+         LEFT JOIN "classes" c ON c."id" = se."classId"
+         LEFT JOIN "school_levels" sl ON sl."id" = se."schoolLevelId"
+         WHERE ft."id" = $1 AND ft."tenantId" = $2 LIMIT 1`,
+        paymentId, tenantId,
+      ).catch(() => []);
+
+      if (!tx || tx.length === 0) {
+        throw new NotFoundException('Paiement non trouvé');
+      }
+
+      const p = tx[0];
+      res.json({
+        paymentId: p.id,
+        amount: p.amount,
+        date: p.paymentDate,
+        method: p.paymentMethod,
+        receiptNumber: p.receiptNumber,
+        reference: p.reference,
+        status: p.status,
+        notes: p.notes,
+        feeName: 'Scolarité',
+        student: `${p.firstName} ${p.lastName}`,
+        matricule: p.matricule,
+        className: p.className,
+        levelName: p.levelName,
+        school: {
+          name: p.tenantName,
+          logoUrl: p.logoUrl,
+          address: p.address,
+          phone: p.phone,
+          email: p.email,
+        },
+      });
+      return;
     }
 
     const p = payment[0];
@@ -585,9 +641,130 @@ export class ParentPortalController {
       receiptNumber: p.receiptNumber,
       reference: p.reference,
       status: p.status,
+      notes: p.notes,
+      feeName: p.feeName || 'Scolarité',
       student: `${p.firstName} ${p.lastName}`,
       matricule: p.matricule,
-      school: p.tenantName,
+      className: p.className,
+      levelName: p.levelName,
+      school: {
+        name: p.tenantName,
+        logoUrl: p.logoUrl,
+        address: p.address,
+        phone: p.phone,
+        email: p.email,
+      },
     });
+  }
+
+  /**
+   * GET /parent/cahier-journal/:classId?weekStart=YYYY-MM-DD
+   * Cahier journal hebdomadaire de la classe (visible par les parents).
+   *
+   * Retourne les entrées structurées par jour + les observations + le statut
+   * de validation. Le parent peut consulter les cahiers journals passés.
+   */
+  @Get('cahier-journal/:classId')
+  async getCahierJournal(
+    @TenantId() tenantId: string,
+    @Param('classId') classId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('weekStart') weekStartStr?: string,
+  ) {
+    // Déterminer la semaine cible
+    let weekStart: string;
+    if (weekStartStr) {
+      weekStart = weekStartStr;
+    } else {
+      // Calculer le lundi de la semaine courante
+      const now = new Date();
+      const day = now.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() + diff);
+      weekStart = monday.toISOString().split('T')[0];
+    }
+
+    const cj: any = await this.prisma.$queryRawUnsafe(
+      `SELECT cj."id", cj."entries", cj."observations", cj."status",
+              cj."weekStartDate", cj."submittedAt", cj."validatedAt",
+              cj."teacherSignature", cj."directorSignature",
+              t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName",
+              c."name" as "className",
+              sl."code" as "levelCode", sl."name" as "levelName"
+       FROM "cahier_journal_entries" cj
+       LEFT JOIN "teachers" t ON t."id" = cj."teacherId"
+       LEFT JOIN "classes" c ON c."id" = cj."classId"
+       LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
+       WHERE cj."tenantId" = $1 AND cj."classId" = $2
+       AND cj."weekStartDate" = $3::date LIMIT 1`,
+      tenantId, classId, weekStart,
+    ).catch(() => []);
+
+    if (!cj || cj.length === 0) {
+      // Retourner une structure vide plutôt que 404 — le parent doit voir
+      // que le cahier n'est pas encore disponible pour cette semaine.
+      return {
+        available: false,
+        weekStart,
+        message: 'Cahier journal non disponible pour cette semaine.',
+      };
+    }
+
+    const row = cj[0];
+    let entries = row.entries;
+    if (typeof entries === 'string') {
+      try { entries = JSON.parse(entries); } catch { entries = {}; }
+    }
+
+    // Récupérer la liste des semaines disponibles (pour navigation frontend)
+    const availableWeeks: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "weekStartDate"::text as "weekStart", "status"
+       FROM "cahier_journal_entries"
+       WHERE "tenantId" = $1 AND "classId" = $2
+       AND "academicYearId" = $3
+       ORDER BY "weekStartDate" DESC LIMIT 12`,
+      tenantId, classId, academicYearId,
+    ).catch(() => []);
+
+    return {
+      available: true,
+      id: row.id,
+      weekStart,
+      className: row.className,
+      levelCode: row.levelCode,
+      levelName: row.levelName,
+      teacherName: `${row.teacherFirstName || ''} ${row.teacherLastName || ''}`.trim() || null,
+      entries,
+      observations: row.observations,
+      status: row.status,
+      submittedAt: row.submittedAt,
+      validatedAt: row.validatedAt,
+      teacherSignature: row.teacherSignature,
+      directorSignature: row.directorSignature,
+      availableWeeks: availableWeeks || [],
+    };
+  }
+
+  /**
+   * GET /parent/weeks/:classId
+   * Liste des semaines ayant un cahier journal — pour navigation frontend.
+   */
+  @Get('weeks/:classId')
+  async getAvailableWeeks(
+    @TenantId() tenantId: string,
+    @Param('classId') classId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    const weeks: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "weekStartDate"::text as "weekStart", "status", "submittedAt"
+       FROM "cahier_journal_entries"
+       WHERE "tenantId" = $1 AND "classId" = $2
+       AND "academicYearId" = $3
+       ORDER BY "weekStartDate" DESC LIMIT 24`,
+      tenantId, classId, academicYearId,
+    ).catch(() => []);
+
+    return weeks || [];
   }
 }

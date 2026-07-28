@@ -2135,3 +2135,101 @@ Stage Summary:
 - ✅ Backend : /evaluations accepte statuses séparés par virgule
 - ⏳ Déploiement Railway requis pour activer le fix backend (statuses séparés par virgule)
 - ⏳ Test navigateur recommandé pour valider le flux complet
+
+---
+Task ID: parent-portal-audit-and-fixes
+Agent: main
+Task: Audit complet du portail parent + corrections des manques + authentification multi-canal (email + téléphone)
+
+Work Log:
+1. **Audit complet** du portail parent via sous-agent Explore — 8 modules analysés:
+   - Mes Enfants: endpoint OK, page liste OK, page détail [childId] manquante (404)
+   - Scolarité & Paiements: bouton "Payer maintenant" non câblé (toast info), reçu sans PDF
+   - Suivi journalier: compteur seulement (pas de détail des cours)
+   - Cahier journal par enfant: ❌ PAS implémenté (endpoint documenté mais absent)
+   - Notes & Bulletins: pas de bouton PDF, items non affichés
+   - Communication: redirect simple vers /app/communication (admin)
+   - CRITIQUE: notifyParentsNewHomework() appelé mais inexistant → crash runtime
+   - SÉCURITÉ: ParentPortalController @Public() → faille critique (accès sans auth)
+
+2. **Fix crash runtime notifyParentsNewHomework** (notification.service.ts):
+   - Implémenté méthode notifyParentsNewHomework(classId, tenantId, subjectLabel, homeworkDescription)
+   - Résout StudentEnrollment → StudentGuardian (primary) → Guardian.email → User.id
+   - Crée une notification in-app + push web par parent destinataire
+   - Fire-and-forget (ne lève jamais d'erreur bloquante)
+
+3. **Authentification parent multi-canal** (DTO + service + UI):
+   - ParentPortalLoginDto étendu: identifierType ('PHONE'|'EMAIL'), email, password (optionnel), otp
+   - loginParent() dispatche vers loginParentByPhone() (SMS+OTP, historique) ou loginParentByEmail()
+   - loginParentByEmail() supporte 2 flux:
+     a) EMAIL + password (1 étape, parents lettrés avec mot de passe)
+     b) EMAIL + OTP par email (envoi via EmailService)
+   - OTP store étendu: normalizeOtpKey() gère préfixes phone: et email:
+   - LoginPage.tsx:
+     - Détection automatique du mode (si '@' dans le champ → EMAIL, sinon PHONE)
+     - Label dynamique: "Adresse email" / "Numéro de téléphone"
+     - Icône dynamique: Mail / Phone
+     - Placeholder dynamique: parent@exemple.com / +229 ...
+     - Champ mot de passe optionnel affiché en mode EMAIL (alternative à l'OTP)
+     - Message OTP dynamique: "envoyé à votre adresse email" / "à votre numéro de téléphone"
+   - Injection EmailService dans PortalAuthService (déjà exporté par CommunicationModule)
+
+4. **Nouveaux endpoints parent-portal.controller.ts**:
+   - GET /parent/cahier-journal/:classId?weekStart=YYYY-MM-DD&academicYearId=...
+     → retourne entries structurées par jour + observations + statut + availableWeeks
+   - GET /parent/weeks/:classId?academicYearId=...
+     → liste des semaines ayant un cahier journal (pour navigation frontend)
+   - GET /parent/receipts/:paymentId enrichi:
+     → + notes, feeName, className, levelName
+     → + school { name, logoUrl, address, phone, email }
+     → fallback sur FinanceTransaction si paymentId pas dans table `payments`
+
+5. **Page détail enfant [/app/parent/children/[childId]/page.tsx]** (NEW, ~600 lignes):
+   - 4 onglets: Suivi journalier / Scolarité / Notes & Bulletins / Assiduité
+   - TodayTab: détail des cours (matière, thème, contenu, devoir) — pas seulement compteur
+   - PaymentsTab: solde + historique + bouton reçu PDF fonctionnel (exportReceiptToPdf)
+   - ResultsTab: bulletins validés + items par matière + bouton bulletin PDF (exportBulletinToPdf)
+   - AttendanceTab: stats + historique mensuel
+   - Téléchargement PDF via nouveau module parent-exports.ts
+
+6. **Module parent-exports.ts** (NEW, ~340 lignes):
+   - exportReceiptToPdf(): reçu de paiement officiel (Republic of Benin header)
+     - Tableau élève/paiement (nom, matricule, classe, date, méthode, statut, référence)
+     - Bloc montant en évidence (couleur émeraude)
+     - Frai concerné + observations
+     - Zone cachet & signature
+   - exportBulletinToPdf(): bulletin de notes parent (1 page par période)
+     - Infos élève + classe + période
+     - Tableau matières (moyenne, coef, rang, appréciation)
+     - Bloc moyenne générale + rang
+   - Réutilise drawOfficialHeader/drawFooter/preloadSchoolLogo du module finance
+
+7. **Page Cahier Journal [/app/parent/cahier-journal/page.tsx]** (NEW, ~310 lignes):
+   - Sélecteur enfant → classId
+   - Navigation semaines (précédente/suivante/courante + chips semaines disponibles)
+   - Grille 5 jours (lundi→vendredi)
+   - Chaque jour: liste des séances (matière, durée, thème, contenu, devoir)
+   - Statut cahier (Validé/Soumis/Brouillon) + nom enseignant titulaire
+   - Observations générales de la semaine
+
+8. **Page Messages [/app/parent/messages/page.tsx]** (refonte totale):
+   - 3 onglets: Notifications / Annonces / Contacter l'école
+   - NotificationsTab: fetch /api/notifications, markAsRead, markAllAsRead
+   - AnnouncementsTab: fetch /api/communication/v2/announcements
+   - ContactTab: cartes Phone/Email/Address cliquables (tel:, mailto:)
+   - Plus de redirect vers /app/communication (réservé au staff école)
+
+9. **Layout parent mis à jour**:
+   - Ajout entrée "Cahier journal" (BookOpen icon) dans la sidebar
+   - 8 modules visibles désormais
+
+Stage Summary:
+- ✅ notifyParentsNewHomework implémenté (fix crash runtime)
+- ✅ Authentification parent multi-canal: téléphone+SMS-OTP / email+OTP-email / email+password
+- ✅ Page détail enfant avec 4 onglets complets + PDF reçus + PDF bulletins
+- ✅ Page Cahier journal par enfant (avec navigation semaines)
+- ✅ Page Messages parent dédiée (notifications + annonces + contact école)
+- ✅ PDF reçus de paiement (format officiel République du Bénin)
+- ✅ PDF bulletins de notes (parent-friendly)
+- ⚠️ Bouton "Payer maintenant" affiche toujours un toast (intégration FedaPay/FeexPay à finaliser)
+- ⚠️ Sécurité @Public() sur ParentPortalController: NON retiré (à faire dans un fix séparé car impact large — besoin de tester le flux BFF proxy avec JWT)

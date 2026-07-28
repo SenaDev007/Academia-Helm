@@ -110,8 +110,14 @@ interface TeacherCredentials {
 }
 
 interface ParentCredentials {
+  /** "PHONE" (par défaut) ou "EMAIL". */
+  identifierType?: 'PHONE' | 'EMAIL';
+  /** Numéro de téléphone (mode PHONE) ou email (mode EMAIL — peut utiliser phone comme champ unique côté UI). */
   phone: string;
+  /** Code OTP (mode OTP, étape 2). */
   otp?: string;
+  /** Mot de passe (mode EMAIL + password, 1 étape). */
+  password?: string;
 }
 
 interface PreEnrollmentData {
@@ -565,9 +571,14 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     ? 'Format d\'email invalide'
     : null;
 
-  const phoneError = phoneTouched && parentCredentials.phone && !isValidBeninPhone(parentCredentials.phone)
-    ? 'Numéro de téléphone invalide (format Bénin attendu)'
-    : null;
+  // Validation côté client — tolérante pour supporter téléphone ET email.
+  // Si l'identifiant contient '@', on valide un format email ; sinon un format téléphone Bénin.
+  const isEmailIdentifier = (parentCredentials.phone || '').includes('@');
+  const phoneError = phoneTouched && parentCredentials.phone && (
+    isEmailIdentifier
+      ? (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentCredentials.phone) ? 'Format d\'email invalide' : null)
+      : (!isValidBeninPhone(parentCredentials.phone) ? 'Numéro de téléphone invalide (format Bénin attendu)' : null)
+  );
 
   const passwordStrength = getPasswordStrength(
     portalType === 'teacher' ? teacherCredentials.password : schoolCredentials.password,
@@ -1081,16 +1092,71 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       throw new Error("Identifiant de l'établissement manquant");
     }
 
-    if (!parentOtpSent) {
+    // ── Détection du mode (téléphone vs email) ──
+    // Si l'utilisateur a tapé un '@' dans le champ, on bascule en mode EMAIL.
+    const rawIdentifier = parentCredentials.phone.trim();
+    const isEmailMode = rawIdentifier.includes('@');
+    const identifierType: 'PHONE' | 'EMAIL' = isEmailMode ? 'EMAIL' : 'PHONE';
+
+    // ── Mode EMAIL + password (1 étape, pas d'OTP) ──
+    if (isEmailMode && parentCredentials.password && !parentOtpSent) {
       const response = await fetchWithTimeout('/api/portal/auth/parent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenantId: tenantIdForApi,
-          phone: parentCredentials.phone,
+          identifierType: 'EMAIL',
+          email: rawIdentifier,
+          password: parentCredentials.password,
           portal_type: 'PARENT',
           turnstileToken: turnstileToken || undefined,
         }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || data.error || 'Identifiants invalides');
+      }
+
+      persistClientSession({
+        accessToken: data.accessToken,
+        portalSessionId: data.portalSessionId,
+        user: data.user,
+        tenant: data.tenant,
+        portalType: 'PARENT',
+        expiresAt: data.expiresAt,
+      });
+
+      const redirectUrl = getTenantRedirectUrl({
+        tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,
+        tenantId: tenantIdForApi,
+        path: redirectPath,
+        portalType: 'PARENT',
+      });
+      markFreshLogin();
+      window.location.href = redirectUrl;
+      return;
+    }
+
+    // ── Mode OTP (PHONE → SMS ; EMAIL → email) ──
+    if (!parentOtpSent) {
+      const bodyPayload: Record<string, unknown> = {
+        tenantId: tenantIdForApi,
+        identifierType,
+        portal_type: 'PARENT',
+        turnstileToken: turnstileToken || undefined,
+      };
+      if (isEmailMode) {
+        bodyPayload.email = rawIdentifier;
+      } else {
+        bodyPayload.phone = rawIdentifier;
+      }
+
+      const response = await fetchWithTimeout('/api/portal/auth/parent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyPayload),
       });
 
       const data = await response.json();
@@ -1107,16 +1173,24 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       return;
     }
 
+    // ── Vérification OTP ──
+    const verifyPayload: Record<string, unknown> = {
+      tenantId: tenantIdForApi,
+      identifierType,
+      otp: parentCredentials.otp,
+      portal_type: 'PARENT',
+      turnstileToken: turnstileToken || undefined,
+    };
+    if (isEmailMode) {
+      verifyPayload.email = rawIdentifier;
+    } else {
+      verifyPayload.phone = rawIdentifier;
+    }
+
     const response = await fetchWithTimeout('/api/portal/auth/parent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tenantId: tenantIdForApi,
-        phone: parentCredentials.phone,
-        otp: parentCredentials.otp,
-        portal_type: 'PARENT',
-        turnstileToken: turnstileToken || undefined,
-      }),
+      body: JSON.stringify(verifyPayload),
     });
 
     const data = await response.json();
@@ -2100,7 +2174,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                   </>
                 )}
 
-                {/* ── PARENT : Téléphone + OTP ── */}
+                {/* ── PARENT : Téléphone OU Email + OTP/Password ── */}
                 {portalType === 'parent' && (
                   <>
                     <div>
@@ -2108,14 +2182,18 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                         htmlFor="phone"
                         className="mb-1.5 block text-sm font-semibold text-slate-900"
                       >
-                        Numéro de téléphone
+                        {isEmailIdentifier ? 'Adresse email' : 'Numéro de téléphone'}
                       </label>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                          <Phone className="h-5 w-5 text-slate-400" />
+                          {isEmailIdentifier ? (
+                            <Mail className="h-5 w-5 text-slate-400" />
+                          ) : (
+                            <Phone className="h-5 w-5 text-slate-400" />
+                          )}
                         </div>
                         <input
-                          type="tel"
+                          type={isEmailIdentifier ? 'email' : 'tel'}
                           id="phone"
                           required
                           disabled={parentOtpSent}
@@ -2124,11 +2202,13 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                             setParentCredentials({
                               ...parentCredentials,
                               phone: e.target.value,
+                              // Reset OTP state when changing identifier
+                              otp: parentOtpSent ? '' : parentCredentials.otp,
                             })
                           }
                           className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2 disabled:bg-slate-100"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
-                          placeholder="+229 90 00 00 00"
+                          placeholder={isEmailIdentifier ? 'parent@exemple.com' : '+229 90 00 00 00'}
                         />
                         {phoneTouched && parentCredentials.phone && !parentOtpSent && (
                           <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
@@ -2141,9 +2221,63 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                         )}
                       </div>
                       <p className="mt-1 text-xs text-slate-500">
-                        Numéro utilisé lors de l&apos;inscription de votre enfant.
+                        {isEmailIdentifier
+                          ? 'Email utilisé lors de l\'inscription de votre enfant.'
+                          : 'Numéro utilisé lors de l\'inscription de votre enfant. Vous pouvez aussi saisir votre adresse email.'}
                       </p>
                     </div>
+
+                    {/* ── Mode EMAIL + mot de passe (optionnel, 1 étape, alternative à l'OTP) ── */}
+                    <AnimatePresence>
+                      {isEmailIdentifier && !parentOtpSent && (
+                        <motion.div
+                          key="parent-password-optional"
+                          initial={shouldReduceMotion ? false : { opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={shouldReduceMotion ? undefined : { opacity: 0, height: 0 }}
+                          transition={{ duration: dur, ease: 'easeOut' }}
+                          className="overflow-hidden"
+                        >
+                          <label
+                            htmlFor="parentPassword"
+                            className="mb-1.5 block text-sm font-semibold text-slate-900"
+                          >
+                            Mot de passe <span className="font-normal text-slate-400">(optionnel)</span>
+                          </label>
+                          <div className="relative">
+                            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                              <Lock className="h-5 w-5 text-slate-400" />
+                            </div>
+                            <input
+                              type={showPassword ? 'text' : 'password'}
+                              id="parentPassword"
+                              value={parentCredentials.password || ''}
+                              onChange={(e) =>
+                                setParentCredentials({
+                                  ...parentCredentials,
+                                  password: e.target.value,
+                                })
+                              }
+                              className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-10 pr-10 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
+                              style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
+                              placeholder="•••••••• (laisser vide pour OTP)"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword(!showPassword)}
+                              className="absolute inset-y-0 right-0 flex items-center justify-center w-11 min-h-[44px] pr-1 text-slate-400 hover:text-slate-700 transition-colors"
+                              aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                            >
+                              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Saisissez votre mot de passe pour vous connecter directement,
+                            ou laissez vide pour recevoir un code OTP par email.
+                          </p>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
 
                     <AnimatePresence>
                       {parentOtpSent ? (
@@ -2184,7 +2318,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                             />
                           </div>
                           <p className="mt-2 text-sm text-slate-600">
-                            Un code OTP a été envoyé à votre numéro de téléphone.
+                            Un code OTP a été envoyé {isEmailIdentifier ? 'à votre adresse email' : 'à votre numéro de téléphone'}.
                           </p>
                           <button
                             type="button"

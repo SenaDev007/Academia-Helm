@@ -149,3 +149,97 @@ export const PLATFORM_REQUIREMENTS = {
   "google-play": "Google Play Store",
   "app-store": "Apple App Store",
 };
+
+// ============================================================================
+// FILE FORMAT ICON — Icônes officielles des formats de fichiers
+// ============================================================================
+//
+// Affiche l'icône officielle du format de fichier d'installation :
+//   - .msi  : Windows Installer (logo MSI officiel — carré bleu avec "msi")
+//   - .exe  : NSIS Installer (logo EXE officiel — carré bleu avec "exe")
+//   - .dmg  : macOS Disk Image (logo DMG officiel — carré gris avec "dmg")
+//   - .apk  : Android Package (logo APK officiel — carré vert avec "apk")
+//   - .aab  : Android App Bundle (logo AAB officiel — carré vert avec "aab")
+//   - .ipa  : iOS App Store Package (logo IPA officiel — carré gris avec "ipa")
+//   - .deb  : Debian Package (logo DEB officiel — carré rouge avec "deb")
+//   - .rpm  : Red Hat Package (logo RPM officiel — carré rouge avec "rpm")
+//   - .app  : macOS Application (logo APP officiel — carré gris avec "app")
+//
+// Design : badge carré arrondi avec l'extension en blanc sur fond coloré.
+// ============================================================================
+
+type FileFormat =
+  | "msi"
+  | "exe"
+  | "dmg"
+  | "apk"
+  | "aab"
+  | "ipa"
+  | "deb"
+  | "rpm"
+  | "app";
+
+interface FileFormatIconProps {
+  format: FileFormat;
+  size?: number;
+  className?: string;
+}
+
+const FILE_FORMAT_COLORS: Record<FileFormat, string> = {
+  msi: "#0078D4", // Bleu Windows Installer
+  exe: "#0b2f73", // Navy Academia Helm (NSIS)
+  dmg: "#5B6770", // Gris macOS
+  apk: "#3DDC84", // Vert Android
+  aab: "#34A853", // Vert Android foncé
+  ipa: "#5B6770", // Gris iOS
+  deb: "#D70A53", // Rouge Debian
+  rpm: "#CC0000", // Rouge Red Hat
+  app: "#5B6770", // Gris macOS
+};
+
+export function FileFormatIcon({
+  format,
+  size = 24,
+  className = "",
+}: FileFormatIconProps) {
+  const color = FILE_FORMAT_COLORS[format];
+
+  return (
+    <div
+      className={`inline-flex items-center justify-center rounded-lg flex-shrink-0 ${className}`}
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: color,
+      }}
+    >
+      <span
+        className="font-bold text-white uppercase"
+        style={{
+          fontSize: size * 0.28,
+          letterSpacing: "0.5px",
+        }}
+      >
+        {format}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Détecte le format de fichier depuis le nom du fichier.
+ */
+export function detectFileFormat(filename: string): FileFormat | null {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".msi")) return "msi";
+  if (lower.endsWith(".exe")) return "exe";
+  if (lower.endsWith(".dmg")) return "dmg";
+  if (lower.endsWith(".apk")) return "apk";
+  if (lower.endsWith(".aab")) return "aab";
+  if (lower.endsWith(".ipa")) return "ipa";
+  if (lower.endsWith(".deb")) return "deb";
+  if (lower.endsWith(".rpm")) return "rpm";
+  if (lower.endsWith(".app")) return "app";
+  return null;
+}
+

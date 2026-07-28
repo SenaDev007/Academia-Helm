@@ -46,6 +46,8 @@ import {
   PLATFORM_COLORS,
   PLATFORM_LABELS,
   PLATFORM_REQUIREMENTS,
+  FileFormatIcon,
+  detectFileFormat,
 } from "@/components/icons/PlatformIcon";
 
 // ── Types ──
@@ -194,12 +196,8 @@ export default function DownloadsPage() {
             backgroundImage: "url('/images/Background-Page-download.png')",
           }}
         />
-        {/* Overlay gradient navy pour assurer la lisibilité du texte */}
-        <div className="absolute inset-0 bg-gradient-to-br from-[#0b2f73]/95 via-[#103e91]/90 to-[#1d4fa5]/85" />
-        <div className="absolute inset-0 opacity-20" style={{
-          backgroundImage: "radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 80%, white 1px, transparent 1px)",
-          backgroundSize: "50px 50px",
-        }} />
+        {/* Overlay gradient navy léger — garde l'image visible tout en assurant la lisibilité */}
+        <div className="absolute inset-0 bg-gradient-to-br from-[#0b2f73]/70 via-[#103e91]/60 to-[#1d4fa5]/50" />
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24 text-center w-full">
           <motion.div
@@ -544,21 +542,30 @@ function DesktopDownloads({
                     <p className="text-xs sm:text-sm text-slate-400">Bientôt disponible</p>
                   </div>
                 ) : (
-                  assets.map((asset) => (
+                  assets.map((asset) => {
+                    const fileFormat = detectFileFormat(asset.name);
+                    return (
                     <a
                       key={asset.name}
                       href={asset.downloadUrl}
                       className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
                     >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs sm:text-sm font-semibold text-[#0b2f73] truncate">
-                          {asset.name}
-                        </p>
-                        <p className="text-[10px] sm:text-xs text-slate-500">{asset.size}</p>
+                      <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                        {/* Icône du format de fichier (.msi, .exe, .dmg, .apk) */}
+                        {fileFormat && (
+                          <FileFormatIcon format={fileFormat} size={32} className="hidden sm:flex" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs sm:text-sm font-semibold text-[#0b2f73] truncate">
+                            {asset.name}
+                          </p>
+                          <p className="text-[10px] sm:text-xs text-slate-500">{asset.size}</p>
+                        </div>
                       </div>
                       <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 group-hover:text-[#f5b335] group-hover:translate-y-0.5 transition-all flex-shrink-0" />
                     </a>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -633,9 +640,12 @@ function MobileDownloads({
               href={release.assets.find((a) => a.platform === "android")?.downloadUrl || "#"}
               className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
             >
-              <div className="flex-1 min-w-0">
-                <p className="text-xs sm:text-sm font-semibold text-[#0b2f73]">Télécharger l'APK</p>
-                <p className="text-[10px] sm:text-xs text-slate-500">~25 MB — Installation manuelle</p>
+              <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                <FileFormatIcon format="apk" size={32} className="hidden sm:flex" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs sm:text-sm font-semibold text-[#0b2f73]">Télécharger l'APK</p>
+                  <p className="text-[10px] sm:text-xs text-slate-500">~25 MB — Installation manuelle</p>
+                </div>
               </div>
               <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 group-hover:text-[#f5b335] transition-all flex-shrink-0" />
             </a>

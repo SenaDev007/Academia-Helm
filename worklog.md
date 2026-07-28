@@ -2657,3 +2657,88 @@ Stage Summary:
 - ✅ Function calling NVIDIA GLM-5.2 reste opérationnel pour web_search
 - ✅ Nom du parent corrigé: affiche le nom du Guardian (pas de l'enseignant)
 - ✅ TypeScript compile sans erreur (web-app)
+
+---
+Task ID: desktop-tauri-and-mobile-flutter
+Agent: main
+Task: Créer l'app desktop Windows (Tauri) + l'app mobile native (Flutter)
+
+Work Log:
+1. **Desktop App (Tauri 2)**:
+   - Page Next.js /desktop créée (apps/web-app/src/app/desktop/page.tsx):
+     * Sélecteur d'école avec recherche (par nom, ville, pays)
+     * Sauvegarde de l'école dans localStorage (academia_helm_desktop_school)
+     * Redirection automatique vers l'école sauvegardée aux lancements suivants
+     * L'utilisateur doit déjà avoir un compte (l'école doit exister sur le web)
+     * Pas de landing page marketing — va directement au sélecteur d'école
+   - Structure Tauri (apps/desktop/src-tauri/):
+     * tauri.conf.json: config Tauri 2 (fenêtre 1280×800, WebView2)
+     * Cargo.toml: dépendances Rust (tauri 2, tauri-plugin-shell, tauri-plugin-http)
+     * src/main.rs + src/lib.rs: point d'entrée Rust minimal
+     * capabilities/default.json: permissions (shell, http)
+     * build.rs: script de build Tauri
+   - En production: charge https://app.academiahelm.com/desktop (URL distante)
+   - En dev: charge http://localhost:3001/desktop (serveur dev Next.js)
+   - PAS de recodage: le frontend est le MÊME que l'app web
+   - Build: cargo tauri build → produit .msi / .exe / .nsis sur Windows
+   - GitHub Actions: .github/workflows/build-desktop.yml (build Windows + macOS)
+
+2. **Mobile App (Flutter)**:
+   - Structure projet (apps/mobile/):
+     * pubspec.yaml: dépendances (flutter_riverpod, go_router, dio, google_fonts, etc.)
+     * analysis_options.yaml: lints Flutter
+   - Core:
+     * lib/core/config/api_config.dart: URL backend (NVIDIA API)
+     * lib/core/theme/app_theme.dart: thème Material 3 (couleurs Academia Helm)
+     * lib/core/utils/storage_utils.dart: helper SharedPreferences (JSON)
+   - Services:
+     * lib/services/school_service.dart: recherche/sélection école (GET /portal/schools)
+     * lib/services/auth_service.dart: auth JWT multi-portail (parent/teacher/school)
+   - Features:
+     * lib/features/school_search/school_search_page.dart: PORTAIL PUBLIC
+       - Recherche d'école (tout le monde y a accès, pas d'auth)
+       - Liste filtrée par nom/ville/pays
+       - École sauvegardée → "Continuer" pour auto-login
+     * lib/features/auth/login_page.dart: CONNEXION MULTI-PORTAIL
+       - SegmentedButton: Parent / Enseignant / École
+       - Champs dynamiques selon le portail:
+         - Parent: téléphone/email + mot de passe optionnel
+         - Enseignant: matricule + mot de passe
+         - École: email + mot de passe
+       - Gestion erreurs + loading state
+     * lib/features/dashboard/dashboard_page.dart: DASHBOARD ADAPTATIF
+       - Parent: enfants + actions rapides (paiements, bulletins, présences, cahier journal)
+       - Enseignant: scaffold (à implémenter)
+       - École: scaffold (à implémenter)
+   - Navigation: GoRouter (lib/app/router.dart)
+     * / → school_search
+     * /login → login
+     * /dashboard → dashboard
+   - GitHub Actions: .github/workflows/build-mobile.yml (build Android APK + AAB + iOS)
+
+3. **Flux utilisateur Desktop**:
+   - Premier lancement: page /desktop → recherche école → sélection → redirection vers /app?tenant={slug}
+   - Lancements suivants: auto-redirect vers la dernière école (localStorage)
+   - L'utilisateur arrive sur la page de connexion de SON école
+   - Même UI que la version web (pas de recodage)
+
+4. **Flux utilisateur Mobile**:
+   - L'app démarre sur le portail public (SchoolSearchPage)
+   - Tout le monde a accès — pas d'auth requise pour la recherche
+   - L'utilisateur recherche et sélectionne son école
+   - L'école est sauvegardée (SharedPreferences)
+   - Redirection vers LoginPage → choix du portail (Parent/Teacher/School)
+   - Authentification JWT → DashboardPage
+   - Le dashboard s'adapte au portalType
+
+Stage Summary:
+- ✅ Desktop app (Tauri 2) configurée — zéro recodage du frontend
+- ✅ Page /desktop créée (sélecteur d'école + auto-redirect)
+- ✅ Mobile app (Flutter) structurée — portail public + auth multi-portail
+- ✅ SchoolSearchPage: recherche d'école publique (tout le monde y a accès)
+- ✅ LoginPage: multi-portail (Parent/Teacher/School)
+- ✅ DashboardPage: adaptatif selon portalType
+- ✅ GitHub Actions: build-desktop.yml (Windows + macOS) + build-mobile.yml (Android + iOS)
+- ⬜ Desktop: nécessite Rust + WebView2 pour build (documentation fournie)
+- ⬜ Mobile: nécessite Flutter SDK pour build (documentation fournie)
+- ⬜ Mobile: features parent/teacher/school à implémenter (scaffold créé)

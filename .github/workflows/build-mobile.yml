@@ -1,0 +1,95 @@
+name: Build Mobile App (Flutter)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.0'
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          cd apps/mobile
+          flutter pub get
+
+      - name: Build APK
+        run: |
+          cd apps/mobile
+          flutter build apk --release \
+            --dart-define=API_BASE_URL=https://api.academiahelm.com/api
+
+      - name: Build App Bundle
+        run: |
+          cd apps/mobile
+          flutter build appbundle --release \
+            --dart-define=API_BASE_URL=https://api.academiahelm.com/api
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: academia-helm-android-apk
+          path: apps/mobile/build/app/outputs/flutter-apk/*.apk
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: academia-helm-android-aab
+          path: apps/mobile/build/app/outputs/bundle/release/*.aab
+
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.0'
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          cd apps/mobile
+          flutter pub get
+
+      - name: Build iOS
+        run: |
+          cd apps/mobile
+          flutter build ios --release --no-codesign \
+            --dart-define=API_BASE_URL=https://api.academiahelm.com/api
+
+      - name: Upload iOS build
+        uses: actions/upload-artifact@v4
+        with:
+          name: academia-helm-ios
+          path: apps/mobile/build/ios/iphoneos/*.app
+
+  release:
+    needs: [build-android]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/academia-helm-android-apk/*.apk
+          generate_release_notes: true
+          draft: false
+          prerelease: false

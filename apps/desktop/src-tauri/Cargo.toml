@@ -1,0 +1,24 @@
+[package]
+name = "academia-helm-desktop"
+version = "1.0.0"
+description = "Academia Helm Desktop App"
+authors = ["Academia Helm"]
+edition = "2021"
+rust-version = "1.70"
+
+[lib]
+name = "academia_helm_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-http = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]

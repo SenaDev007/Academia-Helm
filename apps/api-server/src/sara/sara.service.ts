@@ -24,7 +24,7 @@ import { SiteContentService } from './site-content.service';
  *   - Assistante Stratégique : réponses contextualisées par rôle
  *   - Pont vers ORION (analyse) et ATLAS (exécution)
  *
- * Modèle : z-ai/glm-5.1 via OpenRouter
+ * Modèle : z-ai/glm-5.2 via NVIDIA (integrate.api.nvidia.com/v1)
  */
 @Injectable()
 export class SaraService {
@@ -381,9 +381,9 @@ PRODUIT : ACADEMIA HELM
 ERP éducatif SaaS multi-tenant, offline-first, mobile-first
 - ÉDITEUR : YEHI OR Tech — entreprise technologique béninoise
 - MISSION : Démocratiser l'accès à une gestion scolaire moderne pour l'Afrique de l'Ouest
-- ARCHITECTURE : Cloud (Next.js + NestJS + PostgreSQL/Neon + Supabase) + Mobile (Flutter) + IA (3 agents via GLM 5.1)
+- ARCHITECTURE : Cloud (Next.js + NestJS + PostgreSQL/Neon + Supabase) + Mobile (Flutter) + IA (3 agents via GLM 5.2)
 
-3 AGENTS IA INCLUS (POWERED BY GLM 5.1) :
+3 AGENTS IA INCLUS (POWERED BY GLM 5.2) :
 - ORION : L'Analyste — observe, analyse, prédit, recommande
 - ATLAS : L'Exécutant — génère documents, automatise workflows
 - Sarah : L'Ambassadrice — c'est moi

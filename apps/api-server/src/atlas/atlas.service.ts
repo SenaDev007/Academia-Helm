@@ -11,7 +11,7 @@ import { AIGateway } from '../ai/gateway/ai-gateway';
  * ATLAS est le bras opérationnel de la plateforme. Là où ORION analyse
  * et SARA dialogue, ATLAS agit.
  *
- * Modèle : z-ai/glm-5.1 via OpenRouter
+ * Modèle : z-ai/glm-5.2 via NVIDIA (integrate.api.nvidia.com/v1)
  *
  * Missions :
  *   1. Assistance quotidienne : aide à la gestion de l'établissement

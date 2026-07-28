@@ -63,7 +63,7 @@ export class IaPrismaService {
    * Analyse sémantique d'un CV ou d'une lettre de motivation.
    *
    * Si un fichier est fourni (base64Data + mimeType), le document est envoyé
-   * au modèle IA multimodal (GLM-5.1 vision) qui extrait les informations clés.
+   * au modèle IA multimodal (GLM-5.2 vision) qui extrait les informations clés.
    * Si l'IA n'est pas configurée ou si l'analyse échoue, on retombe sur un
    * résultat structuré de secours basé sur les données candidat existantes.
    */
@@ -570,7 +570,7 @@ Si une information n'est pas présente dans le document, mets une chaîne vide, 
    * @returns AsyncGenerator de chunks compatibles SSE
    *   - { type: 'delta', text }       → portion de réponse (à afficher au fil de l'eau)
    *   - { type: 'status', text }      → changement de statut (retry, fallback)
-   *   - { type: 'reasoning', reasoningText } → raisonnement du modèle (GLM 5.1)
+   *   - { type: 'reasoning', reasoningText } → raisonnement du modèle (GLM 5.2)
    *   - { type: 'final', text, usage } → réponse complète finale + usage tokens
    *   - { type: 'error', text }       → erreur fatale
    *

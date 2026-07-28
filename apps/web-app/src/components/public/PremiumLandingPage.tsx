@@ -1244,7 +1244,7 @@ export default function PremiumLandingPage() {
                 <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
                   <span className="inline-flex items-center gap-1.5">
                     <Brain className="w-3.5 h-3.5 text-[#0b2f73]" />
-                    IA GLM-5.1
+                    IA GLM-5.2
                   </span>
                   <span>Mis à jour il y a 2 min</span>
                 </div>

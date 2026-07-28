@@ -5,7 +5,7 @@
  * Moteurs d'intelligence pour ORION, le cerveau analytique de la plateforme.
  * Chaque engine produit des analyses, alertes et recommandations.
  *
- * Modèle : z-ai/glm-5.1 via OpenRouter avec support reasoning
+ * Modèle : z-ai/glm-5.2 via NVIDIA (integrate.api.nvidia.com/v1) avec support reasoning
  * Conforme à la spécification v2.0 Tome 2
  */
 
@@ -233,11 +233,11 @@ export class OrionIntelligenceService {
     }
   }
 
-  // ─── PREDICTION ENGINE (GLM 5.1 with reasoning) ─────────────────────────
+  // ─── PREDICTION ENGINE (GLM 5.2 with reasoning) ─────────────────────────
 
   /**
    * Analyse prédictive via l'AI Gateway avec reasoning activé
-   * Utilise le paramètre reasoning de GLM 5.1 pour les analyses approfondies
+   * Utilise le paramètre reasoning de GLM 5.2 pour les analyses approfondies
    */
   async predict(tenantId: string, userId: string, type: string): Promise<unknown> {
     return this.aiGateway.processRequest({
@@ -255,7 +255,7 @@ Analyse les tendances historiques et produis une prédiction structurée avec :
   }
 
   /**
-   * Prédiction avancée avec raisonnement GLM 5.1
+   * Prédiction avancée avec raisonnement GLM 5.2
    * Utilise directement le service OpenRouter avec reasoning activé
    */
   async predictWithReasoning(tenantId: string, userId: string, type: string): Promise<unknown> {

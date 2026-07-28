@@ -31,7 +31,11 @@
 #   UPSTASH_REDIS_REST_URL=<votre-url-upstash>
 #   UPSTASH_REDIS_REST_TOKEN=<votre-token-upstash>
 #
-# AI (Modal/OpenRouter) :
+# AI (NVIDIA GLM-5.2 — provider principal) :
+#   NVIDIA_API_KEY=<votre-key-nvidia>
+#   NVIDIA_MODEL=z-ai/glm-5.2
+#   NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+# Legacy Modal/OpenRouter (rétro-compatibilité — ignoré si NVIDIA_* défini) :
 #   OPENROUTER_API_KEY=<votre-key>
 #   OPENROUTER_MODEL=zai-org/GLM-5.1-FP8
 #   OPENROUTER_BASE_URL=https://api.us-west-2.modal.direct/v1

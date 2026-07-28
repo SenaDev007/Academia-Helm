@@ -3,7 +3,9 @@
  * ORION AI SERVICE — Intelligence artificielle propulsée par GLM-5.2
  * ============================================================================
  *
- * Service backend qui connecte ORION au modèle GLM-5.2 via z-ai-web-dev-sdk.
+ * Service backend qui connecte ORION au modèle GLM-5.2 ZAI via l'API NVIDIA
+ * (integrate.api.nvidia.com/v1 — endpoint OpenAI-compatible).
+ *
  * Permet à ORION d'analyser les données de l'établissement en langage naturel.
  *
  * Fonctionnalités :
@@ -14,17 +16,49 @@
  *
  * Endpoint : POST /api/orion/chat
  * Body : { message: string, context?: any }
+ *
+ * Variables d'environnement (priorité NVIDIA_* > OPENROUTER_*) :
+ *   - NVIDIA_API_KEY  / OPENROUTER_API_KEY : Clé API NVIDIA
+ *   - NVIDIA_MODEL     / OPENROUTER_MODEL  : Modèle (défaut: z-ai/glm-5.2)
+ *   - NVIDIA_BASE_URL  / OPENROUTER_BASE_URL : URL base (défaut: https://integrate.api.nvidia.com/v1)
  * ============================================================================
  */
 
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class OrionAiService {
   private readonly logger = new Logger(OrionAiService.name);
+  private readonly apiKey: string;
+  private readonly model: string;
+  private readonly baseUrl: string;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {
+    // ⭐ Migration vers NVIDIA GLM-5.2 — priorité NVIDIA_* > OPENROUTER_*
+    this.apiKey =
+      this.configService.get<string>('NVIDIA_API_KEY') ||
+      this.configService.get<string>('OPENROUTER_API_KEY') ||
+      '';
+    this.model =
+      this.configService.get<string>('NVIDIA_MODEL') ||
+      this.configService.get<string>('OPENROUTER_MODEL') ||
+      'z-ai/glm-5.2';
+    this.baseUrl =
+      this.configService.get<string>('NVIDIA_BASE_URL') ||
+      this.configService.get<string>('OPENROUTER_BASE_URL') ||
+      'https://integrate.api.nvidia.com/v1';
+
+    if (this.apiKey) {
+      this.logger.log(`ORION AI configured — model: ${this.model}, baseUrl: ${this.baseUrl}`);
+    } else {
+      this.logger.warn('NVIDIA_API_KEY not configured. ORION will use fallback responses.');
+    }
+  }
 
   /**
    * ⭐ Chat avec ORION — envoie une question à GLM-5.2 avec le contexte de l'école
@@ -39,8 +73,8 @@ export class OrionAiService {
       // 2. Construire le prompt système
       const systemPrompt = this.buildSystemPrompt(context);
 
-      // 3. Appeler GLM-5.2 via z-ai-web-dev-sdk
-      const response = await this.callGlmModel(systemPrompt, message);
+      // 3. Appeler GLM-5.2 via l'API NVIDIA (integrate.api.nvidia.com/v1)
+      const response = await this.callGlmModel(systemPrompt, message, context);
 
       // 4. Logger l'interaction
       this.logger.log(`✅ ORION response generated (${response.length} chars)`);
@@ -82,7 +116,7 @@ export class OrionAiService {
 
 Format ta réponse en JSON structuré avec les clés: summary, alerts (array), recommendations (array).`;
 
-      const response = await this.callGlmModel(systemPrompt, analysisPrompt);
+      const response = await this.callGlmModel(systemPrompt, analysisPrompt, context);
 
       // Essayer de parser le JSON
       try {
@@ -203,28 +237,71 @@ IMPORTANT :
   }
 
   /**
-   * ⭐ Appelle le modèle GLM-5.2 via z-ai-web-dev-sdk
+   * ⭐ Appelle le modèle GLM-5.2 via l'API NVIDIA (OpenAI-compatible endpoint)
+   *
+   * Utilise fetch() natif vers ${NVIDIA_BASE_URL}/chat/completions
+   * avec Authorization: Bearer ${NVIDIA_API_KEY}.
+   *
+   * Fallback : si l'API n'est pas configurée ou échoue, on retourne une
+   * réponse basique construite à partir du contexte (sans IA).
    */
-  private async callGlmModel(systemPrompt: string, userMessage: string): Promise<string> {
-    try {
-      // Utiliser z-ai-web-dev-sdk (uniquement côté backend)
-      const ZAI = await import('z-ai-web-dev-sdk');
-      const zai = await ZAI.create();
+  private async callGlmModel(
+    systemPrompt: string,
+    userMessage: string,
+    context?: any,
+  ): Promise<string> {
+    // Si pas de clé API configurée → fallback sans IA
+    if (!this.apiKey) {
+      this.logger.warn('NVIDIA_API_KEY not configured — using fallback response');
+      return this.buildFallbackResponse(context);
+    }
 
-      const response = await zai.chat.completions.create({
+    try {
+      const url = `${this.baseUrl}/chat/completions`;
+      const body = {
+        model: this.model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMessage },
         ],
         temperature: 0.7,
+        top_p: 1,
         max_tokens: 2000,
+        stream: false,
+      };
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+          Accept: 'application/json',
+        },
+        body: JSON.stringify(body),
       });
 
-      return response.choices[0]?.message?.content || 'Je n\'ai pas de réponse à vous fournir.';
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        this.logger.error(
+          `GLM-5.2 (NVIDIA) call failed: ${response.status} ${response.statusText} — ${errText.substring(0, 200)}`,
+        );
+        return this.buildFallbackResponse(context);
+      }
+
+      const data = await response.json();
+      const content = data?.choices?.[0]?.message?.content;
+      return content || 'Je n\'ai pas de réponse à vous fournir.';
     } catch (error: any) {
-      this.logger.error(`GLM-5.2 call failed: ${error.message}`);
-      // Fallback : réponse basique sans IA
-      return `Je suis ORION, l'assistant d'Academia Helm. Je ne peux pas actuellement me connecter au modèle d'IA. Voici ce que je peux vous dire avec les données disponibles :\n\nL'établissement compte ${context?.activeStudents || 0} élèves actifs sur ${context?.studentsCount || 0} au total, avec ${context?.classes || 0} classes et ${context?.teachers || 0} enseignants.`;
+      this.logger.error(`GLM-5.2 (NVIDIA) call failed: ${error.message}`);
+      return this.buildFallbackResponse(context);
     }
+  }
+
+  /**
+   * Construit une réponse de fallback sans IA (quand NVIDIA n'est pas configuré
+   * ou quand l'appel échoue).
+   */
+  private buildFallbackResponse(context?: any): string {
+    return `Je suis ORION, l'assistant d'Academia Helm. Je ne peux pas actuellement me connecter au modèle d'IA. Voici ce que je peux vous dire avec les données disponibles :\n\nL'établissement compte ${context?.activeStudents || 0} élèves actifs sur ${context?.studentsCount || 0} au total, avec ${context?.classes || 0} classes et ${context?.teachers || 0} enseignants.`;
   }
 }

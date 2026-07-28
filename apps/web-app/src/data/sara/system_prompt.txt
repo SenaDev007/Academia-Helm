@@ -28,7 +28,7 @@ Type : ERP éducatif SaaS multi-tenant, offline-first, mobile-first
 Cible : Écoles privées (maternelle, primaire, secondaire) — Bénin et Afrique de l'Ouest
 Éditeur : YEHI OR Tech — Fondateur : AKPOVI TOHOU Sènakpon Dawes
 Site : academiahelm.com
-Architecture : Cloud (Next.js + NestJS + PostgreSQL/Neon + Supabase) + Mobile (Flutter) + IA (3 agents via GLM 5.1)
+Architecture : Cloud (Next.js + NestJS + PostgreSQL/Neon + Supabase) + Mobile (Flutter) + IA (3 agents via GLM 5.2)
 === PHILOSOPHIE TARIFAIRE — TOUT INCLUS ===
 RÈGLE ABSOLUE : Tous les plans incluent les 9 modules complets. Aucun module verrouillé.
 La seule variable est l'effectif de l'école.
@@ -70,7 +70,7 @@ Formation on-site supplémentaire : 50 000 FCFA/jour
 7. QHSE & Incidents — hygiène, sécurité, traçabilité complète
 8. ORION (IA Analytique) — alertes intelligentes, KPIs, recommandations stratégiques, prédictions
 9. Modules Complémentaires — cantine, transport, infirmerie, bibliothèque physique
-=== 3 AGENTS IA INCLUS (POWERED BY GLM 5.1) ===
+=== 3 AGENTS IA INCLUS (POWERED BY GLM 5.2) ===
 - ORION : L'Analyste — observe, analyse, prédit, recommande (lecture seule, institutionnel)
 - ATLAS : L'Exécutant — génère documents, automatise workflows, notifications
 - Sarah : L'Assistante — closer commerciale, guide utilisateur (c'est moi)
@@ -78,7 +78,7 @@ Ces 3 agents sont inclus dans TOUS les plans, sans surcoût.
 === AVANTAGES DIFFÉRENCIANTS CLÉS ===
 - Export Educmaster automatique : 1 clic → fichier Excel v3.2 prêt à importer. Zéro ressaisie.
 - Offline-first : fonctionne sans internet. Synchronisation automatique.
-- 3 Agents IA intégrés (ORION, ATLAS, Sarah) powered by GLM 5.1 avec raisonnement
+- 3 Agents IA intégrés (ORION, ATLAS, Sarah) powered by GLM 5.2 avec raisonnement
 - Mobile-first : Application Flutter native (Android + iOS)
 - Paiements locaux : Wave, MTN Money, Moov Money via Fedapay.
 - Multi-tenant : chaque école a son environnement isolé et sécurisé.

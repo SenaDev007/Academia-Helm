@@ -131,21 +131,35 @@ function buildRefusalMessage(outputLanguage: 'FR' | 'EN'): string {
 
 /**
  * Détermine le provider IA à utiliser
- * Priorité : OPENROUTER_API_KEY > ANTHROPIC_API_KEY
+ * Priorité : NVIDIA_API_KEY > OPENROUTER_API_KEY > ANTHROPIC_API_KEY
+ *
+ * ⭐ Migration vers NVIDIA GLM-5.2 (integrate.api.nvidia.com/v1)
  */
-function getAIProvider(): { provider: 'openrouter' | 'anthropic'; apiKey: string; model: string; baseUrl: string } {
-  const openrouterKey = process.env.OPENROUTER_API_KEY;
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+function getAIProvider(): { provider: 'nvidia' | 'openrouter' | 'anthropic'; apiKey: string; model: string; baseUrl: string } {
+  // ⭐ NVIDIA GLM-5.2 (provider principal)
+  const nvidiaKey = process.env.NVIDIA_API_KEY;
+  if (nvidiaKey) {
+    return {
+      provider: 'nvidia',
+      apiKey: nvidiaKey,
+      model: process.env.NVIDIA_MODEL || 'z-ai/glm-5.2',
+      baseUrl: process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1',
+    };
+  }
 
+  // Legacy OpenRouter / Modal
+  const openrouterKey = process.env.OPENROUTER_API_KEY;
   if (openrouterKey) {
     return {
       provider: 'openrouter',
       apiKey: openrouterKey,
-      model: process.env.OPENROUTER_MODEL || 'zai-org/GLM-5.1-FP8',
-      baseUrl: process.env.OPENROUTER_BASE_URL || 'https://api.us-west-2.modal.direct/v1',
+      model: process.env.OPENROUTER_MODEL || 'z-ai/glm-5.2',
+      baseUrl: process.env.OPENROUTER_BASE_URL || 'https://integrate.api.nvidia.com/v1',
     };
   }
 
+  // Fallback Anthropic
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
   return {
     provider: 'anthropic',
     apiKey: anthropicKey || '',
@@ -180,8 +194,8 @@ export async function POST(request: NextRequest) {
 
     let responseText = '';
 
-    if (provider === 'openrouter') {
-      // ─── OpenRouter (compatible OpenAI) ───
+    if (provider === 'nvidia' || provider === 'openrouter') {
+      // ─── NVIDIA / OpenRouter (compatible OpenAI) ───
       const chatMessages: ChatMessage[] = [
         {
           role: 'system',

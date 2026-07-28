@@ -15,7 +15,7 @@
  *     ↓ POST {API_BASE}/hr/ia/copilot/stream (avec Authorization du cookie)
  *   NestJS IaPrismaController.copilotChatStream
  *     ↓ openRouter.chatStream (SSE)
- *   OpenRouter (GLM-5.1-FP8)
+ *   OpenRouter (GLM-5.2-FP8)
  *
  * Sécurité :
  *   - Le JWT est récupéré depuis les cookies/request headers via getProxyAuthHeaders

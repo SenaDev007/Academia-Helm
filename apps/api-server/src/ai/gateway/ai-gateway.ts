@@ -39,7 +39,11 @@ const RATE_LIMITS: Record<string, { perMinute: number; perHour: number; perDay: 
 
 // Coûts estimés par modèle (USD pour 1M tokens)
 const MODEL_COSTS: Record<string, { input: number; output: number }> = {
+  // ⭐ NVIDIA GLM-5.2 (provider principal)
+  'z-ai/glm-5.2': { input: 0.15, output: 0.60 },
+  // Legacy Modal / OpenRouter
   'z-ai/glm-5.1': { input: 0.15, output: 0.60 },
+  'zai-org/GLM-5.1-FP8': { input: 0.15, output: 0.60 },
   'z-ai/glm-4.5-air:free': { input: 0, output: 0 },
   'google/gemini-2.0-flash-001': { input: 0.075, output: 0.30 },
   'google/gemini-2.5-pro-preview': { input: 1.25, output: 10.0 },

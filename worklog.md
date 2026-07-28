@@ -2492,3 +2492,96 @@ Stage Summary:
   - DIRECTOR/ADMIN via portail SCHOOL → /app (dashboard) ✓
 - ✅ Helper getEffectivePortal réutilisable et testable
 - ✅ Documentation ajoutée dans types/index.ts (champ portalType)
+
+---
+Task ID: migrate-glm-5-1-to-nvidia-glm-5-2
+Agent: main
+Task: Remplacer GLM 5.1 (modal.com) par GLM 5.2 ZAI de NVIDIA (integrate.api.nvidia.com/v1)
+
+Work Log:
+1. **Audit exhaustif via sous-agent Explore**:
+   - 9 fichiers backend impactés + 6 frontend + 4 config + 4 marketing
+   - Service central: OpenRouterService (common/services/openrouter.service.ts)
+   - Chemin parallèle identifié: OrionAiService utilisait z-ai-web-dev-sdk (GLM-5.2)
+   - 3 routes BFF Next.js faisaient fetch() direct vers modal.com
+   - Variables d'env: OPENROUTER_API_KEY/MODEL/BASE_URL utilisées partout
+
+2. **Migration OpenRouterService (backend central)**:
+   - Header doc: mis à jour pour refléter NVIDIA GLM-5.2
+   - Constructor: priorité NVIDIA_* > OPENROUTER_* pour clé API, modèle, base URL
+   - Valeurs par défaut:
+     * model: 'z-ai/glm-5.2' (au lieu de 'zai-org/GLM-5.1-FP8')
+     * baseUrl: 'https://integrate.api.nvidia.com/v1' (au lieu de modal.direct)
+   - MODEL_FALLBACK_CHAIN: ['z-ai/glm-5.2', 'zai-org/GLM-5.1-FP8', 'z-ai/glm-4.5-air:free']
+   - Tous les commentaires "GLM 5.1" → "GLM 5.2"
+   - Rétro-compatibilité: si NVIDIA_* absent, fallback sur OPENROUTER_* (modal.com)
+
+3. **Mise à jour AIGateway (table des coûts)**:
+   - Ajouté 'z-ai/glm-5.2': { input: 0.15, output: 0.60 } (même prix que GLM-5.1)
+   - Conservé 'z-ai/glm-5.1' et 'zai-org/GLM-5.1-FP8' pour rétro-compatibilité
+
+4. **Réécriture OrionAiService** (orion-ai.service.ts):
+   - AVANT: utilisait `await import('z-ai-web-dev-sdk')` + `zai.chat.completions.create()`
+   - APRÈS: fetch() natif vers `${NVIDIA_BASE_URL}/chat/completions`
+   - Constructor: injection ConfigService + lecture NVIDIA_* > OPENROUTER_*
+   - Paramètres body OpenAI-compatible: model, messages, temperature, top_p, max_tokens, stream
+   - Headers: Authorization Bearer + Content-Type + Accept
+   - Fallback: buildFallbackResponse(context) si API non configurée ou échec
+   - Signature callGlmModel: ajouté paramètre `context` pour fallback informé
+
+5. **Mise à jour 3 routes BFF Next.js**:
+   - apps/web-app/src/app/api/public/sara/chat/route.ts:
+     * getAIProvider(): ajouté branche 'nvidia' (priorité NVIDIA_API_KEY)
+     * if (provider === 'nvidia' || provider === 'openrouter') → même chemin OpenAI-compat
+   - apps/web-app/src/app/api/public/sara/chat/stream/route.ts:
+     * Même refonte que la route non-streaming
+   - apps/web-app/src/lib/orion/orion-llm.service.ts:
+     * LLM_CONFIG.provider défaut 'nvidia' (au lieu de 'openrouter')
+     * LLM_CONFIG.model défaut 'z-ai/glm-5.2'
+     * Renommé callOpenRouter → callNvidiaOrOpenRouter
+     * Priorité NVIDIA_API_KEY > OPENROUTER_API_KEY
+     * baseUrl défaut: integrate.api.nvidia.com/v1
+
+6. **Mise à jour fichiers de configuration**:
+   - apps/api-server/.env.example:
+     * Section "AI Configuration (NVIDIA GLM-5.2)" (au lieu de Modal/OpenRouter)
+     * NVIDIA_API_KEY=, NVIDIA_MODEL=z-ai/glm-5.2, NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+     * Variables OPENROUTER_* commentées (legacy)
+   - apps/web-app/.env.example:
+     * Même section NVIDIA
+     * ORION_LLM_PROVIDER=nvidia (au lieu de openrouter)
+     * ORION_LLM_MODEL=z-ai/glm-5.2
+   - apps/web-app/.env.production: même refonte
+   - apps/api-server/railway.toml: doc mise à jour NVIDIA + legacy
+
+7. **Mise à jour contenu marketing (GLM 5.1 → GLM 5.2)**:
+   - apps/api-server/src/orion/services/orion-intelligence.service.ts (commentaires)
+   - apps/api-server/src/sara/sara.service.ts (system prompt + commentaires)
+   - apps/api-server/src/ai/tools/tool-definitions-sara.ts (architecture + agents)
+   - apps/api-server/src/hr/ia-prisma.service.ts (commentaires vision + reasoning)
+   - apps/api-server/src/atlas/atlas.service.ts (commentaire Modèle)
+   - apps/web-app/src/components/public/PremiumLandingPage.tsx (badge "IA GLM-5.2")
+   - apps/web-app/src/data/sara/system_prompt.txt (3 occurrences)
+   - apps/web-app/src/app/api/hr/ia/copilot/stream/route.ts (commentaire)
+
+8. **Vérifications**:
+   - TypeScript web-app: compile sans erreur (npx tsc --noEmit)
+   - Aucune référence à z-ai-web-dev-sdk dans OrionAiService (migré vers fetch NVIDIA)
+   - Voice service (TTS/ASR) et Web search RESTENT sur z-ai-web-dev-sdk (fonctionnalités
+     spécifiques non disponibles via l'API OpenAI-compatible NVIDIA)
+   - Composants UI (OrionWidget.tsx) affichent déjà "GLM-5.2" — pas de changement nécessaire
+
+Stage Summary:
+- ✅ Migration GLM 5.1 (modal.com) → GLM 5.2 (NVIDIA integrate.api.nvidia.com/v1)
+- ✅ Provider principal: NVIDIA (model: z-ai/glm-5.2, baseUrl: integrate.api.nvidia.com/v1)
+- ✅ Rétro-compatibilité: si NVIDIA_* absent, fallback sur OPENROUTER_* (modal.com legacy)
+- ✅ Service central OpenRouterService mis à jour (impacte 7 services NestJS)
+- ✅ OrionAiService réécrit (fini z-ai-web-dev-sdk pour le chat — utilisait déjà GLM-5.2
+  mais via le SDK, maintenant via fetch direct NVIDIA)
+- ✅ 3 routes BFF Next.js alignées (sara/chat, sara/chat/stream, orion-llm.service)
+- ✅ Contenu marketing mis à jour (landing page, system prompts, commentaires)
+- ✅ Fichiers .env.example/.env.production/railway.toml mis à jour
+- ⚠️ Action requise côté utilisateur:
+  - Variable NVIDIA_API_KEY déjà configurée sur Railway (api-server) ✅
+  - Vérifier que NVIDIA_API_KEY est aussi configurée sur Vercel (web-app) pour les routes BFF
+  - Optionnel: supprimer les anciennes variables OPENROUTER_* si plus utilisées

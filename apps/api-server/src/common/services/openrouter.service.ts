@@ -4,8 +4,9 @@
  * ============================================================================
  *
  * Service partagé pour toutes les intégrations IA du système.
- * Actuellement configuré pour utiliser l'endpoint Modal GLM-5.1 (gratuit).
- * Compatible avec tout endpoint OpenAI-compatible (Modal, OpenRouter, etc.).
+ * Actuellement configuré pour utiliser l'endpoint NVIDIA integrate API
+ * (modèle GLM-5.2 ZAI).
+ * Compatible avec tout endpoint OpenAI-compatible (NVIDIA, Modal, OpenRouter, etc.).
  *
  * Personnalités IA supportées :
  *   - ORION : Assistant de direction (lecture seule, institutionnel)
@@ -15,19 +16,20 @@
  * Architecture :
  *   - API compatible OpenAI (POST /v1/chat/completions)
  *   - Streaming SSE supporté pour les interfaces conversationnelles
- *   - Reasoning support (GLM 5.1) pour les analyses approfondies
+ *   - Reasoning support (GLM 5.2) pour les analyses approfondies
  *   - Retry avec backoff exponentiel (3 tentatives)
  *   - Fallback de modèle automatique en cas d'indisponibilité
  *   - Rate limiting intégré
  *
- * Variables d'environnement :
- *   - OPENROUTER_API_KEY : Clé API (Modal ou OpenRouter, obligatoire pour IA réelle)
- *   - OPENROUTER_MODEL   : Modèle à utiliser (défaut: zai-org/GLM-5.1-FP8)
- *   - OPENROUTER_BASE_URL: URL de base (défaut: https://api.us-west-2.modal.direct/v1)
+ * Variables d'environnement (priorité NVIDIA_* > OPENROUTER_*) :
+ *   - NVIDIA_API_KEY  / OPENROUTER_API_KEY : Clé API (obligatoire pour IA réelle)
+ *   - NVIDIA_MODEL     / OPENROUTER_MODEL  : Modèle (défaut: z-ai/glm-5.2)
+ *   - NVIDIA_BASE_URL  / OPENROUTER_BASE_URL : URL base (défaut: https://integrate.api.nvidia.com/v1)
  *
  * Fournisseurs supportés :
- *   - Modal (gratuit)   : https://api.us-west-2.modal.direct/v1
- *   - OpenRouter (payant): https://openrouter.ai/api/v1
+ *   - NVIDIA (actuel)    : https://integrate.api.nvidia.com/v1
+ *   - Modal (legacy)     : https://api.us-west-2.modal.direct/v1
+ *   - OpenRouter (legacy): https://openrouter.ai/api/v1
  * ============================================================================
  */
 
@@ -50,7 +52,7 @@ export interface OpenRouterChatOptions {
   messages: Array<{
     role: 'system' | 'user' | 'assistant' | 'tool';
     // Multimodal : string pour le texte simple, ou tableau de parts (text + image_url + file_url)
-    // pour supporter la vision (GLM-4V, GLM-5.1 multimodal, etc.)
+    // pour supporter la vision (GLM-4V, GLM-5.2 multimodal, etc.)
     content: string | null | Array<
       | { type: 'text'; text: string }
       | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } }
@@ -79,7 +81,7 @@ export interface OpenRouterChatOptions {
   persona?: 'ORION' | 'ATLAS' | 'SARA' | 'HDIE' | 'SCE' | 'GENERAL';
   /** Timeout en ms, défaut 60000 */
   timeout?: number;
-  /** Activer le raisonnement (GLM 5.1 reasoning tokens) */
+  /** Activer le raisonnement (GLM 5.2 reasoning tokens) */
   reasoning?: boolean;
   /** Effort de raisonnement : low, medium, high */
   reasoningEffort?: 'low' | 'medium' | 'high';
@@ -140,14 +142,14 @@ export interface OpenRouterStreamChunk {
 /**
  * Chaîne de fallback des modèles — si le modèle principal échoue,
  * on essaie le modèle suivant dans la liste.
- * Ordre : GLM-5.1-FP8 Modal (production) → GLM-5-FP8 Modal (fallback) → GLM 4.5 Air OpenRouter (fallback gratuit)
+ * Ordre : GLM-5.2 NVIDIA (production) → GLM-5.1 Modal (legacy) → GLM 4.5 Air OpenRouter (fallback gratuit)
  *
  * NOTE : Les fallbacks OpenRouter nécessitent que OPENROUTER_FALLBACK_KEY soit configuré.
- * Si seule la clé Modal est configurée, le fallback se limitera aux modèles Modal.
+ * Si seule la clé NVIDIA est configurée, le fallback se limitera aux modèles NVIDIA.
  */
 const MODEL_FALLBACK_CHAIN: string[] = [
+  'z-ai/glm-5.2',
   'zai-org/GLM-5.1-FP8',
-  'zai-org/GLM-5-FP8',
   'z-ai/glm-4.5-air:free',
 ];
 
@@ -169,16 +171,26 @@ export class OpenRouterService {
   private readonly minCallInterval = 300;
 
   constructor(private readonly configService: ConfigService) {
-    this.apiKey = this.configService.get<string>('OPENROUTER_API_KEY') || '';
-    this.model = this.configService.get<string>('OPENROUTER_MODEL') || 'zai-org/GLM-5.1-FP8';
-    this.baseUrl = this.configService.get<string>('OPENROUTER_BASE_URL') || 'https://api.us-west-2.modal.direct/v1';
+    // ⭐ Migration vers NVIDIA GLM-5.2 — priorité NVIDIA_* > OPENROUTER_* (rétro-compatibilité)
+    this.apiKey =
+      this.configService.get<string>('NVIDIA_API_KEY') ||
+      this.configService.get<string>('OPENROUTER_API_KEY') ||
+      '';
+    this.model =
+      this.configService.get<string>('NVIDIA_MODEL') ||
+      this.configService.get<string>('OPENROUTER_MODEL') ||
+      'z-ai/glm-5.2';
+    this.baseUrl =
+      this.configService.get<string>('NVIDIA_BASE_URL') ||
+      this.configService.get<string>('OPENROUTER_BASE_URL') ||
+      'https://integrate.api.nvidia.com/v1';
     this.siteUrl = this.configService.get<string>('NEXT_PUBLIC_APP_URL') || 'https://academiahelm.com';
     this.siteName = 'Academia Helm';
 
     if (this.apiKey) {
-      this.logger.log(`OpenRouter configured with model: ${this.model}`);
+      this.logger.log(`AI Gateway configured — provider: NVIDIA, model: ${this.model}, baseUrl: ${this.baseUrl}`);
     } else {
-      this.logger.warn('OPENROUTER_API_KEY not configured. All AI services will use fallback responses.');
+      this.logger.warn('NVIDIA_API_KEY / OPENROUTER_API_KEY not configured. All AI services will use fallback responses.');
     }
   }
 
@@ -198,7 +210,7 @@ export class OpenRouterService {
 
   /**
    * Appel IA non-streaming - Retourne la réponse complète
-   * Support du reasoning pour GLM 5.1
+   * Support du reasoning pour GLM 5.2
    * Retry automatique avec backoff exponentiel + fallback de modèle
    */
   async chat(options: OpenRouterChatOptions): Promise<OpenRouterChatResponse> {
@@ -224,7 +236,7 @@ export class OpenRouterService {
     const modelsToTry: string[] = [requestedModel];
     if (enableFallback && !options.reasoning) {
       // Le fallback n'est appliqué que si le reasoning n'est pas activé
-      // (le reasoning est spécifique à GLM 5.1)
+      // (le reasoning est spécifique à GLM 5.2)
       for (const fallback of MODEL_FALLBACK_CHAIN) {
         if (fallback !== requestedModel) {
           modelsToTry.push(fallback);
@@ -317,7 +329,7 @@ export class OpenRouterService {
       max_tokens: maxTokens,
     };
 
-    // Ajouter le support du reasoning pour GLM 5.1
+    // Ajouter le support du reasoning pour GLM 5.2
     if (enableReasoning) {
       body.reasoning = {
         enabled: true,
@@ -426,7 +438,7 @@ export class OpenRouterService {
   /**
    * Appel IA streaming - Retourne un AsyncGenerator de chunks
    * Compatible avec le format SSE OpenAI utilisé par OpenRouter
-   * Support du reasoning streaming pour GLM 5.1
+   * Support du reasoning streaming pour GLM 5.2
    * Retry automatique avec fallback de modèle
    */
   async *chatStream(options: OpenRouterChatOptions): AsyncGenerator<OpenRouterStreamChunk> {
@@ -557,7 +569,7 @@ export class OpenRouterService {
           // OpenAI-compatible delta format (used by OpenRouter)
           const delta = evt?.choices?.[0]?.delta;
 
-          // Reasoning delta (GLM 5.1 specific)
+          // Reasoning delta (GLM 5.2 specific)
           if (delta?.reasoning_content) {
             reasoningContent += delta.reasoning_content;
             yield { type: 'reasoning', reasoningText: delta.reasoning_content };
@@ -683,7 +695,7 @@ export class OpenRouterService {
   ): Promise<OpenRouterChatResponse> {
     const dataUrl = `data:${mimeType};base64,${base64Data}`;
 
-    // Les images sont envoyées via image_url (supporté par GLM-4V, GLM-5.1 multimodal)
+    // Les images sont envoyées via image_url (supporté par GLM-4V, GLM-5.2 multimodal)
     // Les PDF peuvent aussi être envoyés via image_url car l'API OpenAI-compatible
     // de Modal/GLM accepte les PDF comme image_url avec extraction native.
     const isImage = mimeType.startsWith('image/');
@@ -709,7 +721,7 @@ export class OpenRouterService {
   }
 
   /**
-   * Appel IA avec raisonnement - Utilise le paramètre reasoning de GLM 5.1
+   * Appel IA avec raisonnement - Utilise le paramètre reasoning de GLM 5.2
    * Idéal pour ORION (analyses approfondies) et les prédictions
    */
   async chatWithReasoning(
@@ -734,7 +746,7 @@ export class OpenRouterService {
       reasoning: true,
       reasoningEffort: options?.reasoningEffort ?? 'medium',
       maxReasoningTokens: options?.maxReasoningTokens,
-      // Le fallback est désactivé pour le reasoning car c'est spécifique à GLM 5.1
+      // Le fallback est désactivé pour le reasoning car c'est spécifique à GLM 5.2
       enableFallback: false,
     });
   }

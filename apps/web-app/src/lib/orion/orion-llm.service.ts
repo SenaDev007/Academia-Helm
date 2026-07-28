@@ -8,7 +8,7 @@
  * - Fallback local si réponse non conforme
  * - Journalisation de toutes les interactions
  * 
- * SUPPORT : Modal GLM-5.1 (défaut), OpenRouter, OpenAI, Anthropic
+ * SUPPORT : NVIDIA GLM-5.2 (défaut), Modal, OpenRouter, OpenAI, Anthropic
  */
 
 import type {
@@ -23,10 +23,12 @@ import { fetchWithTimeout, LLM_FETCH_TIMEOUT } from '@/lib/api/fetch-with-timeou
 
 /**
  * Configuration LLM
+ *
+ * ⭐ Migration vers NVIDIA GLM-5.2 — priorité NVIDIA_* > OPENROUTER_* / ORION_LLM_*
  */
 const LLM_CONFIG = {
-  provider: (process.env.ORION_LLM_PROVIDER || 'openrouter') as 'openrouter' | 'openai' | 'anthropic' | 'local',
-  model: process.env.ORION_LLM_MODEL || 'zai-org/GLM-5.1-FP8',
+  provider: (process.env.ORION_LLM_PROVIDER || 'nvidia') as 'nvidia' | 'openrouter' | 'openai' | 'anthropic' | 'local',
+  model: process.env.NVIDIA_MODEL || process.env.ORION_LLM_MODEL || 'z-ai/glm-5.2',
   temperature: 0.1, // Très basse pour des réponses factuelles
   maxTokens: 1000,
 };
@@ -43,11 +45,11 @@ interface LLMResponse {
 }
 
 /**
- * Appelle le LLM externe (OpenRouter, OpenAI ou Anthropic)
+ * Appelle le LLM externe (NVIDIA, OpenRouter, OpenAI ou Anthropic)
  */
 async function callExternalLLM(prompt: string): Promise<LLMResponse> {
-  if (LLM_CONFIG.provider === 'openrouter') {
-    return callOpenRouter(prompt);
+  if (LLM_CONFIG.provider === 'nvidia' || LLM_CONFIG.provider === 'openrouter') {
+    return callNvidiaOrOpenRouter(prompt);
   } else if (LLM_CONFIG.provider === 'openai') {
     return callOpenAI(prompt);
   } else if (LLM_CONFIG.provider === 'anthropic') {
@@ -58,15 +60,24 @@ async function callExternalLLM(prompt: string): Promise<LLMResponse> {
 }
 
 /**
- * Appelle OpenRouter (compatible OpenAI)
+ * Appelle NVIDIA (ou OpenRouter legacy) — endpoint OpenAI-compatible
+ *
+ * ⭐ NVIDIA : integrate.api.nvidia.com/v1 (priorité)
+ * Legacy : OPENROUTER_API_KEY + modal.direct
  */
-async function callOpenRouter(prompt: string): Promise<LLMResponse> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+async function callNvidiaOrOpenRouter(prompt: string): Promise<LLMResponse> {
+  // ⭐ Priorité NVIDIA_* > OPENROUTER_*
+  const apiKey =
+    process.env.NVIDIA_API_KEY ||
+    process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error('Le service IA n\'est pas encore activé. Veuillez contacter votre administrateur.');
   }
 
-  const baseUrl = process.env.OPENROUTER_BASE_URL || 'https://api.us-west-2.modal.direct/v1';
+  const baseUrl =
+    process.env.NVIDIA_BASE_URL ||
+    process.env.OPENROUTER_BASE_URL ||
+    'https://integrate.api.nvidia.com/v1';
 
   const response = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
     method: 'POST',

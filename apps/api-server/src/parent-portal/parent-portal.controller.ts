@@ -2,14 +2,16 @@
  * ============================================================================
  * PARENT PORTAL — Controller
  * ============================================================================
- * 
+ *
  * Endpoints pour le portail parent :
  *   GET  /parent/children          — Liste des enfants du parent
- *   GET  /parent/children/:id       — Détail d'un enfant (infos + assiduité)
- *   GET  /parent/payments/:studentId — Paiements + solde d'un enfant
+ *   GET  /parent/children/:id       — Détail d'un enfant (infos + assiduité + scolarité)
+ *   GET  /parent/payments/:studentId — Paiements + solde d'un enfant (StudentAccount)
  *   GET  /parent/attendance/:studentId — Assiduité d'un enfant
- *   GET  /parent/results/:studentId   — Bulletins/Résultats d'un enfant
- *   GET  /parent/receipts/:paymentId  — Télécharger un reçu PDF
+ *   GET  /parent/today/:studentId   — Suivi journalier (présence + cours + devoirs)
+ *   GET  /parent/homeworks/:studentId — Devoirs d'un enfant
+ *   GET  /parent/cahier-journal/:classId — Cahier journal validé de la classe
+ *   GET  /parent/results/:studentId   — Bulletins/Résultats d'un enfant (ReportCard)
  * ============================================================================
  */
 
@@ -20,6 +22,7 @@ import {
 import { Public } from '../auth/decorators/public.decorator';
 import { PrismaService } from '../database/prisma.service';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { Response } from 'express';
 
 @Controller('parent')
 @Public()
@@ -29,8 +32,52 @@ export class ParentPortalController {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * GET /parent/children?parentId=X
-   * Liste des enfants liés à un parent.
+   * Résoudre l'ID du guardian depuis l'userId du parent connecté.
+   * Le parent se connecte avec son User (email/téléphone), mais ses enfants
+   * sont liés via la table student_guardians (guardianId).
+   * On cherche par email ou téléphone matching.
+   */
+  private async resolveGuardianId(tenantId: string, parentId: string): Promise<string | null> {
+    // 1. Vérifier si parentId est déjà un guardianId
+    const directGuardian: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "id" FROM "guardians" WHERE "id" = $1 AND "tenantId" = $2 LIMIT 1`,
+      parentId, tenantId,
+    ).catch(() => []);
+    if (directGuardian && directGuardian.length > 0) return directGuardian[0].id;
+
+    // 2. Chercher par User → email/téléphone → Guardian
+    const user: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "email", "phone" FROM "users" WHERE "id" = $1 AND "tenantId" = $2 LIMIT 1`,
+      parentId, tenantId,
+    ).catch(() => []);
+
+    if (user && user.length > 0) {
+      const u = user[0];
+      // Chercher guardian par email
+      if (u.email) {
+        const guardianByEmail: any = await this.prisma.$queryRawUnsafe(
+          `SELECT "id" FROM "guardians" WHERE "email" = $1 AND "tenantId" = $2 LIMIT 1`,
+          u.email, tenantId,
+        ).catch(() => []);
+        if (guardianByEmail && guardianByEmail.length > 0) return guardianByEmail[0].id;
+      }
+      // Chercher guardian par téléphone
+      if (u.phone) {
+        const guardianByPhone: any = await this.prisma.$queryRawUnsafe(
+          `SELECT "id" FROM "guardians" WHERE "phone" = $1 AND "tenantId" = $2 LIMIT 1`,
+          u.phone, tenantId,
+        ).catch(() => []);
+        if (guardianByPhone && guardianByPhone.length > 0) return guardianByPhone[0].id;
+      }
+    }
+
+    // 3. Fallback : retourner parentId directement (peut être un guardianId)
+    return parentId;
+  }
+
+  /**
+   * GET /parent/children?parentId=X&academicYearId=Y
+   * Liste des enfants liés à un parent + solde scolarité.
    */
   @Get('children')
   async getChildren(
@@ -40,37 +87,76 @@ export class ParentPortalController {
   ) {
     if (!parentId) throw new BadRequestException('parentId est requis');
 
-    // Récupérer les élèves liés à ce parent
-    const links = await this.prisma.$queryRawUnsafe(
+    const guardianId = await this.resolveGuardianId(tenantId, parentId);
+
+    // Récupérer les élèves liés à ce guardian
+    const children: any = await this.prisma.$queryRawUnsafe(
       `SELECT s."id", s."firstName", s."lastName", s."gender", s."matricule",
               s."dateOfBirth", s."photoUrl",
               se."classId", c."name" as "className",
               sl."name" as "levelName", sl."code" as "levelCode",
-              se."status" as "enrollmentStatus"
+              se."status" as "enrollmentStatus",
+              sg."relationship", sg."isPrimary"
        FROM "students" s
        INNER JOIN "student_enrollments" se ON se."studentId" = s."id"
+       INNER JOIN "student_guardians" sg ON sg."studentId" = s."id"
        LEFT JOIN "classes" c ON c."id" = se."classId"
        LEFT JOIN "school_levels" sl ON sl."id" = se."schoolLevelId"
        WHERE s."tenantId" = $1
        AND se."academicYearId" = $2
-       AND se."status" IN ('ACTIVE', 'ADMITTED', 'ENROLLED')
-       AND s."id" IN (
-         SELECT "studentId" FROM "student_guardians"
-         WHERE "guardianId" = $3
-         UNION
-         SELECT "studentId" FROM "parent_student_links"
-         WHERE "parentId" = $3 AND "tenantId" = $1
-       )
+       AND se."status" IN ('ACTIVE', 'ADMITTED', 'ENROLLED', 'CONFIRMED')
+       AND sg."guardianId" = $3
        ORDER BY s."lastName", s."firstName"`,
-      tenantId, academicYearId, parentId,
+      tenantId, academicYearId, guardianId,
+    ).catch(() => []);
+
+    // Enrichir avec le solde scolarité (StudentAccount)
+    const enriched = await Promise.all(
+      (children || []).map(async (child: any) => {
+        const account: any = await this.prisma.$queryRawUnsafe(
+          `SELECT "totalDue", "totalPaid", "balance", "arrearsAmount", "status"
+           FROM "student_accounts"
+           WHERE "studentId" = $1 AND "tenantId" = $2 AND "academicYearId" = $3
+           LIMIT 1`,
+          child.id, tenantId, academicYearId,
+        ).catch(() => []);
+
+        const acc = account && account.length > 0 ? account[0] : null;
+
+        // Enseignant titulaire
+        let teacher = null;
+        if (child.classId) {
+          const teachers: any = await this.prisma.$queryRawUnsafe(
+            `SELECT t."firstName", t."lastName", t."email", t."phone"
+             FROM "teacher_class_assignments" tca
+             INNER JOIN "teachers" t ON t."id" = tca."teacherId"
+             WHERE tca."tenantId" = $1 AND tca."academicYearId" = $2
+             AND tca."classId" = $3 LIMIT 1`,
+            tenantId, academicYearId, child.classId,
+          ).catch(() => []);
+          if (teachers && teachers.length > 0) {
+            teacher = {
+              name: `${teachers[0].firstName} ${teachers[0].lastName}`.trim(),
+              email: teachers[0].email,
+              phone: teachers[0].phone,
+            };
+          }
+        }
+
+        return {
+          ...child,
+          teacher,
+          account: acc || { totalDue: 0, totalPaid: 0, balance: 0, arrearsAmount: 0, status: 'N/A' },
+        };
+      }),
     );
 
-    return links;
+    return enriched;
   }
 
   /**
    * GET /parent/children/:studentId?parentId=X&academicYearId=Y
-   * Détail d'un enfant : infos + effectifs classe + assiduité + enseignant titulaire.
+   * Détail d'un enfant : infos + effectifs classe + assiduité + enseignant + solde.
    */
   @Get('children/:studentId')
   async getChildDetail(
@@ -91,23 +177,20 @@ export class ParentPortalController {
        LEFT JOIN "classes" c ON c."id" = se."classId"
        LEFT JOIN "school_levels" sl ON sl."id" = se."schoolLevelId"
        WHERE s."id" = $1 AND s."tenantId" = $2
-       AND se."academicYearId" = $3
-       LIMIT 1`,
+       AND se."academicYearId" = $3 LIMIT 1`,
       studentId, tenantId, academicYearId,
     );
 
     if (!students || students.length === 0) {
       throw new NotFoundException('Élève non trouvé');
     }
-
     const student = students[0];
 
     // Effectifs de la classe
     let classStats: any = null;
     if (student.classId) {
       const stats: any = await this.prisma.$queryRawUnsafe(
-        `SELECT
-           COUNT(*)::int as "total",
+        `SELECT COUNT(*)::int as "total",
            COUNT(CASE WHEN s."gender" = 'MALE' THEN 1 END)::int as "boys",
            COUNT(CASE WHEN s."gender" = 'FEMALE' THEN 1 END)::int as "girls"
          FROM "student_enrollments" se
@@ -115,39 +198,34 @@ export class ParentPortalController {
          WHERE se."classId" = $1 AND se."academicYearId" = $2
          AND se."status" IN ('ACTIVE', 'ADMITTED', 'ENROLLED')`,
         student.classId, academicYearId,
-      );
-      classStats = stats[0] || null;
+      ).catch(() => []);
+      classStats = stats?.[0] || null;
     }
 
-    // Enseignant titulaire de la classe
+    // Enseignant titulaire
     let teacher: any = null;
     if (student.classId) {
       const teachers: any = await this.prisma.$queryRawUnsafe(
-        `SELECT t."id", t."firstName", t."lastName", t."email", t."phone",
-                t."matricule", u."email" as "userEmail"
+        `SELECT t."id", t."firstName", t."lastName", t."email", t."phone"
          FROM "teacher_class_assignments" tca
          INNER JOIN "teachers" t ON t."id" = tca."teacherId"
-         LEFT JOIN "users" u ON u."email" = t."email" AND u."tenantId" = t."tenantId"
          WHERE tca."tenantId" = $1 AND tca."academicYearId" = $2
-         AND tca."classId" = $3 AND tca."teacherId" IS NOT NULL
-         LIMIT 1`,
+         AND tca."classId" = $3 LIMIT 1`,
         tenantId, academicYearId, student.classId,
-      );
-      if (teachers && teachers.length > 0) {
+      ).catch(() => []);
+      if (teachers?.length > 0) {
         teacher = {
           id: teachers[0].id,
           name: `${teachers[0].firstName} ${teachers[0].lastName}`.trim(),
-          email: teachers[0].email || teachers[0].userEmail || null,
-          phone: teachers[0].phone || null,
-          matricule: teachers[0].matricule || null,
+          email: teachers[0].email,
+          phone: teachers[0].phone,
         };
       }
     }
 
     // Résumé assiduité (ce mois)
     const attendance: any = await this.prisma.$queryRawUnsafe(
-      `SELECT
-         COUNT(*)::int as "totalDays",
+      `SELECT COUNT(*)::int as "totalDays",
          COUNT(CASE WHEN "status" = 'PRESENT' THEN 1 END)::int as "present",
          COUNT(CASE WHEN "status" = 'ABSENT' THEN 1 END)::int as "absent",
          COUNT(CASE WHEN "status" = 'LATE' THEN 1 END)::int as "late"
@@ -155,19 +233,29 @@ export class ParentPortalController {
        WHERE "studentId" = $1 AND "tenantId" = $2
        AND "date" >= date_trunc('month', CURRENT_DATE)`,
       studentId, tenantId,
-    );
+    ).catch(() => []);
+
+    // Solde scolarité (StudentAccount)
+    const account: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "totalDue", "totalPaid", "balance", "arrearsAmount", "status"
+       FROM "student_accounts"
+       WHERE "studentId" = $1 AND "tenantId" = $2 AND "academicYearId" = $3
+       LIMIT 1`,
+      studentId, tenantId, academicYearId,
+    ).catch(() => []);
 
     return {
       ...student,
       classStats,
       teacher,
-      attendance: attendance[0] || { totalDays: 0, present: 0, absent: 0, late: 0 },
+      attendance: attendance?.[0] || { totalDays: 0, present: 0, absent: 0, late: 0 },
+      account: account?.[0] || { totalDue: 0, totalPaid: 0, balance: 0, arrearsAmount: 0, status: 'N/A' },
     };
   }
 
   /**
    * GET /parent/payments/:studentId?academicYearId=Y
-   * Paiements + solde pour un enfant.
+   * Solde + historique paiements (depuis StudentAccount + FinanceTransaction).
    */
   @Get('payments/:studentId')
   async getPayments(
@@ -177,44 +265,54 @@ export class ParentPortalController {
   ) {
     if (!academicYearId) throw new BadRequestException('academicYearId est requis');
 
-    // Total dû : somme des StudentFee
-    const fees: any = await this.prisma.$queryRawUnsafe(
-      `SELECT COALESCE(SUM("amountDue"), 0)::float as "totalDue",
-              COALESCE(SUM("amountPaid"), 0)::float as "totalPaid"
-       FROM "student_fees"
-       WHERE "studentId" = $1 AND "tenantId" = $2
-       AND "academicYearId" = $3`,
+    // Solde depuis StudentAccount
+    const account: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "totalDue", "totalPaid", "balance", "arrearsAmount", "status"
+       FROM "student_accounts"
+       WHERE "studentId" = $1 AND "tenantId" = $2 AND "academicYearId" = $3
+       LIMIT 1`,
       studentId, tenantId, academicYearId,
-    );
+    ).catch(() => []);
 
-    const totalDue = fees[0]?.totalDue || 0;
-    const totalPaid = fees[0]?.totalPaid || 0;
-    const totalRemaining = totalDue - totalPaid;
+    const acc = account?.[0] || { totalDue: 0, totalPaid: 0, balance: 0, arrearsAmount: 0, status: 'N/A' };
 
-    // Historique des paiements
-    const payments = await this.prisma.$queryRawUnsafe(
+    // Historique des paiements (FinanceTransaction)
+    const transactions: any = await this.prisma.$queryRawUnsafe(
+      `SELECT ft."id", ft."amount", ft."createdAt", ft."paymentMethod",
+              ft."receiptNumber", ft."reference", ft."status", ft."notes",
+              ft."type"
+       FROM "finance_transactions" ft
+       WHERE ft."studentId" = $1 AND ft."tenantId" = $2
+       AND ft."type" = 'PAYMENT'
+       ORDER BY ft."createdAt" DESC LIMIT 50`,
+      studentId, tenantId,
+    ).catch(() => []);
+
+    // Fallback : anciens paiements (table payments)
+    const legacyPayments: any = await this.prisma.$queryRawUnsafe(
       `SELECT p."id", p."amount", p."paymentDate", p."paymentMethod",
               p."receiptNumber", p."reference", p."status", p."notes",
-              p."createdAt", fc."name" as "feeName"
+              p."createdAt", p."transactionType"
        FROM "payments" p
-       LEFT JOIN "fee_configurations" fc ON fc."id" = p."feeConfigurationId"
        WHERE p."studentId" = $1 AND p."tenantId" = $2
        AND p."status" = 'completed'
-       AND p."transactionType" = 'PAYMENT'
-       ORDER BY p."paymentDate" DESC`,
+       ORDER BY p."paymentDate" DESC LIMIT 50`,
       studentId, tenantId,
-    );
+    ).catch(() => []);
 
     return {
-      totalDue,
-      totalPaid,
-      totalRemaining,
-      payments,
+      totalDue: acc.totalDue || 0,
+      totalPaid: acc.totalPaid || 0,
+      totalRemaining: acc.balance || 0,
+      arrears: acc.arrearsAmount || 0,
+      status: acc.status || 'N/A',
+      transactions: transactions || [],
+      legacyPayments: legacyPayments || [],
     };
   }
 
   /**
-   * GET /parent/attendance/:studentId?month=Y&m=M
+   * GET /parent/attendance/:studentId?month=YYYY-MM
    * Assiduité d'un enfant par mois.
    */
   @Get('attendance/:studentId')
@@ -234,15 +332,185 @@ export class ParentPortalController {
     } else {
       query += ` AND "date" >= date_trunc('month', CURRENT_DATE)`;
     }
-
     query += ` ORDER BY "date" DESC LIMIT 100`;
 
     return this.prisma.$queryRawUnsafe(query, ...params);
   }
 
   /**
+   * GET /parent/today/:studentId?academicYearId=Y
+   * Suivi journalier : présence du jour + cours déroulés + devoirs donnés.
+   */
+  @Get('today/:studentId')
+  async getTodaySummary(
+    @TenantId() tenantId: string,
+    @Param('studentId') studentId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    const today = new Date().toISOString().split('T')[0];
+
+    // 1. Présence du jour
+    const attendance: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "status", "notes"
+       FROM "attendance_records"
+       WHERE "studentId" = $1 AND "tenantId" = $2 AND "date" = $3::date
+       LIMIT 1`,
+      studentId, tenantId, today,
+    ).catch(() => []);
+
+    // 2. Récupérer le classId de l'élève
+    const enrollment: any = await this.prisma.$queryRawUnsafe(
+      `SELECT se."classId", c."name" as "className"
+       FROM "student_enrollments" se
+       LEFT JOIN "classes" c ON c."id" = se."classId"
+       WHERE se."studentId" = $1 AND se."tenantId" = $2
+       AND se."academicYearId" = $3 LIMIT 1`,
+      studentId, tenantId, academicYearId,
+    ).catch(() => []);
+
+    const classId = enrollment?.[0]?.classId || null;
+    const className = enrollment?.[0]?.className || '—';
+
+    // 3. Cahier journal du jour (entries JSON)
+    let cahierJournal: any = null;
+    if (classId) {
+      // Calculer le lundi de la semaine
+      const now = new Date();
+      const day = now.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() + diff);
+      const weekStart = monday.toISOString().split('T')[0];
+
+      const cj: any = await this.prisma.$queryRawUnsafe(
+        `SELECT "entries", "observations", "status"
+         FROM "cahier_journal_entries"
+         WHERE "tenantId" = $1 AND "classId" = $2
+         AND "weekStartDate" = $3::date LIMIT 1`,
+        tenantId, classId, weekStart,
+      ).catch(() => []);
+
+      if (cj && cj.length > 0) {
+        const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+        const todayKey = dayNames[now.getDay()];
+        let entries = cj[0].entries;
+        if (typeof entries === 'string') {
+          try { entries = JSON.parse(entries); } catch { entries = {}; }
+        }
+        cahierJournal = {
+          todayEntries: entries[todayKey] || {},
+          status: cj[0].status,
+          observations: cj[0].observations,
+        };
+      }
+    }
+
+    // 4. Devoirs donnés (HomeworkEntry) pour la classe
+    let homeworks: any[] = [];
+    if (classId) {
+      homeworks = await this.prisma.$queryRawUnsafe(
+        `SELECT h."id", h."title", h."description", h."dueDate", h."maxScore",
+                s."name" as "subjectName"
+         FROM "homework_entries" h
+         LEFT JOIN "subjects" s ON s."id" = h."subjectId"
+         WHERE h."tenantId" = $1 AND h."classId" = $2
+         AND h."academicYearId" = $3
+         AND h."dueDate" >= CURRENT_DATE
+         ORDER BY h."dueDate" ASC LIMIT 20`,
+        tenantId, classId, academicYearId,
+      ).catch(() => []);
+
+      // Statut de chaque devoir pour cet élève
+      if (homeworks.length > 0) {
+        const hwIds = homeworks.map((h: any) => h.id);
+        const taskStatus: any = await this.prisma.$queryRawUnsafe(
+          `SELECT "homeworkEntryId", "status", "score", "appreciation", "observation"
+           FROM "pedagogical_task_students"
+           WHERE "studentId" = $1 AND "homeworkEntryId" = ANY($2::text[])`,
+          studentId, hwIds,
+        ).catch(() => []);
+
+        const statusMap = new Map<string, any>();
+        for (const t of (taskStatus || [])) {
+          statusMap.set(t.homeworkEntryId, t);
+        }
+        homeworks = homeworks.map((h: any) => ({
+          ...h,
+          taskStatus: statusMap.get(h.id) || null,
+        }));
+      }
+    }
+
+    return {
+      date: today,
+      attendance: attendance?.[0] || null,
+      className,
+      cahierJournal,
+      homeworks,
+    };
+  }
+
+  /**
+   * GET /parent/homeworks/:studentId?academicYearId=Y
+   * Tous les devoirs d'un enfant (avec statut).
+   */
+  @Get('homeworks/:studentId')
+  async getHomeworks(
+    @TenantId() tenantId: string,
+    @Param('studentId') studentId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    // Récupérer le classId
+    const enrollment: any = await this.prisma.$queryRawUnsafe(
+      `SELECT se."classId"
+       FROM "student_enrollments" se
+       WHERE se."studentId" = $1 AND se."tenantId" = $2
+       AND se."academicYearId" = $3 LIMIT 1`,
+      studentId, tenantId, academicYearId,
+    ).catch(() => []);
+
+    if (!enrollment || enrollment.length === 0) return [];
+
+    const classId = enrollment[0].classId;
+    if (!classId) return [];
+
+    const homeworks: any = await this.prisma.$queryRawUnsafe(
+      `SELECT h."id", h."title", h."description", h."dueDate", h."maxScore",
+              h."createdAt", s."name" as "subjectName"
+       FROM "homework_entries" h
+       LEFT JOIN "subjects" s ON s."id" = h."subjectId"
+       WHERE h."tenantId" = $1 AND h."classId" = $2
+       AND h."academicYearId" = $3
+       ORDER BY h."dueDate" DESC LIMIT 50`,
+      tenantId, classId, academicYearId,
+    ).catch(() => []);
+
+    // Statut pour cet élève
+    if (homeworks.length > 0) {
+      const hwIds = homeworks.map((h: any) => h.id);
+      const taskStatus: any = await this.prisma.$queryRawUnsafe(
+        `SELECT "homeworkEntryId", "status", "score", "appreciation", "observation", "evaluatedAt"
+         FROM "pedagogical_task_students"
+         WHERE "studentId" = $1 AND "homeworkEntryId" = ANY($2::text[])`,
+        studentId, hwIds,
+      ).catch(() => []);
+
+      const statusMap = new Map<string, any>();
+      for (const t of (taskStatus || [])) {
+        statusMap.set(t.homeworkEntryId, t);
+      }
+      return homeworks.map((h: any) => ({
+        ...h,
+        taskStatus: statusMap.get(h.id) || null,
+      }));
+    }
+
+    return homeworks;
+  }
+
+  /**
    * GET /parent/results/:studentId?academicYearId=Y
-   * Bulletins / résultats d'un enfant.
+   * Bulletins d'un enfant (depuis ReportCard).
    */
   @Get('results/:studentId')
   async getResults(
@@ -250,31 +518,47 @@ export class ParentPortalController {
     @Param('studentId') studentId: string,
     @Query('academicYearId') academicYearId: string,
   ) {
-    // Pour l'instant, on récupère les notes disponibles
-    const results = await this.prisma.$queryRawUnsafe(
-      `SELECT r."id", r."subject", r."score", r."maxScore",
-              r."grade", r."appreciation", r."period", r."createdAt"
-       FROM "results" r
-       WHERE r."studentId" = $1 AND r."tenantId" = $2
-       ORDER BY r."createdAt" DESC LIMIT 50`,
-      studentId, tenantId,
-    ).catch(() => {
-      // Table results peut ne pas exister — retourner vide
-      return [];
-    });
+    const reportCards: any = await this.prisma.$queryRawUnsafe(
+      `SELECT rc."id", rc."type", rc."overallAverage", rc."rank", rc."status",
+              rc."filePath", rc."publishedAt", rc."createdAt",
+              q."name" as "quarterName", q."number" as "quarterNumber"
+       FROM "report_cards" rc
+       LEFT JOIN "quarters" q ON q."id" = rc."quarterId"
+       WHERE rc."studentId" = $1 AND rc."tenantId" = $2
+       AND rc."academicYearId" = $3
+       AND rc."status" IN ('VALIDATED', 'PUBLISHED')
+       ORDER BY rc."createdAt" DESC`,
+      studentId, tenantId, academicYearId,
+    ).catch(() => []);
 
-    return results;
+    // Enrichir avec les items par matière
+    const enriched = await Promise.all(
+      (reportCards || []).map(async (rc: any) => {
+        const items: any = await this.prisma.$queryRawUnsafe(
+          `SELECT rci."average", rci."coefficient", rci."rank", rci."comments",
+                  s."name" as "subjectName"
+           FROM "report_card_items" rci
+           LEFT JOIN "subjects" s ON s."id" = rci."subjectId"
+           WHERE rci."reportCardId" = $1
+           ORDER BY s."name"`,
+          rc.id,
+        ).catch(() => []);
+        return { ...rc, items: items || [] };
+      }),
+    );
+
+    return enriched;
   }
 
   /**
    * GET /parent/receipts/:paymentId
-   * Télécharge un reçu PDF (placeholder — le reçu réel sera généré par le module finance).
+   * Infos d'un reçu (JSON — le PDF sera généré par le module finance).
    */
   @Get('receipts/:paymentId')
   async getReceipt(
     @TenantId() tenantId: string,
     @Param('paymentId') paymentId: string,
-    @Res() res: any,
+    @Res() res: Response,
   ) {
     const payment: any = await this.prisma.$queryRawUnsafe(
       `SELECT p."id", p."amount", p."paymentDate", p."paymentMethod",
@@ -286,14 +570,13 @@ export class ParentPortalController {
        LEFT JOIN "tenants" t ON t."id" = p."tenantId"
        WHERE p."id" = $1 AND p."tenantId" = $2 LIMIT 1`,
       paymentId, tenantId,
-    );
+    ).catch(() => []);
 
     if (!payment || payment.length === 0) {
       throw new NotFoundException('Paiement non trouvé');
     }
 
     const p = payment[0];
-    // Pour l'instant on retourne les infos en JSON — le PDF sera généré plus tard
     res.json({
       paymentId: p.id,
       amount: p.amount,

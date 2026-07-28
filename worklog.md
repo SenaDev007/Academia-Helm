@@ -2334,3 +2334,101 @@ Stage Summary:
   - Toast succès avec n° reçu + reload auto
 - ✅ studentAccountId exposé dans /parent/children (account.id) pour permettre FedaPay
 - ✅ Pages impactées : /app/parent/children/[childId] + /app/parent/payments
+
+---
+Task ID: parent-portal-align-with-finance-module
+Agent: main
+Task: Aligner 100% le portail parent sur le module Finance (onglet Encaissements) — même workflow, même reçu, même historique
+
+Work Log:
+1. **Audit complet via sous-agent Explore**:
+   - NewPaymentModal.tsx (874 lignes) — flux FedaPay étape par étape identifié
+   - StudentAccountsContent.tsx — tableau historique admin (7 colonnes + 5 actions)
+   - finance.service.ts — getStudentAccountDetails(), getReceiptPdfUrl(), resendReceipt(), getWhatsAppLink()
+   - receipt-finance.service.ts (710 lignes) — génération PDF Puppeteer avec QR code, imputations, arriérés
+   - Écarts identifiés:
+     * Parent utilisait SQL brut ($queryRawUnsafe) au lieu de financeService.getStudentAccountDetails
+     * Parent générait PDF jsPDF frontend (simple) au lieu de Puppeteer backend (complet)
+     * Tableau historique parent: 5 colonnes vs 7 admin
+     * Parent n'avait que bouton "Reçu PDF" vs 5 actions admin (Eye/Download/Email/WhatsApp/SMS)
+     * Parent n'avait pas de bandeau succès post-paiement
+
+2. **Création composant partagé ParentPaymentHistory.tsx** (NEW, ~280 lignes):
+   - Reproduit FIDÈLEMENT le tableau admin (StudentAccountsContent.tsx lignes 998-1161)
+   - 7 colonnes: N° reçu, Montant, Mode, Date, Heure, Référence, Actions
+   - Badge "Mode" avec map CASH→Espèces, FEDAPAY→Fedapay, etc.
+   - 5 actions par ligne (identiques admin):
+     * 👁️ Eye → preview PDF dans modal (fetch blob → iframe)
+     * ⬇️ Download → <a href download> direct (même URL admin)
+     * ✉️ Email → financeService.resendReceipt(t.id, ['email'])
+     * 💬 WhatsApp dropdown 2 options: lien wa.me + API auto
+     * 📱 SMS → financeService.resendReceipt(t.id, ['sms'])
+   - Source: account.transactions (depuis getStudentAccountDetails)
+   - Format currency identique admin (Intl fr-FR + FCFA)
+
+3. **Création composant partagé PaymentSuccessBanner.tsx** (NEW, ~180 lignes):
+   - Reproduit FIDÈLEMENT le bandeau succès de NewPaymentModal.tsx (lignes 557-632)
+   - Affiché après qu'un parent effectue un paiement FedaPay
+   - Contenu:
+     * ✓ Icône CheckCircle (emerald)
+     * Titre "Paiement enregistré avec succès"
+     * N° reçu (font-mono) + Date/heure formatée
+     * 4 boutons: Télécharger PDF / Email / WhatsApp / SMS
+   - Télécharger PDF → window.open(financeService.getReceiptPdfUrl(transactionId))
+     → MÊME PDF que admin (Puppeteer backend avec QR code, imputations, arriérés)
+   - Fermer (X) → callback onClose
+
+4. **Refonte /app/parent/payments/page.tsx** (279 → 230 lignes):
+   - AVANT: fetch('/api/parent/payments/${studentId}') → SQL brut, données incomplètes
+   - APRÈS: financeService.getStudentAccountDetails(studentAccountId)
+     → MÊME endpoint que admin (StudentAccountsContent.tsx)
+   - Solde: account.totalDue / totalPaid / balance (inclut arriérés multi-année)
+   - Historique: account.transactions (50 dernières, tri desc createdAt)
+   - Affichage historique via <ParentPaymentHistory transactions={transactions} />
+   - Bandeau succès: <PaymentSuccessBanner /> après paiement FedaPay
+   - Plus de window.location.reload() — rechargement propre via loadAccount()
+   - Plus de exportReceiptToPdf (jsPDF frontend) — utiliser PDF backend admin
+
+5. **Refonte /app/parent/children/[childId] PaymentsTab**:
+   - Même refonte que /app/parent/payments
+   - Signature simplifiée: PaymentsTab({ child }) — gère son propre chargement
+   - Retrait des props paymentsData + schoolHeader (inutiles maintenant)
+   - State paymentsData supprimé (plus de fetch vers /api/parent/payments)
+   - loadTabData("payments") devient no-op (PaymentsTab gère son propre useEffect)
+   - Import exportReceiptToPdf retiré (plus utilisé)
+   - Imports ajoutés: financeService, ParentPaymentHistory, PaymentSuccessBanner
+
+6. **Sécurité backend — ownership check sur FinanceTransactionController**:
+   - apps/api-server/src/finance/finance-transaction.controller.ts:
+     - Ajouté constante PARENT_ROLES + STAFF_ROLES
+     - Ajouté Logger
+     - Ajouté méthode assertParentCanAccessTransaction(tenantId, user, transactionId):
+       * Staff (DIRECTOR, ADMIN, etc.) → bypass
+       * Parent → vérifie via student_guardians que la transaction concerne
+         un élève lié au parent (par email/phone matching User ↔ Guardian)
+       * Lève ForbiddenException("Vous n'avez pas accès à ce reçu") sinon
+     - Appliqué sur 3 endpoints:
+       * GET /finance/transactions/:id/receipt.pdf (téléchargement PDF)
+       * POST /finance/transactions/:id/resend (email/WhatsApp/SMS)
+       * GET /finance/transactions/:id/whatsapp-link (lien wa.me)
+   - Un parent ne peut donc télécharger que les reçus de SES enfants
+   - L'admin garde accès complet (bypass)
+
+Stage Summary:
+- ✅ UN SEUL CHEMIN pour les paiements parent ↔ admin:
+  - Même source: financeService.getStudentAccountDetails(studentAccountId)
+  - Même endpoint création: POST /api/finance/transactions
+  - Même PDF reçu: GET /api/finance/transactions/:id/receipt.pdf (Puppeteer backend)
+  - Mêmes actions: Eye/Download/Email/WhatsApp/SMS
+  - Même bandeau succès post-paiement
+- ✅ Cohérence des données garantie:
+  - Quand l'école encaisse via Module Finance → le parent voit la transaction
+    immédiatement dans son portail (même source de données)
+  - Quand le parent paie via FedaPay → l'école voit la transaction
+    immédiatement dans l'onglet Encaissements
+- ✅ Reçu PDF identique (Puppeteer backend avec QR code, imputations par frais,
+  arriérés multi-année, multi-action boutique, branding école complet)
+- ✅ Sécurité: ownership check sur les endpoints finance/transactions/:id/*
+  empêche un parent d'accéder aux reçus d'autres élèves
+- ✅ Composants partagés réutilisables (ParentPaymentHistory, PaymentSuccessBanner)
+  → facilitera la maintenance future (1 seul endroit à modifier)

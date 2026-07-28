@@ -1,7 +1,7 @@
 /**
  * SOUS-MODULE 3 — Encaissements (FinanceTransaction) — API
  */
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Res, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Res, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -13,14 +13,92 @@ import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateTransactionDto } from './dto';
 
+const PARENT_ROLES = ['PARENT', 'PARENT_PRIMARY', 'LEGAL_GUARDIAN', 'FINANCIAL_RESPONSIBLE', 'GUARDIAN'];
+const STAFF_ROLES = ['DIRECTOR', 'SUPER_DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'CENSEUR', 'SURVEILLANT_GENERAL', 'SECRETARY_GENERAL', 'COMPTABLE', 'PROMOTER'];
+
 @Controller('finance/transactions')
 @UseGuards(JwtAuthGuard)
 export class FinanceTransactionController {
+  private readonly logger = new Logger(FinanceTransactionController.name);
+
   constructor(
     private readonly service: FinanceTransactionService,
     private readonly receiptFinanceService: ReceiptFinanceService,
     private readonly receiptNotificationService: ReceiptNotificationFinanceService,
   ) {}
+
+  /**
+   * Vérifie qu'un utilisateur parent a bien le droit d'accéder à une transaction
+   * (la transaction doit concerner un élève lié à ce parent via student_guardians).
+   *
+   * Rôles staff (DIRECTOR, ADMIN, etc.) → toujours autorisés.
+   * Rôles parent → vérif ownership via student_guardians.
+   *
+   * Lève ForbiddenException si refusé.
+   */
+  private async assertParentCanAccessTransaction(
+    tenantId: string,
+    user: any,
+    transactionId: string,
+  ): Promise<void> {
+    if (!user?.id) return;
+    const role = (user.role || '').toUpperCase();
+
+    // Staff → bypass
+    if (STAFF_ROLES.includes(role)) return;
+
+    // Parent → vérifier ownership
+    if (!PARENT_ROLES.includes(role)) {
+      // Rôle non reconnu (TEACHER, etc.) → on laisse passer par sécurité
+      // (le JwtAuthGuard a déjà validé l'authenticité du user)
+      return;
+    }
+
+    // Récupérer le studentId de la transaction
+    const tx: any = await this.service.prismaClient.financeTransaction.findUnique({
+      where: { id: transactionId },
+      select: {
+        studentAccount: {
+          select: { studentId: true },
+        },
+      },
+    });
+
+    if (!tx?.studentAccount?.studentId) {
+      this.logger.warn(`assertParentCanAccessTransaction: transaction ${transactionId} introuvable ou sans studentId`);
+      throw new NotFoundException('Transaction introuvable');
+    }
+
+    const studentId = tx.studentAccount.studentId;
+
+    // Vérifier qu'un guardian lié à ce studentId a le même email ou téléphone
+    // que l'utilisateur connecté.
+    const userRow: any = await this.service.prismaClient.$queryRawUnsafe(
+      `SELECT "email", "phone" FROM "users" WHERE "id" = $1 AND "tenantId" = $2 LIMIT 1`,
+      user.id, tenantId,
+    ).catch(() => []);
+
+    if (!userRow || userRow.length === 0) {
+      throw new ForbiddenException('Utilisateur non trouvé');
+    }
+
+    const u = userRow[0];
+    const guardian: any = await this.service.prismaClient.$queryRawUnsafe(
+      `SELECT 1 FROM "student_guardians" sg
+       INNER JOIN "guardians" g ON g."id" = sg."guardianId"
+       WHERE sg."studentId" = $1 AND sg."tenantId" = $2
+       AND (g."email" = $3 OR g."phone" = $4)
+       LIMIT 1`,
+      studentId, tenantId, u.email || '', u.phone || '',
+    ).catch(() => []);
+
+    if (!guardian || guardian.length === 0) {
+      this.logger.warn(
+        `assertParentCanAccessTransaction: ACCÈS REFUSÉ — user ${user.id} (role=${role}) a demandé la transaction ${transactionId} qui ne concerne pas son enfant`,
+      );
+      throw new ForbiddenException("Vous n'avez pas accès à ce reçu");
+    }
+  }
 
   @Post()
   async create(
@@ -69,13 +147,20 @@ export class FinanceTransactionController {
    * GET /finance/transactions/:id/receipt.pdf
    * Télécharge le PDF du reçu. Si le PDF n'existe pas encore (génération
    * fire-and-forget en cours), on le génère à la volée.
+   *
+   * Sécurité : vérifie qu'un parent connecté ne peut télécharger que les reçus
+   * de ses propres enfants (assertParentCanAccessTransaction).
    */
   @Get(':id/receipt.pdf')
   async downloadReceipt(
     @Param('id') id: string,
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Res() res: Response,
   ) {
+    // Vérifier ownership (no-op pour staff, vérifie parent sinon)
+    await this.assertParentCanAccessTransaction(tenantId, user, id);
+
     // S'assurer que le PDF existe (le régénère si nécessaire)
     const { filePath } = await this.receiptFinanceService.generateForTransaction(id, tenantId);
 
@@ -108,13 +193,18 @@ export class FinanceTransactionController {
    * POST /finance/transactions/:id/resend
    * Renvoie le reçu par email/WhatsApp/SMS au parent de l'élève.
    * Body: { channels: ['email', 'whatsapp', 'sms'] }
+   *
+   * Sécurité : vérifie ownership pour les parents.
    */
   @Post(':id/resend')
   async resendReceipt(
     @Param('id') id: string,
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Body() body: { channels?: string[] },
   ) {
+    await this.assertParentCanAccessTransaction(tenantId, user, id);
+
     const requestedChannels = (body?.channels || ['email']) as ('email' | 'whatsapp' | 'sms')[];
     const results = await this.receiptNotificationService.sendReceiptNotifications(
       id,
@@ -145,7 +235,11 @@ export class FinanceTransactionController {
   async getWhatsAppLink(
     @Param('id') id: string,
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
   ) {
+    // Vérifier ownership pour les parents
+    await this.assertParentCanAccessTransaction(tenantId, user, id);
+
     // Charger la transaction + élève + guardian + branding
     const tx = await this.service.prismaClient.financeTransaction.findUnique({
       where: { id },

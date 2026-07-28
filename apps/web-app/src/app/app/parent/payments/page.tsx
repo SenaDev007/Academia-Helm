@@ -1,76 +1,114 @@
 "use client";
 
 /**
- * Parent Portal — Paiements
- * Solde total (dû/payé/restant) + historique des paiements + reçus + paiement en ligne FedaPay.
+ * ============================================================================
+ * PORTAIL PARENT — Paiements [/app/parent/payments]
+ * ============================================================================
+ *
+ * ⚠️ IMPORTANT — Alignement avec module Finance admin :
+ *
+ * Cette page utilise EXACTEMENT le même workflow que l'onglet "Encaissements"
+ * du module Finance admin :
+ *   - Solde : financeService.getStudentAccountDetails(studentAccountId)
+ *     → account.totalDue / totalPaid / balance / status / breakdowns
+ *   - Historique : account.transactions (50 dernières FinanceTransaction)
+ *     → affiché via le composant partagé <ParentPaymentHistory />
+ *   - Reçu PDF : GET /api/finance/transactions/:id/receipt.pdf (Puppeteer backend)
+ *     → SAME PDF que admin (avec QR code, imputations, arriérés, multi-action)
+ *   - Paiement FedaPay : openFedaPayCheckout() → POST /api/finance/transactions
+ *     → SAME endpoint que admin
+ *   - Post-paiement : bandeau succès <PaymentSuccessBanner /> (same que admin)
+ *
+ * Aucune divergence avec l'admin : mêmes données, mêmes reçus, mêmes actions.
+ * Quand l'école encaisse via Module Finance, le parent voit la transaction
+ * ici en temps réel (et inversement).
+ * ============================================================================
  */
 
 import { useState, useEffect, useCallback } from "react";
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import {
-  CreditCard, Loader2, Download, CheckCircle2, Clock,
+  CreditCard, Loader2, CheckCircle2, Clock,
   TrendingUp, TrendingDown, Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
+import { financeService } from "@/services/finance.service";
 import { openFedaPayCheckout } from "@/lib/parent/fedapay-checkout";
+import { ParentPaymentHistory } from "@/components/parent/ParentPaymentHistory";
+import { PaymentSuccessBanner } from "@/components/parent/PaymentSuccessBanner";
+
+interface LastReceipt {
+  transactionId: string;
+  receiptNumber?: string;
+  createdAt?: string;
+}
 
 export default function ParentPaymentsPage() {
   const { user } = useAppSession();
   const { academicYear } = useModuleContext();
-  const [data, setData] = useState<any>(null);
+  const [account, setAccount] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [lastReceipt, setLastReceipt] = useState<LastReceipt | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<string>("");
 
-  // Charger les enfants d'abord
+  // Charger les enfants d'abord (pour récupérer le studentAccountId)
   const [children, setChildren] = useState<any[]>([]);
 
   useEffect(() => {
     if (!academicYear?.id || !user?.id) return;
     (async () => {
       try {
-        const res = await fetch(`/api/parent/children?parentId=${user.id}&academicYearId=${academicYear.id}`, { credentials: "include" });
+        const res = await fetch(
+          `/api/parent/children?parentId=${user.id}&academicYearId=${academicYear.id}`,
+          { credentials: "include" }
+        );
         const data = await res.json();
         const list = Array.isArray(data) ? data : [];
         setChildren(list);
         if (list.length > 0) setSelectedStudent(list[0].id);
-      } catch { setChildren([]); }
+      } catch {
+        setChildren([]);
+      }
     })();
   }, [user?.id, academicYear?.id]);
 
-  const loadPayments = useCallback(async () => {
-    if (!academicYear?.id || !selectedStudent) return;
+  // Trouver l'enfant sélectionné pour récupérer le studentAccountId
+  const selectedChild = children.find((c) => c.id === selectedStudent);
+  const studentAccountId = selectedChild?.account?.id;
+
+  // ── Charger le compte élève + transactions (même endpoint que admin) ──
+  const loadAccount = useCallback(async () => {
+    if (!studentAccountId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const res = await fetch(
-        `/api/parent/payments/${selectedStudent}?academicYearId=${academicYear.id}`,
-        { credentials: "include" }
-      );
-      const data = await res.json();
-      setData(data);
-    } catch {
-      setData(null);
+      // ⭐ Même appel que StudentAccountsContent.tsx (admin)
+      const acc = await financeService.getStudentAccountDetails(studentAccountId);
+      setAccount(acc);
+    } catch (err: any) {
+      console.error("loadAccount error:", err);
+      setAccount(null);
     } finally {
       setLoading(false);
     }
-  }, [selectedStudent, academicYear?.id]);
+  }, [studentAccountId]);
 
   useEffect(() => {
-    if (selectedStudent) loadPayments();
-  }, [loadPayments, selectedStudent]);
+    if (studentAccountId) loadAccount();
+  }, [loadAccount, studentAccountId]);
 
-  const formatXOF = (amount: number) => {
-    return new Intl.NumberFormat('fr-FR').format(amount) + ' FCFA';
+  const formatXOF = (amount: number | string) => {
+    const num = typeof amount === "string" ? parseFloat(amount) : amount;
+    if (isNaN(num)) return "0 FCFA";
+    return new Intl.NumberFormat("fr-FR").format(num) + " FCFA";
   };
 
-  // Trouver l'enfant sélectionné pour récupérer le studentAccountId
-  const selectedChild = children.find((c) => c.id === selectedStudent);
-
-  // ── Lancer le paiement FedaPay ──
+  // ── Lancer le paiement FedaPay (même flux que admin) ──
   const handlePayNow = async () => {
-    const studentAccountId = selectedChild?.account?.id;
     if (!studentAccountId) {
       toast.error("Compte élève introuvable", {
         description: "Impossible de déterminer le compte à débiter. Contactez l'administration.",
@@ -81,7 +119,8 @@ export default function ParentPaymentsPage() {
       toast.error("Année scolaire introuvable");
       return;
     }
-    if (!data || data.totalRemaining <= 0) {
+    const balance = Number(account?.balance ?? 0);
+    if (balance <= 0) {
       toast.info("Scolarité déjà à jour");
       return;
     }
@@ -89,7 +128,7 @@ export default function ParentPaymentsPage() {
     setPaying(true);
     try {
       const result = await openFedaPayCheckout({
-        amount: data.totalRemaining,
+        amount: balance,
         studentAccountId,
         academicYearId: academicYear.id,
         studentFirstName: selectedChild?.firstName,
@@ -98,11 +137,17 @@ export default function ParentPaymentsPage() {
       });
 
       if (result.success) {
+        // ⭐ Afficher le bandeau de succès (même que admin)
+        setLastReceipt({
+          transactionId: result.transactionId || "",
+          receiptNumber: result.receiptNumber,
+          createdAt: new Date().toISOString(),
+        });
         toast.success("Paiement confirmé", {
           description: `Reçu ${result.receiptNumber} généré. Référence : ${result.reference}.`,
         });
-        // Recharger les données pour afficher le nouveau solde
-        setTimeout(() => loadPayments(), 1500);
+        // Recharger le compte pour afficher le nouveau solde + la transaction
+        loadAccount();
       } else if (result.error) {
         if (result.error.includes("annulé")) {
           toast.info("Paiement annulé");
@@ -117,22 +162,11 @@ export default function ParentPaymentsPage() {
     }
   };
 
-  const downloadReceipt = async (paymentId: string) => {
-    setDownloadingId(paymentId);
-    try {
-      const res = await fetch(`/api/parent/receipts/${paymentId}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Erreur");
-      const data = await res.json();
-      // Pour l'instant on affiche les infos — le PDF sera généré plus tard
-      toast.success("Reçu récupéré", {
-        description: `Reçu N°${data.receiptNumber || data.paymentId} — ${formatXOF(data.amount)}`,
-      });
-    } catch (e: any) {
-      toast.error("Erreur", { description: e.message });
-    } finally {
-      setDownloadingId(null);
-    }
-  };
+  // ── Données pour l'affichage ──
+  const totalDue = Number(account?.totalDue ?? 0);
+  const totalPaid = Number(account?.totalPaid ?? 0);
+  const balance = Number(account?.balance ?? 0);
+  const transactions = account?.transactions || [];
 
   return (
     <div className="space-y-4">
@@ -145,7 +179,10 @@ export default function ParentPaymentsPage() {
       {children.length > 1 && (
         <select
           value={selectedStudent}
-          onChange={(e) => setSelectedStudent(e.target.value)}
+          onChange={(e) => {
+            setSelectedStudent(e.target.value);
+            setLastReceipt(null); // reset bandeau succès si on change d'enfant
+          }}
           className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium min-w-[200px]"
         >
           {children.map((c) => (
@@ -154,48 +191,58 @@ export default function ParentPaymentsPage() {
         </select>
       )}
 
+      {/* Bandeau succès post-paiement (même que admin) */}
+      {lastReceipt && (
+        <PaymentSuccessBanner
+          transactionId={lastReceipt.transactionId}
+          receiptNumber={lastReceipt.receiptNumber}
+          createdAt={lastReceipt.createdAt}
+          onClose={() => setLastReceipt(null)}
+        />
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
         </div>
-      ) : !data ? (
+      ) : !account ? (
         <div className="text-center py-12">
           <CreditCard className="h-12 w-12 text-slate-300 mx-auto mb-3" />
           <p className="text-slate-500">Aucune donnée financière disponible</p>
         </div>
       ) : (
         <>
-          {/* Cards solde */}
+          {/* Cards solde (même info que admin) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-center gap-2 mb-2">
                 <Wallet className="h-5 w-5 text-blue-600" />
                 <span className="text-xs font-semibold text-slate-500 uppercase">Total dû</span>
               </div>
-              <p className="text-2xl font-bold text-slate-900">{formatXOF(data.totalDue)}</p>
+              <p className="text-2xl font-bold text-slate-900">{formatXOF(totalDue)}</p>
             </div>
             <div className="bg-white rounded-xl border border-emerald-200 p-5 bg-emerald-50/50">
               <div className="flex items-center gap-2 mb-2">
                 <TrendingUp className="h-5 w-5 text-emerald-600" />
                 <span className="text-xs font-semibold text-emerald-700 uppercase">Total payé</span>
               </div>
-              <p className="text-2xl font-bold text-emerald-700">{formatXOF(data.totalPaid)}</p>
+              <p className="text-2xl font-bold text-emerald-700">{formatXOF(totalPaid)}</p>
             </div>
             <div className="bg-white rounded-xl border border-red-200 p-5 bg-red-50/50">
               <div className="flex items-center gap-2 mb-2">
                 <TrendingDown className="h-5 w-5 text-red-600" />
                 <span className="text-xs font-semibold text-red-700 uppercase">Restant à payer</span>
               </div>
-              <p className="text-2xl font-bold text-red-700">{formatXOF(data.totalRemaining)}</p>
+              <p className="text-2xl font-bold text-red-700">{formatXOF(balance)}</p>
             </div>
           </div>
 
-          {/* Bouton payer */}
-          {data.totalRemaining > 0 && (
+          {/* Bouton payer (même flux FedaPay que admin) */}
+          {balance > 0 && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center justify-between">
               <div>
                 <p className="font-semibold text-blue-900">Payer les frais de scolarité</p>
-                <p className="text-sm text-blue-700">Restant : {formatXOF(data.totalRemaining)}</p>
+                <p className="text-sm text-blue-700">Restant : {formatXOF(balance)}</p>
                 <p className="text-xs text-blue-500 mt-0.5">
                   Paiement sécurisé via FedaPay (Mobile Money / Carte bancaire)
                 </p>
@@ -220,57 +267,12 @@ export default function ParentPaymentsPage() {
             </div>
           )}
 
-          {/* Historique des paiements */}
+          {/* Historique des paiements — COMPOSANT PARTAGÉ (même table que admin) */}
           <div>
-            <h3 className="text-sm font-bold text-slate-700 uppercase mb-3">Historique des paiements</h3>
-            {data.payments && data.payments.length > 0 ? (
-              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200">
-                      <th className="text-left px-4 py-3 font-semibold text-slate-700">Date</th>
-                      <th className="text-left px-4 py-3 font-semibold text-slate-700">Frais</th>
-                      <th className="text-right px-4 py-3 font-semibold text-slate-700">Montant</th>
-                      <th className="text-center px-4 py-3 font-semibold text-slate-700">Méthode</th>
-                      <th className="text-center px-4 py-3 font-semibold text-slate-700">Reçu</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.payments.map((p: any) => (
-                      <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
-                        <td className="px-4 py-3 text-slate-600">
-                          {new Date(p.paymentDate).toLocaleDateString('fr-FR')}
-                        </td>
-                        <td className="px-4 py-3 font-medium text-slate-900">{p.feeName || "Scolarité"}</td>
-                        <td className="px-4 py-3 text-right font-bold text-emerald-600">{formatXOF(p.amount)}</td>
-                        <td className="px-4 py-3 text-center text-slate-500">
-                          {p.paymentMethod || "—"}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <button
-                            onClick={() => downloadReceipt(p.id)}
-                            disabled={downloadingId === p.id}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50"
-                          >
-                            {downloadingId === p.id ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <Download className="h-3 w-3" />
-                            )}
-                            Reçu
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
-                <Clock className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-                <p className="text-sm text-slate-500">Aucun paiement enregistré pour cette année.</p>
-              </div>
-            )}
+            <h3 className="text-sm font-bold text-slate-700 uppercase mb-3">
+              Historique des paiements
+            </h3>
+            <ParentPaymentHistory transactions={transactions} />
           </div>
         </>
       )}

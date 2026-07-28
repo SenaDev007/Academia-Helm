@@ -31,11 +31,13 @@ import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import {
-  exportReceiptToPdf,
   exportBulletinToPdf,
   type SchoolHeader,
 } from "@/lib/exports/parent-exports";
 import { openFedaPayCheckout } from "@/lib/parent/fedapay-checkout";
+import { financeService } from "@/services/finance.service";
+import { ParentPaymentHistory } from "@/components/parent/ParentPaymentHistory";
+import { PaymentSuccessBanner } from "@/components/parent/PaymentSuccessBanner";
 
 type Tab = "today" | "payments" | "results" | "attendance";
 
@@ -56,7 +58,6 @@ export default function ParentChildDetailPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("today");
   const [todayData, setTodayData] = useState<any>(null);
-  const [paymentsData, setPaymentsData] = useState<any>(null);
   const [resultsData, setResultsData] = useState<any[]>([]);
   const [attendanceData, setAttendanceData] = useState<any[]>([]);
   const [loadingTab, setLoadingTab] = useState(false);
@@ -92,9 +93,9 @@ export default function ParentChildDetailPage() {
         const data = await res.json();
         setTodayData(data);
       } else if (tab === "payments") {
-        const res = await fetch(`/api/parent/payments/${childId}?academicYearId=${academicYear.id}`, { credentials: "include" });
-        const data = await res.json();
-        setPaymentsData(data);
+        // ⚠️ Le PaymentsTab gère son propre chargement via financeService.getStudentAccountDetails
+        // (même endpoint que admin — pas d'appel à /api/parent/payments ici)
+        return; // no-op
       } else if (tab === "results") {
         const res = await fetch(`/api/parent/results/${childId}?academicYearId=${academicYear.id}`, { credentials: "include" });
         const data = await res.json();
@@ -197,20 +198,7 @@ export default function ParentChildDetailPage() {
       ) : (
         <>
           {activeTab === "today" && <TodayTab child={child} todayData={todayData} />}
-          {activeTab === "payments" && (
-            <PaymentsTab
-              child={child}
-              paymentsData={paymentsData}
-              schoolHeader={{
-                schoolName: school?.schoolName || "École",
-                schoolLogoUrl: school?.logoUrl,
-                schoolAddress: school?.address,
-                schoolPhone: school?.phone,
-                schoolEmail: school?.email,
-                schoolSlogan: school?.slogan,
-              }}
-            />
-          )}
+          {activeTab === "payments" && <PaymentsTab child={child} />}
           {activeTab === "results" && (
             <ResultsTab
               child={child}
@@ -424,36 +412,58 @@ function TodayTab({ child, todayData }: { child: any; todayData: any }) {
 // ============================================================================
 // ONGLET 2 : Scolarité & Paiements
 // ============================================================================
+// ⚠️ Aligné sur le module Finance admin (onglet Encaissements) :
+//   - Solde + historique : financeService.getStudentAccountDetails(studentAccountId)
+//   - Reçu PDF : GET /api/finance/transactions/:id/receipt.pdf (Puppeteer backend)
+//   - Paiement FedaPay : openFedaPayCheckout() → POST /api/finance/transactions
+//   - Bandeau succès : <PaymentSuccessBanner /> (composant partagé)
+//   - Historique : <ParentPaymentHistory /> (composant partagé, 7 colonnes + 5 actions)
+// ============================================================================
 
-function PaymentsTab({
-  child,
-  paymentsData,
-  schoolHeader,
-}: {
-  child: any;
-  paymentsData: any;
-  schoolHeader: SchoolHeader;
-}) {
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  const [paying, setPaying] = useState(false);
+function PaymentsTab({ child }: { child: any }) {
   const { academicYear } = useModuleContext();
+  const [account, setAccount] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [paying, setPaying] = useState(false);
+  const [lastReceipt, setLastReceipt] = useState<{
+    transactionId: string;
+    receiptNumber?: string;
+    createdAt?: string;
+  } | null>(null);
 
-  if (!paymentsData) {
-    return (
-      <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
-        <Wallet className="h-10 w-10 text-slate-300 mx-auto mb-2" />
-        <p className="text-sm text-slate-500">Aucune donnée financière disponible.</p>
-      </div>
-    );
-  }
+  const studentAccountId = child?.account?.id;
 
-  const formatXOF = (amount: number) => new Intl.NumberFormat("fr-FR").format(amount) + " FCFA";
+  // Charger le compte élève + transactions (même endpoint que admin)
+  const loadAccount = useCallback(async () => {
+    if (!studentAccountId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      // ⭐ Même appel que StudentAccountsContent.tsx (admin)
+      const acc = await financeService.getStudentAccountDetails(studentAccountId);
+      setAccount(acc);
+    } catch (err: any) {
+      console.error("loadAccount error:", err);
+      setAccount(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [studentAccountId]);
 
-  // ── Lancer le paiement FedaPay ──
-  // Récupère le studentAccountId depuis l'objet `child` (renvoyé par /parent/children).
-  // L'amount est le solde restant à payer.
+  useEffect(() => {
+    if (studentAccountId) loadAccount();
+  }, [loadAccount, studentAccountId]);
+
+  const formatXOF = (amount: number | string) => {
+    const num = typeof amount === "string" ? parseFloat(amount) : amount;
+    if (isNaN(num)) return "0 FCFA";
+    return new Intl.NumberFormat("fr-FR").format(num) + " FCFA";
+  };
+
+  // ── Lancer le paiement FedaPay (même flux que admin) ──
   const handlePayNow = async () => {
-    const studentAccountId = child?.account?.id;
     if (!studentAccountId) {
       toast.error("Compte élève introuvable", {
         description: "Impossible de déterminer le compte à débiter. Contactez l'administration.",
@@ -464,7 +474,8 @@ function PaymentsTab({
       toast.error("Année scolaire introuvable");
       return;
     }
-    if (paymentsData.totalRemaining <= 0) {
+    const balance = Number(account?.balance ?? 0);
+    if (balance <= 0) {
       toast.info("Scolarité déjà à jour");
       return;
     }
@@ -472,7 +483,7 @@ function PaymentsTab({
     setPaying(true);
     try {
       const result = await openFedaPayCheckout({
-        amount: paymentsData.totalRemaining,
+        amount: balance,
         studentAccountId,
         academicYearId: academicYear.id,
         studentFirstName: child.firstName,
@@ -481,14 +492,18 @@ function PaymentsTab({
       });
 
       if (result.success) {
+        // ⭐ Bandeau de succès (même que admin)
+        setLastReceipt({
+          transactionId: result.transactionId || "",
+          receiptNumber: result.receiptNumber,
+          createdAt: new Date().toISOString(),
+        });
         toast.success("Paiement confirmé", {
           description: `Reçu ${result.receiptNumber} généré. Référence : ${result.reference}.`,
         });
-        // Recharger les données de paiement pour afficher le nouveau solde
-        // (le parent peut cliquer sur le bouton "Rafraîchir" en haut)
-        setTimeout(() => window.location.reload(), 1500);
+        // Recharger le compte pour afficher le nouveau solde + la transaction
+        loadAccount();
       } else if (result.error) {
-        // Si annulation, juste un toast info (pas d'erreur)
         if (result.error.includes("annulé")) {
           toast.info("Paiement annulé");
         } else {
@@ -502,51 +517,40 @@ function PaymentsTab({
     }
   };
 
-  const downloadReceipt = async (paymentId: string) => {
-    setDownloadingId(paymentId);
-    try {
-      const res = await fetch(`/api/parent/receipts/${paymentId}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Erreur");
-      const data = await res.json();
-      await exportReceiptToPdf(
-        {
-          paymentId: data.paymentId,
-          amount: Number(data.amount),
-          date: data.date,
-          method: data.method,
-          receiptNumber: data.receiptNumber,
-          reference: data.reference,
-          status: data.status,
-          notes: data.notes,
-          feeName: data.feeName,
-          student: data.student,
-          matricule: data.matricule,
-          className: data.className,
-          levelName: data.levelName,
-          school: data.school,
-        },
-        schoolHeader,
-      );
-      toast.success("Reçu téléchargé");
-    } catch (e: any) {
-      toast.error("Erreur", { description: e.message });
-    } finally {
-      setDownloadingId(null);
-    }
-  };
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+      </div>
+    );
+  }
 
-  // Combiner transactions + legacy payments
-  const allPayments = [
-    ...(paymentsData.transactions || []).map((t: any) => ({
-      ...t,
-      paymentDate: t.createdAt,
-      feeName: "Scolarité",
-    })),
-    ...(paymentsData.legacyPayments || []),
-  ];
+  if (!account) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+        <Wallet className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+        <p className="text-sm text-slate-500">Aucune donnée financière disponible.</p>
+      </div>
+    );
+  }
+
+  const totalDue = Number(account.totalDue ?? 0);
+  const totalPaid = Number(account.totalPaid ?? 0);
+  const balance = Number(account.balance ?? 0);
+  const transactions = account.transactions || [];
 
   return (
     <div className="space-y-4">
+      {/* Bandeau succès post-paiement (même que admin) */}
+      {lastReceipt && (
+        <PaymentSuccessBanner
+          transactionId={lastReceipt.transactionId}
+          receiptNumber={lastReceipt.receiptNumber}
+          createdAt={lastReceipt.createdAt}
+          onClose={() => setLastReceipt(null)}
+        />
+      )}
+
       {/* Cards solde */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="bg-white rounded-xl border border-slate-200 p-4">
@@ -554,30 +558,30 @@ function PaymentsTab({
             <Wallet className="h-5 w-5 text-blue-600" />
             <span className="text-xs font-semibold text-slate-500 uppercase">Total dû</span>
           </div>
-          <p className="text-2xl font-bold text-slate-900">{formatXOF(paymentsData.totalDue)}</p>
+          <p className="text-2xl font-bold text-slate-900">{formatXOF(totalDue)}</p>
         </div>
         <div className="bg-emerald-50 rounded-xl border border-emerald-200 p-4">
           <div className="flex items-center gap-2 mb-2">
             <CheckCircle2 className="h-5 w-5 text-emerald-600" />
             <span className="text-xs font-semibold text-emerald-700 uppercase">Payé</span>
           </div>
-          <p className="text-2xl font-bold text-emerald-700">{formatXOF(paymentsData.totalPaid)}</p>
+          <p className="text-2xl font-bold text-emerald-700">{formatXOF(totalPaid)}</p>
         </div>
         <div className="bg-red-50 rounded-xl border border-red-200 p-4">
           <div className="flex items-center gap-2 mb-2">
             <Clock className="h-5 w-5 text-red-600" />
             <span className="text-xs font-semibold text-red-700 uppercase">Restant</span>
           </div>
-          <p className="text-2xl font-bold text-red-700">{formatXOF(paymentsData.totalRemaining)}</p>
+          <p className="text-2xl font-bold text-red-700">{formatXOF(balance)}</p>
         </div>
       </div>
 
-      {/* Bouton payer */}
-      {paymentsData.totalRemaining > 0 && (
+      {/* Bouton payer (même flux FedaPay que admin) */}
+      {balance > 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center justify-between">
           <div>
             <p className="font-semibold text-blue-900">Payer les frais de scolarité</p>
-            <p className="text-sm text-blue-700">Restant : {formatXOF(paymentsData.totalRemaining)}</p>
+            <p className="text-sm text-blue-700">Restant : {formatXOF(balance)}</p>
             <p className="text-xs text-blue-500 mt-0.5">
               Paiement sécurisé via FedaPay (Mobile Money / Carte bancaire)
             </p>
@@ -602,55 +606,12 @@ function PaymentsTab({
         </div>
       )}
 
-      {/* Historique */}
+      {/* Historique — COMPOSANT PARTAGÉ (même table que admin) */}
       <div>
-        <h3 className="text-sm font-bold text-slate-700 uppercase mb-3">Historique des paiements</h3>
-        {allPayments.length > 0 ? (
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="text-left px-4 py-3 font-semibold text-slate-700">Date</th>
-                  <th className="text-left px-4 py-3 font-semibold text-slate-700">Frais</th>
-                  <th className="text-right px-4 py-3 font-semibold text-slate-700">Montant</th>
-                  <th className="text-center px-4 py-3 font-semibold text-slate-700">Méthode</th>
-                  <th className="text-center px-4 py-3 font-semibold text-slate-700">Reçu</th>
-                </tr>
-              </thead>
-              <tbody>
-                {allPayments.map((p: any) => (
-                  <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="px-4 py-3 text-slate-600">
-                      {new Date(p.paymentDate || p.createdAt).toLocaleDateString("fr-FR")}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-slate-900">{p.feeName || "Scolarité"}</td>
-                    <td className="px-4 py-3 text-right font-bold text-emerald-600">{formatXOF(p.amount)}</td>
-                    <td className="px-4 py-3 text-center text-slate-500">{p.paymentMethod || "—"}</td>
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        onClick={() => downloadReceipt(p.id)}
-                        disabled={downloadingId === p.id}
-                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50"
-                      >
-                        {downloadingId === p.id ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <Download className="h-3 w-3" />
-                        )}
-                        Reçu PDF
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
-            <Clock className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-            <p className="text-sm text-slate-500">Aucun paiement enregistré pour cette année.</p>
-          </div>
-        )}
+        <h3 className="text-sm font-bold text-slate-700 uppercase mb-3">
+          Historique des paiements
+        </h3>
+        <ParentPaymentHistory transactions={transactions} />
       </div>
     </div>
   );

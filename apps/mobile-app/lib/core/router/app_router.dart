@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../theme/ah_theme.dart';
 import '../widgets/adaptive_scaffold.dart';
 import 'route_guards.dart';
+import '../auth/auth_notifier.dart';
+import '../auth/auth_providers.dart';
 import '../../features/auth/pages/splash_screen.dart';
 import '../../features/auth/pages/login_screen.dart';
 import '../../features/auth/pages/tenant_select_screen.dart';
@@ -33,6 +35,15 @@ import '../../features/infirmary/pages/infirmary_screen.dart';
 import '../../features/qhse/pages/qhse_screen.dart';
 import '../../features/educast/pages/educast_screen.dart';
 import '../../features/shop/pages/shop_screen.dart';
+// ⭐ P0: Import des écrans orphelins (écrans qui existaient mais n'étaient pas routés)
+import '../../features/grades/pages/grades_list_screen.dart';
+import '../../features/grades/pages/grade_detail_screen.dart';
+import '../../features/payments/pages/payments_list_screen.dart';
+import '../../features/payments/pages/payment_detail_screen.dart';
+import '../../features/messages/pages/messages_list_screen.dart';
+import '../../features/messages/pages/message_detail_screen.dart';
+import '../../features/absences/pages/absences_list_screen.dart';
+import '../../features/schedule/pages/schedule_screen.dart';
 
 // ── Navigation Destinations ───────────────────────────────────────────
 
@@ -59,11 +70,44 @@ const List<NavigationDestination> ahDestinations = [
   ),
 ];
 
-const List<AdaptiveDestination> adaptiveDestinations = [
+// ⭐ P0-5: Destinations dynamiques selon le portail sélectionné
+// Remplace l'ancienne liste hardcodée à 4 entrées fixes.
+// Chaque portail voit ses propres modules dans la barre de navigation.
+
+/// Provider qui retourne les destinations de navigation selon le portail.
+final adaptiveDestinationsProvider = Provider<List<AdaptiveDestination>>((ref) {
+  // Lire le portail sélectionné depuis l'état d'auth
+  // Pour l'instant on utilise une approche simple basée sur le rôle user
+  final authState = ref.watch(authNotifierProvider);
+
+  return authState.maybeWhen(
+    data: (state) {
+      final role = state.userOrNull?.role?.toUpperCase() ?? '';
+      final portal = state.selectedPortal;
+
+      // Si le portail est explicitement choisi, l'utiliser
+      if (portal != null) {
+        return _destinationsForPortal(portal);
+      }
+
+      // Sinon, déduire du rôle
+      if (role == 'TEACHER' || role == 'ENSEIGNANT') {
+        return _teacherDestinations;
+      } else if (role == 'PARENT' || role == 'PARENT_PRIMARY' ||
+          role == 'LEGAL_GUARDIAN' || role == 'GUARDIAN') {
+        return _parentDestinations;
+      }
+      return _adminDestinations;
+    },
+    orElse: () => _adminDestinations,
+  );
+});
+
+const List<AdaptiveDestination> _adminDestinations = [
   AdaptiveDestination(
     icon: Icons.dashboard_outlined,
     selectedIcon: Icons.dashboard,
-    label: 'Tableau de bord',
+    label: 'Accueil',
     path: '/dashboard',
   ),
   AdaptiveDestination(
@@ -71,6 +115,96 @@ const List<AdaptiveDestination> adaptiveDestinations = [
     selectedIcon: Icons.school,
     label: 'Élèves',
     path: '/students',
+  ),
+  AdaptiveDestination(
+    icon: Icons.attach_money_outlined,
+    selectedIcon: Icons.attach_money,
+    label: 'Finances',
+    path: '/finance',
+  ),
+  AdaptiveDestination(
+    icon: Icons.people_outline,
+    selectedIcon: Icons.people,
+    label: 'RH',
+    path: '/hr',
+  ),
+  AdaptiveDestination(
+    icon: Icons.menu_book_outlined,
+    selectedIcon: Icons.menu_book,
+    label: 'Pédagogie',
+    path: '/pedagogy',
+  ),
+  AdaptiveDestination(
+    icon: Icons.person_outline,
+    selectedIcon: Icons.person,
+    label: 'Profil',
+    path: '/profile',
+  ),
+];
+
+const List<AdaptiveDestination> _teacherDestinations = [
+  AdaptiveDestination(
+    icon: Icons.dashboard_outlined,
+    selectedIcon: Icons.dashboard,
+    label: 'Accueil',
+    path: '/dashboard',
+  ),
+  AdaptiveDestination(
+    icon: Icons.school_outlined,
+    selectedIcon: Icons.school,
+    label: 'Mes élèves',
+    path: '/students',
+  ),
+  AdaptiveDestination(
+    icon: Icons.grade_outlined,
+    selectedIcon: Icons.grade,
+    label: 'Notes',
+    path: '/grades',
+  ),
+  AdaptiveDestination(
+    icon: Icons.calendar_today_outlined,
+    selectedIcon: Icons.calendar_today,
+    label: 'Emploi du temps',
+    path: '/schedule',
+  ),
+  AdaptiveDestination(
+    icon: Icons.menu_book_outlined,
+    selectedIcon: Icons.menu_book,
+    label: 'Pédagogie',
+    path: '/pedagogy',
+  ),
+  AdaptiveDestination(
+    icon: Icons.person_outline,
+    selectedIcon: Icons.person,
+    label: 'Profil',
+    path: '/profile',
+  ),
+];
+
+const List<AdaptiveDestination> _parentDestinations = [
+  AdaptiveDestination(
+    icon: Icons.dashboard_outlined,
+    selectedIcon: Icons.dashboard,
+    label: 'Accueil',
+    path: '/dashboard',
+  ),
+  AdaptiveDestination(
+    icon: Icons.child_care_outlined,
+    selectedIcon: Icons.child_care,
+    label: 'Mes enfants',
+    path: '/students',
+  ),
+  AdaptiveDestination(
+    icon: Icons.grade_outlined,
+    selectedIcon: Icons.grade,
+    label: 'Bulletins',
+    path: '/grades',
+  ),
+  AdaptiveDestination(
+    icon: Icons.attach_money_outlined,
+    selectedIcon: Icons.attach_money,
+    label: 'Paiements',
+    path: '/payments',
   ),
   AdaptiveDestination(
     icon: Icons.message_outlined,
@@ -85,6 +219,12 @@ const List<AdaptiveDestination> adaptiveDestinations = [
     path: '/profile',
   ),
 ];
+
+List<AdaptiveDestination> _destinationsForPortal(dynamic portal) {
+  if (portal.toString().toUpperCase() == 'TEACHER') return _teacherDestinations;
+  if (portal.toString().toUpperCase() == 'PARENT') return _parentDestinations;
+  return _adminDestinations;
+}
 
 // ── Shell Branches ────────────────────────────────────────────────────
 
@@ -138,11 +278,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
 
       // ── Authenticated Shell ──────────────────────────────────────
+      // ⭐ P0-5: Destinations dynamiques selon le portail (admin/teacher/parent)
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
         builder: (context, state, child) {
+          // ⭐ Utiliser le provider dynamique au lieu de la constante hardcodée
+          final destinations = ref.read(adaptiveDestinationsProvider);
           return AHAdaptiveScaffold(
-            destinations: adaptiveDestinations,
+            destinations: destinations,
             currentPath: state.matchedLocation,
             onDestinationSelected: (path) => context.go(path),
             child: child,
@@ -169,6 +312,67 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               return StudentsScreen(); // TODO: student detail view
             },
           ),
+
+          // ⭐ P0-1: Routes orphelines maintenant câblées
+          // Grades (notes / bulletins)
+          GoRoute(
+            path: '/grades',
+            name: 'grades',
+            builder: (context, state) => const GradesListScreen(),
+          ),
+          GoRoute(
+            path: '/grades/:id',
+            name: 'gradeDetail',
+            builder: (context, state) {
+              final gradeId = state.pathParameters['id'] ?? '';
+              return GradeDetailScreen(gradeId: gradeId);
+            },
+          ),
+
+          // Payments (paiements / scolarité)
+          GoRoute(
+            path: '/payments',
+            name: 'payments',
+            builder: (context, state) => const PaymentsListScreen(),
+          ),
+          GoRoute(
+            path: '/payments/:id',
+            name: 'paymentDetail',
+            builder: (context, state) {
+              final paymentId = state.pathParameters['id'] ?? '';
+              return PaymentDetailScreen(paymentId: paymentId);
+            },
+          ),
+
+          // Messages (messagerie — plus de redirect, vraie route)
+          GoRoute(
+            path: '/messages',
+            name: 'messages',
+            builder: (context, state) => const MessagesListScreen(),
+          ),
+          GoRoute(
+            path: '/messages/:id',
+            name: 'messageDetail',
+            builder: (context, state) {
+              final messageId = state.pathParameters['id'] ?? '';
+              return MessageDetailScreen(messageId: messageId);
+            },
+          ),
+
+          // Absences (présences / absences)
+          GoRoute(
+            path: '/absences',
+            name: 'absences',
+            builder: (context, state) => const AbsencesListScreen(),
+          ),
+
+          // Schedule (emploi du temps)
+          GoRoute(
+            path: '/schedule',
+            name: 'schedule',
+            builder: (context, state) => const ScheduleScreen(),
+          ),
+
           GoRoute(
             path: '/finance',
             name: 'finance',
@@ -259,7 +463,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             name: 'shop',
             builder: (context, state) => const ShopScreen(),
           ),
-          // Legacy routes kept for compatibility — redirect to real screens
+          // Legacy routes
           GoRoute(
             path: '/parents',
             name: 'parents',
@@ -274,11 +478,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: '/admin',
             name: 'admin',
             redirect: (context, state) => '/platform',
-          ),
-          GoRoute(
-            path: '/messages',
-            name: 'messages',
-            redirect: (context, state) => '/communication',
           ),
           GoRoute(
             path: '/notifications',

@@ -199,30 +199,31 @@ const _studentStats = [
   ),
 ];
 
+// ⭐ P0-4: Quick actions corrigées — pointent vers les vraies routes
 const _adminActions = [
   QuickAction(label: 'Élèves', icon: Icons.school, route: '/students'),
-  QuickAction(label: 'Notes', icon: Icons.grade, route: '/students'),
-  QuickAction(label: 'Paiements', icon: Icons.payment, route: '/students'),
+  QuickAction(label: 'Notes', icon: Icons.grade, route: '/grades'),
+  QuickAction(label: 'Finances', icon: Icons.payment, route: '/finance'),
   QuickAction(label: 'Messages', icon: Icons.message, route: '/messages'),
 ];
 
 const _teacherActions = [
-  QuickAction(label: 'Mes classes', icon: Icons.class_, route: '/students'),
-  QuickAction(label: 'Notes', icon: Icons.grade, route: '/students'),
-  QuickAction(label: 'Présence', icon: Icons.check_circle, route: '/students'),
-  QuickAction(label: 'Messages', icon: Icons.message, route: '/messages'),
+  QuickAction(label: 'Mes élèves', icon: Icons.school, route: '/students'),
+  QuickAction(label: 'Notes', icon: Icons.grade, route: '/grades'),
+  QuickAction(label: 'Présence', icon: Icons.check_circle, route: '/absences'),
+  QuickAction(label: 'Emploi du temps', icon: Icons.schedule, route: '/schedule'),
 ];
 
 const _parentActions = [
-  QuickAction(label: 'Notes', icon: Icons.grade, route: '/students'),
-  QuickAction(label: 'Paiements', icon: Icons.payment, route: '/students'),
-  QuickAction(label: 'Absences', icon: Icons.event_busy, route: '/students'),
-  QuickAction(label: 'Messages', icon: Icons.message, route: '/messages'),
+  QuickAction(label: 'Mes enfants', icon: Icons.child_care, route: '/students'),
+  QuickAction(label: 'Bulletins', icon: Icons.grade, route: '/grades'),
+  QuickAction(label: 'Paiements', icon: Icons.payment, route: '/payments'),
+  QuickAction(label: 'Absences', icon: Icons.event_busy, route: '/absences'),
 ];
 
 const _studentActions = [
-  QuickAction(label: 'Mes notes', icon: Icons.grade, route: '/students'),
-  QuickAction(label: 'Emploi du temps', icon: Icons.schedule, route: '/students'),
-  QuickAction(label: 'Absences', icon: Icons.event_busy, route: '/students'),
+  QuickAction(label: 'Mes notes', icon: Icons.grade, route: '/grades'),
+  QuickAction(label: 'Emploi du temps', icon: Icons.schedule, route: '/schedule'),
+  QuickAction(label: 'Absences', icon: Icons.event_busy, route: '/absences'),
   QuickAction(label: 'Messages', icon: Icons.message, route: '/messages'),
 ];

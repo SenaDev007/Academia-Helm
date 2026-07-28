@@ -20,32 +20,62 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd apps/mobile
+          cd apps/mobile-app
           flutter pub get
 
-      - name: Build APK
+      - name: Build APK (release)
         run: |
-          cd apps/mobile
+          cd apps/mobile-app
           flutter build apk --release \
             --dart-define=API_BASE_URL=https://api.academiahelm.com/api
 
-      - name: Build App Bundle
+      - name: Build App Bundle (release)
         run: |
-          cd apps/mobile
+          cd apps/mobile-app
           flutter build appbundle --release \
             --dart-define=API_BASE_URL=https://api.academiahelm.com/api
+
+      - name: Rename APK with version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then
+            VERSION="dev-$(date +%Y%m%d%H%M%S)"
+          fi
+
+          cd apps/mobile-app/build/app/outputs/flutter-apk
+          if [ -f app-release.apk ]; then
+            cp app-release.apk "Academia-Helm-${VERSION}-android.apk"
+          fi
+
+          echo "=== APK généré ==="
+          ls -la *.apk 2>/dev/null
+
+      - name: Rename AAB with version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then
+            VERSION="dev-$(date +%Y%m%d%H%M%S)"
+          fi
+
+          cd apps/mobile-app/build/app/outputs/bundle/release
+          if [ -f app-release.aab ]; then
+            cp app-release.aab "Academia-Helm-${VERSION}-android.aab"
+          fi
+
+          echo "=== AAB généré ==="
+          ls -la *.aab 2>/dev/null
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: academia-helm-android-apk
-          path: apps/mobile/build/app/outputs/flutter-apk/*.apk
+          path: apps/mobile-app/build/app/outputs/flutter-apk/Academia-Helm-*.apk
 
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
           name: academia-helm-android-aab
-          path: apps/mobile/build/app/outputs/bundle/release/*.aab
+          path: apps/mobile-app/build/app/outputs/bundle/release/Academia-Helm-*.aab
 
   build-ios:
     runs-on: macos-latest
@@ -60,12 +90,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd apps/mobile
+          cd apps/mobile-app
           flutter pub get
 
-      - name: Build iOS
+      - name: Build iOS (no codesign)
         run: |
-          cd apps/mobile
+          cd apps/mobile-app
           flutter build ios --release --no-codesign \
             --dart-define=API_BASE_URL=https://api.academiahelm.com/api
 
@@ -73,7 +103,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: academia-helm-ios
-          path: apps/mobile/build/ios/iphoneos/*.app
+          path: apps/mobile-app/build/ios/iphoneos/*.app
 
   release:
     needs: [build-android]
@@ -85,11 +115,26 @@ jobs:
         with:
           path: artifacts
 
+      - name: List artifacts
+        run: |
+          echo "=== Artifacts à publier ==="
+          find artifacts -type f | head -20
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
             artifacts/academia-helm-android-apk/*.apk
+            artifacts/academia-helm-android-aab/*.aab
           generate_release_notes: true
           draft: false
           prerelease: false
+          body: |
+            ## 📥 Téléchargements
+
+            ### Android
+            - **.apk** (Installation directe) — `Academia-Helm-${{ github.ref_name }}-android.apk`
+            - **.aab** (Google Play Bundle) — `Academia-Helm-${{ github.ref_name }}-android.aab`
+
+            ---
+            Page de téléchargement : https://app.academiahelm.com/downloads

@@ -20,12 +20,18 @@
 
 import { useState, useEffect } from "react";
 import {
-  Download, Monitor, Smartphone, Apple, CheckCircle2, AlertCircle,
+  Download, CheckCircle2, AlertCircle,
   Loader2, ChevronRight, Calendar, Tag, Github, Shield, Zap, WifiOff,
-  RefreshCw, Package, FileCode,
+  RefreshCw, FileCode,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import {
+  PlatformIcon,
+  PLATFORM_COLORS,
+  PLATFORM_LABELS,
+  PLATFORM_REQUIREMENTS,
+} from "@/components/icons/PlatformIcon";
 
 // ── Palette Academia Helm ──
 const NAVY = "#0b2f73";
@@ -102,13 +108,8 @@ const PREVIOUS_RELEASES: Release[] = [
   // TODO: récupérer depuis GitHub API
 ];
 
-const PLATFORM_CONFIG = {
-  windows: { label: "Windows", icon: Monitor, color: BLUE, requirements: "Windows 10/11 (64-bit)" },
-  macos: { label: "macOS", icon: Apple, color: "#000000", requirements: "macOS 11+ (Intel/Apple Silicon)" },
-  linux: { label: "Linux", icon: Package, color: "#FCC624", requirements: "Ubuntu 20.04+ / Debian / Fedora" },
-  android: { label: "Android", icon: Smartphone, color: EMERALD, requirements: "Android 8.0+ (API 26+)" },
-  ios: { label: "iOS", icon: Apple, color: "#000000", requirements: "iOS 14+ (iPhone/iPad)" },
-};
+// ── Mapping plateforme → config (utilise les icônes officielles) ──
+// Plus besoin de PLATFORM_CONFIG — on utilise PlatformIcon + PLATFORM_COLORS/LABELS/REQUIREMENTS
 
 // ── Composant principal ──
 
@@ -189,7 +190,7 @@ export default function DownloadsPage() {
                 : "text-slate-600 hover:bg-slate-50"
             }`}
           >
-            <Monitor className="w-5 h-5" />
+            <PlatformIcon platform="windows" size={20} />
             Desktop
           </button>
           <button
@@ -200,7 +201,7 @@ export default function DownloadsPage() {
                 : "text-slate-600 hover:bg-slate-50"
             }`}
           >
-            <Smartphone className="w-5 h-5" />
+            <PlatformIcon platform="android" size={20} />
             Mobile
           </button>
         </div>
@@ -388,23 +389,24 @@ function DesktopDownloads({ release }: { release: Release }) {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {(["windows", "macos", "linux"] as const).map((platform) => {
-          const config = PLATFORM_CONFIG[platform];
+          const color = PLATFORM_COLORS[platform];
+          const label = PLATFORM_LABELS[platform];
+          const requirements = PLATFORM_REQUIREMENTS[platform];
           const assets = byPlatform[platform] || [];
-          const Icon = config.icon;
 
           return (
             <div
               key={platform}
               className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden hover:shadow-xl transition-shadow"
             >
-              {/* En-tête plateforme */}
+              {/* En-tête plateforme avec icône officielle */}
               <div
                 className="p-6 text-white"
-                style={{ background: `linear-gradient(135deg, ${config.color}, ${config.color}DD)` }}
+                style={{ background: `linear-gradient(135deg, ${color}, ${color}DD)` }}
               >
-                <Icon className="w-10 h-10 mb-3" />
-                <h3 className="text-lg font-bold">{config.label}</h3>
-                <p className="text-xs opacity-80 mt-1">{config.requirements}</p>
+                <PlatformIcon platform={platform} size={40} className="mb-3" />
+                <h3 className="text-lg font-bold">{label}</h3>
+                <p className="text-xs opacity-80 mt-1">{requirements}</p>
               </div>
 
               {/* Boutons de téléchargement */}
@@ -461,11 +463,11 @@ function MobileDownloads({ release }: { release: Release }) {
         <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden hover:shadow-xl transition-shadow">
           <div
             className="p-6 text-white"
-            style={{ background: `linear-gradient(135deg, ${EMERALD}, ${EMERALD}DD)` }}
+            style={{ background: `linear-gradient(135deg, ${PLATFORM_COLORS.android}, ${PLATFORM_COLORS.android}DD)` }}
           >
-            <Smartphone className="w-10 h-10 mb-3" />
-            <h3 className="text-lg font-bold">Android</h3>
-            <p className="text-xs opacity-80 mt-1">Android 8.0+ (API 26+)</p>
+            <PlatformIcon platform="android" size={40} className="mb-3" />
+            <h3 className="text-lg font-bold">{PLATFORM_LABELS.android}</h3>
+            <p className="text-xs opacity-80 mt-1">{PLATFORM_REQUIREMENTS.android}</p>
           </div>
 
           <div className="p-6 space-y-3">
@@ -476,10 +478,10 @@ function MobileDownloads({ release }: { release: Release }) {
             >
               <div className="flex items-center gap-3 flex-1 min-w-0">
                 <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                  <Smartphone className="w-4 h-4 text-emerald-600" />
+                  <PlatformIcon platform="google-play" size={18} className="text-emerald-600" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">Google Play</p>
+                  <p className="text-sm font-semibold text-slate-900">{PLATFORM_LABELS["google-play"]}</p>
                   <p className="text-xs text-slate-500">Recommandé</p>
                 </div>
               </div>
@@ -506,9 +508,9 @@ function MobileDownloads({ release }: { release: Release }) {
             className="p-6 text-white"
             style={{ background: `linear-gradient(135deg, #1a1a1a, #333)` }}
           >
-            <Apple className="w-10 h-10 mb-3" />
-            <h3 className="text-lg font-bold">iOS</h3>
-            <p className="text-xs opacity-80 mt-1">iOS 14+ (iPhone/iPad)</p>
+            <PlatformIcon platform="ios" size={40} className="mb-3" />
+            <h3 className="text-lg font-bold">{PLATFORM_LABELS.ios}</h3>
+            <p className="text-xs opacity-80 mt-1">{PLATFORM_REQUIREMENTS.ios}</p>
           </div>
 
           <div className="p-6 space-y-3">
@@ -519,10 +521,10 @@ function MobileDownloads({ release }: { release: Release }) {
             >
               <div className="flex items-center gap-3 flex-1 min-w-0">
                 <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
-                  <Apple className="w-4 h-4 text-slate-700" />
+                  <PlatformIcon platform="app-store" size={18} className="text-slate-700" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">App Store</p>
+                  <p className="text-sm font-semibold text-slate-900">{PLATFORM_LABELS["app-store"]}</p>
                   <p className="text-xs text-slate-500">Recommandé</p>
                 </div>
               </div>

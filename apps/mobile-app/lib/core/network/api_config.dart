@@ -82,6 +82,24 @@ class ApiConfig {
 
   /// TTL du cache local.
   static const Duration defaultCacheTTL = Duration(minutes: 5);
+
+  // ── Meetings Endpoints ───────────────────────────────────────────────
+
+  static const String meetings = '/meetings';
+  static String meetingById(String id) => '/meetings/$id';
+  static String meetingAgenda(String meetingId) => '/meetings/$meetingId/agenda';
+  static String meetingMinutes(String meetingId) => '/meetings/$meetingId/minutes';
+  static String meetingParticipants(String meetingId) => '/meetings/$meetingId/participants';
+  static String meetingDecisions(String meetingId) => '/meetings/$meetingId/decisions';
+
+  // ── Settings Endpoints ───────────────────────────────────────────────
+
+  static const String settingsPermissions = '/settings/permissions';
+  static const String settingsFeatureFlags = '/settings/feature-flags';
+  static const String settingsSecurity = '/settings/security';
+  static const String settingsBilling = '/settings/billing';
+  static const String settingsCommunication = '/settings/communication';
+  static const String settingsSeals = '/settings/seals';
 }
 
 /// Enum representing the API environment.

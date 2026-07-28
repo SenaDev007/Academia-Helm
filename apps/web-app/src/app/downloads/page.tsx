@@ -8,22 +8,28 @@
  * Page publique qui partage EXACTEMENT le même style que le landing page :
  *   - Header <Header /> depuis @/components/ui/header-1
  *   - Footer <Footer2 /> depuis @/components/ui/footer-2
- *   - Logo <LogoCircle /> depuis @/components/ui/LogoCircle
+ *   - Logo <LogoCircle /> (default export) depuis @/components/ui/LogoCircle
  *   - Palette : Navy #0b2f73, Blue #1d4fa5, Gold #f5b335
  *   - Font : Inter (chargée globalement via layout.tsx)
  *   - Keywords : "Plateforme de pilotage éducatif", "Cockpit digital"
  *
- * Sections :
- *   1. Hero — gradient navy + badge or + titre + sous-titre
- *   2. Sélecteur Desktop / Mobile (onglets)
- *   3. Cartes de téléchargement (Windows/macOS/Linux ou Android/iOS)
- *   4. Fonctionnalités (4 feature cards)
- *   5. Changelog (dernière version)
- *   6. FAQ
+ * Version dynamique :
+ *   - Récupère la dernière release depuis l'API GitHub
+ *   - Si l'API échoue, fallback sur les valeurs par défaut
+ *   - Version + date + notes mises à jour automatiquement
+ *
+ * Image de fond :
+ *   - Background-Page-download.png dans le hero (si disponible)
+ *   - Fallback : gradient navy + pattern dots
+ *
+ * Responsive :
+ *   - Mobile-first, breakpoints sm/md/lg/xl
+ *   - Grilles adaptatives (1 col mobile → 2-3 cols desktop)
+ *   - Tailles de texte fluides (clamp via Tailwind)
  * ============================================================================
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Download, CheckCircle2, AlertCircle, ChevronRight,
   Calendar, Tag, Shield, Zap, WifiOff, RefreshCw, FileCode,
@@ -34,22 +40,13 @@ import Link from "next/link";
 // ── Composants partagés du landing page ──
 import { Header } from "@/components/ui/header-1";
 import { Footer2 } from "@/components/ui/footer-2";
-import { LogoCircle } from "@/components/ui/LogoCircle";
+import LogoCircle from "@/components/ui/LogoCircle";
 import {
   PlatformIcon,
   PLATFORM_COLORS,
   PLATFORM_LABELS,
   PLATFORM_REQUIREMENTS,
 } from "@/components/icons/PlatformIcon";
-
-// ── Palette Academia Helm (identique au landing page) ──
-const NAVY = "#0b2f73";
-const NAVY_DARK = "#0a1d3f";
-const NAVY_MID = "#103e91";
-const BLUE = "#1d4fa5";
-const GOLD = "#f5b335";
-const GOLD_HOVER = "#f7c359";
-const GOLD_LIGHT = "#ffd166";
 
 // ── Types ──
 
@@ -67,11 +64,11 @@ interface Release {
   assets: ReleaseAsset[];
 }
 
-// ── Release actuelle ──
+// ── Release par défaut (fallback si GitHub API indisponible) ──
 
-const LATEST_RELEASE: Release = {
+const DEFAULT_RELEASE: Release = {
   version: "1.0.0",
-  date: "2026-07-28",
+  date: new Date().toISOString(),
   notes: [
     "Application desktop Windows, macOS et Linux (Tauri 2)",
     "Application mobile Android et iOS (Flutter)",
@@ -110,10 +107,74 @@ const LATEST_RELEASE: Release = {
   ],
 };
 
+// ── Hook: récupère la dernière release depuis GitHub API ──
+
+function useLatestRelease(): { release: Release; loading: boolean } {
+  const [release, setRelease] = useState<Release>(DEFAULT_RELEASE);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchLatestRelease() {
+      try {
+        const response = await fetch(
+          "https://api.github.com/repos/SenaDev007/Academia-Helm/releases/latest",
+        );
+
+        if (!response.ok) throw new Error("GitHub API error");
+
+        const data = await response.json();
+
+        // Construire les assets depuis la réponse GitHub
+        const assets: ReleaseAsset[] = (data.assets || []).map((asset: any) => {
+          const name = asset.name as string;
+          let platform: ReleaseAsset["platform"] = "windows";
+
+          if (name.includes(".exe") || name.includes(".msi")) platform = "windows";
+          else if (name.includes(".dmg") || name.includes(".app")) platform = "macos";
+          else if (name.includes(".deb") || name.includes(".AppImage") || name.includes(".rpm")) platform = "linux";
+          else if (name.includes(".apk") || name.includes(".aab")) platform = "android";
+          else if (name.includes(".ipa")) platform = "ios";
+
+          return {
+            name,
+            downloadUrl: asset.browser_download_url,
+            size: asset.size ? `${Math.round(asset.size / 1024 / 1024)} MB` : "—",
+            platform,
+          };
+        });
+
+        // Parser les notes de version (body markdown → lignes)
+        const notesRaw = data.body || "";
+        const notes = notesRaw
+          .split("\n")
+          .map((line: string) => line.replace(/^[-•*\s]+/, "").trim())
+          .filter((line: string) => line.length > 0 && !line.startsWith("#"));
+
+        setRelease({
+          version: data.tag_name?.replace(/^v/, "") || DEFAULT_RELEASE.version,
+          date: data.published_at || data.created_at || new Date().toISOString(),
+          notes: notes.length > 0 ? notes : DEFAULT_RELEASE.notes,
+          assets: assets.length > 0 ? assets : DEFAULT_RELEASE.assets,
+        });
+      } catch (error) {
+        // Fallback silencieux sur les valeurs par défaut
+        console.warn("[downloads] Could not fetch GitHub release, using defaults");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchLatestRelease();
+  }, []);
+
+  return { release, loading };
+}
+
 // ── Composant principal ──
 
 export default function DownloadsPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<"desktop" | "mobile">("desktop");
+  const { release, loading } = useLatestRelease();
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-white text-slate-900">
@@ -121,85 +182,105 @@ export default function DownloadsPage() {
       <Header />
 
       {/* Espace pour le header fixe */}
-      <div className="h-16 md:h-18" />
+      <div className="h-14 md:h-16" />
 
-      {/* ── Hero ── */}
-      <section className="relative overflow-hidden">
-        {/* Fond gradient Navy (identique au hero du landing page) */}
-        <div className="absolute inset-0 bg-gradient-to-br from-[#0b2f73] via-[#103e91] to-[#1d4fa5]" />
+      {/* ── Hero avec image de fond ── */}
+      <section className="relative overflow-hidden min-h-[60vh] flex items-center justify-center">
+        {/* Image de fond — Background-Page-download.png */}
+        {/* Si le fichier n'existe pas, fallback sur gradient navy */}
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{
+            backgroundImage: "url('/images/Background-Page-download.png')",
+          }}
+        />
+        {/* Overlay gradient navy pour assurer la lisibilité du texte */}
+        <div className="absolute inset-0 bg-gradient-to-br from-[#0b2f73]/95 via-[#103e91]/90 to-[#1d4fa5]/85" />
         <div className="absolute inset-0 opacity-20" style={{
           backgroundImage: "radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 80%, white 1px, transparent 1px)",
           backgroundSize: "50px 50px",
         }} />
 
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24 text-center">
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24 text-center w-full">
           <motion.div
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
             {/* Badge or */}
-            <div className="inline-flex items-center gap-2 rounded-full bg-[#f5b335]/20 border border-[#f5b335]/30 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#f5b335] mb-6">
-              <Download className="w-3.5 h-3.5" />
+            <div className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full bg-[#f5b335]/20 border border-[#f5b335]/30 px-3 sm:px-4 py-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider text-[#f5b335] mb-4 sm:mb-6">
+              <Download className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               Téléchargements
             </div>
 
             {/* Logo Academia Helm */}
-            <div className="flex justify-center mb-6">
-              <LogoCircle size={72} animated={true} />
+            <div className="flex justify-center mb-4 sm:mb-6">
+              <LogoCircle size={56} animated={true} />
             </div>
 
-            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold text-white leading-[1.15] tracking-tight mb-4">
-              Academia<span className="text-amber-300 ml-2">Helm</span>
+            <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold text-white leading-[1.15] tracking-tight mb-3 sm:mb-4">
+              Academia<span className="text-amber-300 ml-1 sm:ml-2">Helm</span>
             </h1>
 
-            <p className="text-base md:text-lg text-blue-100 max-w-2xl mx-auto mb-6">
+            <p className="text-sm sm:text-base md:text-lg text-blue-100 max-w-xl sm:max-w-2xl mx-auto mb-4 sm:mb-6 px-2">
               Téléchargez le cockpit digital de votre établissement.
               Application desktop et mobile, mode hors connexion, synchronisation automatique.
             </p>
 
-            {/* Version actuelle */}
-            <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white text-sm">
-              <Tag className="w-4 h-4 text-[#f5b335]" />
-              <span className="font-semibold">Version {LATEST_RELEASE.version}</span>
-              <span className="opacity-40">•</span>
-              <Calendar className="w-4 h-4 text-[#f5b335]" />
-              <span>{new Date(LATEST_RELEASE.date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</span>
+            {/* Version dynamique */}
+            <div className="inline-flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white text-xs sm:text-sm">
+              <Tag className="w-3.5 h-3.5 text-[#f5b335]" />
+              <span className="font-semibold">
+                {loading ? "Chargement…" : `Version ${release.version}`}
+              </span>
+              {!loading && (
+                <>
+                  <span className="opacity-40">•</span>
+                  <Calendar className="w-3.5 h-3.5 text-[#f5b335]" />
+                  <span>
+                    {new Date(release.date).toLocaleDateString("fr-FR", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })}
+                  </span>
+                </>
+              )}
             </div>
           </motion.div>
         </div>
       </section>
 
       {/* ── Sélecteur Desktop / Mobile ── */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 relative z-10">
-        <div className="bg-white rounded-2xl shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] border border-slate-200/80 p-2 grid grid-cols-2 gap-2">
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-6 sm:-mt-8 relative z-10">
+        <div className="bg-white rounded-xl sm:rounded-2xl shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] border border-slate-200/80 p-1.5 sm:p-2 grid grid-cols-2 gap-1.5 sm:gap-2">
           <button
             onClick={() => setSelectedPlatform("desktop")}
-            className={`flex items-center justify-center gap-2 py-4 rounded-xl font-semibold transition-all duration-300 ${
+            className={`flex items-center justify-center gap-2 py-3 sm:py-4 rounded-lg sm:rounded-xl font-semibold text-sm sm:text-base transition-all duration-300 ${
               selectedPlatform === "desktop"
                 ? "bg-[#0b2f73] text-white shadow-lg"
                 : "text-slate-600 hover:bg-slate-50"
             }`}
           >
-            <PlatformIcon platform="windows" size={20} />
-            Desktop
+            <PlatformIcon platform="windows" size={18} />
+            <span className="hidden xs:inline sm:inline">Desktop</span>
           </button>
           <button
             onClick={() => setSelectedPlatform("mobile")}
-            className={`flex items-center justify-center gap-2 py-4 rounded-xl font-semibold transition-all duration-300 ${
+            className={`flex items-center justify-center gap-2 py-3 sm:py-4 rounded-lg sm:rounded-xl font-semibold text-sm sm:text-base transition-all duration-300 ${
               selectedPlatform === "mobile"
                 ? "bg-[#0b2f73] text-white shadow-lg"
                 : "text-slate-600 hover:bg-slate-50"
             }`}
           >
-            <PlatformIcon platform="android" size={20} />
-            Mobile
+            <PlatformIcon platform="android" size={18} />
+            <span className="hidden xs:inline sm:inline">Mobile</span>
           </button>
         </div>
       </section>
 
       {/* ── Section téléchargements ── */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-20">
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 md:py-20">
         <AnimatePresence mode="wait">
           {selectedPlatform === "desktop" ? (
             <motion.div
@@ -209,7 +290,7 @@ export default function DownloadsPage() {
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.3 }}
             >
-              <DesktopDownloads release={LATEST_RELEASE} />
+              <DesktopDownloads release={release} loading={loading} />
             </motion.div>
           ) : (
             <motion.div
@@ -219,30 +300,30 @@ export default function DownloadsPage() {
               exit={{ opacity: 0, y: -20 }}
               transition={{ duration: 0.3 }}
             >
-              <MobileDownloads release={LATEST_RELEASE} />
+              <MobileDownloads release={release} loading={loading} />
             </motion.div>
           )}
         </AnimatePresence>
       </section>
 
       {/* ── Fonctionnalités ── */}
-      <section className="bg-[#0a1d3f] py-20 md:py-28 relative overflow-hidden">
+      <section className="bg-[#0a1d3f] py-16 sm:py-20 md:py-28 relative overflow-hidden">
         <div className="absolute inset-0 opacity-10" style={{
           backgroundImage: "radial-gradient(circle at 30% 20%, #f5b335 1px, transparent 1px)",
           backgroundSize: "40px 40px",
         }} />
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 rounded-full bg-[#f5b335]/20 border border-[#f5b335]/30 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#f5b335] mb-4">
+          <div className="text-center mb-8 sm:mb-12">
+            <div className="inline-flex items-center gap-2 rounded-full bg-[#f5b335]/20 border border-[#f5b335]/30 px-3 sm:px-4 py-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider text-[#f5b335] mb-3 sm:mb-4">
               Avantages
             </div>
-            <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-white leading-[1.15] tracking-tight">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold text-white leading-[1.15] tracking-tight px-2">
               Pourquoi utiliser l'application desktop et mobile ?
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
             <FeatureCard
               icon={Zap}
               title="Accès plus rapide"
@@ -268,48 +349,64 @@ export default function DownloadsPage() {
       </section>
 
       {/* ── Changelog ── */}
-      <section className="bg-white py-20 md:py-28">
+      <section className="bg-white py-16 sm:py-20 md:py-28">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 rounded-full bg-[#0b2f73]/10 border border-[#0b2f73]/15 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#0b2f73] mb-4">
+          <div className="text-center mb-8 sm:mb-12">
+            <div className="inline-flex items-center gap-2 rounded-full bg-[#0b2f73]/10 border border-[#0b2f73]/15 px-3 sm:px-4 py-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider text-[#0b2f73] mb-3 sm:mb-4">
               <FileCode className="w-3.5 h-3.5" />
               Mises à jour
             </div>
-            <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-[#0b2f73] leading-[1.15] tracking-tight mb-2">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold text-[#0b2f73] leading-[1.15] tracking-tight mb-2">
               Dernières nouveautés
             </h2>
-            <p className="text-slate-500">
-              Version {LATEST_RELEASE.version} — {new Date(LATEST_RELEASE.date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
-            </p>
+            {!loading && (
+              <p className="text-slate-500 text-sm sm:text-base">
+                Version {release.version} —{" "}
+                {new Date(release.date).toLocaleDateString("fr-FR", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })}
+              </p>
+            )}
           </div>
 
-          <div className="rounded-3xl border border-slate-200/80 bg-white shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] overflow-hidden">
+          <div className="rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-white shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] overflow-hidden">
             {/* En-tête navy */}
-            <div className="bg-gradient-to-r from-[#0b2f73] to-[#1d4fa5] p-6 text-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-bold">Version {LATEST_RELEASE.version}</h3>
-                  <p className="text-sm text-blue-100 mt-1">
-                    {new Date(LATEST_RELEASE.date).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-                  </p>
+            <div className="bg-gradient-to-r from-[#0b2f73] to-[#1d4fa5] p-4 sm:p-6 text-white">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="text-lg sm:text-xl font-bold truncate">
+                    {loading ? "Chargement…" : `Version ${release.version}`}
+                  </h3>
+                  {!loading && (
+                    <p className="text-xs sm:text-sm text-blue-100 mt-1">
+                      {new Date(release.date).toLocaleDateString("fr-FR", {
+                        weekday: "long",
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                      })}
+                    </p>
+                  )}
                 </div>
-                <span className="px-3 py-1 rounded-full bg-[#f5b335] text-[#0b2f73] text-xs font-bold">
+                <span className="px-2 sm:px-3 py-1 rounded-full bg-[#f5b335] text-[#0b2f73] text-[10px] sm:text-xs font-bold whitespace-nowrap flex-shrink-0">
                   DERNIÈRE
                 </span>
               </div>
             </div>
 
             {/* Notes de version */}
-            <div className="p-6 md:p-8">
-              <h4 className="font-semibold text-[#0b2f73] mb-4 flex items-center gap-2">
+            <div className="p-4 sm:p-6 md:p-8">
+              <h4 className="font-semibold text-[#0b2f73] mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base">
                 <FileCode className="w-4 h-4 text-[#f5b335]" />
                 Nouveautés
               </h4>
-              <ul className="space-y-3">
-                {LATEST_RELEASE.notes.map((note, i) => (
-                  <li key={i} className="flex items-start gap-3">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                    <span className="text-slate-700 text-sm md:text-base">{note}</span>
+              <ul className="space-y-2 sm:space-y-3">
+                {(loading ? DEFAULT_RELEASE.notes : release.notes).map((note, i) => (
+                  <li key={i} className="flex items-start gap-2 sm:gap-3">
+                    <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                    <span className="text-slate-700 text-xs sm:text-sm md:text-base">{note}</span>
                   </li>
                 ))}
               </ul>
@@ -319,18 +416,18 @@ export default function DownloadsPage() {
       </section>
 
       {/* ── FAQ ── */}
-      <section className="bg-[#F7F9FC] py-20 md:py-28">
+      <section className="bg-[#F7F9FC] py-16 sm:py-20 md:py-28">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 rounded-full bg-[#0b2f73]/10 border border-[#0b2f73]/15 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#0b2f73] mb-4">
+          <div className="text-center mb-8 sm:mb-12">
+            <div className="inline-flex items-center gap-2 rounded-full bg-[#0b2f73]/10 border border-[#0b2f73]/15 px-3 sm:px-4 py-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider text-[#0b2f73] mb-3 sm:mb-4">
               FAQ
             </div>
-            <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-[#0b2f73] leading-[1.15] tracking-tight">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold text-[#0b2f73] leading-[1.15] tracking-tight">
               Questions fréquentes
             </h2>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4">
             <FaqItem
               question="Dois-je avoir un compte pour utiliser l'application desktop ?"
               answer="Oui. L'établissement doit déjà avoir un compte créé sur la version web. Au premier lancement de l'application desktop, vous recherchez votre établissement puis vous connectez avec vos identifiants existants."
@@ -356,20 +453,20 @@ export default function DownloadsPage() {
       </section>
 
       {/* ── CTA final ── */}
-      <section className="bg-gradient-to-br from-[#0b2f73] via-[#103e91] to-[#1d4fa5] py-16 md:py-20">
+      <section className="bg-gradient-to-br from-[#0b2f73] via-[#103e91] to-[#1d4fa5] py-12 sm:py-16 md:py-20">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white leading-[1.15] tracking-tight mb-4">
+          <h2 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-extrabold text-white leading-[1.15] tracking-tight mb-3 sm:mb-4 px-2">
             Passez au pilotage scolaire nouvelle génération
           </h2>
-          <p className="text-blue-100 text-base md:text-lg mb-8 max-w-2xl mx-auto">
+          <p className="text-blue-100 text-sm sm:text-base md:text-lg mb-6 sm:mb-8 max-w-2xl mx-auto px-2">
             Équipez votre établissement d'un système fiable, élégant et prêt pour la croissance.
           </p>
           <Link
             href="/portal"
-            className="inline-flex items-center gap-2 bg-[#f5b335] text-[#0b2f73] hover:bg-[#f7c359] px-6 py-3 rounded-xl font-bold min-h-[48px] shadow-lg shadow-[#f5b335]/20 transition-all duration-200 hover:-translate-y-0.5"
+            className="inline-flex items-center gap-2 bg-[#f5b335] text-[#0b2f73] hover:bg-[#f7c359] px-5 sm:px-6 py-3 rounded-xl font-bold min-h-[48px] text-sm sm:text-base shadow-lg shadow-[#f5b335]/20 transition-all duration-200 hover:-translate-y-0.5"
           >
             Accéder au portail
-            <ChevronRight className="w-5 h-5" />
+            <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
           </Link>
         </div>
       </section>
@@ -382,7 +479,13 @@ export default function DownloadsPage() {
 
 // ── Composant: Downloads Desktop ──
 
-function DesktopDownloads({ release }: { release: Release }) {
+function DesktopDownloads({
+  release,
+  loading,
+}: {
+  release: Release;
+  loading: boolean;
+}) {
   const desktopAssets = release.assets.filter(
     (a) => a.platform === "windows" || a.platform === "macos" || a.platform === "linux",
   );
@@ -395,20 +498,23 @@ function DesktopDownloads({ release }: { release: Release }) {
 
   return (
     <div>
-      <div className="text-center mb-12">
-        <div className="inline-flex items-center gap-2 rounded-full bg-[#0b2f73]/10 border border-[#0b2f73]/15 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#0b2f73] mb-4">
+      <div className="text-center mb-8 sm:mb-12">
+        <div className="inline-flex items-center gap-2 rounded-full bg-[#0b2f73]/10 border border-[#0b2f73]/15 px-3 sm:px-4 py-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider text-[#0b2f73] mb-3 sm:mb-4">
           <PlatformIcon platform="windows" size={14} />
           Desktop
         </div>
-        <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-[#0b2f73] leading-[1.15] tracking-tight mb-2">
+        <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold text-[#0b2f73] leading-[1.15] tracking-tight mb-2">
           Télécharger pour Desktop
         </h2>
-        <p className="text-slate-500">
-          Version {release.version} — {new Date(release.date).toLocaleDateString("fr-FR")}
-        </p>
+        {!loading && (
+          <p className="text-slate-500 text-sm sm:text-base">
+            Version {release.version} —{" "}
+            {new Date(release.date).toLocaleDateString("fr-FR")}
+          </p>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {(["windows", "macos", "linux"] as const).map((platform) => {
           const color = PLATFORM_COLORS[platform];
           const label = PLATFORM_LABELS[platform];
@@ -418,39 +524,39 @@ function DesktopDownloads({ release }: { release: Release }) {
           return (
             <div
               key={platform}
-              className="rounded-3xl border border-slate-200/80 bg-white overflow-hidden shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] hover:shadow-[0_24px_60px_-20px_rgba(11,47,115,0.30)] hover:border-[#0b2f73]/30 transition-all duration-300"
+              className="rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-white overflow-hidden shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] hover:shadow-[0_24px_60px_-20px_rgba(11,47,115,0.30)] hover:border-[#0b2f73]/30 transition-all duration-300"
             >
-              {/* En-tête plateforme avec icône officielle */}
+              {/* En-tête plateforme */}
               <div
-                className="p-6 text-white"
+                className="p-4 sm:p-6 text-white"
                 style={{ background: `linear-gradient(135deg, ${color}, ${color}DD)` }}
               >
-                <PlatformIcon platform={platform} size={40} className="mb-3" />
-                <h3 className="text-lg font-bold">{label}</h3>
-                <p className="text-xs opacity-80 mt-1">{requirements}</p>
+                <PlatformIcon platform={platform} size={32} className="mb-2 sm:mb-3" />
+                <h3 className="text-base sm:text-lg font-bold">{label}</h3>
+                <p className="text-[10px] sm:text-xs opacity-80 mt-1">{requirements}</p>
               </div>
 
               {/* Boutons de téléchargement */}
-              <div className="p-6 space-y-3">
+              <div className="p-4 sm:p-6 space-y-2 sm:space-y-3">
                 {assets.length === 0 ? (
-                  <div className="text-center py-6">
-                    <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                    <p className="text-sm text-slate-400">Bientôt disponible</p>
+                  <div className="text-center py-4 sm:py-6">
+                    <AlertCircle className="w-6 h-6 sm:w-8 sm:h-8 text-slate-300 mx-auto mb-2" />
+                    <p className="text-xs sm:text-sm text-slate-400">Bientôt disponible</p>
                   </div>
                 ) : (
                   assets.map((asset) => (
                     <a
                       key={asset.name}
                       href={asset.downloadUrl}
-                      className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
+                      className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-[#0b2f73] truncate">
+                        <p className="text-xs sm:text-sm font-semibold text-[#0b2f73] truncate">
                           {asset.name}
                         </p>
-                        <p className="text-xs text-slate-500">{asset.size}</p>
+                        <p className="text-[10px] sm:text-xs text-slate-500">{asset.size}</p>
                       </div>
-                      <Download className="w-4 h-4 text-slate-400 group-hover:text-[#f5b335] group-hover:translate-y-0.5 transition-all flex-shrink-0" />
+                      <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 group-hover:text-[#f5b335] group-hover:translate-y-0.5 transition-all flex-shrink-0" />
                     </a>
                   ))
                 )}
@@ -465,116 +571,128 @@ function DesktopDownloads({ release }: { release: Release }) {
 
 // ── Composant: Downloads Mobile ──
 
-function MobileDownloads({ release }: { release: Release }) {
+function MobileDownloads({
+  release,
+  loading,
+}: {
+  release: Release;
+  loading: boolean;
+}) {
   return (
     <div>
-      <div className="text-center mb-12">
-        <div className="inline-flex items-center gap-2 rounded-full bg-[#0b2f73]/10 border border-[#0b2f73]/15 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[#0b2f73] mb-4">
+      <div className="text-center mb-8 sm:mb-12">
+        <div className="inline-flex items-center gap-2 rounded-full bg-[#0b2f73]/10 border border-[#0b2f73]/15 px-3 sm:px-4 py-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-wider text-[#0b2f73] mb-3 sm:mb-4">
           <PlatformIcon platform="android" size={14} />
           Mobile
         </div>
-        <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-[#0b2f73] leading-[1.15] tracking-tight mb-2">
+        <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-extrabold text-[#0b2f73] leading-[1.15] tracking-tight mb-2">
           Télécharger pour Mobile
         </h2>
-        <p className="text-slate-500">
-          Version {release.version} — {new Date(release.date).toLocaleDateString("fr-FR")}
-        </p>
+        {!loading && (
+          <p className="text-slate-500 text-sm sm:text-base">
+            Version {release.version} —{" "}
+            {new Date(release.date).toLocaleDateString("fr-FR")}
+          </p>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 max-w-3xl mx-auto">
         {/* Android */}
-        <div className="rounded-3xl border border-slate-200/80 bg-white overflow-hidden shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] hover:shadow-[0_24px_60px_-20px_rgba(11,47,115,0.30)] hover:border-[#0b2f73]/30 transition-all duration-300">
+        <div className="rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-white overflow-hidden shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] hover:shadow-[0_24px_60px_-20px_rgba(11,47,115,0.30)] hover:border-[#0b2f73]/30 transition-all duration-300">
           <div
-            className="p-6 text-white"
+            className="p-4 sm:p-6 text-white"
             style={{ background: `linear-gradient(135deg, ${PLATFORM_COLORS.android}, ${PLATFORM_COLORS.android}DD)` }}
           >
-            <PlatformIcon platform="android" size={40} className="mb-3" />
-            <h3 className="text-lg font-bold">{PLATFORM_LABELS.android}</h3>
-            <p className="text-xs opacity-80 mt-1">{PLATFORM_REQUIREMENTS.android}</p>
+            <PlatformIcon platform="android" size={32} className="mb-2 sm:mb-3" />
+            <h3 className="text-base sm:text-lg font-bold">{PLATFORM_LABELS.android}</h3>
+            <p className="text-[10px] sm:text-xs opacity-80 mt-1">{PLATFORM_REQUIREMENTS.android}</p>
           </div>
 
-          <div className="p-6 space-y-3">
+          <div className="p-4 sm:p-6 space-y-2 sm:space-y-3">
             {/* Play Store */}
             <a
               href="https://play.google.com/store/apps/details?id=com.academiahelm.mobile"
-              className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
+              className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
             >
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                  <PlatformIcon platform="google-play" size={18} className="text-emerald-600" />
+              <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                  <PlatformIcon platform="google-play" size={16} className="text-emerald-600" />
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-[#0b2f73]">{PLATFORM_LABELS["google-play"]}</p>
-                  <p className="text-xs text-slate-500">Recommandé</p>
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm font-semibold text-[#0b2f73] truncate">
+                    {PLATFORM_LABELS["google-play"]}
+                  </p>
+                  <p className="text-[10px] sm:text-xs text-slate-500">Recommandé</p>
                 </div>
               </div>
-              <Download className="w-4 h-4 text-slate-400 group-hover:text-[#f5b335] transition-all flex-shrink-0" />
+              <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 group-hover:text-[#f5b335] transition-all flex-shrink-0" />
             </a>
 
             {/* APK direct */}
             <a
               href={release.assets.find((a) => a.platform === "android")?.downloadUrl || "#"}
-              className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
+              className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
             >
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-[#0b2f73]">Télécharger l'APK</p>
-                <p className="text-xs text-slate-500">~25 MB — Installation manuelle</p>
+                <p className="text-xs sm:text-sm font-semibold text-[#0b2f73]">Télécharger l'APK</p>
+                <p className="text-[10px] sm:text-xs text-slate-500">~25 MB — Installation manuelle</p>
               </div>
-              <Download className="w-4 h-4 text-slate-400 group-hover:text-[#f5b335] transition-all flex-shrink-0" />
+              <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 group-hover:text-[#f5b335] transition-all flex-shrink-0" />
             </a>
           </div>
         </div>
 
         {/* iOS */}
-        <div className="rounded-3xl border border-slate-200/80 bg-white overflow-hidden shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] hover:shadow-[0_24px_60px_-20px_rgba(11,47,115,0.30)] hover:border-[#0b2f73]/30 transition-all duration-300">
+        <div className="rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-white overflow-hidden shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] hover:shadow-[0_24px_60px_-20px_rgba(11,47,115,0.30)] hover:border-[#0b2f73]/30 transition-all duration-300">
           <div
-            className="p-6 text-white"
+            className="p-4 sm:p-6 text-white"
             style={{ background: `linear-gradient(135deg, #1a1a1a, #333)` }}
           >
-            <PlatformIcon platform="ios" size={40} className="mb-3" />
-            <h3 className="text-lg font-bold">{PLATFORM_LABELS.ios}</h3>
-            <p className="text-xs opacity-80 mt-1">{PLATFORM_REQUIREMENTS.ios}</p>
+            <PlatformIcon platform="ios" size={32} className="mb-2 sm:mb-3" />
+            <h3 className="text-base sm:text-lg font-bold">{PLATFORM_LABELS.ios}</h3>
+            <p className="text-[10px] sm:text-xs opacity-80 mt-1">{PLATFORM_REQUIREMENTS.ios}</p>
           </div>
 
-          <div className="p-6 space-y-3">
+          <div className="p-4 sm:p-6 space-y-2 sm:space-y-3">
             {/* App Store */}
             <a
               href="https://apps.apple.com/app/academia-helm/idXXXXXXXX"
-              className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
+              className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
             >
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
-                  <PlatformIcon platform="app-store" size={18} className="text-slate-700" />
+              <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+                  <PlatformIcon platform="app-store" size={16} className="text-slate-700" />
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-[#0b2f73]">{PLATFORM_LABELS["app-store"]}</p>
-                  <p className="text-xs text-slate-500">Recommandé</p>
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm font-semibold text-[#0b2f73] truncate">
+                    {PLATFORM_LABELS["app-store"]}
+                  </p>
+                  <p className="text-[10px] sm:text-xs text-slate-500">Recommandé</p>
                 </div>
               </div>
-              <Download className="w-4 h-4 text-slate-400 group-hover:text-[#f5b335] transition-all flex-shrink-0" />
+              <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 group-hover:text-[#f5b335] transition-all flex-shrink-0" />
             </a>
 
             {/* TestFlight */}
-            <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-200 opacity-60">
+            <div className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200 opacity-60">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-[#0b2f73]">TestFlight</p>
-                <p className="text-xs text-slate-500">Bientôt disponible</p>
+                <p className="text-xs sm:text-sm font-semibold text-[#0b2f73]">TestFlight</p>
+                <p className="text-[10px] sm:text-xs text-slate-500">Bientôt disponible</p>
               </div>
-              <AlertCircle className="w-4 h-4 text-slate-400 flex-shrink-0" />
+              <AlertCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 flex-shrink-0" />
             </div>
           </div>
         </div>
       </div>
 
       {/* Note d'info */}
-      <div className="mt-8 max-w-3xl mx-auto bg-[#0b2f73]/5 border border-[#0b2f73]/15 rounded-xl p-4 flex items-start gap-3">
-        <AlertCircle className="w-5 h-5 text-[#0b2f73] flex-shrink-0 mt-0.5" />
+      <div className="mt-6 sm:mt-8 max-w-3xl mx-auto bg-[#0b2f73]/5 border border-[#0b2f73]/15 rounded-xl p-3 sm:p-4 flex items-start gap-2 sm:gap-3">
+        <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-[#0b2f73] flex-shrink-0 mt-0.5" />
         <div>
-          <p className="text-sm font-semibold text-[#0b2f73]">Avant de commencer</p>
-          <p className="text-xs text-slate-600 mt-1">
+          <p className="text-xs sm:text-sm font-semibold text-[#0b2f73]">Avant de commencer</p>
+          <p className="text-[10px] sm:text-xs text-slate-600 mt-1">
             L'application mobile vous guidera pour rechercher votre établissement au premier lancement.
-            Votre établissement doit déjà avoir un compte Academia Helm. Si ce n'est pas le cas,
-            contactez l'administration de votre établissement.
+            Votre établissement doit déjà avoir un compte Academia Helm.
           </p>
         </div>
       </div>
@@ -594,12 +712,12 @@ function FeatureCard({
   description: string;
 }) {
   return (
-    <div className="rounded-2xl bg-white/[0.04] border border-white/10 backdrop-blur-sm p-6 hover:bg-white/[0.08] transition-all duration-300">
-      <div className="w-12 h-12 rounded-xl bg-[#f5b335]/20 flex items-center justify-center mb-4">
-        <Icon className="w-6 h-6 text-[#f5b335]" />
+    <div className="rounded-xl sm:rounded-2xl bg-white/[0.04] border border-white/10 backdrop-blur-sm p-4 sm:p-6 hover:bg-white/[0.08] transition-all duration-300">
+      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-[#f5b335]/20 flex items-center justify-center mb-3 sm:mb-4">
+        <Icon className="w-5 h-5 sm:w-6 sm:h-6 text-[#f5b335]" />
       </div>
-      <h3 className="font-bold text-white mb-2">{title}</h3>
-      <p className="text-sm text-blue-100/70 leading-relaxed">{description}</p>
+      <h3 className="font-bold text-white mb-1.5 sm:mb-2 text-sm sm:text-base">{title}</h3>
+      <p className="text-xs sm:text-sm text-blue-100/70 leading-relaxed">{description}</p>
     </div>
   );
 }
@@ -608,18 +726,18 @@ function FaqItem({ question, answer }: { question: string; answer: string }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="border border-slate-200/80 rounded-xl overflow-hidden bg-white shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)]">
+    <div className="border border-slate-200/80 rounded-lg sm:rounded-xl overflow-hidden bg-white shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)]">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between gap-4 px-5 py-4 text-left hover:bg-slate-50 transition-colors duration-200"
+        className="w-full flex items-center justify-between gap-3 sm:gap-4 px-4 sm:px-5 py-3 sm:py-4 text-left hover:bg-slate-50 transition-colors duration-200"
       >
-        <span className="font-semibold text-[#0b2f73] text-sm md:text-base">{question}</span>
+        <span className="font-semibold text-[#0b2f73] text-xs sm:text-sm md:text-base">{question}</span>
         <ChevronRight
           className={`w-4 h-4 text-[#f5b335] flex-shrink-0 transition-transform duration-300 ${open ? "rotate-90" : ""}`}
         />
       </button>
       {open && (
-        <div className="px-5 pb-4 text-sm text-slate-600 leading-relaxed">
+        <div className="px-4 sm:px-5 pb-3 sm:pb-4 text-xs sm:text-sm text-slate-600 leading-relaxed">
           {answer}
         </div>
       )}

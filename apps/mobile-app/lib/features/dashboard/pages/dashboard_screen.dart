@@ -30,7 +30,7 @@ class DashboardScreen extends ConsumerWidget {
         ? tenants.where((TenantBasic t) => t.id == tenantId).firstOrNull
         : null;
     final schoolName = tenant?.name ?? 'Academia Helm';
-    final stats = ref.watch(dashboardStatsProvider);
+    final statsAsync = ref.watch(dashboardStatsProvider);
     final quickActions = ref.watch(dashboardQuickActionsProvider);
     final role = ref.watch(currentUserRoleProvider) ?? '';
 
@@ -39,9 +39,7 @@ class DashboardScreen extends ConsumerWidget {
       body: RefreshIndicator(
         color: AHColors.navy,
         onRefresh: () async {
-          // Trigger a refresh of dashboard data
           ref.invalidate(dashboardStatsProvider);
-          ref.invalidate(dashboardQuickActionsProvider);
         },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -56,8 +54,15 @@ class DashboardScreen extends ConsumerWidget {
                 role: role,
               ),
 
-              // ── Stats Grid ────────────────────────────────────────
-              _StatsGrid(stats: stats),
+              // ── Stats Grid (async — loading/error/data states) ───
+              statsAsync.when(
+                data: (stats) => _StatsGrid(stats: stats),
+                loading: () => const Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+                error: (_, __) => _StatsGrid(stats: const []),
+              ),
 
               // ── Quick Actions ─────────────────────────────────────
               _QuickActionsSection(actions: quickActions),

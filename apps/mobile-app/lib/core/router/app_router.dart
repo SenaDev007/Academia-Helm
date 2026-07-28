@@ -56,6 +56,8 @@ import '../../features/parents/pages/bulletin_screen.dart';
 import '../../features/parents/pages/child_journal_screen.dart';
 // ⭐ P1-10: Écran Initier paiement (parent)
 import '../../features/parents/pages/initiate_payment_screen.dart';
+// ⭐ Module Documents (parent)
+import '../../features/parents/pages/documents_screen.dart';
 
 // ── Navigation Destinations ───────────────────────────────────────────
 
@@ -431,6 +433,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: '/initiate-payment',
             name: 'initiatePayment',
             builder: (context, state) => const InitiatePaymentScreen(),
+          ),
+
+          // ⭐ Module Documents (parent)
+          GoRoute(
+            path: '/documents',
+            name: 'documents',
+            builder: (context, state) => const DocumentsScreen(),
           ),
 
           GoRoute(

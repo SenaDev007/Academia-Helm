@@ -84,7 +84,7 @@ class AHAdaptiveScaffold extends ConsumerWidget {
                 ))
             .toList(),
         backgroundColor: Colors.white,
-        indicatorColor: AHColors.navy.withValues(alpha: 0.1),
+        indicatorColor: AHColors.navy.withOpacity(0.1),
         height: 64,
       ),
     );
@@ -107,7 +107,7 @@ class AHAdaptiveScaffold extends ConsumerWidget {
                     ))
                 .toList(),
             backgroundColor: Colors.white,
-            indicatorColor: AHColors.navy.withValues(alpha: 0.1),
+            indicatorColor: AHColors.navy.withOpacity(0.1),
             leading: _buildRailLeading(context),
             trailing: _buildRailTrailing(context, ref),
             labelType: NavigationRailLabelType.all,

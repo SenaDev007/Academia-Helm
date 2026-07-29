@@ -23,7 +23,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../loading/loading_messages.dart';
-import '../../core/theme/ah_colors.dart';
+import '../../../theme/ah_colors.dart';
 import 'inline_spinner.dart';
 import 'module_loading.dart';
 import 'skeleton.dart';

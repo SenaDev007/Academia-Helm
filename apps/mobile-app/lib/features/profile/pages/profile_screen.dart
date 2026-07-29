@@ -1,3 +1,5 @@
+import '../../core/theme/ah_spacing.dart';
+import '../../core/theme/ah_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -86,7 +88,7 @@ class ProfileScreen extends ConsumerWidget {
                     style: TextStyle(
                       fontFamily: 'Inter',
                       fontSize: 14,
-                      color: Colors.white.withValues(alpha: 0.7),
+                      color: Colors.white.withOpacity(0.7),
                     ),
                   ),
                   const SizedBox(height: AHSpacing.md),
@@ -96,7 +98,7 @@ class ProfileScreen extends ConsumerWidget {
                       vertical: AHSpacing.sm,
                     ),
                     decoration: BoxDecoration(
-                      color: AHColors.gold.withValues(alpha: 0.2),
+                      color: AHColors.gold.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(AHRadius.full),
                     ),
                     child: Text(
@@ -390,7 +392,7 @@ class _ProfileTile extends StatelessWidget {
         width: 38,
         height: 38,
         decoration: BoxDecoration(
-          color: iconColor.withValues(alpha: 0.1),
+          color: iconColor.withOpacity(0.1),
           borderRadius: BorderRadius.circular(AHRadius.md),
         ),
         child: Icon(icon, color: iconColor, size: 20),

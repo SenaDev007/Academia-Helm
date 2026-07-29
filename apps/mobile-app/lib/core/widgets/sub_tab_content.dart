@@ -87,7 +87,7 @@ class StatCard extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(AHSpacing.sm),
                     decoration: BoxDecoration(
-                      color: iconBgColor ?? AHColors.navy.withValues(alpha: 0.1),
+                      color: iconBgColor ?? AHColors.navy.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(AHSpacing.radiusSM),
                     ),
                     child: Icon(
@@ -231,7 +231,7 @@ class ListItemCard extends StatelessWidget {
                   padding: const EdgeInsets.all(AHSpacing.sm),
                   decoration: BoxDecoration(
                     color: leadingIconBgColor ??
-                        AHColors.navy.withValues(alpha: 0.08),
+                        AHColors.navy.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(AHSpacing.radiusSM),
                   ),
                   child: Icon(
@@ -315,7 +315,7 @@ class PlaceholderContent extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 56, color: AHColors.muted.withValues(alpha: 0.5)),
+            Icon(icon, size: 56, color: AHColors.muted.withOpacity(0.5)),
             const SizedBox(height: AHSpacing.lg),
             Text(
               title,
@@ -344,7 +344,7 @@ class PlaceholderContent extends StatelessWidget {
                 vertical: AHSpacing.sm,
               ),
               decoration: BoxDecoration(
-                color: AHColors.gold.withValues(alpha: 0.1),
+                color: AHColors.gold.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(AHSpacing.radiusFull),
               ),
               child: const Text(
@@ -399,17 +399,17 @@ class StatusBadge extends StatelessWidget {
   (Color, Color) _getColors() {
     switch (type) {
       case StatusBadgeType.success:
-        return (AHColors.success.withValues(alpha: 0.12), AHColors.success);
+        return (AHColors.success.withOpacity(0.12), AHColors.success);
       case StatusBadgeType.warning:
-        return (AHColors.warning.withValues(alpha: 0.12), AHColors.warning);
+        return (AHColors.warning.withOpacity(0.12), AHColors.warning);
       case StatusBadgeType.error:
-        return (AHColors.error.withValues(alpha: 0.12), AHColors.error);
+        return (AHColors.error.withOpacity(0.12), AHColors.error);
       case StatusBadgeType.info:
-        return (AHColors.info.withValues(alpha: 0.12), AHColors.info);
+        return (AHColors.info.withOpacity(0.12), AHColors.info);
       case StatusBadgeType.neutral:
-        return (AHColors.muted.withValues(alpha: 0.12), AHColors.mutedForeground);
+        return (AHColors.muted.withOpacity(0.12), AHColors.mutedForeground);
       case StatusBadgeType.gold:
-        return (AHColors.gold.withValues(alpha: 0.12), AHColors.goldDark);
+        return (AHColors.gold.withOpacity(0.12), AHColors.goldDark);
     }
   }
 }

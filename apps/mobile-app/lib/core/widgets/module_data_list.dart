@@ -25,8 +25,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/theme/ah_colors.dart';
-import '../../core/theme/ah_spacing.dart';
+import '../../theme/ah_colors.dart';
+import '../../theme/ah_spacing.dart';
 import 'loading/module_loading_wrapper.dart';
 import 'sub_tab_content.dart';
 
@@ -194,7 +194,7 @@ class _ModuleEmptyState extends StatelessWidget {
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                color: AHColors.navy.withValues(alpha: 0.08),
+                color: AHColors.navy.withOpacity(0.08),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, size: 32, color: AHColors.muted),

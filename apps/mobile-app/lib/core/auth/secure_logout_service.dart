@@ -131,7 +131,7 @@ class SecureLogoutService {
         completedSteps: completedSteps,
       );
     } catch (e) {
-      return LogoutResult.failureResult(
+      return LogoutResult.failure(
         'Erreur lors de la déconnexion : $e',
         completedSteps: completedSteps,
       );

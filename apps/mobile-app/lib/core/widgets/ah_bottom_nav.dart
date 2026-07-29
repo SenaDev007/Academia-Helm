@@ -23,7 +23,7 @@ class AHBottomNav extends StatelessWidget {
       selectedIndex: selectedIndex,
       onDestinationSelected: onDestinationSelected,
       backgroundColor: Colors.white,
-      indicatorColor: AHColors.navy.withValues(alpha: 0.1),
+      indicatorColor: AHColors.navy.withOpacity(0.1),
       height: 64,
       labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
       destinations: const [

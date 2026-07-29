@@ -167,7 +167,7 @@ class _GradeInputRow extends StatelessWidget {
           // Avatar avec initiale
           CircleAvatar(
             radius: 18,
-            backgroundColor: AHColors.navy.withValues(alpha: 0.1),
+            backgroundColor: AHColors.navy.withOpacity(0.1),
             child: Text(
               name.isNotEmpty ? name[0].toUpperCase() : '?',
               style: TextStyle(color: AHColors.navy, fontSize: 14, fontWeight: FontWeight.bold),

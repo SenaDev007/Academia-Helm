@@ -19,14 +19,14 @@ import '../../../core/network/api_client.dart';
 final canteenDashboardProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/canteen/dashboard');
+  final response = await client.getRaw('/canteen/dashboard');
   return response is Map<String, dynamic> ? response : <String, dynamic>{};
 });
 
 final canteenMenusProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/canteen/menus');
+  final response = await client.getRaw('/canteen/menus');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
 });
@@ -34,7 +34,7 @@ final canteenMenusProvider =
 final canteenReservationsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/canteen/reservations');
+  final response = await client.getRaw('/canteen/reservations');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
 });
@@ -42,7 +42,7 @@ final canteenReservationsProvider =
 final canteenPaymentsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/canteen/payments');
+  final response = await client.getRaw('/canteen/payments');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
 });
@@ -50,7 +50,7 @@ final canteenPaymentsProvider =
 final canteenStatisticsProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/canteen/statistics');
+  final response = await client.getRaw('/canteen/statistics');
   return response is Map<String, dynamic> ? response : <String, dynamic>{};
 });
 

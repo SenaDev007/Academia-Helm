@@ -1,3 +1,5 @@
+import '../../core/theme/ah_spacing.dart';
+import '../../core/theme/ah_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -65,10 +67,10 @@ class PortalSelectScreen extends ConsumerWidget {
           width: 72,
           height: 72,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.15),
+            color: Colors.white.withOpacity(0.15),
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: Colors.white.withValues(alpha: 0.2),
+              color: Colors.white.withOpacity(0.2),
               width: 2,
             ),
           ),
@@ -98,7 +100,7 @@ class PortalSelectScreen extends ConsumerWidget {
           style: TextStyle(
             fontFamily: 'Inter',
             fontSize: 14,
-            color: Colors.white.withValues(alpha: 0.7),
+            color: Colors.white.withOpacity(0.7),
           ),
         ),
       ],
@@ -257,7 +259,7 @@ class _PortalCard extends StatelessWidget {
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
+                    color: Colors.white.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(AHSpacing.r12),
                   ),
                   child: Icon(icon, color: Colors.white, size: 28),
@@ -280,7 +282,7 @@ class _PortalCard extends StatelessWidget {
                   style: TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 11,
-                    color: Colors.white.withValues(alpha: 0.8),
+                    color: Colors.white.withOpacity(0.8),
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -347,7 +349,7 @@ class _PortalCardWide extends StatelessWidget {
                   width: 56,
                   height: 56,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
+                    color: Colors.white.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(AHSpacing.r12),
                   ),
                   child: Icon(icon, color: Colors.white, size: 32),
@@ -372,7 +374,7 @@ class _PortalCardWide extends StatelessWidget {
                         style: TextStyle(
                           fontFamily: 'Inter',
                           fontSize: 13,
-                          color: Colors.white.withValues(alpha: 0.8),
+                          color: Colors.white.withOpacity(0.8),
                         ),
                       ),
                     ],

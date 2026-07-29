@@ -1,3 +1,4 @@
+import '../../core/theme/ah_spacing.dart';
 import 'package:flutter/material.dart';
 import '../../../core/theme/ah_colors.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -149,7 +150,7 @@ class _WelcomeHeader extends StatelessWidget {
                       style: TextStyle(
                         fontFamily: 'Inter',
                         fontSize: 14,
-                        color: Colors.white.withValues(alpha: 0.8),
+                        color: Colors.white.withOpacity(0.8),
                       ),
                     ),
                     const SizedBox(height: AHSpacing.xs),
@@ -189,7 +190,7 @@ class _WelcomeHeader extends StatelessWidget {
               vertical: AHSpacing.sm,
             ),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
+              color: Colors.white.withOpacity(0.15),
               borderRadius: BorderRadius.circular(AHRadius.md),
             ),
             child: Row(
@@ -208,7 +209,7 @@ class _WelcomeHeader extends StatelessWidget {
                       fontFamily: 'Inter',
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
-                      color: Colors.white.withValues(alpha: 0.9),
+                      color: Colors.white.withOpacity(0.9),
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -221,7 +222,7 @@ class _WelcomeHeader extends StatelessWidget {
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: AHColors.gold.withValues(alpha: 0.25),
+                    color: AHColors.gold.withOpacity(0.25),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
@@ -419,7 +420,7 @@ class _ActivityItemWidget extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: item.iconColor.withValues(alpha: 0.1),
+              color: item.iconColor.withOpacity(0.1),
               borderRadius: BorderRadius.circular(AHRadius.md),
             ),
             child: Icon(item.icon, color: item.iconColor, size: 20),

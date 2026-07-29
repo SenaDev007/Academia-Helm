@@ -18,14 +18,14 @@ import '../../../core/network/api_client.dart';
 final infirmaryDashboardProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/infirmary/dashboard');
+  final response = await client.getRaw('/infirmary/dashboard');
   return response is Map<String, dynamic> ? response : <String, dynamic>{};
 });
 
 final infirmaryVisitsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/infirmary/visits');
+  final response = await client.getRaw('/infirmary/visits');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
 });
@@ -33,7 +33,7 @@ final infirmaryVisitsProvider =
 final infirmaryMedicationsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/infirmary/medications');
+  final response = await client.getRaw('/infirmary/medications');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
 });
@@ -41,7 +41,7 @@ final infirmaryMedicationsProvider =
 final infirmaryStatisticsProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/infirmary/statistics');
+  final response = await client.getRaw('/infirmary/statistics');
   return response is Map<String, dynamic> ? response : <String, dynamic>{};
 });
 

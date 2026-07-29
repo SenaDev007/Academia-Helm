@@ -1,3 +1,5 @@
+import '../../core/theme/ah_spacing.dart';
+import '../../core/theme/ah_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -92,7 +94,7 @@ class _LogoutScreenState extends ConsumerState<LogoutScreen> {
                       width: 72,
                       height: 72,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
+                        color: Colors.white.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(18),
                       ),
                       child: const Icon(
@@ -106,7 +108,7 @@ class _LogoutScreenState extends ConsumerState<LogoutScreen> {
                       width: 72,
                       height: 72,
                       decoration: BoxDecoration(
-                        color: AHColors.error.withValues(alpha: 0.2),
+                        color: AHColors.error.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(18),
                       ),
                       child: const Icon(
@@ -140,7 +142,7 @@ class _LogoutScreenState extends ConsumerState<LogoutScreen> {
                       fontSize: 14,
                       color: hasError
                           ? AHColors.errorLight
-                          : Colors.white.withValues(alpha: 0.7),
+                          : Colors.white.withOpacity(0.7),
                     ),
                   ),
                   const SizedBox(height: AHSpacing.xxl),
@@ -151,7 +153,7 @@ class _LogoutScreenState extends ConsumerState<LogoutScreen> {
                       borderRadius: BorderRadius.circular(AHSpacing.r8),
                       child: LinearProgressIndicator(
                         value: overallProgress,
-                        backgroundColor: Colors.white.withValues(alpha: 0.15),
+                        backgroundColor: Colors.white.withOpacity(0.15),
                         valueColor: const AlwaysStoppedAnimation<Color>(
                           AHColors.gold,
                         ),
@@ -191,7 +193,7 @@ class _LogoutScreenState extends ConsumerState<LogoutScreen> {
                       child: Text(
                         'Forcer la déconnexion',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6),
+                          color: Colors.white.withOpacity(0.6),
                         ),
                       ),
                     ),
@@ -236,7 +238,7 @@ class _LogoutScreenState extends ConsumerState<LogoutScreen> {
                   height: 2,
                   color: isCompleted
                       ? AHColors.gold
-                      : Colors.white.withValues(alpha: 0.2),
+                      : Colors.white.withOpacity(0.2),
                 ),
               ),
           ],
@@ -283,7 +285,7 @@ class _StepDot extends StatelessWidget {
         width: 24,
         height: 24,
         decoration: BoxDecoration(
-          color: AHColors.gold.withValues(alpha: 0.3),
+          color: AHColors.gold.withOpacity(0.3),
           shape: BoxShape.circle,
           border: Border.all(color: AHColors.gold, width: 2),
         ),
@@ -305,10 +307,10 @@ class _StepDot extends StatelessWidget {
       width: 24,
       height: 24,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
+        color: Colors.white.withOpacity(0.1),
         shape: BoxShape.circle,
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.2),
+          color: Colors.white.withOpacity(0.2),
           width: 1,
         ),
       ),
@@ -319,7 +321,7 @@ class _StepDot extends StatelessWidget {
             fontFamily: 'Inter',
             fontSize: 10,
             fontWeight: FontWeight.w600,
-            color: Colors.white.withValues(alpha: 0.4),
+            color: Colors.white.withOpacity(0.4),
           ),
         ),
       ),

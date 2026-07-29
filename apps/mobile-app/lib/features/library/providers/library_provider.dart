@@ -19,14 +19,14 @@ import '../../../core/network/api_client.dart';
 final libraryDashboardProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/library/dashboard');
+  final response = await client.getRaw('/library/dashboard');
   return response is Map<String, dynamic> ? response : <String, dynamic>{};
 });
 
 final libraryCatalogProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/library/catalog');
+  final response = await client.getRaw('/library/catalog');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
 });
@@ -34,7 +34,7 @@ final libraryCatalogProvider =
 final libraryBorrowingsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/library/borrowings');
+  final response = await client.getRaw('/library/borrowings');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
 });
@@ -42,7 +42,7 @@ final libraryBorrowingsProvider =
 final libraryReturnsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/library/returns');
+  final response = await client.getRaw('/library/returns');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
 });
@@ -50,7 +50,7 @@ final libraryReturnsProvider =
 final libraryStatisticsProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/library/statistics');
+  final response = await client.getRaw('/library/statistics');
   return response is Map<String, dynamic> ? response : <String, dynamic>{};
 });
 

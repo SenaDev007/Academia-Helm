@@ -13,9 +13,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/theme/ah_colors.dart';
-import '../../core/theme/ah_spacing.dart';
-import '../../core/theme/ah_typography.dart';
+import '../../theme/ah_colors.dart';
+import '../../theme/ah_spacing.dart';
+import '../../theme/ah_typography.dart';
 import 'academic_year_model.dart';
 import 'school_level_provider.dart';
 
@@ -83,7 +83,7 @@ class _SchoolLevelSelectorState extends ConsumerState<SchoolLevelSelector> {
     ThemeData theme,
   ) {
     return Material(
-      color: AHColors.blue.withValues(alpha: 0.1),
+      color: AHColors.blue.withOpacity(0.1),
       borderRadius: BorderRadius.circular(AHSpacing.r8),
       child: InkWell(
         borderRadius: BorderRadius.circular(AHSpacing.r8),
@@ -265,7 +265,7 @@ class _SchoolLevelSelectorState extends ConsumerState<SchoolLevelSelector> {
                         )
                       : null,
                   selected: isSelected,
-                  selectedTileColor: AHColors.gold.withValues(alpha: 0.05),
+                  selectedTileColor: AHColors.gold.withOpacity(0.05),
                   onTap: () {
                     _selectLevel(level);
                     Navigator.of(context).pop();

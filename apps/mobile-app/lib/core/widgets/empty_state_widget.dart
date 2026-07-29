@@ -1,3 +1,5 @@
+import '../theme/ah_colors.dart';
+import '../theme/ah_spacing.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/ah_theme.dart';
@@ -31,7 +33,7 @@ class AHEmptyState extends StatelessWidget {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: AHColors.navy.withValues(alpha: 0.08),
+                color: AHColors.navy.withOpacity(0.08),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, size: 40, color: AHColors.navy),

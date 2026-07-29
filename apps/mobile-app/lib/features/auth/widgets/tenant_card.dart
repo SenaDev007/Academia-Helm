@@ -1,3 +1,5 @@
+import '../../core/theme/ah_spacing.dart';
+import '../../core/theme/ah_colors.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/auth/auth_state.dart';
@@ -38,7 +40,7 @@ class TenantCard extends StatelessWidget {
                 width: 52,
                 height: 52,
                 decoration: BoxDecoration(
-                  color: AHColors.navy.withValues(alpha: 0.1),
+                  color: AHColors.navy.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(AHRadius.md),
                 ),
                 child: tenant.logoUrl != null
@@ -83,7 +85,7 @@ class TenantCard extends StatelessWidget {
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: AHColors.gold.withValues(alpha: 0.15),
+                              color: AHColors.gold.withOpacity(0.15),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
@@ -105,7 +107,7 @@ class TenantCard extends StatelessWidget {
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: AHColors.navy.withValues(alpha: 0.08),
+                              color: AHColors.navy.withOpacity(0.08),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(

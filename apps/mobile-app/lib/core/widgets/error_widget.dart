@@ -1,3 +1,5 @@
+import '../theme/ah_colors.dart';
+import '../theme/ah_spacing.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/ah_theme.dart';
@@ -88,7 +90,7 @@ class AHErrorBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: AHColors.errorLight,
         borderRadius: BorderRadius.circular(AHRadius.md),
-        border: Border.all(color: AHColors.error.withValues(alpha: 0.3)),
+        border: Border.all(color: AHColors.error.withOpacity(0.3)),
       ),
       child: Row(
         children: [

@@ -1,3 +1,5 @@
+import '../../core/theme/ah_spacing.dart';
+import '../../core/theme/ah_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -61,7 +63,7 @@ class _LoginFormState extends State<LoginForm> {
                 color: AHColors.errorLight,
                 borderRadius: BorderRadius.circular(AHRadius.md),
                 border: Border.all(
-                    color: AHColors.error.withValues(alpha: 0.3)),
+                    color: AHColors.error.withOpacity(0.3)),
               ),
               child: Row(
                 children: [
@@ -175,7 +177,7 @@ class _LoginFormState extends State<LoginForm> {
                   borderRadius: BorderRadius.circular(AHRadius.md),
                 ),
                 disabledBackgroundColor:
-                    AHColors.navy.withValues(alpha: 0.5),
+                    AHColors.navy.withOpacity(0.5),
               ),
               child: widget.isLoading
                   ? const SizedBox(

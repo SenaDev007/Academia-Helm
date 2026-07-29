@@ -73,7 +73,7 @@ class _TakeAttendanceScreenState extends ConsumerState<TakeAttendanceScreen> {
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(AHSpacing.md),
-                color: AHColors.navy.withValues(alpha: 0.05),
+                color: AHColors.navy.withOpacity(0.05),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -200,7 +200,7 @@ class _StudentAttendanceRow extends StatelessWidget {
           // Avatar
           CircleAvatar(
             radius: 20,
-            backgroundColor: AHColors.navy.withValues(alpha: 0.1),
+            backgroundColor: AHColors.navy.withOpacity(0.1),
             backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl!) : null,
             child: avatarUrl == null
                 ? Text(
@@ -280,9 +280,9 @@ class _StatusButton extends StatelessWidget {
         height: 36,
         margin: const EdgeInsets.only(left: 4),
         decoration: BoxDecoration(
-          color: isSelected ? color : color.withValues(alpha: 0.1),
+          color: isSelected ? color : color.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
-          border: isSelected ? null : Border.all(color: color.withValues(alpha: 0.3)),
+          border: isSelected ? null : Border.all(color: color.withOpacity(0.3)),
         ),
         child: Icon(
           icon,

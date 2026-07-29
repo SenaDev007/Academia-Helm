@@ -72,7 +72,7 @@ class _SettingsScreenFullState extends State<SettingsScreenFull> {
           // School logo placeholder
           Center(child: Container(
             width: 100, height: 100,
-            decoration: BoxDecoration(color: AHColors.navy.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(AHRadius.lg), border: Border.all(color: AHColors.gray200)),
+            decoration: BoxDecoration(color: AHColors.navy.withOpacity(0.08), borderRadius: BorderRadius.circular(AHRadius.lg), border: Border.all(color: AHColors.gray200)),
             child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
               Icon(Icons.school, color: AHColors.navy, size: 36),
               SizedBox(height: 4),
@@ -109,7 +109,7 @@ class _SettingsScreenFullState extends State<SettingsScreenFull> {
         _SettingsCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             Container(padding: const EdgeInsets.symmetric(horizontal: AHSpacing.sm, vertical: 4),
-              decoration: BoxDecoration(color: AHColors.success.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
+              decoration: BoxDecoration(color: AHColors.success.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
               child: const Text('Active', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AHColors.success))),
             const SizedBox(width: AHSpacing.sm),
             const Text('2024-2025', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AHColors.gray900)),
@@ -275,7 +275,7 @@ class _SettingsScreenFullState extends State<SettingsScreenFull> {
         _SettingsCard(child: Column(children: [
           Row(children: [
             Container(width: 64, height: 64,
-              decoration: BoxDecoration(color: AHColors.navy.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(AHRadius.md), border: Border.all(color: AHColors.gray200)),
+              decoration: BoxDecoration(color: AHColors.navy.withOpacity(0.08), borderRadius: BorderRadius.circular(AHRadius.md), border: Border.all(color: AHColors.gray200)),
               child: const Icon(Icons.verified, color: AHColors.navy, size: 32)),
             const SizedBox(width: AHSpacing.md),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -289,7 +289,7 @@ class _SettingsScreenFullState extends State<SettingsScreenFull> {
         _SettingsCard(child: Column(children: [
           Row(children: [
             Container(width: 64, height: 64,
-              decoration: BoxDecoration(color: AHColors.gold.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(AHRadius.md), border: Border.all(color: AHColors.gray200)),
+              decoration: BoxDecoration(color: AHColors.gold.withOpacity(0.12), borderRadius: BorderRadius.circular(AHRadius.md), border: Border.all(color: AHColors.gray200)),
               child: const Icon(Icons.draw, color: AHColors.gold, size: 32)),
             const SizedBox(width: AHSpacing.md),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -380,7 +380,7 @@ class _SettingsScreenFullState extends State<SettingsScreenFull> {
         Container(
           width: double.infinity, padding: const EdgeInsets.all(AHSpacing.xl),
           decoration: BoxDecoration(color: AHColors.warningLight, borderRadius: BorderRadius.circular(AHRadius.lg),
-            border: Border.all(color: AHColors.warning.withValues(alpha: 0.3))),
+            border: Border.all(color: AHColors.warning.withOpacity(0.3))),
           child: Column(children: [
             const Icon(Icons.cloud_off, color: AHColors.warning, size: 40),
             const SizedBox(height: AHSpacing.md),
@@ -525,7 +525,7 @@ class _ListItem extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: AHSpacing.sm), padding: const EdgeInsets.all(AHSpacing.md),
       decoration: BoxDecoration(color: AHColors.white, borderRadius: BorderRadius.circular(AHRadius.md), border: Border.all(color: AHColors.gray200)),
       child: Row(children: [
-        Container(width: 40, height: 40, decoration: BoxDecoration(color: iconColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(AHRadius.md)),
+        Container(width: 40, height: 40, decoration: BoxDecoration(color: iconColor.withOpacity(0.1), borderRadius: BorderRadius.circular(AHRadius.md)),
           child: Icon(icon, color: iconColor, size: 20)),
         const SizedBox(width: AHSpacing.md),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -549,7 +549,7 @@ class _StatMini extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(padding: const EdgeInsets.all(AHSpacing.md),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(AHRadius.md)),
+      decoration: BoxDecoration(color: color.withOpacity(0.06), borderRadius: BorderRadius.circular(AHRadius.md)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: color)),
         const SizedBox(height: 2), Text(label, style: const TextStyle(fontSize: 11, color: AHColors.gray600)),
@@ -567,7 +567,7 @@ class _FeatureToggle extends StatelessWidget {
       decoration: BoxDecoration(color: AHColors.white, borderRadius: BorderRadius.circular(AHRadius.md), border: Border.all(color: AHColors.gray200)),
       child: Row(children: [
         Container(width: 40, height: 40, decoration: BoxDecoration(
-          color: isEnabled ? AHColors.navy.withValues(alpha: 0.1) : AHColors.gray100,
+          color: isEnabled ? AHColors.navy.withOpacity(0.1) : AHColors.gray100,
           borderRadius: BorderRadius.circular(AHRadius.md)),
           child: Icon(icon, color: isEnabled ? AHColors.navy : AHColors.gray400, size: 20)),
         const SizedBox(width: AHSpacing.md),

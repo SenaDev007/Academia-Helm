@@ -130,7 +130,7 @@ class AHTheme {
         elevation: AHSpacing.elevationNone,
         shape: AHCardStyle.cardShape(),
         margin: const EdgeInsets.symmetric(
-          horizontal: AHSpacing.s46,
+          horizontal: AHSpacing.s48,
           vertical: AHSpacing.s4,
         ),
         clipBehavior: Clip.antiAlias,
@@ -157,7 +157,7 @@ class AHTheme {
         fillColor: colorScheme.surface,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: AHSpacing.inputHorizontalPadding,
-          vertical: AHSpacing.s42,
+          vertical: AHSpacing.s40,
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AHSpacing.r8),

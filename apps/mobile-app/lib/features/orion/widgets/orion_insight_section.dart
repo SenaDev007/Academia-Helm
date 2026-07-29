@@ -55,15 +55,15 @@ class _OrionInsightSectionState extends State<OrionInsightSection> {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                AHColors.navy.withValues(alpha: 0.04),
-                AHColors.gold.withValues(alpha: 0.06),
+                AHColors.navy.withOpacity(0.04),
+                AHColors.gold.withOpacity(0.06),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(AHRadius.lg),
             border: Border.all(
-              color: AHColors.navy.withValues(alpha: 0.1),
+              color: AHColors.navy.withOpacity(0.1),
             ),
           ),
           child: Column(

@@ -1,3 +1,5 @@
+import '../theme/ah_colors.dart';
+import '../theme/ah_spacing.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -67,7 +69,7 @@ class AHAppBar extends ConsumerWidget implements PreferredSizeWidget {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
+                    color: Colors.white.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(AHRadius.md),
                   ),
                   child: const Icon(
@@ -102,7 +104,7 @@ class AHAppBar extends ConsumerWidget implements PreferredSizeWidget {
                         fontFamily: 'Inter',
                         fontSize: 11,
                         fontWeight: FontWeight.w500,
-                        color: Colors.white.withValues(alpha: 0.7),
+                        color: Colors.white.withOpacity(0.7),
                       ),
                     ),
                   ],

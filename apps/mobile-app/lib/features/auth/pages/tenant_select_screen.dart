@@ -1,3 +1,5 @@
+import '../../core/theme/ah_spacing.dart';
+import '../../core/theme/ah_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -80,7 +82,7 @@ class _TenantSelectScreenState extends ConsumerState<TenantSelectScreen> {
                       width: 56,
                       height: 56,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
+                        color: Colors.white.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: const Icon(
@@ -106,7 +108,7 @@ class _TenantSelectScreenState extends ConsumerState<TenantSelectScreen> {
                       style: TextStyle(
                         fontFamily: 'Inter',
                         fontSize: 14,
-                        color: Colors.white.withValues(alpha: 0.7),
+                        color: Colors.white.withOpacity(0.7),
                       ),
                     ),
                   ],
@@ -262,7 +264,7 @@ class _TenantSelectScreenState extends ConsumerState<TenantSelectScreen> {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: AHColors.navy.withValues(alpha: 0.1),
+                  color: AHColors.navy.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(AHRadius.md),
                 ),
                 child: Center(

@@ -1,3 +1,5 @@
+import '../../core/theme/ah_spacing.dart';
+import '../../core/theme/ah_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -123,10 +125,10 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
           width: 72,
           height: 72,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.15),
+            color: Colors.white.withOpacity(0.15),
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: Colors.white.withValues(alpha: 0.2),
+              color: Colors.white.withOpacity(0.2),
               width: 2,
             ),
           ),
@@ -153,7 +155,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
           style: TextStyle(
             fontFamily: 'Inter',
             fontSize: 14,
-            color: Colors.white.withValues(alpha: 0.7),
+            color: Colors.white.withOpacity(0.7),
           ),
         ),
       ],
@@ -169,7 +171,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
         borderRadius: BorderRadius.circular(AHRadius.xl),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
+            color: Colors.black.withOpacity(0.15),
             blurRadius: 24,
             offset: const Offset(0, 8),
           ),
@@ -198,7 +200,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                 color: AHColors.errorLight,
                 borderRadius: BorderRadius.circular(AHRadius.md),
                 border: Border.all(
-                    color: AHColors.error.withValues(alpha: 0.3)),
+                    color: AHColors.error.withOpacity(0.3)),
               ),
               child: Row(
                 children: [
@@ -256,7 +258,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                   borderRadius: BorderRadius.circular(AHRadius.md),
                 ),
                 disabledBackgroundColor:
-                    AHColors.navy.withValues(alpha: 0.5),
+                    AHColors.navy.withOpacity(0.5),
               ),
               child: _isLoading
                   ? const SizedBox(

@@ -493,7 +493,7 @@ class _FederisScreenState extends State<FederisScreen> {
       Container(
         width: double.infinity, padding: const EdgeInsets.all(AHSpacing.xl),
         decoration: BoxDecoration(color: AHColors.successLight, borderRadius: BorderRadius.circular(AHRadius.lg),
-          border: Border.all(color: AHColors.success.withValues(alpha: 0.3))),
+          border: Border.all(color: AHColors.success.withOpacity(0.3))),
         child: Column(children: [
           const Icon(Icons.payment, color: AHColors.success, size: 40),
           const SizedBox(height: AHSpacing.md),
@@ -552,7 +552,7 @@ class _FStatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(width: 160, padding: const EdgeInsets.all(AHSpacing.md),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(AHRadius.lg), border: Border.all(color: color.withValues(alpha: 0.15))),
+      decoration: BoxDecoration(color: color.withOpacity(0.06), borderRadius: BorderRadius.circular(AHRadius.lg), border: Border.all(color: color.withOpacity(0.15))),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Icon(icon, color: color, size: 22), const SizedBox(height: AHSpacing.sm),
         Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: color)),
@@ -569,7 +569,7 @@ class _FListItem extends StatelessWidget {
     return Container(margin: const EdgeInsets.only(bottom: AHSpacing.sm), padding: const EdgeInsets.all(AHSpacing.md),
       decoration: BoxDecoration(color: AHColors.white, borderRadius: BorderRadius.circular(AHRadius.md), border: Border.all(color: AHColors.gray200)),
       child: Row(children: [
-        Container(width: 40, height: 40, decoration: BoxDecoration(color: iconColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(AHRadius.md)),
+        Container(width: 40, height: 40, decoration: BoxDecoration(color: iconColor.withOpacity(0.1), borderRadius: BorderRadius.circular(AHRadius.md)),
           child: Icon(icon, color: iconColor, size: 20)),
         const SizedBox(width: AHSpacing.md),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -609,7 +609,7 @@ class _FStatMini extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(padding: const EdgeInsets.all(AHSpacing.md),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(AHRadius.md)),
+      decoration: BoxDecoration(color: color.withOpacity(0.06), borderRadius: BorderRadius.circular(AHRadius.md)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: color)),
         const SizedBox(height: 2), Text(label, style: const TextStyle(fontSize: 11, color: AHColors.gray600)),

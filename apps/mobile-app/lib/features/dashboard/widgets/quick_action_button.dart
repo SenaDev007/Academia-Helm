@@ -1,3 +1,5 @@
+import '../../core/theme/ah_spacing.dart';
+import '../../core/theme/ah_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -23,10 +25,10 @@ class QuickActionButton extends StatelessWidget {
             vertical: AHSpacing.md,
           ),
           decoration: BoxDecoration(
-            color: AHColors.navy.withValues(alpha: 0.04),
+            color: AHColors.navy.withOpacity(0.04),
             borderRadius: BorderRadius.circular(AHRadius.lg),
             border: Border.all(
-              color: AHColors.navy.withValues(alpha: 0.08),
+              color: AHColors.navy.withOpacity(0.08),
             ),
           ),
           child: Column(
@@ -36,7 +38,7 @@ class QuickActionButton extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: AHColors.navy.withValues(alpha: 0.1),
+                  color: AHColors.navy.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(AHRadius.md),
                 ),
                 child: Icon(

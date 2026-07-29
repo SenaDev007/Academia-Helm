@@ -19,14 +19,14 @@ import '../../../core/network/api_client.dart';
 final platformDashboardProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/platform/dashboard');
+  final response = await client.getRaw('/platform/dashboard');
   return response is Map<String, dynamic> ? response : <String, dynamic>{};
 });
 
 final platformTenantsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/platform/tenants');
+  final response = await client.getRaw('/platform/tenants');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
 });
@@ -34,7 +34,7 @@ final platformTenantsProvider =
 final platformUsersProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/platform/users');
+  final response = await client.getRaw('/platform/users');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
 });
@@ -42,7 +42,7 @@ final platformUsersProvider =
 final platformAuditLogsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/platform/audit');
+  final response = await client.getRaw('/platform/audit');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
 });
@@ -50,7 +50,7 @@ final platformAuditLogsProvider =
 final platformStatisticsProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/platform/statistics');
+  final response = await client.getRaw('/platform/statistics');
   return response is Map<String, dynamic> ? response : <String, dynamic>{};
 });
 

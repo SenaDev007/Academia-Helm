@@ -7,6 +7,7 @@ import '../widgets/adaptive_scaffold.dart';
 import 'route_guards.dart';
 import '../auth/auth_notifier.dart';
 import '../theme/ah_colors.dart';
+import '../auth/auth_state.dart';
 import '../auth/auth_providers.dart';
 import '../../features/auth/pages/splash_screen.dart';
 import '../../features/auth/pages/login_screen.dart';

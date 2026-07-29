@@ -13,9 +13,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/theme/ah_colors.dart';
-import '../../core/theme/ah_spacing.dart';
-import '../../core/theme/ah_typography.dart';
+import '../../theme/ah_colors.dart';
+import '../../theme/ah_spacing.dart';
+import '../../theme/ah_typography.dart';
 import 'academic_year_model.dart';
 import 'academic_year_provider.dart';
 
@@ -84,7 +84,7 @@ class _AcademicYearSelectorState extends ConsumerState<AcademicYearSelector> {
     ThemeData theme,
   ) {
     return Material(
-      color: AHColors.navy.withValues(alpha: 0.1),
+      color: AHColors.navy.withOpacity(0.1),
       borderRadius: BorderRadius.circular(AHSpacing.r8),
       child: InkWell(
         borderRadius: BorderRadius.circular(AHSpacing.r8),

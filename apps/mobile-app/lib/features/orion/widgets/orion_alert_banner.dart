@@ -80,10 +80,10 @@ class _OrionAlertBannerState extends ConsumerState<OrionAlertBanner> {
             vertical: AHSpacing.xs,
           ),
           decoration: BoxDecoration(
-            color: bannerColor.withValues(alpha: 0.1),
+            color: bannerColor.withOpacity(0.1),
             borderRadius: BorderRadius.circular(AHRadius.lg),
             border: Border.all(
-              color: bannerColor.withValues(alpha: 0.3),
+              color: bannerColor.withOpacity(0.3),
             ),
           ),
           child: Column(

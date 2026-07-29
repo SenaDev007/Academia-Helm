@@ -1,3 +1,5 @@
+import '../../core/theme/ah_spacing.dart';
+import '../../core/theme/ah_colors.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/ah_theme.dart';
@@ -36,7 +38,7 @@ class StatCard extends StatelessWidget {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: stat.color.withValues(alpha: 0.1),
+                    color: stat.color.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(AHRadius.md),
                   ),
                   child: Icon(stat.icon, color: stat.color, size: 22),
@@ -86,7 +88,7 @@ class StatCard extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         color: (isUp ? AHColors.successLight : AHColors.errorLight)
-            .withValues(alpha: 0.8),
+            .withOpacity(0.8),
         borderRadius: BorderRadius.circular(AHRadius.full),
       ),
       child: Row(

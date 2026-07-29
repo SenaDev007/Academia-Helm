@@ -151,7 +151,7 @@ class _Avatar extends StatelessWidget {
     }
     return CircleAvatar(
       radius: 24,
-      backgroundColor: AHColors.navy.withValues(alpha: 0.1),
+      backgroundColor: AHColors.navy.withOpacity(0.1),
       child: Text(
         child.initials,
         style: TextStyle(
@@ -217,7 +217,7 @@ class _AlertChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
+        color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(

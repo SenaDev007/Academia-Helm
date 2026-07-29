@@ -19,14 +19,14 @@ import '../../../core/network/api_client.dart';
 final qhseDashboardProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/qhse/dashboard');
+  final response = await client.getRaw('/qhse/dashboard');
   return response is Map<String, dynamic> ? response : <String, dynamic>{};
 });
 
 final qhseAuditsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/qhse/audits');
+  final response = await client.getRaw('/qhse/audits');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
 });
@@ -34,7 +34,7 @@ final qhseAuditsProvider =
 final qhseIncidentsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/qhse/incidents');
+  final response = await client.getRaw('/qhse/incidents');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
 });
@@ -42,7 +42,7 @@ final qhseIncidentsProvider =
 final qhseRisksProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/qhse/risks');
+  final response = await client.getRaw('/qhse/risks');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
 });
@@ -50,7 +50,7 @@ final qhseRisksProvider =
 final qhseStatisticsProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.get('/qhse/statistics');
+  final response = await client.getRaw('/qhse/statistics');
   return response is Map<String, dynamic> ? response : <String, dynamic>{};
 });
 

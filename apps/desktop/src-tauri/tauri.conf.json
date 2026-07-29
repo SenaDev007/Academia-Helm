@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "identifier": "com.yehiortech.academiahelm.desktop",
   "build": {
+    "frontendDist": "../frontend",
     "devUrl": "http://localhost:3001/desktop",
     "beforeDevCommand": "cd ../web-app && npm run dev",
     "beforeBuildCommand": ""

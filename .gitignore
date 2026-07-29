@@ -89,3 +89,4 @@ scripts/node_modules/
 .jdk/
 tool-results/
 apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/

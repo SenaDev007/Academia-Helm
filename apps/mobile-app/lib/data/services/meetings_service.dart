@@ -13,11 +13,11 @@
 /// - getDecisions, createDecision (Décisions)
 /// ============================================================================
 
-import '../../core/crud/base_crud_service.dart';
-import '../../core/network/api_config.dart';
-import '../../core/network/api_result.dart';
-import '../../core/network/api_client.dart';
-import '../../core/offline/offline_service.dart';
+import '../../../core/crud/base_crud_service.dart';
+import '../../../core/network/api_config.dart';
+import '../../../core/network/api_result.dart';
+import '../../../core/network/api_client.dart';
+import '../../../core/offline/offline_service.dart';
 
 class MeetingsService extends BaseCrudService {
   MeetingsService()

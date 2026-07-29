@@ -29,8 +29,7 @@ class ScheduleApi {
 
     return result.when(
       success: (data) {
-        final List<dynamic> items =
-            data['data'] ?? data['schedule'] ?? <dynamic>[];
+        final List<dynamic> items = (data['data'] ?? data['schedule'] ?? <dynamic>[]) as List<dynamic>;
         return ApiResult.success(
           items
               .map((e) => ScheduleEntryDto.fromJson(e as Map<String, dynamic>)

@@ -22,11 +22,11 @@
 /// - getKpiDashboard, getOrionDashboard (Analytics)
 /// ============================================================================
 
-import '../../core/crud/base_crud_service.dart';
-import '../../core/network/api_config.dart';
-import '../../core/network/api_result.dart';
-import '../../core/network/api_client.dart';
-import '../../core/offline/offline_service.dart';
+import '../../../core/crud/base_crud_service.dart';
+import '../../../core/network/api_config.dart';
+import '../../../core/network/api_result.dart';
+import '../../../core/network/api_client.dart';
+import '../../../core/offline/offline_service.dart';
 
 class PedagogyService extends BaseCrudService {
   PedagogyService()
@@ -387,7 +387,7 @@ class PedagogyService extends BaseCrudService {
   /// Retire une matière d'une classe.
   Future<ApiResult<void>> removeClassSubject(String id) async {
     return apiDeleteWithOfflineFallback(
-      ApiConfig.classSubjectById(id),
+      ApiConfig.classSubjects(id),
       id,
     );
   }
@@ -430,7 +430,7 @@ class PedagogyService extends BaseCrudService {
     String schoolLevelId,
   ) async {
     final isConnected =
-        await OfflineService.instance._connectivityService.isConnected;
+        await OfflineService.instance.connectivityService.isConnected;
     if (!isConnected) {
       final results = await searchLocal(
         filters: {'academicYearId': academicYearId},

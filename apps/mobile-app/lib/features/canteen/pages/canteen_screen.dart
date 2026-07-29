@@ -75,10 +75,10 @@ class _MenusContent extends ConsumerWidget {
         if (data != null) ref.read(canteenMutationProvider.notifier).createMenu(data);
       },
       itemBuilder: (item) => ListItemCard(
-        title: item['name'] ?? 'Menu',
-        subtitle: item['items'] ?? item['date'] ?? '',
+        title: (item['name'] as String?) ?? 'Menu',
+        subtitle: (item['items'] as String?) ?? (item['date'] as String?) ?? '',
         leadingIcon: Icons.today,
-        badge: StatusBadge(label: item['status'] ?? 'Actif', type: StatusBadgeType.success),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Actif', type: StatusBadgeType.success),
       ),
     );
   }
@@ -99,8 +99,8 @@ class _ReservationsContent extends ConsumerWidget {
       emptySubtitle: 'Les réservations apparaîtront ici',
       onRetry: () => ref.invalidate(canteenReservationsProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['date'] ?? 'Réservation',
-        subtitle: '${item['count'] ?? ''} repas',
+        title: (item['date'] as String?) ?? 'Réservation',
+        subtitle: '${(item['count'] as String?) ?? ''} repas',
         leadingIcon: Icons.bookmark,
       ),
     );
@@ -117,10 +117,10 @@ class _PaymentsContent extends ConsumerWidget {
       emptySubtitle: 'Les paiements apparaîtront ici',
       onRetry: () => ref.invalidate(canteenPaymentsProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['reference'] ?? 'Facture',
-        subtitle: '${item['amount'] ?? ''} €',
+        title: (item['reference'] as String?) ?? 'Facture',
+        subtitle: '${(item['amount'] as String?) ?? ''} €',
         leadingIcon: Icons.receipt,
-        badge: StatusBadge(label: item['status'] ?? 'En cours', type: StatusBadgeType.warning),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'En cours', type: StatusBadgeType.warning),
       ),
     );
   }

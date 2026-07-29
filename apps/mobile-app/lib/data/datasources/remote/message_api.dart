@@ -35,8 +35,7 @@ class MessageApi {
 
     return result.when(
       success: (data) {
-        final List<dynamic> items =
-            data['data'] ?? data['messages'] ?? <dynamic>[];
+        final List<dynamic> items = (data['data'] ?? data['messages'] ?? <dynamic>[]) as List<dynamic>;
         return ApiResult.success(
           items
               .map((e) => SchoolMessageDto.fromJson(e as Map<String, dynamic>)

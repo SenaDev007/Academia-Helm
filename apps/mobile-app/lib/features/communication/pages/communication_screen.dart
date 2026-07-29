@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../messages/providers/messages_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/enums/module_config.dart';
@@ -9,6 +8,8 @@ import '../../../core/widgets/module_page_shell.dart';
 import '../../../core/widgets/module_data_list.dart';
 import '../../../core/widgets/sub_tab_content.dart';
 import '../../../core/widgets/loading/module_loading_wrapper.dart';
+import '../../communication/providers/communication_provider.dart';
+import '../../messages/providers/messages_provider.dart';
 import '../../orion/providers/orion_provider.dart';
 import '../../orion/widgets/orion_alert_banner.dart';
 import '../../orion/widgets/orion_kpi_card.dart';
@@ -84,15 +85,28 @@ class _InboxContent extends ConsumerWidget {
   const _InboxContent();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final messagesAsync = ref.watch(messagesListProvider(MessageFilter.all));
+    // Convert AsyncValue<List<Message>> to AsyncValue<List<Map<String, dynamic>>>
+    final itemsAsync = messagesAsync.whenData(
+      (messages) => messages
+          .map((m) => <String, dynamic>{
+                'sender': m.senderName,
+                'subject': m.title,
+                'preview': m.content,
+                'date': m.date.toIso8601String(),
+                'read': m.isRead,
+              })
+          .toList(),
+    );
     return ModuleDataList(
-      itemsAsync: ref.watch(messagesListProvider(MessageFilter.all)),
+      itemsAsync: itemsAsync,
       moduleName: 'Boîte de réception',
       emptyTitle: 'Aucun message',
       emptySubtitle: 'Votre boîte de réception est vide',
       onRetry: () => ref.invalidate(messagesListProvider(MessageFilter.all)),
       itemBuilder: (item) => ListItemCard(
-        title: item['sender'] ?? item['subject'] ?? 'Message',
-        subtitle: item['preview'] ?? item['date'] ?? '',
+        title: (item['sender'] as String?) ?? (item['subject'] as String?) ?? 'Message',
+        subtitle: (item['preview'] as String?) ?? (item['date'] as String?) ?? '',
         leadingIcon: Icons.mail,
         badge: StatusBadge(label: item['read'] == true ? 'Lu' : 'Non lu', type: item['read'] == true ? StatusBadgeType.neutral : StatusBadgeType.gold),
       ),
@@ -104,17 +118,30 @@ class _SentContent extends ConsumerWidget {
   const _SentContent();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final messagesAsync = ref.watch(messagesListProvider(MessageFilter.all));
+    // Convert AsyncValue<List<Message>> to AsyncValue<List<Map<String, dynamic>>>
+    final itemsAsync = messagesAsync.whenData(
+      (messages) => messages
+          .map((m) => <String, dynamic>{
+                'sender': m.senderName,
+                'subject': m.title,
+                'preview': m.content,
+                'date': m.date.toIso8601String(),
+                'read': m.isRead,
+              })
+          .toList(),
+    );
     return ModuleDataList(
-      itemsAsync: ref.watch(messagesListProvider(MessageFilter.all)),
+      itemsAsync: itemsAsync,
       moduleName: 'Envoyés',
       emptyTitle: 'Aucun message envoyé',
       emptySubtitle: 'Les messages envoyés apparaîtront ici',
       onRetry: () => ref.invalidate(messagesListProvider(MessageFilter.all)),
       itemBuilder: (item) => ListItemCard(
-        title: item['subject'] ?? 'Message envoyé',
-        subtitle: '${item['recipients'] ?? ''} - ${item['date'] ?? ''}',
+        title: (item['subject'] as String?) ?? 'Message envoyé',
+        subtitle: '${(item['recipients'] as String?) ?? ''} - ${(item['date'] as String?) ?? ''}',
         leadingIcon: Icons.send,
-        badge: StatusBadge(label: item['status'] ?? 'Délivré', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Délivré', type: _st(item['status'])),
       ),
     );
   }
@@ -140,10 +167,10 @@ class _AnnouncementsContent extends ConsumerWidget {
       },
       addLabel: 'Créer une annonce',
       itemBuilder: (item) => ListItemCard(
-        title: item['title'] ?? 'Annonce',
-        subtitle: item['date'] ?? '',
+        title: (item['title'] as String?) ?? 'Annonce',
+        subtitle: (item['date'] as String?) ?? '',
         leadingIcon: Icons.campaign,
-        badge: StatusBadge(label: item['status'] ?? 'Active', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Active', type: _st(item['status'])),
       ),
     );
   }
@@ -214,7 +241,7 @@ class _OrionContent extends ConsumerWidget {
           children: kpis.take(4).map((kpi) => SizedBox(
             width: (MediaQuery.of(context).size.width - AHSpacing.xl * 2 - AHSpacing.sm * 3) / 4,
             child: OrionKpiCard(
-              label: kpi['label'] ?? kpi['title'] ?? 'KPI',
+              label: (kpi['label'] as String?) ?? (kpi['title'] as String?) ?? 'KPI',
               value: kpi['value']?.toString() ?? '—',
               trend: kpi['trend'] as String?,
               trendValue: kpi['trendValue'] as String?,
@@ -239,8 +266,8 @@ class _OrionContent extends ConsumerWidget {
             child: Text('Aucune alerte active', style: TextStyle(color: AHColors.gray500)),
           );
           return Column(children: alerts.take(5).map((a) => ListItemCard(
-            title: a['title'] ?? 'Alerte',
-            subtitle: a['description'] ?? '',
+            title: (a['title'] as String?) ?? 'Alerte',
+            subtitle: (a['description'] as String?) ?? '',
             leadingIcon: Icons.warning_amber,
             leadingIconColor: AHColors.warning,
           )).toList());

@@ -82,3 +82,9 @@ download/
 # Divergent repo clones (not the active project)
 repo/
 scripts/node_modules/
+---
+# Local SDK installations
+.flutter-sdk/
+.android-sdk/
+.jdk/
+tool-results/

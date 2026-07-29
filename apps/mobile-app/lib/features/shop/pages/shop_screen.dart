@@ -77,10 +77,10 @@ class _ProductsContent extends ConsumerWidget {
         if (data != null) ref.read(shopMutationProvider.notifier).createProduct(data);
       },
       itemBuilder: (item) => ListItemCard(
-        title: item['name'] ?? 'Produit',
-        subtitle: '${item['price'] ?? '—'} € - ${item['category'] ?? ''}',
+        title: (item['name'] as String?) ?? 'Produit',
+        subtitle: '${(item['price'] as String?) ?? '—'} € - ${(item['category'] as String?) ?? ''}',
         leadingIcon: Icons.inventory_2,
-        badge: StatusBadge(label: item['status'] ?? 'En stock', type: StatusBadgeType.success),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'En stock', type: StatusBadgeType.success),
       ),
     );
   }
@@ -97,10 +97,10 @@ class _OrdersContent extends ConsumerWidget {
       emptySubtitle: 'Les commandes apparaîtront ici',
       onRetry: () => ref.invalidate(shopOrdersProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['reference'] ?? 'Commande',
-        subtitle: '${item['customer'] ?? ''} - ${item['amount'] ?? ''} €',
+        title: (item['reference'] as String?) ?? 'Commande',
+        subtitle: '${(item['customer'] as String?) ?? ''} - ${(item['amount'] as String?) ?? ''} €',
         leadingIcon: Icons.shopping_cart,
-        badge: StatusBadge(label: item['status'] ?? 'En attente', type: StatusBadgeType.warning),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'En attente', type: StatusBadgeType.warning),
       ),
     );
   }
@@ -117,10 +117,10 @@ class _PaymentsContent extends ConsumerWidget {
       emptySubtitle: 'Les paiements apparaîtront ici',
       onRetry: () => ref.invalidate(shopPaymentsProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['reference'] ?? 'Paiement',
-        subtitle: '${item['amount'] ?? ''} €',
+        title: (item['reference'] as String?) ?? 'Paiement',
+        subtitle: '${(item['amount'] as String?) ?? ''} €',
         leadingIcon: Icons.credit_card,
-        badge: StatusBadge(label: item['status'] ?? 'En attente', type: StatusBadgeType.warning),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'En attente', type: StatusBadgeType.warning),
       ),
     );
   }

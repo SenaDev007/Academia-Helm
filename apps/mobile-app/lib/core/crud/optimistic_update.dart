@@ -139,7 +139,7 @@ class OptimisticUpdate {
       // Pas d'état actuel → exécuter sans optimisme
       final result = await mutation();
       result.when(
-        success: onSuccess,
+        success: (data) => onSuccess?.call(data),
         failure: (e) => onError?.call(e),
         loading: () {},
       );
@@ -162,19 +162,19 @@ class OptimisticUpdate {
         success: (data) {
           onSuccess?.call(data);
           // Invalider le provider pour forcer le refetch
-          ref.invalidate(provider);
+          (ref as dynamic).invalidate(provider);
           return result;
         },
         failure: (error) {
           // Erreur → l'invalidation ramènera les données serveur
-          ref.invalidate(provider);
+          (ref as dynamic).invalidate(provider);
           onError?.call(error);
           return result;
         },
         loading: () => result,
       );
     } catch (e) {
-      ref.invalidate(provider);
+      (ref as dynamic).invalidate(provider);
 
       final apiError = ApiError(
         message: 'Erreur inattendue : $e',

@@ -41,7 +41,8 @@ class GradeEntryApi {
   }) async {
     final result = await _client.post(
       '/api/exams/evaluations/$evaluationId/grades',
-      {'grades': grades},
+      data: {'grades': grades},
+      fromJson: (_) => <String, dynamic>{},
     );
 
     return result.when(

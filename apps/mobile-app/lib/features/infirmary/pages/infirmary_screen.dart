@@ -78,10 +78,10 @@ class _VisitsContent extends ConsumerWidget {
         if (data != null) ref.read(infirmaryMutationProvider.notifier).createVisit(data);
       },
       itemBuilder: (item) => ListItemCard(
-        title: item['student_name'] ?? 'Visite',
-        subtitle: '${item['reason'] ?? ''} - ${item['date'] ?? ''}',
+        title: (item['student_name'] as String?) ?? 'Visite',
+        subtitle: '${(item['reason'] as String?) ?? ''} - ${(item['date'] as String?) ?? ''}',
         leadingIcon: Icons.login,
-        badge: StatusBadge(label: item['status'] ?? 'Traité', type: StatusBadgeType.success),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Traité', type: StatusBadgeType.success),
       ),
     );
   }
@@ -98,10 +98,10 @@ class _MedicationsContent extends ConsumerWidget {
       emptySubtitle: 'Les médicaments apparaîtront ici',
       onRetry: () => ref.invalidate(infirmaryMedicationsProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['name'] ?? 'Médicament',
-        subtitle: '${item['quantity'] ?? ''} - Péremption: ${item['expiry'] ?? ''}',
+        title: (item['name'] as String?) ?? 'Médicament',
+        subtitle: '${(item['quantity'] as String?) ?? ''} - Péremption: ${(item['expiry'] as String?) ?? ''}',
         leadingIcon: Icons.medication,
-        badge: StatusBadge(label: item['status'] ?? 'OK', type: StatusBadgeType.success),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'OK', type: StatusBadgeType.success),
       ),
     );
   }

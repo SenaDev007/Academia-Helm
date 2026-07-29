@@ -58,9 +58,9 @@ class _DashboardContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDashboardView(
-      dashboardAsync: ref.watch(examsDashboardProvider),
+      dashboardAsync: ref.watch(examsDashboardProvider('')),
       moduleName: 'Examens',
-      onRetry: () => ref.invalidate(examsDashboardProvider),
+      onRetry: () => ref.invalidate(examsDashboardProvider('')),
       statCards: const [
         StatCardConfig(title: 'Examens planifiés', valueKey: 'planned_exams', defaultValue: '—', icon: Icons.event_available),
         StatCardConfig(title: 'Résultats publiés', valueKey: 'published_results', defaultValue: '—', icon: Icons.check_circle, iconColor: AHColors.success),
@@ -92,10 +92,10 @@ class _ScheduleContent extends ConsumerWidget {
       },
       addLabel: 'Planifier un examen',
       itemBuilder: (item) => ListItemCard(
-        title: item['subject'] ?? 'Examen',
-        subtitle: '${item['date'] ?? ''} - ${item['room'] ?? ''}',
+        title: (item['subject'] as String?) ?? 'Examen',
+        subtitle: '${(item['date'] as String?) ?? ''} - ${(item['room'] as String?) ?? ''}',
         leadingIcon: Icons.event_available,
-        badge: StatusBadge(label: item['status'] ?? 'Planifié', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Planifié', type: _st(item['status'])),
       ),
     );
   }
@@ -112,10 +112,10 @@ class _ResultsContent extends ConsumerWidget {
       emptySubtitle: 'Les résultats apparaîtront après correction',
       onRetry: () => ref.invalidate(evaluationsProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['subject'] ?? item['title'] ?? 'Résultat',
-        subtitle: 'Moyenne: ${item['average'] ?? '—'}/20 - ${item['student_count'] ?? ''} élèves',
+        title: (item['subject'] as String?) ?? (item['title'] as String?) ?? 'Résultat',
+        subtitle: 'Moyenne: ${(item['average'] as String?) ?? '—'}/20 - ${(item['student_count'] as String?) ?? ''} élèves',
         leadingIcon: Icons.assessment,
-        badge: StatusBadge(label: item['status'] ?? 'Publié', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Publié', type: _st(item['status'])),
       ),
     );
   }
@@ -126,9 +126,9 @@ class _StatisticsContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDashboardView(
-      dashboardAsync: ref.watch(examsDashboardProvider),
+      dashboardAsync: ref.watch(examsDashboardProvider('')),
       moduleName: 'Statistiques',
-      onRetry: () => ref.invalidate(examsDashboardProvider),
+      onRetry: () => ref.invalidate(examsDashboardProvider('')),
       statCards: const [
         StatCardConfig(title: 'Moy. générale', valueKey: 'average_grade', defaultValue: '—', icon: Icons.grade, iconColor: AHColors.gold),
         StatCardConfig(title: 'Taux réussite', valueKey: 'success_rate', defaultValue: '—', icon: Icons.check_circle, iconColor: AHColors.success),
@@ -157,10 +157,10 @@ class _DeliberationsContent extends ConsumerWidget {
         if (data != null) ref.read(examsMutationProvider.notifier).createCouncil(data);
       },
       itemBuilder: (item) => ListItemCard(
-        title: item['title'] ?? 'Conseil de classe',
-        subtitle: item['date'] ?? '',
+        title: (item['title'] as String?) ?? 'Conseil de classe',
+        subtitle: (item['date'] as String?) ?? '',
         leadingIcon: Icons.gavel,
-        badge: StatusBadge(label: item['status'] ?? 'Planifié', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Planifié', type: _st(item['status'])),
       ),
     );
   }
@@ -222,7 +222,7 @@ class _OrionContent extends ConsumerWidget {
           children: kpis.take(4).map((kpi) => SizedBox(
             width: (MediaQuery.of(context).size.width - AHSpacing.xl * 2 - AHSpacing.sm * 3) / 4,
             child: OrionKpiCard(
-              label: kpi['label'] ?? kpi['title'] ?? 'KPI',
+              label: (kpi['label'] as String?) ?? (kpi['title'] as String?) ?? 'KPI',
               value: kpi['value']?.toString() ?? '—',
               trend: kpi['trend'] as String?,
               trendValue: kpi['trendValue'] as String?,
@@ -247,8 +247,8 @@ class _OrionContent extends ConsumerWidget {
             child: Text('Aucune alerte active', style: TextStyle(color: AHColors.gray500)),
           );
           return Column(children: alerts.take(5).map((a) => ListItemCard(
-            title: a['title'] ?? 'Alerte',
-            subtitle: a['description'] ?? '',
+            title: (a['title'] as String?) ?? 'Alerte',
+            subtitle: (a['description'] as String?) ?? '',
             leadingIcon: Icons.warning_amber,
             leadingIconColor: AHColors.warning,
           )).toList());

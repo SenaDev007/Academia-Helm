@@ -13,9 +13,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../theme/ah_colors.dart';
-import '../../theme/ah_spacing.dart';
-import '../../theme/ah_typography.dart';
+import '../theme/ah_colors.dart';
+import '../theme/ah_spacing.dart';
+import '../theme/ah_typography.dart';
 import 'academic_year_model.dart';
 import 'school_level_provider.dart';
 

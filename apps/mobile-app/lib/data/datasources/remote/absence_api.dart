@@ -33,8 +33,7 @@ class AbsenceApi {
 
     return result.when(
       success: (data) {
-        final List<dynamic> items =
-            data['data'] ?? data['absences'] ?? <dynamic>[];
+        final List<dynamic> items = (data['data'] ?? data['absences'] ?? <dynamic>[]) as List<dynamic>;
         return ApiResult.success(
           items
               .map((e) =>

@@ -31,8 +31,7 @@ class GradeApi {
 
     return result.when(
       success: (data) {
-        final List<dynamic> items =
-            data['data'] ?? data['grades'] ?? <dynamic>[];
+        final List<dynamic> items = (data['data'] ?? data['grades'] ?? <dynamic>[]) as List<dynamic>;
         return ApiResult.success(
           items
               .map((e) =>
@@ -78,8 +77,7 @@ class GradeApi {
 
     return result.when(
       success: (data) {
-        final List<dynamic> items =
-            data['data'] ?? data['averages'] ?? <dynamic>[];
+        final List<dynamic> items = (data['data'] ?? data['averages'] ?? <dynamic>[]) as List<dynamic>;
         return ApiResult.success(
           items
               .map((e) => SubjectAverageDto.fromJson(e as Map<String, dynamic>)

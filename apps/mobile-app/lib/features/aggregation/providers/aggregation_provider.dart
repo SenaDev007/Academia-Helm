@@ -15,6 +15,51 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_client.dart';
+import '../../../core/network/api_result.dart';
+
+// Helper to unwrap ApiResult<Map<String, dynamic>> to a plain Map (or null on failure).
+Future<Map<String, dynamic>?> _unwrapMap(
+    Future<ApiResult<Map<String, dynamic>>> future) async {
+  try {
+    final result = await future;
+    return result.when<Map<String, dynamic>?>(
+      success: (data) => data,
+      failure: (_) => null,
+      loading: () => null,
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+// Helper to unwrap ApiResult<Map<String, dynamic>> to a List<Map<String, dynamic>>.
+// The API may return either a List directly or a Map with a 'data' key containing a List.
+Future<List<Map<String, dynamic>>> _unwrapList(
+    Future<ApiResult<Map<String, dynamic>>> future) async {
+  try {
+    final result = await future;
+    return result.when<List<Map<String, dynamic>>>(
+      success: (data) {
+        if (data['data'] is List) {
+          return (data['data'] as List)
+              .map((e) => e is Map<String, dynamic>
+                  ? e
+                  : (e as Map).cast<String, dynamic>())
+              .toList();
+        }
+        // Single object wrapped as list
+        return [data];
+      },
+      failure: (_) => [],
+      loading: () => [],
+    );
+  } catch (_) {
+    return [];
+  }
+}
+
+
+
 
 // ─── Dashboard Provider ──────────────────────────────────────────────────────
 
@@ -22,8 +67,7 @@ import '../../../core/network/api_client.dart';
 final aggregationDashboardProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
   final client = ApiClient.defaultInstance();
-  final response = await client.getRaw('/aggregation/dashboard');
-  return response is Map<String, dynamic> ? response : <String, dynamic>{};
+  return await _unwrapMap(client.getRaw('/aggregation/dashboard')) ?? <String, dynamic>{};
 });
 
 // ─── Data Provider ────────────────────────────────────────────────────────────
@@ -31,12 +75,7 @@ final aggregationDashboardProvider =
 /// Fetches the list of aggregated data sources.
 final aggregationDataProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final client = ApiClient.defaultInstance();
-  final response = await client.getRaw('/aggregation/data');
-  if (response is List) {
-    return response.cast<Map<String, dynamic>>();
-  }
-  return [];
+  return await _unwrapList(ApiClient.defaultInstance().getRaw('/aggregation/data'));
 });
 
 // ─── Reports Provider ─────────────────────────────────────────────────────────
@@ -44,12 +83,7 @@ final aggregationDataProvider =
 /// Fetches aggregation reports.
 final aggregationReportsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final client = ApiClient.defaultInstance();
-  final response = await client.getRaw('/aggregation/reports');
-  if (response is List) {
-    return response.cast<Map<String, dynamic>>();
-  }
-  return [];
+  return await _unwrapList(ApiClient.defaultInstance().getRaw('/aggregation/reports'));
 });
 
 // ─── Mutation Notifier ────────────────────────────────────────────────────────

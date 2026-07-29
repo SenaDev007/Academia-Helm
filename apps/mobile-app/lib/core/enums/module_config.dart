@@ -641,6 +641,31 @@ const shopModule = ModuleConfig(
   ],
 );
 
+/// Federis module — inter-school federation management (29 sub-tabs).
+const federisModule = ModuleConfig(
+  id: 'federis',
+  label: 'Academia Federis',
+  icon: 'network',
+  route: '/federis',
+  portals: [PortalType.platform],
+  subTabs: [
+    SubTab(id: 'fed-dashboard', label: 'Tableau de bord', icon: 'layout-dashboard', route: '/federis/dashboard'),
+    SubTab(id: 'fed-bureau', label: 'Bureau', icon: 'users', route: '/federis/bureau'),
+    SubTab(id: 'fed-schools', label: 'Écoles membres', icon: 'school', route: '/federis/schools'),
+    SubTab(id: 'fed-members', label: 'Membres', icon: 'user-check', route: '/federis/members'),
+    SubTab(id: 'fed-assemblies', label: 'Assemblées', icon: 'users', route: '/federis/assemblies'),
+    SubTab(id: 'fed-decisions', label: 'Décisions', icon: 'gavel', route: '/federis/decisions'),
+    SubTab(id: 'fed-finance', label: 'Finances', icon: 'dollar-sign', route: '/federis/finance'),
+    SubTab(id: 'fed-contributions', label: 'Cotisations', icon: 'credit-card', route: '/federis/contributions'),
+    SubTab(id: 'fed-events', label: 'Événements', icon: 'calendar', route: '/federis/events'),
+    SubTab(id: 'fed-meetings', label: 'Réunions', icon: 'video', route: '/federis/meetings'),
+    SubTab(id: 'fed-communications', label: 'Communications', icon: 'mail', route: '/federis/communications'),
+    SubTab(id: 'fed-documents', label: 'Documents', icon: 'file-text', route: '/federis/documents'),
+    SubTab(id: 'fed-reports', label: 'Rapports', icon: 'bar-chart', route: '/federis/reports'),
+    SubTab(id: 'fed-settings', label: 'Paramètres', icon: 'settings', route: '/federis/settings'),
+  ],
+);
+
 // ─── All Modules ─────────────────────────────────────────────────────────────
 
 /// Complete list of all module configurations.

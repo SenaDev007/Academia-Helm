@@ -325,7 +325,7 @@ class RemoteConfig {
   final RemoteAcademicYear? academicYear;
   final List<RemoteSchoolLevel> schoolLevels;
   final RemoteTenantSettings tenantSettings;
-  final DateTime lastUpdated;
+  final DateTime? lastUpdated;
 
   const RemoteConfig({
     this.modules = const [],
@@ -334,10 +334,12 @@ class RemoteConfig {
     this.academicYear,
     this.schoolLevels = const [],
     this.tenantSettings = const RemoteTenantSettings(),
-    DateTime? lastUpdated,
-  }) : lastUpdated = lastUpdated ?? _defaultTimestamp;
+    this.lastUpdated,
+  });
 
-  static final DateTime _defaultTimestamp = DateTime(2000, 1, 1);
+  /// Effective timestamp (falls back to epoch if not set).
+  DateTime get effectiveLastUpdated =>
+      lastUpdated ?? DateTime.fromMillisecondsSinceEpoch(0);
 
   /// Whether a specific feature is enabled.
   bool isFeatureEnabled(String featureCode) =>
@@ -447,7 +449,7 @@ class RemoteConfig {
         'academicYear': academicYear?.toJson(),
         'schoolLevels': schoolLevels.map((e) => e.toJson()).toList(),
         'tenantSettings': tenantSettings.toJson(),
-        'lastUpdated': lastUpdated.toIso8601String(),
+        'lastUpdated': effectiveLastUpdated.toIso8601String(),
       };
 
   /// Serializes to JSON string for local caching.

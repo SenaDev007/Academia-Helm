@@ -239,7 +239,9 @@ class _LoadingStateState extends State<LoadingState> {
     if (widget.messages != null) {
       _messages = widget.messages!;
     } else if (widget.context != null) {
-      _messages = getContextualMessages(widget.context!);
+      _messages = getContextualMessages(widget.context!)
+          .map((m) => MessageEntry(m.title, m.subtitle))
+          .toList();
     } else {
       _messages = const [
         MessageEntry('Chargement', 'Veuillez patienter...'),

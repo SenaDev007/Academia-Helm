@@ -237,7 +237,7 @@ class _LoadingScreenState extends State<LoadingScreen>
                 widthFactor: progress,
                 child: Container(
                   decoration: BoxDecoration(
-                    gradient: AHColors.navyToGold,
+                    gradient: LinearGradient(colors: AHColors.navyToGold),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 ),

@@ -67,6 +67,9 @@ class ConnectivityService {
   /// Retourne le dernier statut de connectivité connu (sans vérification).
   bool get isConnectedSync => _isConnected;
 
+  /// Alias for [isConnectedSync] — `true` when the device is online.
+  bool get isOnline => _isConnected;
+
   /// Stream des changements de connectivité.
   Stream<bool> get onConnectivityChanged => _connectivityController.stream;
 

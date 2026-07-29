@@ -49,7 +49,7 @@ class _DashboardContent extends ConsumerWidget {
       moduleName: 'Transport',
       onRetry: () => ref.invalidate(transportDashboardProvider),
       statCards: const [
-        StatCardConfig(title: 'Élèves transportés', valueKey: 'students_count', defaultValue: '—', icon: Icons.bus),
+        StatCardConfig(title: 'Élèves transportés', valueKey: 'students_count', defaultValue: '—', icon: Icons.directions_bus),
         StatCardConfig(title: 'Véhicules', valueKey: 'vehicles_count', defaultValue: '—', icon: Icons.directions_bus, iconColor: AHColors.info),
         StatCardConfig(title: 'Chauffeurs', valueKey: 'drivers_count', defaultValue: '—', icon: Icons.person, iconColor: AHColors.success),
         StatCardConfig(title: 'Incidents', valueKey: 'incidents_count', defaultValue: '0', icon: Icons.check_circle, iconColor: AHColors.success),
@@ -77,10 +77,10 @@ class _RoutesContent extends ConsumerWidget {
         if (data != null) ref.read(transportMutationProvider.notifier).createRoute(data);
       },
       itemBuilder: (item) => ListItemCard(
-        title: item['name'] ?? 'Circuit',
-        subtitle: '${item['students'] ?? ''} élèves - ${item['stops'] ?? ''} arrêts',
+        title: (item['name'] as String?) ?? 'Circuit',
+        subtitle: '${(item['students'] as String?) ?? ''} élèves - ${(item['stops'] as String?) ?? ''} arrêts',
         leadingIcon: Icons.alt_route,
-        badge: StatusBadge(label: item['status'] ?? 'Actif', type: StatusBadgeType.success),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Actif', type: StatusBadgeType.success),
       ),
     );
   }
@@ -97,10 +97,10 @@ class _VehiclesContent extends ConsumerWidget {
       emptySubtitle: 'Les véhicules apparaîtront ici',
       onRetry: () => ref.invalidate(transportVehiclesProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['name'] ?? item['plate'] ?? 'Véhicule',
-        subtitle: '${item['capacity'] ?? ''} places',
+        title: (item['name'] as String?) ?? (item['plate'] as String?) ?? 'Véhicule',
+        subtitle: '${(item['capacity'] as String?) ?? ''} places',
         leadingIcon: Icons.directions_bus,
-        badge: StatusBadge(label: item['status'] ?? 'OK', type: StatusBadgeType.success),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'OK', type: StatusBadgeType.success),
       ),
     );
   }
@@ -121,10 +121,10 @@ class _StudentsContent extends ConsumerWidget {
       emptySubtitle: 'Les élèves inscrits apparaîtront ici',
       onRetry: () => ref.invalidate(transportStudentsProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['name'] ?? 'Élève',
-        subtitle: '${item['route'] ?? ''} - ${item['stop'] ?? ''}',
+        title: (item['name'] as String?) ?? 'Élève',
+        subtitle: '${(item['route'] as String?) ?? ''} - ${(item['stop'] as String?) ?? ''}',
         leadingIcon: Icons.person,
-        badge: StatusBadge(label: item['status'] ?? 'Inscrit', type: StatusBadgeType.success),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Inscrit', type: StatusBadgeType.success),
       ),
     );
   }

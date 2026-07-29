@@ -45,11 +45,13 @@ class AttendanceApi {
     required DateTime date,
     required List<Map<String, dynamic>> records,
   }) async {
-    final result = await _client.post('/api/attendance/save', {
-      'classId': classId,
-      'date': date.toIso8601String().split('T')[0],
-      'records': records,
-    });
+    final result = await _client.post('/api/attendance/save',
+        data: {
+          'classId': classId,
+          'date': date.toIso8601String().split('T')[0],
+          'records': records,
+        },
+        fromJson: (_) => <String, dynamic>{});
 
     return result.when(
       success: (_) => const ApiResult.success(null),

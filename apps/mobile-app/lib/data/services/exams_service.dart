@@ -14,11 +14,11 @@
 /// - getDashboard (Tableau de bord)
 /// ============================================================================
 
-import '../../core/crud/base_crud_service.dart';
-import '../../core/network/api_config.dart';
-import '../../core/network/api_result.dart';
-import '../../core/network/api_client.dart';
-import '../../core/offline/offline_service.dart';
+import '../../../core/crud/base_crud_service.dart';
+import '../../../core/network/api_config.dart';
+import '../../../core/network/api_result.dart';
+import '../../../core/network/api_client.dart';
+import '../../../core/offline/offline_service.dart';
 
 class ExamsService extends BaseCrudService {
   ExamsService()

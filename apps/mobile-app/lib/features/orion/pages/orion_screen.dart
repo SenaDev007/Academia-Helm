@@ -1,4 +1,4 @@
-import '../../core/theme/ah_spacing.dart';
+import '../../../core/theme/ah_spacing.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/enums/module_config.dart';
@@ -59,8 +59,8 @@ class _DashboardContent extends ConsumerWidget {
               child: Text('Aucune alerte active', style: TextStyle(color: AHColors.muted)),
             );
             return Column(children: alerts.take(3).map((a) => ListItemCard(
-              title: a['title'] ?? 'Alerte',
-              subtitle: a['description'] ?? '',
+              title: (a['title'] as String?) ?? 'Alerte',
+              subtitle: (a['description'] as String?) ?? '',
               leadingIcon: Icons.warning_amber,
               leadingIconColor: AHColors.warning,
             )).toList());
@@ -82,10 +82,10 @@ class _AnalysisContent extends ConsumerWidget {
       emptySubtitle: 'Les analyses Orion apparaîtront ici',
       onRetry: () => ref.invalidate(orionInsightsProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['title'] ?? 'Analyse',
-        subtitle: item['description'] ?? '',
+        title: (item['title'] as String?) ?? 'Analyse',
+        subtitle: (item['description'] as String?) ?? '',
         leadingIcon: Icons.analytics,
-        badge: StatusBadge(label: item['status'] ?? 'En cours', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'En cours', type: _st(item['status'])),
       ),
     );
   }
@@ -96,9 +96,9 @@ class _PredictionsContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDashboardView(
-      dashboardAsync: ref.watch(orionKpisProvider),
+      dashboardAsync: ref.watch(orionMonthlySummaryProvider),
       moduleName: 'Prédictions',
-      onRetry: () => ref.invalidate(orionKpisProvider),
+      onRetry: () => ref.invalidate(orionMonthlySummaryProvider),
       statCards: const [
         StatCardConfig(title: 'Taux de réussite estimé', valueKey: 'estimated_success_rate', defaultValue: '—', icon: Icons.school, iconColor: AHColors.success),
         StatCardConfig(title: 'Risque d\'abandon', valueKey: 'dropout_risk', defaultValue: '—', icon: Icons.person_off, iconColor: AHColors.error),
@@ -120,10 +120,10 @@ class _ReportsContent extends ConsumerWidget {
       emptySubtitle: 'Les rapports générés apparaîtront ici',
       onRetry: () => ref.invalidate(orionHistoryFilteredProvider(const OrionHistoryArgs())),
       itemBuilder: (item) => ListItemCard(
-        title: item['title'] ?? 'Rapport',
-        subtitle: item['date'] ?? '',
+        title: (item['title'] as String?) ?? 'Rapport',
+        subtitle: (item['date'] as String?) ?? '',
         leadingIcon: Icons.description,
-        badge: StatusBadge(label: item['status'] ?? 'Nouveau', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Nouveau', type: _st(item['status'])),
       ),
     );
   }
@@ -139,10 +139,10 @@ class _SettingsContent extends ConsumerWidget {
       onRetry: () => ref.invalidate(orionConfigProvider),
       builder: (config) => SubTabContentWrapper(children: [
         const SectionHeader(title: 'Configuration Orion IA'),
-        ListItemCard(title: 'Modèles de prédiction', subtitle: '${config['models_count'] ?? '—'} modèles actifs', leadingIcon: Icons.model_training),
-        ListItemCard(title: 'Sources de données', subtitle: '${config['sources_count'] ?? '—'} connecteurs configurés', leadingIcon: Icons.storage),
-        ListItemCard(title: 'Seuils d\'alerte', subtitle: 'Configurés pour ${config['indicators_count'] ?? '—'} indicateurs', leadingIcon: Icons.tune),
-        ListItemCard(title: 'Planification des analyses', subtitle: config['schedule'] ?? 'Quotidienne', leadingIcon: Icons.schedule),
+        ListItemCard(title: 'Modèles de prédiction', subtitle: '${(config['models_count'] as String?) ?? '—'} modèles actifs', leadingIcon: Icons.model_training),
+        ListItemCard(title: 'Sources de données', subtitle: '${(config['sources_count'] as String?) ?? '—'} connecteurs configurés', leadingIcon: Icons.storage),
+        ListItemCard(title: 'Seuils d\'alerte', subtitle: 'Configurés pour ${(config['indicators_count'] as String?) ?? '—'} indicateurs', leadingIcon: Icons.tune),
+        ListItemCard(title: 'Planification des analyses', subtitle: (config['schedule'] as String?) ?? 'Quotidienne', leadingIcon: Icons.schedule),
       ]),
     );
   }

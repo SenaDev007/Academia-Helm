@@ -25,6 +25,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../api/client.dart';
+import 'config_service.dart';
 import 'sync_event.dart';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -240,7 +241,7 @@ class OfflineSyncQueue with ChangeNotifier {
       StreamController<QueuedMutation>.broadcast();
 
   /// Subscription to connectivity changes.
-  StreamSubscription<ConnectivityResult>? _connectivitySub;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
 
   // ─── Getters ────────────────────────────────────────────────────────────
 

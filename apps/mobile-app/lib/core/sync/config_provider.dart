@@ -77,7 +77,8 @@ class RemoteConfigNotifier extends AsyncNotifier<RemoteConfig> {
     });
 
     // If not authenticated, return empty config
-    if (!authState.isAuthenticated) {
+    final auth = authState.valueOrNull;
+    if (auth == null || !auth.isAuthenticated) {
       return RemoteConfig.empty;
     }
 
@@ -129,17 +130,18 @@ class RemoteConfigNotifier extends AsyncNotifier<RemoteConfig> {
 final dynamicModulesProvider = Provider<List<ModuleConfig>>((ref) {
   final asyncConfig = ref.watch(remoteConfigProvider);
   final authState = ref.watch(authNotifierProvider);
+  final auth = authState.valueOrNull;
 
   return asyncConfig.when(
     data: (config) {
-      final portal = authState.currentPortal;
+      final portal = auth?.currentPortal;
       if (portal == null) return <ModuleConfig>[];
 
       // Get the user's role codes for visibility filtering
-      final userRole = authState.currentRole;
+      final userRole = auth?.currentRole;
       final roleCodes = <String>[];
       if (userRole != null) {
-        roleCodes.add(userRole.name);
+        roleCodes.add(userRole);
       }
 
       // Build dynamic modules from remote config
@@ -152,13 +154,13 @@ final dynamicModulesProvider = Provider<List<ModuleConfig>>((ref) {
     },
     loading: () {
       // While loading, use the hardcoded modules as fallback
-      final portal = authState.currentPortal;
+      final portal = auth?.currentPortal;
       if (portal == null) return <ModuleConfig>[];
       return getVisibleModules(portal);
     },
     error: (_, __) {
       // On error, fall back to hardcoded modules
-      final portal = authState.currentPortal;
+      final portal = auth?.currentPortal;
       if (portal == null) return <ModuleConfig>[];
       return getVisibleModules(portal);
     },

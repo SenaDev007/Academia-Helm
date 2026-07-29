@@ -24,11 +24,18 @@ import 'token_storage.dart';
 /// 5. **Controlled redirect** — Navigate to `/portal-select`.
 class SecureLogoutService {
   SecureLogoutService({
-    required this.ref,
-  });
+    required dynamic ref,
+  }) : _ref = ref;
 
   /// Riverpod ref for accessing providers and invalidating state.
-  final Ref ref;
+  /// Accepts either a `Ref` (from a Provider) or a `WidgetRef` (from a widget).
+  final dynamic _ref;
+
+  /// Forwards to `Ref.read`/`WidgetRef.read` polymorphically.
+  T read<T>(ProviderListenable<T> provider) => (_ref as dynamic).read(provider) as T;
+  T watch<T>(ProviderListenable<T> provider) => (_ref as dynamic).watch(provider) as T;
+  void invalidate(ProviderOrFamily provider) =>
+      (_ref as dynamic).invalidate(provider);
 
   /// Auth keys that should be cleared from secure storage during logout.
   static const List<String> _authKeys = [
@@ -144,7 +151,7 @@ class SecureLogoutService {
   /// Best-effort: errors are silently swallowed.
   Future<void> _invalidateServerSession() async {
     try {
-      final apiClient = ref.read(apiClientProvider);
+      final apiClient = read(apiClientProvider);
       await apiClient.postRaw(ApiConfig.logoutEndpoint).timeout(
         const Duration(seconds: 5),
       );
@@ -196,7 +203,7 @@ class SecureLogoutService {
 
     // 4. Invalidate Riverpod providers by resetting the auth state.
     try {
-      ref.invalidate(authNotifierProvider);
+      invalidate(authNotifierProvider);
     } catch (_) {
       // Provider may already be invalidated.
     }

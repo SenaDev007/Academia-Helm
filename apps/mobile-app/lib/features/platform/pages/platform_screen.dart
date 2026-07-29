@@ -80,10 +80,10 @@ class _TenantsContent extends ConsumerWidget {
       },
       addLabel: 'Ajouter un établissement',
       itemBuilder: (item) => ListItemCard(
-        title: item['name'] ?? 'Établissement',
-        subtitle: '${item['plan'] ?? ''} - ${item['students_count'] ?? ''} élèves',
+        title: (item['name'] as String?) ?? 'Établissement',
+        subtitle: '${(item['plan'] as String?) ?? ''} - ${(item['students_count'] as String?) ?? ''} élèves',
         leadingIcon: Icons.business,
-        badge: StatusBadge(label: item['status'] ?? 'Actif', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Actif', type: _st(item['status'])),
       ),
     );
   }
@@ -104,10 +104,10 @@ class _AuditContent extends ConsumerWidget {
       emptySubtitle: 'Les logs d\'audit apparaîtront ici',
       onRetry: () => ref.invalidate(platformAuditLogsProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['action'] ?? 'Entrée d\'audit',
-        subtitle: item['timestamp'] ?? '',
-        leadingIcon: Icons.shield_check,
-        badge: StatusBadge(label: item['status'] ?? 'Vérifié', type: _st(item['status'])),
+        title: (item['action'] as String?) ?? 'Entrée d\'audit',
+        subtitle: (item['timestamp'] as String?) ?? '',
+        leadingIcon: Icons.shield,
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Vérifié', type: _st(item['status'])),
       ),
     );
   }
@@ -123,10 +123,10 @@ class _UsersContent extends ConsumerWidget {
       emptySubtitle: 'Les utilisateurs apparaîtront ici',
       onRetry: () => ref.invalidate(platformUsersProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['name'] ?? 'Utilisateur',
-        subtitle: '${item['role'] ?? ''} - ${item['tenant'] ?? ''}',
+        title: (item['name'] as String?) ?? 'Utilisateur',
+        subtitle: '${(item['role'] as String?) ?? ''} - ${(item['tenant'] as String?) ?? ''}',
         leadingIcon: Icons.person,
-        badge: StatusBadge(label: item['status'] ?? 'Actif', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Actif', type: _st(item['status'])),
       ),
     );
   }

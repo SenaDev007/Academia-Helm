@@ -75,10 +75,10 @@ class _ScheduleContent extends ConsumerWidget {
       },
       addLabel: 'Planifier une réunion',
       itemBuilder: (item) => ListItemCard(
-        title: item['title'] ?? 'Réunion',
-        subtitle: '${item['date'] ?? ''} - ${item['location'] ?? ''}',
+        title: (item['title'] as String?) ?? 'Réunion',
+        subtitle: '${(item['date'] as String?) ?? ''} - ${(item['location'] as String?) ?? ''}',
         leadingIcon: Icons.event_available,
-        badge: StatusBadge(label: item['status'] ?? 'Planifié', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Planifié', type: _st(item['status'])),
       ),
     );
   }
@@ -89,16 +89,16 @@ class _MinutesContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDataList(
-      itemsAsync: ref.watch(meetingMinutesProvider),
+      itemsAsync: ref.watch(allMeetingsProvider),
       moduleName: 'Procès-verbaux',
       emptyTitle: 'Aucun procès-verbal',
       emptySubtitle: 'Les PV apparaîtront après les réunions',
-      onRetry: () => ref.invalidate(meetingMinutesProvider),
+      onRetry: () => ref.invalidate(allMeetingsProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['title'] ?? 'Procès-verbal',
-        subtitle: item['date'] ?? '',
+        title: (item['title'] as String?) ?? 'Procès-verbal',
+        subtitle: (item['date'] as String?) ?? '',
         leadingIcon: Icons.description,
-        badge: StatusBadge(label: item['status'] ?? 'En relecture', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'En relecture', type: _st(item['status'])),
       ),
     );
   }
@@ -109,16 +109,16 @@ class _DecisionsContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDataList(
-      itemsAsync: ref.watch(meetingDecisionsProvider),
+      itemsAsync: ref.watch(meetingDecisionsProvider('')),
       moduleName: 'Décisions',
       emptyTitle: 'Aucune décision',
       emptySubtitle: 'Les décisions apparaîtront ici',
-      onRetry: () => ref.invalidate(meetingDecisionsProvider),
+      onRetry: () => ref.invalidate(meetingDecisionsProvider('')),
       itemBuilder: (item) => ListItemCard(
-        title: item['title'] ?? 'Décision',
-        subtitle: item['date'] ?? '',
+        title: (item['title'] as String?) ?? 'Décision',
+        subtitle: (item['date'] as String?) ?? '',
         leadingIcon: Icons.check_circle,
-        badge: StatusBadge(label: item['status'] ?? 'En cours', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'En cours', type: _st(item['status'])),
       ),
     );
   }

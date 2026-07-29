@@ -121,12 +121,12 @@ class _ListContent extends ConsumerWidget {
       },
       addLabel: 'Ajouter un élève',
       itemBuilder: (item) => ListItemCard(
-        title: '${item['first_name'] ?? ''} ${item['last_name'] ?? ''}'.trim(),
-        subtitle: item['class'] ?? item['classe'] ?? '',
+        title: '${(item['first_name'] as String?) ?? ''} ${(item['last_name'] as String?) ?? ''}'.trim(),
+        subtitle: (item['class'] as String?) ?? (item['classe'] as String?) ?? '',
         leadingIcon: Icons.person,
         badge: StatusBadge(
-          label: item['status'] ?? 'Actif',
-          type: (item['status'] ?? '') == 'Inactif'
+          label: (item['status'] as String?) ?? 'Actif',
+          type: ((item['status'] as String?) ?? '') == 'Inactif'
               ? StatusBadgeType.neutral
               : StatusBadgeType.success,
         ),
@@ -159,11 +159,11 @@ class _EnrollmentsContent extends ConsumerWidget {
         }
       },
       itemBuilder: (item) => ListItemCard(
-        title: item['student_name'] ?? item['name'] ?? '',
-        subtitle: 'Demande: ${item['class'] ?? ''} - ${item['date'] ?? ''}',
+        title: (item['student_name'] as String?) ?? (item['name'] as String?) ?? '',
+        subtitle: 'Demande: ${(item['class'] as String?) ?? ''} - ${(item['date'] as String?) ?? ''}',
         leadingIcon: Icons.person_add,
         badge: StatusBadge(
-          label: item['status'] ?? 'En attente',
+          label: (item['status'] as String?) ?? 'En attente',
           type: _statusType(item['status']),
         ),
       ),
@@ -207,8 +207,8 @@ class _GradesContent extends ConsumerWidget {
       emptySubtitle: 'Les notes seront affichées ici',
       onRetry: () => ref.invalidate(studentsProvider),
       itemBuilder: (item) => ListItemCard(
-        title: '${item['first_name'] ?? ''} ${item['last_name'] ?? ''}'.trim(),
-        subtitle: 'Moyenne: ${item['average'] ?? '—'}',
+        title: '${(item['first_name'] as String?) ?? ''} ${(item['last_name'] as String?) ?? ''}'.trim(),
+        subtitle: 'Moyenne: ${(item['average'] as String?) ?? '—'}',
         leadingIcon: Icons.assessment,
       ),
     );
@@ -238,8 +238,8 @@ class _DisciplineContent extends ConsumerWidget {
         }
       },
       itemBuilder: (item) => ListItemCard(
-        title: '${item['first_name'] ?? ''} ${item['last_name'] ?? ''}'.trim(),
-        subtitle: item['discipline_note'] ?? '',
+        title: '${(item['first_name'] as String?) ?? ''} ${(item['last_name'] as String?) ?? ''}'.trim(),
+        subtitle: (item['discipline_note'] as String?) ?? '',
         leadingIcon: Icons.warning,
         leadingIconColor: AHColors.warning,
       ),
@@ -357,7 +357,7 @@ class _OrionContent extends ConsumerWidget {
           children: kpis.take(4).map((kpi) => SizedBox(
             width: (MediaQuery.of(context).size.width - AHSpacing.xl * 2 - AHSpacing.sm * 3) / 4,
             child: OrionKpiCard(
-              label: kpi['label'] ?? kpi['title'] ?? 'KPI',
+              label: (kpi['label'] as String?) ?? (kpi['title'] as String?) ?? 'KPI',
               value: kpi['value']?.toString() ?? '—',
               trend: kpi['trend'] as String?,
               trendValue: kpi['trendValue'] as String?,
@@ -384,8 +384,8 @@ class _OrionContent extends ConsumerWidget {
             child: Text('Aucune alerte active', style: TextStyle(color: AHColors.gray500)),
           );
           return Column(children: alerts.take(5).map((a) => ListItemCard(
-            title: a['title'] ?? 'Alerte',
-            subtitle: a['description'] ?? '',
+            title: (a['title'] as String?) ?? 'Alerte',
+            subtitle: (a['description'] as String?) ?? '',
             leadingIcon: Icons.warning_amber,
             leadingIconColor: AHColors.warning,
           )).toList());

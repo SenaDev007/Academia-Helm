@@ -63,9 +63,9 @@ class _DashboardContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDashboardView(
-      dashboardAsync: ref.watch(_pedagogyKpisProvider),
+      dashboardAsync: ref.watch(_pedagogyKpisProvider('')),
       moduleName: 'Pédagogie',
-      onRetry: () => ref.invalidate(_pedagogyKpisProvider),
+      onRetry: () => ref.invalidate(_pedagogyKpisProvider('')),
       statCards: const [
         StatCardConfig(title: 'Leçons actives', valueKey: 'active_lessons', defaultValue: '—', icon: Icons.menu_book, subtitle: 'Enseignants actifs'),
         StatCardConfig(title: 'Devoirs assignés', valueKey: 'assigned_homework', defaultValue: '—', icon: Icons.assignment, iconColor: AHColors.info),
@@ -81,11 +81,11 @@ class _PlanningContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDataList(
-      itemsAsync: ref.watch(classDiariesProvider),
+      itemsAsync: ref.watch(classDiariesProvider('')),
       moduleName: 'Progression',
       emptyTitle: 'Aucune progression trouvée',
       emptySubtitle: 'Appuyez sur + pour créer une progression',
-      onRetry: () => ref.invalidate(classDiariesProvider),
+      onRetry: () => ref.invalidate(classDiariesProvider('')),
       onAdd: () async {
         final data = await showAddItemDialog(context, title: 'Nouvelle progression', fields: const [
           AddFieldConfig(key: 'subject', label: 'Matière'),
@@ -95,10 +95,10 @@ class _PlanningContent extends ConsumerWidget {
         if (data != null) ref.read(pedagogyMutationProvider.notifier).createClassDiary(data);
       },
       itemBuilder: (item) => ListItemCard(
-        title: item['subject'] ?? item['title'] ?? 'Progression',
-        subtitle: '${item['class'] ?? ''} - ${item['progress'] ?? ''}',
+        title: (item['subject'] as String?) ?? (item['title'] as String?) ?? 'Progression',
+        subtitle: '${(item['class'] as String?) ?? ''} - ${(item['progress'] as String?) ?? ''}',
         leadingIcon: Icons.calendar_month,
-        badge: StatusBadge(label: item['status'] ?? 'En cours', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'En cours', type: _st(item['status'])),
       ),
     );
   }
@@ -123,8 +123,8 @@ class _LessonsContent extends ConsumerWidget {
         if (data != null) ref.read(pedagogyMutationProvider.notifier).createLessonPlan(data);
       },
       itemBuilder: (item) => ListItemCard(
-        title: item['title'] ?? 'Leçon',
-        subtitle: '${item['subject'] ?? ''} - ${item['class'] ?? ''}',
+        title: (item['title'] as String?) ?? 'Leçon',
+        subtitle: '${(item['subject'] as String?) ?? ''} - ${(item['class'] as String?) ?? ''}',
         leadingIcon: Icons.auto_stories,
       ),
     );
@@ -136,11 +136,11 @@ class _HomeworkContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDataList(
-      itemsAsync: ref.watch(teacherAssignmentsProvider),
+      itemsAsync: ref.watch(teacherAssignmentsProvider(const TeacherAssignmentArgs(teacherId: '', academicYearId: ''))),
       moduleName: 'Devoirs',
       emptyTitle: 'Aucun devoir trouvé',
       emptySubtitle: 'Appuyez sur + pour assigner un devoir',
-      onRetry: () => ref.invalidate(teacherAssignmentsProvider),
+      onRetry: () => ref.invalidate(teacherAssignmentsProvider(const TeacherAssignmentArgs(teacherId: '', academicYearId: ''))),
       onAdd: () async {
         final data = await showAddItemDialog(context, title: 'Nouveau devoir', fields: const [
           AddFieldConfig(key: 'title', label: 'Titre'),
@@ -150,10 +150,10 @@ class _HomeworkContent extends ConsumerWidget {
         if (data != null) ref.read(pedagogyMutationProvider.notifier).createHomeworkEntry(data);
       },
       itemBuilder: (item) => ListItemCard(
-        title: item['title'] ?? 'Devoir',
-        subtitle: '${item['subject'] ?? ''} - Pour le ${item['due_date'] ?? ''}',
+        title: (item['title'] as String?) ?? 'Devoir',
+        subtitle: '${(item['subject'] as String?) ?? ''} - Pour le ${(item['due_date'] as String?) ?? ''}',
         leadingIcon: Icons.edit_note,
-        badge: StatusBadge(label: item['status'] ?? 'À rendre', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'À rendre', type: _st(item['status'])),
       ),
     );
   }
@@ -235,7 +235,7 @@ class _OrionContent extends ConsumerWidget {
           children: kpis.take(4).map((kpi) => SizedBox(
             width: (MediaQuery.of(context).size.width - AHSpacing.xl * 2 - AHSpacing.sm * 3) / 4,
             child: OrionKpiCard(
-              label: kpi['label'] ?? kpi['title'] ?? 'KPI',
+              label: (kpi['label'] as String?) ?? (kpi['title'] as String?) ?? 'KPI',
               value: kpi['value']?.toString() ?? '—',
               trend: kpi['trend'] as String?,
               trendValue: kpi['trendValue'] as String?,
@@ -260,8 +260,8 @@ class _OrionContent extends ConsumerWidget {
             child: Text('Aucune alerte active', style: TextStyle(color: AHColors.gray500)),
           );
           return Column(children: alerts.take(5).map((a) => ListItemCard(
-            title: a['title'] ?? 'Alerte',
-            subtitle: a['description'] ?? '',
+            title: (a['title'] as String?) ?? 'Alerte',
+            subtitle: (a['description'] as String?) ?? '',
             leadingIcon: Icons.warning_amber,
             leadingIconColor: AHColors.warning,
           )).toList());

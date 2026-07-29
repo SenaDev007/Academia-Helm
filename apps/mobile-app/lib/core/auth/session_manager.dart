@@ -157,7 +157,7 @@ class SessionManager with WidgetsBindingObserver {
     _startProactiveRefresh();
 
     // Record activity in secure storage
-    _tokenStorage.updateLastActivity();
+    TokenStorage.updateLastActivity();
   }
 
   /// Stops monitoring session activity.
@@ -188,7 +188,7 @@ class SessionManager with WidgetsBindingObserver {
     }
 
     // Persist last activity
-    _tokenStorage.updateLastActivity();
+    TokenStorage.updateLastActivity();
 
     // If we were in warning, clear it
     if (wasWarning) {
@@ -209,7 +209,7 @@ class SessionManager with WidgetsBindingObserver {
         break;
       case AppLifecycleState.paused:
         // App went to background — save current activity
-        _tokenStorage.updateLastActivity();
+        TokenStorage.updateLastActivity();
         break;
       case AppLifecycleState.inactive:
       case AppLifecycleState.detached:
@@ -306,7 +306,7 @@ class SessionManager with WidgetsBindingObserver {
     if (idle > _idleWarningThreshold) return;
 
     // Check if token is near expiration
-    final isExpired = await _tokenStorage.isTokenExpired();
+    final isExpired = await TokenStorage.isTokenExpired();
     if (!isExpired) {
       // Token is still valid, but refresh proactively
       _lastTokenRefresh = DateTime.now();
@@ -329,7 +329,7 @@ class SessionManager with WidgetsBindingObserver {
     _warningShown = false;
     _currentEvent = SessionEvent.active;
     _lastActivity = DateTime.now();
-    _tokenStorage.updateLastActivity();
+    TokenStorage.updateLastActivity();
     _callbacks.onActivityUpdate?.call(Duration.zero);
   }
 
@@ -369,7 +369,6 @@ class SessionActivityDetector extends StatelessWidget {
       onPointerDown: (_) => sessionManager.recordActivity(),
       onPointerMove: (_) => sessionManager.recordActivity(),
       onPointerUp: (_) => sessionManager.recordActivity(),
-      onPointerScroll: (_) => sessionManager.recordActivity(),
       child: child,
     );
   }

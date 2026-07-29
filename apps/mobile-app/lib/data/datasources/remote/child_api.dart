@@ -20,8 +20,7 @@ class ChildApi {
 
     return result.when(
       success: (data) {
-        final List<dynamic> items =
-            data['data'] ?? data['children'] ?? <dynamic>[];
+        final List<dynamic> items = (data['data'] ?? data['children'] ?? <dynamic>[]) as List<dynamic>;
         return ApiResult.success(
           items
               .map(

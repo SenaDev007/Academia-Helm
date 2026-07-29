@@ -21,11 +21,11 @@
 /// - getInsights (Perspectives)
 /// ============================================================================
 
-import '../../core/crud/base_crud_service.dart';
-import '../../core/network/api_config.dart';
-import '../../core/network/api_result.dart';
-import '../../core/network/api_client.dart';
-import '../../core/offline/offline_service.dart';
+import '../../../core/crud/base_crud_service.dart';
+import '../../../core/network/api_config.dart';
+import '../../../core/network/api_result.dart';
+import '../../../core/network/api_client.dart';
+import '../../../core/offline/offline_service.dart';
 
 class OrionService extends BaseCrudService {
   OrionService()
@@ -45,7 +45,7 @@ class OrionService extends BaseCrudService {
     Map<String, dynamic> request,
   ) async {
     final isConnected =
-        await OfflineService.instance._connectivityService.isConnected;
+        await OfflineService.instance.connectivityService.isConnected;
     final tenantId = await _getTenantId();
 
     if (!isConnected) {
@@ -114,7 +114,7 @@ class OrionService extends BaseCrudService {
   /// Acquitte une alerte ORION.
   Future<ApiResult<void>> acknowledgeAlert(String alertId) async {
     final isConnected =
-        await OfflineService.instance._connectivityService.isConnected;
+        await OfflineService.instance.connectivityService.isConnected;
 
     if (!isConnected) {
       return const ApiFailure(ApiError(
@@ -177,7 +177,7 @@ class OrionService extends BaseCrudService {
     Map<String, dynamic> config,
   ) async {
     final isConnected =
-        await OfflineService.instance._connectivityService.isConnected;
+        await OfflineService.instance.connectivityService.isConnected;
 
     if (!isConnected) {
       return const ApiFailure(ApiError(
@@ -242,7 +242,7 @@ class OrionService extends BaseCrudService {
     String cacheStore,
   ) async {
     final isConnected =
-        await OfflineService.instance._connectivityService.isConnected;
+        await OfflineService.instance.connectivityService.isConnected;
     final tenantId = await _getTenantId();
 
     // Hors ligne : lecture depuis le cache

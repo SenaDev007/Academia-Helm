@@ -104,6 +104,23 @@ class AHSpacing {
 
   static const double dividerThickness = 1.0;
   static const double dividerThickThickness = 2.0;
+
+  // ── Aliases (compatibility with shadcn/ui naming) ─────────────────────
+
+  /// Small icon size (alias for [iconSmall]).
+  static const double iconSM = iconSmall;
+
+  /// Small border radius (alias for [radiusSmall]).
+  static const double radiusSM = radiusSmall;
+
+  /// Card border radius (alias for [r12]).
+  static const double cardBorderRadius = r12;
+
+  /// Card elevation (alias for [elevationLow]).
+  static const double cardElevation = elevationLow;
+
+  /// Tab indicator height.
+  static const double tabIndicatorHeight = 3.0;
 }
 
 /// Academia Helm border radius constants with semantic naming.

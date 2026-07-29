@@ -64,7 +64,7 @@ class SyncEvent {
   final Map<String, dynamic>? data;
 
   /// Timestamp when the event was received locally.
-  final DateTime timestamp;
+  final DateTime? timestamp;
 
   /// Optional message describing the event (for logging / debugging).
   final String? message;
@@ -72,11 +72,13 @@ class SyncEvent {
   const SyncEvent({
     required this.type,
     this.data,
-    DateTime? timestamp,
+    this.timestamp,
     this.message,
-  }) : timestamp = timestamp ?? _defaultTimestamp;
+  });
 
-  static final DateTime _defaultTimestamp = DateTime(2000, 1, 1);
+  /// Effective timestamp (falls back to epoch if not set).
+  DateTime get effectiveTimestamp =>
+      timestamp ?? DateTime.fromMillisecondsSinceEpoch(0);
 
   /// Creates a SyncEvent from a WebSocket/SSE JSON payload.
   factory SyncEvent.fromJson(Map<String, dynamic> json) {
@@ -90,7 +92,7 @@ class SyncEvent {
   Map<String, dynamic> toJson() => {
         'type': type.name,
         'data': data,
-        'timestamp': timestamp.toIso8601String(),
+        'timestamp': effectiveTimestamp.toIso8601String(),
         'message': message,
       };
 

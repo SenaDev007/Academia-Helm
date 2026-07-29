@@ -1,4 +1,4 @@
-import '../../core/theme/ah_spacing.dart';
+import '../../../core/theme/ah_spacing.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/enums/module_config.dart';
@@ -6,6 +6,7 @@ import '../../../core/theme/ah_colors.dart';
 import '../../../core/widgets/module_page_shell.dart';
 import '../../../core/widgets/module_data_list.dart';
 import '../../../core/widgets/sub_tab_content.dart';
+import '../../../core/widgets/loading/module_loading_wrapper.dart';
 import '../providers/general_provider.dart';
 
 class GeneralScreen extends ConsumerWidget {
@@ -54,8 +55,8 @@ class _DirectionContent extends ConsumerWidget {
               child: Text('Aucune actualité', style: TextStyle(color: AHColors.muted)),
             );
             return Column(children: news.take(5).map((n) => ListItemCard(
-              title: n['title'] ?? 'Actualité',
-              subtitle: n['date'] ?? '',
+              title: (n['title'] as String?) ?? 'Actualité',
+              subtitle: (n['date'] as String?) ?? '',
               leadingIcon: Icons.article,
             )).toList());
           },

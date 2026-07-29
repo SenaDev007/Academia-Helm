@@ -95,10 +95,10 @@ class _StaffContent extends ConsumerWidget {
       },
       addLabel: 'Ajouter du personnel',
       itemBuilder: (item) => ListItemCard(
-        title: '${item['first_name'] ?? ''} ${item['last_name'] ?? ''}'.trim(),
-        subtitle: item['role'] ?? item['position'] ?? '',
+        title: '${(item['first_name'] as String?) ?? ''} ${(item['last_name'] as String?) ?? ''}'.trim(),
+        subtitle: (item['role'] as String?) ?? (item['position'] as String?) ?? '',
         leadingIcon: Icons.person,
-        badge: StatusBadge(label: item['status'] ?? 'Actif', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Actif', type: _st(item['status'])),
       ),
     );
   }
@@ -130,10 +130,10 @@ class _ContractsContent extends ConsumerWidget {
         if (data != null) ref.read(hrMutationProvider.notifier).createContract(data);
       },
       itemBuilder: (item) => ListItemCard(
-        title: item['staff_name'] ?? item['reference'] ?? 'Contrat',
-        subtitle: item['type'] ?? '',
+        title: (item['staff_name'] as String?) ?? (item['reference'] as String?) ?? 'Contrat',
+        subtitle: (item['type'] as String?) ?? '',
         leadingIcon: Icons.description,
-        badge: StatusBadge(label: item['status'] ?? 'Actif', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Actif', type: _st(item['status'])),
       ),
     );
   }
@@ -149,10 +149,10 @@ class _PayrollContent extends ConsumerWidget {
       emptySubtitle: 'Les fiches apparaîtront ici',
       onRetry: () => ref.invalidate(payrollProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['label'] ?? item['reference'] ?? 'Fiche de paie',
-        subtitle: '${item['amount'] ?? '—'} €',
+        title: (item['label'] as String?) ?? (item['reference'] as String?) ?? 'Fiche de paie',
+        subtitle: '${(item['amount'] as String?) ?? '—'} €',
         leadingIcon: Icons.payments,
-        badge: StatusBadge(label: item['status'] ?? 'En préparation', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'En préparation', type: _st(item['status'])),
       ),
     );
   }
@@ -176,10 +176,10 @@ class _LeaveContent extends ConsumerWidget {
         if (data != null) ref.read(hrMutationProvider.notifier).createLeave(data);
       },
       itemBuilder: (item) => ListItemCard(
-        title: item['staff_name'] ?? 'Demande de congé',
-        subtitle: item['dates'] ?? '',
+        title: (item['staff_name'] as String?) ?? 'Demande de congé',
+        subtitle: (item['dates'] as String?) ?? '',
         leadingIcon: Icons.event_busy,
-        badge: StatusBadge(label: item['status'] ?? 'En attente', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'En attente', type: _st(item['status'])),
       ),
     );
   }
@@ -260,7 +260,7 @@ class _OrionContent extends ConsumerWidget {
           children: kpis.take(4).map((kpi) => SizedBox(
             width: (MediaQuery.of(context).size.width - AHSpacing.xl * 2 - AHSpacing.sm * 3) / 4,
             child: OrionKpiCard(
-              label: kpi['label'] ?? kpi['title'] ?? 'KPI',
+              label: (kpi['label'] as String?) ?? (kpi['title'] as String?) ?? 'KPI',
               value: kpi['value']?.toString() ?? '—',
               trend: kpi['trend'] as String?,
               trendValue: kpi['trendValue'] as String?,
@@ -285,8 +285,8 @@ class _OrionContent extends ConsumerWidget {
             child: Text('Aucune alerte active', style: TextStyle(color: AHColors.gray500)),
           );
           return Column(children: alerts.take(5).map((a) => ListItemCard(
-            title: a['title'] ?? 'Alerte',
-            subtitle: a['description'] ?? '',
+            title: (a['title'] as String?) ?? 'Alerte',
+            subtitle: (a['description'] as String?) ?? '',
             leadingIcon: Icons.warning_amber,
             leadingIconColor: AHColors.warning,
           )).toList());

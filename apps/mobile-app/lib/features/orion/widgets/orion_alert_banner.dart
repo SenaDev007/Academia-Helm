@@ -172,7 +172,7 @@ class _OrionAlertBannerState extends ConsumerState<OrionAlertBanner> {
                             const SizedBox(width: AHSpacing.sm),
                             Expanded(
                               child: Text(
-                                alert['title'] ?? alert['description'] ?? 'Alerte',
+                                (alert['title'] as String?) ?? (alert['description'] as String?) ?? 'Alerte',
                                 style: const TextStyle(
                                   fontFamily: 'Inter',
                                   fontSize: 12,

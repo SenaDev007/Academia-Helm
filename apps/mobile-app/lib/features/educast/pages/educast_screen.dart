@@ -79,10 +79,10 @@ class _ChannelsContent extends ConsumerWidget {
         if (data != null) ref.read(educastMutationProvider.notifier).createChannel(data);
       },
       itemBuilder: (item) => ListItemCard(
-        title: item['name'] ?? 'Chaîne',
-        subtitle: item['description'] ?? '${item['videos_count'] ?? ''} vidéos',
+        title: (item['name'] as String?) ?? 'Chaîne',
+        subtitle: (item['description'] as String?) ?? '${(item['videos_count']?.toString()) ?? ''} vidéos',
         leadingIcon: Icons.tv,
-        badge: StatusBadge(label: item['status'] ?? 'Actif', type: StatusBadgeType.success),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Actif', type: StatusBadgeType.success),
       ),
     );
   }
@@ -99,8 +99,8 @@ class _VideosContent extends ConsumerWidget {
       emptySubtitle: 'Les vidéos apparaîtront ici',
       onRetry: () => ref.invalidate(educastVideosProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['title'] ?? 'Vidéo',
-        subtitle: '${item['views'] ?? ''} vues - ${item['duration'] ?? ''}',
+        title: (item['title'] as String?) ?? 'Vidéo',
+        subtitle: '${(item['views'] as String?) ?? ''} vues - ${(item['duration'] as String?) ?? ''}',
         leadingIcon: Icons.play_circle,
       ),
     );

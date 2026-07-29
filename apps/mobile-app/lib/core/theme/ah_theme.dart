@@ -16,6 +16,14 @@ class AHTheme {
 
   static const Color _seedColor = AHColors.navy;
 
+  // ── Static getters (used by MaterialApp) ──────────────────────────────
+
+  /// Light theme (use as `theme: AHTheme.light`).
+  static ThemeData get light => lightTheme();
+
+  /// Dark theme (use as `darkTheme: AHTheme.dark`).
+  static ThemeData get dark => darkTheme();
+
   // ── Light Theme ───────────────────────────────────────────────────────
 
   static ThemeData lightTheme() {

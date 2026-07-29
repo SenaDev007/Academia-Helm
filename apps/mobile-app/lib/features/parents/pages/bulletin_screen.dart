@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
 import '../../../core/widgets/loading/async_value_widget.dart';
+import '../../../domain/entities/grade.dart';
 import '../../../data/datasources/remote/grade_api.dart';
 import '../../../domain/entities/child.dart';
 import '../providers/children_provider.dart';
@@ -182,14 +183,14 @@ class _BulletinContent extends ConsumerWidget {
 class _BulletinView extends StatelessWidget {
   const _BulletinView({required this.report});
 
-  final dynamic report;
+  final PeriodReport report;
 
   @override
   Widget build(BuildContext context) {
     // report est de type PeriodReport — adapter selon l'entity
-    final overallAverage = report.overallAverage ?? 0;
+    final overallAverage = report.generalAverage;
     final rank = report.rank;
-    final subjects = report.subjectAverages ?? <dynamic>[];
+    final subjects = report.subjectAverages;
 
     return ListView(
       padding: const EdgeInsets.all(AHSpacing.md),
@@ -226,24 +227,24 @@ class _BulletinView extends StatelessWidget {
 
         ...subjects.map((s) => Card(
           child: ListTile(
-            title: Text(s.subjectName ?? 'Matière', style: const TextStyle(fontWeight: FontWeight.w600)),
+            title: Text(s.subjectName, style: const TextStyle(fontWeight: FontWeight.w600)),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  (s.average ?? 0).toStringAsFixed(2),
+                  s.average.toStringAsFixed(2),
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: _gradeColor(s.average ?? 0),
+                    color: _gradeColor(s.average),
                   ),
                 ),
                 const SizedBox(width: 4),
                 Text('/ 20', style: TextStyle(fontSize: 12, color: AHColors.gray400)),
               ],
             ),
-            subtitle: s.coefficient != null
-                ? Text('Coefficient: ${s.coefficient}', style: TextStyle(fontSize: 11, color: AHColors.gray500))
+            subtitle: s.rank != null
+                ? Text('Rang: ${s.rank!.toStringAsFixed(0)} / ${s.classSize ?? 0}')
                 : null,
           ),
         )),

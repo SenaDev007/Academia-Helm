@@ -146,8 +146,7 @@ class _OrionInsightSectionState extends State<OrionInsightSection> {
                                       CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      insight['title'] ??
-                                          insight['summary'] ??
+                                      (insight['title'] as String?) ?? (insight['summary'] as String?) ??
                                           'Analyse IA',
                                       style: const TextStyle(
                                         fontFamily: 'Inter',
@@ -160,8 +159,7 @@ class _OrionInsightSectionState extends State<OrionInsightSection> {
                                             null ||
                                         insight['summary'] != null)
                                       Text(
-                                        insight['description'] ??
-                                            insight['summary'] ??
+                                        (insight['description'] as String?) ?? (insight['summary'] as String?) ??
                                             '',
                                         style: const TextStyle(
                                           fontFamily: 'Inter',

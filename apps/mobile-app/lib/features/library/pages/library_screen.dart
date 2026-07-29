@@ -68,8 +68,8 @@ class _CatalogContent extends ConsumerWidget {
       emptySubtitle: 'Appuyez sur + pour ajouter',
       onRetry: () => ref.invalidate(libraryCatalogProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['title'] ?? 'Ouvrage',
-        subtitle: '${item['author'] ?? ''} - ${item['copies'] ?? ''} exemplaires',
+        title: (item['title'] as String?) ?? 'Ouvrage',
+        subtitle: '${(item['author'] as String?) ?? ''} - ${(item['copies'] as String?) ?? ''} exemplaires',
         leadingIcon: Icons.menu_book,
       ),
     );
@@ -95,10 +95,10 @@ class _BorrowingsContent extends ConsumerWidget {
         if (data != null) ref.read(libraryMutationProvider.notifier).createBorrowing(data);
       },
       itemBuilder: (item) => ListItemCard(
-        title: item['member'] ?? 'Emprunt',
-        subtitle: '${item['book'] ?? ''} - Retour le ${item['return_date'] ?? ''}',
+        title: (item['member'] as String?) ?? 'Emprunt',
+        subtitle: '${(item['book'] as String?) ?? ''} - Retour le ${(item['return_date'] as String?) ?? ''}',
         leadingIcon: Icons.logout,
-        badge: StatusBadge(label: item['status'] ?? 'En cours', type: _st(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'En cours', type: _st(item['status'])),
       ),
     );
   }
@@ -115,10 +115,10 @@ class _ReturnsContent extends ConsumerWidget {
       emptySubtitle: 'Les retours apparaîtront ici',
       onRetry: () => ref.invalidate(libraryReturnsProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['book'] ?? 'Retour',
-        subtitle: '${item['member'] ?? ''} - ${item['date'] ?? ''}',
+        title: (item['book'] as String?) ?? 'Retour',
+        subtitle: '${(item['member'] as String?) ?? ''} - ${(item['date'] as String?) ?? ''}',
         leadingIcon: Icons.login,
-        badge: StatusBadge(label: item['status'] ?? 'Rendu', type: StatusBadgeType.success),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Rendu', type: StatusBadgeType.success),
       ),
     );
   }

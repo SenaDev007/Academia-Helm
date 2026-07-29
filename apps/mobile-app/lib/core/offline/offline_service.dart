@@ -225,6 +225,10 @@ class OfflineService {
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   final ConnectivityService _connectivityService = ConnectivityService.instance;
 
+  /// Public accessor for the connectivity service (used by services that
+  /// need to check online status).
+  ConnectivityService get connectivityService => _connectivityService;
+
   /// Box Hive pour l'outbox.
   Box<dynamic>? _outboxBox;
 

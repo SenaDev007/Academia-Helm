@@ -50,7 +50,7 @@ class _DashboardContent extends ConsumerWidget {
       onRetry: () => ref.invalidate(qhseDashboardProvider),
       statCards: const [
         StatCardConfig(title: 'Inspections ce mois', valueKey: 'inspections_count', defaultValue: '—', icon: Icons.search),
-        StatCardConfig(title: 'Incidents ouverts', valueKey: 'open_incidents', defaultValue: '—', icon: Icons.alert_octagon, iconColor: AHColors.error),
+        StatCardConfig(title: 'Incidents ouverts', valueKey: 'open_incidents', defaultValue: '—', icon: Icons.warning, iconColor: AHColors.error),
         StatCardConfig(title: 'Taux conformité', valueKey: 'compliance_rate', defaultValue: '—', icon: Icons.verified, iconColor: AHColors.success),
         StatCardConfig(title: 'Actions en cours', valueKey: 'active_actions', defaultValue: '—', icon: Icons.build_circle, iconColor: AHColors.warning),
       ],
@@ -69,11 +69,11 @@ class _RisksContent extends ConsumerWidget {
       emptySubtitle: 'Appuyez sur + pour signaler un risque',
       onRetry: () => ref.invalidate(qhseRisksProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['name'] ?? 'Risque',
-        subtitle: 'Niveau: ${item['level'] ?? '—'} - ${item['location'] ?? ''}',
+        title: (item['name'] as String?) ?? 'Risque',
+        subtitle: 'Niveau: ${(item['level'] as String?) ?? '—'} - ${(item['location'] as String?) ?? ''}',
         leadingIcon: Icons.warning_amber,
         leadingIconColor: _riskColor(item['level']),
-        badge: StatusBadge(label: item['level'] ?? 'Moyen', type: _riskBadgeType(item['level'])),
+        badge: StatusBadge(label: (item['level'] as String?) ?? 'Moyen', type: _riskBadgeType(item['level'])),
       ),
     );
   }
@@ -103,11 +103,11 @@ class _IncidentsContent extends ConsumerWidget {
         if (data != null) ref.read(qhseMutationProvider.notifier).createIncident(data);
       },
       itemBuilder: (item) => ListItemCard(
-        title: item['title'] ?? 'Incident',
-        subtitle: '${item['date'] ?? ''} - Gravité: ${item['severity'] ?? ''}',
-        leadingIcon: Icons.alert_octagon,
+        title: (item['title'] as String?) ?? 'Incident',
+        subtitle: '${(item['date'] as String?) ?? ''} - Gravité: ${(item['severity'] as String?) ?? ''}',
+        leadingIcon: Icons.warning,
         leadingIconColor: AHColors.error,
-        badge: StatusBadge(label: item['status'] ?? 'Ouvert', type: StatusBadgeType.error),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Ouvert', type: StatusBadgeType.error),
       ),
     );
   }
@@ -128,10 +128,10 @@ class _AuditsContent extends ConsumerWidget {
       emptySubtitle: 'Les audits apparaîtront ici',
       onRetry: () => ref.invalidate(qhseAuditsProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['title'] ?? 'Audit',
-        subtitle: item['date'] ?? '',
+        title: (item['title'] as String?) ?? 'Audit',
+        subtitle: (item['date'] as String?) ?? '',
         leadingIcon: Icons.shield,
-        badge: StatusBadge(label: item['status'] ?? 'Planifié', type: StatusBadgeType.info),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Planifié', type: StatusBadgeType.info),
       ),
     );
   }

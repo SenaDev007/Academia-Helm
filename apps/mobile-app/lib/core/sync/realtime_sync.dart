@@ -99,7 +99,7 @@ class RealtimeSyncService with ChangeNotifier {
       StreamController<SyncEvent>.broadcast();
 
   /// Subscription to connectivity changes.
-  StreamSubscription<ConnectivityResult>? _connectivitySub;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
 
   /// Subscription to the WebSocket stream.
   StreamSubscription? _wsSubscription;

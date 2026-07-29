@@ -7,6 +7,10 @@ import 'auth_state.dart';
 import 'token_storage.dart';
 import '../enums/user_role.dart' show PortalType;
 
+// Re-export AuthState and its extensions so consumers don't need to import
+// both files separately.
+export 'auth_state.dart';
+
 /// Riverpod provider for the [AuthNotifier].
 final authNotifierProvider =
     AsyncNotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new);

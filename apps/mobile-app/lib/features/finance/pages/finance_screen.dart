@@ -93,10 +93,10 @@ class _PaymentsContent extends ConsumerWidget {
       },
       addLabel: 'Enregistrer un paiement',
       itemBuilder: (item) => ListItemCard(
-        title: item['student_name'] ?? item['reference'] ?? 'Paiement',
-        subtitle: '${item['amount'] ?? '—'} € - ${item['date'] ?? ''}',
+        title: (item['student_name'] as String?) ?? (item['reference'] as String?) ?? 'Paiement',
+        subtitle: '${(item['amount'] as String?) ?? '—'} € - ${(item['date'] as String?) ?? ''}',
         leadingIcon: Icons.credit_card,
-        badge: StatusBadge(label: item['status'] ?? 'En attente', type: _statusType(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'En attente', type: _statusType(item['status'])),
       ),
     );
   }
@@ -113,10 +113,10 @@ class _InvoicesContent extends ConsumerWidget {
       emptySubtitle: 'Les factures apparaîtront ici',
       onRetry: () => ref.invalidate(feeStructuresProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['label'] ?? item['reference'] ?? 'Facture',
-        subtitle: '${item['amount'] ?? '—'} €',
+        title: (item['label'] as String?) ?? (item['reference'] as String?) ?? 'Facture',
+        subtitle: '${(item['amount'] as String?) ?? '—'} €',
         leadingIcon: Icons.receipt,
-        badge: StatusBadge(label: item['status'] ?? 'En attente', type: _statusType(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'En attente', type: _statusType(item['status'])),
       ),
     );
   }
@@ -133,10 +133,10 @@ class _ReceiptsContent extends ConsumerWidget {
       emptySubtitle: 'Les reçus apparaîtront ici',
       onRetry: () => ref.invalidate(transactionsProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['reference'] ?? 'Reçu',
-        subtitle: '${item['amount'] ?? '—'} € - ${item['student_name'] ?? ''}',
+        title: (item['reference'] as String?) ?? 'Reçu',
+        subtitle: '${(item['amount'] as String?) ?? '—'} € - ${(item['student_name'] as String?) ?? ''}',
         leadingIcon: Icons.receipt_long,
-        badge: StatusBadge(label: item['status'] ?? 'Émis', type: _statusType(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Émis', type: _statusType(item['status'])),
       ),
     );
   }
@@ -171,10 +171,10 @@ class _SalaryContent extends ConsumerWidget {
       emptySubtitle: 'Les fiches de paie apparaîtront ici',
       onRetry: () => ref.invalidate(expensesProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['label'] ?? item['reference'] ?? 'Fiche de paie',
-        subtitle: '${item['amount'] ?? '—'} €',
+        title: (item['label'] as String?) ?? (item['reference'] as String?) ?? 'Fiche de paie',
+        subtitle: '${(item['amount'] as String?) ?? '—'} €',
         leadingIcon: Icons.badge,
-        badge: StatusBadge(label: item['status'] ?? 'En préparation', type: _statusType(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'En préparation', type: _statusType(item['status'])),
       ),
     );
   }
@@ -202,8 +202,8 @@ class _ExpensesContent extends ConsumerWidget {
       },
       addLabel: 'Ajouter une dépense',
       itemBuilder: (item) => ListItemCard(
-        title: item['label'] ?? 'Dépense',
-        subtitle: '${item['amount'] ?? '—'} € - ${item['category'] ?? ''}',
+        title: (item['label'] as String?) ?? 'Dépense',
+        subtitle: '${(item['amount'] as String?) ?? '—'} € - ${(item['category'] as String?) ?? ''}',
         leadingIcon: Icons.trending_down,
         leadingIconColor: AHColors.error,
       ),
@@ -222,10 +222,10 @@ class _ReportsContent extends ConsumerWidget {
       emptySubtitle: 'Les rapports apparaîtront ici',
       onRetry: () => ref.invalidate(financeAnomaliesProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['label'] ?? item['title'] ?? 'Rapport',
-        subtitle: item['date'] ?? '',
+        title: (item['label'] as String?) ?? (item['title'] as String?) ?? 'Rapport',
+        subtitle: (item['date'] as String?) ?? '',
         leadingIcon: Icons.assessment,
-        badge: StatusBadge(label: item['status'] ?? 'Disponible', type: _statusType(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Disponible', type: _statusType(item['status'])),
       ),
     );
   }
@@ -242,10 +242,10 @@ class _AuditContent extends ConsumerWidget {
       emptySubtitle: 'Les logs d\'audit apparaîtront ici',
       onRetry: () => ref.invalidate(financeAuditLogsProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['action'] ?? item['label'] ?? 'Entrée d\'audit',
-        subtitle: item['timestamp'] ?? item['date'] ?? '',
+        title: (item['action'] as String?) ?? (item['label'] as String?) ?? 'Entrée d\'audit',
+        subtitle: (item['timestamp'] as String?) ?? (item['date'] as String?) ?? '',
         leadingIcon: Icons.verified_user,
-        badge: StatusBadge(label: item['status'] ?? 'Vérifié', type: _statusType(item['status'])),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Vérifié', type: _statusType(item['status'])),
       ),
     );
   }
@@ -262,9 +262,9 @@ class _SettingsContent extends ConsumerWidget {
       onRetry: () => ref.invalidate(financeSettingsProvider),
       builder: (settings) => SubTabContentWrapper(children: [
         const SectionHeader(title: 'Paramètres finance'),
-        ListItemCard(title: 'Exercice comptable', subtitle: settings['fiscal_year'] ?? '2024-2025', leadingIcon: Icons.calendar_today),
-        ListItemCard(title: 'Plan comptable', subtitle: settings['chart_of_accounts'] ?? 'PCG adapté', leadingIcon: Icons.list_alt),
-        ListItemCard(title: 'Modes de paiement', subtitle: settings['payment_methods'] ?? 'Virement, chèque, espèces, CB', leadingIcon: Icons.payment),
+        ListItemCard(title: 'Exercice comptable', subtitle: (settings['fiscal_year'] as String?) ?? '2024-2025', leadingIcon: Icons.calendar_today),
+        ListItemCard(title: 'Plan comptable', subtitle: (settings['chart_of_accounts'] as String?) ?? 'PCG adapté', leadingIcon: Icons.list_alt),
+        ListItemCard(title: 'Modes de paiement', subtitle: (settings['payment_methods'] as String?) ?? 'Virement, chèque, espèces, CB', leadingIcon: Icons.payment),
       ]),
     );
   }
@@ -289,7 +289,7 @@ class _OrionContent extends ConsumerWidget {
           children: kpis.take(4).map((kpi) => SizedBox(
             width: (MediaQuery.of(context).size.width - AHSpacing.xl * 2 - AHSpacing.sm * 3) / 4,
             child: OrionKpiCard(
-              label: kpi['label'] ?? kpi['title'] ?? 'KPI',
+              label: (kpi['label'] as String?) ?? (kpi['title'] as String?) ?? 'KPI',
               value: kpi['value']?.toString() ?? '—',
               trend: kpi['trend'] as String?,
               trendValue: kpi['trendValue'] as String?,
@@ -314,8 +314,8 @@ class _OrionContent extends ConsumerWidget {
             child: Text('Aucune alerte active', style: TextStyle(color: AHColors.gray500)),
           );
           return Column(children: alerts.take(5).map((a) => ListItemCard(
-            title: a['title'] ?? 'Alerte',
-            subtitle: a['description'] ?? '',
+            title: (a['title'] as String?) ?? 'Alerte',
+            subtitle: (a['description'] as String?) ?? '',
             leadingIcon: Icons.warning_amber,
             leadingIconColor: AHColors.warning,
           )).toList());

@@ -58,10 +58,10 @@ class _DataContent extends ConsumerWidget {
       emptySubtitle: 'Les données agrégées apparaîtront ici',
       onRetry: () => ref.invalidate(aggregationDataProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['name'] ?? item['source'] ?? 'Source',
-        subtitle: '${item['records'] ?? '—'} enregistrements',
+        title: (item['name'] as String?) ?? (item['source'] as String?) ?? 'Source',
+        subtitle: '${(item['records'] as String?) ?? '—'} enregistrements',
         leadingIcon: Icons.school,
-        badge: StatusBadge(label: item['status'] ?? 'Synchro', type: StatusBadgeType.success),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Synchro', type: StatusBadgeType.success),
       ),
     );
   }
@@ -78,10 +78,10 @@ class _ReportsContent extends ConsumerWidget {
       emptySubtitle: 'Les rapports apparaîtront ici',
       onRetry: () => ref.invalidate(aggregationReportsProvider),
       itemBuilder: (item) => ListItemCard(
-        title: item['title'] ?? 'Rapport',
-        subtitle: item['date'] ?? '',
+        title: (item['title'] as String?) ?? 'Rapport',
+        subtitle: (item['date'] as String?) ?? '',
         leadingIcon: Icons.assessment,
-        badge: StatusBadge(label: item['status'] ?? 'Nouveau', type: StatusBadgeType.gold),
+        badge: StatusBadge(label: (item['status'] as String?) ?? 'Nouveau', type: StatusBadgeType.gold),
       ),
     );
   }

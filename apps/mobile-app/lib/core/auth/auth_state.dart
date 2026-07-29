@@ -155,4 +155,10 @@ extension AuthStateX on AuthState {
 
   /// Returns the user's role if authenticated, otherwise `null`.
   String? get roleOrNull => userOrNull?.role;
+
+  /// Returns the current portal (alias for [selectedPortalOrNull]).
+  PortalType? get currentPortal => selectedPortalOrNull;
+
+  /// Returns the current role (alias for [roleOrNull]).
+  String? get currentRole => roleOrNull;
 }

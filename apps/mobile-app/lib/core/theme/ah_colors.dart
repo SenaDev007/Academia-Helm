@@ -123,4 +123,56 @@ class AHColors {
   // ── Border (compatibility alias) ──────────────────────────────────────
 
   static const Color border = Color(0xFFCBD5E1);
+
+  // ── Semantic surface aliases (light-mode defaults) ────────────────────
+
+  /// Light-mode background (alias for [lightBackground]).
+  static const Color background = lightBackground;
+
+  /// Light-mode surface (alias for [lightSurface]).
+  static const Color surface = lightSurface;
+
+  /// Muted background (alias for [lightSurfaceVariant]).
+  static const Color muted = lightSurfaceVariant;
+
+  /// Muted foreground (alias for [grey500]).
+  static const Color mutedForeground = grey500;
+
+  /// Divider color (alias for [lightDivider]).
+  static const Color divider = lightDivider;
+
+  // ── Text color aliases ────────────────────────────────────────────────
+
+  /// Primary text color (alias for [grey900]).
+  static const Color textPrimary = grey900;
+
+  /// Secondary text color (alias for [grey600]).
+  static const Color textSecondary = grey600;
+
+  /// Muted text color (alias for [grey500]).
+  static const Color textMuted = grey500;
+
+  // ── Brand extension colors ────────────────────────────────────────────
+
+  /// Lighter brand blue (distinct from [blue]).
+  static const Color blueLight = Color(0xFF3B82F6);
+
+  /// Darker brand gold (warning-style gold).
+  static const Color goldDark = Color(0xFFD97706);
+
+  /// White with 70% opacity (for subtle on-dark text).
+  static const Color white70 = Color(0xB3FFFFFF);
+
+  // ── Light/Dark mode shorthand getters ─────────────────────────────────
+
+  /// Light mode background (alias for [lightBackground]).
+  static const Color light = lightBackground;
+
+  /// Dark mode background (alias for [darkBackground]).
+  static const Color dark = darkBackground;
+
+  // ── Gradients ─────────────────────────────────────────────────────────
+
+  /// Navy → gold gradient (brand signature).
+  static const List<Color> navyToGold = <Color>[navy, gold];
 }

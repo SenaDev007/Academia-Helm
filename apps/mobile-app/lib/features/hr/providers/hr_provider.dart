@@ -316,6 +316,9 @@ class HrMutationNotifier extends StateNotifier<AsyncValue<void>> {
     }
   }
 
+  /// Alias for [recordLeave] — creates a new leave entry.
+  Future<bool> createLeave(Map<String, dynamic> data) => recordLeave(data);
+
   /// Approves a leave and refreshes the list.
   Future<bool> approveLeave(String id) async {
     state = const AsyncValue.loading();

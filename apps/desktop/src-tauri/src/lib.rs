@@ -1,4 +1,5 @@
 use tauri::Manager;
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::UpdaterExt;
 
 /// Initializes the Tauri application.
@@ -24,7 +25,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_updater::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:academia_helm.db", vec![
@@ -65,16 +66,15 @@ async fn check_for_updates(app: tauri::AppHandle) {
                     );
 
                     // Afficher une notification native
-                    tauri_plugin_notification::Notification::new(
-                        &app.config().identifier,
-                    )
-                    .title("Mise à jour Academia Helm disponible")
-                    .body(format!(
-                        "Version {} disponible (actuel: {}). Cliquez pour installer.",
-                        update.version, update.current_version
-                    ))
-                    .show()
-                    .ok();
+                    app.notification()
+                        .builder()
+                        .title("Mise à jour Academia Helm disponible")
+                        .body(format!(
+                            "Version {} disponible (actuel: {}). Cliquez pour installer.",
+                            update.version, update.current_version
+                        ))
+                        .show()
+                        .ok();
 
                     // TODO: émettre un événement au frontend pour afficher
                     // un badge "Mise à jour disponible" dans le header

@@ -44,8 +44,12 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled true
-            shrinkResources true
+            // Disable R8/minification to prevent native crashes on launch.
+            // R8 was stripping classes needed by Riverpod/Freezed/Hive/SecureStorage
+            // even with ProGuard rules, causing "Academia Helm keeps stopping" on Android.
+            // The APK is larger (~80MB vs 58MB) but guaranteed to work.
+            minifyEnabled false
+            shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.debug // Replace with production signing config
         }

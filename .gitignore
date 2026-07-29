@@ -88,3 +88,4 @@ scripts/node_modules/
 .android-sdk/
 .jdk/
 tool-results/
+apps/desktop/src-tauri/target/

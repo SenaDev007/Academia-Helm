@@ -33,7 +33,7 @@ class ModulePageShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AHColors.background,
+      backgroundColor: AHColors.lightBackground,
       appBar: AppBar(
         title: Text(
           module.label,
@@ -43,7 +43,7 @@ class ModulePageShell extends StatelessWidget {
             fontSize: 18,
           ),
         ),
-        backgroundColor: AHColors.surface,
+        backgroundColor: AHColors.lightSurface,
         elevation: 0.5,
         iconTheme: const IconThemeData(color: AHColors.navy),
         actions: actions,
@@ -124,7 +124,7 @@ class _StatefulModulePageState extends State<StatefulModulePage>
   Widget build(BuildContext context) {
     final tabs = widget.visibleSubTabs;
     return Scaffold(
-      backgroundColor: AHColors.background,
+      backgroundColor: AHColors.lightBackground,
       appBar: AppBar(
         title: Text(
           widget.module.label,
@@ -134,7 +134,7 @@ class _StatefulModulePageState extends State<StatefulModulePage>
             fontSize: 18,
           ),
         ),
-        backgroundColor: AHColors.surface,
+        backgroundColor: AHColors.lightSurface,
         elevation: 0.5,
         iconTheme: const IconThemeData(color: AHColors.navy),
         actions: widget.actions,
@@ -143,7 +143,7 @@ class _StatefulModulePageState extends State<StatefulModulePage>
                 controller: _tabController,
                 isScrollable: tabs.length > 4,
                 labelColor: AHColors.navy,
-                unselectedLabelColor: AHColors.muted,
+                unselectedLabelColor: AHColors.grey500,
                 indicatorColor: AHColors.gold,
                 indicatorWeight: AHSpacing.tabIndicatorHeight,
                 labelStyle: const TextStyle(

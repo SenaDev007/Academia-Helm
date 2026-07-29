@@ -48,7 +48,7 @@ class AHCardShimmer extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Shimmer.fromColors(
-      baseColor: isDark ? AHColors.darkCard : AHColors.gray200,
+      baseColor: isDark ? AHColors.darkSurface : AHColors.gray200,
       highlightColor: isDark ? AHColors.gray700 : AHColors.gray100,
       child: Container(
         width: double.infinity,
@@ -106,7 +106,7 @@ class AHListShimmer extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Shimmer.fromColors(
-      baseColor: isDark ? AHColors.darkCard : AHColors.gray200,
+      baseColor: isDark ? AHColors.darkSurface : AHColors.gray200,
       highlightColor: isDark ? AHColors.gray700 : AHColors.gray100,
       child: ListView.separated(
         physics: const NeverScrollableScrollPhysics(),
@@ -179,7 +179,7 @@ class AHGridShimmer extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Shimmer.fromColors(
-      baseColor: isDark ? AHColors.darkCard : AHColors.gray200,
+      baseColor: isDark ? AHColors.darkSurface : AHColors.gray200,
       highlightColor: isDark ? AHColors.gray700 : AHColors.gray100,
       child: GridView.count(
         physics: const NeverScrollableScrollPhysics(),

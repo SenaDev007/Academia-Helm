@@ -35,7 +35,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../loading/loading_messages.dart';
 import '../../network/connectivity_service.dart';
-import '../../../theme/ah_colors.dart';
+import '../../theme/ah_colors.dart';
 import 'async_value_widget.dart';
 import 'inline_spinner.dart';
 import 'module_loading.dart';

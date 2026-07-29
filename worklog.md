@@ -2971,3 +2971,43 @@ Stage Summary:
 - Local Android SDK at /home/z/my-project/.android-sdk
 - Local JDK 17 at /home/z/my-project/.jdk/jdk-17.0.13+11
 - To rebuild locally: export ANDROID_HOME, JAVA_HOME, GRADLE_OPTS then `flutter build apk`
+
+---
+Task ID: tauri-build-fix-v1.0.0
+Agent: main
+Task: Set up local Tauri build environment for Windows cross-compilation (similar to Flutter/Android setup)
+
+Work Log:
+- Installed Rust 1.97.1 via rustup (stable channel)
+- Added x86_64-pc-windows-msvc target for Windows cross-compilation
+- Installed cargo-xwin (0.23.0) for MSVC SDK integration (auto-downloads Windows SDK)
+- Installed Tauri CLI 2.11.4 via npm (precompiled, faster than cargo install)
+- Downloaded and extracted LLVM/Clang 19 tools locally:
+  - clang-19 (provides clang-cl for MSVC-compatible C/C++ compilation)
+  - lld-19 (provides lld-link for Windows PE linking)
+  - llvm-19 (provides llvm-lib for MSVC-compatible archiving)
+  - libclang-common-19-dev (provides stdalign.h and other built-in headers)
+- Downloaded and extracted NSIS 3.11 + nsis-common for installer creation
+- Created .cargo/config.toml with Windows MSVC linker configuration
+- Fixed icon.ico: was actually a PNG file → converted to proper ICO format (6 sizes, BMP entries)
+- Fixed Rust API errors in lib.rs:
+  - tauri_plugin_updater::init() → tauri_plugin_updater::Builder::new().build()
+  - Notification::new(identifier) → app.notification().builder() (Tauri 2 API)
+- Built Windows .exe binary: academia-helm-desktop.exe (21MB, PE32+ x86-64)
+- Built NSIS installer: Academia-Helm-v1.0.0-windows-setup.exe (5.2MB)
+- Created build-tauri-windows.sh script for reproducible builds
+
+Stage Summary:
+- All Rust code compiles for Windows (cargo xwin check passes)
+- Windows .exe binary built successfully (21MB portable)
+- NSIS installer built successfully (5.2MB setup.exe)
+- Both files verified as valid PE32+ Windows executables
+- Local build environment at:
+  - Rust: ~/.cargo, ~/.rustup
+  - LLVM/Clang: /home/z/my-project/.clang/
+  - NSIS: /home/z/my-project/.nsis/
+  - Tauri CLI: /home/z/.npm-global/bin/tauri
+- To rebuild: ./scripts/build-tauri-windows.sh
+- Deliverables in /home/z/my-project/download/:
+  - academia-helm-desktop-v1.0.0.exe (21MB portable)
+  - Academia-Helm-v1.0.0-windows-setup.exe (5.2MB installer)

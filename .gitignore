@@ -82,14 +82,9 @@ download/
 # Divergent repo clones (not the active project)
 repo/
 scripts/node_modules/
----
-# Local SDK installations
+.clang/
+.nsis/
 .flutter-sdk/
 .android-sdk/
 .jdk/
 tool-results/
-apps/desktop/src-tauri/target/
-apps/desktop/src-tauri/gen/
-.clang/
-.nsis/
-.llvm/

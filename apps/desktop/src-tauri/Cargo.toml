@@ -2,7 +2,7 @@
 name = "academia-helm-desktop"
 version = "1.0.0"
 description = "Academia Helm Desktop App"
-authors = ["Academia Helm"]
+authors = ["YEHI OR Tech"]
 edition = "2021"
 rust-version = "1.70"
 

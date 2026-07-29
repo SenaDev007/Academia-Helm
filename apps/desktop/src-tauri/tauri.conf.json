@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Academia Helm",
   "version": "1.0.0",
-  "identifier": "com.academiahelm.desktop",
+  "identifier": "com.yehiortech.academiahelm.desktop",
   "build": {
     "devUrl": "http://localhost:3001/desktop",
     "beforeDevCommand": "cd ../web-app && npm run dev",
@@ -12,7 +12,7 @@
     "windows": [
       {
         "title": "Academia Helm",
-        "url": "https://app.academiahelm.com/desktop",
+        "url": "splash.html",
         "width": 1280,
         "height": 800,
         "minWidth": 1024,
@@ -42,13 +42,22 @@
     ],
     "resources": [],
     "externalBin": [],
-    "copyright": "© 2026 Academia Helm. Tous droits réservés.",
+    "publisher": "YEHI OR Tech",
+    "copyright": "© 2026 YEHI OR Tech. Tous droits réservés.",
     "category": "Education",
     "shortDescription": "Plateforme de gestion scolaire Academia Helm",
-    "longDescription": "Academia Helm — la plateforme de gestion scolaire tout-en-un pour les établissements africains. Gérez vos élèves, finances, pédagogie, communication et plus encore.",
+    "longDescription": "Academia Helm — la plateforme de gestion scolaire tout-en-un pour les établissements africains. Développé par YEHI OR Tech.",
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "icons/nsis-header.bmp",
+        "sidebarImage": "icons/nsis-sidebar.bmp",
+        "installMode": "currentUser",
+        "languages": ["French", "English"],
+        "displayLanguageSelector": true
       }
     },
     "createUpdaterArtifacts": true

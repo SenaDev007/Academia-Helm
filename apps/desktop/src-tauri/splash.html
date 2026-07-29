@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Academia Helm — Connexion</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            width: 100%;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        body {
+            background-color: #0B2F73;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        /* ── Background: Hero image with blur overlay ── */
+        .bg-hero {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: url('https://app.academiahelm.com/images/Background-SaisieMaster-hero.png');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            filter: blur(8px);
+            transform: scale(1.1);
+            z-index: 0;
+        }
+        .bg-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, rgba(7, 29, 74, 0.85) 0%, rgba(11, 47, 115, 0.75) 50%, rgba(26, 63, 139, 0.8) 100%);
+            z-index: 1;
+        }
+
+        /* ── Main content ── */
+        .container {
+            position: relative;
+            z-index: 2;
+            text-align: center;
+            color: white;
+            max-width: 600px;
+            padding: 40px;
+        }
+
+        /* ── Logo ── */
+        .logo-wrapper {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 32px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        .logo-wrapper svg {
+            width: 70px;
+            height: 70px;
+        }
+
+        /* ── Title ── */
+        .app-name {
+            font-size: 42px;
+            font-weight: 800;
+            letter-spacing: -1px;
+            margin-bottom: 12px;
+            color: #FFFFFF;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+        .tagline {
+            font-size: 18px;
+            font-weight: 400;
+            color: #F5B335;
+            margin-bottom: 48px;
+            text-shadow: 0 1px 5px rgba(0, 0, 0, 0.3);
+        }
+
+        /* ── Connect button ── */
+        .btn-connect {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 16px 48px;
+            font-size: 18px;
+            font-weight: 600;
+            color: #0B2F73;
+            background: linear-gradient(135deg, #F5B335 0%, #FCD779 100%);
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 24px rgba(245, 179, 53, 0.4);
+            text-decoration: none;
+        }
+        .btn-connect:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 32px rgba(245, 179, 53, 0.5);
+        }
+        .btn-connect:active {
+            transform: translateY(0);
+        }
+        .btn-connect svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        /* ── Secondary link ── */
+        .secondary-link {
+            display: block;
+            margin-top: 24px;
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.7);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        .secondary-link:hover {
+            color: #F5B335;
+        }
+
+        /* ── Footer ── */
+        .footer {
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            z-index: 2;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.4);
+        }
+        .footer a {
+            color: rgba(255, 255, 255, 0.6);
+            text-decoration: none;
+        }
+
+        /* ── Loading spinner (shown briefly) ── */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #0B2F73;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            transition: opacity 0.5s;
+        }
+        .loading-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid rgba(255, 255, 255, 0.2);
+            border-top-color: #F5B335;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading overlay (shown while page loads) -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Background -->
+    <div class="bg-hero"></div>
+    <div class="bg-overlay"></div>
+
+    <!-- Main content -->
+    <div class="container">
+        <!-- Logo -->
+        <div class="logo-wrapper">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M50 5 L85 20 L85 50 C85 70 70 85 50 95 C30 85 15 70 15 50 L15 20 Z"
+                      fill="#F5B335" stroke="#F5B335" stroke-width="2"/>
+                <path d="M50 15 L75 25 L75 50 C75 65 65 78 50 85 C35 78 25 65 25 50 L25 25 Z"
+                      fill="#0B2F73"/>
+                <text x="50" y="58" text-anchor="middle" fill="#F5B335"
+                      font-family="Inter, sans-serif" font-size="28" font-weight="800">AH</text>
+            </svg>
+        </div>
+
+        <!-- Title -->
+        <h1 class="app-name">Academia Helm</h1>
+        <p class="tagline">Gestion Scolaire Intelligente</p>
+
+        <!-- Connect button -->
+        <a href="https://app.academiahelm.com/login" class="btn-connect" id="connectBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                <polyline points="10 17 15 12 10 7"/>
+                <line x1="15" y1="12" x2="3" y2="12"/>
+            </svg>
+            Se connecter à mon école
+        </a>
+
+        <!-- Secondary link -->
+        <a href="https://academiahelm.com" class="secondary-link">
+            Découvrir Academia Helm →
+        </a>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        © 2026 YEHI OR Tech — Academia Helm. Tous droits réservés.
+    </div>
+
+    <script>
+        // Hide loading overlay once page is ready
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                document.getElementById('loadingOverlay').classList.add('hidden');
+            }, 500);
+        });
+
+        // Handle connect button click - open login in the same window
+        document.getElementById('connectBtn').addEventListener('click', function(e) {
+            // The default anchor behavior will navigate to the login page
+            // No preventDefault needed - let it navigate naturally
+        });
+    </script>
+</body>
+</html>

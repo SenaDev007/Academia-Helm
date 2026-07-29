@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../theme/ah_theme.dart';
+import '../theme/ah_colors.dart';
+import '../theme/ah_spacing.dart';
+import '../theme/ah_spacing.dart' show AHSpacing, AHRadius;
 import '../auth/logout_state.dart';
 
 /// A destination for the adaptive navigation.

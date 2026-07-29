@@ -40,7 +40,6 @@ class AHTheme {
       onSurface: AHColors.lightOnSurface,
       surfaceContainerHighest: AHColors.lightSurfaceContainerHighest,
       surfaceContainerHigh: AHColors.lightSurfaceVariant,
-      surfaceContainerMedium: AHColors.lightSurfaceVariant,
       surfaceContainerLow: AHColors.lightSurface,
       surfaceContainerLowest: AHColors.white,
       outline: AHColors.lightOutline,
@@ -76,7 +75,6 @@ class AHTheme {
       onSurface: AHColors.darkOnSurface,
       surfaceContainerHighest: AHColors.darkSurfaceContainerHighest,
       surfaceContainerHigh: AHColors.darkSurfaceVariant,
-      surfaceContainerMedium: AHColors.darkSurfaceVariant,
       surfaceContainerLow: AHColors.darkSurface,
       surfaceContainerLowest: AHColors.darkBackground,
       outline: AHColors.darkOutline,
@@ -132,7 +130,7 @@ class AHTheme {
         elevation: AHSpacing.elevationNone,
         shape: AHCardStyle.cardShape(),
         margin: const EdgeInsets.symmetric(
-          horizontal: AHSpacing.s16,
+          horizontal: AHSpacing.s46,
           vertical: AHSpacing.s4,
         ),
         clipBehavior: Clip.antiAlias,
@@ -159,7 +157,7 @@ class AHTheme {
         fillColor: colorScheme.surface,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: AHSpacing.inputHorizontalPadding,
-          vertical: AHSpacing.s12,
+          vertical: AHSpacing.s42,
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AHSpacing.r8),
@@ -233,7 +231,7 @@ class AHTheme {
       dividerTheme: DividerThemeData(
         color: isLight ? AHColors.lightDivider : AHColors.darkDivider,
         thickness: AHSpacing.dividerThickness,
-        space: AHSpacing.s1,
+        space: AHSpacing.s4,
       ),
 
       // ── Bottom Navigation Bar ───────────────────────────────────────

@@ -6,6 +6,7 @@ import '../theme/ah_theme.dart';
 import '../widgets/adaptive_scaffold.dart';
 import 'route_guards.dart';
 import '../auth/auth_notifier.dart';
+import '../theme/ah_colors.dart';
 import '../auth/auth_providers.dart';
 import '../../features/auth/pages/splash_screen.dart';
 import '../../features/auth/pages/login_screen.dart';
@@ -97,7 +98,7 @@ final adaptiveDestinationsProvider = Provider<List<AdaptiveDestination>>((ref) {
   return authState.maybeWhen(
     data: (state) {
       final role = state.userOrNull?.role?.toUpperCase() ?? '';
-      final portal = state.selectedPortal;
+      final portal = state.selectedPortalOrNull;
 
       // Si le portail est explicitement choisi, l'utiliser
       if (portal != null) {

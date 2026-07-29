@@ -21,7 +21,7 @@ import '../../../core/network/api_client.dart';
 /// Fetches aggregation dashboard statistics.
 final aggregationDashboardProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
-  final client = ApiClient();
+  final client = ApiClient.defaultInstance();
   final response = await client.get('/aggregation/dashboard');
   return response is Map<String, dynamic> ? response : <String, dynamic>{};
 });
@@ -31,7 +31,7 @@ final aggregationDashboardProvider =
 /// Fetches the list of aggregated data sources.
 final aggregationDataProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final client = ApiClient();
+  final client = ApiClient.defaultInstance();
   final response = await client.get('/aggregation/data');
   if (response is List) {
     return response.cast<Map<String, dynamic>>();
@@ -44,7 +44,7 @@ final aggregationDataProvider =
 /// Fetches aggregation reports.
 final aggregationReportsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final client = ApiClient();
+  final client = ApiClient.defaultInstance();
   final response = await client.get('/aggregation/reports');
   if (response is List) {
     return response.cast<Map<String, dynamic>>();

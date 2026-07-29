@@ -12,7 +12,7 @@
 
 import 'package:flutter/material.dart';
 
-import '../../theme/ah_colors.dart';
+import '../../core/theme/ah_colors.dart';
 import 'skeleton.dart';
 
 // ─── Module Loading ──────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../messages/providers/messages_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/enums/module_config.dart';
@@ -14,7 +15,7 @@ import '../../orion/widgets/orion_kpi_card.dart';
 import '../../orion/widgets/orion_insight_section.dart';
 // Dashboard built from messages count as proxy
 final _communicationDashboardProvider = FutureProvider<Map<String, dynamic>>((ref) async {
-  final msgs = await ref.watch(messagesProvider.future);
+  final msgs = await ref.watch(messagesListProvider(MessageFilter.all()).future);
   return {'received_count': msgs.length};
 });
 
@@ -84,11 +85,11 @@ class _InboxContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDataList(
-      itemsAsync: ref.watch(messagesProvider),
+      itemsAsync: ref.watch(messagesListProvider(MessageFilter.all())),
       moduleName: 'Boîte de réception',
       emptyTitle: 'Aucun message',
       emptySubtitle: 'Votre boîte de réception est vide',
-      onRetry: () => ref.invalidate(messagesProvider),
+      onRetry: () => ref.invalidate(messagesListProvider(MessageFilter.all())),
       itemBuilder: (item) => ListItemCard(
         title: item['sender'] ?? item['subject'] ?? 'Message',
         subtitle: item['preview'] ?? item['date'] ?? '',
@@ -104,11 +105,11 @@ class _SentContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDataList(
-      itemsAsync: ref.watch(messagesProvider),
+      itemsAsync: ref.watch(messagesListProvider(MessageFilter.all())),
       moduleName: 'Envoyés',
       emptyTitle: 'Aucun message envoyé',
       emptySubtitle: 'Les messages envoyés apparaîtront ici',
-      onRetry: () => ref.invalidate(messagesProvider),
+      onRetry: () => ref.invalidate(messagesListProvider(MessageFilter.all())),
       itemBuilder: (item) => ListItemCard(
         title: item['subject'] ?? 'Message envoyé',
         subtitle: '${item['recipients'] ?? ''} - ${item['date'] ?? ''}',

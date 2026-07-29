@@ -115,7 +115,7 @@ class LogoutResult {
   final Set<LogoutStep> completedSteps;
 
   /// Convenience factory for a successful logout.
-  static const LogoutResult success = LogoutResult(success: true);
+  static const LogoutResult successResult = LogoutResult(success: true);
 
   /// Convenience factory for a failed logout.
   factory LogoutResult.failure(String error, {Set<LogoutStep>? completedSteps}) {

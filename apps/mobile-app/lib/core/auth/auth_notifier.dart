@@ -5,6 +5,7 @@ import '../network/api_config.dart';
 import '../network/api_result.dart';
 import 'auth_state.dart';
 import 'token_storage.dart';
+import '../enums/user_role.dart' show PortalType;
 
 /// Riverpod provider for the [AuthNotifier].
 final authNotifierProvider =

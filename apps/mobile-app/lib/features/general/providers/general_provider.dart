@@ -20,7 +20,7 @@ import '../../../core/network/api_client.dart';
 
 final generalDashboardProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
-  final client = ApiClient();
+  final client = ApiClient.defaultInstance();
   final response = await client.get('/general/dashboard');
   return response is Map<String, dynamic> ? response : <String, dynamic>{};
 });
@@ -29,7 +29,7 @@ final generalDashboardProvider =
 
 final generalNewsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final client = ApiClient();
+  final client = ApiClient.defaultInstance();
   final response = await client.get('/general/news');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
@@ -39,7 +39,7 @@ final generalNewsProvider =
 
 final generalDocumentsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final client = ApiClient();
+  final client = ApiClient.defaultInstance();
   final response = await client.get('/general/documents');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
@@ -49,7 +49,7 @@ final generalDocumentsProvider =
 
 final generalAnnouncementsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final client = ApiClient();
+  final client = ApiClient.defaultInstance();
   final response = await client.get('/general/announcements');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];

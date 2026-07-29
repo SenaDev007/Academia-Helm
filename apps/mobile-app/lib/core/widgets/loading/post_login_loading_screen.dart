@@ -19,7 +19,7 @@ import '../../enums/user_role.dart';
 import '../../loading/loading_messages.dart';
 import '../../loading/post_login_flow.dart';
 import '../../network/api_client.dart';
-import '../../theme/ah_colors.dart';
+import '../../core/theme/ah_colors.dart';
 import 'loading_screen.dart';
 
 // ─── Post Login Result ───────────────────────────────────────────────────────

@@ -120,7 +120,7 @@ class SubjectAverage {
     required this.subjectId,
     required this.subjectName,
     required this.average,
-    required this.maxAverage = 20.0,
+    this.maxAverage = 20.0,
     required this.gradeCount,
     required this.coefficient,
   });

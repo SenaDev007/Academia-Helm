@@ -5,6 +5,7 @@ import '../academic_year/academic_year_provider.dart';
 import '../academic_year/school_level_provider.dart';
 import '../auth/token_storage.dart';
 import '../tenant/tenant_notifier.dart';
+import '../tenant/tenant_state.dart';
 import 'api_config.dart';
 
 /// Dio interceptor that injects authentication headers and handles token

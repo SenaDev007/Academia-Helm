@@ -25,10 +25,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../theme/ah_colors.dart';
-import '../../theme/ah_spacing.dart';
-import '../loading/module_loading_wrapper.dart';
-import '../sub_tab_content.dart';
+import '../../core/theme/ah_colors.dart';
+import '../../core/theme/ah_spacing.dart';
+import 'loading/module_loading_wrapper.dart';
+import 'sub_tab_content.dart';
 
 /// A reusable data list widget for module sub-tabs that handles
 /// loading, empty state, error, and data display with optional FAB.

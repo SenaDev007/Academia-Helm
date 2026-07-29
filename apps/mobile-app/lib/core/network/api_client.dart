@@ -60,6 +60,17 @@ final apiClientProvider = Provider<ApiClient>((Ref ref) {
 class ApiClient {
   ApiClient(this._dio);
 
+  /// Factory constructor with default Dio instance.
+  factory ApiClient.defaultInstance() {
+    return ApiClient(Dio(BaseOptions(
+      baseUrl: ApiConfig.baseUrl,
+      connectTimeout: ApiConfig.connectTimeout,
+      receiveTimeout: ApiConfig.receiveTimeout,
+      sendTimeout: ApiConfig.sendTimeout,
+      headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+    )));
+  }
+
   final Dio _dio;
 
   // ── Convenience singleton for services that don't use Riverpod ────────────

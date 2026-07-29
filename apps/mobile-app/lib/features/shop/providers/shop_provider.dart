@@ -18,14 +18,14 @@ import '../../../core/network/api_client.dart';
 
 final shopDashboardProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
-  final client = ApiClient();
+  final client = ApiClient.defaultInstance();
   final response = await client.get('/shop/dashboard');
   return response is Map<String, dynamic> ? response : <String, dynamic>{};
 });
 
 final shopProductsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final client = ApiClient();
+  final client = ApiClient.defaultInstance();
   final response = await client.get('/shop/products');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
@@ -33,7 +33,7 @@ final shopProductsProvider =
 
 final shopOrdersProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final client = ApiClient();
+  final client = ApiClient.defaultInstance();
   final response = await client.get('/shop/orders');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
@@ -41,7 +41,7 @@ final shopOrdersProvider =
 
 final shopPaymentsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final client = ApiClient();
+  final client = ApiClient.defaultInstance();
   final response = await client.get('/shop/payments');
   if (response is List) return response.cast<Map<String, dynamic>>();
   return [];
@@ -49,7 +49,7 @@ final shopPaymentsProvider =
 
 final shopStatisticsProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
-  final client = ApiClient();
+  final client = ApiClient.defaultInstance();
   final response = await client.get('/shop/statistics');
   return response is Map<String, dynamic> ? response : <String, dynamic>{};
 });

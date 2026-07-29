@@ -2,19 +2,8 @@
 # CODEMAGIC CI/CD — Academia Helm Mobile (Flutter)
 # ============================================================================
 #
-# Fichier de configuration Codemagic pour les builds Android + iOS.
+# Configuration pour Android + iOS.
 # 500 minutes gratuites par mois.
-#
-# Pour configurer :
-# 1. Allez sur https://codemagic.io
-# 2. Sign up / Login avec GitHub
-# 3. Add application →选择 SenaDev007/Academia-Helm
-# 4. Select "codemagic.yaml" as workflow type
-# 5. Ce fichier sera détecté automatiquement
-#
-# Pour lancer un build :
-# - Push un tag v* → build automatique
-# - Ou déclencher manuellement depuis le dashboard Codemagic
 # ============================================================================
 
 workflows:
@@ -24,9 +13,6 @@ workflows:
     max_build_duration: 30
     environment:
       flutter: 3.24.0
-      vars:
-        API_BASE_URL:
-          value: "https://api.academiahelm.com/api"
       groups:
         - android_credentials
     triggering:
@@ -51,21 +37,16 @@ workflows:
         working_directory: apps/mobile-app
         script: |
           flutter build apk --release \
-            --dart-define=API_BASE_URL=$API_BASE_URL
+            --dart-define=API_BASE_URL=https://api.academiahelm.com/api
 
       - name: Build App Bundle (release)
         working_directory: apps/mobile-app
         script: |
           flutter build appbundle --release \
-            --dart-define=API_BASE_URL=$API_BASE_URL
+            --dart-define=API_BASE_URL=https://api.academiahelm.com/api
     artifacts:
       - apps/mobile-app/build/app/outputs/flutter-apk/*.apk
       - apps/mobile-app/build/app/outputs/bundle/release/*.aab
-    publishing:
-      github:
-        token: $GITHUB_TOKEN
-        tags: true
-        release_notes: "Academia Helm Mobile — Build automatique via Codemagic CI/CD"
 
   ios-workflow:
     name: Academia Helm iOS
@@ -73,9 +54,6 @@ workflows:
     max_build_duration: 40
     environment:
       flutter: 3.24.0
-      vars:
-        API_BASE_URL:
-          value: "https://api.academiahelm.com/api"
       groups:
         - ios_credentials
     triggering:
@@ -100,12 +78,6 @@ workflows:
         working_directory: apps/mobile-app
         script: |
           flutter build ios --release --no-codesign \
-            --dart-define=API_BASE_URL=$API_BASE_URL
+            --dart-define=API_BASE_URL=https://api.academiahelm.com/api
     artifacts:
       - apps/mobile-app/build/ios/iphoneos/*.app
-      - apps/mobile-app/build/ios/ipa/*.ipa
-    publishing:
-      github:
-        token: $GITHUB_TOKEN
-        tags: true
-        release_notes: "Academia Helm iOS — Build automatique via Codemagic CI/CD"

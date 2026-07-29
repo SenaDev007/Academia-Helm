@@ -1,10 +1,6 @@
 # ============================================================================
 # CODEMAGIC CI/CD — Academia Helm Mobile (Flutter)
 # ============================================================================
-#
-# Configuration pour Android + iOS.
-# 500 minutes gratuites par mois.
-# ============================================================================
 
 workflows:
   android-workflow:
@@ -27,6 +23,11 @@ workflows:
         working_directory: apps/mobile-app
         script: |
           flutter pub get
+
+      - name: Generate app icons
+        working_directory: apps/mobile-app
+        script: |
+          dart run flutter_launcher_icons
 
       - name: Generate code (freezed/json_serializable)
         working_directory: apps/mobile-app
@@ -68,6 +69,11 @@ workflows:
         working_directory: apps/mobile-app
         script: |
           flutter pub get
+
+      - name: Generate app icons
+        working_directory: apps/mobile-app
+        script: |
+          dart run flutter_launcher_icons
 
       - name: Generate code (freezed/json_serializable)
         working_directory: apps/mobile-app

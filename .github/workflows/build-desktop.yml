@@ -28,6 +28,11 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2.0.0"
 
+      - name: Generate Tauri icons from logo
+        run: |
+          cd apps/desktop
+          cargo tauri icon src-tauri/icons/icon.png || echo "Icon generation skipped (using existing icons)"
+
       - name: Build desktop app
         run: |
           cd apps/desktop

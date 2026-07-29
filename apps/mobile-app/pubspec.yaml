@@ -67,6 +67,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.3
 
   # ── Code Generation ─────────────────────────────────────────────────
   build_runner: ^2.4.11
@@ -86,6 +87,7 @@ flutter:
     - assets/images/
     - assets/icons/
     - assets/l10n/
+    - assets/icon.png
 
   fonts:
     - family: Inter

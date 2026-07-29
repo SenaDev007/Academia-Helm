@@ -2928,3 +2928,46 @@ Stage Summary:
 - ✅ Sync ascendante: file d'attente pour écritures offline (déjà en place)
 - ✅ Mobile: SyncDeltaService créé (consomme /api/sync/delta)
 - ✅ Stratégie respectée: Neon = source de vérité, local = cache miroir
+
+---
+Task ID: mobile-build-fix-v1.2.3
+Agent: main
+Task: Fix all mobile-app compile errors and build APK locally for iterative testing
+
+Work Log:
+- Installed Flutter 3.24.0 SDK locally (matching Codemagic version)
+- Installed Android SDK (platform-tools, android-34, build-tools 34.0.0)
+- Used existing JDK 17 (Temurin) with jlink support
+- Ran `flutter pub get` and `dart run build_runner` successfully
+- Ran `flutter analyze`: found 1292 errors across 2647 issues
+- Categorized errors: 432 undefined_identifier, 261 invalid_constant, 225 undefined_getter, 170 argument_type_not_assignable, 110 undefined_method, 33 uri_does_not_exist
+- Created and ran fix_imports.py: fixed 35 files, 87 import paths
+- Created and ran fix_imports_pass2.py: fixed 9 files in core/widgets/loading/
+- Added 12 missing AHColors members (background, surface, muted, etc.)
+- Added 5 missing AHSpacing members (iconSM, radiusSM, cardBorderRadius, etc.)
+- Added AHTheme.light/dark static getters
+- Added 100+ missing ApiConfig endpoints (finance, orion, students, communication, pedagogy, HR)
+- Created and ran fix_providers.py: fixed ApiResult.cast() in 10 providers
+- Created and ran fix_connectivity_access.py: fixed _connectivityService access
+- Created and ran fix_icons.py: replaced invalid Icons (bus, shield_check, alert_octagon)
+- Created and ran fix_dynamic_strings.py: fixed dynamic→String casts
+- Fixed AuthState: added currentPortal, currentRole getters
+- Fixed ConfigProvider: proper AsyncValue<AuthState> unwrapping
+- Added federisModule definition with 14 sub-tabs
+- Fixed network_security_config.xml: removed nested domain-config in debug-overrides
+- Added missing imports for ModuleLoadingWrapper, announcementsProvider
+- Added createLeave alias to HrMutationNotifier
+- Result: `flutter analyze` shows 0 errors (down from 1292)
+- Built APK locally: `flutter build apk --release` → app-release.apk (58.7MB)
+- Copied APK to /home/z/my-project/download/academia-helm-v1.2.3.apk
+- Committed all fixes, pushed to GitHub, tagged v1.2.3
+
+Stage Summary:
+- All 1292 Dart compile errors resolved
+- Local build environment fully functional for iterative testing
+- APK builds successfully (58.7MB)
+- Tag v1.2.3 pushed to trigger Codemagic CI/CD build
+- Local Flutter SDK at /home/z/my-project/.flutter-sdk/flutter (3.24.0)
+- Local Android SDK at /home/z/my-project/.android-sdk
+- Local JDK 17 at /home/z/my-project/.jdk/jdk-17.0.13+11
+- To rebuild locally: export ANDROID_HOME, JAVA_HOME, GRADLE_OPTS then `flutter build apk`

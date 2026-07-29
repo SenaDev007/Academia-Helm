@@ -17,11 +17,35 @@
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
         body {
-            background: linear-gradient(135deg, #071D4A 0%, #0B2F73 50%, #1A3F8B 100%);
+            background-color: #071D4A;
             display: flex;
             align-items: center;
             justify-content: center;
             position: relative;
+        }
+
+        /* ── Background: AH background image (local, bundled) ── */
+        .bg-image {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: url('icons/ah-background.jpg');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            z-index: 0;
+        }
+        /* Navy overlay for readability */
+        .bg-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, rgba(7, 29, 74, 0.82) 0%, rgba(11, 47, 115, 0.72) 50%, rgba(26, 63, 139, 0.78) 100%);
+            z-index: 1;
         }
 
         /* ── Main content ── */
@@ -34,37 +58,40 @@
             padding: 40px;
         }
 
-        /* ── Logo (smaller, elegant) ── */
+        /* ── Logo (elegant, not too large) ── */
         .logo-wrapper {
-            width: 80px;
-            height: 80px;
+            width: 90px;
+            height: 90px;
             margin: 0 auto 24px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 18px;
             display: flex;
             align-items: center;
             justify-content: center;
-            border: 1px solid rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(8px);
         }
         .logo-wrapper img {
-            width: 56px;
-            height: 56px;
+            width: 64px;
+            height: 64px;
             object-fit: contain;
         }
 
         /* ── Title ── */
         .app-name {
-            font-size: 28px;
+            font-size: 30px;
             font-weight: 700;
             letter-spacing: -0.5px;
             margin-bottom: 8px;
             color: #FFFFFF;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
         }
         .tagline {
-            font-size: 15px;
+            font-size: 16px;
             font-weight: 400;
             color: #F5B335;
             margin-bottom: 40px;
+            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
         }
 
         /* ── Connect button ── */
@@ -101,7 +128,7 @@
             display: block;
             margin-top: 20px;
             font-size: 13px;
-            color: rgba(255, 255, 255, 0.6);
+            color: rgba(255, 255, 255, 0.7);
             text-decoration: none;
             transition: color 0.2s;
         }
@@ -118,14 +145,18 @@
             text-align: center;
             z-index: 2;
             font-size: 11px;
-            color: rgba(255, 255, 255, 0.35);
+            color: rgba(255, 255, 255, 0.4);
         }
     </style>
 </head>
 <body>
-    <!-- Main content (shown immediately, no loading delay) -->
+    <!-- Background (local AH background image + navy overlay) -->
+    <div class="bg-image"></div>
+    <div class="bg-overlay"></div>
+
+    <!-- Main content (shown immediately) -->
     <div class="container">
-        <!-- Logo (smaller) -->
+        <!-- Logo -->
         <div class="logo-wrapper">
             <img src="icons/logo-academia-helm.png" alt="Academia Helm">
         </div>

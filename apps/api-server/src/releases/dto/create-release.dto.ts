@@ -1,4 +1,4 @@
-import { IsString, IsEnum, IsBoolean, IsOptional, IsNumber, IsURL, MaxLength } from 'class-validator';
+import { IsString, IsEnum, IsBoolean, IsOptional, IsNumber, IsUrl, MaxLength } from 'class-validator';
 
 export enum ReleasePlatform {
   ANDROID = 'android',
@@ -38,7 +38,7 @@ export class CreateReleaseDto {
   @IsNumber()
   fileSize: number; // en bytes
 
-  @IsURL()
+  @IsUrl()
   downloadUrl: string;
 
   @IsOptional()

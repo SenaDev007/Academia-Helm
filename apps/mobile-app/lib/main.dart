@@ -25,23 +25,14 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // ── Initialize Firebase BEFORE runApp() ──
-  // This is critical: Firebase plugins auto-register on the Android side,
-  // and if Firebase.initializeApp() is not called, any Firebase plugin usage
-  // (or even the auto-registration) will crash the app with
-  // "Academia Helm keeps stopping".
+  // With google-services.json + the Google Services Gradle plugin properly
+  // configured, Firebase.initializeApp() reads the config automatically.
+  // No need to pass FirebaseOptions manually on Android.
   //
   // We use try/catch so that if Firebase config is missing/misconfigured,
   // the app still starts (just without push notifications).
   try {
-    await Firebase.initializeApp(
-      options: const FirebaseOptions(
-        apiKey: 'AIzaSyBxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-        appId: '1:102938475610:android:a1b2c3d4e5f6a7b8c9d0',
-        messagingSenderId: '102938475610',
-        projectId: 'academia-helm-mobile',
-        storageBucket: 'academia-helm-mobile.appspot.com',
-      ),
-    );
+    await Firebase.initializeApp();
   } catch (e) {
     // Firebase failed to initialize — app will continue without push notifications.
     // This prevents a hard crash; the user can still use the app.

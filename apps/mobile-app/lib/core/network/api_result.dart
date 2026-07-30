@@ -148,12 +148,14 @@ class ApiError {
           );
 
         case DioExceptionType.badCertificate:
+      case DioExceptionType.transformTimeout:
           return const ApiError(
             message: 'Certificat SSL invalide',
             type: ApiErrorType.network,
           );
 
         case DioExceptionType.unknown:
+      case DioExceptionType.transformTimeout:
           // Check if the underlying error is a SocketException (offline)
           final String errorString = error.toString().toLowerCase();
           if (errorString.contains('socket') ||

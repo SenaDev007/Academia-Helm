@@ -316,12 +316,14 @@ class ApiClient {
         );
 
       case DioExceptionType.badCertificate:
+      case DioExceptionType.transformTimeout:
         return const ApiError(
           message: 'Échec de la vérification du certificat SSL.',
           type: ApiErrorType.network,
         );
 
       case DioExceptionType.unknown:
+      case DioExceptionType.transformTimeout:
         if (e.error is UnauthorizedException) {
           return ApiError(
             message: (e.error as UnauthorizedException).message,

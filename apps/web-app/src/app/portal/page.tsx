@@ -677,38 +677,6 @@ export default function PortalPage() {
                 <Shield className="h-3 w-3" style={{ color: NAVY }} />
                 <span>Portail officiel sécurisé {BRAND.name}</span>
               </div>
-
-              {/* Dev mode button — compact */}
-              <div className="flex justify-center lg:justify-start">
-                <motion.button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    handleDevPanelOpen();
-                  }}
-                  whileHover={
-                    shouldReduceMotion
-                      ? undefined
-                      : { scale: 1.02, boxShadow: `0 8px 20px ${GOLD}30` }
-                  }
-                  whileTap={shouldReduceMotion ? undefined : { scale: 0.97 }}
-                  transition={cardSpring}
-                  className="group relative inline-flex items-center gap-1.5 rounded-lg border-2 px-3 py-2 text-xs font-semibold shadow min-h-[44px]"
-                  style={{
-                    borderColor: GOLD,
-                    background: `linear-gradient(135deg, ${GOLD}, #e6a020)`,
-                    color: NAVY,
-                  }}
-                  title="Mode développement"
-                >
-                  <Code2 className="h-3 w-3" />
-                  <span>DEV</span>
-                  <span className="absolute -right-0.5 -top-0.5 rounded-full bg-red-500 px-1 py-px text-[8px] font-bold text-white shadow-sm">
-                    ⚡
-                  </span>
-                </motion.button>
-              </div>
             </motion.div>
           </div>
         </div>

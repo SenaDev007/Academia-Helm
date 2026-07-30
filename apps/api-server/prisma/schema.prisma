@@ -16472,3 +16472,6 @@ model AppRelease {
   @@index([releaseChannel, platform])
   @@map("app_releases")
 }
+
+// Cache bust: force prisma generate to re-run with @map annotations
+// Timestamp: 2026-07-30T14:36:09Z

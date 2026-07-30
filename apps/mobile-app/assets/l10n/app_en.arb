@@ -1,0 +1,17 @@
+{
+  "@@locale": "en",
+  "appName": "Academia Helm",
+  "loginTitle": "Sign In",
+  "loginButton": "Sign In",
+  "emailLabel": "Email address",
+  "passwordLabel": "Password",
+  "forgotPassword": "Forgot password?",
+  "selectTenant": "Select your school",
+  "dashboard": "Dashboard",
+  "students": "Students",
+  "messages": "Messages",
+  "profile": "Profile",
+  "logout": "Sign Out",
+  "settings": "Settings",
+  "notifications": "Notifications"
+}

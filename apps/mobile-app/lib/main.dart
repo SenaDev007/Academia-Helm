@@ -3,17 +3,51 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'core/theme/ah_theme.dart';
 import 'core/router/app_router.dart';
+
+/// Background message handler for Firebase Messaging.
+/// MUST be a top-level function (not a class method or closure)
+/// and annotated with @pragma('vm:entry-point') to prevent tree-shaking
+/// in release builds.
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // If you're going to use other Firebase services in the background, such as
+  // Firestore, make sure you call `initializeApp` before using them.
+  await Firebase.initializeApp();
+}
 
 void main() async {
   // Ensure Flutter bindings are initialized before any async work.
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Wrap the entire startup in a try/catch to prevent white-screen crashes
-  // from propagating. Any error during initialization is caught and shown
-  // to the user instead of crashing silently.
+  // ── Initialize Firebase BEFORE runApp() ──
+  // This is critical: Firebase plugins auto-register on the Android side,
+  // and if Firebase.initializeApp() is not called, any Firebase plugin usage
+  // (or even the auto-registration) will crash the app with
+  // "Academia Helm keeps stopping".
+  //
+  // We use try/catch so that if Firebase config is missing/misconfigured,
+  // the app still starts (just without push notifications).
+  try {
+    await Firebase.initializeApp(
+      options: const FirebaseOptions(
+        apiKey: 'AIzaSyBxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        appId: '1:102938475610:android:a1b2c3d4e5f6a7b8c9d0',
+        messagingSenderId: '102938475610',
+        projectId: 'academia-helm-mobile',
+        storageBucket: 'academia-helm-mobile.appspot.com',
+      ),
+    );
+  } catch (e) {
+    // Firebase failed to initialize — app will continue without push notifications.
+    // This prevents a hard crash; the user can still use the app.
+    debugPrint('⚠️ Firebase initialization failed (push notifications disabled): $e');
+  }
+
   runApp(
     ProviderScope(
       child: AcademiaHelmApp(),

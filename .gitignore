@@ -90,3 +90,4 @@ scripts/node_modules/
 tool-results/
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
+apps/mobile-app/android/app/google-services.json

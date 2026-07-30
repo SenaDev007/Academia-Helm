@@ -1,0 +1,54 @@
+name: Upload Releases to R2
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (ex: 1.2.8)'
+        required: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: |
+          cd scripts
+          npm install @aws-sdk/client-s3 @prisma/client pg
+
+      - name: Download artifacts from release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            *.exe
+            *.apk
+            *.msi
+            *.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload to R2 + register in DB
+        run: node scripts/ci-upload-releases.js
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: academia-helm-releases
+          R2_PUBLIC_URL: https://downloads.academiahelm.com
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          VERSION: ${{ github.ref_name }}
+
+      - name: Verify
+        run: |
+          echo "=== Verification ==="
+          curl -s https://api.academiahelm.com/api/releases/latest | jq .

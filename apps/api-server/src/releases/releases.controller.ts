@@ -15,6 +15,7 @@ import { CreateReleaseDto } from './dto/create-release.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 
 /**
  * ============================================================================
@@ -50,6 +51,7 @@ export class ReleasesController {
    *   - channel: stable | beta | dev (défaut: stable)
    *   - latestOnly: true pour ne retourner que les versions "latest"
    */
+  @Public()
   @Get()
   async findAll(
     @Query('platform') platform?: string,
@@ -68,6 +70,7 @@ export class ReleasesController {
    * Retourne la dernière version stable pour chaque plateforme.
    * Utilisé par la page /downloads pour afficher les boutons.
    */
+  @Public()
   @Get('latest')
   async findLatest() {
     return this.releasesService.findLatest();
@@ -77,6 +80,7 @@ export class ReleasesController {
    * GET /api/releases/:id
    * Détails d'une release spécifique.
    */
+  @Public()
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.releasesService.findOne(id);

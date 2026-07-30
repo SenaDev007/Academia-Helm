@@ -48,9 +48,15 @@ dependencies:
   crypto: ^3.0.3
 
   # ── Notifications ───────────────────────────────────────────────────
-  firebase_core: ^3.2.0
-  firebase_messaging: ^15.0.3
-  flutter_local_notifications: ^17.2.2
+  # NOTE: Firebase and flutter_local_notifications removed — they were causing
+  # crash-on-launch ("Academia Helm keeps stopping") because:
+  # 1. google-services.json was not configured
+  # 2. The plugins auto-register on app start and crash without proper config
+  # 3. They were declared in pubspec.yaml but never used in the Dart code
+  # Push notifications can be re-added later when properly configured.
+  # firebase_core: ^3.2.0
+  # firebase_messaging: ^15.0.3
+  # flutter_local_notifications: ^17.2.2
 
   # ── Utils ───────────────────────────────────────────────────────────
   intl: ^0.19.0  # Pinned by flutter_localizations (Flutter 3.24 SDK)

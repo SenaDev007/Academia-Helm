@@ -16451,20 +16451,20 @@ model CahierDeTest {
 
 model AppRelease {
   id              String   @id @default(uuid()) @db.Uuid
-  version         String   @db.VarChar(32)   // ex: "1.2.8"
-  platform        String   @db.VarChar(16)   // android, windows, ios, macos, linux
-  arch            String   @default("universal") @db.VarChar(16) // x64, arm64, universal
-  filename        String   @db.VarChar(255)  // ex: "academia-helm-v1.2.8.apk"
-  fileSize        BigInt                      // taille en bytes
-  downloadUrl     String   @db.Text          // URL R2 publique
-  checksumSha256  String?  @db.VarChar(64)   // hash SHA-256
-  releaseChannel  String   @default("stable") @db.VarChar(16) // stable, beta, dev
-  isLatest        Boolean  @default(false)   // TRUE = dernière version de cette plateforme
-  releaseNotes    String?  @db.Text
-  minOsVersion    String?  @db.VarChar(32)   // ex: "Android 7.0", "Windows 10"
-  uploadedAt      DateTime @default(now()) @db.Timestamptz
-  createdAt       DateTime @default(now()) @db.Timestamptz
-  updatedAt       DateTime @updatedAt @db.Timestamptz
+  version         String   @db.VarChar(32)
+  platform        String   @db.VarChar(16)
+  arch            String   @default("universal") @db.VarChar(16)
+  filename        String   @db.VarChar(255)
+  fileSize        BigInt   @map("file_size")
+  downloadUrl     String   @map("download_url") @db.Text
+  checksumSha256  String?  @map("checksum_sha256") @db.VarChar(64)
+  releaseChannel  String   @default("stable") @map("release_channel") @db.VarChar(16)
+  isLatest        Boolean  @default(false) @map("is_latest")
+  releaseNotes    String?  @map("release_notes") @db.Text
+  minOsVersion    String?  @map("min_os_version") @db.VarChar(32)
+  uploadedAt      DateTime @default(now()) @map("uploaded_at") @db.Timestamptz
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   @@unique([platform, version, arch])
   @@index([platform, isLatest])

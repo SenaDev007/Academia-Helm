@@ -16,7 +16,7 @@ bun.lock
 
 # Scripts with sensitive DB credentials — NEVER commit
 scripts/*.py
-scripts/*.js
+scripts/*.local.js
 scripts/*.ts
 !scripts/.gitkeep
 

@@ -138,7 +138,11 @@ function useFileAvailability(url: string): { available: boolean; checking: boole
   return { available, checking };
 }
 
-// ── Hook: récupère la dernière release depuis releases.academiahelm.com ──
+// ── Hook: récupère la dernière release depuis notre API (/api/releases/latest) ──
+//
+// L'API interroge la table app_releases dans Neon, qui contient les métadonnées
+// des installables. Les fichiers binaires sont stockés sur Cloudflare R2.
+// Si l'API échoue, fallback sur les valeurs par défaut (DEFAULT_RELEASE).
 
 function useLatestRelease(): { release: Release; loading: boolean } {
   const [release, setRelease] = useState<Release>(DEFAULT_RELEASE);
@@ -147,44 +151,51 @@ function useLatestRelease(): { release: Release; loading: boolean } {
   useEffect(() => {
     async function fetchLatestRelease() {
       try {
-        // Récupère les infos de la dernière version depuis releases.academiahelm.com
-        const response = await fetch(
-          "https://releases.academiahelm.com/api/latest",
-        );
+        // Récupère les dernières versions depuis notre API
+        // (qui lit la table app_releases dans Neon)
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL
+          ? `${process.env.NEXT_PUBLIC_API_URL}/releases/latest`
+          : "/api/releases/latest";
+
+        const response = await fetch(apiUrl);
 
         if (!response.ok) throw new Error("Releases API error");
 
         const data = await response.json();
 
-        // Construire les assets depuis la réponse
-        const assets: ReleaseAsset[] = (data.assets || []).map((asset: any) => {
-          const name = asset.name as string;
-          let platform: ReleaseAsset["platform"] = "windows";
+        // data est un tableau de releases (une par plateforme disponible)
+        const releases = Array.isArray(data) ? data : [];
 
-          if (name.includes(".exe") || name.includes(".msi")) platform = "windows";
-          else if (name.includes(".dmg") || name.includes(".app")) platform = "macos";
-          else if (name.includes(".deb") || name.includes(".AppImage") || name.includes(".rpm")) platform = "linux";
-          else if (name.includes(".apk") || name.includes(".aab")) platform = "android";
-          else if (name.includes(".ipa")) platform = "ios";
+        // Construire les assets depuis les releases
+        const assets: ReleaseAsset[] = releases.map((rel: any) => {
+          const name = rel.filename as string;
+          const platform = rel.platform as ReleaseAsset["platform"];
 
           return {
             name,
-            downloadUrl: asset.download_url || asset.url,
-            size: asset.size ? `${Math.round(asset.size / 1024 / 1024)} MB` : "—",
+            downloadUrl: rel.downloadUrl,
+            size: rel.fileSize
+              ? `${Math.round(Number(rel.fileSize) / 1024 / 1024)} MB`
+              : "—",
             platform,
           };
         });
 
+        // Prendre la version la plus récente (premier élément trié par date)
+        const latestRelease = releases[0];
+        const version = latestRelease?.version || DEFAULT_RELEASE.version;
+        const date = latestRelease?.uploadedAt || new Date().toISOString();
+
         // Parser les notes de version
-        const notesRaw = data.body || data.notes || "";
+        const notesRaw = latestRelease?.releaseNotes || "";
         const notes = notesRaw
           .split("\n")
           .map((line: string) => line.replace(/^[-•*\s]+/, "").trim())
           .filter((line: string) => line.length > 0 && !line.startsWith("#"));
 
         setRelease({
-          version: data.version || data.tag_name?.replace(/^v/, "") || DEFAULT_RELEASE.version,
-          date: data.date || data.published_at || new Date().toISOString(),
+          version,
+          date,
           notes: notes.length > 0 ? notes : DEFAULT_RELEASE.notes,
           assets: assets.length > 0 ? assets : DEFAULT_RELEASE.assets,
         });

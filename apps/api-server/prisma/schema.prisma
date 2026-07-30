@@ -16442,3 +16442,33 @@ model CahierDeTest {
   @@index([testType])
   @@map("cahier_de_tests")
 }
+
+// ============================================================================
+// APP_RELEASES — Installables Academia Helm (APK, EXE, MSI)
+// ============================================================================
+// Métadonnées uniquement. Les fichiers binaires sont stockés sur Cloudflare R2.
+// ============================================================================
+
+model AppRelease {
+  id              String   @id @default(uuid()) @db.Uuid
+  version         String   @db.VarChar(32)   // ex: "1.2.8"
+  platform        String   @db.VarChar(16)   // android, windows, ios, macos, linux
+  arch            String   @default("universal") @db.VarChar(16) // x64, arm64, universal
+  filename        String   @db.VarChar(255)  // ex: "academia-helm-v1.2.8.apk"
+  fileSize        BigInt                      // taille en bytes
+  downloadUrl     String   @db.Text          // URL R2 publique
+  checksumSha256  String?  @db.VarChar(64)   // hash SHA-256
+  releaseChannel  String   @default("stable") @db.VarChar(16) // stable, beta, dev
+  isLatest        Boolean  @default(false)   // TRUE = dernière version de cette plateforme
+  releaseNotes    String?  @db.Text
+  minOsVersion    String?  @db.VarChar(32)   // ex: "Android 7.0", "Windows 10"
+  uploadedAt      DateTime @default(now()) @db.Timestamptz
+  createdAt       DateTime @default(now()) @db.Timestamptz
+  updatedAt       DateTime @updatedAt @db.Timestamptz
+
+  @@unique([platform, version, arch])
+  @@index([platform, isLatest])
+  @@index([platform, version])
+  @@index([releaseChannel, platform])
+  @@map("app_releases")
+}

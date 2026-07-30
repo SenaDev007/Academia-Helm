@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { ReleasesService } from './releases.service';
 import { CreateReleaseDto } from './dto/create-release.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt.auth.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 

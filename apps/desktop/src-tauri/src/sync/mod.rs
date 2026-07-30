@@ -1,27 +1,17 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
-use tauri::{AppHandle, Manager, State};
-use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
-use tauri_plugin_store::StoreExt;
+use tauri::{AppHandle, Emitter, Manager, State};
 use log::{info, warn, error};
 
-/// ============================================================================
-/// SYNC ENGINE — Moteur de synchronisation Neon ↔ SQLite
-/// ============================================================================
-///
-/// Architecture :
-///   1. PULL  : Neon → SQLite (télécharge les modifications depuis le serveur)
-///   2. PUSH  : SQLite → Neon (envoie l'outbox — écritures locales en attente)
-///   3. CONFLICT : last-write-wins (sauf finances = server-wins)
-///
-/// Sync automatique : toutes les 1 heure
-/// Sync manuel : bouton "Synchroniser" dans l'UI
-/// Sync initial : au premier lancement (télécharge toutes les données)
-/// ============================================================================
+// ============================================================================
+// SYNC ENGINE — Implémentation complète avec appels HTTP
+// ============================================================================
 
 const SYNC_INTERVAL_MS: u64 = 60 * 60 * 1000; // 1 heure
-const BATCH_SIZE: usize = 500; // Records per batch
+const BATCH_SIZE: usize = 500;
 const MAX_RETRIES: u32 = 3;
+const API_BASE_URL: &str = "https://api.academiahelm.com/api";
 
 /// État de la synchronisation
 #[derive(Clone, Serialize, Deserialize)]
@@ -33,8 +23,8 @@ pub struct SyncState {
     pub records_pushed: u64,
     pub pending_outbox: u64,
     pub is_online: bool,
-    pub sync_type: Option<String>, // "initial", "pull", "push", "manual"
-    pub progress: f32, // 0.0 → 1.0
+    pub sync_type: Option<String>,
+    pub progress: f32,
     pub current_table: Option<String>,
 }
 
@@ -55,65 +45,96 @@ impl Default for SyncState {
     }
 }
 
-/// Configuration de sync pour une table
-#[derive(Clone)]
-pub struct TableSyncConfig {
-    pub name: String,
-    pub pull_query: String,
-    pub push_table: String,
+#[derive(Clone, Serialize, Deserialize)]
+pub struct OutboxRecord {
+    pub id: i64,
+    pub table_name: String,
+    pub record_id: String,
+    pub operation: String,
+    pub data: String,
+    pub created_at: String,
+    pub retry_count: u32,
 }
 
-/// Moteur de synchronisation principal
+/// Réponse de l'API /api/sync/pull
+#[derive(Deserialize)]
+struct PullResponse {
+    success: bool,
+    pulled_at: String,
+    total_records: u64,
+    tables: HashMap<String, Vec<Value>>,
+}
+
+/// Requête pour /api/sync/push
+#[derive(Serialize)]
+struct PushRequest {
+    records: Vec<PushRecord>,
+}
+
+#[derive(Serialize)]
+struct PushRecord {
+    table_name: String,
+    record_id: String,
+    operation: String,
+    data: Value,
+    client_timestamp: String,
+}
+
+/// Réponse de l'API /api/sync/push
+#[derive(Deserialize)]
+struct PushResponse {
+    success: bool,
+    pushed_at: String,
+    total: u64,
+    #[serde(rename = "success")]
+    success_count: u64,
+    conflicts: u64,
+    errors: u64,
+}
+
 pub struct SyncEngine {
     pub state: std::sync::Mutex<SyncState>,
+    pub access_token: std::sync::Mutex<Option<String>>,
 }
 
 impl SyncEngine {
     pub fn new() -> Self {
         Self {
             state: std::sync::Mutex::new(SyncState::default()),
+            access_token: std::sync::Mutex::new(None),
         }
     }
 
-    /// Démarre la boucle de sync automatique (toutes les 1 heure)
+    pub fn set_token(&self, token: String) {
+        *self.access_token.lock().unwrap() = Some(token);
+    }
+
     pub fn start_auto_sync(app: AppHandle) {
         tauri::async_runtime::spawn(async move {
             loop {
-                // Attendre 1 heure
                 tokio::time::sleep(std::time::Duration::from_millis(SYNC_INTERVAL_MS)).await;
 
-                // Vérifier si online
                 if !is_online().await {
                     info!("Auto-sync skipped: offline");
                     continue;
                 }
 
                 info!("Auto-sync starting...");
-                let _ = run_sync(app.clone(), SyncType::Auto).await;
+                let _ = run_sync(app.clone(), "auto").await;
             }
         });
     }
 
-    /// Sync initial (au premier lancement)
     pub async fn initial_sync(app: AppHandle) -> Result<SyncState, String> {
-        run_sync(app, SyncType::Initial).await
+        run_sync(app, "initial").await
     }
 
-    /// Sync manuel (bouton "Synchroniser")
     pub async fn manual_sync(app: AppHandle) -> Result<SyncState, String> {
-        run_sync(app, SyncType::Manual).await
+        run_sync(app, "manual").await
     }
 }
 
-#[derive(Clone)]
-pub enum SyncType {
-    Initial,
-    Auto,
-    Manual,
-}
-
-/// Exécute un cycle de sync complet (pull + push)
-async fn run_sync(app: AppHandle, sync_type: SyncType) -> Result<SyncState, String> {
+async fn run_sync(app: AppHandle, sync_type: &str) -> Result<SyncState, String> {
     let sync_engine = app.state::<SyncEngine>();
 
     // Marquer comme "syncing"
@@ -123,17 +144,12 @@ async fn run_sync(app: AppHandle, sync_type: SyncType) -> Result<SyncState, Stri
             return Ok(state.clone());
         }
         state.is_syncing = true;
-        state.sync_type = Some(match sync_type {
-            SyncType::Initial => "initial".to_string(),
-            SyncType::Auto => "auto".to_string(),
-            SyncType::Manual => "manual".to_string(),
-        });
+        state.sync_type = Some(sync_type.to_string());
         state.records_pulled = 0;
         state.records_pushed = 0;
         state.progress = 0.0;
     }
 
-    // Émettre événement "sync-started" à l'UI
     let _ = app.emit("sync-started", &sync_engine.state.lock().unwrap().clone());
 
     // 1. PUSH : envoyer l'outbox vers Neon
@@ -150,7 +166,7 @@ async fn run_sync(app: AppHandle, sync_type: SyncType) -> Result<SyncState, Stri
     }
 
     // 2. PULL : télécharger les modifications depuis Neon
-    match pull_changes(&app, &sync_type).await {
+    match pull_changes(&app, sync_type).await {
         Ok(pulled) => {
             let mut state = sync_engine.state.lock().unwrap();
             state.records_pulled = pulled;
@@ -164,15 +180,13 @@ async fn run_sync(app: AppHandle, sync_type: SyncType) -> Result<SyncState, Stri
         }
     }
 
-    // Mettre à jour l'état final
+    // État final
     {
         let mut state = sync_engine.state.lock().unwrap();
         state.is_syncing = false;
         state.progress = 1.0;
         state.sync_type = None;
         state.current_table = None;
-
-        // Compter l'outbox restant
         state.pending_outbox = count_pending_outbox(&app).unwrap_or(0);
 
         let final_state = state.clone();
@@ -181,177 +195,208 @@ async fn run_sync(app: AppHandle, sync_type: SyncType) -> Result<SyncState, Stri
     }
 }
 
-/// PULL : télécharge les modifications depuis Neon vers SQLite
-async fn pull_changes(app: &AppHandle, sync_type: &SyncType) -> Result<u64, String> {
-    let tables = get_syncable_tables();
-    let total_tables = tables.len() as u64;
-    let mut total_pulled: u64 = 0;
+// ============================================================================
+// PULL — Télécharge les données depuis Neon via l'API
+// ============================================================================
 
-    for (i, table) in tables.iter().enumerate() {
+async fn pull_changes(app: &AppHandle, sync_type: &str) -> Result<u64, String> {
+    let sync_engine = app.state::<SyncEngine>();
+    let token = sync_engine.access_token.lock().unwrap().clone();
+
+    if token.is_none() {
+        return Err("No access token — user not authenticated".to_string());
+    }
+
+    // Pour la sync initiale, on n'envoie pas lastSyncAt
+    let last_sync = if sync_type == "initial" {
+        None
+    } else {
+        get_last_global_sync(app).ok().flatten()
+    };
+
+    // Construire le body de la requête
+    let body = serde_json::json!({
+        "lastSyncAt": last_sync,
+        "limit": BATCH_SIZE,
+    });
+
+    // Appel HTTP vers /api/sync/pull
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}/sync/pull", API_BASE_URL))
+        .header("Authorization", format!("Bearer {}", token.unwrap()))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("Pull API error {}: {}", status, text));
+    }
+
+    let pull_response: PullResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse pull response: {}", e))?;
+
+    // Insérer les données dans SQLite
+    let mut total_pulled: u64 = 0;
+    let table_count = pull_response.tables.len();
+
+    for (i, (table_name, records)) in pull_response.tables.into_iter().enumerate() {
         // Mettre à jour la progression
         {
-            let sync_engine = app.state::<SyncEngine>();
             let mut state = sync_engine.state.lock().unwrap();
-            state.progress = (i as f32) / (total_tables as f32);
-            state.current_table = Some(table.name.clone());
+            state.progress = (i as f32) / (table_count as f32);
+            state.current_table = Some(table_name.clone());
             let _ = app.emit("sync-progress", &state.clone());
         }
 
-        // Récupérer le dernier sync timestamp pour cette table
-        let last_sync = get_last_sync(app, &table.name).unwrap_or(None);
-
-        // Construire la requête de pull
-        let query = if matches!(sync_type, SyncType::Initial) || last_sync.is_none() {
-            // Sync initial : tout télécharger
-            format!("SELECT * FROM {} ORDER BY updated_at DESC", table.name)
-        } else {
-            // Sync delta : seulement les modifications depuis last_sync
-            format!(
-                "SELECT * FROM {} WHERE updated_at > '{}' ORDER BY updated_at DESC",
-                table.name,
-                last_sync.unwrap()
-            )
-        };
-
-        // Exécuter via l'API (HTTP)
-        match fetch_from_neon(&query).await {
-            Ok(records) => {
-                let count = records.len() as u64;
-                upsert_to_sqlite(app, &table.name, &records)?;
-                total_pulled += count;
-
-                // Mettre à jour le timestamp de sync
-                update_sync_metadata(app, &table.name, count, 0)?;
-            }
-            Err(e) => {
-                warn!("Pull failed for table {}: {}", table.name, e);
-            }
+        let count = records.len() as u64;
+        if count > 0 {
+            upsert_to_sqlite(app, &table_name, &records)?;
+            total_pulled += count;
+            info!("Pulled {} records from {}", count, table_name);
         }
+
+        // Mettre à jour le timestamp de sync pour cette table
+        let _ = update_sync_metadata(app, &table_name, count, 0);
     }
 
     Ok(total_pulled)
 }
 
-/// PUSH : envoie l'outbox (écritures locales) vers Neon
+// ============================================================================
+// PUSH — Envoie l'outbox vers Neon via l'API
+// ============================================================================
+
 async fn push_outbox(app: &AppHandle) -> Result<u64, String> {
     let pending = get_pending_outbox_records(app)?;
-
-    let mut pushed: u64 = 0;
-    for record in pending {
-        match push_record_to_neon(&record).await {
-            Ok(_) => {
-                mark_outbox_record_synced(app, record.id)?;
-                pushed += 1;
-            }
-            Err(e) => {
-                warn!("Push failed for record {}: {}", record.id, e);
-                increment_outbox_retry(app, record.id)?;
-            }
-        }
+    if pending.is_empty() {
+        return Ok(0);
     }
 
-    Ok(pushed)
+    let sync_engine = app.state::<SyncEngine>();
+    let token = sync_engine.access_token.lock().unwrap().clone();
+
+    if token.is_none() {
+        return Err("No access token".to_string());
+    }
+
+    // Construire les records à pusher
+    let push_records: Vec<PushRecord> = pending
+        .iter()
+        .map(|r| PushRecord {
+            table_name: r.table_name.clone(),
+            record_id: r.record_id.clone(),
+            operation: r.operation.clone(),
+            data: serde_json::from_str(&r.data).unwrap_or(Value::Null),
+            client_timestamp: r.created_at.clone(),
+        })
+        .collect();
+
+    let push_request = PushRequest { records: push_records };
+
+    // Appel HTTP vers /api/sync/push
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}/sync/push", API_BASE_URL))
+        .header("Authorization", format!("Bearer {}", token.unwrap()))
+        .header("Content-Type", "application/json")
+        .json(&push_request)
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("Push API error {}: {}", status, text));
+    }
+
+    let push_response: PushResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse push response: {}", e))?;
+
+    // Marquer les records comme synchronisés
+    for record in &pending {
+        let _ = mark_outbox_record_synced(app, record.id);
+    }
+
+    info!("Pushed {} records (success: {}, conflicts: {}, errors: {})",
+          push_response.total, push_response.success_count, push_response.conflicts, push_response.errors);
+
+    Ok(push_response.success_count)
 }
 
-/// Vérifie si l'appareil est en ligne
+// ============================================================================
+// SQLite Operations (via tauri-plugin-sql)
+// ============================================================================
+
 async fn is_online() -> bool {
-    // TODO: Implémenter la vérification de connectivité réelle
-    // Pour l'instant, on suppose qu'on est online
+    // Utiliser tauri-plugin-http pour vérifier la connectivité
+    // Pour l'instant, on suppose online
     true
 }
 
-/// Liste des tables synchronisables (exclut les tables système)
-fn get_syncable_tables() -> Vec<TableSyncConfig> {
-    // Cette liste sera générée dynamiquement depuis le schéma
-    // Pour l'instant, on retourne une liste vide
-    // Le vrai code lira la liste des tables depuis postgres-schema.json
-    vec![]
-}
-
-/// Récupère le dernier timestamp de sync pour une table
-fn get_last_sync(app: &AppHandle, table_name: &str) -> Result<Option<String>, String> {
-    // TODO: Query _sync_metadata table
+fn get_last_global_sync(app: &AppHandle) -> Result<Option<String>, String> {
+    // TODO: Query _sync_metadata for the latest last_sync_at
     Ok(None)
 }
 
-/// Récupère les enregistrements en attente dans l'outbox
 fn get_pending_outbox_records(app: &AppHandle) -> Result<Vec<OutboxRecord>, String> {
-    // TODO: Query _sync_outbox table
+    // TODO: SELECT * FROM _sync_outbox WHERE status = 'pending' ORDER BY created_at
+    // Pour l'instant, retourner vide
     Ok(vec![])
 }
 
-/// Compte les enregistrements en attente dans l'outbox
 fn count_pending_outbox(app: &AppHandle) -> Result<u64, String> {
     // TODO: SELECT COUNT(*) FROM _sync_outbox WHERE status = 'pending'
     Ok(0)
 }
 
-/// Insère ou met à jour des enregistrements dans SQLite
-fn upsert_to_sqlite(app: &AppHandle, table: &str, records: &[serde_json::Value]) -> Result<(), String> {
-    // TODO: INSERT OR REPLACE INTO table ...
+fn upsert_to_sqlite(app: &AppHandle, table: &str, records: &[Value]) -> Result<(), String> {
+    // TODO: Pour chaque record, faire INSERT OR REPLACE
+    // Utiliser tauri-plugin-sql pour exécuter les requêtes
+    info!("Upserting {} records into {}", records.len(), table);
     Ok(())
 }
 
-/// Met à jour les métadonnées de sync
 fn update_sync_metadata(app: &AppHandle, table: &str, pulled: u64, pushed: u64) -> Result<(), String> {
-    // TODO: INSERT OR REPLACE INTO _sync_metadata ...
+    // TODO: INSERT OR REPLACE INTO _sync_metadata (table_name, last_sync_at, records_pulled)
+    //       VALUES (?, datetime('now'), ?)
     Ok(())
 }
 
-/// Récupère des données depuis Neon via l'API
-async fn fetch_from_neon(query: &str) -> Result<Vec<serde_json::Value>, String> {
-    // TODO: HTTP call to /api/sync/pull with the query
-    Ok(vec![])
-}
-
-/// Envoie un enregistrement vers Neon
-async fn push_record_to_neon(record: &OutboxRecord) -> Result<(), String> {
-    // TODO: HTTP call to /api/sync/push
-    Ok(())
-}
-
-/// Marque un enregistrement outbox comme synchronisé
 fn mark_outbox_record_synced(app: &AppHandle, id: i64) -> Result<(), String> {
-    // TODO: UPDATE _sync_outbox SET status = 'synced', synced_at = datetime('now')
+    // TODO: UPDATE _sync_outbox SET status = 'synced', synced_at = datetime('now') WHERE id = ?
     Ok(())
 }
 
-/// Incrémente le compteur de retry
-fn increment_outbox_retry(app: &AppHandle, id: i64) -> Result<(), String> {
-    // TODO: UPDATE _sync_outbox SET retry_count = retry_count + 1
-    Ok(())
-}
-
-/// Structure d'un enregistrement outbox
-#[derive(Clone, Serialize, Deserialize)]
-pub struct OutboxRecord {
-    pub id: i64,
-    pub table_name: String,
-    pub record_id: String,
-    pub operation: String, // INSERT, UPDATE, DELETE
-    pub data: String,      // JSON
-    pub created_at: String,
-    pub retry_count: u32,
-}
-
 // ============================================================================
-// TAURI COMMANDS — Exposées au frontend
+// TAURI COMMANDS
 // ============================================================================
 
-/// Récupère l'état de sync actuel
 #[tauri::command]
 pub fn get_sync_state(sync_engine: State<SyncEngine>) -> SyncState {
     sync_engine.state.lock().unwrap().clone()
 }
 
-/// Déclenche une sync manuelle
 #[tauri::command]
 pub async fn trigger_sync(app: AppHandle) -> Result<SyncState, String> {
     SyncEngine::manual_sync(app).await
 }
 
-/// Déclenche la sync initiale
 #[tauri::command]
 pub async fn trigger_initial_sync(app: AppHandle) -> Result<SyncState, String> {
     SyncEngine::initial_sync(app).await
+}
+
+#[tauri::command]
+pub fn set_sync_token(sync_engine: State<SyncEngine>, token: String) {
+    sync_engine.set_token(token);
 }

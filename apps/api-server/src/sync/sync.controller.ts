@@ -1,68 +1,80 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  UseGuards,
+  Logger,
+} from '@nestjs/common';
+import { SyncService } from './sync.service';
+import { SyncPullDto, SyncPushDto } from './dto/sync-pull-push.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+
 /**
  * ============================================================================
- * SYNC CONTROLLER — Endpoint de synchronisation descendante
+ * SYNC CONTROLLER — Endpoints pour la sync desktop ↔ Neon
  * ============================================================================
  *
- * GET /api/sync/delta?since=ISO_DATE&tenantId=XXX
- *   → Retourne tous les changements Neon depuis la date donnée
+ * POST /api/sync/pull
+ *   L'app desktop demande les modifications depuis Neon.
+ *   Body: { tables?: string[], lastSyncAt?: string, limit?: number, tenantId?: string }
+ *   Response: { success, pulledAt, lastSyncAt, totalRecords, tables: { [tableName]: records[] } }
  *
- * GET /api/sync/token
- *   → Retourne le syncToken courant (timestamp)
+ * POST /api/sync/push
+ *   L'app desktop envoie ses écritures locales (outbox) vers Neon.
+ *   Body: { records: [{ tableName, recordId, operation, data, clientTimestamp }] }
+ *   Response: { success, pushedAt, total, success, conflicts, errors, results: [...] }
  *
- * ⚠️ READ-ONLY — aucun impact sur le CRUD existant.
+ * GET /api/sync/status
+ *   Retourne le statut de sync (dernière sync, nombre de tables, etc.)
+ *
+ * GET /api/sync/tables
+ *   Retourne la liste des tables synchronisables
  * ============================================================================
  */
-
-import { Controller, Get, Query, UseGuards, BadRequestException } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { TenantId } from '../common/decorators/tenant-id.decorator';
-import { SyncService } from './sync.service';
 
 @Controller('sync')
 @UseGuards(JwtAuthGuard)
 export class SyncController {
+  private readonly logger = new Logger(SyncController.name);
+
   constructor(private readonly syncService: SyncService) {}
 
   /**
-   * GET /api/sync/delta?since=2026-07-28T10:00:00Z
-   *
-   * Retourne tous les changements depuis la date donnée.
-   * Si `since` n'est pas fourni, récupère TOUT (première sync).
-   *
-   * Response :
-   * {
-   *   "syncToken": "2026-07-28T11:00:00.000Z",
-   *   "tenantId": "xxx",
-   *   "since": "2026-07-28T10:00:00.000Z",
-   *   "entities": {
-   *     "students": [...],
-   *     "classes": [...],
-   *     "financeTransactions": [...],
-   *     ...
-   *   },
-   *   "stats": { "totalEntities": 42 }
-   * }
+   * POST /api/sync/pull
+   * Télécharge les modifications depuis Neon vers l'app desktop.
    */
-  @Get('delta')
-  async getDelta(
-    @TenantId() tenantId: string,
-    @Query('since') since?: string,
-  ) {
-    if (!tenantId) {
-      throw new BadRequestException('tenantId est requis');
-    }
-
-    return this.syncService.getDelta(tenantId, since);
+  @Post('pull')
+  async pull(@Body() dto: SyncPullDto) {
+    this.logger.log(`Pull request received`);
+    return this.syncService.pull(dto);
   }
 
   /**
-   * GET /api/sync/token
-   * Retourne le syncToken courant (timestamp ISO).
+   * POST /api/sync/push
+   * Envoie les écritures locales de l'app desktop vers Neon.
    */
-  @Get('token')
-  async getToken() {
+  @Post('push')
+  async push(@Body() dto: SyncPushDto) {
+    this.logger.log(`Push request received: ${dto.records?.length || 0} records`);
+    return this.syncService.push(dto);
+  }
+
+  /**
+   * GET /api/sync/status
+   * Retourne le statut de sync (pour affichage dans l'UI desktop).
+   */
+  @Get('status')
+  async status() {
     return {
-      syncToken: await this.syncService.getCurrentSyncToken(),
+      service: 'sync',
+      version: '1.0.0',
+      serverTime: new Date().toISOString(),
+      endpoints: {
+        pull: 'POST /api/sync/pull',
+        push: 'POST /api/sync/push',
+        status: 'GET /api/sync/status',
+      },
     };
   }
 }

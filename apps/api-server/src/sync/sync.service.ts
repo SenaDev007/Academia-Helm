@@ -1,301 +1,271 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../database/prisma.service';
+import { SyncPullDto, SyncPushDto } from './dto/sync-pull-push.dto';
+
 /**
  * ============================================================================
- * SYNC SERVICE — Synchronisation descendante Neon → Local (desktop/mobile)
+ * SYNC SERVICE — Synchronisation Neon ↔ SQLite (app desktop)
  * ============================================================================
  *
- * Service READ-ONLY qui retourne tous les changements effectués sur Neon
- * depuis une date donnée. Non intrusif : n'impacte AUCUN CRUD existant.
+ * PULL : L'app desktop demande les modifications depuis Neon
+ *   GET /api/sync/pull
+ *   → Retourne les enregistrements modifiés depuis lastSyncAt
  *
- * Endpoint : GET /api/sync/delta?since=ISO_DATE&tenantId=XXX
- *
- * Stratégie :
- *   1. Le client (desktop/mobile) appelle cet endpoint avec la date de sa
- *      dernière sync (stockée dans sync_meta.last_online_sync)
- *   2. Le serveur fait un SELECT ... WHERE updatedAt > $since sur toutes
- *      les tables principales
- *   3. Retourne un objet { entities: { students: [...], classes: [...], ... },
- *      syncToken: NOW() }
- *   4. Le client met à jour son cache local (SQLite/Hive) avec les deltas
- *   5. Au prochain appel, le client utilise le nouveau syncToken
- *
- * ⚠️ Ce service ne modifie JAMAIS les données — il ne fait que des SELECT.
- *    Aucun impact sur le CRUD existant des modules.
+ * PUSH : L'app desktop envoie ses écritures locales (outbox)
+ *   POST /api/sync/push
+ *   → Applique les INSERT/UPDATE/DELETE sur Neon
+ *   → Retourne le résultat (success/conflict/error) pour chaque record
  * ============================================================================
  */
-
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class SyncService {
   private readonly logger = new Logger(SyncService.name);
 
+  // Tables synchronisables (exclut les tables système et de sync)
+  private readonly EXCLUDED_TABLES = new Set([
+    '_prisma_migrations',
+    '_sync_metadata',
+    '_sync_outbox',
+    '_sync_log',
+    'audit_logs',
+    'schema_migrations',
+  ]);
+
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Récupère tous les changements depuis une date donnée.
-   *
-   * @param tenantId ID du tenant (obligatoire)
-   * @param since Date ISO (obligatoire) — si non fourni, utilise epoch (récupère tout)
-   * @returns Objet avec toutes les entités modifiées + nouveau syncToken
-   */
-  async getDelta(tenantId: string, since?: string) {
-    if (!tenantId) {
-      throw new BadRequestException('tenantId est requis');
+  // ===========================================================================
+  // PULL — Télécharge les modifications depuis Neon
+  // ===========================================================================
+
+  async pull(dto: SyncPullDto) {
+    this.logger.log(`Pull request: tables=${dto.tables?.length || 'all'}, lastSync=${dto.lastSyncAt || 'initial'}`);
+
+    const tables = dto.tables?.length ? dto.tables : await this.getAllTableNames();
+    const limit = dto.limit || 500;
+    const results: Record<string, any[]> = {};
+    let totalRecords = 0;
+
+    for (const tableName of tables) {
+      if (this.EXCLUDED_TABLES.has(tableName)) continue;
+
+      try {
+        const records = await this.pullTable(tableName, dto.lastSyncAt, limit, dto.tenantId);
+        results[tableName] = records;
+        totalRecords += records.length;
+      } catch (error) {
+        this.logger.warn(`Pull failed for table ${tableName}: ${error.message}`);
+        results[tableName] = [];
+      }
     }
 
-    // Si pas de "since", on récupère tout (première sync)
-    const sinceDate = since ? new Date(since) : new Date(0);
-    if (isNaN(sinceDate.getTime())) {
-      throw new BadRequestException('since doit être une date ISO valide');
-    }
+    this.logger.log(`Pull complete: ${totalRecords} records from ${Object.keys(results).length} tables`);
 
-    this.logger.log(
-      `Sync delta requested — tenant: ${tenantId}, since: ${sinceDate.toISOString()}`,
-    );
-
-    // ── Récupérer les deltas pour chaque table ──
-    // On utilise Prisma avec where: { updatedAt: { gt: sinceDate } }
-    // pour profiter de l'ORM et éviter les $queryRawUnsafe.
-
-    const [
-      students,
-      studentEnrollments,
-      guardians,
-      studentGuardians,
-      admissions,
-      classes,
-      schoolLevels,
-      subjects,
-      schedules,
-      cahierJournalEntries,
-      pedagogicalFiches,
-      homeworkEntries,
-      pedagogicalTaskStudents,
-      studentAccounts,
-      financeTransactions,
-      feeStructures,
-      feeArrears,
-      feeInstallments,
-      recoveryReminders,
-      financeExpenses,
-      evaluations,
-      grades,
-      reportCards,
-      reportCardItems,
-      quarters,
-      attendanceRecords,
-      attendanceRegisters,
-    ] = await Promise.all([
-      // ── Module Élève ──
-      this.prisma.student.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 1000,
-      }).catch(() => []),
-      this.prisma.studentEnrollment.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 1000,
-      }).catch(() => []),
-      this.prisma.guardian.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 1000,
-      }).catch(() => []),
-      this.prisma.studentGuardian.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 1000,
-      }).catch(() => []),
-      this.prisma.admission.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 500,
-      }).catch(() => []),
-
-      // ── Module Pédagogie ──
-      this.prisma.class.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 500,
-      }).catch(() => []),
-      this.prisma.schoolLevel.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 100,
-      }).catch(() => []),
-      this.prisma.subject.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 500,
-      }).catch(() => []),
-      // Emplois du temps (schedule) — vérifier le nom exact du modèle
-      (this.prisma as any).schedule?.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 500,
-      })?.catch(() => []) ?? [],
-      this.prisma.cahierJournal.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 500,
-      }).catch(() => []),
-      (this.prisma as any).primaryPedagogicalFiche?.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 500,
-      })?.catch(() => []) ?? [],
-      (this.prisma as any).homeworkEntry?.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 500,
-      })?.catch(() => []) ?? [],
-      (this.prisma as any).pedagogicalTaskStudent?.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 1000,
-      })?.catch(() => []) ?? [],
-
-      // ── Module Finance ──
-      this.prisma.studentAccount.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 1000,
-      }).catch(() => []),
-      this.prisma.financeTransaction.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 1000,
-      }).catch(() => []),
-      this.prisma.feeStructure.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 500,
-      }).catch(() => []),
-      (this.prisma as any).feeArrear?.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 500,
-      })?.catch(() => []) ?? [],
-      (this.prisma as any).feeInstallment?.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 1000,
-      })?.catch(() => []) ?? [],
-      (this.prisma as any).recoveryReminder?.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 500,
-      })?.catch(() => []) ?? [],
-      (this.prisma as any).financeExpense?.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 500,
-      })?.catch(() => []) ?? [],
-
-      // ── Module Évaluations ──
-      (this.prisma as any).evaluation?.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 1000,
-      })?.catch(() => []) ?? [],
-      (this.prisma as any).grade?.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 5000,
-      })?.catch(() => []) ?? [],
-      this.prisma.reportCard.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 1000,
-      }).catch(() => []),
-      (this.prisma as any).reportCardItem?.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 5000,
-      })?.catch(() => []) ?? [],
-      (this.prisma as any).quarter?.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 50,
-      })?.catch(() => []) ?? [],
-
-      // ── Module Présences ──
-      (this.prisma as any).attendanceRecord?.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 5000,
-      })?.catch(() => []) ?? [],
-      (this.prisma as any).attendanceRegister?.findMany({
-        where: { tenantId, updatedAt: { gt: sinceDate } },
-        take: 500,
-      })?.catch(() => []) ?? [],
-    ]);
-
-    // ── Construire la réponse ──
-    const now = new Date().toISOString();
-
-    const delta = {
-      syncToken: now,
-      tenantId,
-      since: sinceDate.toISOString(),
-      entities: {
-        // Module Élève
-        students: students as any[],
-        studentEnrollments: studentEnrollments as any[],
-        guardians: guardians as any[],
-        studentGuardians: studentGuardians as any[],
-        admissions: admissions as any[],
-
-        // Module Pédagogie
-        classes: classes as any[],
-        schoolLevels: schoolLevels as any[],
-        subjects: subjects as any[],
-        schedules: schedules as any[],
-        cahierJournalEntries: cahierJournalEntries as any[],
-        pedagogicalFiches: pedagogicalFiches as any[],
-        homeworkEntries: homeworkEntries as any[],
-        pedagogicalTaskStudents: pedagogicalTaskStudents as any[],
-
-        // Module Finance
-        studentAccounts: studentAccounts as any[],
-        financeTransactions: financeTransactions as any[],
-        feeStructures: feeStructures as any[],
-        feeArrears: feeArrears as any[],
-        feeInstallments: feeInstallments as any[],
-        recoveryReminders: recoveryReminders as any[],
-        financeExpenses: financeExpenses as any[],
-
-        // Module Évaluations
-        evaluations: evaluations as any[],
-        grades: grades as any[],
-        reportCards: reportCards as any[],
-        reportCardItems: reportCardItems as any[],
-        quarters: quarters as any[],
-
-        // Module Présences
-        attendanceRecords: attendanceRecords as any[],
-        attendanceRegisters: attendanceRegisters as any[],
-      },
-      stats: {
-        totalEntities:
-          (students as any[]).length +
-          (studentEnrollments as any[]).length +
-          (guardians as any[]).length +
-          (studentGuardians as any[]).length +
-          (admissions as any[]).length +
-          (classes as any[]).length +
-          (schoolLevels as any[]).length +
-          (subjects as any[]).length +
-          (schedules as any[]).length +
-          (cahierJournalEntries as any[]).length +
-          (pedagogicalFiches as any[]).length +
-          (homeworkEntries as any[]).length +
-          (pedagogicalTaskStudents as any[]).length +
-          (studentAccounts as any[]).length +
-          (financeTransactions as any[]).length +
-          (feeStructures as any[]).length +
-          (feeArrears as any[]).length +
-          (feeInstallments as any[]).length +
-          (recoveryReminders as any[]).length +
-          (financeExpenses as any[]).length +
-          (evaluations as any[]).length +
-          (grades as any[]).length +
-          (reportCards as any[]).length +
-          (reportCardItems as any[]).length +
-          (quarters as any[]).length +
-          (attendanceRecords as any[]).length +
-          (attendanceRegisters as any[]).length,
-      },
+    return {
+      success: true,
+      pulledAt: new Date().toISOString(),
+      lastSyncAt: dto.lastSyncAt,
+      totalRecords,
+      tables: results,
     };
-
-    this.logger.log(
-      `Sync delta completed — ${delta.stats.totalEntities} entities returned, syncToken: ${now}`,
-    );
-
-    return delta;
   }
 
-  /**
-   * Récupère la version courante du syncToken (timestamp actuel).
-   * Utile pour initialiser un client qui n'a jamais syncé.
-   */
-  async getCurrentSyncToken(): Promise<string> {
-    return new Date().toISOString();
+  /// Récupère les enregistrements d'une table
+  private async pullTable(tableName: string, lastSyncAt: string | undefined, limit: number, tenantId?: string) {
+    // Construire la requête SQL
+    let query = `SELECT * FROM "${tableName}"`;
+
+    const conditions: string[] = [];
+
+    // Filtre par timestamp (delta sync)
+    if (lastSyncAt) {
+      const hasUpdatedAt = await this.columnExists(tableName, 'updated_at');
+      if (hasUpdatedAt) {
+        conditions.push(`"updated_at" > '${this.escapeSql(lastSyncAt)}'`);
+      }
+    }
+
+    // Filtre par tenant
+    if (tenantId) {
+      const hasTenantId = await this.columnExists(tableName, 'tenant_id');
+      if (hasTenantId) {
+        conditions.push(`"tenant_id" = '${this.escapeSql(tenantId)}'`);
+      }
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    // Tri par updated_at (si la colonne existe)
+    const hasUpdatedAt = await this.columnExists(tableName, 'updated_at');
+    if (hasUpdatedAt) {
+      query += ' ORDER BY "updated_at" DESC';
+    }
+
+    query += ` LIMIT ${limit}`;
+
+    const result = await this.prisma.$queryRawUnsafe(query);
+    return result as any[];
+  }
+
+  // ===========================================================================
+  // PUSH — Applique les écritures locales sur Neon
+  // ===========================================================================
+
+  async push(dto: SyncPushDto) {
+    this.logger.log(`Push request: ${dto.records.length} records`);
+
+    const results: Array<{
+      tableName: string;
+      recordId: string;
+      status: 'success' | 'conflict' | 'error';
+      error?: string;
+    }> = [];
+
+    for (const record of dto.records) {
+      try {
+        await this.applyRecord(record);
+        results.push({
+          tableName: record.tableName,
+          recordId: record.recordId,
+          status: 'success',
+        });
+      } catch (error) {
+        // Check if it's a conflict (version mismatch)
+        if (error.message?.includes('conflict') || error.message?.includes('version')) {
+          results.push({
+            tableName: record.tableName,
+            recordId: record.recordId,
+            status: 'conflict',
+            error: error.message,
+          });
+        } else {
+          results.push({
+            tableName: record.tableName,
+            recordId: record.recordId,
+            status: 'error',
+            error: error.message,
+          });
+          this.logger.warn(`Push failed for ${record.tableName}/${record.recordId}: ${error.message}`);
+        }
+      }
+    }
+
+    const successCount = results.filter(r => r.status === 'success').length;
+    const conflictCount = results.filter(r => r.status === 'conflict').length;
+    const errorCount = results.filter(r => r.status === 'error').length;
+
+    this.logger.log(`Push complete: ${successCount} success, ${conflictCount} conflicts, ${errorCount} errors`);
+
+    return {
+      success: errorCount === 0,
+      pushedAt: new Date().toISOString(),
+      total: dto.records.length,
+      success: successCount,
+      conflicts: conflictCount,
+      errors: errorCount,
+      results,
+    };
+  }
+
+  /// Applique un enregistrement (INSERT/UPDATE/DELETE) sur Neon
+  private async applyRecord(record: {
+    tableName: string;
+    recordId: string;
+    operation: string;
+    data: Record<string, any>;
+    clientTimestamp: string;
+  }) {
+    const { tableName, recordId, operation, data } = record;
+
+    if (this.EXCLUDED_TABLES.has(tableName)) {
+      throw new Error(`Table ${tableName} is not syncable`);
+    }
+
+    switch (operation) {
+      case 'INSERT':
+        return this.applyInsert(tableName, data);
+
+      case 'UPDATE':
+        return this.applyUpdate(tableName, recordId, data);
+
+      case 'DELETE':
+        return this.applyDelete(tableName, recordId);
+
+      default:
+        throw new Error(`Unknown operation: ${operation}`);
+    }
+  }
+
+  /// INSERT : insère un nouvel enregistrement
+  private async applyInsert(tableName: string, data: Record<string, any>) {
+    const columns = Object.keys(data).map(c => `"${c}"`);
+    const values = Object.values(data).map(v => this.formatSqlValue(v));
+
+    const query = `INSERT INTO "${tableName}" (${columns.join(', ')}) VALUES (${values.join(', ')}) ON CONFLICT DO NOTHING`;
+
+    await this.prisma.$executeRawUnsafe(query);
+  }
+
+  /// UPDATE : met à jour un enregistrement existant
+  private async applyUpdate(tableName: string, recordId: string, data: Record<string, any>) {
+    const setClauses = Object.entries(data)
+      .filter(([key]) => key !== 'id')
+      .map(([key, value]) => `"${key}" = ${this.formatSqlValue(value)}`);
+
+    if (setClauses.length === 0) return;
+
+    const query = `UPDATE "${tableName}" SET ${setClauses.join(', ')} WHERE "id" = '${this.escapeSql(recordId)}'`;
+
+    await this.prisma.$executeRawUnsafe(query);
+  }
+
+  /// DELETE : supprime un enregistrement
+  private async applyDelete(tableName: string, recordId: string) {
+    const query = `DELETE FROM "${tableName}" WHERE "id" = '${this.escapeSql(recordId)}'`;
+    await this.prisma.$executeRawUnsafe(query);
+  }
+
+  // ===========================================================================
+  // Helpers
+  // ===========================================================================
+
+  /// Récupère la liste de toutes les tables synchronisables
+  private async getAllTableNames(): Promise<string[]> {
+    const result = await this.prisma.$queryRawUnsafe(`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+      ORDER BY table_name
+    `);
+
+    return (result as any[])
+      .map(r => r.table_name)
+      .filter(name => !this.EXCLUDED_TABLES.has(name));
+  }
+
+  /// Vérifie si une colonne existe dans une table
+  private async columnExists(tableName: string, columnName: string): Promise<boolean> {
+    const result = await this.prisma.$queryRawUnsafe(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = '${this.escapeSql(tableName)}'
+        AND column_name = '${this.escapeSql(columnName)}'
+    `);
+    return (result as any[]).length > 0;
+  }
+
+  /// Échappe les chaînes pour SQL (anti-injection basique)
+  private escapeSql(value: string): string {
+    return value.replace(/'/g, "''");
+  }
+
+  /// Formate une valeur pour SQL
+  private formatSqlValue(value: any): string {
+    if (value === null || value === undefined) return 'NULL';
+    if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
+    if (typeof value === 'number') return value.toString();
+    if (typeof value === 'object') return `'${this.escapeSql(JSON.stringify(value))}'`;
+    // String
+    return `'${this.escapeSql(String(value))}'`;
   }
 }

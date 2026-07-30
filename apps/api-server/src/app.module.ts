@@ -37,6 +37,7 @@ import { PermissionsModule } from './permissions/permissions.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { CountriesModule } from './countries/countries.module';
 import { ReleasesModule } from './releases/releases.module';
+import { SyncModule } from './sync/sync.module';
 import { SalaryPoliciesModule } from './salary-policies/salary-policies.module';
 import { ComplianceModule } from './compliance/compliance.module';
 import { SchoolLevelsModule } from './school-levels/school-levels.module';
@@ -187,6 +188,7 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     // Country & Policies modules
     CountriesModule,
     ReleasesModule,
+    SyncModule,
     SalaryPoliciesModule,
     
     // Compliance module

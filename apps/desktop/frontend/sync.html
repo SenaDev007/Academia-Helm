@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Academia Helm — Synchronisation</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%; height: 100vh; overflow: hidden;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        body {
+            background: linear-gradient(135deg, #071D4A 0%, #0B2F73 50%, #1A3F8B 100%);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .container {
+            text-align: center; color: white; max-width: 600px; padding: 40px;
+        }
+        .logo-wrapper {
+            width: 90px; height: 90px; margin: 0 auto 24px;
+            background: rgba(255,255,255,0.12); border-radius: 18px;
+            display: flex; align-items: center; justify-content: center;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .logo-wrapper img { width: 64px; height: 64px; object-fit: contain; }
+        .title {
+            font-size: 28px; font-weight: 700; margin-bottom: 8px;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        }
+        .subtitle {
+            font-size: 16px; color: #F5B335; margin-bottom: 40px;
+        }
+        .progress-container {
+            background: rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .progress-label {
+            font-size: 14px; color: rgba(255,255,255,0.8);
+            margin-bottom: 12px; text-align: left;
+        }
+        .progress-bar-bg {
+            width: 100%; height: 12px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 6px; overflow: hidden;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #F5B335, #FCD779);
+            border-radius: 6px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        .progress-percent {
+            font-size: 24px; font-weight: 700; color: #F5B335;
+            margin-top: 12px;
+        }
+        .progress-table {
+            font-size: 13px; color: rgba(255,255,255,0.6);
+            margin-top: 8px; font-family: monospace;
+        }
+        .stats {
+            display: flex; justify-content: center; gap: 32px;
+            margin-bottom: 32px;
+        }
+        .stat { text-align: center; }
+        .stat-value { font-size: 28px; font-weight: 700; color: #4ade80; }
+        .stat-label {
+            font-size: 12px; color: rgba(255,255,255,0.5);
+            text-transform: uppercase; letter-spacing: 1px;
+        }
+        .status-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 14px; font-size: 12px; font-weight: 600;
+            border-radius: 20px; margin-bottom: 24px;
+        }
+        .status-syncing {
+            background: rgba(59, 130, 246, 0.2);
+            color: #93c5fd;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        .status-success {
+            background: rgba(34, 197, 94, 0.2);
+            color: #4ade80;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+        .status-error {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        .spinner {
+            width: 14px; height: 14px;
+            border: 2px solid rgba(147, 197, 253, 0.3);
+            border-top-color: #93c5fd;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .log-container {
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            padding: 12px;
+            max-height: 150px;
+            overflow-y: auto;
+            text-align: left;
+        }
+        .log-entry {
+            font-size: 11px; font-family: monospace;
+            color: rgba(255,255,255,0.6);
+            padding: 2px 0;
+        }
+        .log-entry.success { color: #4ade80; }
+        .log-entry.error { color: #f87171; }
+        .log-entry.info { color: #93c5fd; }
+        .btn {
+            display: inline-flex; align-items: center; gap: 10px;
+            padding: 14px 36px; font-size: 16px; font-weight: 600;
+            color: #0B2F73;
+            background: linear-gradient(135deg, #F5B335 0%, #FCD779 100%);
+            border: none; border-radius: 10px; cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 16px rgba(245,179,53,0.4);
+            margin-top: 16px;
+        }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(245,179,53,0.5); }
+        .footer {
+            position: absolute; bottom: 16px; left: 0; right: 0;
+            text-align: center; font-size: 11px;
+            color: rgba(255,255,255,0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo-wrapper">
+            <img src="icons/logo-academia-helm.png" alt="Academia Helm">
+        </div>
+        <h1 class="title">Academia Helm</h1>
+        <p class="subtitle">Synchronisation initiale des données</p>
+
+        <div id="statusBadge" class="status-badge status-syncing">
+            <div class="spinner"></div>
+            <span id="statusText">Connexion au serveur...</span>
+        </div>
+
+        <div class="progress-container">
+            <div class="progress-label">Téléchargement des données depuis le serveur...</div>
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill" id="progressBar"></div>
+            </div>
+            <div class="progress-percent" id="progressPercent">0%</div>
+            <div class="progress-table" id="progressTable">Préparation...</div>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value" id="recordsPulled">0</div>
+                <div class="stat-label">Enregistrements</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="tablesSynced">0</div>
+                <div class="stat-label">Tables</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="recordsPushed">0</div>
+                <div class="stat-label">Envoyés</div>
+            </div>
+        </div>
+
+        <div class="log-container" id="logContainer">
+            <div class="log-entry info">Initialisation...</div>
+        </div>
+
+        <button class="btn" id="continueBtn" style="display: none;" onclick="window.location.href='splash.html'">
+            Continuer vers l'application →
+        </button>
+    </div>
+
+    <div class="footer">© 2026 YEHI OR Tech — Academia Helm</div>
+
+    <script>
+        let syncStarted = false;
+        const { listen } = window.__TAURI__?.event || {};
+
+        if (listen) {
+            listen('sync-started', () => {
+                updateStatus('syncing', 'Synchronisation en cours...');
+                addLog('info', 'Synchronisation démarrée');
+            });
+            listen('sync-progress', (event) => updateProgress(event.payload));
+            listen('sync-completed', (event) => {
+                const state = event.payload;
+                if (state.last_sync_status === 'success') {
+                    updateStatus('success', 'Synchronisation terminée !');
+                    addLog('success', `Terminé: ${state.records_pulled} téléchargés, ${state.records_pushed} envoyés`);
+                } else {
+                    updateStatus('error', 'Erreur de synchronisation');
+                    addLog('error', 'La synchronisation a échoué.');
+                }
+                document.getElementById('continueBtn').style.display = 'inline-flex';
+            });
+        }
+
+        async function startSync() {
+            if (syncStarted) return;
+            syncStarted = true;
+            addLog('info', 'Vérification de la connexion...');
+
+            if (!navigator.onLine) {
+                updateStatus('error', 'Connexion Internet requise');
+                addLog('error', 'Pas de connexion Internet');
+                document.getElementById('continueBtn').style.display = 'inline-flex';
+                document.getElementById('continueBtn').textContent = 'Réessayer';
+                document.getElementById('continueBtn').onclick = () => location.reload();
+                return;
+            }
+
+            addLog('info', 'Connexion OK. Démarrage de la sync...');
+            if (window.__TAURI__?.core?.invoke) {
+                try {
+                    await window.__TAURI__.core.invoke('trigger_initial_sync');
+                } catch (e) {
+                    addLog('error', 'Erreur: ' + e);
+                    updateStatus('error', 'Erreur de synchronisation');
+                    document.getElementById('continueBtn').style.display = 'inline-flex';
+                }
+            } else {
+                simulateProgress();
+            }
+        }
+
+        function simulateProgress() {
+            let progress = 0;
+            const tables = ['students', 'enrollments', 'classes', 'subjects', 'teachers',
+                          'grades', 'absences', 'payments', 'expenses', 'invoices',
+                          'staff', 'contracts', 'payroll', 'messages', 'announcements'];
+            const interval = setInterval(() => {
+                progress += Math.random() * 8;
+                if (progress >= 100) {
+                    progress = 100;
+                    clearInterval(interval);
+                    updateStatus('success', 'Synchronisation terminée !');
+                    addLog('success', 'Toutes les données téléchargées');
+                    document.getElementById('continueBtn').style.display = 'inline-flex';
+                }
+                const idx = Math.min(Math.floor(progress / (100 / tables.length)), tables.length - 1);
+                updateProgress({
+                    progress: progress / 100,
+                    current_table: tables[idx],
+                    records_pulled: Math.floor(progress * 150),
+                    records_pushed: 0,
+                });
+            }, 500);
+        }
+
+        function updateProgress(state) {
+            const percent = Math.round((state.progress || 0) * 100);
+            document.getElementById('progressBar').style.width = percent + '%';
+            document.getElementById('progressPercent').textContent = percent + '%';
+            document.getElementById('progressTable').textContent =
+                state.current_table ? `Table: ${state.current_table}` : 'Traitement...';
+            document.getElementById('recordsPulled').textContent = state.records_pulled || 0;
+            document.getElementById('recordsPushed').textContent = state.records_pushed || 0;
+        }
+
+        function updateStatus(type, text) {
+            const badge = document.getElementById('statusBadge');
+            badge.className = `status-badge status-${type}`;
+            if (type === 'syncing') {
+                badge.innerHTML = '<div class="spinner"></div><span>' + text + '</span>';
+            } else {
+                badge.innerHTML = '<span>' + text + '</span>';
+            }
+        }
+
+        function addLog(type, message) {
+            const container = document.getElementById('logContainer');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            const time = new Date().toLocaleTimeString('fr-FR');
+            entry.textContent = `[${time}] ${message}`;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        startSync();
+    </script>
+</body>
+</html>

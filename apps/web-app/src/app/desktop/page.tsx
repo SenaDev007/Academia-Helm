@@ -120,7 +120,7 @@ function DesktopSchoolSelector() {
   }
 
   // ── Sélectionner une école ──
-  function handleSelectSchool(school: any) {
+  async function handleSelectSchool(school: any) {
     const selection: SchoolSelection = {
       id: school.id,
       name: school.name,
@@ -133,13 +133,40 @@ function DesktopSchoolSelector() {
     setSelectedSchool(selection);
     // Sauvegarder dans localStorage
     localStorage.setItem(STORAGE_KEY, JSON.stringify(selection));
+
+    // Sauvegarder aussi dans le store Tauri (pour l'app desktop)
+    try {
+      const tauri = (window as any).__TAURI__;
+      if (tauri?.store?.Store) {
+        const store = await tauri.store.Store.load('academia-helm-store.json');
+        await store.set('selectedSchool', { slug: selection.slug, name: selection.name });
+        await store.save();
+        console.log('School saved to Tauri store for offline use');
+      }
+    } catch (e) {
+      console.log('Tauri store not available (web mode):', e);
+    }
+
     // Rediriger
     redirectToSchool(selection);
   }
 
   // ── Changer d'école (oublier la sélection sauvegardée) ──
-  function handleChangeSchool() {
+  async function handleChangeSchool() {
     localStorage.removeItem(STORAGE_KEY);
+
+    // Supprimer aussi du store Tauri
+    try {
+      const tauri = (window as any).__TAURI__;
+      if (tauri?.store?.Store) {
+        const store = await tauri.store.Store.load('academia-helm-store.json');
+        await store.delete('selectedSchool');
+        await store.save();
+      }
+    } catch (e) {
+      console.log('Tauri store not available:', e);
+    }
+
     setSavedSchool(null);
     setSelectedSchool(null);
     setSearchQuery("");

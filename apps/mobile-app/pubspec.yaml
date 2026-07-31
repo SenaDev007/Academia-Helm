@@ -1,5 +1,5 @@
 name: academia_helm_mobile
-description: "Academia Helm — Pure Dart only"
+description: "Academia Helm — Pure Dart + AGP 8.5.0"
 publish_to: 'none'
 version: 1.0.0+1
 environment:
@@ -8,7 +8,6 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
-  # Pure Dart plugins only (no native Android code)
   flutter_riverpod: ^2.5.1
   go_router: ^14.2.0
   dio: ^5.4.3+1
@@ -18,9 +17,6 @@ dependencies:
   intl: ^0.19.0
   logger: ^2.3.0
   uuid: ^4.4.0
-  collection: ^1.18.0
-  rxdart: ^0.28.0
-  async: ^2.11.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

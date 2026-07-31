@@ -17,7 +17,7 @@ class MyApp extends StatelessWidget {
               SizedBox(height: 24),
               Text('Academia Helm', style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
               SizedBox(height: 8),
-              Text('Pure Dart v1.3.7', style: TextStyle(color: Color(0xFFF5B335), fontSize: 14)),
+              Text('PureDart+AGP8.5 v1.3.8', style: TextStyle(color: Color(0xFFF5B335), fontSize: 14)),
             ],
           ),
         ),

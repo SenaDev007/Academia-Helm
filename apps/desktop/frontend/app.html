@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Academia Helm</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100vh; overflow: hidden; font-family: 'Inter', -apple-system, sans-serif; }
+        body { background: #f0f4f8; display: flex; flex-direction: column; }
+
+        /* ── Header ── */
+        .header {
+            background: linear-gradient(135deg, #071D4A 0%, #0B2F73 50%, #1A3F8B 100%);
+            padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15); flex-shrink: 0;
+        }
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        .header-logo { width: 36px; height: 36px; border-radius: 8px; background: rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; }
+        .header-logo img { width: 28px; height: 28px; object-fit: contain; }
+        .header-title { color: white; font-size: 18px; font-weight: 700; }
+        .header-school { color: rgba(255,255,255,0.6); font-size: 13px; margin-left: 8px; }
+
+        /* ── Status badges ── */
+        .header-right { display: flex; align-items: center; gap: 8px; }
+        .badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 5px 12px; font-size: 12px; font-weight: 600; border-radius: 20px;
+        }
+        .badge-online { background: rgba(34,197,94,0.2); color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
+        .badge-offline { background: rgba(245,179,53,0.2); color: #F5B335; border: 1px solid rgba(245,179,53,0.3); }
+        .badge-dot { width: 7px; height: 7px; border-radius: 50%; }
+        .badge-online .badge-dot { background: #4ade80; }
+        .badge-offline .badge-dot { background: #F5B335; }
+
+        .btn-sync {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 14px; font-size: 12px; font-weight: 600;
+            background: linear-gradient(135deg, #F5B335, #FCD779);
+            color: #0B2F73; border: none; border-radius: 8px; cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-sync:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(245,179,53,0.4); }
+        .btn-sync:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-sync svg { width: 14px; height: 14px; }
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Content ── */
+        .content { flex: 1; overflow-y: auto; padding: 24px; }
+
+        /* ── Stats grid ── */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat-card {
+            background: white; border-radius: 12px; padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08); border: 1px solid #e2e8f0;
+            transition: all 0.2s;
+        }
+        .stat-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); transform: translateY(-2px); }
+        .stat-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+        .stat-value { font-size: 28px; font-weight: 700; color: #1e293b; }
+        .stat-label { font-size: 13px; color: #64748b; margin-top: 4px; }
+
+        /* ── Section ── */
+        .section { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; margin-bottom: 16px; }
+        .section-title { font-size: 16px; font-weight: 700; color: #1e293b; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .section-title svg { width: 18px; height: 18px; color: #0B2F73; }
+
+        /* ── Table ── */
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 10px 12px; font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #e2e8f0; }
+        td { padding: 10px 12px; font-size: 14px; color: #334155; border-bottom: 1px solid #f1f5f9; }
+        tr:hover td { background: #f8fafc; }
+
+        /* ── Loading ── */
+        .loading { display: flex; align-items: center; justify-content: center; height: 100%; }
+        .spinner { width: 40px; height: 40px; border: 3px solid rgba(11,47,115,0.2); border-top-color: #0B2F73; border-radius: 50%; animation: spin 1s linear infinite; }
+
+        /* ── Offline notice ── */
+        .offline-notice {
+            background: rgba(245,179,53,0.1); border: 1px solid rgba(245,179,53,0.25);
+            border-radius: 10px; padding: 12px 16px; margin-bottom: 16px;
+            font-size: 13px; color: #92400e; display: flex; align-items: center; gap: 8px;
+        }
+
+        /* ── Empty ── */
+        .empty { text-align: center; padding: 40px; color: #94a3b8; }
+        .empty svg { width: 48px; height: 48px; margin-bottom: 12px; opacity: 0.3; }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-left">
+            <div class="header-logo">
+                <img src="icons/logo-academia-helm.png" alt="AH">
+            </div>
+            <div>
+                <span class="header-title">Academia Helm</span>
+                <span class="header-school" id="schoolName">—</span>
+            </div>
+        </div>
+        <div class="header-right">
+            <div id="statusBadge"></div>
+            <button class="btn-sync" id="syncBtn" onclick="triggerSync()">
+                <svg id="syncIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+                    <path d="M21 3v5h-5"/>
+                </svg>
+                <span id="syncText">Synchroniser</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Content -->
+    <div class="content" id="content">
+        <div class="loading"><div class="spinner"></div></div>
+    </div>
+
+    <script>
+        // ── State ──
+        let isOnline = navigator.onLine;
+        let school = null;
+        let db = null;
+
+        // ── Init ──
+        async function init() {
+            // Load saved school from Tauri store
+            try {
+                const { Store } = window.__TAURI__.store;
+                const store = await Store.load('academia-helm-store.json');
+                school = await store.get('selectedSchool');
+                if (school?.name) {
+                    document.getElementById('schoolName').textContent = '— ' + school.name;
+                }
+            } catch(e) { console.log('Store not available:', e); }
+
+            // Update status badge
+            updateStatus();
+
+            // Load data from SQLite
+            await loadData();
+
+            // Listen for online/offline
+            window.addEventListener('online', () => { isOnline = true; updateStatus(); });
+            window.addEventListener('offline', () => { isOnline = false; updateStatus(); });
+
+            // Listen for sync events
+            if (window.__TAURI__?.event?.listen) {
+                window.__TAURI__.event.listen('sync-progress', (e) => {
+                    document.getElementById('syncText').textContent = Math.round((e.payload?.progress || 0) * 100) + '%';
+                });
+                window.__TAURI__.event.listen('sync-completed', (e) => {
+                    document.getElementById('syncIcon').classList.remove('spin');
+                    document.getElementById('syncText').textContent = 'Synchroniser';
+                    document.getElementById('syncBtn').disabled = false;
+                    loadData(); // Reload data after sync
+                });
+            }
+        }
+
+        function updateStatus() {
+            const badge = document.getElementById('statusBadge');
+            if (isOnline) {
+                badge.innerHTML = '<div class="badge badge-online"><div class="badge-dot"></div>En ligne</div>';
+            } else {
+                badge.innerHTML = '<div class="badge badge-offline"><div class="badge-dot"></div>Hors ligne</div>';
+            }
+        }
+
+        // ── Load data from SQLite ──
+        async function loadData() {
+            const content = document.getElementById('content');
+
+            if (!isOnline) {
+                content.innerHTML = `
+                    <div class="offline-notice">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M1 1l22 22"/>
+                            <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
+                            <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
+                            <path d="M10.71 5.05A16 16 0 0 1 22.58 9"/>
+                            <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
+                            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+                            <line x1="12" y1="20" x2="12.01" y2="20"/>
+                        </svg>
+                        Mode hors ligne — Les données affichées proviennent du cache local. Les modifications seront synchronisées au retour de la connexion.
+                    </div>
+                `;
+            } else {
+                content.innerHTML = '';
+            }
+
+            // Try to query SQLite via Tauri
+            try {
+                const sql = window.__TAURI__?.sql;
+                if (sql) {
+                    // Open database
+                    db = await sql.Database.load('sqlite:academia_helm.db');
+
+                    // Load stats
+                    await loadStats(content);
+                    await loadRecentStudents(content);
+                    await loadRecentPayments(content);
+                } else {
+                    // Tauri SQL not available — show demo data
+                    showDemoData(content);
+                }
+            } catch (e) {
+                console.log('SQLite error:', e);
+                showDemoData(content);
+            }
+        }
+
+        async function loadStats(container) {
+            const stats = [];
+
+            try {
+                // Count students
+                const students = await db.select('SELECT COUNT(*) as count FROM students LIMIT 1');
+                stats.push({ icon: '🎓', color: '#3b82f6', value: students[0]?.count || 0, label: 'Élèves' });
+            } catch(e) { stats.push({ icon: '🎓', color: '#3b82f6', value: '—', label: 'Élèves' }); }
+
+            try {
+                const classes = await db.select('SELECT COUNT(*) as count FROM classes LIMIT 1');
+                stats.push({ icon: '🏫', color: '#8b5cf6', value: classes[0]?.count || 0, label: 'Classes' });
+            } catch(e) { stats.push({ icon: '🏫', color: '#8b5cf6', value: '—', label: 'Classes' }); }
+
+            try {
+                const staff = await db.select('SELECT COUNT(*) as count FROM hr_staff LIMIT 1');
+                stats.push({ icon: '👥', color: '#10b981', value: staff[0]?.count || 0, label: 'Personnel' });
+            } catch(e) { stats.push({ icon: '👥', color: '#10b981', value: '—', label: 'Personnel' }); }
+
+            try {
+                const payments = await db.select("SELECT COUNT(*) as count FROM finance_transactions WHERE created_at > date('now','-30 days') LIMIT 1");
+                stats.push({ icon: '💰', color: '#f59e0b', value: payments[0]?.count || 0, label: 'Paiements (30j)' });
+            } catch(e) { stats.push({ icon: '💰', color: '#f59e0b', value: '—', label: 'Paiements (30j)' }); }
+
+            // Render stats
+            const statsHtml = `
+                <div class="stats-grid">
+                    ${stats.map(s => `
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background:${s.color}20">
+                                <span style="font-size:20px">${s.icon}</span>
+                            </div>
+                            <div class="stat-value">${s.value}</div>
+                            <div class="stat-label">${s.label}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            container.insertAdjacentHTML('beforeend', statsHtml);
+        }
+
+        async function loadRecentStudents(container) {
+            try {
+                const students = await db.select('SELECT first_name, last_name, matricule, created_at FROM students ORDER BY created_at DESC LIMIT 5');
+                if (students.length === 0) return;
+
+                const html = `
+                    <div class="section">
+                        <div class="section-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+                            Derniers élèves inscrits
+                        </div>
+                        <table>
+                            <thead><tr><th>Nom</th><th>Matricule</th><th>Date</th></tr></thead>
+                            <tbody>
+                                ${students.map(s => `<tr><td>${s.first_name} ${s.last_name}</td><td>${s.matricule || '—'}</td><td>${s.created_at || '—'}</td></tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', html);
+            } catch(e) { console.log('Students load failed:', e); }
+        }
+
+        async function loadRecentPayments(container) {
+            try {
+                const payments = await db.select("SELECT * FROM finance_transactions ORDER BY created_at DESC LIMIT 5");
+                if (payments.length === 0) return;
+
+                const html = `
+                    <div class="section">
+                        <div class="section-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                            Dernières transactions
+                        </div>
+                        <table>
+                            <thead><tr><th>ID</th><th>Montant</th><th>Date</th></tr></thead>
+                            <tbody>
+                                ${payments.map(p => `<tr><td>${p.id?.substring(0,8) || '—'}</td><td>${p.amount || '—'}</td><td>${p.created_at || '—'}</td></tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', html);
+            } catch(e) { console.log('Payments load failed:', e); }
+        }
+
+        function showDemoData(container) {
+            container.insertAdjacentHTML('beforeend', `
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background:#3b82f620"><span style="font-size:20px">🎓</span></div>
+                        <div class="stat-value">—</div>
+                        <div class="stat-label">Élèves (sync requise)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background:#8b5cf620"><span style="font-size:20px">🏫</span></div>
+                        <div class="stat-value">—</div>
+                        <div class="stat-label">Classes</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background:#10b98120"><span style="font-size:20px">👥</span></div>
+                        <div class="stat-value">—</div>
+                        <div class="stat-label">Personnel</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background:#f59e0b20"><span style="font-size:20px">💰</span></div>
+                        <div class="stat-value">—</div>
+                        <div class="stat-label">Paiements (30j)</div>
+                    </div>
+                </div>
+                <div class="section">
+                    <div class="empty">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                        <p>Aucune donnée locale. Cliquez sur "Synchroniser" pour télécharger les données.</p>
+                    </div>
+                </div>
+            `);
+        }
+
+        // ── Sync ──
+        async function triggerSync() {
+            const btn = document.getElementById('syncBtn');
+            const icon = document.getElementById('syncIcon');
+            const text = document.getElementById('syncText');
+
+            btn.disabled = true;
+            icon.classList.add('spin');
+            text.textContent = 'Sync...';
+
+            try {
+                if (window.__TAURI__?.core?.invoke) {
+                    await window.__TAURI__.core.invoke('trigger_sync');
+                } else {
+                    // Demo mode
+                    setTimeout(() => {
+                        icon.classList.remove('spin');
+                        text.textContent = 'Synchroniser';
+                        btn.disabled = false;
+                        alert('Synchronisation terminée (mode démo)');
+                    }, 2000);
+                }
+            } catch(e) {
+                icon.classList.remove('spin');
+                text.textContent = 'Synchroniser';
+                btn.disabled = false;
+                alert('Erreur de sync: ' + e);
+            }
+        }
+
+        // ── Start ──
+        init();
+    </script>
+</body>
+</html>

@@ -154,6 +154,7 @@ class ApiError {
           );
 
         case DioExceptionType.unknown:
+      case DioExceptionType.transformTimeout:
           // Check if the underlying error is a SocketException (offline)
           final String errorString = error.toString().toLowerCase();
           if (errorString.contains('socket') ||

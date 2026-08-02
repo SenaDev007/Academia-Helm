@@ -133,7 +133,7 @@ class AHTheme {
       ),
 
       // ── Card ────────────────────────────────────────────────────────
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: colorScheme.surface,
         elevation: AHSpacing.elevationNone,
         shape: AHCardStyle.cardShape(),
@@ -281,7 +281,7 @@ class AHTheme {
       ),
 
       // ── Dialog ──────────────────────────────────────────────────────
-      dialogTheme: DialogTheme(
+      dialogTheme: DialogThemeData(
         backgroundColor: isLight ? AHColors.white : AHColors.darkSurface,
         elevation: AHSpacing.elevationHigh,
         shape: RoundedRectangleBorder(
@@ -311,7 +311,7 @@ class AHTheme {
       ),
 
       // ── Tab Bar ─────────────────────────────────────────────────────
-      tabBarTheme: TabBarTheme(
+      tabBarTheme: TabBarThemeData(
         labelColor: isLight ? AHColors.navy : AHColors.goldLight,
         unselectedLabelColor: AHColors.grey500,
         indicatorColor: AHColors.gold,
@@ -413,11 +413,11 @@ class AHTheme {
       // ── Page Transitions ────────────────────────────────────────────
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
-          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.android: const CupertinoPageTransitionsBuilder(),
+          TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: const CupertinoPageTransitionsBuilder(),
+          TargetPlatform.windows: const CupertinoPageTransitionsBuilder(),
+          TargetPlatform.linux: const CupertinoPageTransitionsBuilder(),
         },
       ),
     );

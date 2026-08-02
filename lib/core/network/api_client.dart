@@ -322,6 +322,7 @@ class ApiClient {
         );
 
       case DioExceptionType.unknown:
+      case DioExceptionType.transformTimeout:
         if (e.error is UnauthorizedException) {
           return ApiError(
             message: (e.error as UnauthorizedException).message,

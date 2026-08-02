@@ -413,11 +413,11 @@ class AHTheme {
       // ── Page Transitions ────────────────────────────────────────────
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
-          TargetPlatform.android: const CupertinoPageTransitionsBuilder(),
-          TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
-          TargetPlatform.macOS: const CupertinoPageTransitionsBuilder(),
-          TargetPlatform.windows: const CupertinoPageTransitionsBuilder(),
-          TargetPlatform.linux: const CupertinoPageTransitionsBuilder(),
+          TargetPlatform.android: ZoomPageTransitionsBuilder(),
+          TargetPlatform.iOS: ZoomPageTransitionsBuilder(),
+          TargetPlatform.macOS: ZoomPageTransitionsBuilder(),
+          TargetPlatform.windows: ZoomPageTransitionsBuilder(),
+          TargetPlatform.linux: ZoomPageTransitionsBuilder(),
         },
       ),
     );

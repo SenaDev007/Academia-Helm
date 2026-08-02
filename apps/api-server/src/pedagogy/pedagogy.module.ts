@@ -77,6 +77,10 @@ import { StorageService } from '../common/services/storage.service';
 import { PedagogicalSpaceService } from './pedagogical-space.service';
 import { PedagogicalSpaceController } from './pedagogical-space.controller';
 
+// Module 2 - SaisieMaster Evaluations (notes/évaluations)
+import { SaisieMasterService } from './saisiemaster.service';
+import { SaisieMasterController } from './saisiemaster.controller';
+
 @Module({
   imports: [DatabaseModule, CommunicationModule],
   controllers: [
@@ -111,6 +115,8 @@ import { PedagogicalSpaceController } from './pedagogical-space.controller';
     PedagogyNotificationController,
     // Module 2 - Espace Pédagogique Enseignant + Contrôle Direction
     PedagogicalSpaceController,
+    // Module 2 - SaisieMaster Evaluations
+    SaisieMasterController,
   ],
   providers: [
     StorageService,
@@ -151,6 +157,8 @@ import { PedagogicalSpaceController } from './pedagogical-space.controller';
     // Module 2 - Notifications email aux enseignants
     PedagogyNotificationService,
     PedagogyPdfDocumentService,
+    // Module 2 - SaisieMaster Evaluations
+    SaisieMasterService,
     // ⭐ PuppeteerPoolService pour les exports PDF (registre d'appel, cahier journal)
     PuppeteerPoolService,
   ],

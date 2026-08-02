@@ -207,7 +207,9 @@ export default function StudentAccountsContent() {
   }, [filterClassId, filterStatus, searchQuery, effectiveYearId, showWithdrawn]);
 
   useEffect(() => {
-    classesService.getAll({})
+    // Use /api/all-classes (bypasses school-level filter) so ALL classes are shown
+    fetch('/api/all-classes', { credentials: 'include' })
+      .then((res) => res.json())
       .then((d) => setClasses(Array.isArray(d) ? d : (d.data ?? [])))
       .catch(() => setClasses([]));
     getAcademicYears()

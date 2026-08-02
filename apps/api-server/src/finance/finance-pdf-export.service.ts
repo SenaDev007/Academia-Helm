@@ -337,6 +337,9 @@ export class FinancePdfExportService {
     const totalDue = accounts.reduce((s, a) => s + Number(a.totalDue ?? 0), 0);
     const totalPaid = accounts.reduce((s, a) => s + Number(a.totalPaid ?? 0), 0);
     const totalBalance = accounts.reduce((s, a) => s + Number(a.balance ?? 0), 0);
+    const totalArrears = accounts.reduce((s, a) => s + Number((a as any).actualArrears ?? 0), 0);
+    const totalInscription = accounts.reduce((s, a) => s + Number((a as any).inscriptionFee ?? 0), 0);
+    const totalScolarite = accounts.reduce((s, a) => s + Number((a as any).tuitionFee ?? 0), 0);
 
     const rows = accounts.map(a => {
       const balance = Number(a.balance ?? 0);
@@ -346,10 +349,11 @@ export class FinancePdfExportService {
       if (balance <= 0) { statusClass = 'status-solde'; statusLabel = 'Soldé'; }
       else if (paid > 0) { statusClass = 'status-partiel'; statusLabel = 'Partiel'; }
 
-      // ⭐ Task 20-a : fallback sur le code si le name du niveau est vide
-      const levelName = a.student?.schoolLevel?.name || a.student?.schoolLevel?.code || '—';
       // ⭐ Task 20-a : fallback sur academicClass.name si class.name vide (sécurité)
       const className = a.student?.studentEnrollments?.[0]?.class?.name || '—';
+      const arrears = Number((a as any).actualArrears ?? 0);
+      const inscription = Number((a as any).inscriptionFee ?? 0);
+      const scolarite = Number((a as any).tuitionFee ?? 0);
 
       return `
         <tr>
@@ -357,7 +361,9 @@ export class FinancePdfExportService {
           <td>${a.student?.lastName || '—'}</td>
           <td>${a.student?.firstName || '—'}</td>
           <td style="text-align:center;">${className}</td>
-          <td style="text-align:center;">${levelName}</td>
+          <td class="amount">${arrears.toLocaleString('fr-FR')}</td>
+          <td class="amount">${inscription.toLocaleString('fr-FR')}</td>
+          <td class="amount">${scolarite.toLocaleString('fr-FR')}</td>
           <td class="amount">${Number(a.balance ?? 0).toLocaleString('fr-FR')}</td>
           <td class="amount">${Number(a.totalPaid ?? 0).toLocaleString('fr-FR')}</td>
           <td class="amount">${Number(a.totalDue ?? 0).toLocaleString('fr-FR')}</td>
@@ -375,17 +381,22 @@ export class FinancePdfExportService {
             <th>Nom</th>
             <th>Prénom</th>
             <th style="width:10%;">Classe</th>
-            <th style="width:8%;">Niveau</th>
-            <th style="width:12%;text-align:right;">Solde dû</th>
-            <th style="width:12%;text-align:right;">Payé</th>
-            <th style="width:12%;text-align:right;">À payer</th>
+            <th style="width:10%;text-align:right;">Arriérés</th>
+            <th style="width:10%;text-align:right;">Inscription</th>
+            <th style="width:10%;text-align:right;">Scolarité</th>
+            <th style="width:10%;text-align:right;">Solde dû</th>
+            <th style="width:10%;text-align:right;">Payé</th>
+            <th style="width:10%;text-align:right;">À payer</th>
             <th style="width:8%;">Statut</th>
           </tr>
         </thead>
         <tbody>
-          ${rows || '<tr><td colspan="9" style="text-align:center;padding:20px;color:#999;">Aucun compte élève</td></tr>'}
+          ${rows || '<tr><td colspan="11" style="text-align:center;padding:20px;color:#999;">Aucun compte élève</td></tr>'}
           <tr class="total-row">
-            <td colspan="5" style="text-align:right;">TOTAL</td>
+            <td colspan="4" style="text-align:right;">TOTAL</td>
+            <td class="amount">${totalArrears.toLocaleString('fr-FR')}</td>
+            <td class="amount">${totalInscription.toLocaleString('fr-FR')}</td>
+            <td class="amount">${totalScolarite.toLocaleString('fr-FR')}</td>
             <td class="amount">${totalBalance.toLocaleString('fr-FR')}</td>
             <td class="amount">${totalPaid.toLocaleString('fr-FR')}</td>
             <td class="amount">${totalDue.toLocaleString('fr-FR')}</td>

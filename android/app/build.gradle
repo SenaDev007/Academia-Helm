@@ -17,6 +17,7 @@ def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '
 android {
     namespace "io.academiahelm.mobile"
     compileSdk 35
+    ndkVersion ""
 
     defaultConfig {
         applicationId "io.academiahelm.mobile"

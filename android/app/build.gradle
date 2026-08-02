@@ -16,12 +16,12 @@ def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '
 
 android {
     namespace "io.academiahelm.mobile"
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         applicationId "io.academiahelm.mobile"
         minSdk 24
-        targetSdk 35
+        targetSdk 36
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         multiDexEnabled true
@@ -36,7 +36,11 @@ android {
         debug {
             minifyEnabled false
             debuggable true
-            applicationIdSuffix ".debug"
+            // applicationIdSuffix ".debug" removed:
+            // google-services.json only declares io.academiahelm.mobile.
+            // To re-enable side-by-side debug/release install, register
+            // io.academiahelm.mobile.debug in Firebase Console and
+            // download an updated google-services.json.
         }
     }
 

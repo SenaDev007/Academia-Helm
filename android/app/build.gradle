@@ -17,7 +17,6 @@ def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '
 android {
     namespace "io.academiahelm.mobile"
     compileSdk 35
-    ndkVersion ""
 
     defaultConfig {
         applicationId "io.academiahelm.mobile"
@@ -56,7 +55,7 @@ dependencies {
     implementation 'androidx.multidex:multidex:2.0.1'
     implementation 'androidx.window:window:1.2.0'
 
-    implementation platform('com.google.firebase:firebase-bom:34.16.0')
+    implementation platform('com.google.firebase:firebase-bom:33.7.0')
     implementation 'com.google.firebase:firebase-analytics'
     implementation 'com.google.firebase:firebase-messaging'
 }

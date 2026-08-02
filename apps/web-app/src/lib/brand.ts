@@ -9,7 +9,7 @@ export const BRAND = {
   description: 'La plateforme de pilotage éducatif nouvelle génération',
   slogan: 'Prenez le gouvernail de votre institution',
   /** Chemin du logo (nom de fichier inchangé pour éviter de casser les assets) */
-  logoPath: '/images/logo-Academia Hub.png',
+  logoPath: '/images/logo-Academia Hub.webp',
 } as const;
 
 export const BRAND_NAME = BRAND.name;

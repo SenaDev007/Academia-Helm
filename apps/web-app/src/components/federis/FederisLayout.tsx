@@ -107,7 +107,7 @@ export default function FederisLayout({
           <div className="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
             <div className="flex items-center space-x-3 flex-shrink-0">
               <Image
-                src="/images/logo-Academia Hub.png"
+                src="/images/logo-Academia Hub.webp"
                 alt="Academia Federis"
                 width={40}
                 height={40}

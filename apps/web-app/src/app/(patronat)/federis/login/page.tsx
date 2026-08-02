@@ -95,7 +95,7 @@ export default function FederisLoginPage() {
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center mb-4">
               <Image
-                src="/images/logo-Academia Hub.png"
+                src="/images/logo-Academia Hub.webp"
                 alt="Academia Helm"
                 width={64}
                 height={64}

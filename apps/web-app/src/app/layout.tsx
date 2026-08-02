@@ -83,10 +83,10 @@ const verification = buildSiteVerification();
  * generateMetadata — détection dynamique du domaine pour l'image Open Graph.
  *
  * - Domaine principal (academiahelm.com, www.academiahelm.com)
- *   → /images/OpenGraph-AcademiaHelm.png
+ *   → /images/OpenGraph-AcademiaHelm.webp
  *
  * - Sous-domaine tenant (*.academiahelm.com)
- *   → /images/OpenGraph-AcademiaHelmTenants.png
+ *   → /images/OpenGraph-AcademiaHelmTenants.webp
  *
  * Les URLs des images OG sont absolues (requis par les crawlers :
  * Facebook, WhatsApp, Twitter/X, LinkedIn, Telegram, etc.).

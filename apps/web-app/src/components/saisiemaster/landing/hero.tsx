@@ -24,7 +24,7 @@ export function Hero({ onUploadClick }: HeroProps) {
         <div
           className="absolute inset-0 bg-contain bg-top bg-no-repeat"
           style={{
-            backgroundImage: 'url("/images/Background-SaisieMaster-hero.png")',
+            backgroundImage: 'url("/images/Background-SaisieMaster-hero.webp")',
             backgroundColor: '#0B3B6B',
           }}
           aria-hidden
@@ -56,7 +56,7 @@ export function Hero({ onUploadClick }: HeroProps) {
         <div
           className="absolute inset-0 bg-contain bg-top bg-no-repeat"
           style={{
-            backgroundImage: 'url("/images/Background-SaisieMaster-hero-mobile.png")',
+            backgroundImage: 'url("/images/Background-SaisieMaster-hero-mobile.webp")',
             backgroundColor: '#0B3B6B',
           }}
           aria-hidden

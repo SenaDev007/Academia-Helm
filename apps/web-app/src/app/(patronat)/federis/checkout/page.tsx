@@ -139,7 +139,7 @@ export default function FederisCheckoutPage() {
             {/* Logo Fedapay */}
             <div className="mb-6 text-center">
               <Image
-                src="/images/logoFedaPay.png"
+                src="/images/logoFedaPay.webp"
                 alt="Fedapay - Paiement sécurisé"
                 width={120}
                 height={48}

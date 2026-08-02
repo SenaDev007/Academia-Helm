@@ -199,7 +199,7 @@ export default function AdminLoginPage() {
               animate={{ y: [0, -3, 0] }}
               transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
             >
-              <Image src="/images/logo-Academia Hub.png" alt="Academia Helm" width={64} height={64} className="w-16 h-16 object-contain" priority />
+              <Image src="/images/logo-Academia Hub.webp" alt="Academia Helm" width={64} height={64} className="w-16 h-16 object-contain" priority />
             </motion.div>
             <h1 className="text-2xl md:text-3xl font-extrabold text-[#0b2f73] mb-1.5">Back-office Academia Helm</h1>
             <p className="text-xs md:text-sm text-slate-600">Accès réservé aux administrateurs plateforme</p>

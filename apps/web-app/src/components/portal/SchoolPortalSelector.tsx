@@ -233,7 +233,7 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
       {/* ── Image de fond ── */}
       <div className="pointer-events-none absolute inset-0" aria-hidden>
         <Image
-          src="/images/school-portal.png"
+          src="/images/school-portal.webp"
           alt=""
           fill
           className="object-cover object-center"

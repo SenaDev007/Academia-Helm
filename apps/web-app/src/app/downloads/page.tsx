@@ -19,7 +19,7 @@
  *   - Version + date + notes mises à jour automatiquement
  *
  * Image de fond :
- *   - Background-Page-download.png dans le hero (si disponible)
+ *   - Background-Page-download.webp dans le hero (si disponible)
  *   - Fallback : gradient navy + pattern dots
  *
  * Responsive :
@@ -229,12 +229,12 @@ export default function DownloadsPage() {
 
       {/* ── Hero avec image de fond ── */}
       <section className="relative overflow-hidden min-h-[60vh] flex items-center justify-center">
-        {/* Image de fond — Background-Page-download.png */}
+        {/* Image de fond — Background-Page-download.webp */}
         {/* Si le fichier n'existe pas, fallback sur gradient navy */}
         <div
           className="absolute inset-0 bg-cover bg-center bg-no-repeat"
           style={{
-            backgroundImage: "url('/images/Background-Page-download.png')",
+            backgroundImage: "url('/images/Background-Page-download.webp')",
           }}
         />
         {/* Overlay gradient navy léger — garde l'image visible tout en assurant la lisibilité */}

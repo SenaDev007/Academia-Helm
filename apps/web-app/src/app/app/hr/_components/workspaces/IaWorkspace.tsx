@@ -1178,7 +1178,7 @@ export function IaWorkspace() {
               <div className="flex items-center gap-3">
                 <div className="relative w-11 h-11 rounded-full overflow-hidden ring-2 ring-blue-500/30 shadow-lg shadow-blue-500/20 shrink-0">
                   <Image
-                    src="/images/SarahAI.png"
+                    src="/images/SarahAI.webp"
                     alt="Sarah — Assistante RH"
                     fill
                     sizes="44px"
@@ -1215,7 +1215,7 @@ export function IaWorkspace() {
                   ) : (
                     <div className="relative w-7 h-7 rounded-full overflow-hidden shrink-0 ring-1 ring-blue-500/30">
                       <Image
-                        src="/images/SarahAI.png"
+                        src="/images/SarahAI.webp"
                         alt="Sarah"
                         fill
                         sizes="28px"
@@ -1237,7 +1237,7 @@ export function IaWorkspace() {
                 <div className="flex gap-3 mr-auto max-w-[85%]">
                   <div className="relative w-7 h-7 rounded-full overflow-hidden shrink-0 ring-1 ring-blue-500/30">
                     <Image
-                      src="/images/SarahAI.png"
+                      src="/images/SarahAI.webp"
                       alt="Sarah"
                       fill
                       sizes="28px"

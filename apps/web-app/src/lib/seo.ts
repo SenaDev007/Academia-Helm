@@ -5,8 +5,8 @@
  * Définir NEXT_PUBLIC_APP_URL en production (sans slash final).
  *
  * Open Graph multi-tenant :
- *   - Domaine principal (academiahelm.com, www.academiahelm.com) → OpenGraph-AcademiaHelm.png
- *   - Sous-domaines tenant (*.academiahelm.com)               → OpenGraph-AcademiaHelmTenants.png
+ *   - Domaine principal (academiahelm.com, www.academiahelm.com) → OpenGraph-AcademiaHelm.webp
+ *   - Sous-domaines tenant (*.academiahelm.com)               → OpenGraph-AcademiaHelmTenants.webp
  */
 
 import type { Metadata } from 'next';
@@ -223,8 +223,8 @@ export interface SEOConfig {
  * Génère les métadonnées SEO complètes pour une page.
  *
  * Si `hostname` est fourni, l'image OG est sélectionnée automatiquement :
- *   - Domaine principal → OpenGraph-AcademiaHelm.png
- *   - Sous-domaine tenant → OpenGraph-AcademiaHelmTenants.png
+ *   - Domaine principal → OpenGraph-AcademiaHelm.webp
+ *   - Sous-domaine tenant → OpenGraph-AcademiaHelmTenants.webp
  *
  * Les URLs d'images OG sont toujours absolues (requis par Facebook, WhatsApp, etc.).
  */

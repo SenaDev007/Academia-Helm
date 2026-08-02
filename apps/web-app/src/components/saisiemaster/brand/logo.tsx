@@ -37,7 +37,7 @@ export function Logo({ size = "md", className }: LogoProps) {
       aria-label="SaisieMaster"
     >
       <img
-        src="/images/Logo-SaisieMaster.png"
+        src="/images/Logo-SaisieMaster.webp"
         alt="SaisieMaster"
         className="w-full h-full object-cover"
       />

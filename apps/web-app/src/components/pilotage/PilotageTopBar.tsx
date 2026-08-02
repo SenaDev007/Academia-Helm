@@ -276,7 +276,7 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
                 ) : tenant?.subdomain === 'admin' || user?.role === 'PLATFORM_SUPER_ADMIN' ? (
                   // Back-office admin : utiliser le logo Academia Helm
                   <Image
-                    src="/images/logo-Academia Hub.png"
+                    src="/images/logo-Academia Hub.webp"
                     alt="Academia Helm"
                     width={38}
                     height={38}

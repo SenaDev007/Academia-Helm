@@ -83,6 +83,7 @@ const nextConfig = {
   
   // ✅ Optimisation des bundles
   experimental: {
+    // ✅ Reduce initial JS bundle by tree-shaking
     optimizePackageImports: [
       // ✅ Tree-shaking optimisé pour réduire le bundle et la mémoire de build
       // Ces packages sont lourds et doivent être importés de manière sélective

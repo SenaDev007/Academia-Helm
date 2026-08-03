@@ -9,6 +9,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import {
   Users, Loader2, GraduationCap, Wallet, CalendarCheck,
   BookOpen, AlertCircle, CheckCircle2, XCircle, Clock,
@@ -94,14 +95,12 @@ export default function ParentDashboard() {
           const isPaid = balance <= 0;
 
           return (
-            <button
+            <Link
               key={child.id}
-              onClick={() => setSelectedChild(child)}
+              href={`/app/parent/children/${child.id}`}
               className={cn(
-                "text-left p-5 rounded-2xl border-2 transition-all",
-                isSelected
-                  ? "border-blue-500 bg-blue-50/50 shadow-md"
-                  : "border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm"
+                "block text-left p-5 rounded-2xl border-2 transition-all",
+                "border-gray-200 bg-white hover:border-blue-300 hover:shadow-md cursor-pointer"
               )}
             >
               {/* Photo + Nom */}
@@ -144,10 +143,10 @@ export default function ParentDashboard() {
 
               {/* Lien détail */}
               <div className="flex items-center gap-1 text-xs text-blue-600 font-semibold mt-3">
-                Voir le suivi
+                Voir le détail
                 <ChevronRight className="w-3 h-3" />
               </div>
-            </button>
+            </Link>
           );
         })}
       </div>

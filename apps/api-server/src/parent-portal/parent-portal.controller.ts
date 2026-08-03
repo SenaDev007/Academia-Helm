@@ -399,12 +399,14 @@ export class ParentPortalController {
     const acc = account?.[0] || { totalDue: 0, totalPaid: 0, balance: 0, arrearsAmount: 0, status: 'N/A' };
 
     // Historique des paiements (FinanceTransaction)
+    // ⚠️ FIX: finance_transactions n'a PAS de colonne studentId — seulement studentAccountId.
+    // On join via student_accounts pour filtrer par studentId.
     const transactions: any = await this.prisma.$queryRawUnsafe(
       `SELECT ft."id", ft."amount", ft."createdAt", ft."paymentMethod",
-              ft."receiptNumber", ft."reference", ft."status", ft."notes",
-              ft."type"
+              ft."receiptNumber", ft."reference", ft."notes", ft."type"
        FROM "finance_transactions" ft
-       WHERE ft."studentId" = $1 AND ft."tenantId" = $2
+       INNER JOIN "student_accounts" sa ON sa."id" = ft."studentAccountId"
+       WHERE sa."studentId" = $1 AND ft."tenantId" = $2
        AND ft."type" = 'PAYMENT'
        ORDER BY ft."createdAt" DESC LIMIT 50`,
       studentId, tenantId,
@@ -431,6 +433,199 @@ export class ParentPortalController {
       transactions: transactions || [],
       legacyPayments: legacyPayments || [],
     };
+  }
+
+  /**
+   * GET /parent/finance/:studentId/breakdown?academicYearId=Y
+   *
+   * Détail financier complet d'un enfant pour le parent connecté :
+   *   - Frais d'inscription ou réinscription (selon enrollmentType NEW/REPEAT)
+   *   - Frais de scolarité (avec override/personnalisation si applicable)
+   *   - Autres frais (cantine, examen, transport...)
+   *   - Réductions appliquées (motif, montant original, montant personnalisé)
+   *   - Arriérés par année scolaire (année + montant restant)
+   *   - Total dû, total payé, restant à payer
+   *   - Transactions récentes (50 dernières)
+   *
+   * Sécurité : assertStudentBelongsToGuardian() vérifie que l'élève
+   * appartient bien au parent connecté.
+   */
+  @Get('finance/:studentId/breakdown')
+  async getFinanceBreakdown(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Param('studentId') studentId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) throw new BadRequestException('academicYearId est requis');
+    await this.assertStudentBelongsToGuardian(tenantId, user?.id, studentId);
+
+    // 1. StudentAccount
+    const accountRows: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "id", "totalDue", "totalPaid", "balance", "arrearsAmount",
+              "carriedArrears", "status", "isBlocked"
+       FROM "student_accounts"
+       WHERE "studentId" = $1 AND "tenantId" = $2 AND "academicYearId" = $3
+       LIMIT 1`,
+      studentId, tenantId, academicYearId,
+    ).catch(() => []);
+    const account = accountRows?.[0] || null;
+
+    if (!account) {
+      return {
+        hasAccount: false,
+        enrollmentType: null,
+        breakdowns: [],
+        overrides: [],
+        feeArrears: [],
+        transactions: [],
+        totals: { totalDue: 0, totalPaid: 0, balance: 0, arrearsAmount: 0, carriedArrears: 0 },
+      };
+    }
+
+    // 2. Enrollment type (NEW vs REPEAT) pour distinguer inscription/réinscription
+    const enrollmentRows: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "enrollmentType", "isNewStudent"
+       FROM "student_enrollments"
+       WHERE "studentId" = $1 AND "tenantId" = $2 AND "academicYearId" = $3
+       LIMIT 1`,
+      studentId, tenantId, academicYearId,
+    ).catch(() => []);
+    const enrollment = enrollmentRows?.[0] || {};
+    const enrollmentType = enrollment.enrollmentType || 'NEW';
+    const isNewStudent = enrollment.isNewStudent ?? (enrollmentType === 'NEW');
+
+    // 3. AccountBreakdowns avec FeeStructure + Override
+    const breakdowns: any = await this.prisma.$queryRawUnsafe(
+      `SELECT ab."id", ab."initialAmount", ab."adjustedAmount", ab."paidAmount",
+              ab."remainingAmount",
+              fs."id" as "feeStructureId", fs."name" as "feeName",
+              fs."feeType", fs."customFeeTypeLabel", fs."isMandatory", fs."isActive",
+              fo."customAmount" as "overrideAmount", fo."reason" as "overrideReason"
+       FROM "account_breakdowns" ab
+       INNER JOIN "fee_structures" fs ON fs."id" = ab."feeStructureId"
+       LEFT JOIN "fee_overrides" fo ON fo."feeStructureId" = fs."id" AND fo."studentId" = $1
+       WHERE ab."studentAccountId" = $2 AND ab."tenantId" = $3
+       ORDER BY
+         CASE fs."feeType"
+           WHEN 'INSCRIPTION' THEN 1
+           WHEN 'REINSCRIPTION' THEN 2
+           WHEN 'TUITION' THEN 3
+           WHEN 'CANTEEN' THEN 4
+           WHEN 'EXAMEN' THEN 5
+           ELSE 6
+         END`,
+      studentId, account.id, tenantId,
+    ).catch(() => []);
+
+    // 4. FeeArrears (arriérés par année)
+    const feeArrears: any = await this.prisma.$queryRawUnsafe(
+      `SELECT fa."id", fa."academicYearId", fa."totalDue", fa."totalPaid",
+              fa."balanceDue", fa."status", fa."notes",
+              ay."name" as "academicYearName", ay."label" as "academicYearLabel"
+       FROM "fee_arrears" fa
+       LEFT JOIN "academic_years" ay ON ay."id" = fa."academicYearId"
+       WHERE fa."studentId" = $1 AND fa."tenantId" = $2
+       AND fa."status" IN ('OPEN', 'PARTIALLY_PAID')
+       AND fa."balanceDue" > 0
+       ORDER BY ay."startDate" DESC`,
+      studentId, tenantId,
+    ).catch(() => []);
+
+    const actualArrears = (feeArrears || []).reduce(
+      (sum: number, a: any) => sum + Number(a.balanceDue || 0), 0,
+    );
+
+    // 5. Transactions récentes
+    const transactions: any = await this.prisma.$queryRawUnsafe(
+      `SELECT ft."id", ft."amount", ft."createdAt", ft."paymentMethod",
+              ft."receiptNumber", ft."reference", ft."notes", ft."type"
+       FROM "finance_transactions" ft
+       WHERE ft."studentAccountId" = $1 AND ft."tenantId" = $2
+       AND ft."type" = 'PAYMENT'
+       ORDER BY ft."createdAt" DESC LIMIT 50`,
+      account.id, tenantId,
+    ).catch(() => []);
+
+    // 6. Formater les breakdowns pour le frontend
+    const formattedBreakdowns = (breakdowns || []).map((b: any) => {
+      const hasOverride = !!b.overrideAmount && Number(b.overrideAmount) !== Number(b.initialAmount);
+      const feeTypeLabel = this.getFeeTypeLabel(b.feeType, enrollmentType);
+      return {
+        id: b.id,
+        feeStructureId: b.feeStructureId,
+        feeName: b.feeName,
+        feeType: b.feeType,
+        feeTypeLabel,
+        customFeeTypeLabel: b.customFeeTypeLabel,
+        isMandatory: b.isMandatory,
+        originalAmount: Number(b.initialAmount),
+        adjustedAmount: Number(b.adjustedAmount),
+        paidAmount: Number(b.paidAmount),
+        remainingAmount: Number(b.remainingAmount),
+        hasOverride,
+        overrideAmount: hasOverride ? Number(b.overrideAmount) : null,
+        overrideReason: b.overrideReason || null,
+        isPersonalized: hasOverride,
+      };
+    });
+
+    return {
+      hasAccount: true,
+      accountId: account.id,
+      enrollmentType,
+      isNewStudent,
+      breakdowns: formattedBreakdowns,
+      feeArrears: (feeArrears || []).map((a: any) => ({
+        id: a.id,
+        academicYearId: a.academicYearId,
+        academicYearName: a.academicYearName || a.academicYearLabel || 'Année précédente',
+        totalDue: Number(a.totalDue),
+        totalPaid: Number(a.totalPaid),
+        balanceDue: Number(a.balanceDue),
+        status: a.status,
+        notes: a.notes,
+      })),
+      actualArrears,
+      transactions: (transactions || []).map((t: any) => ({
+        id: t.id,
+        amount: Number(t.amount),
+        date: t.createdAt,
+        paymentMethod: t.paymentMethod,
+        receiptNumber: t.receiptNumber,
+        reference: t.reference,
+        notes: t.notes,
+      })),
+      totals: {
+        totalDue: Number(account.totalDue),
+        totalPaid: Number(account.totalPaid),
+        balance: Number(account.balance),
+        arrearsAmount: Number(account.arrearsAmount),
+        carriedArrears: Number(account.carriedArrears || 0),
+        status: account.status,
+        isBlocked: account.isBlocked,
+      },
+    };
+  }
+
+  /** Convertit le FeeType en label lisible, en tenant compte du type d'élève. */
+  private getFeeTypeLabel(feeType: string, enrollmentType: string): string {
+    switch (feeType) {
+      case 'INSCRIPTION':
+        return enrollmentType === 'NEW' ? "Frais d'inscription" : 'Frais de réinscription';
+      case 'REINSCRIPTION':
+        return 'Frais de réinscription';
+      case 'TUITION':
+        return 'Scolarité';
+      case 'CANTEEN':
+        return 'Cantine';
+      case 'EXAMEN':
+        return "Frais d'examen";
+      case 'OTHER':
+        return 'Autre frais';
+      default:
+        return feeType;
+    }
   }
 
   /**

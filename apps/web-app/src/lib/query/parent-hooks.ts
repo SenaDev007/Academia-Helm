@@ -35,6 +35,8 @@ export const parentKeys = {
     [...parentKeys.all, 'attendance', studentId, academicYearId] as const,
   results: (studentId: string, academicYearId: string) =>
     [...parentKeys.all, 'results', studentId, academicYearId] as const,
+  financeBreakdown: (studentId: string, academicYearId: string) =>
+    [...parentKeys.all, 'finance', 'breakdown', studentId, academicYearId] as const,
 };
 
 // ─── Fetch helpers ──────────────────────────────────────────────────────────
@@ -138,6 +140,34 @@ export function useParentResults(
     queryKey: parentKeys.results(studentId || '', academicYearId || ''),
     queryFn: () =>
       fetchJson(`/api/parent/results/${studentId}?academicYearId=${academicYearId}`),
+    enabled: !!studentId && !!academicYearId,
+    staleTime: DEFAULT_STALE_TIME,
+    gcTime: DEFAULT_GC_TIME,
+    retry: 1,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * Détail financier complet d'un enfant.
+ *
+ * Retourne :
+ *   - breakdowns[] : frais d'inscription/réinscription, scolarité, cantine, etc.
+ *     avec override/personnalisation si applicable
+ *   - feeArrears[] : arriérés par année scolaire
+ *   - transactions[] : historique des paiements
+ *   - totals : totalDue, totalPaid, balance, arrearsAmount
+ *   - enrollmentType : NEW (inscription) ou REPEAT (réinscription)
+ */
+export function useParentFinanceBreakdown(
+  studentId: string | undefined,
+  academicYearId: string | undefined,
+) {
+  return useQuery({
+    queryKey: parentKeys.financeBreakdown(studentId || '', academicYearId || ''),
+    queryFn: () =>
+      fetchJson(`/api/parent/finance/${studentId}/breakdown?academicYearId=${academicYearId}`),
     enabled: !!studentId && !!academicYearId,
     staleTime: DEFAULT_STALE_TIME,
     gcTime: DEFAULT_GC_TIME,

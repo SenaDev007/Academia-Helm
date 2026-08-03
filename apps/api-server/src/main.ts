@@ -128,10 +128,20 @@ async function bootstrap() {
     }
   }
 
+  // ✅ START THE SERVER FIRST — ne pas attendre les CREATE TABLE IF NOT EXISTS.
+  // Toutes les ensure-tables statements sont idempotents et peuvent tourner en
+  // arrière-plan après app.listen(). Cela permet au healthcheck de passer en
+  // ~5s au lieu de ~60s (surtout critique maintenant que Neon auto-suspend
+  // le compute = cold start ~2-3s sur la première requête).
+  await app.listen(port, '0.0.0.0');
+  logger.log(`🚀 Server listening on http://0.0.0.0:${port} — healthcheck should pass now`);
+
   // ─── Ensure recruitment tables exist (idempotent SQL fallback) ──────────
   // Prisma migrate deploy may silently skip migrations that aren't tracked
   // in _prisma_migrations. This fallback guarantees the HR recruitment tables
   // exist on every startup. Uses CREATE TABLE IF NOT EXISTS (idempotent).
+  // ⚠️ Run in background (non-blocking) — app is already listening.
+  setTimeout(async () => {
   try {
     const prisma = app.get(PrismaService);
 
@@ -1374,8 +1384,7 @@ async function bootstrap() {
   } catch (twErr: any) {
     logger.warn(`Tenant Website tables migration warning: ${twErr.message}`);
   }
-
-  await app.listen(port, '0.0.0.0');
+  }, 1000); // ← ferme le setTimeout démarré à la ligne 144 (ensure-tables en background)
 
   // ─── Auto-sync HR teachers → Pedagogy on startup ──
   // One-time backfill: for each tenant, sync existing Staff TEACHER records

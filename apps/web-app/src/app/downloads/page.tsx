@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import Image from "next/image";
 
 // ── Composants partagés du landing page ──
 import { Header } from "@/components/ui/header-1";
@@ -232,13 +233,19 @@ export default function DownloadsPage() {
 
       {/* ── Hero avec image de fond ── */}
       <section className="relative overflow-hidden min-h-[60vh] flex items-center justify-center">
-        {/* Image de fond — Background-Page-download.webp */}
-        {/* Si le fichier n'existe pas, fallback sur gradient navy */}
-        <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-          style={{
-            backgroundImage: "url('/images/Background-Page-download.webp')",
-          }}
+        {/* Image de fond — Background-Page-download.webp
+            ✅ next/image avec priority pour optimiser LCP :
+              - AVIF/WebP automatique selon navigateur
+              - srcset responsive (pas de sur-téléchargement sur mobile)
+              - fetchPriority="high" pour démarrer le fetch immédiatement
+              - header Content-Type image/webp au lieu de CSS render-blocking */}
+        <Image
+          src="/images/Background-Page-download.webp"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover"
         />
         {/* Overlay gradient navy léger — garde l'image visible tout en assurant la lisibilité */}
         <div className="absolute inset-0 bg-gradient-to-br from-[#0b2f73]/70 via-[#103e91]/60 to-[#1d4fa5]/50" />

@@ -105,13 +105,18 @@ async function bootstrap() {
   const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3000);
 
   // Run pending migrations before starting the server
-  // ⚠️ SKIP_MIGRATIONS=true permet de sauter cette étape pour accélérer le
-  // démarrage. Les migrations devraient être lancées explicitement via
-  // `railway run npx prisma migrate deploy` lors des changements de schéma,
-  // pas à chaque redémarrage de container.
-  // Par défaut : SKIP_MIGRATIONS=false (rétro-compatible).
-  if (process.env.SKIP_MIGRATIONS === 'true') {
-    logger.log('⏭️  SKIP_MIGRATIONS=true — skipping prisma migrate deploy (faster startup)');
+  // ⚠️ DÉFAUT : SKIP_MIGRATIONS=true — les migrations ne sont PLUS lancées
+  // automatiquement au démarrage. Elles doivent être lancées explicitement via :
+  //   railway run npx prisma migrate deploy --schema=prisma/schema.prisma
+  // quand tu modifies schema.prisma.
+  //
+  // Raison : prisma migrate deploy fait un execSync() qui BLOQUE l'event loop
+  // Node.js pendant toute sa durée (jusqu'à 60s). Pendant ce temps, le
+  // healthcheck Railway ne peut pas passer → le deploy est marqué failed.
+  // Pour lancer les migrations au démarrage, set SKIP_MIGRATIONS=false.
+  if (process.env.SKIP_MIGRATIONS !== 'false') {
+    logger.log('⏭️  SKIP_MIGRATIONS=true (default) — skipping prisma migrate deploy');
+    logger.log('   To run migrations: railway run npx prisma migrate deploy --schema=prisma/schema.prisma');
   } else {
     try {
       const { execSync } = await import('child_process');
@@ -119,7 +124,7 @@ async function bootstrap() {
       logger.log(`Running database migrations (APP_ENV=${appEnv})...`);
       execSync('npx prisma migrate deploy --schema=prisma/schema.prisma', {
         stdio: 'inherit',
-        timeout: 60_000, // 60s max (was 120s) — néon cold start inclus
+        timeout: 30_000, // 30s max — réduit pour éviter de bloquer le healthcheck
       });
       logger.log('Database migrations completed successfully');
     } catch (migrateErr) {

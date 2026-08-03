@@ -38,10 +38,10 @@ function normalizeSaraOutput(raw: string): string {
   let text = String(raw || '').trim();
   if (!text) return text;
 
-  // Remplacer les références à d'autres IA (sécurité)
+  // Remplacer les références à d'autres IA (sécurité) — par Sarah (avec le "h")
   text = text
-    .replace(/\b(ChatGPT|OpenAI|Gemini|Google|Microsoft|Bard)\b/gi, 'SARA')
-    .replace(/\bAnthropic\b/gi, 'notre IA');
+    .replace(/\b(ChatGPT|OpenAI|Gemini|Google|Microsoft|Bard)\b/gi, 'Sarah')
+    .replace(/\bAnthropic\b/gi, 'notre équipe');
 
   // Nettoyer les espaces
   text = text.replace(/\s+/g, ' ').trim();

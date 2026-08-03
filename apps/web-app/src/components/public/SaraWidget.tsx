@@ -13,46 +13,51 @@ import {
 
 /**
  * ============================================================================
- * SARAH WIDGET — Holographic AI Assistant (Style Carte du Bénin)
+ * SARAH WIDGET — Academia Helm Brand Aligned (Royal Blue + Living Gold)
  * ============================================================================
  *
- * Widget flottant holographique avec couronne animée.
- * Style holographique identique à la carte du Bénin sur /portal :
- *   - Cyan #00e5ff comme couleur principale
- *   - Fond rgba(0,18,35,0.97) noir-bleu profond
- *   - Scanline animée, corner brackets, energy lines
- *   - Bordure cyan lumineuse, triple box-shadow
+ * Refonte du widget Sarah pour respecter la palette officielle Academia Helm :
+ *   - Royal Blue : #0A2A5E (900) → #0D3B85 (800) → #114FC4 (700) → #1C6FE8 (600)
+ *   - Living Gold : #CFA63A (600) → #F2C94C (500) → #FFE08A (400)
+ *   - Cloud : #F7F9FC (fond clair)
+ *   - Graphite : #0F172A / #334155 / #64748B (textes)
  *
- * "Sarah" = Princesse en hébreu — la couronne est le symbole de royauté.
+ * Style inspiré de Messenger / WhatsApp :
+ *   - Bulles de chat compactes, texte 12px lisible mais dense
+ *   - Largeur 360px (vs 400px précédemment)
+ *   - Animations discrètes (pas de scanline, pas de particules)
+ *   - Header compact avec photo Sarah + indicateur en ligne + bouton fermer
+ *   - Suggestions en chips discrets
+ *   - Input en barre pill avec bouton envoyer
+ *
+ * "Sarah" = Princesse en hébreu — la conseillère numéro 1 d'Academia Helm.
  */
 
-// ─── HOLO COLORS (Carte du Bénin palette) ─────────────────────────────────
-const H = {
-  cyan: '#00e5ff',
-  cyanDim: 'rgba(0,229,255,0.7)',
-  cyanFaint: 'rgba(0,229,255,0.3)',
-  cyanGhost: 'rgba(0,229,255,0.1)',
-  cyanBorder: 'rgba(0,229,255,0.85)',
-  darkBg: 'rgba(0,18,35,0.97)',
-  darkBg95: 'rgba(0,18,35,0.95)',
-  gold: '#f5b335',
-  goldLight: '#f7c76e',
-  green: '#22c55e',
-  greenGlow: '#4ade80',
+// ─── ACADEMIA HELM BRAND PALETTE ─────────────────────────────────────────
+const AH = {
+  // Royal Blue (primary)
+  navy900: '#0A2A5E',
+  navy800: '#0D3B85',
+  navy700: '#114FC4',
+  navy600: '#1C6FE8',
+  // Living Gold (accent)
+  gold600: '#CFA63A',
+  gold500: '#F2C94C',
+  gold400: '#FFE08A',
+  // Neutrals
+  cloud: '#F7F9FC',
+  mist: '#EEF2F8',
+  graphite900: '#0F172A',
+  graphite700: '#334155',
+  graphite500: '#64748B',
+  graphite300: '#CBD5E1',
+  white: '#FFFFFF',
+  // Semantic
+  online: '#22C55E',
+  onlineGlow: 'rgba(34,197,94,0.4)',
 } as const;
 
-// ─── PARTICLE SYSTEM ──────────────────────────────────────────────────────
-
-interface Particle {
-  id: number;
-  x: number;
-  y: number;
-  size: number;
-  opacity: number;
-  speed: number;
-}
-
-// ─── FULL MARKDOWN RENDERER ──────────────────────────────────────────
+// ─── FULL MARKDOWN RENDERER ──────────────────────────────────────────────
 // Handles paragraphs, bullet lists (-, *, •), numbered lists, **bold**, *italic*, `code`
 
 /** Global key counter for unique React keys */
@@ -71,15 +76,26 @@ function renderInline(text: string): React.ReactNode[] {
       parts.push(text.slice(lastIndex, match.index));
     }
     if (match[1]) {
-      parts.push(<strong key={nextKey()} className="font-bold text-white">{match[2]}</strong>);
+      parts.push(
+        <strong key={nextKey()} className="font-bold" style={{ color: AH.navy900 }}>
+          {match[2]}
+        </strong>,
+      );
     } else if (match[3]) {
-      parts.push(<em key={nextKey()} className="italic text-white/90">{match[4]}</em>);
+      parts.push(
+        <em key={nextKey()} className="italic" style={{ color: AH.graphite700 }}>
+          {match[4]}
+        </em>,
+      );
     } else if (match[5]) {
       parts.push(
-        <code key={nextKey()} className="px-1 py-0.5 rounded text-[11px] font-mono"
-          style={{ background: 'rgba(0,229,255,0.12)', color: H.cyan }}>
+        <code
+          key={nextKey()}
+          className="px-1 py-0.5 rounded text-[10.5px] font-mono"
+          style={{ background: 'rgba(10,42,94,0.08)', color: AH.navy700 }}
+        >
           {match[6]}
-        </code>
+        </code>,
       );
     }
     lastIndex = regex.lastIndex;
@@ -94,10 +110,10 @@ type BlockType = 'paragraph' | 'bullet' | 'numbered';
 
 interface ParsedBlock {
   type: BlockType;
-  items: string[];         // for lists: each item text; for paragraph: single element
+  items: string[];
 }
 
-/** Parse raw text into structured blocks (paragraphs, bullet lists, numbered lists) */
+/** Parse raw text into structured blocks */
 function parseBlocks(text: string): ParsedBlock[] {
   const lines = text.split('\n');
   const blocks: ParsedBlock[] = [];
@@ -112,7 +128,6 @@ function parseBlocks(text: string): ParsedBlock[] {
     const numberedMatch = trimmed.match(numberedRegex);
 
     if (bulletMatch) {
-      // If current block is not a bullet list, flush it
       if (currentBlock && currentBlock.type !== 'bullet') {
         blocks.push(currentBlock);
         currentBlock = null;
@@ -120,7 +135,6 @@ function parseBlocks(text: string): ParsedBlock[] {
       if (!currentBlock) currentBlock = { type: 'bullet', items: [] };
       currentBlock.items.push(bulletMatch[1]);
     } else if (numberedMatch) {
-      // If current block is not a numbered list, flush it
       if (currentBlock && currentBlock.type !== 'numbered') {
         blocks.push(currentBlock);
         currentBlock = null;
@@ -128,13 +142,11 @@ function parseBlocks(text: string): ParsedBlock[] {
       if (!currentBlock) currentBlock = { type: 'numbered', items: [] };
       currentBlock.items.push(numberedMatch[2]);
     } else if (trimmed === '') {
-      // Blank line = paragraph break, flush current block
       if (currentBlock) {
         blocks.push(currentBlock);
         currentBlock = null;
       }
     } else {
-      // Regular text line
       if (currentBlock && currentBlock.type !== 'paragraph') {
         blocks.push(currentBlock);
         currentBlock = null;
@@ -142,15 +154,12 @@ function parseBlocks(text: string): ParsedBlock[] {
       if (!currentBlock) {
         currentBlock = { type: 'paragraph', items: [trimmed] };
       } else {
-        // Merge consecutive text lines with a space
         currentBlock.items[0] += ' ' + trimmed;
       }
     }
   }
 
-  // Flush last block
   if (currentBlock) blocks.push(currentBlock);
-
   return blocks;
 }
 
@@ -161,35 +170,39 @@ function renderBlocks(blocks: ParsedBlock[]): React.ReactNode[] {
   for (const block of blocks) {
     if (block.type === 'paragraph') {
       elements.push(
-        <p key={nextKey()} className="mb-2 last:mb-0">
+        <p key={nextKey()} className="mb-1.5 last:mb-0">
           {renderInline(block.items[0])}
-        </p>
+        </p>,
       );
     } else if (block.type === 'bullet') {
       elements.push(
-        <ul key={nextKey()} className="mb-2 last:mb-0 ml-1 space-y-1">
+        <ul key={nextKey()} className="mb-1.5 last:mb-0 space-y-0.5">
           {block.items.map((item) => (
-            <li key={nextKey()} className="flex items-start gap-2">
-              <span className="mt-[7px] w-1.5 h-1.5 rounded-full shrink-0"
-                style={{ backgroundColor: H.cyan, boxShadow: `0 0 4px ${H.cyan}` }} />
+            <li key={nextKey()} className="flex items-start gap-1.5">
+              <span
+                className="mt-[6px] w-1 h-1 rounded-full shrink-0"
+                style={{ backgroundColor: AH.gold600 }}
+              />
               <span className="flex-1">{renderInline(item)}</span>
             </li>
           ))}
-        </ul>
+        </ul>,
       );
     } else if (block.type === 'numbered') {
       elements.push(
-        <ol key={nextKey()} className="mb-2 last:mb-0 ml-1 space-y-1">
+        <ol key={nextKey()} className="mb-1.5 last:mb-0 space-y-0.5">
           {block.items.map((item, idx) => (
-            <li key={nextKey()} className="flex items-start gap-2">
-              <span className="shrink-0 w-5 text-right font-semibold text-[12px]"
-                style={{ color: H.cyan }}>
+            <li key={nextKey()} className="flex items-start gap-1.5">
+              <span
+                className="shrink-0 w-4 text-right font-semibold text-[11px]"
+                style={{ color: AH.navy700 }}
+              >
                 {idx + 1}.
               </span>
               <span className="flex-1">{renderInline(item)}</span>
             </li>
           ))}
-        </ol>
+        </ol>,
       );
     }
   }
@@ -200,46 +213,31 @@ function renderBlocks(blocks: ParsedBlock[]): React.ReactNode[] {
 /** Main entry point — parse markdown text and render as structured React elements */
 function renderMarkdown(text: string): React.ReactNode[] {
   if (!text) return [text];
-  _mdKey = 0; // reset key counter per render
+  _mdKey = 0;
   const blocks = parseBlocks(text);
   const rendered = renderBlocks(blocks);
   return rendered.length > 0 ? rendered : [text];
-}
-
-function generateParticles(count: number): Particle[] {
-  return Array.from({ length: count }, (_, i) => ({
-    id: i,
-    x: Math.random() * 100,
-    y: Math.random() * 100,
-    size: Math.random() * 2 + 0.5,
-    opacity: Math.random() * 0.35 + 0.05,
-    speed: Math.random() * 0.4 + 0.1,
-  }));
 }
 
 // ─── SARAH WIDGET COMPONENT ──────────────────────────────────────────────
 
 export default function SaraWidget() {
   const [isOpen, setIsOpen] = useState(false);
-  // Message d'accueil par défaut
   const WELCOME_MESSAGE: { role: 'user' | 'assistant'; content: string } = {
     role: 'assistant',
-    content: "Shalom ! Je suis Sarah, votre conseillère Academia Helm. Je suis là pour vous accompagner et vous montrer comment notre solution peut transformer la gestion de votre école. Que souhaitez-vous savoir ?",
+    content:
+      "Shalom ! Je suis **Sarah**, votre conseillère Academia Helm. Je suis ravie de vous accueillir. Dites-moi ce qui vous amène : vous souhaitez découvrir notre solution, comparer les plans, ou parler de votre école ?",
   };
 
   // Version du chat — si on change cette version, les anciens messages sont purgés
-  // Ceci empêche les anciens messages placeholder de polluer le contexte de l'IA
-  const SARA_CHAT_VERSION = 'v2-2025-06';
+  const SARA_CHAT_VERSION = 'v3-2025-08';
 
-  // Charger les messages sauvegardés ou utiliser le message d'accueil
   const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>(() => {
     if (typeof window === 'undefined') return [WELCOME_MESSAGE];
 
-    // Vérifier la version du chat — purger si la version a changé
     try {
       const storedVersion = localStorage.getItem('sara_chat_version');
       if (storedVersion !== SARA_CHAT_VERSION) {
-        // Version différente → purger les anciens messages (probablement des placeholders)
         clearChatMessages('sara-widget');
         localStorage.setItem('sara_chat_version', SARA_CHAT_VERSION);
       }
@@ -254,20 +252,18 @@ export default function SaraWidget() {
   const [isTyping, setIsTyping] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [streamingText, setStreamingText] = useState('');
-  const [particles] = useState(() => generateParticles(20));
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const quickSuggestions = [
     "Qu'est-ce que Academia Helm ?",
-    "Quels sont les tarifs ?",
-    "Quels modules sont inclus ?",
-    "Comment fonctionne l'IA ?",
+    "Voir les tarifs",
+    "Quels modules ?",
     "Je veux une démo",
     "Comment s'inscrire ?",
   ];
 
-  // Persistance : sauvegarder les messages à chaque modification
+  // Persistance
   useEffect(() => {
     saveChatMessages('sara-widget', messages);
   }, [messages]);
@@ -279,66 +275,74 @@ export default function SaraWidget() {
 
   // Focus input on open
   useEffect(() => {
-    if (isOpen) setTimeout(() => inputRef.current?.focus(), 500);
+    if (isOpen) setTimeout(() => inputRef.current?.focus(), 300);
   }, [isOpen]);
 
   // ─── STREAMING SEND ──────────────────────────────────────────────────
 
-  const handleSend = useCallback(async (text?: string) => {
-    const userMsg = text || input.trim();
-    if (!userMsg || isTyping) return;
+  const handleSend = useCallback(
+    async (text?: string) => {
+      const userMsg = text || input.trim();
+      if (!userMsg || isTyping) return;
 
-    setInput('');
-    setShowSuggestions(false);
-    setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
-    setIsTyping(true);
-    setStreamingText('');
-
-    let fullText = '';
-
-    try {
-      // On envoie l'historique SANS le message actuel
-      // Le backend ajoute le message via le paramètre query
-      const stream = saraApi.queryStream(userMsg, undefined, messages);
-
-      for await (const chunk of stream) {
-        if (chunk.type === 'delta' && chunk.text) {
-          fullText += chunk.text;
-          setStreamingText(fullText);
-        } else if (chunk.type === 'final' && chunk.text) {
-          // Final chunk = texte complet (même que les deltas accumulés)
-          // On l'utilise uniquement si on n'a pas encore reçu de deltas
-          if (!fullText) {
-            fullText = chunk.text;
-            setStreamingText(fullText);
-          }
-        } else if (chunk.type === 'error') {
-          if (!fullText) {
-            fullText = "Je suis désolée, une erreur technique s'est produite. Souhaitez-vous qu'un conseiller vous contacte directement ? C'est gratuit et sans engagement.";
-          }
-          break;
-        }
-      }
-
-      if (fullText) {
-        setMessages(prev => [...prev, { role: 'assistant', content: fullText }]);
-      } else {
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: "Je suis temporairement indisponible. Souhaitez-vous qu'un conseiller vous contacte directement ? C'est gratuit et sans engagement.",
-        }]);
-      }
-    } catch (error: any) {
-      console.error('[SaraWidget] Error:', error?.message);
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: "Je suis désolée, une erreur de connexion s'est produite. Souhaitez-vous qu'un conseiller vous contacte directement ? C'est gratuit et sans engagement.",
-      }]);
-    } finally {
-      setIsTyping(false);
+      setInput('');
+      setShowSuggestions(false);
+      setMessages((prev) => [...prev, { role: 'user', content: userMsg }]);
+      setIsTyping(true);
       setStreamingText('');
-    }
-  }, [input, isTyping, messages]);
+
+      let fullText = '';
+
+      try {
+        const stream = saraApi.queryStream(userMsg, undefined, messages);
+
+        for await (const chunk of stream) {
+          if (chunk.type === 'delta' && chunk.text) {
+            fullText += chunk.text;
+            setStreamingText(fullText);
+          } else if (chunk.type === 'final' && chunk.text) {
+            if (!fullText) {
+              fullText = chunk.text;
+              setStreamingText(fullText);
+            }
+          } else if (chunk.type === 'error') {
+            if (!fullText) {
+              fullText =
+                "Je suis désolée, une erreur technique s'est produite. Souhaitez-vous qu'un conseiller vous contacte directement ? C'est gratuit et sans engagement.";
+            }
+            break;
+          }
+        }
+
+        if (fullText) {
+          setMessages((prev) => [...prev, { role: 'assistant', content: fullText }]);
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: 'assistant',
+              content:
+                "Je suis temporairement indisponible. Souhaitez-vous qu'un conseiller vous contacte directement ? C'est gratuit et sans engagement.",
+            },
+          ]);
+        }
+      } catch (error: any) {
+        console.error('[SaraWidget] Error:', error?.message);
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content:
+              "Je suis désolée, une erreur de connexion s'est produite. Souhaitez-vous qu'un conseiller vous contacte directement ? C'est gratuit et sans engagement.",
+          },
+        ]);
+      } finally {
+        setIsTyping(false);
+        setStreamingText('');
+      }
+    },
+    [input, isTyping, messages],
+  );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -347,184 +351,162 @@ export default function SaraWidget() {
     }
   };
 
+  const handleClearChat = () => {
+    clearChatMessages('sara-widget');
+    setMessages([WELCOME_MESSAGE]);
+    setShowSuggestions(true);
+  };
+
   // ─── RENDER ──────────────────────────────────────────────────────────
 
   return (
-    <div className="fixed bottom-6 right-6 z-[1000] font-sans">
+    <div className="fixed bottom-4 right-4 z-[1000] font-sans">
       {isOpen ? (
-        // ─── OPEN STATE — Holographic Chat Panel (Carte du Bénin style) ──
+        // ─── OPEN STATE — Compact Branded Chat Panel ──
         <div
           className={cn(
-            'w-[400px] max-h-[600px] flex flex-col overflow-hidden',
-            'animate-in slide-in-from-bottom-4 duration-500',
-            'rounded-xl',
-            'sara-holo-scroll',
+            'w-[360px] h-[540px] max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden',
+            'animate-in slide-in-from-bottom-3 duration-300',
+            'rounded-2xl shadow-2xl',
+            'sara-brand-scroll',
           )}
           style={{
-            background: H.darkBg,
-            border: `2px solid ${H.cyanBorder}`,
-            boxShadow: `0 0 40px rgba(0,229,255,0.3), 0 0 80px rgba(0,229,255,0.1), inset 0 0 40px rgba(0,229,255,0.06)`,
-            backdropFilter: 'blur(20px)',
+            background: AH.white,
+            border: `1px solid ${AH.graphite300}`,
+            boxShadow: `0 12px 40px rgba(10,42,94,0.18), 0 2px 8px rgba(10,42,94,0.08)`,
           }}
         >
-          {/* ─── OUTER GLOW PULSE ─────────────────────────────── */}
+          {/* ─── HEADER — Royal Blue with Gold accent ─────────────────── */}
           <div
-            className="absolute -inset-2 rounded-xl border-2 pointer-events-none"
+            className="relative px-3.5 py-2.5 flex items-center justify-between shrink-0"
             style={{
-              borderColor: H.cyan,
-              animation: 'holo-halo-pulse 2.5s ease-in-out infinite',
-              boxShadow: '0 0 20px rgba(0,229,255,0.25), 0 0 40px rgba(0,229,255,0.1)',
+              background: `linear-gradient(135deg, ${AH.navy900} 0%, ${AH.navy800} 100%)`,
             }}
-          />
-
-          {/* ─── TOP ENERGY LINE ──────────────────────────────── */}
-          <div
-            className="relative h-[2.5px] mx-3 mt-2 rounded-full shrink-0"
-            style={{
-              background: `linear-gradient(90deg, transparent, ${H.cyan}, transparent)`,
-              animation: 'holo-pulse 1.8s ease-in-out infinite',
-              boxShadow: '0 0 8px rgba(0,229,255,0.5)',
-            }}
-          />
-
-          {/* ─── SCANLINE ──────────────────────────────────────── */}
-          <div className="absolute inset-0 rounded-xl pointer-events-none overflow-hidden z-20">
+          >
+            {/* Thin gold accent line at top */}
             <div
-              className="absolute left-0 right-0 h-[2px]"
+              className="absolute top-0 left-0 right-0 h-[2px]"
               style={{
-                background: `linear-gradient(90deg, transparent, rgba(0,229,255,0.7), transparent)`,
-                boxShadow: '0 0 6px rgba(0,229,255,0.4)',
-                animation: 'holo-scan 3s linear infinite',
-                top: 0,
+                background: `linear-gradient(90deg, ${AH.gold600}, ${AH.gold500}, ${AH.gold600})`,
               }}
             />
-          </div>
 
-          {/* ─── CORNER BRACKETS ──────────────────────────────── */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 400 600" fill="none">
-            <path d="M2,16 L2,2 L16,2" stroke={H.cyan} strokeWidth="1.5" opacity="0.6" />
-            <path d="M384,2 L398,2 L398,16" stroke={H.cyan} strokeWidth="1.5" opacity="0.6" />
-            <path d="M2,584 L2,598 L16,598" stroke={H.cyan} strokeWidth="1.5" opacity="0.6" />
-            <path d="M384,598 L398,598 L398,584" stroke={H.cyan} strokeWidth="1.5" opacity="0.6" />
-          </svg>
-
-          {/* ─── HEADER ──────────────────────────────────────────── */}
-          <div className="relative p-4 flex items-center justify-between shrink-0">
-            {/* Separator line under header */}
-            <div className="absolute bottom-0 left-0 right-0 h-[1px]"
-              style={{ background: `linear-gradient(90deg, transparent, ${H.cyanFaint}, transparent)` }}
-            />
-
-            <div className="relative flex items-center gap-3">
-              {/* Photo de Sarah avec anneau holographique */}
-              <div className="relative flex items-center justify-center" style={{ animation: 'crownFloat 3s ease-in-out infinite' }}>
-                <div className="absolute inset-[-3px] rounded-full"
-                  style={{
-                    background: 'conic-gradient(from 0deg, rgba(0,229,255,0.5), transparent 25%, rgba(245,179,53,0.3), transparent 50%, rgba(0,229,255,0.4), transparent 75%, rgba(245,179,53,0.2), rgba(0,229,255,0.5))',
-                    animation: 'holoBorderSpin 4s linear infinite',
-                    borderRadius: '50%',
-                  }}
-                />
-                <div className="relative w-10 h-10 rounded-full overflow-hidden ring-2" style={{ ringColor: H.cyan }}>
+            <div className="flex items-center gap-2.5">
+              {/* Photo de Sarah avec anneau discret */}
+              <div className="relative flex items-center justify-center">
+                <div className="relative w-8 h-8 rounded-full overflow-hidden ring-2"
+                  style={{ '--tw-ring-color': AH.gold500 } as React.CSSProperties}
+                >
                   <Image
                     src="/images/SarahAI.webp"
                     alt="Sarah"
-                    width={40}
-                    height={40}
+                    width={32}
+                    height={32}
                     className="object-cover w-full h-full"
                     priority
                   />
                 </div>
-                <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 animate-pulse"
+                {/* Online indicator */}
+                <div
+                  className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2"
                   style={{
-                    background: `linear-gradient(135deg, ${H.green}, ${H.greenGlow})`,
-                    borderColor: 'transparent',
-                    boxShadow: `0 0 6px ${H.green}`,
+                    backgroundColor: AH.online,
+                    borderColor: AH.navy900,
+                    boxShadow: `0 0 4px ${AH.onlineGlow}`,
                   }}
                 />
               </div>
 
-              <div>
-                <h4 className="font-bold text-sm text-white"
-                  style={{
-                    textShadow: '0 0 6px rgba(0,229,255,0.3)',
-                  }}
-                >
+              <div className="flex flex-col leading-tight">
+                <h4 className="font-semibold text-[13px] text-white flex items-center gap-1.5">
                   Sarah
+                  <span
+                    className="text-[9px] px-1 py-0.5 rounded-sm font-medium tracking-wider uppercase"
+                    style={{ background: AH.gold600, color: AH.navy900 }}
+                  >
+                    Conseillère
+                  </span>
                 </h4>
-                <p className="text-[10px] font-medium tracking-[0.1em] uppercase"
-                  style={{ color: H.cyanDim }}
-                >
-                  Conseillère Academia Helm
+                <p className="text-[10px] text-white/70 flex items-center gap-1">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full inline-block"
+                    style={{ backgroundColor: AH.online }}
+                  />
+                  Academia Helm · En ligne
                 </p>
               </div>
             </div>
 
-            <div className="relative flex items-center gap-2.5">
-              {/* GREEN online indicator */}
-              <div className="relative flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full animate-pulse"
-                  style={{ backgroundColor: H.green, boxShadow: `0 0 6px ${H.green}` }}
-                />
-                <span className="text-[9px] font-semibold"
-                  style={{ color: H.green }}
-                >
-                  En ligne
-                </span>
-              </div>
+            <div className="flex items-center gap-1">
+              {/* Clear chat button */}
+              <button
+                onClick={handleClearChat}
+                className="p-1.5 rounded-md transition-colors text-white/60 hover:text-white hover:bg-white/10"
+                aria-label="Nouvelle conversation"
+                title="Nouvelle conversation"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                </svg>
+              </button>
+              {/* Close button */}
               <button
                 onClick={() => setIsOpen(false)}
-                className="hover:bg-white/10 p-1.5 rounded-lg transition-colors text-white/50 hover:text-white/80"
+                className="p-1.5 rounded-md transition-colors text-white/60 hover:text-white hover:bg-white/10"
                 aria-label="Fermer"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <path d="M18 6L6 18M6 6l12 12" />
                 </svg>
               </button>
             </div>
           </div>
 
-          {/* ─── MESSAGES ─────────────────────────────────────────── */}
-          <div className="relative flex-1 overflow-y-auto p-4 space-y-3 min-h-[300px] sara-holo-scroll">
-            {/* Floating particles */}
-            <div className="absolute inset-0 pointer-events-none overflow-hidden">
-              {particles.map((p) => (
-                <div
-                  key={p.id}
-                  className="absolute rounded-full"
-                  style={{
-                    left: `${p.x}%`,
-                    top: `${p.y}%`,
-                    width: `${p.size}px`,
-                    height: `${p.size}px`,
-                    opacity: p.opacity,
-                    background: p.id % 3 === 0 ? H.gold : H.cyan,
-                    animation: `holoFloat ${4 + p.speed * 8}s ease-in-out infinite`,
-                    animationDelay: `${p.id * 0.15}s`,
-                    boxShadow: `0 0 ${p.size * 2}px ${p.id % 3 === 0 ? 'rgba(245,179,53,0.2)' : 'rgba(0,229,255,0.2)'}`,
-                  }}
-                />
-              ))}
-            </div>
-
+          {/* ─── MESSAGES ─────────────────────────────────────────────── */}
+          <div className="relative flex-1 overflow-y-auto px-3 py-3 space-y-2 sara-brand-scroll"
+            style={{ background: AH.cloud }}
+          >
             {messages.map((m, i) => (
-              <div key={i} className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start', 'relative z-10')}>
+              <div
+                key={i}
+                className={cn(
+                  'flex',
+                  m.role === 'user' ? 'justify-end' : 'justify-start',
+                )}
+              >
+                {m.role === 'assistant' && (
+                  <div className="w-6 h-6 rounded-full overflow-hidden shrink-0 mr-1.5 mt-0.5 self-end"
+                    style={{ border: `1.5px solid ${AH.gold500}` }}
+                  >
+                    <Image
+                      src="/images/SarahAI.webp"
+                      alt="Sarah"
+                      width={24}
+                      height={24}
+                      className="object-cover w-full h-full"
+                    />
+                  </div>
+                )}
                 <div
                   className={cn(
-                    'max-w-[85%] p-3 rounded-xl text-[13px] leading-relaxed',
-                    m.role === 'user' ? 'rounded-tr-sm' : 'rounded-tl-sm',
+                    'max-w-[78%] px-2.5 py-1.5 rounded-2xl text-[12px] leading-snug',
+                    m.role === 'user'
+                      ? 'rounded-br-sm text-white'
+                      : 'rounded-bl-sm text-graphite-900',
                   )}
-                  style={m.role === 'user' ? {
-                    background: `linear-gradient(135deg, rgba(0,229,255,0.12), rgba(0,18,35,0.6))`,
-                    border: `1px solid rgba(0,229,255,0.3)`,
-                    color: '#ffffff',
-                    boxShadow: '0 0 12px rgba(0,229,255,0.08)',
-                  } : {
-                    background: `linear-gradient(135deg, rgba(0,18,35,0.6), rgba(0,18,35,0.8))`,
-                    border: `1px solid ${H.cyanFaint}`,
-                    color: '#ffffff',
-                    boxShadow: '0 0 12px rgba(0,229,255,0.04)',
-                  }}
+                  style={
+                    m.role === 'user'
+                      ? {
+                          background: `linear-gradient(135deg, ${AH.navy700}, ${AH.navy600})`,
+                          color: AH.white,
+                        }
+                      : {
+                          background: AH.white,
+                          border: `1px solid ${AH.graphite300}`,
+                          color: AH.graphite900,
+                        }
+                  }
                 >
                   {m.role === 'assistant' ? renderMarkdown(m.content) : m.content}
                 </div>
@@ -533,76 +515,96 @@ export default function SaraWidget() {
 
             {/* Streaming text */}
             {isTyping && streamingText && (
-              <div className="flex justify-start relative z-10">
+              <div className="flex justify-start">
+                <div className="w-6 h-6 rounded-full overflow-hidden shrink-0 mr-1.5 mt-0.5 self-end"
+                  style={{ border: `1.5px solid ${AH.gold500}` }}
+                >
+                  <Image
+                    src="/images/SarahAI.webp"
+                    alt="Sarah"
+                    width={24}
+                    height={24}
+                    className="object-cover w-full h-full"
+                  />
+                </div>
                 <div
-                  className="max-w-[85%] p-3 rounded-xl rounded-tl-sm text-[13px] leading-relaxed"
+                  className="max-w-[78%] px-2.5 py-1.5 rounded-2xl rounded-bl-sm text-[12px] leading-snug"
                   style={{
-                    background: `linear-gradient(135deg, rgba(0,18,35,0.6), rgba(0,18,35,0.8))`,
-                    border: `1px solid ${H.cyanFaint}`,
-                    color: '#ffffff',
-                    boxShadow: '0 0 12px rgba(0,229,255,0.04)',
+                    background: AH.white,
+                    border: `1px solid ${AH.graphite300}`,
+                    color: AH.graphite900,
                   }}
                 >
                   {renderMarkdown(streamingText)}
-                  <span className="inline-block w-[2px] h-4 ml-0.5 animate-pulse align-middle"
-                    style={{ backgroundColor: H.cyan, boxShadow: `0 0 6px ${H.cyan}` }}
+                  <span
+                    className="inline-block w-[1.5px] h-3 ml-0.5 animate-pulse align-middle"
+                    style={{ backgroundColor: AH.navy700 }}
                   />
                 </div>
               </div>
             )}
 
-            {/* Typing indicator */}
+            {/* Typing indicator (3 dots) */}
             {isTyping && !streamingText && (
-              <div className="flex justify-start relative z-10">
+              <div className="flex justify-start">
+                <div className="w-6 h-6 rounded-full overflow-hidden shrink-0 mr-1.5 mt-0.5 self-end"
+                  style={{ border: `1.5px solid ${AH.gold500}` }}
+                >
+                  <Image
+                    src="/images/SarahAI.webp"
+                    alt="Sarah"
+                    width={24}
+                    height={24}
+                    className="object-cover w-full h-full"
+                  />
+                </div>
                 <div
-                  className="p-3 rounded-xl rounded-tl-sm flex gap-2 items-center"
+                  className="px-3 py-2.5 rounded-2xl rounded-bl-sm flex gap-1 items-center"
                   style={{
-                    background: `linear-gradient(135deg, rgba(0,18,35,0.6), rgba(0,18,35,0.8))`,
-                    border: `1px solid ${H.cyanFaint}`,
+                    background: AH.white,
+                    border: `1px solid ${AH.graphite300}`,
                   }}
                 >
-                  <span className="w-2 h-2 rounded-full animate-bounce [animation-delay:-0.3s]"
-                    style={{ backgroundColor: H.cyan, boxShadow: `0 0 4px ${H.cyan}` }} />
-                  <span className="w-2 h-2 rounded-full animate-bounce [animation-delay:-0.15s]"
-                    style={{ backgroundColor: H.gold, boxShadow: `0 0 4px ${H.gold}` }} />
-                  <span className="w-2 h-2 rounded-full animate-bounce"
-                    style={{ backgroundColor: H.cyan, boxShadow: `0 0 4px ${H.cyan}` }} />
+                  <span className="w-1.5 h-1.5 rounded-full animate-bounce [animation-delay:-0.3s]"
+                    style={{ backgroundColor: AH.navy600 }} />
+                  <span className="w-1.5 h-1.5 rounded-full animate-bounce [animation-delay:-0.15s]"
+                    style={{ backgroundColor: AH.gold600 }} />
+                  <span className="w-1.5 h-1.5 rounded-full animate-bounce"
+                    style={{ backgroundColor: AH.navy600 }} />
                 </div>
               </div>
             )}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* ─── QUICK SUGGESTIONS ── CYAN STYLE ──────────── */}
+          {/* ─── QUICK SUGGESTIONS ────────────────────────────────────── */}
           {showSuggestions && messages.length <= 1 && (
-            <div className="px-4 pb-2 shrink-0 relative">
-              <p className="text-[10px] mb-2 font-semibold uppercase tracking-[0.12em]"
-                style={{ color: H.cyanFaint }}
+            <div className="px-3 pt-2 pb-1.5 shrink-0" style={{ background: AH.cloud }}>
+              <p className="text-[9.5px] mb-1.5 font-semibold uppercase tracking-wider"
+                style={{ color: AH.graphite500 }}
               >
                 Questions fréquentes
               </p>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1">
                 {quickSuggestions.map((suggestion, i) => (
                   <button
                     key={i}
                     onClick={() => handleSend(suggestion)}
-                    className="text-[11px] px-3 py-1.5 rounded-full transition-all duration-300 cursor-pointer"
+                    className="text-[10.5px] px-2.5 py-1 rounded-full transition-all duration-200 cursor-pointer font-medium"
                     style={{
-                      background: H.cyanGhost,
-                      border: `1px solid ${H.cyanFaint}`,
-                      color: H.cyanDim,
+                      background: AH.white,
+                      border: `1px solid ${AH.navy600}40`,
+                      color: AH.navy700,
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(0,229,255,0.2)';
-                      e.currentTarget.style.borderColor = H.cyanDim;
-                      e.currentTarget.style.boxShadow = '0 0 12px rgba(0,229,255,0.25)';
-                      e.currentTarget.style.color = '#ffffff';
+                      e.currentTarget.style.background = AH.navy700;
+                      e.currentTarget.style.borderColor = AH.navy700;
+                      e.currentTarget.style.color = AH.white;
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = H.cyanGhost;
-                      e.currentTarget.style.borderColor = H.cyanFaint;
-                      e.currentTarget.style.boxShadow = 'none';
-                      e.currentTarget.style.color = H.cyanDim;
+                      e.currentTarget.style.background = AH.white;
+                      e.currentTarget.style.borderColor = `${AH.navy600}40`;
+                      e.currentTarget.style.color = AH.navy700;
                     }}
                   >
                     {suggestion}
@@ -612,250 +614,168 @@ export default function SaraWidget() {
             </div>
           )}
 
-          {/* ─── SEPARATOR ──────────────────────────────────────── */}
-          <div className="mx-4 h-[1px] shrink-0"
-            style={{ background: `linear-gradient(90deg, transparent, ${H.cyanFaint}, transparent)` }}
-          />
-
-          {/* ─── INPUT ── ChatGPT-style pill bar ── */}
+          {/* ─── INPUT ── Compact pill bar ── */}
           <form
             onSubmit={(e) => {
               e.preventDefault();
               handleSend();
             }}
-            className="p-3 shrink-0 relative"
+            className="px-3 py-2.5 shrink-0 border-t"
+            style={{
+              background: AH.white,
+              borderColor: AH.graphite300,
+            }}
           >
-            <div
-              className="flex items-center gap-2 rounded-full px-3 py-1.5"
+            <div className="flex items-center gap-1.5 rounded-full pl-3 pr-1 py-0.5"
               style={{
-                background: '#ffffff',
-                border: `1.5px solid ${H.cyanFaint}`,
-                boxShadow: '0 0 0 0 transparent',
-                transition: 'border-color 0.3s, box-shadow 0.3s',
+                background: AH.cloud,
+                border: `1px solid ${AH.graphite300}`,
               }}
             >
-              {/* Text Input */}
               <input
                 ref={inputRef}
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Posez votre question..."
-                className="flex-1 bg-transparent border-none outline-none text-sm py-2"
-                style={{ color: '#001223' }}
+                placeholder="Écrivez votre message…"
+                className="flex-1 bg-transparent border-none outline-none text-[12px] py-1.5"
+                style={{ color: AH.graphite900 }}
                 disabled={isTyping}
               />
-              <style>{`input::placeholder { color: rgba(0,18,35,0.35) !important; }`}</style>
+              <style>{`
+                input::placeholder {
+                  color: ${AH.graphite500} !important;
+                }
+              `}</style>
 
               {/* Send button */}
               <button
                 type="submit"
                 disabled={!input.trim() || isTyping}
-                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all disabled:opacity-30"
+                className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{
-                  background: input.trim() ? H.cyan : 'rgba(0,229,255,0.1)',
-                  color: input.trim() ? '#fff' : 'rgba(0,229,255,0.3)',
+                  background: input.trim() ? `linear-gradient(135deg, ${AH.navy700}, ${AH.navy600})` : AH.mist,
+                  color: input.trim() ? AH.white : AH.graphite500,
                 }}
+                aria-label="Envoyer"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M5 12h14M12 5l7 7-7 7" />
                 </svg>
               </button>
             </div>
+
+            {/* Footer branding */}
+            <div className="flex items-center justify-center gap-1 mt-1.5">
+              <span className="text-[8.5px] tracking-wider font-medium" style={{ color: AH.graphite500 }}>
+                Propulsé par
+              </span>
+              <span className="text-[8.5px] tracking-wider font-bold" style={{ color: AH.navy800 }}>
+                ACADEMIA HELM
+              </span>
+              <span className="text-[8.5px]" style={{ color: AH.gold600 }}>●</span>
+            </div>
           </form>
-
-          {/* ─── BOTTOM ENERGY LINE ──────────────────────────── */}
-          <div
-            className="h-[2px] mx-3 mb-2 rounded-full shrink-0"
-            style={{
-              background: `linear-gradient(90deg, transparent, ${H.cyan}, transparent)`,
-              animation: 'holo-pulse 2.2s ease-in-out infinite',
-              boxShadow: '0 0 6px rgba(0,229,255,0.3)',
-            }}
-          />
-
-          {/* ─── ACADEMIA HELM LABEL ─────────────────────────── */}
-          <p className="text-center text-[7px] tracking-[0.15em] pb-2" style={{ color: 'rgba(0,229,255,0.2)' }}>
-            ACADEMIA HELM
-          </p>
         </div>
       ) : (
-        // ─── CLOSED STATE — Couronne animée flottante (pas de cercle) ──
+        // ─── CLOSED STATE — Floating branded button ──
         <button
           onClick={() => setIsOpen(true)}
-          className="group relative flex items-center justify-center transition-all duration-500 hover:scale-110 cursor-pointer"
-          style={{ width: '72px', height: '72px' }}
-          aria-label="Ouvrir le chat Sarah"
+          className="group relative flex items-center justify-center transition-all duration-300 hover:scale-105 cursor-pointer"
+          style={{ width: '60px', height: '60px' }}
+          aria-label="Discuter avec Sarah"
         >
-          {/* Fond glow diffus derrière la couronne */}
-          <div className="absolute inset-0"
+          {/* Soft glow background */}
+          <div
+            className="absolute inset-0 rounded-full"
             style={{
-              background: `radial-gradient(circle, rgba(0,229,255,0.12) 0%, rgba(245,179,53,0.06) 35%, transparent 65%)`,
-              filter: 'blur(8px)',
-              animation: 'crownGlow 3s ease-in-out infinite',
+              background: `radial-gradient(circle, ${AH.navy600}25 0%, ${AH.gold500}15 45%, transparent 70%)`,
+              filter: 'blur(6px)',
+              animation: 'sarahPulse 3s ease-in-out infinite',
             }}
           />
 
-          {/* Anneau holographique tournant — aura subtile autour */}
-          <div className="absolute inset-[-2px] rounded-full"
+          {/* Gold ring */}
+          <div
+            className="absolute inset-[-2px] rounded-full"
             style={{
-              background: 'conic-gradient(from 0deg, rgba(0,229,255,0.35), transparent 20%, rgba(245,179,53,0.2), transparent 40%, rgba(0,229,255,0.25), transparent 60%, rgba(245,179,53,0.15), transparent 80%, rgba(0,229,255,0.35))',
-              mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-              maskComposite: 'exclude',
-              WebkitMaskComposite: 'xor',
-              padding: '1.5px',
-              borderRadius: '50%',
-              animation: 'holoBorderSpin 6s linear infinite',
+              background: `conic-gradient(from 0deg, ${AH.gold500}, ${AH.navy600}, ${AH.gold500}, ${AH.navy600}, ${AH.gold500})`,
+              animation: 'sarahRingSpin 6s linear infinite',
               opacity: 0.7,
             }}
           />
 
-          {/* Photo de Sarah avec anneau holographique */}
-          <div className="relative" style={{ animation: 'crownFloat 3s ease-in-out infinite' }}>
-            <div className="absolute inset-[-4px] rounded-full"
-              style={{
-                background: 'conic-gradient(from 0deg, rgba(0,229,255,0.6), transparent 20%, rgba(245,179,53,0.35), transparent 40%, rgba(0,229,255,0.45), transparent 60%, rgba(245,179,53,0.25), transparent 80%, rgba(0,229,255,0.6))',
-                animation: 'holoBorderSpin 5s linear infinite',
-                borderRadius: '50%',
-                boxShadow: `0 0 20px rgba(0,229,255,0.2)`,
-              }}
+          {/* Photo Sarah */}
+          <div className="relative w-12 h-12 rounded-full overflow-hidden ring-2 shadow-lg"
+            style={{ '--tw-ring-color': AH.gold500 } as React.CSSProperties}
+          >
+            <Image
+              src="/images/SarahAI.webp"
+              alt="Sarah"
+              width={48}
+              height={48}
+              className="object-cover w-full h-full"
+              priority
             />
-            <div className="relative w-14 h-14 rounded-full overflow-hidden ring-2 shadow-xl" style={{ ringColor: H.cyan }}>
-              <Image
-                src="/images/SarahAI.webp"
-                alt="Sarah"
-                width={56}
-                height={56}
-                className="object-cover w-full h-full"
-                priority
-              />
-            </div>
           </div>
 
-          {/* Ping subtil — anneau diffus */}
-          <div className="absolute inset-0 rounded-full animate-ping opacity-10"
-            style={{ border: `1.5px solid ${H.cyan}` }}
-          />
-
-          {/* Green notification dot */}
-          <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 animate-pulse"
+          {/* Notification badge */}
+          <div
+            className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white border-2"
             style={{
-              background: `linear-gradient(135deg, ${H.green}, ${H.greenGlow})`,
-              borderColor: 'transparent',
-              boxShadow: `0 0 8px ${H.green}`,
+              background: AH.navy700,
+              borderColor: AH.white,
             }}
-          />
+          >
+            1
+          </div>
 
           {/* Hover tooltip */}
-          <div className="absolute right-full mr-3 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none px-3 py-2 rounded-lg text-xs font-semibold"
+          <div
+            className="absolute right-full mr-3 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none px-2.5 py-1.5 rounded-md text-[11px] font-medium"
             style={{
-              background: H.darkBg,
-              border: `1px solid ${H.cyanFaint}`,
-              color: '#ffffff',
-              boxShadow: `0 0 15px rgba(0,229,255,0.1)`,
-              backdropFilter: 'blur(10px)',
+              background: AH.navy900,
+              color: AH.white,
+              boxShadow: '0 4px 12px rgba(10,42,94,0.25)',
             }}
           >
             Discutez avec Sarah
+            <span
+              className="absolute left-full top-1/2 -translate-y-1/2 border-4"
+              style={{
+                borderColor: `transparent transparent transparent ${AH.navy900}`,
+              }}
+            />
           </div>
         </button>
       )}
 
       {/* ─── ANIMATIONS ──────────────────────────────────────────────────── */}
       <style jsx global>{`
-        /* ── Carte du Bénin keyframes ── */
-        @keyframes holo-pulse {
-          0%, 100% { opacity: 0.9; }
-          50% { opacity: 0.5; }
+        @keyframes sarahPulse {
+          0%, 100% { opacity: 0.6; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.08); }
         }
 
-        @keyframes holo-scan {
-          0% { top: 0; opacity: 0.7; }
-          50% { opacity: 0.25; }
-          100% { top: 100%; opacity: 0.7; }
-        }
-
-        @keyframes holo-halo-pulse {
-          0%, 100% { opacity: 0.7; transform: scale(1); }
-          50% { opacity: 0.3; transform: scale(1.02); }
-        }
-
-        /* ── Floating particles ── */
-        @keyframes holoFloat {
-          0%, 100% {
-            transform: translateY(0) translateX(0);
-            opacity: 0.1;
-          }
-          25% {
-            transform: translateY(-10px) translateX(5px);
-            opacity: 0.3;
-          }
-          50% {
-            transform: translateY(-5px) translateX(-5px);
-            opacity: 0.12;
-          }
-          75% {
-            transform: translateY(-15px) translateX(3px);
-            opacity: 0.25;
-          }
-        }
-
-        /* ── Rotating border ── */
-        @keyframes holoBorderSpin {
+        @keyframes sarahRingSpin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
 
-        /* ── Crown animations ── */
-        @keyframes crownFloat {
-          0%, 100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-4px);
-          }
-        }
-
-        @keyframes crownGlow {
-          0%, 100% {
-            opacity: 0.5;
-            transform: scale(1);
-          }
-          50% {
-            opacity: 1;
-            transform: scale(1.08);
-          }
-        }
-
-        @keyframes crownShimmer {
-          0%, 100% {
-            filter: drop-shadow(0 0 6px rgba(0,229,255,0.4));
-            color: #f5b335;
-          }
-          33% {
-            filter: drop-shadow(0 0 14px rgba(0,229,255,0.6)) drop-shadow(0 0 20px rgba(245,179,53,0.3));
-            color: #f7c76e;
-          }
-          66% {
-            filter: drop-shadow(0 0 10px rgba(245,179,53,0.4)) drop-shadow(0 0 16px rgba(0,229,255,0.2));
-            color: #f5b335;
-          }
-        }
-
-        /* Holographic scrollbar */
-        .sara-holo-scroll::-webkit-scrollbar {
+        /* Custom scrollbar — minimal, branded */
+        .sara-brand-scroll::-webkit-scrollbar {
           width: 4px;
         }
-        .sara-holo-scroll::-webkit-scrollbar-track {
+        .sara-brand-scroll::-webkit-scrollbar-track {
           background: transparent;
         }
-        .sara-holo-scroll::-webkit-scrollbar-thumb {
-          background: rgba(0,229,255,0.15);
+        .sara-brand-scroll::-webkit-scrollbar-thumb {
+          background: ${AH.navy600}40;
           border-radius: 4px;
         }
-        .sara-holo-scroll::-webkit-scrollbar-thumb:hover {
-          background: rgba(0,229,255,0.3);
+        .sara-brand-scroll::-webkit-scrollbar-thumb:hover {
+          background: ${AH.navy600}80;
         }
       `}</style>
     </div>

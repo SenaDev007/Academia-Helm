@@ -53,7 +53,7 @@ export class ScheduledEmailDispatcherService {
    *
    * Pour surcharger via env var : SCHEDULED_EMAIL_CRON='0/5 * * * *' (toutes les 5 min)
    */
-  @Cron(process.env.SCHEDULED_EMAIL_CRON || CronExpression.EVERY_15_MINUTES)
+  @Cron(CronExpression.EVERY_15_MINUTES)
   async dispatchPendingEmails(): Promise<void> {
     // Évite les runs concurrents si le précédent n'a pas fini
     if (this.isRunning) {

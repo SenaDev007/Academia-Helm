@@ -51,44 +51,64 @@ export class ParentPortalController {
    * Résoudre l'ID du guardian depuis l'userId du parent connecté.
    * Le parent se connecte avec son User (email/téléphone), mais ses enfants
    * sont liés via la table student_guardians (guardianId).
-   * On cherche par email ou téléphone matching.
+   *
+   * Pattern (même que resolveTeacherId) :
+   *   1. Chercher guardian par userId (colonnes guardians.userId ← users.id)
+   *   2. Fallback : matcher par email (User.email = Guardian.email)
+   *   3. Fallback : matcher par téléphone (User.phone = Guardian.phone)
+   *   4. Dernier recours : retourner userId (peut être un guardianId direct)
    */
   private async resolveGuardianId(tenantId: string, userId: string): Promise<string | null> {
-    // 1. Vérifier si userId est déjà un guardianId (rare — un User peut avoir
+    // 1. ✅ NOUVEAU : Chercher par userId (comme teachers) — le pattern officiel
+    const byUserId: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "id" FROM "guardians" WHERE "userId" = $1 AND "tenantId" = $2 LIMIT 1`,
+      userId, tenantId,
+    ).catch(() => []);
+    if (byUserId && byUserId.length > 0) {
+      this.logger.log(`✅ Guardian resolved via userId: ${userId.substring(0, 8)}... → guardian ${byUserId[0].id.substring(0, 8)}...`);
+      return byUserId[0].id;
+    }
+
+    // 2. Vérifier si userId est déjà un guardianId (rare — un User peut avoir
     //    le même id qu'un Guardian si l'admin a fait une importation manuelle)
     const directGuardian: any = await this.prisma.$queryRawUnsafe(
       `SELECT "id" FROM "guardians" WHERE "id" = $1 AND "tenantId" = $2 LIMIT 1`,
       userId, tenantId,
     ).catch(() => []);
-    if (directGuardian && directGuardian.length > 0) return directGuardian[0].id;
+    if (directGuardian && directGuardian.length > 0) {
+      this.logger.log(`✅ Guardian resolved via direct ID match`);
+      return directGuardian[0].id;
+    }
 
-    // 2. Chercher par User → email/téléphone → Guardian
+    // 3. Chercher par User → email → Guardian
     const user: any = await this.prisma.$queryRawUnsafe(
-      `SELECT "email", "phone" FROM "users" WHERE "id" = $1 AND "tenantId" = $2 LIMIT 1`,
+      `SELECT "email" FROM "users" WHERE "id" = $1 AND "tenantId" = $2 LIMIT 1`,
       userId, tenantId,
     ).catch(() => []);
 
     if (user && user.length > 0) {
       const u = user[0];
-      // Chercher guardian par email
       if (u.email) {
         const guardianByEmail: any = await this.prisma.$queryRawUnsafe(
           `SELECT "id" FROM "guardians" WHERE "email" = $1 AND "tenantId" = $2 LIMIT 1`,
           u.email, tenantId,
         ).catch(() => []);
-        if (guardianByEmail && guardianByEmail.length > 0) return guardianByEmail[0].id;
-      }
-      // Chercher guardian par téléphone
-      if (u.phone) {
-        const guardianByPhone: any = await this.prisma.$queryRawUnsafe(
-          `SELECT "id" FROM "guardians" WHERE "phone" = $1 AND "tenantId" = $2 LIMIT 1`,
-          u.phone, tenantId,
-        ).catch(() => []);
-        if (guardianByPhone && guardianByPhone.length > 0) return guardianByPhone[0].id;
+        if (guardianByEmail && guardianByEmail.length > 0) {
+          this.logger.log(`✅ Guardian resolved via email match: ${u.email}`);
+
+          // ✅ Auto-backfill: set userId on the guardian for future lookups
+          await this.prisma.$executeRawUnsafe(
+            `UPDATE "guardians" SET "userId" = $1 WHERE "id" = $2 AND "userId" IS NULL`,
+            userId, guardianByEmail[0].id,
+          ).catch(() => {});
+
+          return guardianByEmail[0].id;
+        }
       }
     }
 
-    // 3. Fallback : retourner userId directement (peut être un guardianId)
+    // 4. Fallback : retourner userId directement (peut être un guardianId)
+    this.logger.warn(`⚠️ Guardian not resolved via userId/email — falling back to userId as guardianId`);
     return userId;
   }
 

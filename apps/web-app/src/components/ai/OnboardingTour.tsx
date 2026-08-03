@@ -258,7 +258,7 @@ export default function OnboardingTour() {
                     className="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold text-white shadow-lg transition-all hover:scale-105"
                     style={{ background: `linear-gradient(135deg, ${AH.navy700}, ${AH.navy900})` }}
                   >
-                    Oui, guidons-moi ✨
+                    Oui, guide-moi ✨
                   </button>
                 </div>
               </div>

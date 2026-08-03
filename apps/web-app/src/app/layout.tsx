@@ -37,7 +37,7 @@ import I18nWrapper from '@/components/i18n/I18nWrapper';
 // - Fonctionne même si Google Fonts est inaccessible
 // - Meilleure performance et contrôle
 // 
-// Les fichiers de police sont stockés dans : public/fonts/inter/
+// Les fichiers de police sont stockés dans : src/fonts/inter/
 // ✅ POLICES LOCALES — 4 graisses en WOFF2 (subset Latin) — 79 KB total (vs 1.27 MB en TTF)
 // Conversion TTF → WOFF2 + subset Latin de base : 94% de réduction.
 // Si une page a besoin de plus de glyphs (Cyrillique, Grec, etc.), ajouter

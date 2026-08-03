@@ -51,7 +51,7 @@ export class AutoRecoveryService {
    *
    * Pour surcharger via env var : AUTO_RECOVERY_CRON='0 0,6,12,18 * * *' (horaire)
    */
-  @Cron('0 0,6,12,18 * * *') // Toutes les 6 heures à minute 0 (00:00, 06:00, 12:00, 18:00)
+  @Cron(CronExpression.EVERY_6_HOURS) // Toutes les 6 heures
   async handleScheduledRecovery() {
     this.logger.log('Vérification des relances automatiques...');
 

@@ -1,7 +1,9 @@
 "use client";
 
-// ✅ ISR — revalidate every 1 hour
-export const revalidate = 3600;
+// ⚠️ 'use client' + export const revalidate sont incompatibles sur Next.js 16.
+// Pour activer ISR, il faudrait convertir la page en server component + client island.
+// Pour l'instant, on garde 'use client' car la page utilise useState/useEffect pour
+// fetch la dernière release. Le cache navigateur + cache CDN suffisent.
 
 /**
  * ============================================================================

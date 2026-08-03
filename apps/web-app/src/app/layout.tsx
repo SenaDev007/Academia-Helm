@@ -207,11 +207,29 @@ export default function RootLayout({
         </I18nWrapper>
         <ServiceWorkerCleanup />
         <ToastContainer />
+
+        {/* ────────────────────────────────────────────────────────────────
+            🚀 Partytown — exécute les scripts tiers dans un Web Worker
+            ────────────────────────────────────────────────────────────────
+            Google Analytics et autres scripts tiers tournent normalement sur
+            le main thread, ce qui bloque le rendu et augmente le TBT
+            (Total Blocking Time). Partytown les déplace dans un Web Worker,
+            libérant le main thread pour les interactions utilisateur.
+
+            Gain estimé : +3-5 pts TBT sur Lighthouse mobile.
+            ──────────────────────────────────────────────────────────────── */}
+        <Script
+          src="https://cdn.jsdelivr.net/npm/@builder.io/partytown@0.10/lib/partytown.js"
+          strategy="beforeInteractive"
+        />
+        {/* ✅ Google Analytics via Partytown (type="text/partytown") —
+            s'exécute dans un Web Worker, ne bloque pas le main thread */}
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-TG29Y7XL8S"
           strategy="lazyOnload"
+          type="text/partytown"
         />
-        <Script id="google-analytics" strategy="lazyOnload">
+        <Script id="google-analytics" strategy="lazyOnload" type="text/partytown">
           {`
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}

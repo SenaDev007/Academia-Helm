@@ -1,7 +1,7 @@
 'use client';
 
-// ✅ ISR — revalidate every 5 minutes (school list cache)
-export const revalidate = 300;
+// ⚠️ 'use client' + export const revalidate sont incompatibles sur Next.js 16.
+// Le cache React Query (staleTime 5min) suffit côté client.
 
 /**
  * ============================================================================

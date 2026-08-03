@@ -50,10 +50,6 @@ export class AutoRecoveryService {
    * est typiquement configuré entre 08:00 et 18:00.
    *
    * Pour surcharger via env var : AUTO_RECOVERY_CRON='0 0,6,12,18 * * *' (horaire)
-   *
-   * Note: éviter d'écrire des expressions cron avec "slash-étoile" dans les
-   * commentaires JSDoc — la séquence "*/" est interprétée comme la fin du
-   * commentaire par SWC/TSC. Utiliser la notation "0,6,12,18" à la place.
    */
   @Cron(process.env.AUTO_RECOVERY_CRON || '0 0,6,12,18 * * *') // Toutes les 6 heures à minute 0
   async handleScheduledRecovery() {

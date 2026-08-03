@@ -29,8 +29,12 @@ import PortalClient from './PortalClient';
 // La liste des écoles change rarement, on peut la cacher côté serveur.
 export const revalidate = 300;
 
-// ✅ Autorise le prerendering statique (au lieu de force-dynamic)
-export const dynamic = 'force-static';
+// ⚠️ force-dynamic (pas force-static) car PortalClient utilise useQuery()
+// qui nécessite un QueryClient en contexte. Le prerender au build time
+// échoue car React Query n'a pas encore de QueryClient monté.
+// Avec force-dynamic, la page est rendue à chaque requête (SSR) avec
+// prefetch côté serveur → HTML envoyé avec données initiales.
+export const dynamic = 'force-dynamic';
 
 async function prefetchSchools() {
   const queryClient = new QueryClient({

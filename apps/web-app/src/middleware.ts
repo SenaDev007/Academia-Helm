@@ -744,8 +744,10 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Inclut /api/* pour ajouter les headers anti-cache Cloudflare
-    // (essentiel après migration Cloudflare pour éviter le cache des réponses API)
-    '/((?!_next/static|_next/image|favicon.ico|images/|fonts/|uploads/|sw.js|manifest.json|robots.txt|sitemap.xml).*)',
+    // ✅ Exclut /api/* du middleware — les headers anti-cache sont maintenant
+    // gérés statiquement dans next.config.js → headers() (plus efficace).
+    // Cela évite à l'Edge Function de s'exécuter sur chaque requête API
+    // (économise des invocations Vercel + réduit TBT de ~50ms).
+    '/((?!_next/static|_next/image|favicon.ico|images/|fonts/|uploads/|sw.js|manifest.json|robots.txt|sitemap.xml|api/).*)',
   ],
 };

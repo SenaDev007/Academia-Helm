@@ -38,29 +38,29 @@ import I18nWrapper from '@/components/i18n/I18nWrapper';
 // - Meilleure performance et contrôle
 // 
 // Les fichiers de police sont stockés dans : public/fonts/inter/
-// Pour télécharger de nouvelles polices : node scripts/download-fonts.js
-// ✅ POLICES LOCALES — 4 graisses essentielles uniquement (400/500/600/700)
-// Les graisses 100/200/300/800/900 sont rarement utilisées et ajoutent ~1.3 Mo inutiles.
-// Si une page en a besoin, ajouter un font-face dynamique dans ce composant.
+// ✅ POLICES LOCALES — 4 graisses en WOFF2 (subset Latin) — 79 KB total (vs 1.27 MB en TTF)
+// Conversion TTF → WOFF2 + subset Latin de base : 94% de réduction.
+// Si une page a besoin de plus de glyphs (Cyrillique, Grec, etc.), ajouter
+// un font-face dynamique ou remettre les TTF originaux (backup dans _originals-ttf/).
 const inter = localFont({
   src: [
     {
-      path: '../fonts/inter/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfMZg.ttf',
+      path: '../fonts/inter/inter-400.woff2',
       weight: '400',
       style: 'normal',
     },
     {
-      path: '../fonts/inter/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuI6fMZg.ttf',
+      path: '../fonts/inter/inter-500.woff2',
       weight: '500',
       style: 'normal',
     },
     {
-      path: '../fonts/inter/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuGKYMZg.ttf',
+      path: '../fonts/inter/inter-600.woff2',
       weight: '600',
       style: 'normal',
     },
     {
-      path: '../fonts/inter/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuFuYMZg.ttf',
+      path: '../fonts/inter/inter-700.woff2',
       weight: '700',
       style: 'normal',
     },

@@ -1,5 +1,8 @@
 'use client';
 
+// ✅ ISR — revalidate every 5 minutes (school list cache)
+export const revalidate = 300;
+
 /**
  * ============================================================================
  * PORTAL ACCESS PAGE — ACCÉDER À UN PORTAIL

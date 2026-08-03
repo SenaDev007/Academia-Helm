@@ -1,5 +1,8 @@
 "use client";
 
+// ✅ ISR — revalidate every 1 hour
+export const revalidate = 3600;
+
 /**
  * ============================================================================
  * PAGE DE TÉLÉCHARGEMENT — Academia Helm Desktop + Mobile

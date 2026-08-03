@@ -103,6 +103,10 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 // Pas de fetch SSR vers l'API (évite blocage si API down) ; avis = client dans ReviewsSection.
+// ✅ Prerendering: static page with ISR (revalidate every 1 hour)
+export const revalidate = 3600; // ISR — regenerate every hour
+export const dynamic = 'force-static'; // Force static generation
+
 export default function HomePage() {
   return (
     <>

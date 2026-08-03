@@ -1,44 +1,59 @@
-const { S3Client, PutObjectCommand, HeadBucketCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, HeadBucketCommand, DeleteObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
+
+const ACCESS_KEY_ID = '75eecfbee836811eb6c082778e48b499';
+const SECRET_ACCESS_KEY = '1ddd70da27ee0df1c0bf23a5051de7991edbe9ea0169a11e1ba21889f2e927f1';
+const ACCOUNT_ID = '151a2a130fbe6fcc2998740587b72b1b';
+const BUCKET = 'academia-helm-releases';
 
 const r2 = new S3Client({
   region: 'auto',
-  endpoint: 'https://151a2a130fbe6fcc2998740587b72b1b.r2.cloudflarestorage.com',
+  endpoint: `https://${ACCOUNT_ID}.r2.cloudflarestorage.com`,
   credentials: {
-    accessKeyId: 'a36f4cdce46c14fc9505bbc7eb56813c',
-    secretAccessKey: 'b05c1a05967cda9b7a77e199a790ef8eefa7ea474bf645cff00237c60b530ed3',
+    accessKeyId: ACCESS_KEY_ID,
+    secretAccessKey: SECRET_ACCESS_KEY,
   },
   forcePathStyle: true,
 });
 
 (async () => {
-  console.log('─── Test permissions token R2 ───');
-  console.log('Bucket cible: academia-helm-releases\n');
+  console.log('─── Test permissions token R2 (nouveau) ───');
+  console.log('Bucket cible:', BUCKET, '\n');
 
-  // 1. HeadBucket — vérifier accès bucket
+  // 1. HeadBucket
   try {
-    const r = await r2.send(new HeadBucketCommand({ Bucket: 'academia-helm-releases' }));
-    console.log('✅ HeadBucket: 200 — bucket existe et token y a accès');
+    await r2.send(new HeadBucketCommand({ Bucket: BUCKET }));
+    console.log('✅ HeadBucket: 200 — bucket accessible');
   } catch (e) {
     const sc = e.$metadata?.httpStatusCode;
-    console.log('❌ HeadBucket:', e.name, '(http ' + sc + ')');
-    console.log('   →', e.message);
+    console.log('❌ HeadBucket:', e.name, '(http ' + sc + ')', '—', e.message);
   }
 
-  // 2. PutObject — tester écriture
+  // 2. ListObjects (limit 5)
+  try {
+    const r = await r2.send(new ListObjectsV2Command({ Bucket: BUCKET, MaxKeys: 5 }));
+    const objs = (r.Contents || []).map(o => o.Key);
+    console.log('✅ ListObjects: OK — existing objects:', objs.length ? objs.join(', ') : '(empty)');
+  } catch (e) {
+    const sc = e.$metadata?.httpStatusCode;
+    console.log('❌ ListObjects:', e.name, '(http ' + sc + ')', '—', e.message);
+  }
+
+  // 3. PutObject (write test)
   try {
     await r2.send(new PutObjectCommand({
-      Bucket: 'academia-helm-releases',
+      Bucket: BUCKET,
       Key: '_permission-test.txt',
-      Body: Buffer.from('permission check'),
+      Body: Buffer.from('permission check ' + new Date().toISOString()),
       ContentType: 'text/plain',
+      CacheControl: 'public, max-age=31536000, immutable',
     }));
     console.log('✅ PutObject: OK — écriture autorisée');
 
-    // cleanup
-    try { await r2.send(new DeleteObjectCommand({ Bucket: 'academia-helm-releases', Key: '_permission-test.txt' })); } catch {}
+    // Cleanup
+    try { await r2.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: '_permission-test.txt' })); }
+    catch (e) { console.log('   (cleanup delete failed:', e.message, ')'); }
   } catch (e) {
     const sc = e.$metadata?.httpStatusCode;
-    console.log('❌ PutObject:', e.name, '(http ' + sc + ')');
-    console.log('   →', e.message);
+    console.log('❌ PutObject:', e.name, '(http ' + sc + ')', '—', e.message);
   }
 })();

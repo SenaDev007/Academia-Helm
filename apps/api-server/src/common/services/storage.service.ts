@@ -62,6 +62,17 @@ export class StorageService {
 
       this.s3Client = new S3Client(clientConfig);
       this.logger.log(`Storage initialized: ${this.storageType.toUpperCase()} (bucket: ${this.bucketName})`);
+
+      // ─── Health-check : valider la configuration R2/S3 au démarrage ──────
+      // Non-bloquant : si le check échoue, on log une erreur mais on ne crash pas
+      // (permet à l'app de démarrer même si R2 est temporairement down).
+      this.runHealthCheck().catch((err) => {
+        this.logger.error(
+          `⚠️  Storage health-check failed: ${err.message}\n` +
+          `   STORAGE_TYPE=${this.storageType}, BUCKET=${this.bucketName}, ENDPOINT=${endpoint || '(default)'}\n` +
+          `   Les uploads vont échouer jusqu'à résolution. Vérifie les credentials R2.`,
+        );
+      });
     } else if (this.storageType === 'vercel-blob') {
       if (!this.blobToken) {
         this.logger.error('BLOB_READ_WRITE_TOKEN is not set! Vercel Blob storage will not work.');
@@ -368,6 +379,51 @@ export class StorageService {
    */
   getStorageType(): StorageType {
     return this.storageType;
+  }
+
+  // ─── Health-check au démarrage ─────────────────────────────────────────────
+
+  /**
+   * Vérifie que le backend R2/S3 est accessible et que les credentials sont valides.
+   * Non-bloquant : utilisé dans le constructeur pour logger un warning si KO.
+   *
+   * Effectue un PutObject + DeleteObject sur un fichier test (_healthcheck.txt).
+   * Coût : ~2 requêtes S3 par démarrage — négligeable.
+   */
+  private async runHealthCheck(): Promise<void> {
+    if (!this.s3Client) {
+      throw new Error('S3 client not initialized');
+    }
+
+    const testKey = '_healthcheck.txt';
+    const testBody = Buffer.from(`Academia Helm storage health-check @ ${new Date().toISOString()}`);
+
+    // 1. PutObject — vérifie permissions d'écriture
+    await this.s3Client.send(
+      new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: testKey,
+        Body: testBody,
+        ContentType: 'text/plain',
+      }),
+    );
+
+    // 2. DeleteObject — cleanup
+    try {
+      await this.s3Client.send(
+        new DeleteObjectCommand({
+          Bucket: this.bucketName,
+          Key: testKey,
+        }),
+      );
+    } catch {
+      // Non-fatal — le test a réussi même si cleanup échoue
+    }
+
+    this.logger.log(
+      `✅ Storage health-check passed: ${this.storageType.toUpperCase()} is ready ` +
+      `(bucket=${this.bucketName}, publicUrl=${this.publicUrl || '(presigned only)'})`,
+    );
   }
 
   /**

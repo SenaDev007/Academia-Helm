@@ -44,15 +44,18 @@ export class AutoRecoveryService {
    * Pour chaque tenant avec autoRecoveryEnabled = true, vérifie si l'heure
    * d'exécution correspond et lance la relance.
    *
-   * ⚠️ OPTIMISATION NEON : anciennement '0 * * * *' (toutes les heures = 24 requêtes/jour),
-   * ce qui empêchait Neon de suspendre le compute la nuit.
-   * Passage à '0 */6 * * *' (toutes les 6h = 4 requêtes/jour) couvre les fenêtres
-   * 00:00, 06:00, 12:00, 18:00 — suffisant car autoRecoveryTime est typiquement
-   * configuré entre 08:00 et 18:00.
+   * OPTIMISATION NEON : anciennement horaire (24 requêtes/jour), ce qui empêchait
+   * Neon de suspendre le compute la nuit. Passage à toutes les 6h (4 requêtes/jour)
+   * couvre les fenêtres 00:00, 06:00, 12:00, 18:00 — suffisant car autoRecoveryTime
+   * est typiquement configuré entre 08:00 et 18:00.
    *
-   * Pour surcharger via env var : AUTO_RECOVERY_CRON='0 * * * *' (horaire)
+   * Pour surcharger via env var : AUTO_RECOVERY_CRON='0 0,6,12,18 * * *' (horaire)
+   *
+   * Note: éviter d'écrire des expressions cron avec "slash-étoile" dans les
+   * commentaires JSDoc — la séquence "*/" est interprétée comme la fin du
+   * commentaire par SWC/TSC. Utiliser la notation "0,6,12,18" à la place.
    */
-  @Cron(process.env.AUTO_RECOVERY_CRON || '0 */6 * * *') // Toutes les 6 heures à minute 0
+  @Cron(process.env.AUTO_RECOVERY_CRON || '0 0,6,12,18 * * *') // Toutes les 6 heures à minute 0
   async handleScheduledRecovery() {
     this.logger.log('Vérification des relances automatiques...');
 

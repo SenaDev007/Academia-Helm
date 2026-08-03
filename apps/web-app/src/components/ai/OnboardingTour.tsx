@@ -63,7 +63,7 @@ const TOUR_STEPS: TourStep[] = [
   {
     id: 2,
     title: 'Tableau de bord',
-    description: 'Vue d'ensemble de votre établissement : effectifs, finances, statistiques en temps réel.',
+    description: "Vue d'ensemble de votre établissement : effectifs, finances, statistiques en temps réel.",
     icon: <BarChart3 className="w-6 h-6" />,
     route: '/app',
     sarahMessage: "Le **Tableau de bord** est votre point de départ. Vous y trouvez les KPIs principaux : effectifs, recettes, taux de présence. C'est ici que vous revenez chaque matin.",

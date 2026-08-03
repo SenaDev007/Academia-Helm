@@ -250,4 +250,86 @@ export class SaraController {
     return this.saraService.getContextualSuggestions(body.userRole, body.currentModule);
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SARAH GUIDE IN-APP — Navigation & Onboarding (GLOBAL, pas multi-tenant strict)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Sarah Guide In-App query (streaming SSE)
+   *
+   * ⚠️ DIFFÉRENCE avec /sara/inapp/stream :
+   *   - Sarah Guide est GLOBALE (pas multi-tenant strict)
+   *   - Elle n'accède à AUCUNE donnée de l'école
+   *   - Elle aide UNIQUEMENT à la navigation, l'onboarding, l'explication des modules
+   *
+   * 🔒 Authentification JWT requise (pour connaître le rôle et le module courant)
+   * Mais PAS de validation tenant — Sarah Guide est globale par design.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Post('guide/stream')
+  async guideQueryStream(
+    @Body() body: {
+      query: string;
+      userRole?: string;
+      currentModule?: string;
+      messages?: Array<{ role: string; content: string }>;
+    },
+    @Res() res: Response,
+  ) {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    try {
+      const stream = this.saraService.handleGuideQueryStream(
+        body.query,
+        body.userRole,
+        body.currentModule,
+        body.messages,
+      );
+
+      for await (const chunk of stream) {
+        if (chunk.type === 'delta' && chunk.text) {
+          res.write(`data: ${JSON.stringify({ type: 'delta', text: chunk.text })}\n\n`);
+        } else if (chunk.type === 'reasoning' && chunk.reasoningText) {
+          res.write(`data: ${JSON.stringify({ type: 'reasoning', text: chunk.reasoningText })}\n\n`);
+        } else if (chunk.type === 'status') {
+          res.write(`data: ${JSON.stringify({ type: 'status', text: chunk.text })}\n\n`);
+        } else if (chunk.type === 'final') {
+          res.write(`data: ${JSON.stringify({ type: 'final', text: chunk.text, usage: chunk.usage })}\n\n`);
+        } else if (chunk.type === 'error') {
+          res.write(`data: ${JSON.stringify({ type: 'error', text: chunk.text })}\n\n`);
+        }
+      }
+    } catch (error: any) {
+      res.write(`data: ${JSON.stringify({ type: 'error', text: error?.message || 'Stream error' })}\n\n`);
+    }
+
+    res.end();
+  }
+
+  /**
+   * Sarah Guide In-App query (non-streaming)
+   *
+   * ⚠️ Même comportement que /sara/guide/stream mais en mode non-streaming.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Post('guide')
+  async guideQuery(
+    @Body() body: {
+      query: string;
+      userRole?: string;
+      currentModule?: string;
+      messages?: Array<{ role: string; content: string }>;
+    },
+  ) {
+    return this.saraService.handleGuideQuery(
+      body.query,
+      body.userRole,
+      body.currentModule,
+      body.messages,
+    );
+  }
+
 }

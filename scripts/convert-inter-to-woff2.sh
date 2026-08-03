@@ -5,7 +5,7 @@
 # ============================================================================
 set -e
 
-FONT_DIR="/home/z/my-project/apps/web-app/public/fonts/inter"
+FONT_DIR="/home/z/my-project/apps/web-app/src/fonts/inter"
 
 # Mapping : weight → fichier source TTF (avec nom Google Fonts original)
 declare -A WEIGHTS=(

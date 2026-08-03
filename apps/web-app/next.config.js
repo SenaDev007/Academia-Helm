@@ -98,10 +98,11 @@ const nextConfig = {
       '@tanstack/react-query',
       'zod',
     ],
-    // ✅ Inliner le critical CSS directement dans le HTML
-    // Élimine une requête CSS render-blocking par page (gain ~1-2 pts LCP)
+    // ⚠️ TEMPORAIREMENT DÉSACTIVÉ — optimizeCss (critters) peut causer des erreurs
+    // Turbopack "Missing content when trying to generate the content hash for StaticOutputAsset"
+    // sur Next.js 16.2. À réactiver après validation du build.
     // Requires `critters` package (déjà dans devDependencies)
-    optimizeCss: true,
+    // optimizeCss: true,
   },
 
   // ✅ Paquets natifs qui ne doivent pas être bundlés côté serveur

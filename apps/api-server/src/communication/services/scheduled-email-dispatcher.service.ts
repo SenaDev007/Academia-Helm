@@ -37,23 +37,16 @@ export class ScheduledEmailDispatcherService {
   ) {}
 
   /**
-   * Cron toutes les 15 minutes pour dispatcher les emails programmés dus.
+   * Cron toutes les minutes pour dispatcher les emails programmés dus.
    *
-   * ⚠️ OPTIMISATION NEON : anciennement EVERY_MINUTE (1 440 requêtes/jour),
-   * ce qui empêchait Neon PostgreSQL de s'auto-suspendre (keepalive de fait).
-   * Passage à EVERY_15_MINUTES = 96 requêtes/jour, soit 93% de réduction.
-   * Neon peut maintenant suspendre le compute pendant les périodes creuses.
-   *
-   * ⚠️ IMPORTANT : utilise CronExpression.EVERY_15_MINUTES (qui vaut '0/15 * * * *',
+   * ⚠️ IMPORTANT : utilise CronExpression.EVERY_MINUTE (qui vaut '* * * * *',
    * 5 champs sans secondes). Ne PAS utiliser '0 * * * * *' (6 champs avec
    * secondes) car @nestjs/schedule n'accepte que les expressions 5 champs
    * par défaut — une expression 6 champs fait crasher l'app au démarrage
    * (le ScheduleModule lève une erreur pendant l'init, avant que l'app
    * ne bind le port 3000 → "instance refused connection" sur Fly.io).
-   *
-   * Pour surcharger via env var : SCHEDULED_EMAIL_CRON='0/5 * * * *' (toutes les 5 min)
    */
-  @Cron(CronExpression.EVERY_15_MINUTES)
+  @Cron(CronExpression.EVERY_MINUTE)
   async dispatchPendingEmails(): Promise<void> {
     // Évite les runs concurrents si le précédent n'a pas fini
     if (this.isRunning) {

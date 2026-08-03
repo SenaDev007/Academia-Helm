@@ -106,12 +106,8 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
       envFilePath: '.env',
     }),
 
-    // ⚠️ ScheduleModule TEMPORAIREMENT DÉSACTIVÉ — causait un crash au bootstrap.
-    // Le SchedulerOrchestrator.parseCron() reçoit undefined pour un @Cron decorator,
-    // ce qui fait crasher l'app entière avec TypeError: Cannot read 'toLowerCase'.
-    // Les cron jobs (notifications, cleanup, auto-recovery) sont non-critiques.
-    // À réactiver après avoir identifié quel @Cron passe undefined.
-    // ScheduleModule.forRoot(),
+    // ScheduleModule — MUST be registered ONCE at root level (fixes triple-registration OOM)
+    ScheduleModule.forRoot(),
 
     // Rate Limiting
     ThrottlerModule.forRoot([

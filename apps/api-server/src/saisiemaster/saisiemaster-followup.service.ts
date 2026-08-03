@@ -31,12 +31,10 @@ export class SaisieMasterFollowupService {
   ) {}
 
   /**
-   * Cron job : vérifie les prospects à relancer.
+   * Cron job : vérifie toutes les heures les prospects à relancer.
    * Tourne à minuit, 6h, 12h, 18h (UTC) pour éviter la surcharge.
-   * Utilise CronExpression.EVERY_6_HOURS pour éviter les bugs du parser cron
-   * avec les listes '0,6,12,18' (TypeError: Cannot read 'toLowerCase').
    */
-  @Cron(CronExpression.EVERY_6_HOURS)
+  @Cron('0 0,6,12,18 * * *')
   async processFollowups() {
     this.logger.log('🔄 Vérification des prospects SaisieMaster à relancer...');
     try {

@@ -40,18 +40,11 @@ export class AutoRecoveryService {
   ) {}
 
   /**
-   * Cron job : vérifie toutes les 6 heures si des relances auto doivent être envoyées.
+   * Cron job : vérifie toutes les heures si des relances auto doivent être envoyées.
    * Pour chaque tenant avec autoRecoveryEnabled = true, vérifie si l'heure
    * d'exécution correspond et lance la relance.
-   *
-   * OPTIMISATION NEON : anciennement horaire (24 requêtes/jour), ce qui empêchait
-   * Neon de suspendre le compute la nuit. Passage à toutes les 6h (4 requêtes/jour)
-   * couvre les fenêtres 00:00, 06:00, 12:00, 18:00 — suffisant car autoRecoveryTime
-   * est typiquement configuré entre 08:00 et 18:00.
-   *
-   * Pour surcharger via env var : AUTO_RECOVERY_CRON='0 0,6,12,18 * * *' (horaire)
    */
-  @Cron(CronExpression.EVERY_6_HOURS) // Toutes les 6 heures
+  @Cron('0 * * * *') // Toutes les heures à minute 0
   async handleScheduledRecovery() {
     this.logger.log('Vérification des relances automatiques...');
 

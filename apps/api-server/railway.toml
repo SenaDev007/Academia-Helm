@@ -10,7 +10,11 @@
   # Le Dockerfile existe déjà et est compatible Railway
   startCommand = "node --max-old-space-size=1536 dist/main.js"
   healthcheckPath = "/health"
-  healthcheckTimeout = 30
+  # ⚠️ 60s (was 30s) — l'app démarre plus lentement maintenant que Neon
+  # auto-suspend le compute. Le 1er SELECT après suspend prend ~2-3s (cold start
+  # pooler) au lieu de <100ms (warm). Avec prisma migrate deploy + CREATE TABLE
+  # IF NOT EXISTS × 20 au démarrage, 30s n'était plus suffisant.
+  healthcheckTimeout = 60
   restartPolicyType = "ON_FAILURE"
   restartPolicyMaxRetries = 3
 

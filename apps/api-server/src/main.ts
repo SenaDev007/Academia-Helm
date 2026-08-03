@@ -105,18 +105,27 @@ async function bootstrap() {
   const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3000);
 
   // Run pending migrations before starting the server
-  try {
-    const { execSync } = await import('child_process');
-    const appEnv = process.env.APP_ENV || process.env.NODE_ENV || 'production';
-    logger.log(`Running database migrations (APP_ENV=${appEnv})...`);
-    execSync('npx prisma migrate deploy --schema=prisma/schema.prisma', {
-      stdio: 'inherit',
-      timeout: 120_000,
-    });
-    logger.log('Database migrations completed successfully');
-  } catch (migrateErr) {
-    logger.error(`Migration failed: ${migrateErr.message}`);
-    logger.warn('Continuing startup despite migration failure — some features may not work');
+  // ⚠️ SKIP_MIGRATIONS=true permet de sauter cette étape pour accélérer le
+  // démarrage. Les migrations devraient être lancées explicitement via
+  // `railway run npx prisma migrate deploy` lors des changements de schéma,
+  // pas à chaque redémarrage de container.
+  // Par défaut : SKIP_MIGRATIONS=false (rétro-compatible).
+  if (process.env.SKIP_MIGRATIONS === 'true') {
+    logger.log('⏭️  SKIP_MIGRATIONS=true — skipping prisma migrate deploy (faster startup)');
+  } else {
+    try {
+      const { execSync } = await import('child_process');
+      const appEnv = process.env.APP_ENV || process.env.NODE_ENV || 'production';
+      logger.log(`Running database migrations (APP_ENV=${appEnv})...`);
+      execSync('npx prisma migrate deploy --schema=prisma/schema.prisma', {
+        stdio: 'inherit',
+        timeout: 60_000, // 60s max (was 120s) — néon cold start inclus
+      });
+      logger.log('Database migrations completed successfully');
+    } catch (migrateErr) {
+      logger.error(`Migration failed: ${migrateErr.message}`);
+      logger.warn('Continuing startup despite migration failure — some features may not work');
+    }
   }
 
   // ─── Ensure recruitment tables exist (idempotent SQL fallback) ──────────

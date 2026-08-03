@@ -42,7 +42,9 @@
     "seed": "ts-node prisma/seed.ts",
     "db:seed": "ts-node prisma/seed.ts",
     "migrate:maternelle-educmaster": "ts-node -r tsconfig-paths/register scripts/migrate-maternelle-educmaster.ts",
-    "seed:education-series": "ts-node -r tsconfig-paths/register scripts/seed-education-series-and-second-cycle.ts"
+    "seed:education-series": "ts-node -r tsconfig-paths/register scripts/seed-education-series-and-second-cycle.ts",
+    "migrate:logos": "ts-node -r tsconfig-paths/register scripts/migrate-logos-to-r2.ts",
+    "migrate:logos:dry-run": "ts-node -r tsconfig-paths/register scripts/migrate-logos-to-r2.ts --dry-run"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1019.0",

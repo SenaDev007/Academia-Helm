@@ -14,6 +14,7 @@ import { SubdomainService } from './services/subdomain.service';
 import { PuppeteerPoolService } from './services/puppeteer-pool.service';
 import { DomainManagementService } from './services/domain-management.service';
 import { CredentialEncryptionService } from './services/credential-encryption.service';
+import { StorageService } from './services/storage.service';
 import { PermissionsController } from './controllers/permissions.controller';
 import { DashboardController } from './controllers/dashboard.controller';
 import { OpenRouterModule } from './services/openrouter.module';
@@ -40,6 +41,7 @@ import { MatriculeGeneratorService } from './services/matricule-generator.servic
     PuppeteerPoolService,
     DomainManagementService,
     CredentialEncryptionService,
+    StorageService, // ✅ Singleton global — évite 4 instances de S3Client
     AdminStructureService, // Pour LevelScopeGuard
     MatriculeGeneratorService,
   ],
@@ -53,6 +55,7 @@ import { MatriculeGeneratorService } from './services/matricule-generator.servic
     PuppeteerPoolService,
     DomainManagementService,
     CredentialEncryptionService,
+    StorageService, // ✅ Exporté pour tous les feature modules
     OpenRouterModule,
     AdminStructureService, // Pour LevelScopeGuard dans autres modules
     MatriculeGeneratorService,

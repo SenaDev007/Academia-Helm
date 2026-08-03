@@ -648,7 +648,13 @@ body {
   border: 2px solid rgba(255,255,255,0.25);
   display: flex; align-items: center; justify-content: center;
   backdrop-filter: blur(4px);
+  overflow: hidden; /* ✅ Empêche le logo carré de dépasser du cercle */
   animation: academiaPulse 2.8s ease-in-out infinite;
+}
+.academia-loader-logo-circle img,
+.academia-loader-logo-circle picture {
+  border-radius: 50%; /* ✅ Force le logo à être rond */
+  object-fit: cover;
 }
 .academia-loader-text {
   animation: academiaFadeUp 0.6s ease-out 0.15s both;

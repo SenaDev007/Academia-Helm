@@ -1,91 +1,1100 @@
+'use client';
+
+// ⚠️ 'use client' + export const revalidate sont incompatibles sur Next.js 16.
+// Le cache React Query (staleTime 5min) suffit côté client.
+
 /**
  * ============================================================================
- * PORTAL PAGE — Server Component (wrapper)
+ * PORTAL ACCESS PAGE — ACCÉDER À UN PORTAIL
  * ============================================================================
  *
- * Refactor : la page /portal était auparavant un 'use client' de 1101 lignes
- * qui s'exécutait entièrement côté client (pas de prerendering, LCP lent).
+ * Page centrale pour accéder aux différents portails Academia Helm.
+ * Conforme au document academia-helm-portails.md :
+ *   - 5 portails : PLATFORM (7 rôles), SCHOOL (45 rôles),
+ *     TEACHER (11 rôles), PARENT/ÉLÈVE (9 rôles), PUBLIC (5 rôles)
+ *   - Palette Helm exclusive : Navy #0b2f73, Blue #1d4fa5, Gold #f5b335
+ *   - Grille compacte 3+2 (aucune couleur par portail, palette unifiée)
+ *   - Multi-tenant strict (tenant obligatoire sauf Public)
+ *   - Modèle RBAC 7 dimensions (portal, role, function, accreditations,
+ *     levelScopes, classScopes, permissions)
  *
- * Nouvelle architecture :
- *   - page.tsx (CE FICHIER) : Server Component qui prefetch les écoles en SSR
- *   - PortalClient.tsx : Client Component (l'ancienne page, renommée)
- *
- * Bénéfices :
- *   - HTML prerendered avec données initiales → LCP plus rapide
- *   - SEO amélioré (les crawlers voient les écoles dans le HTML)
- *   - Hydration React Query via HydrationBoundary (pas de flash)
- *   - Cache navigateur + cache CDN Vercel (revalidate 300s)
- *
- * Note : la logique interactive (useState, useEffect, BeninMap, etc.) reste
- * dans PortalClient.tsx — aucune logique métier n'a été modifiée.
+ * NE PAS TOUCHER à BeninMap — carte du Bénin intacte.
  * ============================================================================
  */
 
-import { QueryClient, dehydrate, HydrationBoundary } from '@tanstack/react-query';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  Building2,
+  GraduationCap,
+  Users,
+  ArrowRight,
+  Shield,
+  Globe,
+  Code2,
+  X,
+  Search,
+  Loader2,
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Header } from '@/components/ui/header-1';
-import PortalClient from './PortalClient';
+import SchoolSearch from '@/components/portal/SchoolSearch';
+import BeninMap from '@/components/portal/BeninMap';
+import { type DepartmentData } from '@/data/benin-departments';
+import { useTenantRedirect } from '@/lib/hooks/useTenantRedirect';
+import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
+import { BRAND } from '@/lib/brand';
+import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
+import { persistClientSession, markFreshLogin } from '@/lib/auth/client-access-token';
+import { useMotionBudget } from '@/lib/motion/use-motion-budget';
+import { getModalMotion, getMotionDuration } from '@/lib/motion/presets';
+import { useFetchWithTimeout } from '@/lib/hooks/use-fetch-with-timeout';
 
-// ✅ ISR — revalidate toutes les 5 minutes
-// La liste des écoles change rarement, on peut la cacher côté serveur.
-export const revalidate = 300;
-
-// ⚠️ force-dynamic (pas force-static) car PortalClient utilise useQuery()
-// qui nécessite un QueryClient en contexte. Le prerender au build time
-// échoue car React Query n'a pas encore de QueryClient monté.
-// Avec force-dynamic, la page est rendue à chaque requête (SSR) avec
-// prefetch côté serveur → HTML envoyé avec données initiales.
+// ⚠️ FORCE-DYNAMIC : cette page utilise React Query (usePublicSchools via
+// SchoolSearch + BeninMap). Le prerendering statique échoue car QueryClient
+// n'est pas disponible hors d'un Provider React. Force-dynamic désactive le
+// prerender et laisse la page s'hydrider côté client uniquement.
 export const dynamic = 'force-dynamic';
 
-async function prefetchSchools() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: {
-        staleTime: 5 * 60 * 1000, // 5 min — doit matcher PortalClient
-        gcTime: 30 * 60 * 1000,
-        retry: 1,
-        refetchOnWindowFocus: false,
-      },
+// ⭐ QueryClient LOCAL pour la page /portal.
+// Raison : la page /portal n'est PAS dans le layout /app/* qui fournit
+// QueryProvider. Sans ce wrapper local, usePublicSchools() (utilisé par
+// SchoolSearch et BeninMap via useSchoolsMap) crashe avec "No QueryClient set".
+const portalQueryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 min — la liste des écoles change rarement
+      gcTime: 30 * 60 * 1000,
+      retry: 1,
+      refetchOnWindowFocus: false,
     },
-  });
+  },
+});
 
-  try {
-    // Prefetch les écoles côté serveur
-    // L'URL doit être absolue pour fetch côté serveur
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.academiahelm.com';
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout SSR
+type PortalType = 'PLATFORM' | 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC' | null;
 
-    const res = await fetch(`${apiUrl}/api/public/schools/list`, {
-      signal: controller.signal,
-      next: { revalidate: 300 }, // Cache 5 min
-    });
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      const data = await res.json();
-      const schools = Array.isArray(data) ? data : (data?.schools || []);
-      // Pré-remplir le cache React Query côté serveur
-      await queryClient.prefetchQuery({
-        queryKey: ['public-schools', 'list'],
-        queryFn: () => Promise.resolve(schools),
-      });
-    }
-  } catch {
-    // Erreur prefetch non bloquante — le client retry
-  }
-
-  return dehydrate(queryClient);
+interface School {
+  id: string;
+  name: string;
+  slug: string;
+  logoUrl?: string;
+  city?: string;
+  schoolType?: string;
 }
 
-export default async function PortalPage() {
-  const dehydratedState = await prefetchSchools();
+interface DevTenant {
+  id: string;
+  tenantId: string;
+  name: string;
+  schoolName: string;
+  tenantName: string;
+  slug: string;
+}
 
+/** ── Palette Academia Helm — Conforme charte ── */
+const NAVY = '#0b2f73';
+const BLUE = '#1d4fa5';
+const GOLD = '#f5b335';
+
+/**
+ * Définition des 5 portails — conforme au document academia-helm-portails.md
+ * Chaque portail indique le nombre de rôles et la description exacte du document.
+ */
+const PORTAL_DEFINITIONS = [
+  {
+    type: 'SCHOOL' as const,
+    title: 'École',
+    description: 'Gestion de l\'établissement',
+    Icon: Building2,
+  },
+  {
+    type: 'TEACHER' as const,
+    title: 'Enseignant',
+    description: 'Pédagogie & suivi',
+    Icon: GraduationCap,
+  },
+  {
+    type: 'PARENT' as const,
+    title: 'Parent / Élève',
+    description: 'Suivi & communication',
+    Icon: Users,
+  },
+  {
+    type: 'PUBLIC' as const,
+    title: 'Public',
+    description: 'Pré-inscription & acquisition',
+    Icon: Globe,
+  },
+] as const;
+
+export default function PortalPage() {
+  const [selectedPortal, setSelectedPortal] = useState<PortalType>(null);
+  const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
+  const [selectedDepartment, setSelectedDepartment] = useState<DepartmentData | null>(null);
+  const [mapFilter, setMapFilter] = useState<'all' | 'public' | 'private'>('all');
+  const [showSchoolSearch, setShowSchoolSearch] = useState(false);
+  const [devPanelOpen, setDevPanelOpen] = useState(false);
+
+  /* ── Mobile floating portal modal ──────────────────────────────────── */
+  const MOBILE_BREAKPOINT = 1024; // lg breakpoint
+  const [mobilePortalModalOpen, setMobilePortalModalOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect mobile & auto-show modal on first visit
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < MOBILE_BREAKPOINT;
+      setIsMobile(mobile);
+      // Auto-show on first load if mobile
+      if (mobile && !sessionStorage.getItem('ah_portal_modal_dismissed')) {
+        setMobilePortalModalOpen(true);
+      }
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  const closeMobilePortalModal = useCallback(() => {
+    setMobilePortalModalOpen(false);
+    try { sessionStorage.setItem('ah_portal_modal_dismissed', '1'); } catch { /* ignore */ }
+  }, []);
+  const [devTenants, setDevTenants] = useState<DevTenant[]>([]);
+  const [devTenantsLoading, setDevTenantsLoading] = useState(false);
+  const [selectedDevTenant, setSelectedDevTenant] = useState<DevTenant | null>(null);
+  const [devEmail, setDevEmail] = useState('');
+  const [devPassword, setDevPassword] = useState('');
+  const [isDevLoggingIn, setIsDevLoggingIn] = useState(false);
+  const [isContinuing, setIsContinuing] = useState(false);
+  const { redirectToTenant } = useTenantRedirect();
+  const { shouldReduceMotion } = useMotionBudget();
+  const { fetchWithTimeout } = useFetchWithTimeout();
+
+  const dur = useMemo(
+    () => getMotionDuration(shouldReduceMotion, 'normal'),
+    [shouldReduceMotion],
+  );
+
+  const cardSpring = useMemo(
+    () => ({
+      type: 'spring' as const,
+      stiffness: shouldReduceMotion ? 500 : 300,
+      damping: shouldReduceMotion ? 50 : 22,
+    }),
+    [shouldReduceMotion],
+  );
+
+  const modalMotion = getModalMotion(shouldReduceMotion);
+
+  // ── Dev tenants loading ──
+  useEffect(() => {
+    if (devPanelOpen && devTenants.length === 0) {
+      setDevTenantsLoading(true);
+      fetchWithTimeout('/api/auth/dev-available-tenants')
+        .then(async (res) => {
+          const data = await res.json().catch(() => null);
+          if (!res.ok) {
+            console.error('[Portal mode dev] Impossible de charger les tenants:', res.status, data);
+            return;
+          }
+          if (Array.isArray(data)) setDevTenants(data);
+        })
+        .catch((err) => console.error('[Portal mode dev] Erreur réseau tenants:', err))
+        .finally(() => setDevTenantsLoading(false));
+    }
+  }, [devPanelOpen, devTenants.length]);
+
+  useEffect(() => {
+    if (!selectedDevTenant) {
+      setDevEmail('');
+      return;
+    }
+    const tenantKey = selectedDevTenant.tenantId || selectedDevTenant.id;
+    const lastEmail = getSavedEmailForTenant(tenantKey);
+    setDevEmail(lastEmail || '');
+  }, [selectedDevTenant?.id]);
+
+  // ── Portal selection handler ──
+  const handlePortalSelect = (portal: PortalType) => {
+    setSelectedPortal(portal);
+    setSelectedSchool(null);
+
+    // Public portal : aucune authentification requise — pré-inscription directe
+    if (portal === 'PUBLIC') {
+      setShowSchoolSearch(true);
+      return;
+    }
+
+    // Tous les autres portails nécessitent un tenant (multi-tenant strict)
+    setShowSchoolSearch(true);
+  };
+
+  const handleSchoolSelect = (school: School | null) => {
+    setSelectedSchool(school);
+  };
+
+  const handleContinue = async () => {
+    if (!selectedPortal || !selectedSchool) return;
+
+    setIsContinuing(true);
+
+    try {
+      // Store school info for login page display
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem(
+            'academia_portal_school',
+            JSON.stringify({
+              name: selectedSchool.name,
+              slug: selectedSchool.slug || null,
+              logoUrl: selectedSchool.logoUrl || null,
+              city: selectedSchool.city || null,
+              schoolType: selectedSchool.schoolType || null,
+            }),
+          );
+        } catch { /* ignore */ }
+      }
+
+      if (selectedPortal === 'PUBLIC') {
+        // Conforme au document : pré-inscription & acquisition, aucune auth requise
+        // Redirige vers la page publique de l'école pour pré-inscription
+        window.location.href = `/public/pre-enrollment?school=${selectedSchool.slug}`;
+        return;
+      }
+
+      // ── Redirection IMMÉDIATE vers /login (sans attendre le logging) ──
+      // On calcule l'URL et on redirige tout de suite. Le logging se fait
+      // en arrière-plan via navigator.sendBeacon (non-bloquant).
+      //
+      // Avant : `await redirectToTenant(...)` pouvait attendre 5s+ si le
+      // backend était en cold start (logging fetch). Maintenant : calcul URL
+      // synchrone + logging fire-and-forget via sendBeacon.
+      const redirectUrl = getTenantRedirectUrl({
+        tenantSlug: selectedSchool.slug,
+        tenantId: selectedSchool.id,
+        path: '/login',
+        portalType: selectedPortal,
+        queryParams: { portal: selectedPortal.toLowerCase() },
+        skipLogging: true, // on gère le logging nous-mêmes ci-dessous
+      });
+
+      // Logger en arrière-plan (fire-and-forget, ne bloque pas la navigation)
+      // navigator.sendBeacon est spécifiquement conçu pour envoyer des données
+      // juste avant un changement de page sans ralentir le navigateur.
+      try {
+        const logPayload = JSON.stringify({
+          tenantId: selectedSchool.id,
+          tenantSlug: selectedSchool.slug,
+          fromUrl: window.location.href,
+          toUrl: redirectUrl,
+          method: 'query',
+          environment: 'production',
+          timestamp: new Date().toISOString(),
+          userAgent: window.navigator.userAgent,
+        });
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.academiahelm.com';
+        const logUrl = apiUrl.endsWith('/api')
+          ? `${apiUrl}/portal/redirect-log`
+          : `${apiUrl}/api/portal/redirect-log`;
+        if (navigator.sendBeacon) {
+          const blob = new Blob([logPayload], { type: 'application/json' });
+          navigator.sendBeacon(logUrl, blob);
+        }
+      } catch {
+        // ignore — le logging est best-effort
+      }
+
+      // Redirection immédiate (synchrone)
+      window.location.href = redirectUrl;
+    } catch (error) {
+      console.error('[Portal] Erreur lors de la redirection:', error);
+      setIsContinuing(false);
+    }
+  };
+
+  const handleCloseSchoolSearch = () => {
+    setShowSchoolSearch(false);
+    setSelectedPortal(null);
+    setSelectedSchool(null);
+  };
+
+  // ── Dev login handlers ──
+  const handleDevPanelOpen = () => {
+    setDevPanelOpen(true);
+    setSelectedDevTenant(null);
+    setDevEmail('');
+    setDevPassword('');
+  };
+
+  const handleDevPanelClose = () => {
+    setDevPanelOpen(false);
+    setSelectedDevTenant(null);
+    setDevEmail('');
+    setDevPassword('');
+  };
+
+  const handleDevLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDevTenant) {
+      alert('Veuillez d\'abord sélectionner une école.');
+      return;
+    }
+    if (!devEmail.trim() || !devPassword) {
+      alert('Veuillez saisir l\'email et le mot de passe.');
+      return;
+    }
+    setIsDevLoggingIn(true);
+    try {
+      const tenantId = selectedDevTenant.tenantId || selectedDevTenant.id;
+
+      const attemptLogin = async (portalType: 'SCHOOL' | 'PLATFORM') => {
+        return fetchWithTimeout('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: devEmail.trim(),
+            password: devPassword,
+            tenant_id: tenantId,
+            portal_type: portalType,
+            turnstileToken: 'skip-development',
+          }),
+        });
+      };
+
+      let response = await attemptLogin('SCHOOL');
+      let data = await response.json();
+
+      const message = typeof data?.message === 'string' ? data.message : '';
+      if (
+        response.status === 403 &&
+        message.toLowerCase().includes('platform_owner') &&
+        message.toLowerCase().includes('platform')
+      ) {
+        response = await attemptLogin('PLATFORM');
+        data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.message || 'Connexion impossible');
+        }
+        const selectResp = await fetchWithTimeout('/api/auth/select-tenant', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${data.accessToken}`,
+          },
+          body: JSON.stringify({ tenant_id: tenantId }),
+        });
+        const selectData = await selectResp.json();
+        if (!selectResp.ok || !selectData.success) {
+          throw new Error(selectData.message || selectData.error || 'Sélection tenant impossible');
+        }
+        persistClientSession({
+          accessToken: selectData.accessToken,
+          refreshToken: selectData.refreshToken,
+          serverSessionId: selectData.serverSessionId,
+          user: selectData.user,
+          tenant: selectData.tenant,
+          portalType: 'PLATFORM',
+          expiresAt: selectData.expiresAt,
+        });
+        saveEmailForTenant(devEmail.trim(), tenantId);
+        markFreshLogin();
+        await redirectToTenant({
+          tenantSlug: selectedDevTenant.slug || tenantId,
+          tenantId,
+          path: '/app',
+        });
+        return;
+      }
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Connexion impossible');
+      }
+      persistClientSession({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        serverSessionId: data.serverSessionId,
+        user: data.user,
+        tenant: data.tenant,
+        portalType: 'SCHOOL',
+        expiresAt: data.expiresAt,
+      });
+      saveEmailForTenant(devEmail.trim(), tenantId);
+      markFreshLogin();
+      await redirectToTenant({
+        tenantSlug: selectedDevTenant.slug || tenantId,
+        tenantId,
+        path: '/app',
+      });
+    } catch (error: unknown) {
+      console.error('[Dev Login] Error:', error);
+      const msg = error instanceof Error ? error.message : 'Impossible de se connecter';
+      let userMessage = msg;
+      if (msg.includes('PORTAL_MISMATCH')) {
+        const match = msg.match(/PORTAL_MISMATCH:\s*(.*)/);
+        userMessage = match?.[1] || 'Ce compte n\'est pas autorisé sur ce portail. Veuillez utiliser le portail correspondant à votre profil.';
+      } else if (msg.includes('timeout') || msg.includes('ne répond pas') || msg.includes('30 secondes')) {
+        userMessage = 'Le serveur est en cours de démarrage. Veuillez réessayer dans quelques secondes.';
+      } else if (msg.includes('Internal server error') || msg.includes('500')) {
+        userMessage = 'Erreur serveur temporaire. Veuillez réessayer dans quelques instants.';
+      } else if (msg.includes('Unauthorized') || msg.includes('401')) {
+        userMessage = 'Email ou mot de passe incorrect. Vérifiez vos identifiants.';
+      }
+      alert(`Erreur: ${userMessage}`);
+    } finally {
+      setIsDevLoggingIn(false);
+    }
+  };
+
+  // ── Selected portal info for modal ──
+  const activePortalDef = PORTAL_DEFINITIONS.find((p) => p.type === selectedPortal);
+
+  // ──────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ──────────────────────────────────────────────────────────────────────
   return (
-    <>
+    <QueryClientProvider client={portalQueryClient}>
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-white to-blue-50/80 text-slate-900">
+      {/* ── Background blobs ── */}
+      <div className="pointer-events-none absolute inset-0 opacity-[0.3]" aria-hidden>
+        {!shouldReduceMotion ? (
+          <>
+            <motion.div
+              className="absolute -left-24 top-24 h-72 w-72 rounded-full blur-3xl"
+              style={{ backgroundColor: `${NAVY}30` }}
+              animate={{ x: [0, 24, 0], y: [0, -12, 0] }}
+              transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut' }}
+            />
+            <motion.div
+              className="absolute -right-20 bottom-32 h-80 w-80 rounded-full blur-3xl"
+              style={{ backgroundColor: `${GOLD}25` }}
+              animate={{ x: [0, -18, 0], y: [0, 16, 0] }}
+              transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut' }}
+            />
+            <motion.div
+              className="absolute left-1/2 top-1/3 h-64 w-64 -translate-x-1/2 rounded-full blur-3xl"
+              style={{ backgroundColor: `${BLUE}20` }}
+              animate={{ scale: [1, 1.08, 1], opacity: [0.2, 0.32, 0.2] }}
+              transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          </>
+        ) : (
+          <>
+            <div className="absolute -left-32 top-0 h-[600px] w-[600px] rounded-full blur-3xl opacity-20" style={{ backgroundColor: NAVY }} />
+            <div className="absolute -right-32 bottom-0 h-[500px] w-[500px] rounded-full blur-3xl opacity-15" style={{ backgroundColor: BLUE }} />
+            <div className="absolute left-1/2 top-1/4 h-[300px] w-[300px] -translate-x-1/2 rounded-full blur-3xl opacity-10" style={{ backgroundColor: GOLD }} />
+          </>
+        )}
+      </div>
+
       <Header />
-      <HydrationBoundary state={dehydratedState}>
-        <PortalClient />
-      </HydrationBoundary>
-    </>
+
+      <main className="relative z-[1] pb-6 pt-16 sm:pt-20 md:pt-22">
+        <div className="mx-auto max-w-7xl px-3 sm:px-4 lg:px-6">
+
+          {/* ── Layout : BeninMap (majeur) + Portails (compact latéral) ── */}
+          <div className="flex w-full flex-col gap-4 lg:flex-row lg:items-stretch lg:gap-5">
+
+            {/* ── Colonne gauche : Carte du Bénin — espace majeur (INTACTE) ── */}
+            <motion.div
+              initial={shouldReduceMotion ? false : { opacity: 0, x: -16 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: dur, ease: 'easeOut' }}
+              className="w-full lg:w-[68%]"
+            >
+              <div
+                className="rounded-xl border bg-white p-3 shadow-lg sm:p-4"
+                style={{ borderColor: `${NAVY}18` }}
+              >
+                <div className="mb-2 flex items-center justify-between">
+                  <h3
+                    className="text-xs font-bold uppercase tracking-wider"
+                    style={{ color: NAVY }}
+                  >
+                    Carte du Bénin — Données éducatives
+                  </h3>
+                  <div
+                    className="flex overflow-hidden rounded-lg border text-xs sm:text-[10px]"
+                    style={{ borderColor: `${NAVY}20` }}
+                  >
+                    {(['all', 'public', 'private'] as const).map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => setMapFilter(f)}
+                        className="min-h-[44px] px-3 py-2 sm:px-2.5 sm:py-1 font-medium transition-colors"
+                        style={
+                          mapFilter === f
+                            ? { background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`, color: '#fff' }
+                            : { color: NAVY }
+                        }
+                      >
+                        {f === 'all' ? 'Tous' : f === 'public' ? 'Public' : 'Privé'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <BeninMap
+                  onDepartmentSelect={setSelectedDepartment}
+                  selectedDepartment={selectedDepartment}
+                  filter={mapFilter}
+                />
+              </div>
+            </motion.div>
+
+            {/* ── Colonne droite : Panneau portails compact ── */}
+            <motion.div
+              initial={shouldReduceMotion ? false : { opacity: 0, x: 16 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: shouldReduceMotion ? 0 : 0.1, duration: dur, ease: 'easeOut' }}
+              className="w-full lg:w-[32%] flex flex-col gap-3"
+            >
+              {/* Titre compact */}
+              <div className="text-center lg:text-left">
+                <h1
+                  className="text-xl font-extrabold tracking-tight sm:text-2xl"
+                  style={{ color: NAVY }}
+                >
+                  Accéder à votre portail
+                </h1>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {BRAND.name} — {BRAND.subtitle}
+                </p>
+              </div>
+
+              {/* Grille portails ultra-compacte — 1 colonne */}
+              <div className="flex flex-col gap-2">
+                {PORTAL_DEFINITIONS.map((portal, index) => {
+                  const Icon = portal.Icon;
+                  const isActive = selectedPortal === portal.type;
+                  return (
+                    <motion.button
+                      key={portal.type}
+                      type="button"
+                      initial={shouldReduceMotion ? false : { opacity: 0, x: 12 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{
+                        delay: shouldReduceMotion ? 0 : 0.05 + index * 0.04,
+                        duration: dur,
+                        ease: 'easeOut',
+                      }}
+                      whileHover={
+                        shouldReduceMotion
+                          ? undefined
+                          : {
+                              x: 3,
+                              boxShadow: `0 6px 16px ${NAVY}18`,
+                              transition: cardSpring,
+                            }
+                      }
+                      whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
+                      onClick={() => handlePortalSelect(portal.type)}
+                      className="group relative flex items-center gap-3 rounded-xl border px-3 py-3 text-left outline-none transition-all min-h-[44px] sm:px-4 sm:py-3"
+                      style={{
+                        borderColor: isActive ? GOLD : `${NAVY}15`,
+                        background: isActive
+                          ? `linear-gradient(135deg, ${NAVY}0a, ${BLUE}06, ${GOLD}08)`
+                          : `linear-gradient(135deg, ${NAVY}04, ${BLUE}02)`,
+                        boxShadow: isActive
+                          ? `0 0 0 2px ${GOLD}40, 0 4px 12px ${NAVY}10`
+                          : `0 1px 2px ${NAVY}06`,
+                      }}
+                    >
+                      {/* Icon */}
+                      <div
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                        style={{
+                          background: `linear-gradient(135deg, ${NAVY}14, ${BLUE}0c)`,
+                        }}
+                      >
+                        <Icon className="h-4.5 w-4.5" style={{ color: NAVY }} />
+                      </div>
+
+                      {/* Texte */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3
+                            className="text-sm font-bold leading-tight"
+                            style={{ color: NAVY }}
+                          >
+                            {portal.title}
+                          </h3>
+                        </div>
+                        <p className="mt-0.5 text-xs sm:text-[11px] leading-snug text-slate-500">
+                          {portal.description}
+                        </p>
+                      </div>
+
+                      {/* Flèche */}
+                      <ArrowRight
+                        className="h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-slate-500"
+                        style={isActive ? { color: GOLD } : undefined}
+                      />
+
+                      {/* Active indicator bar */}
+                      {isActive && (
+                        <motion.div
+                          layoutId="portal-active-bar"
+                          className="absolute bottom-0 left-0 right-0 h-0.5 rounded-b-xl"
+                          style={{ backgroundColor: GOLD }}
+                          transition={cardSpring}
+                        />
+                      )}
+                    </motion.button>
+                  );
+                })}
+              </div>
+
+              {/* Lien recherche si portail sélectionné */}
+              <AnimatePresence>
+                {selectedPortal && !showSchoolSearch && (
+                  <motion.div
+                    initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={shouldReduceMotion ? undefined : { opacity: 0, y: -4 }}
+                    transition={{ duration: dur, ease: 'easeOut' }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setShowSchoolSearch(true)}
+                      className="flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg min-h-[44px]"
+                      style={{
+                        background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                      }}
+                    >
+                      <Search className="h-3.5 w-3.5" />
+                      <span>
+                        {selectedPortal === 'PUBLIC'
+                          ? 'Pré-inscription'
+                          : 'Rechercher votre établissement'}
+                      </span>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Footer sécurité compact */}
+              <div
+                className="mt-auto flex items-center justify-center gap-1.5 rounded-lg border bg-white/80 px-3 py-2 text-xs sm:text-[11px] text-slate-500 backdrop-blur-sm lg:justify-start"
+                style={{ borderColor: `${NAVY}10` }}
+              >
+                <Shield className="h-3 w-3" style={{ color: NAVY }} />
+                <span>Portail officiel sécurisé {BRAND.name}</span>
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      </main>
+
+      {/* ── MODAL : Recherche d'établissement ── */}
+      <AnimatePresence>
+        {showSchoolSearch && selectedPortal ? (
+          <motion.div
+            key="school-search-overlay"
+            role="presentation"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 sm:p-4 backdrop-blur-[3px]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: dur * 0.6 }}
+            onClick={handleCloseSchoolSearch}
+          >
+            <motion.div
+              key="school-search-modal"
+              className="relative w-full max-w-md rounded-2xl border bg-white/95 shadow-2xl backdrop-blur-md max-h-[88vh] flex flex-col"
+              style={{
+                borderColor: `${NAVY}18`,
+                boxShadow: `0 24px 48px -12px ${NAVY}20, 0 0 0 1px ${GOLD}14`,
+              }}
+              {...modalMotion}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header — fixed */}
+              <div className="px-4 pt-4 pb-2 flex items-start justify-between shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className="flex h-9 w-9 items-center justify-center rounded-xl"
+                    style={{
+                      background: `linear-gradient(135deg, ${NAVY}18, ${BLUE}12)`,
+                    }}
+                  >
+                    {activePortalDef && (
+                      <activePortalDef.Icon className="h-5 w-5" style={{ color: NAVY }} />
+                    )}
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold" style={{ color: NAVY }}>
+                      {activePortalDef?.title || 'Portail'}
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                      {selectedPortal === 'PUBLIC'
+                        ? 'Pré-inscription — aucune authentification requise'
+                        : 'Recherchez votre établissement pour continuer'}
+                    </p>
+                  </div>
+                </div>
+                <motion.button
+                  type="button"
+                  whileTap={{ scale: 0.92 }}
+                  onClick={handleCloseSchoolSearch}
+                  className="rounded-lg p-1.5 min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                  aria-label="Fermer"
+                >
+                  <X className="h-5 w-5" />
+                </motion.button>
+              </div>
+
+              {/* School Search — gère son propre scroll interne */}
+              <div className="flex-1 min-h-0 flex flex-col px-4">
+                <SchoolSearch
+                  onSchoolSelect={handleSchoolSelect}
+                  selectedSchool={selectedSchool}
+                  portalType={selectedPortal}
+                />
+              </div>
+
+              {/* Footer — fixed */}
+              <div className="shrink-0 px-4 pb-4 pt-2">
+                {/* Continue button */}
+                <AnimatePresence>
+                  {selectedSchool ? (
+                    <motion.div
+                      key="continue-btn"
+                      initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={shouldReduceMotion ? undefined : { opacity: 0, y: 6 }}
+                      transition={{ duration: dur, ease: 'easeOut' }}
+                      className="mt-4 sm:mt-5"
+                    >
+                      <motion.button
+                        type="button"
+                        onClick={() => void handleContinue()}
+                        disabled={isContinuing}
+                        whileHover={
+                          isContinuing || shouldReduceMotion
+                            ? undefined
+                            : { scale: 1.01, boxShadow: `0 12px 28px ${NAVY}25` }
+                        }
+                        whileTap={isContinuing || shouldReduceMotion ? undefined : { scale: 0.99 }}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl px-4 sm:px-6 py-3.5 font-semibold text-white shadow-md transition-all disabled:cursor-not-allowed disabled:opacity-80 min-h-[44px]"
+                        style={{
+                          background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                        }}
+                      >
+                        {isContinuing ? (
+                          <>
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                            <span>Redirection en cours…</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>
+                              {selectedPortal === 'PUBLIC'
+                                ? 'Accéder à la pré-inscription'
+                                : 'Continuer vers la connexion'}
+                            </span>
+                            <ArrowRight className="h-5 w-5" />
+                          </>
+                        )}
+                      </motion.button>
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
+
+                {/* Back link */}
+                <button
+                  type="button"
+                  onClick={handleCloseSchoolSearch}
+                  className="mt-3 sm:mt-4 flex w-full items-center justify-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-700 min-h-[44px]"
+                >
+                  <ArrowRight className="h-3.5 w-3.5 rotate-180" />
+                  <span>Retour à la sélection du portail</span>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* ── MODAL : Mode développement ── */}
+      <AnimatePresence>
+        {devPanelOpen ? (
+          <motion.div
+            key="dev-overlay"
+            role="presentation"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: dur }}
+            onClick={handleDevPanelClose}
+          >
+            <motion.div
+              key="dev-modal"
+              className="relative w-full max-w-md rounded-2xl border bg-white p-4 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
+              style={{
+                borderColor: `${NAVY}18`,
+                boxShadow: `0 24px 48px -12px ${NAVY}20, 0 0 0 1px ${GOLD}14`,
+              }}
+              {...modalMotion}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-4 sm:mb-6 flex items-center justify-between">
+                <h3 className="flex items-center gap-2 text-base sm:text-lg font-bold" style={{ color: NAVY }}>
+                  <Code2 className="h-4 w-4 sm:h-5 sm:w-5" style={{ color: GOLD }} />
+                  <span className="hidden sm:inline">Connexion en mode développement</span>
+                  <span className="sm:hidden">Mode DEV</span>
+                </h3>
+                <motion.button
+                  type="button"
+                  whileTap={{ scale: 0.92 }}
+                  onClick={handleDevPanelClose}
+                  className="rounded-lg p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                  aria-label="Fermer"
+                >
+                  <X className="h-5 w-5" />
+                </motion.button>
+              </div>
+              <p className="mb-3 sm:mb-4 text-sm text-slate-600">
+                Choisissez d&apos;abord l&apos;école (tenant), puis saisissez vos
+                identifiants pour vous connecter à l&apos;app avec ce contexte.
+              </p>
+              <form onSubmit={handleDevLogin} className="space-y-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    École
+                  </label>
+                  <select
+                    value={selectedDevTenant?.id ?? ''}
+                    onChange={(e) => {
+                      const t = devTenants.find((x) => x.id === e.target.value);
+                      setSelectedDevTenant(t ?? null);
+                    }}
+                    className="w-full rounded-lg border px-3 py-2.5 min-h-[44px] text-sm focus:ring-2"
+                    style={{
+                      borderColor: `${NAVY}25`,
+                      '--tw-ring-color': `${NAVY}30`,
+                    } as React.CSSProperties}
+                    required
+                  >
+                    <option value="">— Choisir une école —</option>
+                    {devTenantsLoading && <option disabled>Chargement…</option>}
+                    {!devTenantsLoading &&
+                      devTenants.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.schoolName || t.tenantName || t.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    name={selectedDevTenant ? `email_${selectedDevTenant.id}` : 'email'}
+                    autoComplete="email"
+                    value={devEmail}
+                    onChange={(e) => setDevEmail(e.target.value)}
+                    placeholder="votre@email.com"
+                    className="w-full rounded-lg border px-3 py-2.5 min-h-[44px] text-sm focus:ring-2"
+                    style={{
+                      borderColor: `${NAVY}25`,
+                      '--tw-ring-color': `${NAVY}30`,
+                    } as React.CSSProperties}
+                    required
+                  />
+                  {selectedDevTenant &&
+                    getSavedEmailForTenant(selectedDevTenant.tenantId || selectedDevTenant.id) && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Dernière connexion pour cet établissement (ce poste uniquement).
+                      </p>
+                    )}
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    Mot de passe
+                  </label>
+                  <input
+                    type="password"
+                    value={devPassword}
+                    onChange={(e) => setDevPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full rounded-lg border px-3 py-2.5 min-h-[44px] text-sm focus:ring-2"
+                    style={{
+                      borderColor: `${NAVY}25`,
+                      '--tw-ring-color': `${NAVY}30`,
+                    } as React.CSSProperties}
+                    required
+                  />
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleDevPanelClose}
+                    className="flex-1 rounded-lg border px-4 py-2.5 min-h-[44px] text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    style={{ borderColor: `${NAVY}20` }}
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isDevLoggingIn}
+                    className="flex-1 rounded-lg px-4 py-2.5 min-h-[44px] text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    style={{
+                      background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                    }}
+                  >
+                    {isDevLoggingIn ? 'Connexion…' : 'Se connecter'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* ── MOBILE FLOATING PORTAL MODAL ── */}
+      <AnimatePresence>
+        {isMobile && mobilePortalModalOpen ? (
+          <motion.div
+            key="mobile-portal-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Sélection du portail"
+            className="fixed inset-0 z-[60] flex items-end justify-center bg-black/30 backdrop-blur-[2px] sm:items-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={closeMobilePortalModal}
+          >
+            <motion.div
+              key="mobile-portal-modal"
+              className="relative w-full max-w-sm rounded-t-2xl sm:rounded-2xl border bg-white/95 shadow-2xl backdrop-blur-md max-h-[80vh] flex flex-col"
+              style={{
+                borderColor: `${NAVY}18`,
+                boxShadow: `0 24px 48px -12px ${NAVY}20, 0 0 0 1px ${GOLD}14`,
+              }}
+              initial={{ y: 80, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 80, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Handle bar for bottom sheet feel */}
+              <div className="flex justify-center pt-2 pb-1 sm:hidden">
+                <div className="h-1 w-10 rounded-full bg-slate-300" />
+              </div>
+
+              {/* Header */}
+              <div className="px-4 pt-2 pb-2 flex items-center justify-between">
+                <div>
+                  <h2
+                    className="text-base font-bold"
+                    style={{ color: NAVY }}
+                  >
+                    Accéder à votre portail
+                  </h2>
+                  <p className="text-[11px] text-slate-500">
+                    Choisissez un portail pour continuer
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeMobilePortalModal}
+                  className="rounded-lg p-1.5 min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                  aria-label="Fermer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Portal buttons */}
+              <div className="flex flex-col gap-1.5 px-3 pb-4 overflow-y-auto">
+                {PORTAL_DEFINITIONS.map((portal, index) => {
+                  const Icon = portal.Icon;
+                  const isActive = selectedPortal === portal.type;
+                  return (
+                    <motion.button
+                      key={portal.type}
+                      type="button"
+                      initial={{ opacity: 0, x: 12 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.03 + index * 0.04, duration: 0.25, ease: 'easeOut' }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => {
+                        handlePortalSelect(portal.type);
+                        closeMobilePortalModal();
+                      }}
+                      className="group relative flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left outline-none transition-all min-h-[48px]"
+                      style={{
+                        borderColor: isActive ? GOLD : `${NAVY}12`,
+                        background: isActive
+                          ? `linear-gradient(135deg, ${NAVY}0a, ${BLUE}06, ${GOLD}08)`
+                          : `linear-gradient(135deg, ${NAVY}04, ${BLUE}02)`,
+                        boxShadow: isActive
+                          ? `0 0 0 2px ${GOLD}40, 0 4px 12px ${NAVY}10`
+                          : `0 1px 2px ${NAVY}06`,
+                      }}
+                    >
+                      {/* Icon */}
+                      <div
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                        style={{
+                          background: `linear-gradient(135deg, ${NAVY}14, ${BLUE}0c)`,
+                        }}
+                      >
+                        <Icon className="h-4 w-4" style={{ color: NAVY }} />
+                      </div>
+
+                      {/* Text */}
+                      <div className="min-w-0 flex-1">
+                        <h3
+                          className="text-sm font-bold leading-tight"
+                          style={{ color: NAVY }}
+                        >
+                          {portal.title}
+                        </h3>
+                        <p className="text-[11px] leading-snug text-slate-500">
+                          {portal.description}
+                        </p>
+                      </div>
+
+                      {/* Arrow */}
+                      <ArrowRight
+                        className="h-4 w-4 shrink-0 text-slate-300 group-hover:text-slate-500 transition-colors"
+                        style={isActive ? { color: GOLD } : undefined}
+                      />
+                    </motion.button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* ── MOBILE FAB: Re-open portal modal ── */}
+      {isMobile && !mobilePortalModalOpen && (
+        <motion.button
+          type="button"
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 22, delay: 0.3 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={() => setMobilePortalModalOpen(true)}
+          className="fixed bottom-5 right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full shadow-lg text-white"
+          style={{
+            background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+            boxShadow: `0 4px 16px ${NAVY}40`,
+          }}
+          aria-label="Ouvrir les portails"
+        >
+          <Shield className="h-5 w-5" />
+        </motion.button>
+      )}
+    </div>
+    </QueryClientProvider>
   );
 }

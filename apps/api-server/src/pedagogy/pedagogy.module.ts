@@ -119,7 +119,7 @@ import { SaisieMasterController } from './saisiemaster.controller';
     SaisieMasterController,
   ],
   providers: [
-    StorageService,
+    // StorageService fourni par CommonModule (singleton global)
     // Module 2 - Espace Pédagogique Enseignant + Contrôle Direction
     PedagogicalSpaceService,
     SubjectsPrismaService,
@@ -163,7 +163,7 @@ import { SaisieMasterController } from './saisiemaster.controller';
     PuppeteerPoolService,
   ],
   exports: [
-    StorageService,
+    // StorageService fourni par CommonModule
     SubjectsPrismaService,
     TeachersPrismaService,
     PedagogyPrismaService,

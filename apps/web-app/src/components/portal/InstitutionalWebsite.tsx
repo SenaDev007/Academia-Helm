@@ -716,8 +716,13 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
               >
                 {website.presentationImageUrl ? (
                   <div className="relative aspect-[4/3] rounded-2xl overflow-hidden shadow-xl">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={website.presentationImageUrl} alt="Présentation" className="w-full h-full object-cover" />
+                    <Image
+                      src={website.presentationImageUrl}
+                      alt="Présentation"
+                      fill
+                      sizes="(max-width: 768px) 100vw, 50vw"
+                      className="object-cover"
+                    />
                   </div>
                 ) : (
                   <div className="relative aspect-[4/3] rounded-2xl overflow-hidden shadow-xl flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}>
@@ -919,8 +924,13 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                 >
                   {article.coverImageUrl ? (
                     <div className="h-44 overflow-hidden">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={article.coverImageUrl} alt={article.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      <Image
+                        src={article.coverImageUrl}
+                        alt={article.title}
+                        fill
+                        sizes="(max-width: 768px) 100vw, 33vw"
+                        className="object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
                     </div>
                   ) : (
                     <div className="h-44 overflow-hidden flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${NAVY}30, ${GOLD}20)` }}>
@@ -971,8 +981,13 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                     className="relative aspect-square rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition-all group"
                   >
                     {item.imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={item.imageUrl} alt={item.caption || ''} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      <Image
+                        src={item.imageUrl}
+                        alt={item.caption || ''}
+                        fill
+                        sizes="(max-width: 768px) 50vw, 25vw"
+                        className="object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${NAVY}40, ${GOLD}30)` }}>
                         <ImageIcon className="w-8 h-8 text-white/40" />
@@ -1370,8 +1385,13 @@ function DirectorWord({
       <p className="text-sm text-slate-600 leading-relaxed mb-5 line-clamp-5">{text}</p>
       <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
         {photoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={photoUrl} alt={name} className="w-11 h-11 rounded-full object-cover ring-2 ring-amber-300/40" />
+          <Image
+            src={photoUrl}
+            alt={name}
+            width={44}
+            height={44}
+            className="rounded-full object-cover ring-2 ring-amber-300/40"
+          />
         ) : (
           <div className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold" style={{ background: `linear-gradient(135deg, ${navy}, #1E4FA3)`, color: '#FFFFFF' }}>
             {name.split(' ').map(n => n[0]).slice(0, 2).join('')}

@@ -12,6 +12,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import Image from 'next/image';
 import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
 import { faqData, type FAQData } from '@/data/chatbot/faq';
@@ -840,9 +841,11 @@ Ou reformulez votre question, je ferai de mon mieux pour vous aider ! 😊`;
           <div className="bg-blue-600 text-white p-4 rounded-t-2xl flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center bg-white/10">
-                <img 
-                  src="/images/Chatbot Sara.webp" 
-                  alt="Sarah - Assistant support" 
+                <Image
+                  src="/images/Chatbot Sara.webp"
+                  alt="Sarah - Assistant support"
+                  width={40}
+                  height={40}
                   className="w-full h-full object-cover"
                 />
               </div>

@@ -46,7 +46,11 @@ interface ChatStorageData<T> {
 }
 
 /** Identifiant du widget pour la clé de stockage */
-export type ChatWidgetId = 'sara-widget' | 'support-chat' | 'inapp-guide';
+export type ChatWidgetId =
+  | 'sara-widget'
+  | 'support-chat'
+  | 'inapp-guide'
+  | 'sara-guide-inapp';
 
 // ─── Configuration ──────────────────────────────────────────────────────────
 

@@ -301,3 +301,45 @@ Work Log:
 Stage Summary:
 - Git config updated: user.email = s.akpovitohoul@gmail.com, user.name = SenaDev007
 - New commit will have correct author for Vercel deployment
+
+---
+Task ID: 9
+Agent: main
+Task: Fix git email (s.akpovitohou@gmail.com) + create InAppSaraGuideWidget component
+
+Work Log:
+GIT EMAIL FIX:
+- Previous email "s.akpovitohoul@gmail.com" had an extra "l" — corrected to "s.akpovitohou@gmail.com"
+- Updated git config user.email = s.akpovitohou@gmail.com
+- Will create new commit with correct email to trigger Vercel deployment
+
+IN-APP SARA GUIDE WIDGET:
+- Created new component: apps/web-app/src/components/ai/InAppSaraGuideWidget.tsx (~800 lines)
+- Uses saraApi.guideStream() — the new Sarah Guide endpoint (POST /sara/guide/stream)
+- Branding Academia Helm (Royal Blue + Living Gold) — consistent with SaraWidget landing
+- Compact Messenger/WhatsApp style (360×540, text 12px)
+- Avatar Sarah next to each assistant message
+- Auto-detects user role via useAuth() hook
+- Auto-detects current module via usePathname() + path-to-module mapping
+- Contextual suggestions per role AND per module (16 modules in catalog)
+- Role-based onboarding suggestions (director, teacher, accountant, parent, secretary, surveillant)
+- Contextual welcome message ("You are in module X as role Y")
+- Streaming support via saraApi.guideStream() with JWT auth headers
+- History persistence via loadChatMessages/saveChatMessages (key: 'sara-guide-inapp')
+- Clear chat button + new conversation feature
+- Branded footer "Sarah Guide · Navigation uniquement · ACADEMIA HELM"
+- Floating button with compass icon (navigation theme) + gold ring + "?" badge
+- No scanline/particles — minimal & professional
+
+INTEGRATION:
+- Added 'sara-guide-inapp' to ChatWidgetId type in chat-storage.ts
+- Imported InAppSaraGuideWidget in apps/web-app/src/app/app/layout-client.tsx
+- Widget now renders on ALL authenticated /app/* pages (school admin, teacher portal, parent portal)
+- Positioned bottom-right (z-999) — doesn't conflict with SaraWidget (landing only)
+
+Stage Summary:
+- Sarah Guide In-App widget is now live on all authenticated app pages
+- Uses the dedicated /sara/guide/stream endpoint (GLM 5.2, global, no tenant data)
+- Auto-adapts to user role and current module for contextual guidance
+- Redirection logic: data requests → ORION, action requests → ATLAS
+- Git email corrected to s.akpovitohou@gmail.com for Vercel deployment

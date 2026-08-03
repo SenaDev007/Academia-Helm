@@ -87,7 +87,6 @@ export default function AcademiaLoader({ inline = false, message, progress, step
             width={48}
             height={48}
             className="rounded-full"
-            style={{ borderRadius: '50%' }}
             priority
           />
         </div>

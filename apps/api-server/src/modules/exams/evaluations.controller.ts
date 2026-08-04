@@ -209,23 +209,31 @@ export class EvaluationsController {
     @Query('status') status?: string,
   ) {
     const statusFilter = status || 'PENDING';
+    const params = [tenantId];
+    let statusClause = '';
+    if (statusFilter !== 'ALL') {
+      statusClause = 'AND r."status" = $2';
+      params.push(statusFilter);
+    }
+
     const requests = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT r.*, e."evaluationTypeName", e."className", e."subjectName",
+      `SELECT r."id", r."evaluationId", r."reason", r."status", r."createdAt",
+              r."reviewedAt", r."reviewComment",
               u."firstName" as "requesterFirstName", u."lastName" as "requesterLastName",
-              ru."firstName" as "reviewerFirstName", ru."lastName" as "reviewerLastName"
+              ru."firstName" as "reviewerFirstName", ru."lastName" as "reviewerLastName",
+              et."name" as "evaluationTypeName",
+              c."name" as "className",
+              subj."name" as "subjectName"
        FROM "exam_unlock_requests" r
-       LEFT JOIN users u ON u."id" = r."requestedById"
-       LEFT JOIN users ru ON ru."id" = r."reviewedById"
-       LEFT JOIN LATERAL (
-         SELECT "evaluationTypeName", "className", "subjectName"
-         FROM institutional_exam_evaluations
-         WHERE "id" = r."evaluationId"
-         LIMIT 1
-       ) e ON true
-       WHERE r."tenantId" = $1
-       ${statusFilter !== 'ALL' ? 'AND r."status" = $2' : ''}
+       LEFT JOIN "users" u ON u."id" = r."requestedById"
+       LEFT JOIN "users" ru ON ru."id" = r."reviewedById"
+       LEFT JOIN "evaluations" e ON e."id" = r."evaluationId"
+       LEFT JOIN "evaluation_types" et ON et."id" = e."evaluationTypeId"
+       LEFT JOIN "classes" c ON c."id" = e."classId"
+       LEFT JOIN "subjects" subj ON subj."id" = e."subjectId"
+       WHERE r."tenantId" = $1 ${statusClause}
        ORDER BY r."createdAt" DESC`,
-      ...(statusFilter !== 'ALL' ? [tenantId, statusFilter] : [tenantId]),
+      ...params,
     ).catch(() => []);
 
     return requests;
@@ -268,7 +276,7 @@ export class EvaluationsController {
 
     // Déverrouiller l'évaluation : remettre le statut à OPEN_FOR_GRADING
     await this.prisma.$executeRawUnsafe(
-      `UPDATE "institutional_exam_evaluations"
+      `UPDATE "evaluations"
        SET "status" = 'OPEN_FOR_GRADING', "updatedAt" = NOW()
        WHERE "id" = $1`,
       request.evaluationId,

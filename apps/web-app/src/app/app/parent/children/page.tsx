@@ -13,6 +13,7 @@ import {
   CreditCard, CalendarCheck, FileText,
 } from "lucide-react";
 import Link from "next/link";
+import StudentAvatar from "@/components/parent/StudentAvatar";
 
 export default function ParentChildrenPage() {
   const { user } = useAppSession();
@@ -75,9 +76,13 @@ export default function ParentChildrenPage() {
           >
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-center gap-3">
-                <div className={`h-12 w-12 rounded-full flex items-center justify-center ${child.gender === 'FEMALE' ? 'bg-pink-100' : 'bg-blue-100'}`}>
-                  <User className={`h-6 w-6 ${child.gender === 'FEMALE' ? 'text-pink-600' : 'text-blue-600'}`} />
-                </div>
+                <StudentAvatar
+                  firstName={child.firstName}
+                  lastName={child.lastName}
+                  photoUrl={child.photoUrl}
+                  size="md"
+                  variant={child.gender === 'FEMALE' ? 'emerald' : 'blue'}
+                />
                 <div>
                   <h3 className="font-bold text-slate-900">{child.firstName} {child.lastName}</h3>
                   <p className="text-xs text-slate-500">{child.matricule || "—"}</p>

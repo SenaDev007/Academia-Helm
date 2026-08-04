@@ -663,17 +663,18 @@ export class ExamsPrismaService {
       include: { subject: true },
     });
 
-    // Fallback: if no class_subjects with classId, try academicClassId
+    // Fallback: if no class_subjects with classId, try officialClassId
     if (!classSubjects || classSubjects.length === 0) {
-      // Look up the academicClassId for this class
+      // Look up the officialClassId for this class
       const classRecord2 = await this.prisma.class.findFirst({
         where: { id: classId, tenantId },
-        select: { academicClassId: true },
+        select: { officialClassId: true },
       });
 
-      if (classRecord2?.academicClassId) {
+      if (classRecord2?.officialClassId) {
+        // class_subjects uses academicClassId which maps to officialClassId in Class model
         classSubjects = await this.prisma.classSubject.findMany({
-          where: { academicClassId: classRecord2.academicClassId, tenantId, academicYearId },
+          where: { academicClassId: classRecord2.officialClassId, tenantId, academicYearId },
           include: { subject: true },
         });
       }

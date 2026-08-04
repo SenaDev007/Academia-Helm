@@ -44,6 +44,10 @@ interface UnlockRequest {
   evaluationTypeName?: string;
   className?: string;
   subjectName?: string;
+  studentIds?: string[];
+  subjectIds?: string[];
+  studentNames?: string;
+  subjectNames?: string;
 }
 
 const STATUS_CONFIG = {
@@ -226,8 +230,34 @@ export default function UnlockRequestsPage() {
                         </div>
                       </div>
 
-                      {/* Motif de la demande */}
+                      {/* Contenu de la demande */}
                       <div className="px-4 py-3">
+                        {/* Élèves concernés */}
+                        <div className="flex items-start gap-2 mb-2">
+                          <Users className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1">
+                            <p className="text-xs font-medium text-gray-500 mb-0.5">Élèves concernés</p>
+                            <p className="text-sm text-gray-700">
+                              {req.studentNames || 'Tous les élèves'}
+                              {req.studentIds && req.studentIds.length > 0 && (
+                                <span className="text-xs text-gray-400 ml-1">({req.studentIds.length})</span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Matières concernées */}
+                        <div className="flex items-start gap-2 mb-3">
+                          <BookOpen className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1">
+                            <p className="text-xs font-medium text-gray-500 mb-0.5">Matières concernées</p>
+                            <p className="text-sm text-gray-700">
+                              {req.subjectNames || req.subjectName || 'Toutes les matières'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Motif de la demande */}
                         <div className="flex items-start gap-2 mb-3">
                           <MessageSquare className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
                           <div className="flex-1">

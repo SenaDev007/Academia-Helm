@@ -149,10 +149,9 @@ export class EvaluationsController {
   }
 
   /**
-   * ⭐ Demande de déverrouillage d'une évaluation
-   * L'enseignant demande à l'administration de déverrouiller les notes
-   * pour pouvoir les modifier après soumission.
-   * Persiste la demande dans exam_unlock_requests.
+   * ⭐ Demande de déverrouillage d'une évaluation (GRANULAIRE)
+   * L'enseignant demande à déverrouiller des notes pour des élèves ET matières spécifiques.
+   * Seuls les élèves + matières sélectionnés seront déverrouillés.
    */
   @Post(':id/unlock-request')
   @Permissions('exams.manage')
@@ -160,7 +159,7 @@ export class EvaluationsController {
     @Param('id') id: string,
     @TenantId() tenantId: string,
     @UserId() userId: string,
-    @Body() body: { reason: string },
+    @Body() body: { reason: string; studentIds?: string[]; subjectIds?: string[]; studentNames?: string; subjectNames?: string },
   ) {
     if (!body?.reason || body.reason.trim().length < 10) {
       throw new BadRequestException('La raison doit contenir au moins 10 caractères');
@@ -181,12 +180,18 @@ export class EvaluationsController {
       throw new BadRequestException('Une demande de déverrouillage est déjà en cours pour cette évaluation');
     }
 
-    // Persister la demande
+    // Persister la demande avec studentIds + subjectIds
     const requestId = crypto.randomUUID();
     await this.prisma.$executeRawUnsafe(
-      `INSERT INTO "exam_unlock_requests" ("id", "tenantId", "evaluationId", "requestedById", "reason", "status", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, 'PENDING', NOW(), NOW())`,
+      `INSERT INTO "exam_unlock_requests"
+       ("id", "tenantId", "evaluationId", "requestedById", "reason", "status",
+        "studentIds", "subjectIds", "studentNames", "subjectNames", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, 'PENDING', $6, $7, $8, $9, NOW(), NOW())`,
       requestId, tenantId, id, userId, body.reason.trim(),
+      body.studentIds || [],
+      body.subjectIds || [],
+      body.studentNames || null,
+      body.subjectNames || null,
     );
 
     return {
@@ -195,6 +200,8 @@ export class EvaluationsController {
       requestId,
       evaluationId: id,
       reason: body.reason,
+      studentIds: body.studentIds || [],
+      subjectIds: body.subjectIds || [],
     };
   }
 
@@ -219,6 +226,7 @@ export class EvaluationsController {
     const requests = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT r."id", r."evaluationId", r."reason", r."status", r."createdAt",
               r."reviewedAt", r."reviewComment",
+              r."studentIds", r."subjectIds", r."studentNames", r."subjectNames",
               u."firstName" as "requesterFirstName", u."lastName" as "requesterLastName",
               ru."firstName" as "reviewerFirstName", ru."lastName" as "reviewerLastName",
               et."name" as "evaluationTypeName",

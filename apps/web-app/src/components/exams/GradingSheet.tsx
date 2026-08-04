@@ -1179,13 +1179,15 @@ export function GradingSheet({
       />
     )}
     {confirmDialog}
-    {/* ⭐ Modal de demande de déverrouillage (remplace prompt()) */}
+    {/* ⭐ Modal de demande de déverrouillage (granulaire : élèves + matières) */}
     <UnlockRequestModal
       open={unlockModalOpen}
       onClose={() => setUnlockModalOpen(false)}
       evaluationIds={group.evaluationIds}
       className={group.className}
       evaluationTypeName={group.evaluationTypeName}
+      students={rows.map(r => ({ studentId: r.studentId, studentName: r.studentName, matricule: r.matricule }))}
+      subjects={sortedSubjects}
     />
     </>
   );

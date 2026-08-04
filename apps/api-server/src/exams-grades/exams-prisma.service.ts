@@ -621,23 +621,30 @@ export class ExamsPrismaService {
     periodId: string,
     academicYearId: string,
   ) {
-    const classRecord = await this.prisma.class.findFirst({
-      where: { id: classId, tenantId },
-    });
-    if (!classRecord) {
+    // 0. Verify class exists via raw SQL
+    const classRows = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT id, name, "schoolLevelId" FROM "classes" WHERE id = $1 AND "tenantId" = $2 LIMIT 1
+    `, [classId, tenantId]).catch(() => []);
+
+    if (!classRows || classRows.length === 0) {
       throw new NotFoundException(`Class with ID ${classId} not found`);
     }
+    const classRecord = classRows[0];
 
-    // 1. Get active settings
-    const activeSettings = await this.prisma.schoolAcademicSettings.findFirst({
-      where: { tenantId, schoolYearId: academicYearId, status: 'ACTIVE' },
-    });
-    if (!activeSettings) {
+    // 1. Get active settings via raw SQL (avoid Prisma model issues)
+    const settingsRows = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT id, config, status FROM "school_academic_settings"
+      WHERE "tenantId" = $1 AND "schoolYearId" = $2 AND status = 'ACTIVE'
+      LIMIT 1
+    `, [tenantId, academicYearId]).catch(() => []);
+
+    if (!settingsRows || settingsRows.length === 0) {
       throw new BadRequestException(
         "Aucun paramétrage académique actif trouvé pour cette année scolaire. Veuillez l'activer dans les Paramètres.",
       );
     }
 
+    const activeSettings = settingsRows[0];
     const cfg =
       typeof activeSettings.config === 'string'
         ? JSON.parse(activeSettings.config)

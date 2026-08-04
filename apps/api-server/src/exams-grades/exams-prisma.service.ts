@@ -760,7 +760,7 @@ export class ExamsPrismaService {
       evaluationId: g.evaluationId || g.evaluationid,
       studentId: g.studentId || g.studentid,
       subjectId: g.subjectId || g.subjectid,
-      evalTypeName: g.evalTypeName || g.evaltypename,
+      evalTypeName: g.evalTypeName || g.evaltypename || g.EvalTypeName || 'UNKNOWN',
     }));
 
     const studentsList: any[] = [];

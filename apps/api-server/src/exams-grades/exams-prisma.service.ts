@@ -657,50 +657,52 @@ export class ExamsPrismaService {
 
     // 3. Fetch class subjects
     // ✅ FIX: class_subjects.classId is NULL in production — uses academicClassId
-    // Try classId first, fallback to academicClassId
-    let classSubjects = await this.prisma.classSubject.findMany({
-      where: { classId, tenantId, academicYearId },
-      include: { subject: true },
-    });
+    // Use raw SQL to avoid Prisma schema issues with officialClassId field
+    let classSubjects: any[] = [];
 
-    // Fallback: if no class_subjects with classId, try officialClassId
-    if (!classSubjects || classSubjects.length === 0) {
-      // Look up the officialClassId for this class
-      const classRecord2 = await this.prisma.class.findFirst({
-        where: { id: classId, tenantId },
-        select: { officialClassId: true },
-      });
+    // Step 1: Try classId
+    classSubjects = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT cs.*, s."name" as "subjectName", s."code" as "subjectCode"
+      FROM "class_subjects" cs
+      INNER JOIN "subjects" s ON s."id" = cs."subjectId"
+      WHERE cs."classId" = $1 AND cs."tenantId" = $2 AND cs."academicYearId" = $3
+    `, [classId, tenantId, academicYearId]).catch(() => []);
 
-      if (classRecord2?.officialClassId) {
-        // class_subjects uses academicClassId which maps to officialClassId in Class model
-        classSubjects = await this.prisma.classSubject.findMany({
-          where: { academicClassId: classRecord2.officialClassId, tenantId, academicYearId },
-          include: { subject: true },
-        });
-      }
+    // Step 2: Fallback via officialClassId → academicClassId
+    if (classSubjects.length === 0) {
+      classSubjects = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT cs.*, s."name" as "subjectName", s."code" as "subjectCode"
+        FROM "class_subjects" cs
+        INNER JOIN "subjects" s ON s."id" = cs."subjectId"
+        INNER JOIN "classes" c ON c."officialClassId" = cs."academicClassId"
+        WHERE c."id" = $1 AND cs."tenantId" = $2 AND cs."academicYearId" = $3
+      `, [classId, tenantId, academicYearId]).catch(() => []);
     }
 
-    // Last resort: fetch ALL class_subjects for this tenant+year and match by subjectId
-    // (the evaluation has subjectId, so we can match subjects that way)
-    if (!classSubjects || classSubjects.length === 0) {
-      // Get all subjectIds from evaluations for this class
-      const evalSubjects = await this.prisma.evaluation.findMany({
-        where: { classId, tenantId, academicYearId },
-        select: { subjectId: true },
-        distinct: ['subjectId'],
-      });
-      const subjectIds = evalSubjects.map(e => e.subjectId);
-
-      if (subjectIds.length > 0) {
-        classSubjects = await this.prisma.classSubject.findMany({
-          where: {
-            tenantId, academicYearId,
-            subjectId: { in: subjectIds },
-          },
-          include: { subject: true },
-        });
-      }
+    // Step 3: Last resort — match by subjectId from evaluations
+    if (classSubjects.length === 0) {
+      classSubjects = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT cs.*, s."name" as "subjectName", s."code" as "subjectCode"
+        FROM "class_subjects" cs
+        INNER JOIN "subjects" s ON s."id" = cs."subjectId"
+        WHERE cs."tenantId" = $1 AND cs."academicYearId" = $2
+        AND cs."subjectId" IN (
+          SELECT DISTINCT "subjectId" FROM "evaluations"
+          WHERE "classId" = $3 AND "tenantId" = $1 AND "academicYearId" = $2
+        )
+      `, [tenantId, academicYearId, classId]).catch(() => []);
     }
+
+    // Transform to match expected format
+    classSubjects = classSubjects.map((cs: any) => ({
+      id: cs.id,
+      subjectId: cs.subjectId,
+      coefficient: Number(cs.coefficient) || 1,
+      subject: {
+        id: cs.subjectId,
+        name: cs.subjectName || cs.subjectCode || 'Matière',
+      },
+    }));
 
     // 4. Fetch grades (NOT ExamScore — teachers enter grades via Grade table)
     // ✅ FIX: Include SUBMITTED and VALIDATED grades (not just VALIDATED)

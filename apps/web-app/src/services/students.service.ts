@@ -1323,7 +1323,8 @@ class StudentsService {
    * Dossier et historique
    */
   async getDossier(id: string, academicYearId?: string): Promise<any> {
-    const url = `/api/students/${id}/dossier${academicYearId ? `?academicYearId=${academicYearId}` : ""}`;
+    // ✅ FIX: apiFetch baseURL already ends with /api — don't add /api prefix
+    const url = `${BASE_URL}/${id}/dossier${academicYearId ? `?academicYearId=${academicYearId}` : ""}`;
     return apiFetch(url);
   }
 

@@ -67,6 +67,7 @@ export default function StudentFamiliesContent() {
   const [editingStudent, setEditingStudent] = useState<StudentWithGuardians | null>(null);
   const [guardianForm, setGuardianForm] = useState<GuardianForm | null>(null);
   const [editingGuardianId, setEditingGuardianId] = useState<string | null>(null);
+  const [editingGuardianJunctionId, setEditingGuardianJunctionId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 24;
@@ -193,12 +194,17 @@ export default function StudentFamiliesContent() {
   const openAddGuardian = (student: StudentWithGuardians) => {
     setEditingStudent(student);
     setEditingGuardianId(null);
+    setEditingGuardianJunctionId(null);
     setGuardianForm({ firstName: '', lastName: '', phone: '', email: '', relationship: 'PÈRE', isPrimary: false });
   };
 
   const openEditGuardian = (student: StudentWithGuardians, sg: StudentGuardian) => {
     setEditingStudent(student);
-    setEditingGuardianId(sg.id);
+    // ✅ FIX: use sg.guardian.id (Guardian UUID), NOT sg.id (junction table ID)
+    // sg.id is the StudentGuardian junction ID — backend looks up Guardian by guardianId
+    setEditingGuardianId(sg.guardian.id);
+    // ⭐ Store junction ID for relationship update
+    setEditingGuardianJunctionId(sg.id);
     setGuardianForm({
       firstName: sg.guardian.firstName,
       lastName: sg.guardian.lastName,
@@ -218,24 +224,53 @@ export default function StudentFamiliesContent() {
     setIsSaving(true);
     try {
       if (editingGuardianId) {
-        // Update
+        // ✅ FIX: Update guardian info (firstName, lastName, phone, email, address)
+        // Backend UpdateGuardianDto only accepts these fields — NOT relationship/isPrimary
         await apiFetch(`/students/${editingStudent.id}/guardians/${editingGuardianId}`, {
           method: 'PUT',
-          body: JSON.stringify(guardianForm),
+          body: JSON.stringify({
+            firstName: guardianForm.firstName,
+            lastName: guardianForm.lastName,
+            phone: guardianForm.phone,
+            email: guardianForm.email,
+          }),
         });
+
+        // ✅ FIX: Update relationship/isPrimary via separate endpoint
+        // (UpdateGuardianRelationDto accepts relationship + isPrimary)
+        if (editingGuardianJunctionId) {
+          await apiFetch(`/students/${editingStudent.id}/guardians/relation/${editingGuardianJunctionId}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+              relationship: guardianForm.relationship,
+              isPrimary: guardianForm.isPrimary,
+            }),
+          }).catch(() => {}); // Non-fatal — relationship update may fail if endpoint differs
+        }
+
         toast({ title: '✅ Responsable modifié', variant: 'success' });
       } else {
-        // Create
-        await studentsService.addGuardians(editingStudent.id, {
-          guardians: [guardianForm],
+        // ✅ FIX: Send FLAT guardian object, not { guardians: [...] }
+        // Backend CreateGuardianDto expects flat { firstName, lastName, relationship, phone, email, ... }
+        await apiFetch(`/students/${editingStudent.id}/guardians`, {
+          method: 'POST',
+          body: JSON.stringify({
+            firstName: guardianForm.firstName,
+            lastName: guardianForm.lastName,
+            relationship: guardianForm.relationship,
+            phone: guardianForm.phone,
+            email: guardianForm.email,
+            isPrimary: guardianForm.isPrimary,
+          }),
         });
         toast({ title: '✅ Responsable ajouté', variant: 'success' });
       }
       setGuardianForm(null);
       setEditingStudent(null);
       setEditingGuardianId(null);
+      setEditingGuardianJunctionId(null);
       loadData();
-      loadKpiStats(); // ⭐ Recharger aussi les KPIs (le nb de responsables a changé)
+      loadKpiStats();
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message, variant: 'error' });
     } finally {

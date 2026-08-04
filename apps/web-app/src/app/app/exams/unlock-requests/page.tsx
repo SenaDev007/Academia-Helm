@@ -68,7 +68,7 @@ export default function UnlockRequestsPage() {
     setLoading(true);
     try {
       const res = await apiClient.get(
-        `/institutional-exams/evaluations/unlock-requests?status=${filter}`,
+        `/institutional-exams/unlock-requests?status=${filter}`,
       );
       const data = res.data;
       setRequests(Array.isArray(data) ? data : []);
@@ -89,7 +89,7 @@ export default function UnlockRequestsPage() {
     try {
       const comment = reviewComment[requestId];
       await apiClient.patch(
-        `/institutional-exams/evaluations/unlock-requests/${requestId}/approve`,
+        `/institutional-exams/unlock-requests/${requestId}/approve`,
         { reviewComment: comment || undefined },
       );
       toastSuccess('Demande approuvée', 'L\'enseignant peut maintenant modifier les notes.');
@@ -111,7 +111,7 @@ export default function UnlockRequestsPage() {
     setActionLoading(requestId);
     try {
       await apiClient.patch(
-        `/institutional-exams/evaluations/unlock-requests/${requestId}/reject`,
+        `/institutional-exams/unlock-requests/${requestId}/reject`,
         { reviewComment: comment },
       );
       toastSuccess('Demande rejetée', '');

@@ -656,10 +656,50 @@ export class ExamsPrismaService {
     });
 
     // 3. Fetch class subjects
-    const classSubjects = await this.prisma.classSubject.findMany({
+    // ✅ FIX: class_subjects.classId is NULL in production — uses academicClassId
+    // Try classId first, fallback to academicClassId
+    let classSubjects = await this.prisma.classSubject.findMany({
       where: { classId, tenantId, academicYearId },
       include: { subject: true },
     });
+
+    // Fallback: if no class_subjects with classId, try academicClassId
+    if (!classSubjects || classSubjects.length === 0) {
+      // Look up the academicClassId for this class
+      const classRecord2 = await this.prisma.class.findFirst({
+        where: { id: classId, tenantId },
+        select: { academicClassId: true },
+      });
+
+      if (classRecord2?.academicClassId) {
+        classSubjects = await this.prisma.classSubject.findMany({
+          where: { academicClassId: classRecord2.academicClassId, tenantId, academicYearId },
+          include: { subject: true },
+        });
+      }
+    }
+
+    // Last resort: fetch ALL class_subjects for this tenant+year and match by subjectId
+    // (the evaluation has subjectId, so we can match subjects that way)
+    if (!classSubjects || classSubjects.length === 0) {
+      // Get all subjectIds from evaluations for this class
+      const evalSubjects = await this.prisma.evaluation.findMany({
+        where: { classId, tenantId, academicYearId },
+        select: { subjectId: true },
+        distinct: ['subjectId'],
+      });
+      const subjectIds = evalSubjects.map(e => e.subjectId);
+
+      if (subjectIds.length > 0) {
+        classSubjects = await this.prisma.classSubject.findMany({
+          where: {
+            tenantId, academicYearId,
+            subjectId: { in: subjectIds },
+          },
+          include: { subject: true },
+        });
+      }
+    }
 
     // 4. Fetch grades (NOT ExamScore — teachers enter grades via Grade table)
     // ✅ FIX: Include SUBMITTED and VALIDATED grades (not just VALIDATED)

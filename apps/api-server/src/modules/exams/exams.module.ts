@@ -22,12 +22,14 @@ import { AcademicAuditService } from './services/academic-audit.service';
 import { BulletinPdfService } from './services/bulletin-pdf.service';
 import { ExamsSpecConfigController } from './exams-spec-config.controller';
 import { ExamsLockController } from './exams-lock.controller';
+import { UnlockRequestsController } from './unlock-requests.controller';
 
 @Module({
   imports: [DatabaseModule, UsersModule, AuditLogsModule, ExamsGradesModule],
   controllers: [
     ExamsDashboardController,
     EvaluationsController,
+    UnlockRequestsController,
     GradesController,
     ValidationController,
     BulletinsController,

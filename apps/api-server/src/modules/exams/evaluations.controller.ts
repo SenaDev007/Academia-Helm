@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Patch, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Patch, Delete, NotFoundException, BadRequestException } from '@nestjs/common';
 import { EvaluationsService } from './services/evaluations.service';
+import { PrismaService } from '../../database/prisma.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
@@ -31,7 +32,10 @@ import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 @Controller('institutional-exams/evaluations')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 export class EvaluationsController {
-  constructor(private readonly evaluationsService: EvaluationsService) {}
+  constructor(
+    private readonly evaluationsService: EvaluationsService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Get()
   @Permissions('exams.read')
@@ -148,7 +152,7 @@ export class EvaluationsController {
    * ⭐ Demande de déverrouillage d'une évaluation
    * L'enseignant demande à l'administration de déverrouiller les notes
    * pour pouvoir les modifier après soumission.
-   * Crée une notification pour la direction.
+   * Persiste la demande dans exam_unlock_requests.
    */
   @Post(':id/unlock-request')
   @Permissions('exams.manage')
@@ -158,19 +162,161 @@ export class EvaluationsController {
     @UserId() userId: string,
     @Body() body: { reason: string },
   ) {
-    // Récupérer l'évaluation pour les détails
+    if (!body?.reason || body.reason.trim().length < 10) {
+      throw new BadRequestException('La raison doit contenir au moins 10 caractères');
+    }
+
+    // Récupérer l'évaluation
     const evaluation = await this.evaluationsService.findOne(id, tenantId);
     if (!evaluation) throw new NotFoundException('Évaluation non trouvée');
 
-    // Créer une notification pour la direction (PROMOTER, DIRECTOR, ADMIN)
-    // Fire-and-forget — ne bloque pas la réponse
-    // TODO: utiliser NotificationService.notifyDirection si disponible
+    // Vérifier qu'il n'y a pas déjà une demande PENDING pour cette évaluation
+    const existing = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id FROM "exam_unlock_requests"
+       WHERE "evaluationId" = $1 AND "tenantId" = $2 AND "status" = 'PENDING'
+       LIMIT 1`,
+      id, tenantId,
+    ).catch(() => []);
+    if (existing && existing.length > 0) {
+      throw new BadRequestException('Une demande de déverrouillage est déjà en cours pour cette évaluation');
+    }
+
+    // Persister la demande
+    const requestId = crypto.randomUUID();
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "exam_unlock_requests" ("id", "tenantId", "evaluationId", "requestedById", "reason", "status", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, 'PENDING', NOW(), NOW())`,
+      requestId, tenantId, id, userId, body.reason.trim(),
+    );
 
     return {
       success: true,
       message: 'Demande de déverrouillage envoyée à l\'administration',
+      requestId,
       evaluationId: id,
       reason: body.reason,
+    };
+  }
+
+  /**
+   * ⭐ Liste des demandes de déverrouillage (pour la direction)
+   * GET /institutional-exams/evaluations/unlock-requests?status=PENDING
+   */
+  @Get('unlock-requests')
+  @Permissions('exams.read')
+  async getUnlockRequests(
+    @TenantId() tenantId: string,
+    @Query('status') status?: string,
+  ) {
+    const statusFilter = status || 'PENDING';
+    const requests = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT r.*, e."evaluationTypeName", e."className", e."subjectName",
+              u."firstName" as "requesterFirstName", u."lastName" as "requesterLastName",
+              ru."firstName" as "reviewerFirstName", ru."lastName" as "reviewerLastName"
+       FROM "exam_unlock_requests" r
+       LEFT JOIN users u ON u."id" = r."requestedById"
+       LEFT JOIN users ru ON ru."id" = r."reviewedById"
+       LEFT JOIN LATERAL (
+         SELECT "evaluationTypeName", "className", "subjectName"
+         FROM institutional_exam_evaluations
+         WHERE "id" = r."evaluationId"
+         LIMIT 1
+       ) e ON true
+       WHERE r."tenantId" = $1
+       ${statusFilter !== 'ALL' ? 'AND r."status" = $2' : ''}
+       ORDER BY r."createdAt" DESC`,
+      ...(statusFilter !== 'ALL' ? [tenantId, statusFilter] : [tenantId]),
+    ).catch(() => []);
+
+    return requests;
+  }
+
+  /**
+   * ⭐ Approuver une demande de déverrouillage
+   * PATCH /institutional-exams/evaluations/unlock-requests/:id/approve
+   */
+  @Patch('unlock-requests/:id/approve')
+  @Permissions('exams.manage')
+  async approveUnlockRequest(
+    @Param('id') requestId: string,
+    @TenantId() tenantId: string,
+    @UserId() userId: string,
+    @Body() body: { reviewComment?: string },
+  ) {
+    // Vérifier que la demande existe et est PENDING
+    const requests = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM "exam_unlock_requests"
+       WHERE "id" = $1 AND "tenantId" = $2 AND "status" = 'PENDING'
+       LIMIT 1`,
+      requestId, tenantId,
+    ).catch(() => []);
+
+    if (!requests || requests.length === 0) {
+      throw new NotFoundException('Demande non trouvée ou déjà traitée');
+    }
+
+    const request = requests[0];
+
+    // Marquer comme APPROVED
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "exam_unlock_requests"
+       SET "status" = 'APPROVED', "reviewedById" = $1, "reviewComment" = $2,
+           "reviewedAt" = NOW(), "updatedAt" = NOW()
+       WHERE "id" = $3`,
+      userId, body?.reviewComment || null, requestId,
+    );
+
+    // Déverrouiller l'évaluation : remettre le statut à OPEN_FOR_GRADING
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "institutional_exam_evaluations"
+       SET "status" = 'OPEN_FOR_GRADING', "updatedAt" = NOW()
+       WHERE "id" = $1`,
+      request.evaluationId,
+    ).catch(() => {});
+
+    return {
+      success: true,
+      message: 'Demande approuvée. L\'enseignant peut maintenant modifier les notes.',
+      requestId,
+      evaluationId: request.evaluationId,
+    };
+  }
+
+  /**
+   * ⭐ Rejeter une demande de déverrouillage
+   * PATCH /institutional-exams/evaluations/unlock-requests/:id/reject
+   */
+  @Patch('unlock-requests/:id/reject')
+  @Permissions('exams.manage')
+  async rejectUnlockRequest(
+    @Param('id') requestId: string,
+    @TenantId() tenantId: string,
+    @UserId() userId: string,
+    @Body() body: { reviewComment?: string },
+  ) {
+    const requests = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM "exam_unlock_requests"
+       WHERE "id" = $1 AND "tenantId" = $2 AND "status" = 'PENDING'
+       LIMIT 1`,
+      requestId, tenantId,
+    ).catch(() => []);
+
+    if (!requests || requests.length === 0) {
+      throw new NotFoundException('Demande non trouvée ou déjà traitée');
+    }
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "exam_unlock_requests"
+       SET "status" = 'REJECTED', "reviewedById" = $1, "reviewComment" = $2,
+           "reviewedAt" = NOW(), "updatedAt" = NOW()
+       WHERE "id" = $3`,
+      userId, body?.reviewComment || null, requestId,
+    );
+
+    return {
+      success: true,
+      message: 'Demande rejetée.',
+      requestId,
     };
   }
 }

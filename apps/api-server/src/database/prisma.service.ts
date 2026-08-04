@@ -51,7 +51,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       connectionString: databaseUrl,
       max: poolMax,
       idleTimeoutMillis: 30000,       // Close idle connections after 30s
-      connectionTimeoutMillis: 10000,  // Fail fast if DB unreachable (10s)
+      // ✅ 30s pour laisser Neon le temps de se réveiller (cold start = 5-10s)
+      // Avant c'était 10s → timeout quand Neon était suspendu
+      connectionTimeoutMillis: 30000,
     };
     if (needsSsl) {
       poolConfig.ssl = { rejectUnauthorized: false };
@@ -116,20 +118,39 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       this.logger.log('⏭️  SKIP_DB_CHECK=true — skipping Prisma connection warmup');
       return;
     }
-    // Fire-and-forget: warm up the connection pool in the background
-    const start = Date.now();
-    this.$queryRawUnsafe('SELECT 1')
-      .then(() => {
-        const elapsed = Date.now() - start;
-        this.logger.log(`✅ Prisma connected in ${elapsed}ms`);
-      })
-      .catch((error) => {
-        this.logger.error('❌ Prisma connection warmup failed:', error?.message || error);
-      });
+
+    // ✅ Warmup avec RETRY — Neon peut être suspendu (cold start 5-10s).
+    // On réessaie 3 fois avec 3s de délai entre chaque tentative.
+    // Cela permet à l'app de démarrer même si Neon met du temps à se réveiller.
+    const warmupWithRetry = async (retries = 3, delayMs = 3000): Promise<void> => {
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        const start = Date.now();
+        try {
+          await this.$queryRawUnsafe('SELECT 1');
+          const elapsed = Date.now() - start;
+          this.logger.log(`✅ Prisma connected in ${elapsed}ms (attempt ${attempt}/${retries})`);
+          return;
+        } catch (error: any) {
+          const elapsed = Date.now() - start;
+          this.logger.warn(
+            `⚠️ Prisma warmup attempt ${attempt}/${retries} failed in ${elapsed}ms: ${error?.message || error}`,
+          );
+          if (attempt < retries) {
+            this.logger.log(`   Retrying in ${delayMs / 1000}s...`);
+            await new Promise((r) => setTimeout(r, delayMs));
+          } else {
+            this.logger.error('❌ Prisma warmup failed after all retries — app will start but DB calls may fail');
+          }
+        }
+      }
+    };
+
+    // Fire-and-forget: warm up in background (non-bloquant pour le bootstrap)
+    warmupWithRetry().catch(() => {});
 
     // Keepalive : ping la BDD toutes les 5 minutes pour garder la connexion chaude.
     // Évite les timeouts de connexion après une période d'inactivité entre
-    // Fly.io et Neon PostgreSQL (cold connection = 10-13s, warm = <1s).
+    // Railway et Neon PostgreSQL (cold connection = 10-13s, warm = <1s).
     this.keepaliveInterval = setInterval(async () => {
       try {
         await this.$queryRawUnsafe('SELECT 1');

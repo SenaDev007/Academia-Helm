@@ -21,6 +21,9 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query';
 
 const DEFAULT_STALE_TIME = 5 * 60 * 1000; // 5 min
 const DEFAULT_GC_TIME = 60 * 60 * 1000;   // 1 h
+// ✅ 3 retries avec délai — gère le cold start Neon (DB suspendue → 5-10s pour se réveiller)
+const NEON_RETRY = 3;
+const NEON_RETRY_DELAY = 2000; // 2s entre chaque retry
 
 // ─── Query key factory ─────────────────────────────────────────────────────
 
@@ -63,7 +66,8 @@ export function useParentChildren(academicYearId: string | undefined) {
     enabled: !!academicYearId,
     staleTime: DEFAULT_STALE_TIME,
     gcTime: DEFAULT_GC_TIME,
-    retry: 1,
+    retry: NEON_RETRY,
+    retryDelay: (attemptIndex) => Math.min(NEON_RETRY_DELAY * (attemptIndex + 1), 8000),
     placeholderData: keepPreviousData,
     refetchOnWindowFocus: false,
   });
@@ -83,7 +87,8 @@ export function useParentChildDetail(
     enabled: !!studentId && !!academicYearId,
     staleTime: DEFAULT_STALE_TIME,
     gcTime: DEFAULT_GC_TIME,
-    retry: 1,
+    retry: NEON_RETRY,
+    retryDelay: (attemptIndex) => Math.min(NEON_RETRY_DELAY * (attemptIndex + 1), 8000),
     placeholderData: keepPreviousData,
     refetchOnWindowFocus: false,
   });
@@ -103,7 +108,8 @@ export function useParentToday(
     enabled: !!studentId && !!academicYearId,
     staleTime: 2 * 60 * 1000, // 2 min — données temps réel
     gcTime: DEFAULT_GC_TIME,
-    retry: 1,
+    retry: NEON_RETRY,
+    retryDelay: (attemptIndex) => Math.min(NEON_RETRY_DELAY * (attemptIndex + 1), 8000),
     placeholderData: keepPreviousData,
     refetchOnWindowFocus: false,
   });
@@ -123,7 +129,8 @@ export function useParentAttendance(
     enabled: !!studentId && !!academicYearId,
     staleTime: DEFAULT_STALE_TIME,
     gcTime: DEFAULT_GC_TIME,
-    retry: 1,
+    retry: NEON_RETRY,
+    retryDelay: (attemptIndex) => Math.min(NEON_RETRY_DELAY * (attemptIndex + 1), 8000),
     placeholderData: keepPreviousData,
     refetchOnWindowFocus: false,
   });
@@ -143,7 +150,8 @@ export function useParentResults(
     enabled: !!studentId && !!academicYearId,
     staleTime: DEFAULT_STALE_TIME,
     gcTime: DEFAULT_GC_TIME,
-    retry: 1,
+    retry: NEON_RETRY,
+    retryDelay: (attemptIndex) => Math.min(NEON_RETRY_DELAY * (attemptIndex + 1), 8000),
     placeholderData: keepPreviousData,
     refetchOnWindowFocus: false,
   });
@@ -171,7 +179,8 @@ export function useParentFinanceBreakdown(
     enabled: !!studentId && !!academicYearId,
     staleTime: DEFAULT_STALE_TIME,
     gcTime: DEFAULT_GC_TIME,
-    retry: 1,
+    retry: NEON_RETRY,
+    retryDelay: (attemptIndex) => Math.min(NEON_RETRY_DELAY * (attemptIndex + 1), 8000),
     placeholderData: keepPreviousData,
     refetchOnWindowFocus: false,
   });

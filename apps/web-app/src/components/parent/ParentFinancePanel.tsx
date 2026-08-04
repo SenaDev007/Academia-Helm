@@ -287,56 +287,113 @@ export default function ParentFinancePanel({
         </div>
       </div>
 
-      {/* ─── Section 2 : Arriérés ─── */}
-      {feeArrears.length > 0 && (
-        <div className="bg-white rounded-xl border border-red-200 overflow-hidden">
-          <button
-            onClick={() => setShowArrears(!showArrears)}
-            className="w-full px-4 py-3 flex items-center gap-2 hover:bg-gray-50"
-          >
+      {/* ─── Section 2 : Arriérés (toujours visible) ─── */}
+      <div
+        className="bg-white rounded-xl border overflow-hidden"
+        style={{ borderColor: feeArrears.length > 0 ? '#FCA5A5' : '#E5E7EB' }}
+      >
+        <button
+          onClick={() => setShowArrears(!showArrears)}
+          className="w-full px-4 py-3 flex items-center gap-2 hover:bg-gray-50"
+        >
+          {feeArrears.length > 0 ? (
             <AlertCircle className="w-4 h-4 text-red-500" />
-            <h3 className="font-semibold text-sm text-gray-900 flex-1 text-left">
-              Arriérés ({feeArrears.length} année{feeArrears.length > 1 ? 's' : ''})
-            </h3>
+          ) : (
+            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+          )}
+          <h3 className="font-semibold text-sm text-gray-900 flex-1 text-left">
+            Arriérés
+            {feeArrears.length > 0 && (
+              <span className="ml-2 text-xs font-normal text-gray-500">
+                ({feeArrears.length} année{feeArrears.length > 1 ? 's' : ''})
+              </span>
+            )}
+          </h3>
+          {feeArrears.length > 0 ? (
             <span className="text-sm font-bold text-red-600">
               {formatMoney(finance.actualArrears)}
             </span>
-            {showArrears ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-          </button>
-          <AnimatePresence>
-            {showArrears && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="border-t border-red-100"
-              >
-                <div className="divide-y divide-red-50">
-                  {feeArrears.map((a: any) => (
-                    <div key={a.id} className="px-4 py-3 flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{a.academicYearName}</p>
-                        <p className="text-xs text-gray-400">
-                          dû : {formatMoney(a.totalDue)} · payé : {formatMoney(a.totalPaid)}
-                        </p>
-                        {a.notes && <p className="text-xs text-gray-400 mt-0.5">{a.notes}</p>}
+          ) : (
+            <span className="text-xs text-emerald-600 font-medium">Aucun arriéré</span>
+          )}
+          {showArrears ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+        </button>
+        <AnimatePresence>
+          {showArrears && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="border-t border-gray-100"
+            >
+              {feeArrears.length === 0 ? (
+                <div className="px-4 py-6 text-center">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
+                  <p className="text-sm text-gray-600 font-medium">Aucun arriéré</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Cet élève n'a pas de solde impayé des années précédentes.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="divide-y divide-gray-50">
+                    {feeArrears.map((a: any, idx: number) => (
+                      <div key={a.id} className="px-4 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span
+                                className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+                                style={{ background: '#FEE2E2', color: '#DC2626' }}
+                              >
+                                {idx + 1}
+                              </span>
+                              <p className="text-sm font-semibold text-gray-900">
+                                Année {a.academicYearName}
+                              </p>
+                            </div>
+                            <div className="ml-8 space-y-0.5 text-xs text-gray-500">
+                              <div className="flex justify-between">
+                                <span>Frais dus cette année-là</span>
+                                <span className="font-medium text-gray-700">{formatMoney(a.totalDue)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Montant payé</span>
+                                <span className="font-medium text-emerald-600">{formatMoney(a.totalPaid)}</span>
+                              </div>
+                              <div className="flex justify-between pt-1 border-t border-gray-100">
+                                <span className="font-semibold text-red-600">Restant à payer</span>
+                                <span className="font-bold text-red-600">{formatMoney(a.balanceDue)}</span>
+                              </div>
+                              {a.notes && (
+                                <p className="mt-1 text-gray-400 italic">Note : {a.notes}</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-xs text-gray-400">Restant</p>
-                        <p className="font-bold text-sm text-red-600">{formatMoney(a.balanceDue)}</p>
-                      </div>
+                    ))}
+                  </div>
+                  <div
+                    className="px-4 py-3 border-t flex items-center justify-between"
+                    style={{ background: '#FEF2F2' }}
+                  >
+                    <div>
+                      <span className="text-sm font-semibold text-red-700">Total arriérés</span>
+                      <p className="text-xs text-red-500">
+                        Cumul des restants de toutes les années précédentes
+                      </p>
                     </div>
-                  ))}
-                </div>
-                <div className="px-4 py-3 bg-red-50 border-t border-red-100 flex items-center justify-between">
-                  <span className="text-sm font-semibold text-red-700">Total arriérés</span>
-                  <span className="font-bold text-red-700">{formatMoney(finance.actualArrears)}</span>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      )}
+                    <span className="font-bold text-lg text-red-700">
+                      {formatMoney(finance.actualArrears)}
+                    </span>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* ─── Section 3 : Récapitulatif ─── */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">

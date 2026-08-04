@@ -69,149 +69,6 @@ interface ModuleInfo {
   suggestions: string[];
 }
 
-const MODULE_CATALOG: Record<string, ModuleInfo> = {
-  students: {
-    label: 'Élèves & Inscriptions',
-    icon: '👨‍🎓',
-    suggestions: [
-      "Comment inscrire un nouvel élève ?",
-      "Où exporter vers Educmaster ?",
-      "Comment gérer les transferts ?",
-      "Comment voir les dossiers incomplets ?",
-    ],
-  },
-  pedagogy: {
-    label: 'Pédagogie',
-    icon: '📚',
-    suggestions: [
-      "Comment créer un emploi du temps ?",
-      "Où gérer les affectations ?",
-      "Comment créer une matière ?",
-      "Comment utiliser la bibliothèque pédagogique ?",
-    ],
-  },
-  exams: {
-    label: 'Examens & Bulletins',
-    icon: '📝',
-    suggestions: [
-      "Comment saisir les notes ?",
-      "Comment publier les bulletins ?",
-      "Comment configurer le calcul des moyennes ?",
-      "Où voir les statistiques ?",
-    ],
-  },
-  finance: {
-    label: 'Finance & Économat',
-    icon: '💰',
-    suggestions: [
-      "Comment voir les impayés ?",
-      "Comment enregistrer un paiement ?",
-      "Où voir le rapport financier ?",
-      "Comment lancer une campagne de relance ?",
-    ],
-  },
-  hr: {
-    label: 'RH & Paie',
-    icon: '👥',
-    suggestions: [
-      "Comment ajouter un enseignant ?",
-      "Comment calculer la paie ?",
-      "Où gérer les congés ?",
-      "Comment générer une attestation de travail ?",
-    ],
-  },
-  communication: {
-    label: 'Communication',
-    icon: '📱',
-    suggestions: [
-      "Comment envoyer un SMS ?",
-      "Comment configurer WhatsApp ?",
-      "Comment créer une campagne ?",
-      "Où voir l'historique ?",
-    ],
-  },
-  qhse: {
-    label: 'QHSE & Incidents',
-    icon: '🛡️',
-    suggestions: [
-      "Comment signaler un incident ?",
-      "Où voir les traçabilités ?",
-      "Comment gérer les contrôles ?",
-    ],
-  },
-  orion: {
-    label: 'ORION (IA Analytique)',
-    icon: '🧠',
-    suggestions: [
-      "Comment lire les alertes ORION ?",
-      "Où voir les KPIs ?",
-      "Comment interpréter les recommandations ?",
-      "Quel est mon score ORION ?",
-    ],
-  },
-  atlas: {
-    label: 'ATLAS (IA Exécution)',
-    icon: '🤖',
-    suggestions: [
-      "Comment demander un document à ATLAS ?",
-      "Comment automatiser une tâche ?",
-      "Quelles actions ATLAS peut-il faire ?",
-      "Comment déclencher un workflow ?",
-    ],
-  },
-  settings: {
-    label: 'Paramètres',
-    icon: '⚙️',
-    suggestions: [
-      "Comment configurer mon école ?",
-      "Où gérer les rôles ?",
-      "Comment activer les modules ?",
-      "Comment configurer la facturation ?",
-    ],
-  },
-  canteen: {
-    label: 'Cantine',
-    icon: '🍽️',
-    suggestions: ["Comment gérer les menus ?", "Comment voir les tickets ?", "Où sont les rapports ?"],
-  },
-  transport: {
-    label: 'Transport',
-    icon: '🚌',
-    suggestions: ["Comment gérer les itinéraires ?", "Comment voir les tickets ?"],
-  },
-  infirmary: {
-    label: 'Infirmerie',
-    icon: '🏥',
-    suggestions: ["Comment enregistrer une visite ?", "Où voir les certificats ?"],
-  },
-  library: {
-    label: 'Bibliothèque',
-    icon: '📖',
-    suggestions: ["Comment enregistrer un prêt ?", "Comment gérer les retours ?"],
-  },
-  shop: {
-    label: 'Boutique',
-    icon: '🛒',
-    suggestions: ["Comment ajouter un article ?", "Comment voir les ventes ?"],
-  },
-  educast: {
-    label: 'EduCast',
-    icon: '🎬',
-    suggestions: ["Comment créer une chaîne ?", "Comment monétiser ?"],
-  },
-};
-
-const DEFAULT_MODULE: ModuleInfo = {
-  label: 'Tableau de bord',
-  icon: '🏠',
-  suggestions: [
-    "Que peux-tu faire pour moi ?",
-    "Présente les modules d'Academia Helm",
-    "Comment démarrer avec l'application ?",
-    "Où trouver l'aide ?",
-  ],
-};
-
 // ─── ROLE-BASED ONBOARDING SUGGESTIONS ────────────────────────────────────
 
 const ROLE_SUGGESTIONS: Record<string, string[]> = {
@@ -277,13 +134,444 @@ function getRoleLabel(role?: string): string {
   return ROLE_LABELS[role] || ROLE_LABELS[role.toLowerCase()] || 'Utilisateur';
 }
 
-// ─── PATH → MODULE DETECTION ──────────────────────────────────────────────
+// ─── UI TYPE DETECTION (admin vs teacher vs parent vs promoter) ──────────
 
-function detectModuleFromPath(pathname: string): string {
+/**
+ * Détecte le type d'UI à partir du pathname.
+ *
+ * Academia Helm a 5 UI distinctes avec des modules différents :
+ *   - admin    : /app/* (sauf /app/teacher et /app/parent) — direction, comptable, secrétaire, surveillant
+ *   - teacher  : /app/teacher/* ou /portal/teacher/* — enseignants
+ *   - parent   : /app/parent/* ou /portal/parent/* — parents d'élèves
+ *   - promoter : /patronat/* — promoteur multi-campus
+ *   - platform : /platform/* — super-admin YEHI OR Tech
+ *
+ * Sarah Guide adapte son discours et ses suggestions selon l'UI.
+ */
+type UIType = 'admin' | 'teacher' | 'parent' | 'promoter' | 'platform';
+
+function detectUIFromPath(pathname: string): UIType {
+  if (!pathname) return 'admin';
+  const lower = pathname.toLowerCase();
+
+  // Platform admin (YEHI OR Tech super-admin)
+  if (lower.startsWith('/platform')) return 'platform';
+  // Promoter multi-campus
+  if (lower.startsWith('/patronat')) return 'promoter';
+  // Teacher portal
+  if (lower.includes('/teacher') || lower.startsWith('/portal/teacher')) return 'teacher';
+  // Parent portal
+  if (lower.includes('/parent') || lower.startsWith('/portal/parent')) return 'parent';
+  // Default: admin UI (/app/* sans /teacher ni /parent)
+  return 'admin';
+}
+
+// ─── UI-SPECIFIC MODULE CATALOGS ─────────────────────────────────────────
+// Chaque UI a ses propres modules et fonctionnalités.
+
+const UI_LABELS: Record<UIType, string> = {
+  admin: 'Administration école',
+  teacher: 'Espace enseignant',
+  parent: 'Espace parent',
+  promoter: 'Multi-campus',
+  platform: 'Platform Admin',
+};
+
+const UI_MODULE_CATALOGS: Record<UIType, Record<string, ModuleInfo>> = {
+  // ─── UI ADMIN (Direction, Comptable, Secrétaire, Surveillant) ────────
+  admin: {
+    students: {
+      label: 'Élèves & Inscriptions',
+      icon: '👨‍🎓',
+      suggestions: [
+        "Comment inscrire un nouvel élève ?",
+        "Où exporter vers Educmaster ?",
+        "Comment gérer les transferts ?",
+        "Comment voir les dossiers incomplets ?",
+      ],
+    },
+    pedagogy: {
+      label: 'Pédagogie',
+      icon: '📚',
+      suggestions: [
+        "Comment créer un emploi du temps ?",
+        "Où gérer les affectations ?",
+        "Comment créer une matière ?",
+        "Comment utiliser la bibliothèque pédagogique ?",
+      ],
+    },
+    exams: {
+      label: 'Examens & Bulletins',
+      icon: '📝',
+      suggestions: [
+        "Comment configurer les examens ?",
+        "Comment publier les bulletins ?",
+        "Comment configurer le calcul des moyennes ?",
+        "Où voir les statistiques ?",
+      ],
+    },
+    finance: {
+      label: 'Finance & Économat',
+      icon: '💰',
+      suggestions: [
+        "Comment voir les impayés ?",
+        "Comment configurer les frais de scolarité ?",
+        "Où voir le rapport financier ?",
+        "Comment lancer une campagne de relance ?",
+      ],
+    },
+    hr: {
+      label: 'RH & Paie',
+      icon: '👥',
+      suggestions: [
+        "Comment ajouter un enseignant ?",
+        "Comment calculer la paie ?",
+        "Où gérer les congés ?",
+        "Comment générer une attestation de travail ?",
+      ],
+    },
+    communication: {
+      label: 'Communication',
+      icon: '📱',
+      suggestions: [
+        "Comment envoyer un SMS ?",
+        "Comment configurer WhatsApp ?",
+        "Comment créer une campagne ?",
+        "Où voir l'historique ?",
+      ],
+    },
+    qhse: {
+      label: 'QHSE & Incidents',
+      icon: '🛡️',
+      suggestions: [
+        "Comment signaler un incident ?",
+        "Où voir les traçabilités ?",
+        "Comment gérer les contrôles ?",
+      ],
+    },
+    orion: {
+      label: 'ORION (IA Analytique)',
+      icon: '🧠',
+      suggestions: [
+        "Comment lire les alertes ORION ?",
+        "Où voir les KPIs ?",
+        "Comment interpréter les recommandations ?",
+        "Quel est mon score ORION ?",
+      ],
+    },
+    atlas: {
+      label: 'ATLAS (IA Exécution)',
+      icon: '🤖',
+      suggestions: [
+        "Comment demander un document à ATLAS ?",
+        "Comment automatiser une tâche ?",
+        "Quelles actions ATLAS peut-il faire ?",
+        "Comment déclencher un workflow ?",
+      ],
+    },
+    settings: {
+      label: 'Paramètres',
+      icon: '⚙️',
+      suggestions: [
+        "Comment configurer mon école ?",
+        "Où gérer les rôles ?",
+        "Comment activer les modules ?",
+        "Comment configurer la facturation ?",
+      ],
+    },
+    dashboard: {
+      label: 'Tableau de bord',
+      icon: '🏠',
+      suggestions: [
+        "Que peux-tu faire pour moi ?",
+        "Présente les modules d'Academia Helm",
+        "Comment démarrer avec l'application ?",
+        "Où trouver l'aide ?",
+      ],
+    },
+  },
+
+  // ─── UI ENSEIGNANT (Portal Teacher) ──────────────────────────────────
+  teacher: {
+    dashboard: {
+      label: 'Mon tableau de bord',
+      icon: '🏠',
+      suggestions: [
+        "Où trouver mon emploi du temps ?",
+        "Comment voir mes classes ?",
+        "Comment saisir les notes ?",
+        "Comment contacter les parents ?",
+      ],
+    },
+    grades: {
+      label: 'Notes & Évaluations',
+      icon: '📝',
+      suggestions: [
+        "Comment saisir les notes ?",
+        "Comment créer une évaluation ?",
+        "Où voir les statistiques de ma classe ?",
+        "Comment modifier une note ?",
+      ],
+    },
+    timetable: {
+      label: 'Emploi du temps',
+      icon: '📅',
+      suggestions: [
+        "Où voir mon EDT ?",
+        "Comment signaler un conflit ?",
+        "Comment voir mes salles ?",
+      ],
+    },
+    library: {
+      label: 'Bibliothèque pédagogique',
+      icon: '📖',
+      suggestions: [
+        "Comment trouver une ressource ?",
+        "Comment partager un exercice ?",
+        "Comment créer un exercice ?",
+      ],
+    },
+    communication: {
+      label: 'Communication parents',
+      icon: '📱',
+      suggestions: [
+        "Comment contacter un parent ?",
+        "Comment envoyer un message à toute la classe ?",
+        "Où voir l'historique ?",
+      ],
+    },
+    attendance: {
+      label: 'Absences & Présences',
+      icon: '✅',
+      suggestions: [
+        "Comment faire l'appel ?",
+        "Comment signaler une absence ?",
+        "Où voir l'historique des absences ?",
+      ],
+    },
+    sara_compose: {
+      label: 'Sara Compose (IA pédagogique)',
+      icon: '✨',
+      suggestions: [
+        "Comment générer un exercice avec Sara ?",
+        "Comment créer une évaluation personnalisée ?",
+        "Que peut générer Sara Compose ?",
+      ],
+    },
+  },
+
+  // ─── UI PARENT-ÉLÈVE (Portal Parent) ─────────────────────────────────
+  parent: {
+    dashboard: {
+      label: 'Mon tableau de bord',
+      icon: '🏠',
+      suggestions: [
+        "Comment voir les notes de mon enfant ?",
+        "Où trouver les factures ?",
+        "Comment payer en ligne ?",
+        "Comment contacter l'école ?",
+      ],
+    },
+    grades: {
+      label: 'Notes & Bulletins',
+      icon: '📝',
+      suggestions: [
+        "Comment voir les notes de mon enfant ?",
+        "Où télécharger le bulletin ?",
+        "Comment interpréter les moyennes ?",
+      ],
+    },
+    attendance: {
+      label: 'Absences',
+      icon: '✅',
+      suggestions: [
+        "Comment voir les absences de mon enfant ?",
+        "Comment justifier une absence ?",
+        "Où voir l'historique ?",
+      ],
+    },
+    payments: {
+      label: 'Factures & Paiements',
+      icon: '💰',
+      suggestions: [
+        "Comment payer en ligne ?",
+        "Quels moyens de paiement sont acceptés ?",
+        "Où voir l'historique des paiements ?",
+        "Comment télécharger un reçu ?",
+      ],
+    },
+    messages: {
+      label: 'Messages école',
+      icon: '📱',
+      suggestions: [
+        "Comment contacter l'école ?",
+        "Où voir les messages reçus ?",
+        "Comment envoyer un message à l'enseignant ?",
+      ],
+    },
+    calendar: {
+      label: 'Calendrier',
+      icon: '📅',
+      suggestions: [
+        "Où voir le calendrier scolaire ?",
+        "Comment être notifié des événements ?",
+      ],
+    },
+  },
+
+  // ─── UI PROMOTEUR (Multi-campus) ─────────────────────────────────────
+  promoter: {
+    dashboard: {
+      label: 'Vue multi-campus',
+      icon: '🏠',
+      suggestions: [
+        "Comment voir tous mes établissements ?",
+        "Où comparer les performances ?",
+        "Comment ajouter une nouvelle école ?",
+        "Où voir le billing consolidé ?",
+      ],
+    },
+    schools: {
+      label: 'Gestion des écoles',
+      icon: '🏫',
+      suggestions: [
+        "Comment ajouter une école ?",
+        "Comment configurer un campus ?",
+        "Où voir les stats par école ?",
+      ],
+    },
+    billing: {
+      label: 'Billing & Facturation',
+      icon: '💰',
+      suggestions: [
+        "Où voir mes factures ?",
+        "Comment changer de plan ?",
+        "Comment ajouter un add-on ?",
+      ],
+    },
+    analytics: {
+      label: 'Analytics groupe',
+      icon: '📊',
+      suggestions: [
+        "Comment comparer mes écoles ?",
+        "Où voir le ROI global ?",
+        "Comment exporter un rapport groupe ?",
+      ],
+    },
+    orion: {
+      label: 'ORION multi-campus',
+      icon: '🧠',
+      suggestions: [
+        "Comment voir les alertes de toutes mes écoles ?",
+        "Où voir les KPIs consolidés ?",
+        "Comment identifier les écoles à risque ?",
+      ],
+    },
+  },
+
+  // ─── UI PLATFORM ADMIN (Super-Admin YEHI OR Tech) ────────────────────
+  platform: {
+    dashboard: {
+      label: 'Platform Dashboard',
+      icon: '🏠',
+      suggestions: [
+        "Combien d'écoles sont actives ?",
+        "Où voir les métriques globales ?",
+        "Comment monitorer le système ?",
+      ],
+    },
+    tenants: {
+      label: 'Gestion tenants',
+      icon: '🏫',
+      suggestions: [
+        "Comment créer un nouveau tenant ?",
+        "Comment suspendre une école ?",
+        "Où voir les tenants inactifs ?",
+      ],
+    },
+    users: {
+      label: 'Utilisateurs globaux',
+      icon: '👥',
+      suggestions: [
+        "Comment chercher un utilisateur ?",
+        "Comment réinitialiser un compte ?",
+        "Où voir les connexions récentes ?",
+      ],
+    },
+    monitoring: {
+      label: 'Monitoring système',
+      icon: '📊',
+      suggestions: [
+        "Où voir la santé du système ?",
+        "Comment voir les erreurs API ?",
+        "Où voir les performances ?",
+      ],
+    },
+    features: {
+      label: 'Feature flags',
+      icon: '🚩',
+      suggestions: [
+        "Comment activer une feature pour une école ?",
+        "Où voir les flags actifs ?",
+        "Comment créer un nouveau flag ?",
+      ],
+    },
+    rbac: {
+      label: 'RBAC global',
+      icon: '🔐',
+      suggestions: [
+        "Comment créer un rôle ?",
+        "Comment assigner une permission ?",
+        "Où voir les rôles par tenant ?",
+      ],
+    },
+  },
+};
+
+// ─── PATH → MODULE DETECTION (adapts to current UI) ──────────────────────
+
+function detectModuleFromPath(pathname: string, uiType: UIType = 'admin'): string {
   if (!pathname) return 'dashboard';
   const lower = pathname.toLowerCase();
 
-  // Order matters: more specific paths first
+  // UI-specific detection
+  if (uiType === 'teacher') {
+    if (lower.includes('/grades') || lower.includes('/notes')) return 'grades';
+    if (lower.includes('/timetable') || lower.includes('/edt')) return 'timetable';
+    if (lower.includes('/library') || lower.includes('/bibliotheque')) return 'library';
+    if (lower.includes('/communication') || lower.includes('/messages')) return 'communication';
+    if (lower.includes('/attendance') || lower.includes('/absences') || lower.includes('/appel')) return 'attendance';
+    if (lower.includes('/sara-compose') || lower.includes('/compose')) return 'sara_compose';
+    return 'dashboard';
+  }
+
+  if (uiType === 'parent') {
+    if (lower.includes('/grades') || lower.includes('/notes') || lower.includes('/bulletins')) return 'grades';
+    if (lower.includes('/attendance') || lower.includes('/absences')) return 'attendance';
+    if (lower.includes('/payments') || lower.includes('/paiements') || lower.includes('/factures')) return 'payments';
+    if (lower.includes('/messages') || lower.includes('/communication')) return 'messages';
+    if (lower.includes('/calendar') || lower.includes('/calendrier')) return 'calendar';
+    return 'dashboard';
+  }
+
+  if (uiType === 'promoter') {
+    if (lower.includes('/schools') || lower.includes('/ecoles')) return 'schools';
+    if (lower.includes('/billing') || lower.includes('/facturation')) return 'billing';
+    if (lower.includes('/analytics') || lower.includes('/statistiques')) return 'analytics';
+    if (lower.includes('/orion')) return 'orion';
+    return 'dashboard';
+  }
+
+  if (uiType === 'platform') {
+    if (lower.includes('/tenants') || lower.includes('/schools')) return 'tenants';
+    if (lower.includes('/users') || lower.includes('/utilisateurs')) return 'users';
+    if (lower.includes('/monitoring')) return 'monitoring';
+    if (lower.includes('/features') || lower.includes('/flags')) return 'features';
+    if (lower.includes('/rbac') || lower.includes('/roles')) return 'rbac';
+    return 'dashboard';
+  }
+
+  // Default: admin UI
   if (lower.includes('/students')) return 'students';
   if (lower.includes('/pedagogy')) return 'pedagogy';
   if (lower.includes('/exams')) return 'exams';
@@ -471,13 +759,18 @@ export default function InAppSaraGuideWidget() {
   const [streamingText, setStreamingText] = useState('');
 
   // Version du chat — purge les anciens messages si on change de version
-  const SARA_GUIDE_VERSION = 'v1-2025-08';
+  const SARA_GUIDE_VERSION = 'v2-2025-08';
 
-  // Détection automatique du rôle et du module courant
+  // ⭐ Détection automatique du type d'UI (admin, teacher, parent, promoter, platform)
+  const uiType = detectUIFromPath(pathname || '');
+
+  // Détection automatique du rôle et du module courant (adapté à l'UI)
   const userRole = user?.role || 'director';
-  const currentModule = detectModuleFromPath(pathname || '');
-  const moduleInfo = MODULE_CATALOG[currentModule] || DEFAULT_MODULE;
+  const currentModule = detectModuleFromPath(pathname || '', uiType);
+  const uiCatalog = UI_MODULE_CATALOGS[uiType] || UI_MODULE_CATALOGS.admin;
+  const moduleInfo = uiCatalog[currentModule] || uiCatalog.dashboard || UI_MODULE_CATALOGS.admin.dashboard;
   const roleLabel = getRoleLabel(userRole);
+  const uiLabel = UI_LABELS[uiType];
 
   // Construire les suggestions : priorité au module courant, puis au rôle
   const activeSuggestions = [
@@ -485,10 +778,10 @@ export default function InAppSaraGuideWidget() {
     ...(ROLE_SUGGESTIONS[userRole.toLowerCase()] || ROLE_SUGGESTIONS.director),
   ].slice(0, 5);
 
-  // Message d'accueil contextuel
+  // Message d'accueil contextuel — adapté à l'UI
   const welcomeMessage = `Shalom ! Je suis **Sarah**, votre guide dans Academia Helm. 👋
 
-Je vois que vous êtes dans le module **${moduleInfo.label}** ${moduleInfo.icon}.
+Je vois que vous êtes dans l'**${uiLabel}** — module **${moduleInfo.label}** ${moduleInfo.icon}.
 En tant que **${roleLabel}**, je peux vous aider à naviguer, comprendre une fonctionnalité, ou accomplir une tâche étape par étape.
 Que souhaitez-vous faire ?`;
 
@@ -552,7 +845,8 @@ Que souhaitez-vous faire ?`;
 
       try {
         // ⭐ Utilisation de saraApi.guideStream() — le nouvel endpoint Sarah Guide
-        const stream = saraApi.guideStream(userMsg, userRole, currentModule, messages);
+        // Passe le type d'UI pour que le backend adapte le prompt (admin/teacher/parent/promoter/platform)
+        const stream = saraApi.guideStream(userMsg, userRole, currentModule, messages, uiType);
 
         for await (const chunk of stream) {
           if (chunk.type === 'delta' && chunk.text) {
@@ -691,7 +985,7 @@ Que souhaitez-vous faire ?`;
                     className="w-1.5 h-1.5 rounded-full inline-block"
                     style={{ backgroundColor: AH.online }}
                   />
-                  {moduleInfo.icon} {moduleInfo.label} · {roleLabel}
+                  {uiLabel} · {moduleInfo.icon} {moduleInfo.label}
                 </p>
               </div>
             </div>
@@ -970,23 +1264,23 @@ Que souhaitez-vous faire ?`;
           style={{ width: '56px', height: '56px' }}
           aria-label="Ouvrir le guide Sarah"
         >
-          {/* Soft glow background */}
+          {/* Soft glow background — subtle on mobile */}
           <div
-            className="absolute inset-0 rounded-full"
+            className="absolute inset-0 rounded-full sara-guide-glow-bg"
             style={{
-              background: `radial-gradient(circle, ${AH.navy600}25 0%, ${AH.gold500}15 45%, transparent 70%)`,
-              filter: 'blur(6px)',
+              background: `radial-gradient(circle, ${AH.navy600}20 0%, ${AH.gold500}10 40%, transparent 65%)`,
+              filter: 'blur(4px)',
               animation: 'sarahGuidePulse 3s ease-in-out infinite',
             }}
           />
 
-          {/* Gold ring */}
+          {/* Gold ring — thin, low opacity */}
           <div
-            className="absolute inset-[-2px] rounded-full"
+            className="absolute inset-[-1.5px] rounded-full sara-guide-gold-ring"
             style={{
               background: `conic-gradient(from 0deg, ${AH.gold500}, ${AH.navy600}, ${AH.gold500}, ${AH.navy600}, ${AH.gold500})`,
               animation: 'sarahGuideRingSpin 6s linear infinite',
-              opacity: 0.7,
+              opacity: 0.55,
             }}
           />
 
@@ -1051,12 +1345,23 @@ Que souhaitez-vous faire ?`;
         @keyframes sarahGuidePulse {
           0%,
           100% {
-            opacity: 0.6;
+            opacity: 0.5;
             transform: scale(1);
           }
           50% {
-            opacity: 1;
-            transform: scale(1.08);
+            opacity: 0.85;
+            transform: scale(1.04);
+          }
+        }
+
+        /* Mobile : halo encore plus subtil pour éviter l'effet épais */
+        @media (max-width: 768px) {
+          .sara-guide-glow-bg {
+            filter: blur(2px) !important;
+            opacity: 0.6 !important;
+          }
+          .sara-guide-gold-ring {
+            opacity: 0.4 !important;
           }
         }
 

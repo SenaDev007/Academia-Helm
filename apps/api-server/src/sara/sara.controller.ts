@@ -272,6 +272,7 @@ export class SaraController {
       query: string;
       userRole?: string;
       currentModule?: string;
+      uiType?: 'admin' | 'teacher' | 'parent' | 'promoter' | 'platform';
       messages?: Array<{ role: string; content: string }>;
     },
     @Res() res: Response,
@@ -287,6 +288,7 @@ export class SaraController {
         body.userRole,
         body.currentModule,
         body.messages,
+        body.uiType,
       );
 
       for await (const chunk of stream) {
@@ -321,6 +323,7 @@ export class SaraController {
       query: string;
       userRole?: string;
       currentModule?: string;
+      uiType?: 'admin' | 'teacher' | 'parent' | 'promoter' | 'platform';
       messages?: Array<{ role: string; content: string }>;
     },
   ) {
@@ -329,6 +332,7 @@ export class SaraController {
       body.userRole,
       body.currentModule,
       body.messages,
+      body.uiType,
     );
   }
 

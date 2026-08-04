@@ -21,6 +21,7 @@ import { DatabaseModule } from '../database/database.module';
 import { SecurityModule } from '../security/security.module';
 import { AdminStructureService } from '../admin-structure/admin-structure.service';
 import { MatriculeGeneratorService } from './services/matricule-generator.service';
+import { ModelEnsembleService } from './services/model-ensemble.service';
 
 @Global()
 @Module({
@@ -42,6 +43,7 @@ import { MatriculeGeneratorService } from './services/matricule-generator.servic
     CredentialEncryptionService,
     AdminStructureService, // Pour LevelScopeGuard
     MatriculeGeneratorService,
+    ModelEnsembleService, // ⭐ Multi-modèle IA (GLM 5.2 + MiniMax-M3 + GPT-OSS-120B)
   ],
   exports: [
     CacheService,
@@ -56,6 +58,7 @@ import { MatriculeGeneratorService } from './services/matricule-generator.servic
     OpenRouterModule,
     AdminStructureService, // Pour LevelScopeGuard dans autres modules
     MatriculeGeneratorService,
+    ModelEnsembleService, // ⭐ Exporté pour que tous les agents puissent l'utiliser
   ],
 })
 export class CommonModule {}

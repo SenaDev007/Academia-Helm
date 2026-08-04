@@ -109,6 +109,8 @@ export interface OpenRouterChatResponse {
   };
   isPlaceholder: boolean;
   reasoning_details?: unknown;
+  /** ⭐ Reasoning content (string) — exposé par MiniMax-M3 et GPT-OSS-120B */
+  reasoning_content?: string;
   /** Nombre de tentatives effectuées */
   attempts?: number;
   /** Modèle fallback utilisé (si différent du modèle demandé) */
@@ -142,16 +144,36 @@ export interface OpenRouterStreamChunk {
 /**
  * Chaîne de fallback des modèles — si le modèle principal échoue,
  * on essaie le modèle suivant dans la liste.
- * Ordre : GLM-5.2 NVIDIA (production) → GLM-5.1 Modal (legacy) → GLM 4.5 Air OpenRouter (fallback gratuit)
  *
- * NOTE : Les fallbacks OpenRouter nécessitent que OPENROUTER_FALLBACK_KEY soit configuré.
- * Si seule la clé NVIDIA est configurée, le fallback se limitera aux modèles NVIDIA.
+ * ⭐ MULTI-MODÈLE (v2 — Août 2025) :
+ *   1. GLM-5.2 (z-ai/glm-5.2) — Modèle principal, reasoning natif
+ *   2. MiniMax-M3 (minimaxai/minimax-m3) — Raisonnement sophistiqué
+ *   3. GPT-OSS-120B (openai/gpt-oss-120b) — Function calling, structured output
+ *   4. GLM-5.1 (zai-org/GLM-5.1-FP8) — Legacy fallback
+ *   5. GLM-4.5-Air (z-ai/glm-4.5-air:free) — Fallback gratuit
+ *
+ * Le routing agent → modèle est géré par ModelEnsembleService :
+ *   - SARA  → GLM-5.2 (rapide, conversationnel)
+ *   - ORION → MiniMax-M3 (raisonnement analytique)
+ *   - ATLAS → GPT-OSS-120B (function calling, structured output)
  */
 const MODEL_FALLBACK_CHAIN: string[] = [
   'z-ai/glm-5.2',
+  'minimaxai/minimax-m3',
+  'openai/gpt-oss-120b',
   'zai-org/GLM-5.1-FP8',
   'z-ai/glm-4.5-air:free',
 ];
+
+/** Mapping persona → modèle NVIDIA recommandé (routing multi-modèle) */
+const PERSONA_MODEL_MAPPING: Record<string, string> = {
+  SARA: 'z-ai/glm-5.2',        // Closer + Guide : rapide, conversationnel
+  ORION: 'minimaxai/minimax-m3', // Analyste : raisonnement sophistiqué
+  ATLAS: 'openai/gpt-oss-120b',  // Exécuteur : function calling, structured output
+  HDIE: 'z-ai/glm-5.2',
+  SCE: 'z-ai/glm-5.2',
+  GENERAL: 'z-ai/glm-5.2',
+};
 
 /** Codes HTTP qui méritent un retry (429 = rate limit, 500-504 = erreur serveur) */
 const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
@@ -230,7 +252,10 @@ export class OpenRouterService {
 
     const maxRetries = options.maxRetries ?? 3;
     const enableFallback = options.enableFallback ?? true;
-    const requestedModel = options.model || this.model;
+    // ⭐ Routing multi-modèle : si aucun modèle n'est explicitement passé,
+    // sélectionner le modèle recommandé pour cette persona (agent)
+    // SARA → GLM-5.2, ORION → MiniMax-M3, ATLAS → GPT-OSS-120B
+    const requestedModel = options.model || PERSONA_MODEL_MAPPING[persona] || this.model;
 
     // Construire la liste de modèles à essayer
     const modelsToTry: string[] = [requestedModel];
@@ -329,7 +354,18 @@ export class OpenRouterService {
       max_tokens: maxTokens,
     };
 
+    // ⭐ Paramètres spécifiques aux modèles multi-modèles
+    // MiniMax-M3 : top_p 0.95, max_tokens 8192
+    // GPT-OSS-120B : top_p 1, max_tokens 4096
+    // GLM-5.2 : top_p 1 (défaut)
+    if (model === 'minimaxai/minimax-m3') {
+      body.top_p = 0.95;
+    } else if (model === 'openai/gpt-oss-120b') {
+      body.top_p = 1;
+    }
+
     // Ajouter le support du reasoning pour GLM 5.2
+    // (MiniMax-M3 et GPT-OSS-120B exposent le reasoning via reasoning_content, pas via paramètre)
     if (enableReasoning) {
       body.reasoning = {
         enabled: true,
@@ -414,7 +450,12 @@ export class OpenRouterService {
     }
 
     // Extraire les reasoning details si disponibles
+    // ⭐ Multi-modèle :
+    //   - GLM-5.2 : reasoning_details (array d'objets)
+    //   - MiniMax-M3 : reasoning_content (string)
+    //   - GPT-OSS-120B : reasoning_content (string)
     const reasoningDetails = choice?.message?.reasoning_details;
+    const reasoningContent = choice?.message?.reasoning_content;
 
     // Extraire les tokens de raisonnement du usage
     const usageData = data?.usage;
@@ -431,6 +472,7 @@ export class OpenRouterService {
       } : undefined,
       isPlaceholder: false,
       reasoning_details: reasoningDetails,
+      reasoning_content: typeof reasoningContent === 'string' ? reasoningContent : undefined,
       finishReason,
     };
   }
@@ -452,7 +494,9 @@ export class OpenRouterService {
 
     await this.enforceRateLimit();
 
-    const requestedModel = options.model || this.model;
+    // ⭐ Routing multi-modèle pour le streaming aussi
+    // SARA → GLM-5.2, ORION → MiniMax-M3, ATLAS → GPT-OSS-120B
+    const requestedModel = options.model || PERSONA_MODEL_MAPPING[persona] || this.model;
     const maxRetries = options.maxRetries ?? 2;
     const enableFallback = options.enableFallback ?? true;
 

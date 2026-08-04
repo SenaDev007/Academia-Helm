@@ -227,6 +227,7 @@ export const saraApi = {
    *   - Elle n'accède à AUCUNE donnée de l'école
    *   - Elle aide UNIQUEMENT à la navigation, l'onboarding, l'explication des modules
    *   - Elle redirige vers ORION/ATLAS/modules pour les données et actions
+   *   - Elle adapte son discours selon l'UI (admin, teacher, parent, promoter, platform)
    *
    * POST /sara/guide/stream
    */
@@ -235,6 +236,7 @@ export const saraApi = {
     userRole?: string,
     currentModule?: string,
     conversationHistory?: Array<{ role: string; content: string }>,
+    uiType?: 'admin' | 'teacher' | 'parent' | 'promoter' | 'platform',
   ): AsyncGenerator<SaraStreamChunk> {
     const apiBaseUrl = getApiBaseUrl();
     const url = `${apiBaseUrl}/sara/guide/stream`;
@@ -265,6 +267,7 @@ export const saraApi = {
           query,
           userRole,
           currentModule,
+          uiType,
           messages: conversationHistory,
         }),
         signal: AbortSignal.timeout(60000),

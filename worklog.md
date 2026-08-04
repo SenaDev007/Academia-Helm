@@ -343,3 +343,72 @@ Stage Summary:
 - Auto-adapts to user role and current module for contextual guidance
 - Redirection logic: data requests → ORION, action requests → ATLAS
 - Git email corrected to s.akpovitohou@gmail.com for Vercel deployment
+
+---
+Task ID: 10
+Agent: main
+Task: Fix halo on mobile + make Sarah Guide UI-aware + multi-model ensemble (GLM 5.2 + MiniMax-M3 + GPT-OSS-120B)
+
+Work Log:
+
+HALO FIX (mobile):
+- SaraWidget.tsx: reduced glow blur from 6px to 4px, gradient opacity 25→20, gold ring inset -2→-1.5px, opacity 0.7→0.55
+- Added CSS class markers (sara-glow-bg, sara-gold-ring) for targeted mobile override
+- Added @media (max-width: 768px) rule: blur 2px, opacity 0.6 for glow, opacity 0.4 for ring
+- Reduced pulse animation scale from 1.08 to 1.04 (less aggressive)
+- Same fix applied to InAppSaraGuideWidget.tsx (sara-guide-glow-bg, sara-guide-gold-ring)
+
+SARAH GUIDE UI-AWARE (contextual adaptation):
+- Added UIType detection (admin, teacher, parent, promoter, platform) via detectUIFromPath()
+- Created UI_MODULE_CATALOGS with specific modules per UI:
+  * admin: 11 modules (students, pedagogy, exams, finance, hr, communication, qhse, orion, atlas, settings, dashboard)
+  * teacher: 7 modules (dashboard, grades, timetable, library, communication, attendance, sara_compose)
+  * parent: 6 modules (dashboard, grades, attendance, payments, messages, calendar)
+  * promoter: 5 modules (dashboard, schools, billing, analytics, orion)
+  * platform: 6 modules (dashboard, tenants, users, monitoring, features, rbac)
+- detectModuleFromPath() now takes uiType param and detects modules per-UI
+- Removed old monolithic MODULE_CATALOG and DEFAULT_MODULE
+- Welcome message now shows UI label + module + role
+- Header subtitle shows UI label + module icon + label
+- saraApi.guideStream() now accepts uiType param
+- Backend sara.controller.ts and sara.service.ts accept uiType
+- New getUIContext() method returns label + modules list + adaptationRule per UI
+- Adaptation rules prevent Sarah from mentioning admin modules to teachers/parents and vice versa
+- Bumped SARA_GUIDE_VERSION to v2-2025-08 (purges old messages)
+
+MULTI-MODEL ENSEMBLE (GLM 5.2 + MiniMax-M3 + GPT-OSS-120B):
+- Created ModelEnsembleService (apps/api-server/src/common/services/model-ensemble.service.ts)
+  * 3 models: glm-5.2, minimax-m3, gpt-oss-120b
+  * Each with specific config (temperature, top_p, max_tokens, supportsReasoning, supportsFunctionCalling)
+  * AGENT_MODEL_MAPPING: SARA→GLM-5.2, ORION→MiniMax-M3, ATLAS→GPT-OSS-120B
+  * buildRequestBody() adapts params per model (top_p 0.95 for MiniMax, 1 for others)
+  * extractResponse() handles both reasoning_details (GLM) and reasoning_content (MiniMax/GPT-OSS)
+  * extractStreamDelta() handles streaming reasoning_content
+  * getFallbackChain() returns model fallback order (GLM 5.2 as universal fallback)
+- Registered ModelEnsembleService in CommonModule (@Global, exported)
+- Updated OpenRouterService:
+  * Added PERSONA_MODEL_MAPPING for automatic agent→model routing
+  * MODEL_FALLBACK_CHAIN now includes all 3 new models
+  * chat() and chatStream() auto-select model based on persona if no model specified
+  * executeChatCall() adds model-specific top_p (0.95 for MiniMax-M3, 1 for GPT-OSS)
+  * executeChatCall() extracts reasoning_content (MiniMax/GPT-OSS) in addition to reasoning_details (GLM)
+  * Added reasoning_content field to OpenRouterChatResponse interface
+- Updated OrionAiService.callGlmModel():
+  * Now tries MiniMax-M3 first (temp=1, top_p=0.95, max_tokens=8192)
+  * Falls back to GLM-5.2 if MiniMax-M3 fails (temp=0.7, top_p=1, max_tokens=2000)
+  * Logs reasoning_content when available (MiniMax-M3 exposes it)
+
+ROUTING SUMMARY:
+  - Sarah Landing (widget) → GLM 5.2 (via Next.js fallback route, unchanged)
+  - Sarah Guide In-App → GLM 5.2 (via OpenRouterService, persona SARA)
+  - Orion → MiniMax-M3 (direct fetch with fallback to GLM 5.2)
+  - Atlas → GPT-OSS-120B (via OpenRouterService, persona ATLAS — automatic routing)
+
+Stage Summary:
+- Halo on mobile is now subtle (blur 2px, opacity 0.6) instead of thick (blur 6px, opacity 1)
+- Sarah Guide is now UI-aware: admin sees admin modules, teacher sees teacher modules, parent sees parent modules
+- Each UI has its own adaptation rule preventing cross-UI module mentions
+- Multi-model ensemble implemented: GLM 5.2 + MiniMax-M3 + GPT-OSS-120B
+- Automatic agent→model routing via PERSONA_MODEL_MAPPING
+- reasoning_content support added for MiniMax-M3 and GPT-OSS-120B
+- Fallback chain: primary model → GLM 5.2 → other models → placeholder

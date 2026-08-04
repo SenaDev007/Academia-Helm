@@ -686,23 +686,23 @@ export default function SaraWidget() {
           style={{ width: '60px', height: '60px' }}
           aria-label="Discuter avec Sarah"
         >
-          {/* Soft glow background */}
+          {/* Soft glow background — subtle on mobile, visible on desktop */}
           <div
-            className="absolute inset-0 rounded-full"
+            className="absolute inset-0 rounded-full sara-glow-bg"
             style={{
-              background: `radial-gradient(circle, ${AH.navy600}25 0%, ${AH.gold500}15 45%, transparent 70%)`,
-              filter: 'blur(6px)',
+              background: `radial-gradient(circle, ${AH.navy600}20 0%, ${AH.gold500}10 40%, transparent 65%)`,
+              filter: 'blur(4px)',
               animation: 'sarahPulse 3s ease-in-out infinite',
             }}
           />
 
-          {/* Gold ring */}
+          {/* Gold ring — thin, low opacity */}
           <div
-            className="absolute inset-[-2px] rounded-full"
+            className="absolute inset-[-1.5px] rounded-full sara-gold-ring"
             style={{
               background: `conic-gradient(from 0deg, ${AH.gold500}, ${AH.navy600}, ${AH.gold500}, ${AH.navy600}, ${AH.gold500})`,
               animation: 'sarahRingSpin 6s linear infinite',
-              opacity: 0.7,
+              opacity: 0.55,
             }}
           />
 
@@ -754,13 +754,24 @@ export default function SaraWidget() {
       {/* ─── ANIMATIONS ──────────────────────────────────────────────────── */}
       <style jsx global>{`
         @keyframes sarahPulse {
-          0%, 100% { opacity: 0.6; transform: scale(1); }
-          50% { opacity: 1; transform: scale(1.08); }
+          0%, 100% { opacity: 0.5; transform: scale(1); }
+          50% { opacity: 0.85; transform: scale(1.04); }
         }
 
         @keyframes sarahRingSpin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
+        }
+
+        /* Mobile : halo encore plus subtil pour éviter l'effet épais */
+        @media (max-width: 768px) {
+          .sara-glow-bg {
+            filter: blur(2px) !important;
+            opacity: 0.6 !important;
+          }
+          .sara-gold-ring {
+            opacity: 0.4 !important;
+          }
         }
 
         /* Custom scrollbar — minimal, branded */

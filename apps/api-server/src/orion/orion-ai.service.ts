@@ -550,13 +550,20 @@ RÈGLES STRICTES
   }
 
   /**
-   * ⭐ Appelle le modèle GLM-5.2 via l'API NVIDIA (OpenAI-compatible endpoint)
+   * ⭐ Appelle le modèle MiniMax-M3 via l'API NVIDIA (OpenAI-compatible endpoint)
+   *
+   * ⭐ MULTI-MODÈLE (v2 — Août 2025) :
+   *   ORION utilise désormais MiniMax-M3 (minimaxai/minimax-m3) pour son raisonnement
+   *   sophistiqué. MiniMax-M3 est optimisé pour :
+   *     - Analyses complexes et prédictions
+   *     - Rapports décisionnels structurés
+   *     - Raisonnement approfondi sur 5 domaines (Académique, RH, Finance, Admin, Sécurité)
+   *
+   *   Paramètres recommandés : temperature=1, top_p=0.95, max_tokens=8192
+   *   Fallback : si MiniMax-M3 échoue, on utilise GLM-5.2 (modèle de secours)
    *
    * Utilise fetch() natif vers ${NVIDIA_BASE_URL}/chat/completions
    * avec Authorization: Bearer ${NVIDIA_API_KEY}.
-   *
-   * Fallback : si l'API n'est pas configurée ou échoue, on retourne une
-   * réponse basique construite à partir du contexte (sans IA).
    */
   private async callGlmModel(
     systemPrompt: string,
@@ -569,45 +576,69 @@ RÈGLES STRICTES
       return this.buildFallbackResponse(context);
     }
 
-    try {
-      const url = `${this.baseUrl}/chat/completions`;
-      const body = {
-        model: this.model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        temperature: 0.7,
-        top_p: 1,
-        max_tokens: 2000,
-        stream: false,
-      };
+    // ⭐ Routing multi-modèle : ORION utilise MiniMax-M3 (raisonnement sophistiqué)
+    // Fallback : GLM-5.2 si MiniMax-M3 échoue
+    const modelsToTry = [
+      { model: 'minimaxai/minimax-m3', temperature: 1, topP: 0.95, maxTokens: 8192 },
+      { model: 'z-ai/glm-5.2', temperature: 0.7, topP: 1, maxTokens: 2000 },
+    ];
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
-          Accept: 'application/json',
-        },
-        body: JSON.stringify(body),
-      });
+    for (const { model, temperature, topP, maxTokens } of modelsToTry) {
+      try {
+        const url = `${this.baseUrl}/chat/completions`;
+        const body = {
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage },
+          ],
+          temperature,
+          top_p: topP,
+          max_tokens: maxTokens,
+          stream: false,
+        };
 
-      if (!response.ok) {
-        const errText = await response.text().catch(() => '');
-        this.logger.error(
-          `GLM-5.2 (NVIDIA) call failed: ${response.status} ${response.statusText} — ${errText.substring(0, 200)}`,
-        );
-        return this.buildFallbackResponse(context);
+        this.logger.log(`ORION calling model: ${model}`);
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.apiKey}`,
+            Accept: 'application/json',
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          const errText = await response.text().catch(() => '');
+          this.logger.warn(
+            `${model} call failed: ${response.status} ${response.statusText} — ${errText.substring(0, 200)}`,
+          );
+          continue; // Essayer le modèle suivant
+        }
+
+        const data = await response.json();
+        const content = data?.choices?.[0]?.message?.content;
+        const reasoningContent = data?.choices?.[0]?.message?.reasoning_content;
+
+        // Logger le reasoning si disponible (MiniMax-M3 et GPT-OSS-120B l'exposent)
+        if (reasoningContent) {
+          this.logger.log(`ORION reasoning (${model}): ${reasoningContent.substring(0, 200)}...`);
+        }
+
+        if (content) {
+          return content;
+        }
+      } catch (error: any) {
+        this.logger.warn(`${model} call failed: ${error.message}`);
+        continue; // Essayer le modèle suivant
       }
-
-      const data = await response.json();
-      const content = data?.choices?.[0]?.message?.content;
-      return content || 'Je n\'ai pas de réponse à vous fournir.';
-    } catch (error: any) {
-      this.logger.error(`GLM-5.2 (NVIDIA) call failed: ${error.message}`);
-      return this.buildFallbackResponse(context);
     }
+
+    // Tous les modèles ont échoué → fallback sans IA
+    this.logger.error('All models failed for ORION — using fallback response');
+    return this.buildFallbackResponse(context);
   }
 
   /**

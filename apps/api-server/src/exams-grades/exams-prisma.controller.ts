@@ -155,6 +155,47 @@ export class ExamsPrismaController {
     );
   }
 
+  /**
+   * GET /api/exams/annual-averages?classId=X&academicYearId=Y
+   * Moyennes annuelles + moyenne de passage pour tous les élèves d'une classe.
+   */
+  @Get('annual-averages')
+  async getAnnualAverages(
+    @TenantId() tenantId: string,
+    @Query('classId') classId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.examsService.getAnnualAverages(tenantId, classId, academicYearId);
+  }
+
+  /**
+   * GET /api/exams/rankings/by-level?schoolLevelId=X&periodId=Y&academicYearId=Z
+   * Rangs par niveau (toutes classes d'un niveau confondues).
+   */
+  @Get('rankings/by-level')
+  async getRankingsByLevel(
+    @TenantId() tenantId: string,
+    @Query('schoolLevelId') schoolLevelId: string,
+    @Query('periodId') periodId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.examsService.getRankingsByLevel(tenantId, schoolLevelId, periodId, academicYearId);
+  }
+
+  /**
+   * GET /api/exams/rankings/by-subject?classId=X&periodId=Y&academicYearId=Z
+   * Rangs par matière pour une classe (meilleurs élèves par matière).
+   */
+  @Get('rankings/by-subject')
+  async getRankingsBySubject(
+    @TenantId() tenantId: string,
+    @Query('classId') classId: string,
+    @Query('periodId') periodId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.examsService.getRankingsBySubject(tenantId, classId, periodId, academicYearId);
+  }
+
   @Post('generate-report-cards')
   async generateReportCards(
     @TenantId() tenantId: string,

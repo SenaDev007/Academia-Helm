@@ -202,29 +202,51 @@ export default function ParentFinancePanel({
                       )}
                     </div>
 
+                    {/* Montant standard de la classe (avant personnalisation) */}
+                    <div className="mt-1.5 text-xs text-gray-500">
+                      <span>Montant standard : </span>
+                      {b.hasOverride ? (
+                        <span className="line-through">{formatMoney(b.standardAmount)}</span>
+                      ) : (
+                        <span className="font-medium text-gray-700">{formatMoney(b.standardAmount)}</span>
+                      )}
+                    </div>
+
                     {/* Personnalisation / Override */}
                     {b.hasOverride && (
                       <div
-                        className="mt-2 rounded-lg p-2 flex items-start gap-2"
-                        style={{ background: `${AH.gold}10`, border: `1px solid ${AH.gold}30` }}
+                        className="mt-2 rounded-lg p-2.5 border"
+                        style={{ background: `${AH.gold}10`, borderColor: `${AH.gold}40` }}
                       >
-                        <TrendingDown className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: AH.gold }} />
-                        <div className="text-xs">
-                          <p className="font-medium text-gray-700">
-                            Personnalisation appliquée
-                          </p>
-                          <p className="text-gray-500">
-                            Montant original : <span className="line-through">{formatMoney(b.originalAmount)}</span>
-                            {' → '}
-                            <span className="font-semibold" style={{ color: AH.gold }}>
-                              {formatMoney(b.overrideAmount || b.adjustedAmount)}
-                            </span>
-                          </p>
-                          {b.overrideReason && (
-                            <p className="text-gray-500 mt-0.5">
-                              <strong>Motif :</strong> {b.overrideReason}
+                        <div className="flex items-start gap-2">
+                          <TrendingDown className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: AH.gold }} />
+                          <div className="text-xs flex-1">
+                            <p className="font-semibold text-gray-800 flex items-center gap-1.5">
+                              Personnalisation appliquée
+                              <span
+                                className="px-1.5 py-0.5 rounded text-[10px] font-bold"
+                                style={{ background: AH.gold, color: AH.navy }}
+                              >
+                                -{b.reductionPercentage}%
+                              </span>
                             </p>
-                          )}
+                            <div className="mt-1 space-y-0.5 text-gray-600">
+                              <p>
+                                Réduction : <span className="font-semibold text-red-600">{formatMoney(b.reductionAmount)}</span>
+                                {' '}({b.reductionPercentage}% du montant standard)
+                              </p>
+                              <p>
+                                Nouveau montant : <span className="font-semibold" style={{ color: AH.gold }}>
+                                  {formatMoney(b.overrideCustomAmount)}
+                                </span>
+                              </p>
+                              {b.overrideReason && (
+                                <p className="mt-1 pt-1 border-t border-gray-200">
+                                  <strong>Motif :</strong> {b.overrideReason}
+                                </p>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     )}

@@ -497,12 +497,16 @@ export class ParentPortalController {
 
     // 3. AccountBreakdowns avec FeeStructure + Override
     // ⚠️ account_breakdowns n'a PAS de tenantId — le tenant est sur student_accounts
+    // ✅ On récupère fs."totalAmount" (montant STANDARD de la classe/niveau) pour
+    // comparer avec fo."customAmount" (montant personnalisé) et détecter l'override.
+    // ab."initialAmount" est déjà le montant APRÈS override (calculé à la création).
     const breakdowns: any = await this.prisma.$queryRawUnsafe(
       `SELECT ab."id", ab."initialAmount", ab."adjustedAmount", ab."paidAmount",
               ab."remainingAmount",
               fs."id" as "feeStructureId", fs."name" as "feeName",
               fs."feeType", fs."customFeeTypeLabel", fs."isMandatory", fs."isActive",
-              fo."customAmount" as "overrideAmount", fo."reason" as "overrideReason"
+              fs."totalAmount" as "standardAmount",
+              fo."customAmount" as "overrideCustomAmount", fo."reason" as "overrideReason"
        FROM "account_breakdowns" ab
        INNER JOIN "fee_structures" fs ON fs."id" = ab."feeStructureId"
        LEFT JOIN "fee_overrides" fo ON fo."feeStructureId" = fs."id" AND fo."studentId" = $1
@@ -549,8 +553,17 @@ export class ParentPortalController {
     ).catch(() => []);
 
     // 6. Formater les breakdowns pour le frontend
+    // ✅ Détection d'override : comparer le montant STANDARD (fs.totalAmount) avec
+    // le montant PERSONNALISÉ (fo.customAmount). Si ils diffèrent → override actif.
+    // ab.initialAmount/adjustedAmount sont déjà le montant après override.
     const formattedBreakdowns = (breakdowns || []).map((b: any) => {
-      const hasOverride = !!b.overrideAmount && Number(b.overrideAmount) !== Number(b.initialAmount);
+      const standardAmount = Number(b.standardAmount || 0);
+      const overrideCustomAmount = b.overrideCustomAmount ? Number(b.overrideCustomAmount) : null;
+      const hasOverride = overrideCustomAmount !== null && overrideCustomAmount !== standardAmount;
+      const reductionAmount = hasOverride ? standardAmount - overrideCustomAmount : 0;
+      const reductionPercentage = hasOverride && standardAmount > 0
+        ? Math.round((reductionAmount / standardAmount) * 100)
+        : 0;
       const feeTypeLabel = this.getFeeTypeLabel(b.feeType, enrollmentType);
       return {
         id: b.id,
@@ -560,13 +573,18 @@ export class ParentPortalController {
         feeTypeLabel,
         customFeeTypeLabel: b.customFeeTypeLabel,
         isMandatory: b.isMandatory,
-        originalAmount: Number(b.initialAmount),
+        // Montant standard de la classe/niveau (avant personnalisation)
+        standardAmount,
+        // Montant après personnalisation (ce que l'élève doit réellement)
         adjustedAmount: Number(b.adjustedAmount),
         paidAmount: Number(b.paidAmount),
         remainingAmount: Number(b.remainingAmount),
+        // Personnalisation / Override
         hasOverride,
-        overrideAmount: hasOverride ? Number(b.overrideAmount) : null,
+        overrideCustomAmount: hasOverride ? overrideCustomAmount : null,
         overrideReason: b.overrideReason || null,
+        reductionAmount: hasOverride ? reductionAmount : 0,
+        reductionPercentage: hasOverride ? reductionPercentage : 0,
         isPersonalized: hasOverride,
       };
     });

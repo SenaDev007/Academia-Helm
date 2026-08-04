@@ -51,7 +51,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       connectionString: databaseUrl,
       max: poolMax,
       idleTimeoutMillis: 30000,       // Close idle connections after 30s
-      connectionTimeoutMillis: 10000,  // Fail fast if DB unreachable (10s)
+      // ✅ 30s pour laisser Neon le temps de se réveiller (cold start = 5-10s)
+      // Avant c'était 10s → timeout quand Neon était suspendu
+      connectionTimeoutMillis: 30000,
     };
     if (needsSsl) {
       poolConfig.ssl = { rejectUnauthorized: false };
@@ -116,34 +118,58 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       this.logger.log('⏭️  SKIP_DB_CHECK=true — skipping Prisma connection warmup');
       return;
     }
-    // Fire-and-forget: warm up the connection pool ONCE at startup
-    const start = Date.now();
-    this.$queryRawUnsafe('SELECT 1')
-      .then(() => {
-        const elapsed = Date.now() - start;
-        this.logger.log(`✅ Prisma connected in ${elapsed}ms`);
-      })
-      .catch((error) => {
-        this.logger.error('❌ Prisma connection warmup failed:', error?.message || error);
-      });
 
-    // ❌ REMOVED: 5-minute keepalive setInterval — was preventing Neon auto-suspend.
-    // Neon's default autosuspend is 5 min of inactivity, so any ping at 5 min intervals
-    // keeps the DB awake forever (= 213 compute-hours / $22.59 on July bill).
-    //
-    // The Neon pooler endpoint (-pooler.c-2.eu-central-1.aws.neon.tech) handles cold
-    // reconnects in <500ms via PgBouncer, so user-perceived latency stays low even
-    // after a cold start. The `idleTimeoutMillis: 30000` pool setting closes idle
-    // connections after 30s, allowing Neon to suspend.
-    //
-    // If cold-start latency becomes an issue, consider:
-    //   1. External cron (cron-job.org, GitHub Actions) that pings /health every 10 min
-    //      during business hours only — keeps DB warm 8am-8pm, suspends at night.
-    //   2. Neon's "Scale to Zero" delay setting (Dashboard → Settings → Compute).
-    //   3. Neon's "Branch Logic" — keep main branch autosuspend, dev branch always-on.
+    // ✅ Warmup avec RETRY — Neon peut être suspendu (cold start 5-10s).
+    // On réessaie 3 fois avec 3s de délai entre chaque tentative.
+    // Cela permet à l'app de démarrer même si Neon met du temps à se réveiller.
+    const warmupWithRetry = async (retries = 3, delayMs = 3000): Promise<void> => {
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        const start = Date.now();
+        try {
+          await this.$queryRawUnsafe('SELECT 1');
+          const elapsed = Date.now() - start;
+          this.logger.log(`✅ Prisma connected in ${elapsed}ms (attempt ${attempt}/${retries})`);
+          return;
+        } catch (error: any) {
+          const elapsed = Date.now() - start;
+          this.logger.warn(
+            `⚠️ Prisma warmup attempt ${attempt}/${retries} failed in ${elapsed}ms: ${error?.message || error}`,
+          );
+          if (attempt < retries) {
+            this.logger.log(`   Retrying in ${delayMs / 1000}s...`);
+            await new Promise((r) => setTimeout(r, delayMs));
+          } else {
+            this.logger.error('❌ Prisma warmup failed after all retries — app will start but DB calls may fail');
+          }
+        }
+      }
+    };
+
+    // Fire-and-forget: warm up in background (non-bloquant pour le bootstrap)
+    warmupWithRetry().catch(() => {});
+
+    // Keepalive : ping la BDD toutes les 5 minutes pour garder la connexion chaude.
+    // Évite les timeouts de connexion après une période d'inactivité entre
+    // Railway et Neon PostgreSQL (cold connection = 10-13s, warm = <1s).
+    this.keepaliveInterval = setInterval(async () => {
+      try {
+        await this.$queryRawUnsafe('SELECT 1');
+      } catch {
+        // Connexion perdue — Prisma va automatiquement se reconnecter
+        // au prochain appel. Le keepalive garantit que la reconnexion
+        // se fait en arrière-plan, pas sur une requête utilisateur.
+        this.logger.warn('⚠️ Prisma keepalive: connection lost, will retry on next query');
+      }
+    }, 5 * 60 * 1000); // 5 minutes
   }
 
+  private keepaliveInterval: NodeJS.Timeout | null = null;
+
   async onModuleDestroy() {
+    if (this.keepaliveInterval) {
+      clearInterval(this.keepaliveInterval);
+      this.keepaliveInterval = null;
+    }
     try {
       const pool = (this as any).__pool as Pool | undefined;
       if (pool) {

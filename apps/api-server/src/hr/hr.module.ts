@@ -67,7 +67,7 @@ import { BillingModule } from '../billing/billing.module';
     PrismaService,
     StaffPrismaService,
     StaffMatriculeService,
-    StorageService,
+    // StorageService fourni par CommonModule (singleton global)
     ContractsPrismaService,
     AttendancePrismaService,
     GeolocationService,
@@ -123,7 +123,7 @@ import { BillingModule } from '../billing/billing.module';
   exports: [
     StaffPrismaService,
     StaffMatriculeService,
-    StorageService,
+    // StorageService fourni par CommonModule (singleton global)
     ContractsPrismaService,
     AttendancePrismaService,
     LeavesPrismaService,

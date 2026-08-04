@@ -720,16 +720,16 @@ export default function SaraWidget() {
             />
           </div>
 
-          {/* Notification badge */}
+          {/* ✅ Green blinking dot (replaces navy "1" badge) */}
           <div
-            className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white border-2"
+            className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 z-10"
             style={{
-              background: AH.navy700,
+              backgroundColor: AH.online,
               borderColor: AH.white,
+              boxShadow: `0 0 6px ${AH.onlineGlow}`,
+              animation: 'sarahDotBlink 2s ease-in-out infinite',
             }}
-          >
-            1
-          </div>
+          />
 
           {/* Hover tooltip */}
           <div
@@ -772,6 +772,12 @@ export default function SaraWidget() {
           .sara-gold-ring {
             opacity: 0.4 !important;
           }
+        }
+
+        /* ✅ Green dot blink animation */
+        @keyframes sarahDotBlink {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.4; transform: scale(0.8); }
         }
 
         /* Custom scrollbar — minimal, branded */

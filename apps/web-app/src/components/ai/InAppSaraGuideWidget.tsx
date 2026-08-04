@@ -972,7 +972,7 @@ Que souhaitez-vous faire ?`;
 
               <div className="flex flex-col leading-tight">
                 <h4 className="font-semibold text-[13px] text-white flex items-center gap-1.5">
-                  Sarah Guide
+                  Sarah
                   <span
                     className="text-[9px] px-1 py-0.5 rounded-sm font-medium tracking-wider uppercase"
                     style={{ background: AH.gold600, color: AH.navy900 }}
@@ -1245,7 +1245,7 @@ Que souhaitez-vous faire ?`;
             {/* Footer branding + redirect notice */}
             <div className="flex items-center justify-center gap-1 mt-1.5">
               <span className="text-[8.5px] tracking-wider font-medium" style={{ color: AH.graphite500 }}>
-                Sarah Guide · Navigation uniquement
+                Sarah · Navigation uniquement
               </span>
               <span className="text-[8.5px]" style={{ color: AH.gold600 }}>
                 ●
@@ -1262,7 +1262,7 @@ Que souhaitez-vous faire ?`;
           onClick={() => setIsOpen(true)}
           className="group relative flex items-center justify-center transition-all duration-300 hover:scale-105 cursor-pointer"
           style={{ width: '56px', height: '56px' }}
-          aria-label="Ouvrir le guide Sarah"
+          aria-label="Discuter avec Sarah"
         >
           {/* Soft glow background — subtle on mobile */}
           <div
@@ -1284,41 +1284,32 @@ Que souhaitez-vous faire ?`;
             }}
           />
 
-          {/* Compass icon (navigation theme) */}
+          {/* ✅ Sarah photo (replaces compass icon) */}
           <div
-            className="relative w-11 h-11 rounded-full flex items-center justify-center shadow-lg"
+            className="relative w-11 h-11 rounded-full overflow-hidden flex items-center justify-center shadow-lg"
             style={{
-              background: `linear-gradient(135deg, ${AH.navy800}, ${AH.navy900})`,
               border: `2px solid ${AH.gold500}`,
             }}
           >
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke={AH.gold500}
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              {/* Compass icon for navigation */}
-              <circle cx="12" cy="12" r="10" />
-              <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
-            </svg>
+            <Image
+              src="/images/SarahAI.webp"
+              alt="Sarah"
+              width={44}
+              height={44}
+              className="w-full h-full object-cover"
+            />
           </div>
 
-          {/* Notification badge */}
+          {/* ✅ Green blinking dot (replaces gold ? badge) */}
           <div
-            className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold border-2"
+            className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 z-10"
             style={{
-              background: AH.gold600,
+              backgroundColor: AH.online,
               borderColor: AH.white,
-              color: AH.navy900,
+              boxShadow: `0 0 6px ${AH.onlineGlow}`,
+              animation: 'sarahGuideDotBlink 2s ease-in-out infinite',
             }}
-          >
-            ?
-          </div>
+          />
 
           {/* Hover tooltip */}
           <div
@@ -1371,6 +1362,18 @@ Que souhaitez-vous faire ?`;
           }
           100% {
             transform: rotate(360deg);
+          }
+        }
+
+        /* ✅ Green dot blink animation */
+        @keyframes sarahGuideDotBlink {
+          0%, 100% {
+            opacity: 1;
+            transform: scale(1);
+          }
+          50% {
+            opacity: 0.4;
+            transform: scale(0.8);
           }
         }
 

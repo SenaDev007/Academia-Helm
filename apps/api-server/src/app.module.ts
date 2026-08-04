@@ -225,8 +225,12 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     // Bibliothèque médias tenant-scoped (CMS institutionnel)
     TenantMediaModule,
 
-    // Auto-migration base64 → R2 au démarrage (non-bloquant, idempotent)
-    StorageMigrationModule,
+    // ⚠️ StorageMigrationModule TEMPORAIREMENT DÉSACTIVÉ — causait un crash DI
+    // au bootstrap. Le service essayait d'injecter StorageService qui était
+    // déclaré dans CommonModule (rendu @Global) MAIS aussi dans 5 feature modules.
+    // Cela créait un conflit de résolution DI qui faisait crasher l'app avant
+    // app.listen(). À réactiver après avoir nettoyé les déclarations dupliquées.
+    // StorageMigrationModule,
 
     // Thèmes du site institutionnel tenant (40 thèmes 21st.dev)
     TenantThemeModule,

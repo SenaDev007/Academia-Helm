@@ -8,7 +8,8 @@
  * ============================================================================
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import {
   Users, Loader2, GraduationCap, Wallet, CalendarCheck,
   BookOpen, AlertCircle, CheckCircle2, XCircle, Clock,
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import { useParentChildren, useParentToday } from '@/lib/query/parent-hooks';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -29,53 +31,21 @@ const STATUS_CONFIG = {
 export default function ParentDashboard() {
   const { user } = useAppSession();
   const { academicYear } = useModuleContext();
-  const [children, setChildren] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selectedChild, setSelectedChild] = useState<any>(null);
-  const [todayData, setTodayData] = useState<any>(null);
-  const [loadingToday, setLoadingToday] = useState(false);
 
-  const loadChildren = useCallback(async () => {
-    if (!user?.id || !academicYear?.id) return;
-    setLoading(true);
-    try {
-      const res = await fetch(
-        `/api/parent/children?parentId=${user.id}&academicYearId=${academicYear.id}`,
-        { credentials: 'include' }
-      );
-      if (!res.ok) throw new Error('Erreur');
-      const data = await res.json();
-      setChildren(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error('Erreur chargement enfants:', err);
-      setChildren([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [user?.id, academicYear?.id]);
+  // ✅ React Query hooks (même pattern que useMyClasses pour les teachers)
+  const { data: children = [], isLoading: loading, refetch, error } = useParentChildren(academicYear?.id);
+  const { data: todayData, isLoading: loadingToday } = useParentToday(
+    selectedChild?.id,
+    academicYear?.id,
+  );
 
-  const loadToday = useCallback(async (studentId: string) => {
-    if (!academicYear?.id) return;
-    setLoadingToday(true);
-    try {
-      const res = await fetch(
-        `/api/parent/today/${studentId}?academicYearId=${academicYear.id}`,
-        { credentials: 'include' }
-      );
-      if (!res.ok) throw new Error('Erreur');
-      const data = await res.json();
-      setTodayData(data);
-    } catch {
-      setTodayData(null);
-    } finally {
-      setLoadingToday(false);
-    }
-  }, [academicYear?.id]);
-
-  useEffect(() => { loadChildren(); }, [loadChildren]);
+  // Auto-select first child when children load
   useEffect(() => {
-    if (selectedChild) loadToday(selectedChild.id);
-  }, [selectedChild, loadToday]);
+    if (children.length > 0 && !selectedChild) {
+      setSelectedChild(children[0]);
+    }
+  }, [children, selectedChild]);
 
   if (loading) {
     return (
@@ -111,7 +81,7 @@ export default function ParentDashboard() {
             {children.length} enfant(s) · {academicYear?.label || 'Année courante'}
           </p>
         </div>
-        <button onClick={loadChildren} className="p-2 hover:bg-gray-100 rounded-lg">
+        <button onClick={() => refetch()} className="p-2 hover:bg-gray-100 rounded-lg" title="Rafraîchir">
           <RefreshCw className="w-5 h-5 text-gray-500" />
         </button>
       </div>
@@ -125,14 +95,12 @@ export default function ParentDashboard() {
           const isPaid = balance <= 0;
 
           return (
-            <button
+            <Link
               key={child.id}
-              onClick={() => setSelectedChild(child)}
+              href={`/app/parent/children/${child.id}`}
               className={cn(
-                "text-left p-5 rounded-2xl border-2 transition-all",
-                isSelected
-                  ? "border-blue-500 bg-blue-50/50 shadow-md"
-                  : "border-gray-200 bg-white hover:border-blue-300 hover:shadow-sm"
+                "block text-left p-5 rounded-2xl border-2 transition-all",
+                "border-gray-200 bg-white hover:border-blue-300 hover:shadow-md cursor-pointer"
               )}
             >
               {/* Photo + Nom */}
@@ -175,10 +143,10 @@ export default function ParentDashboard() {
 
               {/* Lien détail */}
               <div className="flex items-center gap-1 text-xs text-blue-600 font-semibold mt-3">
-                Voir le suivi
+                Voir le détail
                 <ChevronRight className="w-3 h-3" />
               </div>
-            </button>
+            </Link>
           );
         })}
       </div>

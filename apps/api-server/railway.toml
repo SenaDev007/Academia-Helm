@@ -1,63 +1,17 @@
-# ============================================================================
-# Railway Configuration — Academia Helm API
-# ============================================================================
-# Railway utilise le Dockerfile existant. Ce fichier configure les variables
-# d'environnement et le healthcheck.
-# ============================================================================
-
 [deploy]
-  # Railway utilise le Dockerfile à la racine du dossier apps/api-server
-  # Le Dockerfile existe déjà et est compatible Railway
-  startCommand = "node --max-old-space-size=1536 dist/main.js"
-  healthcheckPath = "/health"
-  healthcheckTimeout = 30
-  restartPolicyType = "ON_FAILURE"
-  restartPolicyMaxRetries = 3
+  [deploy.healthcheck]
+    type = "http"
+    port = 3000
+    path = "/health"
+    grace_period = 300
 
-# Variables d'environnement à configurer sur Railway :
-# (à set via `railway variables set` ou le dashboard Railway)
-#
-# OBLIGATOIRES :
-#   DATABASE_URL=postgresql://neondb_owner:npg_Nio3WadxL0qb@ep-curly-frost-agx7owra-pooler.c-2.eu-central-1.aws.neon.tech/AcademiaHelm?sslmode=require&channel_binding=require
-#   JWT_SECRET=<votre-secret-jwt-32-chars-min>
-#   NODE_ENV=production
-#   PORT=3000
-#
-# STORAGE — Cloudflare R2 (OBJECT STORAGE pour logos, PDF, images, documents) :
-#   STORAGE_TYPE=r2
-#   S3_ACCESS_KEY_ID=<r2-access-key-id>
-#   S3_SECRET_ACCESS_KEY=<r2-secret-access-key>
-#   S3_BUCKET=academia-helm-releases
-#   S3_ENDPOINT=https://151a2a130fbe6fcc2998740587b72b1b.r2.cloudflarestorage.com
-#   S3_PUBLIC_URL=https://downloads.academiahelm.com
-#   S3_REGION=auto
-#
-# ⚡ Auto-migration au démarrage :
-#   Lorsque STORAGE_TYPE=r2, le StorageMigrationService scanne automatiquement
-#   les tables tenant_identity_profiles.logoUrl et schools.logo au démarrage
-#   (après 30s de délai pour ne pas ralentir le bootstrap) et migre toute
-#   entrée base64 vers R2. Aucune intervention manuelle requise.
-#   Désactivé automatiquement si STORAGE_TYPE != 'r2'/'s3'.
-#
-# PUPPETEER (PDF generation) :
-#   PUPPETEER_SKIP_DOWNLOAD=true
-#   PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-#
-# REDIS (Upstash) :
-#   UPSTASH_REDIS_REST_URL=<votre-url-upstash>
-#   UPSTASH_REDIS_REST_TOKEN=<votre-token-upstash>
-#
-# AI (NVIDIA GLM-5.2 — provider principal) :
-#   NVIDIA_API_KEY=<votre-key-nvidia>
-#   NVIDIA_MODEL=z-ai/glm-5.2
-#   NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
-# Legacy Modal/OpenRouter (rétro-compatibilité — ignoré si NVIDIA_* défini) :
-#   OPENROUTER_API_KEY=<votre-key>
-#   OPENROUTER_MODEL=zai-org/GLM-5.1-FP8
-#   OPENROUTER_BASE_URL=https://api.us-west-2.modal.direct/v1
-#
-# SMTP (Email) :
-#   SMTP_HOST=<votre-host>
-#   SMTP_PORT=587
-#   SMTP_USER=<votre-user>
-#   SMTP_PASS=<votre-pass>
+[env]
+  # 384MB heap max — adapté pour une VM 512MB (Fly.io, Railway, Render free tier).
+  # Répartition mémoire sur 512MB :
+  #   - OS + init : ~60MB
+  #   - Node runtime (non-heap) : ~60MB
+  #   - Prisma Client (534 modèles) : ~150MB
+  #   - Pool PostgreSQL (3 connexions) : ~21MB
+  #   - V8 heap : jusqu'à 384MB (mais GC agressif avant)
+  #   Total max théorique : ~675MB → GC tient le heap sous ~250MB en pratique
+  NODE_OPTIONS = "--max-old-space-size=768"

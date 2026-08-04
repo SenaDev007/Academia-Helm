@@ -62,17 +62,6 @@ export class StorageService {
 
       this.s3Client = new S3Client(clientConfig);
       this.logger.log(`Storage initialized: ${this.storageType.toUpperCase()} (bucket: ${this.bucketName})`);
-
-      // ─── Health-check : valider la configuration R2/S3 au démarrage ──────
-      // Non-bloquant : si le check échoue, on log une erreur mais on ne crash pas
-      // (permet à l'app de démarrer même si R2 est temporairement down).
-      this.runHealthCheck().catch((err) => {
-        this.logger.error(
-          `⚠️  Storage health-check failed: ${err.message}\n` +
-          `   STORAGE_TYPE=${this.storageType}, BUCKET=${this.bucketName}, ENDPOINT=${endpoint || '(default)'}\n` +
-          `   Les uploads vont échouer jusqu'à résolution. Vérifie les credentials R2.`,
-        );
-      });
     } else if (this.storageType === 'vercel-blob') {
       if (!this.blobToken) {
         this.logger.error('BLOB_READ_WRITE_TOKEN is not set! Vercel Blob storage will not work.');

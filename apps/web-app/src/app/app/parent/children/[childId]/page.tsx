@@ -36,6 +36,7 @@ import {
 } from "@/lib/exports/parent-exports";
 import { openFedaPayCheckout } from "@/lib/parent/fedapay-checkout";
 import { financeService } from "@/services/finance.service";
+import ParentFinancePanel from "@/components/parent/ParentFinancePanel";
 import { ParentPaymentHistory } from "@/components/parent/ParentPaymentHistory";
 import { PaymentSuccessBanner } from "@/components/parent/PaymentSuccessBanner";
 
@@ -198,7 +199,14 @@ export default function ParentChildDetailPage() {
       ) : (
         <>
           {activeTab === "today" && <TodayTab child={child} todayData={todayData} />}
-          {activeTab === "payments" && <PaymentsTab child={child} />}
+          {activeTab === "payments" && (
+            <ParentFinancePanel
+              studentId={child.id}
+              studentFirstName={child.firstName}
+              studentLastName={child.lastName}
+              studentMatricule={child.matricule}
+            />
+          )}
           {activeTab === "results" && (
             <ResultsTab
               child={child}

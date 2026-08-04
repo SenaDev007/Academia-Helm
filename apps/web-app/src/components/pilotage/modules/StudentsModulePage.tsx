@@ -310,8 +310,15 @@ export default function StudentsModulePage() {
           body: JSON.stringify(formData),
         });
         if (response.ok) {
+          // ✅ Reset selectedStudent to avoid stale form data on next "Créer"
+          setSelectedStudent(null);
           setIsEditModalOpen(false);
           loadStudents();
+          loadStatistics(); // ✅ FIX: was missing — caused dashboard KPIs to show 00
+        } else {
+          const err = await response.json().catch(() => ({}));
+          console.error('Update failed:', err);
+          alert(`Erreur lors de la modification: ${err.message || response.statusText}`);
         }
       } else {
         // Create
@@ -325,13 +332,19 @@ export default function StudentsModulePage() {
           }),
         });
         if (response.ok) {
+          setSelectedStudent(null);
           setIsCreateModalOpen(false);
           loadStudents();
           loadStatistics();
+        } else {
+          const err = await response.json().catch(() => ({}));
+          console.error('Create failed:', err);
+          alert(`Erreur lors de la création: ${err.message || response.statusText}`);
         }
       }
     } catch (error) {
       console.error('Failed to save student:', error);
+      alert(`Erreur: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
     }
   };
 

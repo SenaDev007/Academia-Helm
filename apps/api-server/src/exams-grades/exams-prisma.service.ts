@@ -661,19 +661,23 @@ export class ExamsPrismaService {
       include: { subject: true },
     });
 
-    // 4. Fetch validated scores
-    const scores = await this.prisma.examScore.findMany({
+    // 4. Fetch validated grades (NOT ExamScore — teachers enter grades via Grade table)
+    // ✅ FIX: was reading from examScore (legacy table), now reads from Grade (where
+    // teachers actually enter scores via GradingSheet → /institutional-exams/grades/bulk)
+    const grades = await this.prisma.grade.findMany({
       where: {
         tenantId,
         academicYearId,
-        isValidated: true,
-        exam: {
-          classId,
-          quarterId: periodId,
-        },
+        classId,
+        periodId,
+        status: 'VALIDATED',
       },
       include: {
-        exam: true,
+        evaluation: {
+          include: {
+            evaluationType: true,
+          },
+        },
       },
     });
 
@@ -686,21 +690,61 @@ export class ExamsPrismaService {
       const generalAvgInput: any[] = [];
 
       for (const cs of classSubjects) {
-        const studentSubjScores = scores.filter(
-          (s) => s.studentId === enrollment.studentId && s.subjectId === cs.subjectId,
+        // Get all validated grades for this student + subject
+        const studentSubjGrades = grades.filter(
+          (g) => g.studentId === enrollment.studentId && g.subjectId === cs.subjectId,
         );
 
+        // Skip absent students
+        const validGrades = studentSubjGrades.filter(g => !g.isAbsent && g.score !== null);
+
+        if (validGrades.length === 0) {
+          // No grades for this subject — skip (don't count as 0)
+          continue;
+        }
+
+        // ✅ Maternelle: qualitative evaluation (TS/S/PS)
+        // Convert qualitative codes to numeric values for calculation
+        const isQualitative = validGrades.some(g => g.qualitativeCode);
+        if (isQualitative) {
+          // TS=3, S=2, PS=1 — used for backend calculation
+          const qualitativeMap: Record<string, number> = { 'TS': 3, 'S': 2, 'PS': 1, 'NS': 0 };
+          const numericValues = validGrades.map(g =>
+            g.qualitativeCode ? (qualitativeMap[g.qualitativeCode] ?? 0) : (g.score ?? 0)
+          );
+          const avg = numericValues.reduce((a, b) => a + b, 0) / numericValues.length;
+
+          // Convert back to appreciation
+          const appreciation = avg >= 2.5 ? 'Très Satisfaisant' : avg >= 1.5 ? 'Satisfaisant' : 'Peu Satisfaisant';
+
+          subjectAverages[cs.subjectId] = avg;
+          frontendSubjectAverages[cs.subject.name] = avg;
+          frontendSubjectAverages[`${cs.subject.name}_appreciation`] = appreciation as any;
+          frontendSubjectAverages[`${cs.subject.name}_qualitative`] = true as any;
+          generalAvgInput.push({
+            average: avg,
+            coefficient: cs.coefficient,
+          });
+          continue;
+        }
+
+        // ✅ Primaire/Secondaire: numeric scores
+        // Group by evaluation type (EM1, EM2, EC, DS1, DS2, IE1, IE2, etc.)
         const assessmentScores: Record<string, number> = {};
-        studentSubjScores.forEach((s) => {
-          if (assessmentScores[s.exam.examType] !== undefined) {
-            assessmentScores[s.exam.examType] =
-              (assessmentScores[s.exam.examType] + s.score) / 2;
+        validGrades.forEach((g) => {
+          const evalTypeName = g.evaluation?.evaluationType?.name || 'UNKNOWN';
+          // Map common names to formula placeholders
+          const placeholder = this.mapEvaluationTypeToPlaceholder(evalTypeName);
+          if (assessmentScores[placeholder] !== undefined) {
+            // Average duplicates of same type
+            assessmentScores[placeholder] =
+              (assessmentScores[placeholder] + (g.score ?? 0)) / 2;
           } else {
-            assessmentScores[s.exam.examType] = s.score;
+            assessmentScores[placeholder] = g.score ?? 0;
           }
         });
 
-        // Fill missing scores with 0 if required
+        // Calculate subject average using rules engine
         const subjectAvg = this.rulesEngine.evaluateSubjectAverage(
           assessmentScores,
           { expression: subjectFormula, type: 'formula' },
@@ -714,7 +758,12 @@ export class ExamsPrismaService {
         });
       }
 
-      const generalAverage = this.rulesEngine.evaluateGeneralAverage(generalAvgInput);
+      // ✅ General average: weighted by coefficients (from ClassSubject)
+      // For 6e/5e (no coefficients): all coefficients = 1 → simple average
+      // For 4e/3e (with coefficients): weighted average
+      const generalAverage = generalAvgInput.length > 0
+        ? this.rulesEngine.evaluateGeneralAverage(generalAvgInput)
+        : 0;
 
       studentsList.push({
         studentId: enrollment.studentId,
@@ -797,6 +846,42 @@ export class ExamsPrismaService {
   }
 
   /**
+   * ✅ Map evaluation type names to formula placeholders.
+   * Supports both French and English naming conventions.
+   * Examples:
+   *   "Évaluation mensuelle 1" → "EM1"
+   *   "Évaluation mensuelle 2" → "EM2"
+   *   "Évaluation certificative" → "EC"
+   *   "Devoir surveillé 1" → "DS1"
+   *   "Interrogation écrite 1" → "IE1"
+   *   "Devoir 1" → "DEVOIR_1"
+   *   "Composition" → "COMPOSITION"
+   */
+  private mapEvaluationTypeToPlaceholder(name: string): string {
+    const upper = name.toUpperCase().trim();
+
+    // Primaire: EM1, EM2, EC, EP
+    if (upper.includes('MENSUELLE 1') || upper.includes('EM1')) return 'EM1';
+    if (upper.includes('MENSUELLE 2') || upper.includes('EM2')) return 'EM2';
+    if (upper.includes('CERTIFICATIVE') || upper.includes('EC')) return 'EC';
+    if (upper.includes('PASSAGE') || upper.includes('EP')) return 'EP';
+
+    // Secondaire: IE1, IE2, DS1, DS2
+    if (upper.includes('INTERROGATION') && (upper.includes('1') || upper.includes('I'))) return 'IE1';
+    if (upper.includes('INTERROGATION') && (upper.includes('2') || upper.includes('II'))) return 'IE2';
+    if (upper.includes('DEVOIR SURVEILL') && (upper.includes('1') || upper.includes('I'))) return 'DS1';
+    if (upper.includes('DEVOIR SURVEILL') && (upper.includes('2') || upper.includes('II'))) return 'DS2';
+
+    // Generic: Devoir 1/2, Composition
+    if (upper.includes('DEVOIR 1') || upper === 'DEVOIR_1') return 'DEVOIR_1';
+    if (upper.includes('DEVOIR 2') || upper === 'DEVOIR_2') return 'DEVOIR_2';
+    if (upper.includes('COMPOSITION')) return 'COMPOSITION';
+
+    // Fallback: use the raw name as placeholder
+    return upper.replace(/\s+/g, '_');
+  }
+
+  /**
    * GET /api/exams/averages
    */
   async getAverages(tenantId: string, classId: string, periodId: string, academicYearId: string) {
@@ -809,6 +894,311 @@ export class ExamsPrismaService {
    */
   async calculateAverages(tenantId: string, classId: string, periodId: string, academicYearId: string) {
     return this.computeClassAveragesInternal(tenantId, classId, periodId, academicYearId);
+  }
+
+  /**
+   * GET /api/exams/annual-averages?classId=X&academicYearId=Y
+   *
+   * Calcule la moyenne annuelle + moyenne de passage pour tous les élèves d'une classe.
+   *
+   * Formule primaire/maternelle :
+   *   Moyenne EM annuelle = (Moyenne EM trim1 + trim2 + trim3) / 3
+   *   Moyenne EC annuelle = (EC trim1 + trim2 + trim3) / 3
+   *   Moyenne annuelle = (Moyenne EM + Moyenne EC) / 2
+   *   Moyenne de passage = (Moyenne annuelle + EP) / 2
+   *
+   * Formule secondaire :
+   *   Moyenne annuelle = (Trim1 + Trim2 + Trim3) / 3
+   */
+  async getAnnualAverages(tenantId: string, classId: string, academicYearId: string) {
+    // Récupérer les trimestres (périodes) de l'année
+    const periods = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT id, name, "orderIndex"
+      FROM "academic_periods"
+      WHERE "academicYearId" = $1 AND "tenantId" = $2
+      AND "type" = 'TRIMESTER'
+      ORDER BY "orderIndex"
+    `, [academicYearId, tenantId]).catch(() => []);
+
+    if (!periods || periods.length === 0) {
+      throw new BadRequestException('Aucun trimestre trouvé pour cette année scolaire');
+    }
+
+    // Calculer les moyennes par trimestre pour chaque élève
+    const trimesterAverages: Record<string, any[]> = {}; // periodId → results
+
+    for (const period of periods) {
+      try {
+        const results = await this.computeClassAveragesInternal(
+          tenantId, classId, period.id, academicYearId,
+        );
+        trimesterAverages[period.id] = results;
+      } catch {
+        // Si un trimestre n'a pas de notes, on l'ignore
+        trimesterAverages[period.id] = [];
+      }
+    }
+
+    // Récupérer les notes de l'évaluation de passage (EP)
+    const passageGrades = await this.prisma.grade.findMany({
+      where: {
+        tenantId, academicYearId, classId,
+        status: 'VALIDATED',
+        evaluation: {
+          evaluationType: { name: { contains: 'passage', mode: 'insensitive' } },
+        },
+      },
+      include: { evaluation: { include: { evaluationType: true } } },
+    }).catch(() => []);
+
+    // Récupérer les inscriptions
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: { classId, tenantId, academicYearId },
+      include: { student: true },
+    });
+
+    // Pour chaque élève : calculer la moyenne annuelle + passage
+    const annualResults = enrollments.map((enrollment) => {
+      const studentId = enrollment.studentId;
+
+      // Collecter les moyennes trimestrielles
+      const trimAverages: number[] = [];
+      const trimDetails: any[] = [];
+
+      for (const period of periods) {
+        const trimResult = (trimesterAverages[period.id] || []).find(
+          (r: any) => r.id === studentId,
+        );
+        if (trimResult) {
+          trimAverages.push(trimResult.generalAverage);
+          trimDetails.push({
+            periodId: period.id,
+            periodName: period.name,
+            average: trimResult.generalAverage,
+            rank: trimResult.classRank,
+          });
+        }
+      }
+
+      if (trimAverages.length === 0) {
+        return {
+          studentId,
+          student: {
+            lastName: enrollment.student.lastName,
+            firstName: enrollment.student.firstName,
+            matricule: enrollment.localStudentMatricule ?? enrollment.student.matricule,
+          },
+          trimesterDetails: [],
+          annualAverage: 0,
+          passageAverage: null,
+          passageStatus: 'N/A',
+        };
+      }
+
+      // Moyenne annuelle = moyenne des moyennes trimestrielles
+      const annualAverage = trimAverages.reduce((a, b) => a + b, 0) / trimAverages.length;
+
+      // Moyenne de passage (si EP existe)
+      let passageAverage: number | null = null;
+      let passageStatus = 'N/A';
+
+      const studentPassageGrades = passageGrades.filter(g => g.studentId === studentId);
+      if (studentPassageGrades.length > 0) {
+        // Moyenne EP = somme des notes / nombre de matières
+        const epScores = studentPassageGrades.filter(g => !g.isAbsent && g.score !== null);
+        if (epScores.length > 0) {
+          const epAverage = epScores.reduce((sum, g) => sum + (g.score ?? 0), 0) / epScores.length;
+          passageAverage = (annualAverage + epAverage) / 2;
+          passageStatus = passageAverage >= 10 ? 'ADMIS' : 'REDOUBLANT';
+        }
+      }
+
+      return {
+        studentId,
+        student: {
+          lastName: enrollment.student.lastName,
+          firstName: enrollment.student.firstName,
+          matricule: enrollment.localStudentMatricule ?? enrollment.student.matricule,
+        },
+        trimesterDetails: trimDetails,
+        annualAverage: Number(annualAverage.toFixed(2)),
+        passageAverage: passageAverage !== null ? Number(passageAverage.toFixed(2)) : null,
+        passageStatus,
+      };
+    });
+
+    // Trier par moyenne annuelle décroissante
+    annualResults.sort((a, b) => b.annualAverage - a.annualAverage);
+
+    // Assigner les rangs annuels
+    annualResults.forEach((r, idx) => {
+      r.annualRank = idx + 1;
+    });
+
+    return annualResults;
+  }
+
+  /**
+   * GET /api/exams/rankings/by-level?schoolLevelId=X&periodId=Y&academicYearId=Z
+   *
+   * Calcule les rangs par niveau (toutes classes d'un niveau confondues).
+   * Ex: tous les élèves de Maternelle classés par moyenne générale.
+   */
+  async getRankingsByLevel(
+    tenantId: string,
+    schoolLevelId: string,
+    periodId: string,
+    academicYearId: string,
+  ) {
+    // Récupérer toutes les classes du niveau
+    const classes = await this.prisma.class.findMany({
+      where: { tenantId, schoolLevelId },
+    });
+
+    if (!classes || classes.length === 0) {
+      return [];
+    }
+
+    // Calculer les moyennes pour chaque classe
+    const allStudents: any[] = [];
+
+    for (const cls of classes) {
+      try {
+        const results = await this.computeClassAveragesInternal(
+          tenantId, cls.id, periodId, academicYearId,
+        );
+        // Ajouter le nom de la classe à chaque résultat
+        results.forEach((r: any) => {
+          allStudents.push({
+            ...r,
+            classId: cls.id,
+            className: cls.name,
+          });
+        });
+      } catch {
+        // Skip classes with no data
+      }
+    }
+
+    // Trier par moyenne décroissante
+    allStudents.sort((a, b) => b.generalAverage - a.generalAverage);
+
+    // Assigner les rangs par niveau
+    const tieMode = 'SAME_RANK';
+    const ranked = this.rulesEngine.computeRankings(
+      allStudents.map((s) => ({ id: s.id, average: s.generalAverage })),
+      tieMode,
+    );
+
+    allStudents.forEach((s) => {
+      const rankObj = ranked.find((r) => r.id === s.id);
+      s.levelRank = rankObj ? rankObj.rank : 0;
+    });
+
+    return allStudents;
+  }
+
+  /**
+   * GET /api/exams/rankings/by-subject?classId=X&periodId=Y&academicYearId=Z
+   *
+   * Calcule les rangs par matière pour une classe.
+   * Retourne pour chaque matière le classement des élèves.
+   */
+  async getRankingsBySubject(
+    tenantId: string,
+    classId: string,
+    periodId: string,
+    academicYearId: string,
+  ) {
+    // Récupérer les matières de la classe
+    const classSubjects = await this.prisma.classSubject.findMany({
+      where: { classId, tenantId, academicYearId },
+      include: { subject: true },
+    });
+
+    if (!classSubjects || classSubjects.length === 0) {
+      return [];
+    }
+
+    // Récupérer les notes validées
+    const grades = await this.prisma.grade.findMany({
+      where: {
+        tenantId, academicYearId, classId, periodId,
+        status: 'VALIDATED',
+      },
+      include: {
+        evaluation: { include: { evaluationType: true } },
+      },
+    });
+
+    // Récupérer les élèves
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: { classId, tenantId, academicYearId },
+      include: { student: true },
+    });
+
+    const results: any[] = [];
+
+    for (const cs of classSubjects) {
+      const subjectRankings: any[] = [];
+
+      for (const enrollment of enrollments) {
+        const studentGrades = grades.filter(
+          g => g.studentId === enrollment.studentId &&
+               g.subjectId === cs.subjectId &&
+               !g.isAbsent &&
+               g.score !== null,
+        );
+
+        if (studentGrades.length === 0) continue;
+
+        // Pour le maternelle (qualitatif)
+        const isQualitative = studentGrades.some(g => g.qualitativeCode);
+        let subjectAverage: number;
+
+        if (isQualitative) {
+          const qualitativeMap: Record<string, number> = { 'TS': 3, 'S': 2, 'PS': 1, 'NS': 0 };
+          const numericValues = studentGrades.map(g =>
+            g.qualitativeCode ? (qualitativeMap[g.qualitativeCode] ?? 0) : (g.score ?? 0)
+          );
+          subjectAverage = numericValues.reduce((a, b) => a + b, 0) / numericValues.length;
+        } else {
+          // Moyenne simple des notes
+          subjectAverage = studentGrades.reduce((sum, g) => sum + (g.score ?? 0), 0) / studentGrades.length;
+        }
+
+        subjectRankings.push({
+          studentId: enrollment.studentId,
+          studentName: `${enrollment.student.firstName} ${enrollment.student.lastName}`,
+          matricule: enrollment.localStudentMatricule ?? enrollment.student.matricule,
+          subjectAverage: Number(subjectAverage.toFixed(2)),
+          isQualitative,
+        });
+      }
+
+      // Trier par moyenne décroissante
+      subjectRankings.sort((a, b) => b.subjectAverage - a.subjectAverage);
+
+      // Assigner les rangs
+      const ranked = this.rulesEngine.computeRankings(
+        subjectRankings.map((s) => ({ id: s.studentId, average: s.subjectAverage })),
+        'SAME_RANK',
+      );
+
+      subjectRankings.forEach((s) => {
+        const rankObj = ranked.find((r) => r.id === s.studentId);
+        s.subjectRank = rankObj ? rankObj.rank : 0;
+      });
+
+      results.push({
+        subjectId: cs.subjectId,
+        subjectName: cs.subject.name,
+        coefficient: cs.coefficient,
+        rankings: subjectRankings,
+      });
+    }
+
+    return results;
   }
 
   /**

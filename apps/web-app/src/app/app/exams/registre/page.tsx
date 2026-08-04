@@ -20,7 +20,7 @@
  * ============================================================================
  */
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Loader2, ClipboardList, Download, AlertCircle, FileText,
@@ -33,14 +33,26 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { academicSettingsService } from '@/services/academic-settings.service';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
-import { useExamSubModules } from '../layout';
+import { useExamSubModules, useExamScope } from '../layout';
+import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 
 function RegistreContent() {
   const searchParams = useSearchParams();
-  const { academicYear, schoolLevel } = useModuleContext();
+  const { academicYear } = useModuleContext();
+  const { availableLevels } = useSchoolLevel();
+  const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
 
-  const levelCode = searchParams.get('level') || '';
-  const language = searchParams.get('lang') || 'FR';
+  const levelCode = scopeLevel || searchParams.get('level') || '';
+  const language = scopeLang || searchParams.get('lang') || 'FR';
+
+  // ✅ FIX: Resolve schoolLevelUuid from URL scope (same pattern as evaluations/grades pages)
+  // useModuleContext().schoolLevel.id is education_levels.id, NOT school_levels.id
+  // which is what classes.schoolLevelId references
+  const activeLevel = useMemo(() =>
+    (availableLevels || []).find(
+      (l: any) => (l.code || '').toUpperCase() === levelCode && l.id !== 'ALL'
+    ), [availableLevels, levelCode]);
+  const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
 
   const [loading, setLoading] = useState(true);
   const [schema, setSchema] = useState<any>(null);
@@ -67,17 +79,38 @@ function RegistreContent() {
     }
   }, [academicYear?.id, levelCode, language]);
 
-  // ── Charger les classes du niveau ──────────────────────────────────────────
+  // ── Charger les classes du niveau (pattern identique à evaluations/grades) ──
   const loadClasses = useCallback(async () => {
-    if (!schoolLevel?.id) return;
+    if (!schoolLevelUuid) return;
     try {
-      const res = await fetch(`/api/classes?schoolLevelId=${schoolLevel.id}`, { credentials: 'include' });
+      // ✅ FIX: use /api/all-classes + client-side filter (same as evaluations page)
+      // /api/classes with ?schoolLevelId= fails because of PaginationDto.forbidNonWhitelisted
+      const res = await fetch('/api/all-classes', { credentials: 'include' });
       const data = await res.json();
-      setClasses(Array.isArray(data) ? data : (data?.items || []));
+      const allClasses = Array.isArray(data) ? data : (data?.items || []);
+
+      // Filter by school level UUID
+      const levelClasses = allClasses.filter((c: any) =>
+        c.schoolLevelId === schoolLevelUuid || c.schoolLevel?.id === schoolLevelUuid
+      );
+
+      // Optional language filter (FR/EN)
+      const langClasses = language
+        ? levelClasses.filter((c: any) => {
+            const classLang = c.language;
+            const trackCode = c.academicTrack?.code || c.academicTrackCode;
+            if (!classLang && !trackCode) return true;
+            if (classLang === language) return true;
+            if (trackCode === language) return true;
+            return false;
+          })
+        : levelClasses;
+
+      setClasses(langClasses);
     } catch {
       setClasses([]);
     }
-  }, [schoolLevel?.id]);
+  }, [schoolLevelUuid, language]);
 
   // ── Charger le registre (toutes les notes pour une classe + période) ──────
   const loadRegistre = useCallback(async () => {
@@ -86,7 +119,7 @@ function RegistreContent() {
     try {
       // Récupérer les matières de la classe
       const subjectsRes = await fetch(
-        `/api/pedagogy/subjects?schoolLevelId=${schoolLevel?.id || ''}&academicYearId=${academicYear.id}`,
+        `/api/pedagogy/subjects?schoolLevelId=${schoolLevelUuid || ''}&academicYearId=${academicYear.id}`,
         { credentials: 'include' }
       );
       const subjectsData = await subjectsRes.json();
@@ -147,7 +180,7 @@ function RegistreContent() {
     } finally {
       setLoading(false);
     }
-  }, [selectedClassId, academicYear?.id, schoolLevel?.id, language]);
+  }, [selectedClassId, academicYear?.id, schoolLevelUuid, language]);
 
   useEffect(() => { loadSchema(); loadClasses(); }, [loadSchema, loadClasses]);
   useEffect(() => { if (selectedClassId) loadRegistre(); }, [loadRegistre]);

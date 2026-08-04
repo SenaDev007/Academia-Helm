@@ -40,10 +40,10 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAcademicSettings } from '@/hooks/useAcademicSettings';
+import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { toast } from '@/components/ui/toast';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
-import { useExamSubModules } from '../layout';
-import { useExamScope } from '../layout';
+import { useExamSubModules, useExamScope } from '../layout';
 import { cn } from '@/lib/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -86,6 +86,7 @@ export default function AveragesPage() {
     decimals,
   } = useAcademicSettings();
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
+  const { availableLevels } = useSchoolLevel();
 
   const [classes, setClasses] = useState<any[]>([]);
   const [periods, setPeriods] = useState<any[]>([]);
@@ -97,18 +98,45 @@ export default function AveragesPage() {
   const [calculating, setCalculating] = useState(false);
 
   // ── Load classes ────────────────────────────────────────────────────────────
+  // ✅ FIX: use /api/all-classes + client-side filter (same pattern as evaluations/grades/registre)
+  // /api/classes?schoolLevelId= fails because of PaginationDto.forbidNonWhitelisted
   useEffect(() => {
     async function loadClasses() {
-      if (!schoolLevel?.id || !academicYear?.id) return;
+      if (!scopeLevel || !academicYear?.id) return;
       setLoadingClasses(true);
       try {
-        const res = await fetch(
-          `/api/classes?schoolLevelId=${schoolLevel.id}&academicYearId=${academicYear.id}`,
-          { credentials: 'include' }
-        ).then((r) => r.json());
-        if (Array.isArray(res) && res.length > 0) {
-          setClasses(res);
-          setSelectedClassId(res[0].id);
+        const res = await fetch('/api/all-classes', { credentials: 'include' });
+        const data = await res.json();
+        const allClasses = Array.isArray(data) ? data : (data?.items || []);
+
+        // ✅ Resolve schoolLevelUuid from scope (same pattern as evaluations page)
+        const activeLevel = (availableLevels || []).find(
+          (l: any) => (l.code || '').toUpperCase() === scopeLevel && l.id !== 'ALL'
+        );
+        const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
+
+        // Filter by school level UUID
+        const levelClasses = allClasses.filter((c: any) =>
+          c.schoolLevelId === schoolLevelUuid || c.schoolLevel?.id === schoolLevelUuid
+        );
+
+        // Optional language filter (FR/EN)
+        const langClasses = scopeLang
+          ? levelClasses.filter((c: any) => {
+              const classLang = c.language;
+              const trackCode = c.academicTrack?.code || c.academicTrackCode;
+              if (!classLang && !trackCode) return true;
+              if (classLang === scopeLang) return true;
+              if (trackCode === scopeLang) return true;
+              return false;
+            })
+          : levelClasses;
+
+        if (langClasses.length > 0) {
+          setClasses(langClasses);
+          setSelectedClassId(langClasses[0].id);
+        } else {
+          setClasses([]);
         }
       } catch {
         setClasses([]);
@@ -117,7 +145,7 @@ export default function AveragesPage() {
       }
     }
     loadClasses();
-  }, [schoolLevel?.id, academicYear?.id]);
+  }, [scopeLevel, scopeLang, academicYear?.id, availableLevels]);
 
   // ── Load periods from config ────────────────────────────────────────────────
   useEffect(() => {

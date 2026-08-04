@@ -38,6 +38,7 @@ import { UnlockRequestsController } from './unlock-requests.controller';
     AcademicAuditController,
     ExamsSpecConfigController,
     ExamsLockController,
+    UnlockRequestsController,
   ],
   providers: [
     ExamsDashboardService,

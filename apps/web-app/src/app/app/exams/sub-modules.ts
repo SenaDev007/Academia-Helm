@@ -21,7 +21,7 @@ import {
   Calendar,
   ClipboardList,
   SlidersHorizontal,
-  Lock,
+  Lock
 } from 'lucide-react';
 
 export const EXAMS_SUB_MODULES = [
@@ -50,9 +50,9 @@ export const EXAMS_SUB_MODULES = [
     icon: CheckSquare
   },
   {
-    id: 'unlock-requests',
-    label: 'Déverrouillages',
-    href: '/app/exams/unlock-requests',
+    id: 'deverrouillage',
+    label: 'Déverrouillage',
+    href: '/app/exams/deverrouillage',
     icon: Lock
   },
   {

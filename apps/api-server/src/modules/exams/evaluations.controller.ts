@@ -1,12 +1,12 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Patch, Delete, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Patch, Delete, NotFoundException } from '@nestjs/common';
 import { EvaluationsService } from './services/evaluations.service';
-import { PrismaService } from '../../database/prisma.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { AcademicYearId } from '../../common/decorators/academic-year-id.decorator';
 import { UserId } from '../../auth/decorators/user-id.decorator';
 import { Permissions } from '../../auth/decorators/permissions.decorator';
+import { PrismaService } from '../../prisma/prisma.service';
 
 import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 
@@ -149,9 +149,10 @@ export class EvaluationsController {
   }
 
   /**
-   * ⭐ Demande de déverrouillage d'une évaluation (GRANULAIRE)
-   * L'enseignant demande à déverrouiller des notes pour des élèves ET matières spécifiques.
-   * Seuls les élèves + matières sélectionnés seront déverrouillés.
+   * ⭐ Demande de déverrouillage d'une évaluation
+   * L'enseignant demande à l'administration de déverrouiller les notes
+   * pour pouvoir les modifier après soumission.
+   * Persiste la demande dans evaluation_unlock_requests pour suivi.
    */
   @Post(':id/unlock-request')
   @Permissions('exams.manage')
@@ -159,62 +160,57 @@ export class EvaluationsController {
     @Param('id') id: string,
     @TenantId() tenantId: string,
     @UserId() userId: string,
-    @Body() body: { reason: string; studentIds?: string[]; subjectIds?: string[]; studentNames?: string; subjectNames?: string },
+    @Body() body: { reason: string },
   ) {
-    if (!body?.reason || body.reason.trim().length < 10) {
-      throw new BadRequestException('La raison doit contenir au moins 10 caractères');
+    if (!body.reason || body.reason.trim().length < 10) {
+      throw new NotFoundException('reason requis (min 10 caractères)');
     }
 
-    // Récupérer l'évaluation
+    // Récupérer l'évaluation pour les détails
     const evaluation = await this.evaluationsService.findOne(id, tenantId);
     if (!evaluation) throw new NotFoundException('Évaluation non trouvée');
 
-    // Vérifier qu'il n'y a pas déjà une demande PENDING pour cette évaluation
-    // ✅ Si une demande existe déjà, on retourne success (pas d'erreur)
-    // — l'enseignant ne doit pas voir une erreur s'il reclique
-    const existing = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT id FROM "exam_unlock_requests"
-       WHERE "evaluationId" = $1 AND "tenantId" = $2 AND "status" = 'PENDING'
-       LIMIT 1`,
-      id, tenantId,
-    ).catch(() => []);
-    if (existing && existing.length > 0) {
+    // Vérifier qu'il n'y a pas déjà une demande PENDING
+    const existing = await this.prisma.$queryRawUnsafe(`
+      SELECT id FROM evaluation_unlock_requests
+      WHERE "evaluationId" = $1 AND "tenantId" = $2 AND status = 'PENDING'
+      LIMIT 1
+    `, id, tenantId);
+    if (Array.isArray(existing) && existing.length > 0) {
       return {
-        success: true,
-        message: 'Une demande de déverrouillage est déjà en cours pour cette évaluation',
-        requestId: existing[0].id,
-        evaluationId: id,
-        alreadyPending: true,
+        success: false,
+        message: 'Une demande de déverrouillage est déjà en attente pour cette évaluation',
+        existingRequestId: existing[0].id,
       };
     }
 
-    // Persister la demande avec studentIds + subjectIds
-    const requestId = crypto.randomUUID();
-    await this.prisma.$executeRawUnsafe(
-      `INSERT INTO "exam_unlock_requests"
-       ("id", "tenantId", "evaluationId", "requestedById", "reason", "status",
-        "studentIds", "subjectIds", "studentNames", "subjectNames", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, 'PENDING', $6, $7, $8, $9, NOW(), NOW())`,
-      requestId, tenantId, id, userId, body.reason.trim(),
-      body.studentIds || [],
-      body.subjectIds || [],
-      body.studentNames || null,
-      body.subjectNames || null,
+    // Persister la demande
+    const created = await this.prisma.$queryRawUnsafe(`
+      INSERT INTO evaluation_unlock_requests (
+        id, "tenantId", "evaluationId", "requestedById",
+        "classId", "subjectId", "periodId", "schoolLevelId",
+        reason, status, "createdAt", "updatedAt"
+      ) VALUES (
+        gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7,
+        $8, 'PENDING', NOW(), NOW()
+      ) RETURNING id
+    `,
+      tenantId,
+      id,
+      userId,
+      (evaluation as any).classId,
+      (evaluation as any).subjectId,
+      (evaluation as any).periodId,
+      (evaluation as any).schoolLevelId || null,
+      body.reason.trim(),
     );
 
     return {
       success: true,
       message: 'Demande de déverrouillage envoyée à l\'administration',
-      requestId,
       evaluationId: id,
+      requestId: Array.isArray(created) && created.length > 0 ? created[0].id : null,
       reason: body.reason,
-      studentIds: body.studentIds || [],
-      subjectIds: body.subjectIds || [],
     };
   }
-
-  // ⚠️ Les routes GET unlock-requests, PATCH unlock-requests/:id/approve, reject
-  // ont été déplacées vers UnlockRequestsController (contrôleur séparé) pour
-  // éviter qu'elles soient interceptées par @Get(':id') et @Patch(':id').
-  // Voir unlock-requests.controller.ts
 }

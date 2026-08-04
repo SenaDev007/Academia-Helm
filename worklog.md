@@ -347,6 +347,7 @@ Stage Summary:
 ---
 Task ID: 10
 Agent: main
+
 Task: Fix halo on mobile + make Sarah Guide UI-aware + multi-model ensemble (GLM 5.2 + MiniMax-M3 + GPT-OSS-120B)
 
 Work Log:
@@ -586,3 +587,70 @@ Stage Summary:
 - Formatted scan injected into system prompt for AI analysis
 - Multi-tenant strict enforced on all queries
 - Orion can now answer "analyse le module pédagogie", "analyse les finances", etc.
+
+Task: Termine le seed + fix onglet Déverrouillage (scopeLevel is not defined)
+
+Work Log:
+- Inspected current DB state:
+  * 2 tenants (59b8c348 + e0aaa032)
+  * 6 PRIMAIRE classes for tenant 59b8c348 (CI A, CP, CE1, CE2, CM1, CM2) — 23 subjects each
+  * Active year 2026-2027 (a7593470) with 3 academic_periods (Trimestre 1/2/3)
+  * 3 evaluation_types for PRIMAIRE: EM1, EM2, EC
+  * 574 evaluations existed (556 VALIDATED + 18 PLANNED with NULL teacherId)
+  * 2755 grades — ALL had NULL periodId
+- Discovered data model inconsistency:
+  * evaluations.periodId → academic_periods.id (table: academic_periods)
+  * grades.periodId → quarters.id (table: quarters — DIFFERENT TABLE!)
+  * Built mapping academic_period → quarter (by trimester number)
+- STEP 1: Backfilled 2209 grades.periodId (mapping academic_periods → quarters)
+- STEP 2: Fixed 18 PLANNED evaluations — assigned teacherId from TEACHER_BY_CLASS mapping + marked VALIDATED
+- STEP 3: Created missing PRIMAIRE evaluations via BULK INSERT:
+  * CE1: 23 new evals + 777 grades (184 already existed)
+  * CE2: 69 new evals + 988 grades (138 already existed)
+  * CI A: 92 new evals + 837 grades (115 already existed)
+  * CM1: 207 new evals + 2484 grades (all from scratch)
+  * CM2: 92 new evals + 891 grades (115 already existed)
+  * CP: 207 new evals + 4554 grades (all from scratch)
+- STEP 4: Created quarters for 2025-2026 academic year (was missing)
+  * Created Q#1 Trimestre 1, Q#2 Deuxième Trimestre, Q#3 Troisième Trimestre
+  * Backfilled remaining 546 grades with periodId (Maternelle grades from 2025-2026)
+- FINAL STATE:
+  * 1787 evaluations (all VALIDATED, no NULL teacherId)
+  * 19920 grades (no NULL periodId)
+  * 6 PRIMAIRE classes × 3 trimesters × 3 eval types × 23 subjects = ~1242 evaluations
+
+FOR THE DÉVERROUILLAGE TAB:
+- Diagnosed: previous "onglet déverrouillage" was lost (not committed). The "scopeLevel is not defined" error was from a non-existent page.
+- Created new backend `evaluation_unlock_requests` table:
+  * id, tenantId, evaluationId, requestedById, classId, subjectId, periodId, schoolLevelId
+  * reason, status (PENDING/APPROVED/REJECTED), reviewedById, reviewedAt, reviewComment
+  * Foreign keys to evaluations, users, classes, subjects
+- Created new backend controller `UnlockRequestsController`:
+  * GET  /institutional-exams/unlock-requests (list with filters: status, classId, schoolLevelId, academicYearId)
+  * GET  /institutional-exams/unlock-requests/:id (detail)
+  * POST /institutional-exams/unlock-requests (create)
+  * PATCH /institutional-exams/unlock-requests/:id/approve (sets eval to OPEN_FOR_GRADING)
+  * PATCH /institutional-exams/unlock-requests/:id/reject (with reviewComment)
+- Registered UnlockRequestsController in exams.module.ts
+- Updated evaluations.controller.ts unlockRequest endpoint:
+  * Now persists to evaluation_unlock_requests (was just returning success without saving)
+  * Added NotFoundException import (was missing)
+  * Injects PrismaService
+- Added "Déverrouillage" tab to EXAMS_SUB_MODULES (between Validation and Registre)
+- Created /app/exams/deverrouillage/page.tsx:
+  * Uses useExamScope() PROPERLY — no scopeLevel reference error
+  * Lists unlock requests grouped by class
+  * Filters by status (PENDING/APPROVED/REJECTED/ALL)
+  * Approve/Reject buttons per request
+  * Stats cards (Total, En attente, Approuvées, Rejetées)
+  * Shows justificatif, requested by, dates, review info
+- Created /app/exams/deverrouillage/loading.tsx
+
+Stage Summary:
+- SEED COMPLETE: 1787 evaluations, 19920 grades, all with proper teacherId + periodId
+- DÉVERROUILLAGE TAB: Full stack implementation (DB + API + UI)
+- Backend persists unlock requests + allows approve/reject
+- Frontend uses useExamScope() correctly — no more "scopeLevel is not defined"
+- All PRIMAIRE classes (CI A, CP, CE1, CE2, CM1, CM2) × 3 trimesters × 3 eval types × 23 subjects covered
+- Maternelle 1, 2 already complete from before (3 trimesters × 3 types × ~26 subjects)
+

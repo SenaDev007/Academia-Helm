@@ -1,0 +1,56 @@
+import pg from 'pg';
+const client = new pg.Client({
+  connectionString: 'postgresql://neondb_owner:npg_Nio3WadxL0qb@ep-curly-frost-agx7owra-pooler.c-2.eu-central-1.aws.neon.tech/AcademiaHelm?sslmode=require',
+  ssl: { rejectUnauthorized: false },
+});
+
+// Add error handlers
+client.on('error', (err) => {
+  console.error('CLIENT ERROR:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('UNHANDLED REJECTION:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err);
+  process.exit(1);
+});
+
+console.log('Connecting...');
+await client.connect();
+console.log('Connected');
+
+const TENANT_ID = '59b8c348-ae5f-4d67-8fbd-af6aefa1f394';
+
+// Test class query
+console.log('Querying classes...');
+const classes = await client.query(`
+  SELECT c.id, c.name, c."officialClassId"
+  FROM classes c
+  JOIN school_levels sl ON sl.id = c."schoolLevelId" AND sl.code = 'PRIMAIRE'
+  WHERE c."tenantId" = $1
+    AND c."academicYearId" = 'a7593470-e4f4-460a-b3b6-4dabe53bec2a'
+  ORDER BY c.name
+`, [TENANT_ID]);
+console.log(`Found ${classes.rows.length} classes`);
+
+// Test subject query for first class
+if (classes.rows.length > 0) {
+  const cls = classes.rows[0];
+  console.log(`Querying subjects for class ${cls.name} (officialClassId=${cls.officialClassId?.substring(0,8)})...`);
+  const subs = await client.query(`
+    SELECT s.id, s.name, s.code, cs.coefficient
+    FROM class_subjects cs
+    JOIN subjects s ON s.id = cs."subjectId"
+    WHERE cs."academicClassId" = $1
+      AND cs."tenantId" = $2
+    ORDER BY s.name
+  `, [cls.officialClassId, TENANT_ID]);
+  console.log(`Found ${subs.rows.length} subjects`);
+  for (const s of subs.rows.slice(0, 3)) console.log('  -', s.name);
+}
+
+console.log('Done');
+await client.end();

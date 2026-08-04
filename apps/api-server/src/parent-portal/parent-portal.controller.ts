@@ -496,6 +496,7 @@ export class ParentPortalController {
     const isNewStudent = enrollment.isNewStudent ?? (enrollmentType === 'NEW');
 
     // 3. AccountBreakdowns avec FeeStructure + Override
+    // ⚠️ account_breakdowns n'a PAS de tenantId — le tenant est sur student_accounts
     const breakdowns: any = await this.prisma.$queryRawUnsafe(
       `SELECT ab."id", ab."initialAmount", ab."adjustedAmount", ab."paidAmount",
               ab."remainingAmount",
@@ -505,7 +506,7 @@ export class ParentPortalController {
        FROM "account_breakdowns" ab
        INNER JOIN "fee_structures" fs ON fs."id" = ab."feeStructureId"
        LEFT JOIN "fee_overrides" fo ON fo."feeStructureId" = fs."id" AND fo."studentId" = $1
-       WHERE ab."studentAccountId" = $2 AND ab."tenantId" = $3
+       WHERE ab."studentAccountId" = $2
        ORDER BY
          CASE fs."feeType"
            WHEN 'INSCRIPTION' THEN 1
@@ -515,7 +516,7 @@ export class ParentPortalController {
            WHEN 'EXAMEN' THEN 5
            ELSE 6
          END`,
-      studentId, account.id, tenantId,
+      studentId, account.id,
     ).catch(() => []);
 
     // 4. FeeArrears (arriérés par année)

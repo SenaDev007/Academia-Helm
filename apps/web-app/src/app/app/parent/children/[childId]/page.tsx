@@ -37,6 +37,7 @@ import {
 import { openFedaPayCheckout } from "@/lib/parent/fedapay-checkout";
 import { financeService } from "@/services/finance.service";
 import ParentFinancePanel from "@/components/parent/ParentFinancePanel";
+import StudentAvatar from "@/components/parent/StudentAvatar";
 import { ParentPaymentHistory } from "@/components/parent/ParentPaymentHistory";
 import { PaymentSuccessBanner } from "@/components/parent/PaymentSuccessBanner";
 
@@ -153,9 +154,13 @@ export default function ParentChildDetailPage() {
 
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl p-5 text-white shadow-md">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center text-2xl font-bold">
-            {(child.firstName?.[0] || "")}{(child.lastName?.[0] || "")}
-          </div>
+          <StudentAvatar
+            firstName={child.firstName}
+            lastName={child.lastName}
+            photoUrl={child.photoUrl}
+            size="lg"
+            variant="blue"
+          />
           <div className="flex-1">
             <h1 className="text-xl font-bold">{child.firstName} {child.lastName}</h1>
             <p className="text-sm text-blue-100">

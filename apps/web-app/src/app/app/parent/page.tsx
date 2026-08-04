@@ -18,6 +18,7 @@ import {
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useParentChildren, useParentToday } from '@/lib/query/parent-hooks';
+import StudentAvatar from '@/components/parent/StudentAvatar';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -105,9 +106,13 @@ export default function ParentDashboard() {
             >
               {/* Photo + Nom */}
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
-                  {(child.firstName?.[0] || '')}{(child.lastName?.[0] || '')}
-                </div>
+                <StudentAvatar
+                  firstName={child.firstName}
+                  lastName={child.lastName}
+                  photoUrl={child.photoUrl}
+                  size="md"
+                  variant="blue"
+                />
                 <div className="flex-1 min-w-0">
                   <h3 className="font-bold text-gray-900 truncate">
                     {child.firstName} {child.lastName}

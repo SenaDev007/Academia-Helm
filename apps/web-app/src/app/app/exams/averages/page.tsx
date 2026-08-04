@@ -437,7 +437,7 @@ export default function AveragesPage() {
                 <Button
                   onClick={handleCalculate}
                   disabled={calculating || !selectedClassId || noConfig}
-                  className="bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200 px-6 font-bold"
+                  className="bg-[#0A2A5E] hover:bg-[#103E91] text-white shadow-lg shadow-blue-200 px-6 font-bold"
                 >
                   {calculating
                     ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Calcul en cours…</>

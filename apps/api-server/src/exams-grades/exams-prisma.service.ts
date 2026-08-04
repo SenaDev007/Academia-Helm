@@ -661,16 +661,18 @@ export class ExamsPrismaService {
       include: { subject: true },
     });
 
-    // 4. Fetch validated grades (NOT ExamScore — teachers enter grades via Grade table)
-    // ✅ FIX: was reading from examScore (legacy table), now reads from Grade (where
-    // teachers actually enter scores via GradingSheet → /institutional-exams/grades/bulk)
+    // 4. Fetch grades (NOT ExamScore — teachers enter grades via Grade table)
+    // ✅ FIX: Include SUBMITTED and VALIDATED grades (not just VALIDATED)
+    // ✅ FIX: periodId may be NULL on grades — filter via evaluation.periodId instead
     const grades = await this.prisma.grade.findMany({
       where: {
         tenantId,
         academicYearId,
         classId,
-        periodId,
-        status: 'VALIDATED',
+        status: { in: ['VALIDATED', 'SUBMITTED'] },
+        evaluation: {
+          periodId,
+        },
       },
       include: {
         evaluation: {
@@ -943,7 +945,7 @@ export class ExamsPrismaService {
     const passageGrades = await this.prisma.grade.findMany({
       where: {
         tenantId, academicYearId, classId,
-        status: 'VALIDATED',
+        status: { in: ['VALIDATED', 'SUBMITTED'] },
         evaluation: {
           evaluationType: { name: { contains: 'passage', mode: 'insensitive' } },
         },
@@ -1120,11 +1122,13 @@ export class ExamsPrismaService {
       return [];
     }
 
-    // Récupérer les notes validées
+    // Récupérer les notes (VALIDATED + SUBMITTED)
+    // ✅ periodId via evaluation (grades.periodId may be NULL)
     const grades = await this.prisma.grade.findMany({
       where: {
-        tenantId, academicYearId, classId, periodId,
-        status: 'VALIDATED',
+        tenantId, academicYearId, classId,
+        status: { in: ['VALIDATED', 'SUBMITTED'] },
+        evaluation: { periodId },
       },
       include: {
         evaluation: { include: { evaluationType: true } },

@@ -155,37 +155,43 @@ export default function AveragesPage() {
     loadClasses();
   }, [scopeLevel, scopeLang, academicYear?.id, availableLevels]);
 
-  // ── Load periods from config ────────────────────────────────────────────────
+  // ── Load periods from academic_periods table (NOT from config) ──────────────
+  // ✅ FIX: config generates IDs like 'T1' but evaluations use UUIDs from academic_periods
+  // We must fetch the real academic_periods to get the correct periodId
   useEffect(() => {
-    if (!academicConfig) return;
-    // Periods come from the academic config (not hardcoded)
-    const configPeriods: any[] = (academicConfig as any).periods ?? [];
-    if (configPeriods.length > 0) {
-      setPeriods(configPeriods);
-      setSelectedPeriodId(configPeriods[0]?.id ?? configPeriods[0]?.code ?? '');
-    } else {
-      // Fallback: derive from periodType configured
-      const type = academicConfig.periodType;
-      const generated =
-        type === 'Trimestre' ? [
-          { id: 'T1', label: 'Trimestre 1' },
-          { id: 'T2', label: 'Trimestre 2' },
-          { id: 'T3', label: 'Trimestre 3' },
-        ] : type === 'Semestre' ? [
-          { id: 'S1', label: 'Semestre 1' },
-          { id: 'S2', label: 'Semestre 2' },
-        ] : type === 'Séquence' ? [
-          { id: 'SEQ1', label: 'Séquence 1' },
-          { id: 'SEQ2', label: 'Séquence 2' },
-          { id: 'SEQ3', label: 'Séquence 3' },
-          { id: 'SEQ4', label: 'Séquence 4' },
-          { id: 'SEQ5', label: 'Séquence 5' },
-          { id: 'SEQ6', label: 'Séquence 6' },
-        ] : [{ id: 'P1', label: 'Période 1' }];
-      setPeriods(generated);
-      setSelectedPeriodId(generated[0].id);
+    if (!academicYear?.id) return;
+    async function loadPeriods() {
+      try {
+        const res = await fetch(
+          `/api/settings/academic-years/${academicYear.id}/periods`,
+          { credentials: 'include' },
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const periodList = Array.isArray(data) ? data : (data?.items || []);
+          if (periodList.length > 0) {
+            setPeriods(periodList.map((p: any) => ({
+              id: p.id,
+              label: p.name || p.label,
+              name: p.name,
+              type: p.type,
+            })));
+            setSelectedPeriodId(periodList[0].id);
+          }
+        }
+      } catch {
+        // Fallback: try academic_config periods
+        if (academicConfig) {
+          const configPeriods: any[] = (academicConfig as any).periods ?? [];
+          if (configPeriods.length > 0) {
+            setPeriods(configPeriods);
+            setSelectedPeriodId(configPeriods[0]?.id ?? '');
+          }
+        }
+      }
     }
-  }, [academicConfig]);
+    loadPeriods();
+  }, [academicYear?.id]);
 
   // ── Load results ────────────────────────────────────────────────────────────
   const loadResults = useCallback(async () => {
@@ -497,7 +503,7 @@ export default function AveragesPage() {
                           <TableHead className="w-20 text-center font-black text-xs uppercase tracking-wider">Rang</TableHead>
                           <TableHead className="font-black text-xs uppercase tracking-wider">Élève</TableHead>
                           <TableHead className="text-center font-black text-xs uppercase tracking-wider">
-                            Moy. /{maxScore}
+                            {scopeLevel === 'MATERNELLE' ? 'Appréciation' : `Moy. /${maxScore}`}
                           </TableHead>
                           <TableHead className="font-black text-xs uppercase tracking-wider">Mention</TableHead>
                           <TableHead className="font-black text-xs uppercase tracking-wider">Décision</TableHead>
@@ -541,17 +547,35 @@ export default function AveragesPage() {
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-center">
-                                  <Badge className={cn('font-black text-sm px-3 border-none', getScoreColor(item.avg))}>
-                                    {item.avg.toFixed(decimals)}
-                                  </Badge>
+                                  {scopeLevel === 'MATERNELLE' ? (
+                                    <Badge className={cn('font-bold text-sm px-3 border-none',
+                                      item.avg >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
+                                      item.avg >= 1.5 ? 'bg-blue-100 text-blue-700' :
+                                      'bg-amber-100 text-amber-700'
+                                    )}>
+                                      {item.avg >= 2.5 ? 'Très Satisfaisant' :
+                                       item.avg >= 1.5 ? 'Satisfaisant' :
+                                       'Peu Satisfaisant'}
+                                    </Badge>
+                                  ) : (
+                                    <Badge className={cn('font-black text-sm px-3 border-none', getScoreColor(item.avg))}>
+                                      {item.avg.toFixed(decimals)}
+                                    </Badge>
+                                  )}
                                 </TableCell>
                                 <TableCell>
-                                  <span className="text-xs font-semibold text-gray-600">
-                                    {getAppreciation(item.avg)}
-                                  </span>
+                                  {scopeLevel === 'MATERNELLE' ? (
+                                    <span className="text-xs text-gray-400">—</span>
+                                  ) : (
+                                    <span className="text-xs font-semibold text-gray-600">
+                                      {getAppreciation(item.avg)}
+                                    </span>
+                                  )}
                                 </TableCell>
                                 <TableCell>
-                                  {passing ? (
+                                  {scopeLevel === 'MATERNELLE' ? (
+                                    <span className="text-xs text-gray-400">—</span>
+                                  ) : passing ? (
                                     <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 text-xs">
                                       <CheckCircle className="w-3 h-3 mr-1" />Admis
                                     </Badge>

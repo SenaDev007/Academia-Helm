@@ -704,27 +704,24 @@ export class ExamsPrismaService {
       },
     }));
 
-    // 4. Fetch grades (NOT ExamScore — teachers enter grades via Grade table)
-    // ✅ FIX: Include SUBMITTED and VALIDATED grades (not just VALIDATED)
-    // ✅ FIX: periodId may be NULL on grades — filter via evaluation.periodId instead
-    const grades = await this.prisma.grade.findMany({
-      where: {
-        tenantId,
-        academicYearId,
-        classId,
-        status: { in: ['VALIDATED', 'SUBMITTED'] },
-        evaluation: {
-          periodId,
-        },
-      },
-      include: {
-        evaluation: {
-          include: {
-            evaluationType: true,
-          },
-        },
-      },
-    });
+    // 4. Fetch grades via raw SQL (avoid Prisma relation issues with evaluation include)
+    // ✅ FIX: prisma.grade.findMany with evaluation include causes P2003 on Railway
+    // because the Prisma client cache doesn't have the Grade→Evaluation relation
+    const grades = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT g.id, g.score, g."qualitativeCode", g.status, g."isAbsent",
+             g."classId", g."periodId", g."evaluationId",
+             g."studentId", g."subjectId",
+             e."evaluationTypeId",
+             et."name" as "evalTypeName"
+      FROM "grades" g
+      LEFT JOIN "evaluations" e ON e."id" = g."evaluationId"
+      LEFT JOIN "evaluation_types" et ON et."id" = e."evaluationTypeId"
+      WHERE g."tenantId" = $1
+        AND g."academicYearId" = $2
+        AND g."classId" = $3
+        AND g.status IN ('VALIDATED', 'SUBMITTED')
+        AND e."periodId" = $4
+    `, [tenantId, academicYearId, classId, periodId]).catch(() => []);
 
     const studentsList: any[] = [];
 
@@ -777,7 +774,7 @@ export class ExamsPrismaService {
         // Group by evaluation type (EM1, EM2, EC, DS1, DS2, IE1, IE2, etc.)
         const assessmentScores: Record<string, number> = {};
         validGrades.forEach((g) => {
-          const evalTypeName = g.evaluation?.evaluationType?.name || 'UNKNOWN';
+          const evalTypeName = g.evalTypeName || g.evaluation?.evaluationType?.name || 'UNKNOWN';
           // Map common names to formula placeholders
           const placeholder = this.mapEvaluationTypeToPlaceholder(evalTypeName);
           if (assessmentScores[placeholder] !== undefined) {

@@ -346,6 +346,8 @@ export default function UnlockRequestsPage() {
                     </div>
                   );
                 })}
+                </div>
+                ))}
               </div>
             )}
           </div>

@@ -844,6 +844,12 @@ export function MonthlyEvaluationTab({
                       <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Non</th>
                     </tr>
                   )}
+                  {isMaternelle && (
+                    <tr className="bg-slate-50">
+                      <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Oui</th>
+                      <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Non</th>
+                    </tr>
+                  )}
                 </thead>
                 <tbody>
                   {rows.map((row, idx) => {

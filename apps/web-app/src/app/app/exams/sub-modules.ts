@@ -20,7 +20,8 @@ import {
   History,
   Calendar,
   ClipboardList,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Lock,
 } from 'lucide-react';
 
 export const EXAMS_SUB_MODULES = [
@@ -47,6 +48,12 @@ export const EXAMS_SUB_MODULES = [
     label: 'Validation',
     href: '/app/exams/validation',
     icon: CheckSquare
+  },
+  {
+    id: 'unlock-requests',
+    label: 'Déverrouillages',
+    href: '/app/exams/unlock-requests',
+    icon: Lock
   },
   {
     id: 'registre',

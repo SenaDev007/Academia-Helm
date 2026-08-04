@@ -14,7 +14,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Lock, Unlock, Check, X, Clock, User, RefreshCw,
+  Lock, Unlock, Check, X, Clock, User, Users, BookOpen, RefreshCw,
   AlertCircle, Loader2, MessageSquare, ShieldCheck,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';

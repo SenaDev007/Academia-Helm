@@ -651,6 +651,7 @@ export class ExamsPrismaService {
     const decimals = cfg.scoreScale?.decimals ?? 2;
 
     // 2. Fetch students via raw SQL (avoid Prisma include issues)
+    // ✅ Use column aliases to match camelCase property names expected by code
     const enrollments = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT se."id", se."studentId", se."classId", se."schoolLevelId",
              se."localStudentMatricule",
@@ -660,6 +661,24 @@ export class ExamsPrismaService {
       WHERE se."classId" = $1 AND se."tenantId" = $2 AND se."academicYearId" = $3
         AND se."status" IN ('ACTIVE', 'ADMITTED', 'ENROLLED', 'CONFIRMED')
     `, [classId, tenantId, academicYearId]).catch(() => []);
+
+    // ✅ Prisma $queryRawUnsafe returns column names in lowercase by default
+    // Map to camelCase to match the rest of the code
+    const enrollmentsMapped = enrollments.map((e: any) => ({
+      id: e.id,
+      studentId: e.studentId || e.studentid,
+      classId: e.classId || e.classid,
+      schoolLevelId: e.schoolLevelId || e.schoollevelid,
+      localStudentMatricule: e.localStudentMatricule || e.localstudentmatricule,
+      firstName: e.firstName || e.firstname,
+      lastName: e.lastName || e.lastname,
+      matricule: e.matricule,
+      student: {
+        firstName: e.firstName || e.firstname,
+        lastName: e.lastName || e.lastname,
+        matricule: e.matricule,
+      },
+    }));
 
     // 3. Fetch class subjects
     // ✅ FIX: class_subjects.classId is NULL in production — uses academicClassId
@@ -713,7 +732,7 @@ export class ExamsPrismaService {
     // 4. Fetch grades via raw SQL (avoid Prisma relation issues with evaluation include)
     // ✅ FIX: prisma.grade.findMany with evaluation include causes P2003 on Railway
     // because the Prisma client cache doesn't have the Grade→Evaluation relation
-    const grades = await this.prisma.$queryRawUnsafe<any[]>(`
+    const gradesRaw = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT g.id, g.score, g."qualitativeCode", g.status, g."isAbsent",
              g."classId", g."periodId", g."evaluationId",
              g."studentId", g."subjectId",
@@ -729,10 +748,25 @@ export class ExamsPrismaService {
         AND e."periodId" = $4
     `, [tenantId, academicYearId, classId, periodId]).catch(() => []);
 
+    // ✅ Map raw SQL lowercase columns to camelCase
+    const grades = gradesRaw.map((g: any) => ({
+      id: g.id,
+      score: g.score !== null ? Number(g.score) : null,
+      qualitativeCode: g.qualitativeCode || g.qualitativecode,
+      status: g.status,
+      isAbsent: g.isAbsent ?? g.isabsent ?? false,
+      classId: g.classId || g.classid,
+      periodId: g.periodId || g.periodid,
+      evaluationId: g.evaluationId || g.evaluationid,
+      studentId: g.studentId || g.studentid,
+      subjectId: g.subjectId || g.subjectid,
+      evalTypeName: g.evalTypeName || g.evaltypename,
+    }));
+
     const studentsList: any[] = [];
 
     // 5. Compute for each student
-    for (const enrollment of enrollments) {
+    for (const enrollment of enrollmentsMapped) {
       const subjectAverages: Record<string, number> = {};
       const frontendSubjectAverages: Record<string, number> = {};
       const generalAvgInput: any[] = [];
@@ -851,7 +885,7 @@ export class ExamsPrismaService {
           UPDATE "rankings"
           SET "average" = $1, "rank" = $2, "totalStudents" = $3, "updatedAt" = NOW()
           WHERE "id" = $4
-        `, [s.generalAverage, s.rank, enrollments.length, existing[0].id]).catch(() => {});
+        `, [s.generalAverage, s.rank, enrollmentsMapped.length, existing[0].id]).catch(() => {});
       } else {
         const rankId = crypto.randomUUID();
         await this.prisma.$executeRawUnsafe(`
@@ -860,7 +894,7 @@ export class ExamsPrismaService {
             "createdAt", "updatedAt")
           VALUES ($1, $2, $3, $4, 'CLASS', $5, $6, $7, $8, $9, $10, NOW(), NOW())
         `, [rankId, tenantId, academicYearId, schoolLevelId, classId, periodId,
-            s.studentId, s.generalAverage, s.rank, enrollments.length]).catch(() => {});
+            s.studentId, s.generalAverage, s.rank, enrollmentsMapped.length]).catch(() => {});
       }
     }
 

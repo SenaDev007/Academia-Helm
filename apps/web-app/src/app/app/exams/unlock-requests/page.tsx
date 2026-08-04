@@ -12,13 +12,14 @@
  * ============================================================================
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Lock, Unlock, Check, X, Clock, User, Users, BookOpen, RefreshCw,
   AlertCircle, Loader2, MessageSquare, ShieldCheck,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules } from '../layout';
 import apiClient from '@/lib/api/client';
@@ -67,8 +68,17 @@ export default function UnlockRequestsPage() {
   const loadRequests = useCallback(async () => {
     setLoading(true);
     try {
+      // ✅ Send schoolLevelId to filter by current level (maternelle/primaire/secondaire)
+      const activeLevel = (availableLevels || []).find(
+        (l: any) => (l.code || '').toUpperCase() === scopeLevel && l.id !== 'ALL'
+      );
+      const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
+
+      const params = new URLSearchParams({ status: filter });
+      if (schoolLevelUuid) params.set('schoolLevelId', schoolLevelUuid);
+
       const res = await apiClient.get(
-        `/institutional-exams/unlock-requests?status=${filter}`,
+        `/institutional-exams/unlock-requests?${params.toString()}`,
       );
       const data = res.data;
       setRequests(Array.isArray(data) ? data : []);
@@ -78,7 +88,7 @@ export default function UnlockRequestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, [filter, scopeLevel, availableLevels]);
 
   useEffect(() => {
     loadRequests();
@@ -125,6 +135,17 @@ export default function UnlockRequestsPage() {
   };
 
   const pendingCount = requests.filter(r => r.status === 'PENDING').length;
+
+  // ✅ Group requests by className for better organization
+  const groupedByClass = useMemo(() => {
+    const groups: Record<string, UnlockRequest[]> = {};
+    for (const req of requests) {
+      const cn = req.className || 'Sans classe';
+      if (!groups[cn]) groups[cn] = [];
+      groups[cn].push(req);
+    }
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  }, [requests]);
 
   return (
     <ModuleContainer
@@ -186,8 +207,19 @@ export default function UnlockRequestsPage() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {requests.map((req) => {
+              <div className="space-y-4">
+                {groupedByClass.map(([className, classRequests]) => (
+                  <div key={className} className="space-y-2">
+                    {/* Class header */}
+                    <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg border border-blue-100">
+                      <BookOpen className="w-4 h-4 text-blue-600" />
+                      <span className="font-semibold text-sm text-blue-900">{className}</span>
+                      <Badge variant="outline" className="text-xs border-blue-200 text-blue-600">
+                        {classRequests.length} demande{classRequests.length > 1 ? 's' : ''}
+                      </Badge>
+                    </div>
+                    {/* Requests for this class */}
+                    {classRequests.map((req) => {
                   const statusCfg = STATUS_CONFIG[req.status];
                   const StatusIcon = statusCfg.icon;
                   return (

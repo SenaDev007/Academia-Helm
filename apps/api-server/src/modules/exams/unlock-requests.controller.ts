@@ -31,20 +31,31 @@ export class UnlockRequestsController {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * GET /institutional-exams/unlock-requests?status=PENDING
+   * GET /institutional-exams/unlock-requests?status=PENDING&schoolLevelId=X
+   * ✅ Filter by schoolLevelId to avoid maternelle requests showing in primaire
    */
   @Get()
   @Permissions('exams.read')
   async getUnlockRequests(
     @TenantId() tenantId: string,
     @Query('status') status?: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
   ) {
     const statusFilter = status || 'PENDING';
     const params: any[] = [tenantId];
+    let paramIdx = 2;
+
     let statusClause = '';
+    let levelClause = '';
+
     if (statusFilter !== 'ALL') {
-      statusClause = 'AND r."status" = $2';
+      statusClause = `AND r."status" = $${paramIdx++}`;
       params.push(statusFilter);
+    }
+
+    if (schoolLevelId) {
+      levelClause = `AND c."schoolLevelId" = $${paramIdx++}`;
+      params.push(schoolLevelId);
     }
 
     const requests = await this.prisma.$queryRawUnsafe<any[]>(
@@ -55,6 +66,8 @@ export class UnlockRequestsController {
               ru."firstName" as "reviewerFirstName", ru."lastName" as "reviewerLastName",
               et."name" as "evaluationTypeName",
               c."name" as "className",
+              c."id" as "classId",
+              c."schoolLevelId" as "classSchoolLevelId",
               subj."name" as "subjectName"
        FROM "exam_unlock_requests" r
        LEFT JOIN "users" u ON u."id" = r."requestedById"
@@ -63,8 +76,8 @@ export class UnlockRequestsController {
        LEFT JOIN "evaluation_types" et ON et."id" = e."evaluationTypeId"
        LEFT JOIN "classes" c ON c."id" = e."classId"
        LEFT JOIN "subjects" subj ON subj."id" = e."subjectId"
-       WHERE r."tenantId" = $1 ${statusClause}
-       ORDER BY r."createdAt" DESC`,
+       WHERE r."tenantId" = $1 ${statusClause} ${levelClause}
+       ORDER BY c."name", r."createdAt" DESC`,
       ...params,
     ).catch(() => []);
 

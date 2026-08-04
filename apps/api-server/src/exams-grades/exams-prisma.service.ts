@@ -661,19 +661,23 @@ export class ExamsPrismaService {
       include: { subject: true },
     });
 
-    // 4. Fetch validated scores
-    const scores = await this.prisma.examScore.findMany({
+    // 4. Fetch validated grades (NOT ExamScore — teachers enter grades via Grade table)
+    // ✅ FIX: was reading from examScore (legacy table), now reads from Grade (where
+    // teachers actually enter scores via GradingSheet → /institutional-exams/grades/bulk)
+    const grades = await this.prisma.grade.findMany({
       where: {
         tenantId,
         academicYearId,
-        isValidated: true,
-        exam: {
-          classId,
-          quarterId: periodId,
-        },
+        classId,
+        periodId,
+        status: 'VALIDATED',
       },
       include: {
-        exam: true,
+        evaluation: {
+          include: {
+            evaluationType: true,
+          },
+        },
       },
     });
 
@@ -686,21 +690,61 @@ export class ExamsPrismaService {
       const generalAvgInput: any[] = [];
 
       for (const cs of classSubjects) {
-        const studentSubjScores = scores.filter(
-          (s) => s.studentId === enrollment.studentId && s.subjectId === cs.subjectId,
+        // Get all validated grades for this student + subject
+        const studentSubjGrades = grades.filter(
+          (g) => g.studentId === enrollment.studentId && g.subjectId === cs.subjectId,
         );
 
+        // Skip absent students
+        const validGrades = studentSubjGrades.filter(g => !g.isAbsent && g.score !== null);
+
+        if (validGrades.length === 0) {
+          // No grades for this subject — skip (don't count as 0)
+          continue;
+        }
+
+        // ✅ Maternelle: qualitative evaluation (TS/S/PS)
+        // Convert qualitative codes to numeric values for calculation
+        const isQualitative = validGrades.some(g => g.qualitativeCode);
+        if (isQualitative) {
+          // TS=3, S=2, PS=1 — used for backend calculation
+          const qualitativeMap: Record<string, number> = { 'TS': 3, 'S': 2, 'PS': 1, 'NS': 0 };
+          const numericValues = validGrades.map(g =>
+            g.qualitativeCode ? (qualitativeMap[g.qualitativeCode] ?? 0) : (g.score ?? 0)
+          );
+          const avg = numericValues.reduce((a, b) => a + b, 0) / numericValues.length;
+
+          // Convert back to appreciation
+          const appreciation = avg >= 2.5 ? 'Très Satisfaisant' : avg >= 1.5 ? 'Satisfaisant' : 'Peu Satisfaisant';
+
+          subjectAverages[cs.subjectId] = avg;
+          frontendSubjectAverages[cs.subject.name] = avg;
+          frontendSubjectAverages[`${cs.subject.name}_appreciation`] = appreciation as any;
+          frontendSubjectAverages[`${cs.subject.name}_qualitative`] = true as any;
+          generalAvgInput.push({
+            average: avg,
+            coefficient: cs.coefficient,
+          });
+          continue;
+        }
+
+        // ✅ Primaire/Secondaire: numeric scores
+        // Group by evaluation type (EM1, EM2, EC, DS1, DS2, IE1, IE2, etc.)
         const assessmentScores: Record<string, number> = {};
-        studentSubjScores.forEach((s) => {
-          if (assessmentScores[s.exam.examType] !== undefined) {
-            assessmentScores[s.exam.examType] =
-              (assessmentScores[s.exam.examType] + s.score) / 2;
+        validGrades.forEach((g) => {
+          const evalTypeName = g.evaluation?.evaluationType?.name || 'UNKNOWN';
+          // Map common names to formula placeholders
+          const placeholder = this.mapEvaluationTypeToPlaceholder(evalTypeName);
+          if (assessmentScores[placeholder] !== undefined) {
+            // Average duplicates of same type
+            assessmentScores[placeholder] =
+              (assessmentScores[placeholder] + (g.score ?? 0)) / 2;
           } else {
-            assessmentScores[s.exam.examType] = s.score;
+            assessmentScores[placeholder] = g.score ?? 0;
           }
         });
 
-        // Fill missing scores with 0 if required
+        // Calculate subject average using rules engine
         const subjectAvg = this.rulesEngine.evaluateSubjectAverage(
           assessmentScores,
           { expression: subjectFormula, type: 'formula' },
@@ -714,7 +758,12 @@ export class ExamsPrismaService {
         });
       }
 
-      const generalAverage = this.rulesEngine.evaluateGeneralAverage(generalAvgInput);
+      // ✅ General average: weighted by coefficients (from ClassSubject)
+      // For 6e/5e (no coefficients): all coefficients = 1 → simple average
+      // For 4e/3e (with coefficients): weighted average
+      const generalAverage = generalAvgInput.length > 0
+        ? this.rulesEngine.evaluateGeneralAverage(generalAvgInput)
+        : 0;
 
       studentsList.push({
         studentId: enrollment.studentId,
@@ -794,6 +843,42 @@ export class ExamsPrismaService {
         decision,
       };
     });
+  }
+
+  /**
+   * ✅ Map evaluation type names to formula placeholders.
+   * Supports both French and English naming conventions.
+   * Examples:
+   *   "Évaluation mensuelle 1" → "EM1"
+   *   "Évaluation mensuelle 2" → "EM2"
+   *   "Évaluation certificative" → "EC"
+   *   "Devoir surveillé 1" → "DS1"
+   *   "Interrogation écrite 1" → "IE1"
+   *   "Devoir 1" → "DEVOIR_1"
+   *   "Composition" → "COMPOSITION"
+   */
+  private mapEvaluationTypeToPlaceholder(name: string): string {
+    const upper = name.toUpperCase().trim();
+
+    // Primaire: EM1, EM2, EC, EP
+    if (upper.includes('MENSUELLE 1') || upper.includes('EM1')) return 'EM1';
+    if (upper.includes('MENSUELLE 2') || upper.includes('EM2')) return 'EM2';
+    if (upper.includes('CERTIFICATIVE') || upper.includes('EC')) return 'EC';
+    if (upper.includes('PASSAGE') || upper.includes('EP')) return 'EP';
+
+    // Secondaire: IE1, IE2, DS1, DS2
+    if (upper.includes('INTERROGATION') && (upper.includes('1') || upper.includes('I'))) return 'IE1';
+    if (upper.includes('INTERROGATION') && (upper.includes('2') || upper.includes('II'))) return 'IE2';
+    if (upper.includes('DEVOIR SURVEILL') && (upper.includes('1') || upper.includes('I'))) return 'DS1';
+    if (upper.includes('DEVOIR SURVEILL') && (upper.includes('2') || upper.includes('II'))) return 'DS2';
+
+    // Generic: Devoir 1/2, Composition
+    if (upper.includes('DEVOIR 1') || upper === 'DEVOIR_1') return 'DEVOIR_1';
+    if (upper.includes('DEVOIR 2') || upper === 'DEVOIR_2') return 'DEVOIR_2';
+    if (upper.includes('COMPOSITION')) return 'COMPOSITION';
+
+    // Fallback: use the raw name as placeholder
+    return upper.replace(/\s+/g, '_');
   }
 
   /**

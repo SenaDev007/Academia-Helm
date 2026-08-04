@@ -170,6 +170,8 @@ export class EvaluationsController {
     if (!evaluation) throw new NotFoundException('Évaluation non trouvée');
 
     // Vérifier qu'il n'y a pas déjà une demande PENDING pour cette évaluation
+    // ✅ Si une demande existe déjà, on retourne success (pas d'erreur)
+    // — l'enseignant ne doit pas voir une erreur s'il reclique
     const existing = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT id FROM "exam_unlock_requests"
        WHERE "evaluationId" = $1 AND "tenantId" = $2 AND "status" = 'PENDING'
@@ -177,7 +179,13 @@ export class EvaluationsController {
       id, tenantId,
     ).catch(() => []);
     if (existing && existing.length > 0) {
-      throw new BadRequestException('Une demande de déverrouillage est déjà en cours pour cette évaluation');
+      return {
+        success: true,
+        message: 'Une demande de déverrouillage est déjà en cours pour cette évaluation',
+        requestId: existing[0].id,
+        evaluationId: id,
+        alreadyPending: true,
+      };
     }
 
     // Persister la demande avec studentIds + subjectIds

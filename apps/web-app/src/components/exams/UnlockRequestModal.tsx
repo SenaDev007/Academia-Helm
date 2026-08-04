@@ -125,29 +125,46 @@ export function UnlockRequestModal({
         .join(', ');
 
       const errors: string[] = [];
+      const alreadyPending: string[] = [];
       await Promise.all(
         evaluationIds.map(async (evId) => {
           try {
-            await apiClient.post(`/institutional-exams/evaluations/${evId}/unlock-request`, {
+            const res = await apiClient.post(`/institutional-exams/evaluations/${evId}/unlock-request`, {
               reason: reason.trim(),
               studentIds: studentIdsArr,
               subjectIds: subjectIdsArr,
               studentNames: studentNamesStr,
               subjectNames: subjectNamesStr,
             });
+            // ✅ Si déjà en attente, ne pas compter comme erreur
+            if (res.data?.alreadyPending) {
+              alreadyPending.push(evId);
+            }
           } catch (err: any) {
-            console.error(`Failed for evaluation ${evId}:`, err.response?.data || err.message);
-            errors.push(evId);
+            // ✅ Si le backend dit "déjà en cours", c'est un succès (pas une erreur)
+            const msg = err.response?.data?.message || '';
+            if (msg.includes('déjà en cours') || msg.includes('already pending') || err.response?.status === 409) {
+              alreadyPending.push(evId);
+            } else {
+              console.error(`Failed for evaluation ${evId}:`, err.response?.data || err.message);
+              errors.push(evId);
+            }
           }
         })
       );
 
+      // ✅ Ne lancer une erreur que s'il y a de vraies erreurs (pas des "déjà en attente")
       if (errors.length > 0 && errors.length === evaluationIds.length) {
-        throw new Error("Échec de l'envoi pour toutes les évaluations.");
+        throw new Error(`Échec de l'envoi pour ${errors.length} évaluation(s). Vérifiez votre connexion.`);
       }
 
+      const successCount = evaluationIds.length - errors.length;
+      const pendingCount = alreadyPending.length;
+      const descParts = [`${studentIdsArr.length} élève(s)`, `${subjectIdsArr.length} matière(s)`];
+      if (pendingCount > 0) descParts.push(`${pendingCount} déjà en attente`);
+
       toastSuccess("Demande de déverrouillage envoyée", {
-        description: `${studentIdsArr.length} élève(s) · ${subjectIdsArr.length} matière(s) — L'administration examinera votre demande.`,
+        description: descParts.join(' · ') + " — L'administration examinera votre demande.",
       });
       onClose();
     } catch (err: any) {

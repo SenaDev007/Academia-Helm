@@ -96,6 +96,14 @@ export default function AveragesPage() {
   const [loadingClasses, setLoadingClasses] = useState(true);
   const [loading, setLoading] = useState(false);
   const [calculating, setCalculating] = useState(false);
+  // ✅ Sub-tabs: trimestriel / annuel / niveau / matière
+  const [viewTab, setViewTab] = useState<'trimestriel' | 'annuel' | 'niveau' | 'matiere'>('trimestriel');
+  const [annualResults, setAnnualResults] = useState<any[]>([]);
+  const [levelResults, setLevelResults] = useState<any[]>([]);
+  const [subjectResults, setSubjectResults] = useState<any[]>([]);
+  const [loadingAnnual, setLoadingAnnual] = useState(false);
+  const [loadingLevel, setLoadingLevel] = useState(false);
+  const [loadingSubject, setLoadingSubject] = useState(false);
 
   // ── Load classes ────────────────────────────────────────────────────────────
   // ✅ FIX: use /api/all-classes + client-side filter (same pattern as evaluations/grades/registre)
@@ -234,6 +242,83 @@ export default function AveragesPage() {
     }
   };
 
+  // ── Load annual averages (moyennes annuelles + passage) ─────────────────────
+  const loadAnnualAverages = async () => {
+    if (!selectedClassId || !academicYear?.id) return;
+    setLoadingAnnual(true);
+    try {
+      const res = await fetch(
+        `/api/exams/annual-averages?classId=${selectedClassId}&academicYearId=${academicYear.id}`,
+        { credentials: 'include' },
+      );
+      if (!res.ok) throw new Error('Erreur');
+      const data = await res.json();
+      setAnnualResults(Array.isArray(data) ? data : []);
+    } catch {
+      setAnnualResults([]);
+    } finally {
+      setLoadingAnnual(false);
+    }
+  };
+
+  // ── Load level rankings (rangs par niveau) ──────────────────────────────────
+  const loadLevelRankings = async () => {
+    if (!selectedPeriodId || !academicYear?.id) return;
+    // Resolve schoolLevelUuid
+    const activeLevel = (availableLevels || []).find(
+      (l: any) => (l.code || '').toUpperCase() === scopeLevel && l.id !== 'ALL'
+    );
+    const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
+    if (!schoolLevelUuid) return;
+
+    setLoadingLevel(true);
+    try {
+      const res = await fetch(
+        `/api/exams/rankings/by-level?schoolLevelId=${schoolLevelUuid}&periodId=${selectedPeriodId}&academicYearId=${academicYear.id}`,
+        { credentials: 'include' },
+      );
+      if (!res.ok) throw new Error('Erreur');
+      const data = await res.json();
+      setLevelResults(Array.isArray(data) ? data : []);
+    } catch {
+      setLevelResults([]);
+    } finally {
+      setLoadingLevel(false);
+    }
+  };
+
+  // ── Load subject rankings (rangs par matière) ───────────────────────────────
+  const loadSubjectRankings = async () => {
+    if (!selectedClassId || !selectedPeriodId || !academicYear?.id) return;
+    setLoadingSubject(true);
+    try {
+      const res = await fetch(
+        `/api/exams/rankings/by-subject?classId=${selectedClassId}&periodId=${selectedPeriodId}&academicYearId=${academicYear.id}`,
+        { credentials: 'include' },
+      );
+      if (!res.ok) throw new Error('Erreur');
+      const data = await res.json();
+      setSubjectResults(Array.isArray(data) ? data : []);
+    } catch {
+      setSubjectResults([]);
+    } finally {
+      setLoadingSubject(false);
+    }
+  };
+
+  // ── Auto-load when tab changes ──────────────────────────────────────────────
+  useEffect(() => {
+    if (viewTab === 'annuel' && selectedClassId && annualResults.length === 0) {
+      loadAnnualAverages();
+    }
+    if (viewTab === 'niveau' && selectedPeriodId && levelResults.length === 0) {
+      loadLevelRankings();
+    }
+    if (viewTab === 'matiere' && selectedClassId && selectedPeriodId && subjectResults.length === 0) {
+      loadSubjectRankings();
+    }
+  }, [viewTab, selectedClassId, selectedPeriodId]);
+
   // ── Derived stats ───────────────────────────────────────────────────────────
   const numericResults = results.map((r) => ({
     ...r,
@@ -361,7 +446,31 @@ export default function AveragesPage() {
               </div>
             </div>
 
-            {/* Results */}
+            {/* ✅ Sub-tabs: Trimestriel / Annuel / Niveau / Matière */}
+            <div className="flex gap-2 flex-wrap">
+              {([
+                { id: 'trimestriel', label: 'Trimestriel' },
+                { id: 'annuel', label: 'Annuel + Passage' },
+                { id: 'niveau', label: 'Classement par niveau' },
+                { id: 'matiere', label: 'Classement par matière' },
+              ] as const).map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setViewTab(tab.id)}
+                  className={cn(
+                    'px-4 py-2 rounded-lg text-sm font-medium transition-all',
+                    viewTab === tab.id
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ─── Vue Trimestriel (existant) ─── */}
+            {viewTab === 'trimestriel' && (
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
               {/* Ranking Table */}
               <Card className="lg:col-span-3 border-none shadow-sm overflow-hidden">
@@ -581,6 +690,243 @@ export default function AveragesPage() {
                 )}
               </div>
             </div>
+            )} {/* end viewTab === 'trimestriel' */}
+
+            {/* ─── Vue Annuel + Passage ─── */}
+            {viewTab === 'annuel' && (
+              <Card className="border-none shadow-sm overflow-hidden">
+                <CardHeader>
+                  <CardTitle className="text-lg font-bold flex items-center gap-2">
+                    Moyennes Annuelles & Passage
+                    {annualResults.length > 0 && (
+                      <Badge variant="outline" className="text-xs border-gray-200 text-gray-500">
+                        {annualResults.length} élèves
+                      </Badge>
+                    )}
+                  </CardTitle>
+                  <CardDescription>
+                    Moyenne annuelle = moyenne des 3 trimestres · Moyenne de passage = (annuelle + EP) / 2
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {loadingAnnual ? (
+                    <div className="flex items-center justify-center py-20">
+                      <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                    </div>
+                  ) : annualResults.length === 0 ? (
+                    <div className="text-center py-16">
+                      <Calculator className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-gray-500">Sélectionnez une classe pour voir les moyennes annuelles</p>
+                      <Button onClick={loadAnnualAverages} disabled={!selectedClassId} className="mt-4" size="sm">
+                        Calculer les moyennes annuelles
+                      </Button>
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gray-50">
+                          <TableHead className="w-12">Rang</TableHead>
+                          <TableHead>Élève</TableHead>
+                          <TableHead className="text-center">Trim 1</TableHead>
+                          <TableHead className="text-center">Trim 2</TableHead>
+                          <TableHead className="text-center">Trim 3</TableHead>
+                          <TableHead className="text-center font-bold">Moy. Annuelle</TableHead>
+                          <TableHead className="text-center font-bold">Moy. Passage</TableHead>
+                          <TableHead className="text-center">Statut</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {annualResults.map((r: any, idx: number) => (
+                          <TableRow key={r.studentId} className={idx < 3 ? 'bg-amber-50/50' : ''}>
+                            <TableCell className="font-bold">
+                              {r.annualRank <= 3 ? '🏆' : ''} {r.annualRank}
+                            </TableCell>
+                            <TableCell>
+                              <div className="font-medium">{r.student?.firstName} {r.student?.lastName}</div>
+                              <div className="text-xs text-gray-400">{r.student?.matricule}</div>
+                            </TableCell>
+                            {(r.trimesterDetails || []).map((t: any) => (
+                              <TableCell key={t.periodId} className="text-center">
+                                {t.average?.toFixed(2) ?? '—'}
+                                <div className="text-[10px] text-gray-400">Rang {t.rank ?? '—'}</div>
+                              </TableCell>
+                            ))}
+                            {/* Fill missing trimesters */}
+                            {Array.from({ length: 3 - (r.trimesterDetails?.length || 0) }).map((_, i) => (
+                              <TableCell key={`empty-${i}`} className="text-center text-gray-300">—</TableCell>
+                            ))}
+                            <TableCell className="text-center font-bold text-blue-700">
+                              {r.annualAverage?.toFixed(2) ?? '0.00'}
+                            </TableCell>
+                            <TableCell className="text-center font-bold">
+                              {r.passageAverage !== null ? (
+                                <span className={r.passageAverage >= 10 ? 'text-emerald-600' : 'text-red-600'}>
+                                  {r.passageAverage.toFixed(2)}
+                                </span>
+                              ) : (
+                                <span className="text-gray-300">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {r.passageStatus === 'ADMIS' && (
+                                <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Admis</Badge>
+                              )}
+                              {r.passageStatus === 'REDOUBLANT' && (
+                                <Badge className="bg-red-100 text-red-700 border-red-200">Redoublant</Badge>
+                              )}
+                              {r.passageStatus === 'N/A' && (
+                                <span className="text-gray-300 text-xs">N/A</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ─── Vue Classement par Niveau ─── */}
+            {viewTab === 'niveau' && (
+              <Card className="border-none shadow-sm overflow-hidden">
+                <CardHeader>
+                  <CardTitle className="text-lg font-bold flex items-center gap-2">
+                    Classement par Niveau — {scopeLevel}
+                    {levelResults.length > 0 && (
+                      <Badge variant="outline" className="text-xs border-gray-200 text-gray-500">
+                        {levelResults.length} élèves · {levelResults.length > 0 ? `${new Set(levelResults.map((r:any) => r.className)).size} classe(s)` : ''}
+                      </Badge>
+                    )}
+                  </CardTitle>
+                  <CardDescription>Classement de tous les élèves du niveau, toutes classes confondues.</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {loadingLevel ? (
+                    <div className="flex items-center justify-center py-20">
+                      <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                    </div>
+                  ) : levelResults.length === 0 ? (
+                    <div className="text-center py-16">
+                      <Calculator className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-gray-500">Sélectionnez une période pour voir le classement par niveau</p>
+                      <Button onClick={loadLevelRankings} disabled={!selectedPeriodId} className="mt-4" size="sm">
+                        Calculer le classement
+                      </Button>
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gray-50">
+                          <TableHead className="w-12">Rang</TableHead>
+                          <TableHead>Élève</TableHead>
+                          <TableHead>Classe</TableHead>
+                          <TableHead className="text-center">Moy. Classe</TableHead>
+                          <TableHead className="text-center font-bold">Moy. Générale</TableHead>
+                          <TableHead className="text-center">Mention</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {levelResults.map((r: any, idx: number) => (
+                          <TableRow key={r.id} className={idx < 3 ? 'bg-amber-50/50' : ''}>
+                            <TableCell className="font-bold">
+                              {r.levelRank <= 3 ? '🏆' : ''} {r.levelRank}
+                            </TableCell>
+                            <TableCell>
+                              <div className="font-medium">{r.student?.firstName} {r.student?.lastName}</div>
+                              <div className="text-xs text-gray-400">{r.student?.matricule}</div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs">{r.className}</Badge>
+                            </TableCell>
+                            <TableCell className="text-center text-gray-500">
+                              {r.classRank ?? '—'}
+                            </TableCell>
+                            <TableCell className="text-center font-bold text-blue-700">
+                              {Number(r.generalAverage).toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {r.decision && (
+                                <Badge className={
+                                  r.decision === 'ADMIS' ? 'bg-emerald-100 text-emerald-700' :
+                                  r.decision === 'REDOUBLANT' ? 'bg-red-100 text-red-700' :
+                                  'bg-gray-100 text-gray-700'
+                                }>{r.decision}</Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ─── Vue Classement par Matière ─── */}
+            {viewTab === 'matiere' && (
+              <div className="space-y-4">
+                {loadingSubject ? (
+                  <div className="flex items-center justify-center py-20">
+                    <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                  </div>
+                ) : subjectResults.length === 0 ? (
+                  <div className="text-center py-16">
+                    <Calculator className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500">Sélectionnez une classe et une période</p>
+                    <Button onClick={loadSubjectRankings} disabled={!selectedClassId || !selectedPeriodId} className="mt-4" size="sm">
+                      Calculer les classements par matière
+                    </Button>
+                  </div>
+                ) : (
+                  subjectResults.map((subject: any) => (
+                    <Card key={subject.subjectId} className="border-none shadow-sm overflow-hidden">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-base font-bold flex items-center gap-2">
+                          {subject.subjectName}
+                          <Badge variant="outline" className="text-xs">Coef. {subject.coefficient}</Badge>
+                          {subject.rankings?.length > 0 && (
+                            <Badge variant="outline" className="text-xs text-gray-500">
+                              {subject.rankings.length} élèves
+                            </Badge>
+                          )}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-0">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-gray-50">
+                              <TableHead className="w-12">Rang</TableHead>
+                              <TableHead>Élève</TableHead>
+                              <TableHead className="text-center font-bold">Moyenne</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {(subject.rankings || []).map((r: any, idx: number) => (
+                              <TableRow key={r.studentId} className={idx < 3 ? 'bg-amber-50/50' : ''}>
+                                <TableCell className="font-bold">
+                                  {r.subjectRank <= 3 ? '🏆' : ''} {r.subjectRank}
+                                </TableCell>
+                                <TableCell className="font-medium">{r.studentName}</TableCell>
+                                <TableCell className="text-center font-bold text-blue-700">
+                                  {r.isQualitative ? (
+                                    <span className="text-purple-600">
+                                      {r.subjectAverage >= 2.5 ? 'TS' : r.subjectAverage >= 1.5 ? 'S' : 'PS'}
+                                    </span>
+                                  ) : (
+                                    r.subjectAverage.toFixed(2)
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         ),
       }}

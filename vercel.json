@@ -24,6 +24,14 @@
     "src/app/api/public/reviews-published/route.ts": {
       "maxDuration": 10,
       "memory": 256
+    },
+    "src/app/api/public/sara/chat/stream/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "src/app/api/public/sara/chat/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
     }
   }
 }

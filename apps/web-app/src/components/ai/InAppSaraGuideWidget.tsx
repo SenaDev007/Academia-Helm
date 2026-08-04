@@ -758,8 +758,13 @@ export default function InAppSaraGuideWidget() {
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [streamingText, setStreamingText] = useState('');
 
+  // ⭐ Onboarding : affiché au premier clic, avec case à cocher "ne plus afficher"
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [dontShowAgain, setDontShowAgain] = useState(false);
+
   // Version du chat — purge les anciens messages si on change de version
   const SARA_GUIDE_VERSION = 'v2-2025-08';
+  const ONBOARDING_DISMISS_KEY = 'sara_guide_onboarding_dismissed';
 
   // ⭐ Détection automatique du type d'UI (admin, teacher, parent, promoter, platform)
   const uiType = detectUIFromPath(pathname || '');
@@ -827,6 +832,54 @@ Que souhaitez-vous faire ?`;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ⭐ Vérifier au montage si l'onboarding a déjà été dismissé
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const dismissed = localStorage.getItem(ONBOARDING_DISMISS_KEY);
+      if (dismissed === 'true') {
+        setDontShowAgain(true);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // ⭐ Gestion du clic sur le bouton flottant
+  const handleOpenClick = useCallback(() => {
+    // Si l'onboarding n'a pas été dismissé, l'afficher d'abord
+    if (!dontShowAgain) {
+      setShowOnboarding(true);
+    } else {
+      setIsOpen(true);
+    }
+  }, [dontShowAgain]);
+
+  // ⭐ Accepter l'onboarding → ouvrir le chat
+  const handleAcceptOnboarding = useCallback(() => {
+    if (dontShowAgain) {
+      try {
+        localStorage.setItem(ONBOARDING_DISMISS_KEY, 'true');
+      } catch {
+        // ignore
+      }
+    }
+    setShowOnboarding(false);
+    setIsOpen(true);
+  }, [dontShowAgain]);
+
+  // ⭐ Refuser l'onboarding → fermer et sauvegarder si case cochée
+  const handleDismissOnboarding = useCallback(() => {
+    if (dontShowAgain) {
+      try {
+        localStorage.setItem(ONBOARDING_DISMISS_KEY, 'true');
+      } catch {
+        // ignore
+      }
+    }
+    setShowOnboarding(false);
+  }, [dontShowAgain]);
 
   // ─── STREAMING SEND via saraApi.guideStream() ─────────────────────────
 
@@ -1256,10 +1309,124 @@ Que souhaitez-vous faire ?`;
             </div>
           </form>
         </div>
+      ) : showOnboarding ? (
+        // ─── ONBOARDING STATE — Welcome panel with "ne plus afficher" checkbox ──
+        <div
+          className="w-[340px] animate-in slide-in-from-bottom-3 duration-300 rounded-2xl shadow-2xl overflow-hidden"
+          style={{
+            background: AH.white,
+            border: `1px solid ${AH.graphite300}`,
+            boxShadow: `0 12px 40px rgba(10,42,94,0.18), 0 2px 8px rgba(10,42,94,0.08)`,
+          }}
+        >
+          {/* Header — Royal Blue with Gold accent */}
+          <div
+            className="relative px-4 py-3 flex items-center justify-between"
+            style={{
+              background: `linear-gradient(135deg, ${AH.navy900} 0%, ${AH.navy800} 100%)`,
+            }}
+          >
+            <div
+              className="absolute top-0 left-0 right-0 h-[2px]"
+              style={{
+                background: `linear-gradient(90deg, ${AH.gold600}, ${AH.gold500}, ${AH.gold600})`,
+              }}
+            />
+            <div className="flex items-center gap-2.5">
+              <div
+                className="relative w-9 h-9 rounded-full overflow-hidden ring-2"
+                style={{ '--tw-ring-color': AH.gold500 } as React.CSSProperties}
+              >
+                <Image
+                  src="/images/SarahAI.webp"
+                  alt="Sarah"
+                  width={36}
+                  height={36}
+                  className="object-cover w-full h-full"
+                  priority
+                />
+              </div>
+              <div>
+                <h4 className="font-semibold text-[13px] text-white">Sarah Guide</h4>
+                <p className="text-[10px] text-white/70">{uiLabel}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowOnboarding(false)}
+              className="p-1.5 rounded-md transition-colors text-white/60 hover:text-white hover:bg-white/10"
+              aria-label="Fermer"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Body — Welcome message + checkbox + buttons */}
+          <div className="p-4 space-y-3">
+            <p className="text-[12px] leading-relaxed" style={{ color: AH.graphite700 }}>
+              Shalom ! Je suis <strong style={{ color: AH.navy900 }}>Sarah</strong>, votre guide dans Academia Helm. 👋
+            </p>
+            <p className="text-[11.5px] leading-relaxed" style={{ color: AH.graphite500 }}>
+              Je peux vous aider à naviguer dans l'application, comprendre les modules et accomplir vos tâches étape par étape. Souhaitez-vous que je vous guide ?
+            </p>
+
+            {/* Checkbox "ne plus afficher" */}
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={dontShowAgain}
+                onChange={(e) => setDontShowAgain(e.target.checked)}
+                className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                style={{ accentColor: AH.navy700 }}
+              />
+              <span className="text-[11px]" style={{ color: AH.graphite500 }}>
+                Ne plus afficher ce message
+              </span>
+            </label>
+
+            {/* Buttons */}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={handleDismissOnboarding}
+                className="flex-1 px-3 py-2 rounded-lg text-[11.5px] font-medium transition-all"
+                style={{
+                  background: AH.cloud,
+                  border: `1px solid ${AH.graphite300}`,
+                  color: AH.graphite700,
+                }}
+              >
+                Non merci
+              </button>
+              <button
+                onClick={handleAcceptOnboarding}
+                className="flex-1 px-3 py-2 rounded-lg text-[11.5px] font-semibold text-white transition-all"
+                style={{
+                  background: `linear-gradient(135deg, ${AH.navy700}, ${AH.navy600})`,
+                }}
+              >
+                Oui, guidez-moi
+              </button>
+            </div>
+          </div>
+
+          {/* Footer branding */}
+          <div
+            className="px-4 py-2 border-t flex items-center justify-center gap-1"
+            style={{ borderColor: AH.graphite300, background: AH.cloud }}
+          >
+            <span className="text-[8.5px] tracking-wider font-medium" style={{ color: AH.graphite500 }}>
+              Sarah Guide ·
+            </span>
+            <span className="text-[8.5px] tracking-wider font-bold" style={{ color: AH.navy800 }}>
+              ACADEMIA HELM
+            </span>
+          </div>
+        </div>
       ) : (
         // ─── CLOSED STATE — Floating branded button ──
         <button
-          onClick={() => setIsOpen(true)}
+          onClick={handleOpenClick}
           className="group relative flex items-center justify-center transition-all duration-300 hover:scale-105 cursor-pointer"
           style={{ width: '56px', height: '56px' }}
           aria-label="Discuter avec Sarah"

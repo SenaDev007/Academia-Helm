@@ -498,7 +498,10 @@ export class OpenRouterService {
     // SARA → GLM-5.2, ORION → MiniMax-M3, ATLAS → GPT-OSS-120B
     const requestedModel = options.model || PERSONA_MODEL_MAPPING[persona] || this.model;
     const maxRetries = options.maxRetries ?? 2;
-    const enableFallback = options.enableFallback ?? true;
+    // ⚠️ Désactiver le fallback par défaut pour le streaming (évite la lenteur)
+    // Le fallback multi-modèle en streaming peut prendre 30s+ si les modèles échouent
+    // Préférez retry sur le même modèle, puis fallback uniquement en non-streaming
+    const enableFallback = options.enableFallback ?? false;
 
     // Construire la liste de modèles à essayer
     const modelsToTry: string[] = [requestedModel];
@@ -543,7 +546,8 @@ export class OpenRouterService {
   ): AsyncGenerator<OpenRouterStreamChunk> {
     const temperature = options.temperature ?? 0.6;
     const maxTokens = options.maxTokens ?? 600;
-    const timeout = options.timeout ?? 60000;
+    // ⚠️ Timeout réduit à 30s pour le streaming (évite les attentes trop longues)
+    const timeout = options.timeout ?? 30000;
     const enableReasoning = options.reasoning ?? false;
 
     this.logger.log(`[${persona}] Streaming from OpenRouter (${model}), reasoning=${enableReasoning}`);

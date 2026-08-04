@@ -412,3 +412,75 @@ Stage Summary:
 - Automatic agent→model routing via PERSONA_MODEL_MAPPING
 - reasoning_content support added for MiniMax-M3 and GPT-OSS-120B
 - Fallback chain: primary model → GLM 5.2 → other models → placeholder
+
+---
+Task ID: 11
+Agent: main
+Task: Fix AI agents not responding + slow responses + add onboarding with "don't show again" checkbox
+
+Work Log:
+
+DIAGNOSIS — Why agents returned generic error:
+- Root cause: OpenRouterService.chatStream() had enableFallback=true by default
+  with MODEL_FALLBACK_CHAIN containing 5 models (GLM 5.2, MiniMax-M3, GPT-OSS-120B, GLM 5.1, GLM 4.5 Air)
+- With maxRetries=2 per model = up to 10 attempts before giving up
+- If MiniMax-M3 or GPT-OSS-120B not accessible with NVIDIA key → 30s+ timeout → generic error
+- Also: frontend called backend NestJS directly, which may have CORS/latency issues on Vercel
+
+FIX 1 — Disable fallback for streaming (speed):
+- Changed enableFallback default from true to false for chatStream()
+- Only retry on the same model (2 attempts max), no cross-model fallback in streaming
+- Non-streaming chat() still has full fallback chain (acceptable for non-interactive calls)
+- Reduced streaming timeout from 60s to 30s (fail fast)
+
+FIX 2 — Frontend route priority (reliability):
+- saraApi.queryStream() now tries Next.js route FIRST (/api/public/sara/chat/stream)
+  * Same origin → no CORS issues
+  * Uses NVIDIA_API_KEY configured on Vercel directly
+  * Already deployed with the frontend
+- Falls back to backend NestJS /sara/query/stream if Next.js route fails
+- Falls back to non-streaming /sara/query as last resort
+- Same pattern applied to saraApi.guideStream() for Sarah Guide In-App
+
+FIX 3 — Next.js route supports mode 'inapp' with UI context:
+- route.ts now accepts mode, userRole, currentModule, uiType params
+- buildInAppUIContext() function generates UI-specific context:
+  * admin: 11 modules listed with paths
+  * teacher: 7 modules (no admin modules mentioned)
+  * parent: 6 modules (with Wave/MTN/Moov payment info)
+  * promoter: 5 modules (multi-campus focus)
+  * platform: 6 modules (technical admin)
+- Each UI has adaptation rule preventing cross-UI module mentions
+- Reduced max_tokens from 800 to 600 (faster response)
+- Reduced temperature from 0.85 to 0.7 (more focused)
+
+FIX 4 — Vercel function config:
+- Added maxDuration: 60s + memory: 1024MB for /api/public/sara/chat/stream route
+- Added same config for /api/public/sara/chat route
+- Prevents Vercel 10s timeout on AI calls
+
+ONBOARDING with "don't show again" checkbox:
+- Added showOnboarding + dontShowAgain state to InAppSaraGuideWidget
+- ONBOARDING_DISMISS_KEY = 'sara_guide_onboarding_dismissed' in localStorage
+- On mount: check if dismissed → skip onboarding
+- On button click: if not dismissed → show onboarding panel (not chat)
+- Onboarding panel:
+  * Sarah avatar + header (Royal Blue + Gold)
+  * Welcome message: "Shalom! Je suis Sarah... Souhaitez-vous que je vous guide ?"
+  * Checkbox: "Ne plus afficher ce message"
+  * Two buttons: "Non merci" (dismiss) + "Oui, guidez-moi" (accept)
+- If checkbox checked + "Non merci" → saves to localStorage, never shows again
+- If checkbox checked + "Oui, guidez-moi" → saves + opens chat
+- If checkbox unchecked → onboarding shows again next time
+
+API KEY SECURITY:
+- Verified: NVIDIA_API_KEY is read from environment variable (not hardcoded)
+- No API keys found in any source file
+- Keys must be configured on Vercel (for Next.js route) AND backend (for NestJS)
+
+Stage Summary:
+- AI agents should now respond correctly (Next.js route as primary, backend as fallback)
+- Responses should be faster (no multi-model fallback in streaming, 30s timeout, 600 max_tokens)
+- Onboarding panel appears on first click with "don't show again" checkbox
+- Sarah Guide adapts to current UI (admin/teacher/parent/promoter/platform) via Next.js route
+- API keys are environment variables, never hardcoded

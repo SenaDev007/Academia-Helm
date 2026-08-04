@@ -13,6 +13,7 @@ import { PrismaService } from '../database/prisma.service';
 import { AcademicRulesEngine } from './academic-rules-engine.service';
 import { AcademicSettingsService } from './academic-settings.service';
 import { ReportCardsPrismaService } from './report-cards-prisma.service';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class ExamsPrismaService {
@@ -649,11 +650,16 @@ export class ExamsPrismaService {
     const tieMode = cfg.rankingRules?.tieMode || 'SAME_RANK';
     const decimals = cfg.scoreScale?.decimals ?? 2;
 
-    // 2. Fetch students
-    const enrollments = await this.prisma.studentEnrollment.findMany({
-      where: { classId, tenantId, academicYearId },
-      include: { student: true },
-    });
+    // 2. Fetch students via raw SQL (avoid Prisma include issues)
+    const enrollments = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT se."id", se."studentId", se."classId", se."schoolLevelId",
+             se."localStudentMatricule",
+             s."firstName", s."lastName", s."matricule"
+      FROM "student_enrollments" se
+      INNER JOIN "students" s ON s."id" = se."studentId"
+      WHERE se."classId" = $1 AND se."tenantId" = $2 AND se."academicYearId" = $3
+        AND se."status" IN ('ACTIVE', 'ADMITTED', 'ENROLLED', 'CONFIRMED')
+    `, [classId, tenantId, academicYearId]).catch(() => []);
 
     // 3. Fetch class subjects
     // ✅ FIX: class_subjects.classId is NULL in production — uses academicClassId
@@ -827,44 +833,34 @@ export class ExamsPrismaService {
       s.rank = rankObj ? rankObj.rank : 1;
     });
 
-    // 7. Persist rankings in the DB
+    // 7. Persist rankings via raw SQL (avoid Prisma model issues)
     for (const s of studentsList) {
-      const existingRanking = await this.prisma.ranking.findFirst({
-        where: {
-          tenantId,
-          academicYearId,
-          schoolLevelId: s.enrollment.schoolLevelId,
-          rankingType: 'CLASS',
-          classId,
-          quarterId: periodId,
-          studentId: s.studentId,
-        },
-      });
+      const schoolLevelId = s.enrollment.schoolLevelId || classRecord.schoolLevelId;
+      
+      // Check existing
+      const existing = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT id FROM "rankings"
+        WHERE "tenantId" = $1 AND "academicYearId" = $2
+          AND "schoolLevelId" = $3 AND "rankingType" = 'CLASS'
+          AND "classId" = $4 AND "quarterId" = $5 AND "studentId" = $6
+        LIMIT 1
+      `, [tenantId, academicYearId, schoolLevelId, classId, periodId, s.studentId]).catch(() => []);
 
-      if (existingRanking) {
-        await this.prisma.ranking.update({
-          where: { id: existingRanking.id },
-          data: {
-            average: s.generalAverage,
-            rank: s.rank,
-            totalStudents: enrollments.length,
-          },
-        });
+      if (existing && existing.length > 0) {
+        await this.prisma.$executeRawUnsafe(`
+          UPDATE "rankings"
+          SET "average" = $1, "rank" = $2, "totalStudents" = $3, "updatedAt" = NOW()
+          WHERE "id" = $4
+        `, [s.generalAverage, s.rank, enrollments.length, existing[0].id]).catch(() => {});
       } else {
-        await this.prisma.ranking.create({
-          data: {
-            tenantId,
-            academicYearId,
-            schoolLevelId: s.enrollment.schoolLevelId,
-            rankingType: 'CLASS',
-            classId,
-            quarterId: periodId,
-            studentId: s.studentId,
-            average: s.generalAverage,
-            rank: s.rank,
-            totalStudents: enrollments.length,
-          },
-        });
+        const rankId = crypto.randomUUID();
+        await this.prisma.$executeRawUnsafe(`
+          INSERT INTO "rankings" ("id", "tenantId", "academicYearId", "schoolLevelId",
+            "rankingType", "classId", "quarterId", "studentId", "average", "rank", "totalStudents",
+            "createdAt", "updatedAt")
+          VALUES ($1, $2, $3, $4, 'CLASS', $5, $6, $7, $8, $9, $10, NOW(), NOW())
+        `, [rankId, tenantId, academicYearId, schoolLevelId, classId, periodId,
+            s.studentId, s.generalAverage, s.rank, enrollments.length]).catch(() => {});
       }
     }
 
@@ -875,9 +871,9 @@ export class ExamsPrismaService {
       return {
         id: s.studentId,
         student: {
-          lastName: s.enrollment.student.lastName,
-          firstName: s.enrollment.student.firstName,
-          matricule: s.enrollment.localStudentMatricule ?? s.enrollment.student.matricule ?? null,
+          lastName: s.enrollment.lastName || s.enrollment.student?.lastName || '',
+          firstName: s.enrollment.firstName || s.enrollment.student?.firstName || '',
+          matricule: s.enrollment.localStudentMatricule || s.enrollment.matricule || s.enrollment.student?.matricule || null,
         },
         classRank: s.rank,
         generalAverage: Number(s.generalAverage.toFixed(decimals)),

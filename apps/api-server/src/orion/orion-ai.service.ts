@@ -27,6 +27,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
+import { OrionModuleScanner } from './services/orion-module-scanner.service';
 
 @Injectable()
 export class OrionAiService {
@@ -38,6 +39,7 @@ export class OrionAiService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly moduleScanner: OrionModuleScanner,
   ) {
     // ⭐ Migration vers NVIDIA GLM-5.2 — priorité NVIDIA_* > OPENROUTER_*
     this.apiKey =
@@ -150,12 +152,21 @@ Format ta réponse en JSON structuré avec les clés: summary, alerts (array), r
    * Multi-tenant strict : toutes les requêtes sont filtrées par tenantId.
    * Aucune donnée d'autres tenants n'est jamais lue.
    *
-   * Couvre les 5 domaines ORION :
-   *   1. Académique (élèves, classes, enseignants, notes, absences)
-   *   2. RH (contrats, enseignants, paies)
-   *   3. Finance (paiements, dépenses, impayés)
-   *   4. Administratif (dossiers, cartes, audits)
-   *   5. Sécurité (audit logs, événements suspects)
+   * Couvre 14 modules complets via OrionModuleScanner :
+   *   1. Pédagogie (EDT, matières, affectations, espace péda, validation direction)
+   *   2. Élèves & Scolarité (inscriptions, dossiers, transferts, cartes, absences)
+   *   3. Finance (frais, caisses, encaissements, recouvrements, arriérés, dépenses, clôtures)
+   *   4. Examens & Notes (saisie, moyennes, bulletins, délibérations, corrections)
+   *   5. RH (contrats, congés, paie, CNSS, candidats)
+   *   6. Communication (SMS, WhatsApp, email, push, campagnes)
+   *   7. QHSE (incidents, contrôles, conformité)
+   *   8. Paramètres (config, rôles, audit)
+   *   9. Cantine (menus, inscriptions, paiements, stocks)
+   *  10. EduCast (chaînes, contenus, monétisation)
+   *  11. Boutique (produits, commandes, stocks)
+   *  12. Transport (itinéraires, tickets)
+   *  13. Infirmerie (visites, ordonnances)
+   *  14. Bibliothèque (catalogue, prêts)
    */
   private async buildContext(tenantId: string, academicYearId?: string) {
     const yearFilter = academicYearId ? { academicYearId } : {};
@@ -276,6 +287,45 @@ Format ta réponse en JSON structuré avec les clés: summary, alerts (array), r
     orionScore += Math.min(15, 15 - alerts.filter(a => a.severity === 'CRITIQUE').length * 8);
     orionScore = Math.max(0, Math.min(100, Math.round(orionScore)));
 
+    // ⭐ Scan multi-module exhaustif (14 modules) via OrionModuleScanner
+    // Multi-tenant strict : toutes les requêtes du scanner sont filtrées par tenantId
+    let moduleScan: any = null;
+    try {
+      moduleScan = await this.moduleScanner.scanAllModules(tenantId, academicYearId);
+
+      // Fusionner les anomalies du scanner avec les alertes existantes
+      if (moduleScan) {
+        const moduleAnomalies = [
+          ...moduleScan.pedagogy.anomalies,
+          ...moduleScan.students.anomalies,
+          ...moduleScan.finance.anomalies,
+          ...moduleScan.exams.anomalies,
+          ...moduleScan.hr.anomalies,
+          ...moduleScan.communication.anomalies,
+          ...moduleScan.qhse.anomalies,
+          ...moduleScan.settings.anomalies,
+          ...moduleScan.canteen.anomalies,
+          ...moduleScan.educast.anomalies,
+          ...moduleScan.shop.anomalies,
+          ...moduleScan.transport.anomalies,
+          ...moduleScan.infirmary.anomalies,
+          ...moduleScan.library.anomalies,
+        ];
+        for (const anomaly of moduleAnomalies) {
+          // Éviter les doublons
+          if (!alerts.some(a => a.message === anomaly.message)) {
+            alerts.push({
+              severity: anomaly.severity,
+              domain: 'Module',
+              message: anomaly.message,
+            });
+          }
+        }
+      }
+    } catch (error: any) {
+      this.logger.warn(`Module scan failed (non-blocking): ${error?.message}`);
+    }
+
     return {
       tenant: tenant?.name || 'Établissement',
       // Académique
@@ -301,6 +351,8 @@ Format ta réponse en JSON structuré avec les clés: summary, alerts (array), r
       // ORION intelligence
       alerts,
       orionScore,
+      // ⭐ Scan multi-module exhaustif (14 modules)
+      moduleScan,
     };
   }
 
@@ -429,6 +481,8 @@ ${alertSummary}
 - Journal d'audit actif : ${context.auditLogs > 0 ? 'OUI' : 'NON'}
 - Événements récents : ${context.recentAuditLogs?.slice(0, 5).map((l: any) => `${l.action} sur ${l.entity || 'N/A'}`).join(', ') || 'Aucun'}
 
+${context.moduleScan ? this.moduleScanner.formatScanForPrompt(context.moduleScan) : '【 SCAN MULTI-MODULE NON DISPONIBLE 】'}
+
 ═══════════════════════════════════════════════════════════
 CATALOGUE DE KPIs — CALCULE-LES POUR ENRICHIR TES ANALYSES
 ═══════════════════════════════════════════════════════════
@@ -481,6 +535,44 @@ PRÉDICTION ADMINISTRATIVE :
 
 PRÉDICTION SÉCURITÉ :
 - Si actions inhabituelles détectées (modifications sensibles, accès hors horaires) → investiguer
+
+═══════════════════════════════════════════════════════════
+ANALYSE MULTI-MODULE — TU AS ACCÈS À TOUS LES MODULES
+═══════════════════════════════════════════════════════════
+⚠️ Tu as accès au scan exhaustif de 14 modules ci-dessus. Tu DOIS utiliser ces données pour :
+
+1. ANALYSE PAR MODULE : Quand l'utilisateur demande "analyse le module X", utilise les données du scan pour ce module spécifique. Donne :
+   - Résumé des données (counts, montants)
+   - Anomalies détectées (avec sévérité)
+   - KPIs calculés (avec interprétation vs seuils)
+   - Recommandations spécifiques au module
+
+2. ANALYSE GLOBALE : Quand l'utilisateur demande "analyse tout", parcours les 14 modules et identifie :
+   - Les anomalies CRITIQUES en priorité
+   - Les corrélations entre modules (ex: absences ↑ → notes ↓ → finances ↓)
+   - Les points forts de l'établissement
+   - Les 3 actions prioritaires à mener
+
+3. ANALYSE PÉDAGOGIQUE SPÉCIFIQUE : Pour le module Pédagogie, tu peux analyser :
+   - La génération des emplois du temps (EDT) — propose des améliorations
+   - L'espace pédagogique (documents, fiches) — évalue la complétude
+   - La validation direction — identifie les retards
+   - Les affectations enseignants — vérifie la couverture
+
+4. ANALYSE FINANCIÈRE SPÉCIFIQUE : Pour le module Finance, tu peux analyser :
+   - Les frais et personnalisations
+   - Le multi-caisses
+   - Les encaissements et bilans
+   - Les recouvrements et arriérés
+   - Les dépenses
+   - Les clôtures de trésorerie
+   - Les anomalies financières
+
+5. ANALYSE ÉLÈVES SPÉCIFIQUE : Pour le module Élèves & Scolarité, tu peux analyser :
+   - Les inscriptions (taux de conversion, dossiers incomplets)
+   - Les transferts
+   - Les absences (taux, patterns)
+   - La discipline
 
 ═══════════════════════════════════════════════════════════
 TEMPLATE DE RAPPORT DÉCISIONNEL (utilise cette structure)

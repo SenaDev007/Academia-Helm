@@ -484,3 +484,105 @@ Stage Summary:
 - Onboarding panel appears on first click with "don't show again" checkbox
 - Sarah Guide adapts to current UI (admin/teacher/parent/promoter/platform) via Next.js route
 - API keys are environment variables, never hardcoded
+
+---
+Task ID: 12
+Agent: main
+Task: Make Orion 100% functional across ALL modules (14 modules)
+
+Work Log:
+- Explored Prisma schema — identified 400+ models across all modules
+- Created OrionModuleScanner service (apps/api-server/src/orion/services/orion-module-scanner.service.ts, ~700 lines)
+  * Scans 14 modules exhaustively with multi-tenant strict filtering
+  * Each module returns: name, summary, anomalies[], kpis[]
+  * All Prisma queries wrapped in safeCount()/safeAggregate() for resilience
+  * formatScanForPrompt() generates formatted text for system prompt injection
+
+MODULES COVERED (14):
+1. Pédagogie — Timetable, TimetableEntry, TimetableVersion, TeachingAssignment, ClassSubject,
+   PedagogicalDocument, PedagogicalSheet, LessonJournal, LessonJournalValidation,
+   PedagogicalSheetValidation, PedagogicalMaterial, ClassDiary, CahierJournal
+   Alerts: missing EDT, pending validations, missing teacher assignments, empty pedagogical space
+
+2. Élèves & Scolarité — Student, Admission, StudentEnrollment, TransferRequest, ClassTransfer,
+   StudentIdCard, NationalExportLog, Absence, AttendanceRecord, Discipline, DisciplinaryAction
+   Alerts: no active students, pending admissions, incomplete dossiers, high absence rate
+
+3. Finance — FeeConfiguration, FeeStructure, CashRegister, CashClosure, Payment, OnlinePayment,
+   PaymentFlow, DailyClosure, CollectionAction, CollectionCase, FeeArrear, Expense,
+   FinanceExpense, FinanceTransaction, TreasuryMovement, FinanceDailyClosure, FinancialAnomaly
+   Alerts: no fee config, no payment plans, arrears, financial anomalies, deficit (expenses > income)
+
+4. Examens & Notes — Exam, ExamSession, Grade, ExamScore, ReportCard, ReportCardItem,
+   GradeCalculation, GradeValidationBatch, ExamDeliberation, GradeCorrectionRequest,
+   GradeLock, HonorRoll, Ranking
+   Alerts: no exams, exams without grades, pending grades, no report cards generated
+
+5. RH — Teacher, Contract, ContractAmendment, LeaveRequest, Payroll, SalarySlip, SalaryPayment,
+   CNSSDeclaration, EmployeeCNSS, HrCandidate, HrApplication, HrInterview, HrJob, OvertimeRecord
+   Alerts: teachers without contracts, pending leaves, contracts expiring <30 days, no CNSS
+
+6. Communication — Message, MessageLog, WhatsappLog, EmailLog, PushNotification,
+   ScheduledMessage, MessageTemplate, Announcement
+   Alerts: failed messages, pending scheduled messages
+
+7. QHSE — QHSEIncident, QhsIncident, QHSEAudit, QHSEHygieneInspection, QHSESecurityControl,
+   QHSEHealthVisit, QHSERisk, QHSEActionPlan, QHSECompliance, QHSEPeriodicControl
+   Alerts: critical incidents, open incidents >5
+
+8. Paramètres — TenantSetting, TenantFeature, SchoolSettings, SchoolAcademicSettings,
+   Role, Permission, AuditLog, SecuritySettings, FinancialSettings
+   Alerts: no roles configured, low audit activity
+
+9. Cantine — CanteenMenu, CanteenEnrollment, CanteenPayment, CanteenMealService,
+   CanteenAttendance, CanteenIncident, CanteenStockMovement, CanteenSupplier
+   Alerts: no menus, pending payments, incidents
+
+10. EduCast — EduCastTeacherChannel, EduCastChannelSubscriber, EduCastMediaItem,
+    EduCastResource, EduCastWebinar, EduCastPurchase, EduCastPayoutRequest
+    Alerts: no channels, pending payouts
+
+11. Boutique — ShopProduct, ShopCategory, ShopOrder, ShopOrderItem, ShopDiscount,
+    ShopLoyaltyCard, ShopDelivery, ShopPurchaseOrder
+    Alerts: no products, pending orders, low stock (≤5)
+
+12. Transport — TransportTrip, TransportAssignment, Vehicle, TransportDriver,
+    TransportAttendant, TransportZone, TransportSchedule, TransportIncident
+    Alerts: assignments without trips, incidents
+
+13. Infirmerie — InfirmaryVisit, InfirmaryMedicalRecord, InfirmaryEmergency, InfirmaryCheckup,
+    InfirmaryAllergy, Medication, InfirmaryMedicationMovement
+    Alerts: emergencies, no visits
+
+14. Bibliothèque — LibraryBook, LibraryCopy, LibraryLoan, LibraryPenalty, LibraryReservation,
+    LibraryCategory, LibraryDigitalResource
+    Alerts: overdue loans, penalties, empty library
+
+INTEGRATION:
+- Registered OrionModuleScanner in OrionAiModule (providers + exports)
+- Injected OrionModuleScanner into OrionAiService constructor
+- Updated buildContext() to call moduleScanner.scanAllModules(tenantId, academicYearId)
+- Module scan anomalies merged with existing alerts (deduplicated)
+- moduleScan included in context return object
+- buildSystemPrompt() now injects formatted scan via formatScanForPrompt()
+- Added "ANALYSE MULTI-MODULE" section to system prompt with 5 analysis modes:
+  1. Analysis per module (user asks "analyse module X")
+  2. Global analysis (user asks "analyse everything")
+  3. Pedagogical analysis (EDT, espace péda, validation direction, affectations)
+  4. Financial analysis (frais, multi-caisses, encaissements, recouvrements, dépenses, clôtures)
+  5. Students analysis (inscriptions, transferts, absences, discipline)
+
+MULTI-TENANT STRICT:
+- All scanner queries filtered by tenantFilter = { tenantId }
+- Year-specific queries filtered by tenantYearFilter = { tenantId, academicYearId }
+- No cross-tenant data ever read
+- Scanner is non-blocking: if it fails, Orion still works with basic context
+
+Stage Summary:
+- Orion now reads data from 14 modules (was 5 domains with basic counts)
+- ~100 Prisma queries per scan covering all module tabs
+- Module-specific anomalies with INFO/ATTENTION/CRITIQUE severity
+- Module-specific KPIs with interpretation vs thresholds
+- Formatted scan injected into system prompt for AI analysis
+- Multi-tenant strict enforced on all queries
+- Orion can now answer "analyse le module pédagogie", "analyse les finances", etc.

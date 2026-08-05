@@ -1011,8 +1011,8 @@ export class ParentPortalController {
       if (!quarter.evaluations.has(evalTypeId)) {
         quarter.evaluations.set(evalTypeId, {
           evaluationTypeId: evalTypeId,
-          evaluationTypeCode,
-          evaluationTypeName,
+          evaluationTypeCode: evalTypeCode,
+          evaluationTypeName: evalTypeName,
           evaluationDate: g.evaluationDate,
           subjects: [],
         });

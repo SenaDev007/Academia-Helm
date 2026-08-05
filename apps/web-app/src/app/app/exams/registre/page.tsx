@@ -2,118 +2,122 @@
 
 /**
  * ============================================================================
- * MODULE EXAMEN — REGISTRE DES NOTES (Récapitulatif)
+ * MODULE EXAMENS — REGISTRE DES NOTES (Refonte hiérarchique)
  * ============================================================================
  *
- * Vue récapitulative de TOUTES les notes d'une classe pour une période donnée.
- * Reproduit le format du registre d'appel/évaluation des PDFs officiels :
+ * Affiche les notes VALIDÉES d'une classe, hiérarchisées par :
+ *   Trimestre → Type d'évaluation (EM1, EM2, EC)
  *
- *   - Maternelle : tableau qualitatif (TS/S/PS par domaine × élève)
- *   - Primaire : tableau quantitatif (EM1, EM2, EC par matière × élève + Total)
- *   - Secondaire : tableau quantitatif (INT1, INT2, DS1, DS2 par matière × élève + Moyenne)
- *   - Anglophone : tableau quantitatif (First CA, Second CA, Exam par matière × élève + Total /100)
+ * Flux :
+ *   1. L'admin sélectionne une classe (auto-sélection de la première)
+ *   2. La liste des évaluations VALIDATED est chargée et groupée par trimestre
+ *   3. L'admin clique sur une carte d'évaluation → ouvre le tableau de détails
+ *   4. Le tableau est EXACTEMENT le même que celui du Module Examen
+ *      (GradingSheet en lecture seule) :
+ *      - Maternelle : TS/S/PS (pas de /20, pas de moyenne, appréciation globale)
+ *      - Primaire : CM/18, CP/2, Total, Total gén., Rang, Seuil
+ *      - Secondaire : Note/20, Total gén., Rang, Seuil
  *
- * L'enseignant saisit ses notes dans l'onglet "Saisie des notes" (une fiche par
- * évaluation). Cet onglet montre le RÉCAPITULATIF de toutes les notes ensemble.
- *
- * Scope strict : niveau scolaire + piste linguistique depuis l'URL.
+ * ⭐ Pattern identique à la page Validation — reuse de HierarchicalEvaluationList
+ *    + même tableau de détails (read-only).
  * ============================================================================
  */
 
-import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useEffect, useState, useMemo, useCallback, Suspense } from 'react';
 import {
-  Loader2, ClipboardList, Download, AlertCircle, FileText,
+  Loader2, ClipboardList, ChevronLeft, AlertCircle,
+  Users, BookOpen, Lock, CheckCircle2, FileText,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { academicSettingsService } from '@/services/academic-settings.service';
+import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
+import apiClient from '@/lib/api/client';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules, useExamScope } from '../layout';
-import { useSchoolLevel } from '@/hooks/useSchoolLevel';
+import { HierarchicalEvaluationList } from '@/components/exams/HierarchicalEvaluationList';
+import type { GroupedEvaluation, GradeRow } from '@/components/exams/GradingSheet';
+import { formatRang, computeAppreciationGlobale, getSubjectOrderIndex } from '@/components/exams/GradingSheet';
+import { format } from 'date-fns';
+import { fr } from 'date-fns/locale';
+import { cn } from '@/lib/utils';
+
+// ─── Pedagogical class ordering ──────────────────────────────────────────────
+const PEDAGOGICAL_ORDER = ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2', '6E', '5E', '4E', '3E', '2NDE', '1ERE', 'TERM'];
+
+const pedagogicalSortIndex = (name: string): number => {
+  const upper = (name || '').toUpperCase().trim();
+  for (const prefix of PEDAGOGICAL_ORDER) {
+    if (upper.startsWith(prefix)) return PEDAGOGICAL_ORDER.indexOf(prefix);
+  }
+  return PEDAGOGICAL_ORDER.length;
+};
+
+// ─── Main Page ───────────────────────────────────────────────────────────────
+
+export default function RegistrePage() {
+  const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
+
+  return (
+    <ModuleContainer
+      header={{
+        title: 'Registre des notes',
+        description: 'Récapitulatif de toutes les notes validées par classe et par trimestre.',
+        icon: 'clipboardList',
+      }}
+      subModules={{
+        modules: scopedSubModules,
+        activeModuleId: 'registre',
+      }}
+      content={{
+        layout: 'full',
+        children: (
+          <Suspense fallback={<div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>}>
+            <RegistreContent />
+          </Suspense>
+        ),
+      }}
+    />
+  );
+}
+
+// ─── Content (client component with useSearchParams) ────────────────────────
 
 function RegistreContent() {
-  const searchParams = useSearchParams();
   const { academicYear } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
 
-  const levelCode = scopeLevel || searchParams.get('level') || '';
-  const language = scopeLang || searchParams.get('lang') || 'FR';
-
-  // ✅ FIX: Resolve schoolLevelUuid from URL scope (same pattern as evaluations/grades pages)
-  // useModuleContext().schoolLevel.id is education_levels.id, NOT school_levels.id
-  // which is what classes.schoolLevelId references
-  const activeLevel = useMemo(() =>
-    (availableLevels || []).find(
-      (l: any) => (l.code || '').toUpperCase() === levelCode && l.id !== 'ALL'
-    ), [availableLevels, levelCode]);
-  const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
-
-  const [loading, setLoading] = useState(true);
-  const [schema, setSchema] = useState<any>(null);
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState('');
-  const [registreData, setRegistreData] = useState<any[]>([]); // élèves × matières × notes
-  const [subjects, setSubjects] = useState<any[]>([]);
+  const [evaluations, setEvaluations] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedGroup, setSelectedGroup] = useState<GroupedEvaluation | null>(null);
 
-  const isMaternelle = levelCode === 'MATERNELLE';
-  const isAnglophone = language === 'EN';
+  const language = scopeLang || 'FR';
+  const activeLevel = useMemo(() => {
+    if (!scopeLevel) return null;
+    return (availableLevels || []).find(
+      (l: any) => (l.code || '').toUpperCase() === scopeLevel && l.id !== 'ALL'
+    );
+  }, [availableLevels, scopeLevel]);
+  const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
+  const isMaternelle = scopeLevel === 'MATERNELLE';
+  const isPrimaire = scopeLevel === 'PRIMAIRE';
+  const isSecondaire = scopeLevel === 'SECONDAIRE';
 
-  // ── Charger le schéma de saisie (colonnes) ────────────────────────────────
-  const loadSchema = useCallback(async () => {
-    if (!academicYear?.id || !levelCode) return;
-    try {
-      const result = await academicSettingsService.getScoreEntrySchema({
-        schoolYearId: academicYear.id,
-        levelCode,
-        language,
-      });
-      setSchema(result);
-    } catch {
-      setSchema(null);
-    }
-  }, [academicYear?.id, levelCode, language]);
-
-  // ── Charger les classes du niveau (pattern identique à evaluations/grades) ──
-  // ⭐ Tri par ordre pédagogique : CI, CP, CE1, CE2, CM1, CM2
-  const PEDAGOGICAL_ORDER = ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2', '6E', '5E', '4E', '3E', '2NDE', '1ERE', 'TERM'];
-
-  const pedagogicalSortKey = (name: string): string => {
-    const upper = (name || '').toUpperCase().trim();
-    // Cherche le préfixe (CI, CP, CE1, CE2, CM1, CM2, etc.)
-    for (const prefix of PEDAGOGICAL_ORDER) {
-      if (upper.startsWith(prefix)) return prefix;
-    }
-    return 'ZZ' + upper; // Inconnu → à la fin
-  };
-
-  const pedagogicalSortIndex = (name: string): number => {
-    const key = pedagogicalSortKey(name);
-    const idx = PEDAGOGICAL_ORDER.indexOf(key);
-    return idx === -1 ? PEDAGOGICAL_ORDER.length : idx;
-  };
-
+  // ── Load classes (with pedagogical sort + auto-select first) ──────────────
   const loadClasses = useCallback(async () => {
     if (!schoolLevelUuid) return;
     try {
-      // ✅ Use fetch for BFF routes (Next.js routes on academiahelm.com)
-      // apiClient uses api.academiahelm.com which doesn't have /all-classes
       const res = await fetch('/api/all-classes', { credentials: 'include' });
       const data = await res.json();
       const allClasses = Array.isArray(data) ? data : (data?.items || []);
-
-      // Filter by school level UUID
       const levelClasses = allClasses.filter((c: any) =>
         c.schoolLevelId === schoolLevelUuid || c.schoolLevel?.id === schoolLevelUuid
       );
-
-      // Optional language filter (FR/EN)
       const langClasses = language
         ? levelClasses.filter((c: any) => {
             const classLang = c.language;
@@ -124,19 +128,13 @@ function RegistreContent() {
             return false;
           })
         : levelClasses;
-
-      // ⭐ Tri par ordre pédagogique : CI, CP, CE1, CE2, CM1, CM2
-      // Puis par nom pour les classes avec suffixe (ex: "CI A", "CI B")
       langClasses.sort((a: any, b: any) => {
         const idxA = pedagogicalSortIndex(a.name);
         const idxB = pedagogicalSortIndex(b.name);
         if (idxA !== idxB) return idxA - idxB;
         return (a.name || '').localeCompare(b.name || '', 'fr');
       });
-
       setClasses(langClasses);
-
-      // ⭐ Auto-sélection de la première classe si aucune n'est sélectionnée
       if (langClasses.length > 0 && !selectedClassId) {
         setSelectedClassId(langClasses[0].id);
       }
@@ -145,199 +143,95 @@ function RegistreContent() {
     }
   }, [schoolLevelUuid, language, selectedClassId]);
 
-  // ── Charger le registre (toutes les notes pour une classe + période) ──────
-  const loadRegistre = useCallback(async () => {
-    if (!selectedClassId || !academicYear?.id) return;
+  // ── Load VALIDATED evaluations for the selected class ─────────────────────
+  const loadEvaluations = useCallback(async () => {
+    if (!academicYear?.id || !selectedClassId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      // Récupérer les matières de la classe (FR only if language filter)
-      // ⭐ Use fetch for BFF route /api/subjects (apiClient uses api.academiahelm.com)
-      let subjectList: any[] = [];
-      try {
-        const subjectsRes = await fetch(
-          `/api/subjects?schoolLevelId=${schoolLevelUuid || ''}&academicYearId=${academicYear.id}`,
-          { credentials: 'include' }
-        );
-        if (subjectsRes.ok) {
-          const subjectsData = await subjectsRes.json();
-          subjectList = Array.isArray(subjectsData) ? subjectsData : (subjectsData?.items || []);
-          // ⭐ Filter subjects by language (FR only if user is on FR track)
-          if (language) {
-            subjectList = subjectList.filter((s: any) =>
-              !s.language || s.language === language || s.language === 'FR'
-            );
-          }
-        }
-      } catch (err) {
-        console.warn('Subjects endpoint failed, will derive from evaluations:', err);
-      }
-      setSubjects(subjectList);
-
-      // Récupérer les évaluations de la classe pour cette année
-      // ⭐ Use institutionalExamsService (apiClient with auth)
-      let evaluations: any[] = [];
-      try {
-        evaluations = await institutionalExamsService.getEvaluations({
-          academicYearId: academicYear.id,
-          classId: selectedClassId,
-          ...(language ? { language } : {}),
-        });
-        evaluations = Array.isArray(evaluations) ? evaluations : [];
-      } catch (err) {
-        console.error('Failed to load evaluations:', err);
-        evaluations = [];
-      }
-
-      // ⭐ If subjects endpoint failed, derive subjects from evaluations
-      if (subjectList.length === 0 && evaluations.length > 0) {
-        const subjectMap = new Map<string, any>();
-        for (const ev of evaluations) {
-          if (ev.subjectId && !subjectMap.has(ev.subjectId)) {
-            subjectMap.set(ev.subjectId, {
-              id: ev.subjectId,
-              name: ev.subject?.name || ev.subjectName || 'Matière',
-              code: ev.subject?.code || ev.subjectCode || '',
-              language: ev.subject?.language || 'FR',
-            });
-          }
-        }
-        subjectList = Array.from(subjectMap.values());
-        setSubjects(subjectList);
-      }
-
-      // ⭐ Filter evaluations to keep only those for FR subjects (matching subjectList)
-      const subjectIds = new Set(subjectList.map((s: any) => s.id));
-      const frEvaluations = evaluations.filter((ev: any) =>
-        subjectIds.size === 0 || subjectIds.has(ev.subjectId)
-      );
-
-      // ⭐ Récupérer les notes pour chaque évaluation via l'API grades
-      // (l'endpoint /institutional-exams/grades/evaluation/:id retourne la fiche complète)
-      const evalGradesMap = new Map<string, any[]>(); // evaluationId → grades array
-      await Promise.all(
-        frEvaluations.map(async (ev: any) => {
-          try {
-            const data = await institutionalExamsService.getGradingSheet(ev.id);
-            evalGradesMap.set(ev.id, Array.isArray(data) ? data : []);
-          } catch {
-            evalGradesMap.set(ev.id, []);
-          }
-        })
-      );
-
-      // ⭐ Récupérer les élèves via la même endpoint (déjà inclus dans les grades)
-      // On prend l'union de tous les students apparaissant dans les grades
-      const studentMap = new Map<string, any>();
-      for (const grades of evalGradesMap.values()) {
-        for (const g of grades) {
-          if (g.studentId && !studentMap.has(g.studentId)) {
-            studentMap.set(g.studentId, {
-              id: g.studentId,
-              lastName: g.studentName?.split(' ')[0] || '',
-              firstName: g.studentName?.split(' ').slice(1).join(' ') || '',
-              matricule: g.matricule || '',
-              gender: g.gender || '',
-            });
-          }
-        }
-      }
-      // Fallback: si pas de grades, essayer /api/students
-      let students = Array.from(studentMap.values());
-      if (students.length === 0) {
-        try {
-          const studentsRes = await fetch(
-            `/api/students?classId=${selectedClassId}&academicYearId=${academicYear.id}`,
-            { credentials: 'include' }
-          );
-          const studentsData = await studentsRes.json();
-          students = Array.isArray(studentsData) ? studentsData : (studentsData?.data || []);
-        } catch { students = []; }
-      }
-
-      // ⭐ Construire le tableau récapitulatif
-      // Pour chaque élève, pour chaque matière, récupérer les notes par type d'évaluation
-      const registreRows = students.map((student: any) => {
-        const row: any = {
-          studentId: student.id,
-          studentName: `${student.lastName || ''} ${student.firstName || ''}`.trim(),
-          matricule: student.matricule || student.studentCode || '',
-          subjects: {} as Record<string, any>,
-          total: 0,
-          average: 0,
-        };
-
-        // Pour chaque matière, trouver les évaluations + notes correspondantes
-        subjectList.forEach((subject: any) => {
-          const subjectNotes: any = { scores: {}, total: 0, average: null };
-          // Trouver les évaluations pour cette matière
-          const subjectEvals = frEvaluations.filter((ev: any) => ev.subjectId === subject.id);
-          if (subjectEvals.length > 0) {
-            // Pour chaque évaluation, récupérer le score de cet élève
-            subjectEvals.forEach((ev: any) => {
-              const evalGrades = evalGradesMap.get(ev.id) || [];
-              const studentGrade = evalGrades.find((g: any) => g.studentId === student.id);
-              const evalLabel = ev.evaluationType?.code || ev.evaluationType?.name || ev.title || 'Éval';
-              if (studentGrade) {
-                if (studentGrade.isAbsent) {
-                  subjectNotes.scores[evalLabel] = 'ABS';
-                } else if (studentGrade.qualitativeCode) {
-                  subjectNotes.scores[evalLabel] = studentGrade.qualitativeCode;
-                } else if (typeof studentGrade.score === 'number') {
-                  subjectNotes.scores[evalLabel] = studentGrade.score;
-                  subjectNotes.total += studentGrade.score;
-                } else {
-                  subjectNotes.scores[evalLabel] = '—';
-                }
-              } else {
-                subjectNotes.scores[evalLabel] = '—';
-              }
-            });
-            // Calculer la moyenne de la matière
-            const validScores = Object.values(subjectNotes.scores).filter(
-              (v: any) => typeof v === 'number'
-            ) as number[];
-            if (validScores.length > 0) {
-              subjectNotes.average = validScores.reduce((sum, s) => sum + s, 0) / validScores.length;
-            }
-          }
-          row.subjects[subject.id] = subjectNotes;
-        });
-
-        // Total et moyenne générale
-        const allScores = Object.values(row.subjects).flatMap((s: any) =>
-          Object.values(s.scores).filter((v: any) => typeof v === 'number')
-        ) as number[];
-        row.total = allScores.reduce((sum, s) => sum + s, 0);
-        row.average = allScores.length > 0 ? row.total / allScores.length : 0;
-
-        return row;
+      const res = await institutionalExamsService.getEvaluations({
+        academicYearId: academicYear.id,
+        classId: selectedClassId,
+        status: 'VALIDATED',
       });
-
-      setRegistreData(registreRows);
+      setEvaluations(Array.isArray(res) ? res : []);
     } catch (err) {
-      console.error('Erreur loadRegistre:', err);
-      setRegistreData([]);
-      setSubjects([]);
+      console.error('Error loading evaluations for registre', err);
+      setEvaluations([]);
     } finally {
       setLoading(false);
     }
-  }, [selectedClassId, academicYear?.id, schoolLevelUuid, language]);
+  }, [academicYear?.id, selectedClassId]);
 
-  useEffect(() => { loadSchema(); loadClasses(); }, [loadSchema, loadClasses]);
-  useEffect(() => { if (selectedClassId) loadRegistre(); }, [loadRegistre]);
+  useEffect(() => { loadClasses(); }, [loadClasses]);
+  useEffect(() => { loadEvaluations(); }, [loadEvaluations]);
 
-  const columns = schema?.columns || [];
-  const scoreMax = isAnglophone ? 100 : 20;
+  // ── Group evaluations by (classId × evaluationTypeId × periodId × dates) ─
+  const grouped = useMemo<GroupedEvaluation[]>(() => {
+    const map = new Map<string, GroupedEvaluation>();
+    for (const ev of evaluations) {
+      const classId = ev.class?.id || selectedClassId;
+      const evaluationTypeId = ev.evaluationType?.id || '_no_type';
+      const periodId = ev.period?.id || '_no_period';
+      const sd = ev.startDate || ev.evaluationDate || '';
+      const ed = ev.endDate || ev.startDate || ev.evaluationDate || '';
+      const key = `${classId}|${evaluationTypeId}|${periodId}|${sd}|${ed}`;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          classId,
+          className: ev.class?.name || 'Sans classe',
+          evaluationTypeId,
+          evaluationTypeName: ev.evaluationType?.name || 'Évaluation',
+          evaluationTypeCode: ev.evaluationType?.code,
+          periodId,
+          periodName: ev.period?.name || '',
+          startDate: ev.startDate || ev.evaluationDate || null,
+          endDate: ev.endDate || ev.startDate || ev.evaluationDate || null,
+          subjects: [],
+          evaluationIds: [],
+          statuses: [],
+          firstEvaluation: ev as any,
+        });
+      }
+      const g = map.get(key)!;
+      if (ev.subject && !g.subjects.find((s) => s.id === ev.subject!.id)) {
+        g.subjects.push({ id: ev.subject.id, name: ev.subject.name });
+      }
+      g.evaluationIds.push(ev.id);
+      g.statuses.push(ev.status);
+    }
+    return Array.from(map.values());
+  }, [evaluations, selectedClassId]);
+
+  // ── Render: detail sheet if selected, else list ───────────────────────────
+  if (selectedGroup) {
+    return (
+      <RegistreDetailSheet
+        group={selectedGroup}
+        isMaternelle={isMaternelle}
+        isPrimaire={isPrimaire}
+        isSecondaire={isSecondaire}
+        scopedSubModules={scopedSubModules}
+        onBack={() => {
+          setSelectedGroup(null);
+          loadEvaluations();
+        }}
+      />
+    );
+  }
 
   return (
     <div className="space-y-4">
-      {/* En-tête + filtres */}
+      {/* Header + class selector */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2">
           <ClipboardList className="w-5 h-5 text-blue-600" />
           <h2 className="text-lg font-bold text-gray-900">Registre des notes</h2>
           <Badge variant="outline" className="text-xs">
-            {levelCode} {language ? `· ${language}` : ''}
+            {scopeLevel || '—'} {language ? `· ${language}` : ''}
           </Badge>
         </div>
         <div className="flex items-center gap-2">
@@ -351,153 +245,533 @@ function RegistreContent() {
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
-          <Button variant="outline" size="sm" disabled={!selectedClassId}>
-            <Download className="w-4 h-4 mr-1" /> Export
-          </Button>
         </div>
       </div>
 
-      {/* Info barème */}
-      {schema && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800">
-          <strong>Barème :</strong> {isMaternelle ? 'Qualitatif (TS/S/PS)' : `Quantitatif /${scoreMax}`}
-          {' — '}
-          <strong>Formule :</strong> <code>{schema.formula}</code>
+      {/* Info banner */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex items-start gap-2">
+        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+        <div>
+          Sélectionnez une évaluation ci-dessous pour consulter son registre des notes.
+          Seules les évaluations <strong>VALIDATED</strong> sont affichées (notes verrouillées par l'administration).
         </div>
-      )}
+      </div>
 
-      {/* Tableau du registre */}
+      {/* Content */}
       {!selectedClassId ? (
-        <Card>
-          <CardContent className="py-12 text-center text-gray-500">
-            <ClipboardList className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-            <p className="font-medium">Sélectionnez une classe pour afficher le registre</p>
-          </CardContent>
-        </Card>
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
+          <ClipboardList className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+          <p className="font-medium text-gray-500">Sélectionnez une classe pour afficher le registre</p>
+        </div>
       ) : loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
           <span className="ml-2 text-gray-600">Chargement du registre...</span>
         </div>
-      ) : registreData.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-gray-500">
-            <FileText className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-            <p className="font-medium">Aucune note saisie pour cette classe</p>
-            <p className="text-xs mt-1">Les notes apparaîtront ici une fois saisies dans l'onglet "Saisie des notes".</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle className="text-md">
-              Registre — {classes.find(c => c.id === selectedClassId)?.name || 'Classe'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50">
-                    <TableHead className="text-xs font-black uppercase text-gray-500 sticky left-0 bg-gray-50 z-10">
-                      Élève
-                    </TableHead>
-                    {/* Colonnes pour chaque type d'évaluation par matière */}
-                    {subjects.map(subject => (
-                      <TableHead key={subject.id} className="text-center text-xs font-black uppercase text-gray-500">
-                        {subject.name}
-                      </TableHead>
-                    ))}
-                    <TableHead className="text-center text-xs font-black uppercase text-gray-500 bg-blue-50">
-                      Total /{scoreMax}
-                    </TableHead>
-                    <TableHead className="text-center text-xs font-black uppercase text-gray-500 bg-blue-50">
-                      Moyenne
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {registreData.map((row, i) => (
-                    <TableRow key={row.studentId} className={i % 2 === 0 ? '' : 'bg-gray-50/30'}>
-                      <TableCell className="sticky left-0 bg-white z-10">
-                        <div className="font-semibold text-sm text-gray-900">{row.studentName}</div>
-                        <div className="text-xs text-gray-400 font-mono">{row.matricule}</div>
-                      </TableCell>
-                      {subjects.map(subject => {
-                        const subjectData = row.subjects[subject.id];
-                        if (isMaternelle) {
-                          // Maternelle : afficher le code qualitatif majoritaire
-                          const codes = Object.values(subjectData?.scores || {});
-                          const counts: Record<string, number> = {};
-                          codes.forEach((c: any) => { if (c && c !== '—') counts[c] = (counts[c] || 0) + 1; });
-                          const majoritaire = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
-                          return (
-                            <TableCell key={subject.id} className="text-center">
-                              {majoritaire ? (
-                                <span className={`px-2 py-1 rounded text-xs font-bold ${
-                                  majoritaire === 'TS' ? 'bg-emerald-100 text-emerald-700' :
-                                  majoritaire === 'S' ? 'bg-blue-100 text-blue-700' :
-                                  'bg-amber-100 text-amber-700'
-                                }`}>{majoritaire}</span>
-                              ) : '—'}
-                            </TableCell>
-                          );
-                        }
-                        // Quantitatif : afficher le total de la matière
-                        const total = subjectData?.total || 0;
-                        return (
-                          <TableCell key={subject.id} className="text-center text-sm font-semibold">
-                            {total > 0 ? total.toFixed(2) : '—'}
-                          </TableCell>
-                        );
-                      })}
-                      <TableCell className="text-center text-sm font-bold bg-blue-50/50">
-                        {row.total > 0 ? row.total.toFixed(2) : '—'}
-                      </TableCell>
-                      <TableCell className="text-center text-sm font-bold bg-blue-50/50">
-                        {row.average > 0 ? row.average.toFixed(2) : '—'}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Légende */}
-      {isMaternelle && (
-        <div className="flex items-center gap-4 text-xs text-gray-500">
-          <span className="font-bold">Légende :</span>
-          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded font-bold">TS = Très Satisfaisant</span>
-          <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-bold">S = Satisfaisant</span>
-          <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded font-bold">PS = Peu Satisfaisant</span>
+      ) : grouped.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
+          <FileText className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+          <p className="font-medium text-gray-500">Aucune note validée pour cette classe</p>
+          <p className="text-xs mt-1 text-gray-400">
+            Les notes apparaîtront ici une fois validées dans l'onglet « Validation ».
+          </p>
         </div>
+      ) : (
+        <HierarchicalEvaluationList
+          groups={grouped}
+          onGroupClick={(g) => setSelectedGroup(g)}
+          isMaternelle={isMaternelle}
+          renderStatusBadge={(g) => (
+            <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap bg-emerald-100 text-emerald-700">
+              Validé
+            </span>
+          )}
+        />
       )}
     </div>
   );
 }
 
-export default function RegistrePage() {
-  const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
+// ─── Detail Sheet (read-only — same table as GradingSheet/Validation) ───────
+
+function RegistreDetailSheet({
+  group,
+  isMaternelle,
+  isPrimaire,
+  isSecondaire,
+  scopedSubModules,
+  onBack,
+}: {
+  group: GroupedEvaluation;
+  isMaternelle: boolean;
+  isPrimaire: boolean;
+  isSecondaire: boolean;
+  scopedSubModules: any;
+  onBack: () => void;
+}) {
+  const [rows, setRows] = useState<GradeRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const sortedSubjects = useMemo(() => {
+    return [...group.subjects].sort((a, b) =>
+      getSubjectOrderIndex(a.name, isMaternelle, isPrimaire) -
+      getSubjectOrderIndex(b.name, isMaternelle, isPrimaire)
+    );
+  }, [group.subjects, isMaternelle, isPrimaire]);
+
+  // ── Load students + grades ──────────────────────────────────────────────────
+  useEffect(() => {
+    const loadSheet = async () => {
+      if (!group.evaluationIds.length) {
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      try {
+        const sheets = await Promise.all(
+          group.evaluationIds.map(async (evId) => {
+            try {
+              const response = await apiClient.get(`/institutional-exams/grades/evaluation/${evId}`);
+              return { evaluationId: evId, students: Array.isArray(response.data) ? response.data : [] };
+            } catch {
+              return { evaluationId: evId, students: [] };
+            }
+          })
+        );
+
+        const evalToSubject = new Map<string, string>();
+        group.evaluationIds.forEach((evId, idx) => {
+          const subjectId = group.subjects[idx]?.id;
+          if (subjectId) evalToSubject.set(evId, subjectId);
+        });
+
+        const studentMap = new Map<string, GradeRow>();
+        sheets.forEach(({ evaluationId, students }) => {
+          const subjectId = evalToSubject.get(evaluationId);
+          if (!subjectId) return;
+          students.forEach((student: any) => {
+            if (!studentMap.has(student.studentId)) {
+              studentMap.set(student.studentId, {
+                studentId: student.studentId,
+                studentName: student.studentName || 'Inconnu',
+                matricule: student.matricule,
+                gender: student.gender,
+                scores: {},
+                status: student.status || 'NEW',
+              });
+            }
+            const row = studentMap.get(student.studentId)!;
+            row.scores[subjectId] = {
+              score: student.score ?? null,
+              cm: student.cm ?? null,
+              cp: student.cp ?? null,
+              qualitativeCode: student.qualitativeCode ?? null,
+              isAbsent: student.isAbsent ?? false,
+              comment: student.comment ?? '',
+            };
+          });
+        });
+
+        const rowsArray = Array.from(studentMap.values());
+        rowsArray.forEach((row) => {
+          group.subjects.forEach((subject) => {
+            if (!row.scores[subject.id]) {
+              row.scores[subject.id] = { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
+            }
+          });
+        });
+        rowsArray.sort((a, b) => a.studentName.localeCompare(b.studentName, 'fr'));
+        setRows(rowsArray);
+      } catch (err) {
+        console.error('Error loading registre sheet', err);
+        setRows([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadSheet();
+  }, [group]);
+
+  // ── Stats récapitulatives ──────────────────────────────────────────────────
+  const stats = useMemo(() => {
+    let totalBoys = 0, totalGirls = 0;
+    let composedBoys = 0, composedGirls = 0;
+    let reachedBoys = 0, reachedGirls = 0;
+
+    rows.forEach((row) => {
+      const isBoy = row.gender === 'M';
+      const isGirl = row.gender === 'F';
+      if (isBoy) totalBoys++;
+      if (isGirl) totalGirls++;
+
+      const hasScore = sortedSubjects.some((subj) => {
+        const s = row.scores[subj.id];
+        if (!s || s.isAbsent) return false;
+        return isMaternelle ? !!s.qualitativeCode : (s.cm !== null || s.score !== null);
+      });
+      if (hasScore) {
+        if (isBoy) composedBoys++;
+        if (isGirl) composedGirls++;
+      }
+
+      if (isMaternelle) {
+        const appreciation = computeAppreciationGlobale(row.scores, sortedSubjects);
+        if (appreciation === 'Très Satisfaisant' || appreciation === 'Satisfaisant') {
+          if (isBoy) reachedBoys++;
+          if (isGirl) reachedGirls++;
+        }
+      } else {
+        const totalGeneral = sortedSubjects.reduce((sum, subj) => {
+          const s = row.scores[subj.id];
+          return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
+        }, 0);
+        if (totalGeneral >= (10 * sortedSubjects.length * 0.5)) {
+          if (isBoy) reachedBoys++;
+          if (isGirl) reachedGirls++;
+        }
+      }
+    });
+
+    const total = totalBoys + totalGirls;
+    const composed = composedBoys + composedGirls;
+    const reached = reachedBoys + reachedGirls;
+    const notReached = composed - reached;
+    const pctReussite = composed > 0 ? (reached / composed) * 100 : 0;
+
+    return {
+      totalBoys, totalGirls, total,
+      composedBoys, composedGirls, composed,
+      reachedBoys, reachedGirls, reached,
+      notReachedBoys: composedBoys - reachedBoys,
+      notReachedGirls: composedGirls - reachedGirls,
+      notReached,
+      pctReussite,
+    };
+  }, [rows, sortedSubjects, isMaternelle]);
+
+  // ── Rang calculé ────────────────────────────────────────────────────────────
+  const getRang = (row: GradeRow) => {
+    const sortedByTotal = [...rows]
+      .map((r) => ({
+        id: r.studentId,
+        total: sortedSubjects.reduce((sum, subj) => {
+          const s = r.scores[subj.id];
+          if (!s || s.isAbsent) return sum;
+          if (isMaternelle) {
+            if (s.qualitativeCode === 'TS') return sum + 3;
+            if (s.qualitativeCode === 'S') return sum + 2;
+            if (s.qualitativeCode === 'PS') return sum + 1;
+            return sum;
+          }
+          return sum + (typeof s.score === 'number' ? s.score : 0);
+        }, 0),
+      }))
+      .sort((a, b) => b.total - a.total);
+    const rank = sortedByTotal.findIndex((r) => r.id === row.studentId) + 1;
+    return rank;
+  };
+
+  const startDate = group.startDate ? new Date(group.startDate) : null;
+  const endDate = group.endDate ? new Date(group.endDate) : null;
+  const sameDay = startDate && endDate &&
+    startDate.getFullYear() === endDate.getFullYear() &&
+    startDate.getMonth() === endDate.getMonth() &&
+    startDate.getDate() === endDate.getDate();
+  const dateRange = startDate
+    ? sameDay || !endDate
+      ? `Le ${format(startDate, 'd MMM yyyy', { locale: fr })}`
+      : `Du ${format(startDate, 'd MMM yyyy', { locale: fr })} au ${format(endDate, 'd MMM yyyy', { locale: fr })}`
+    : 'Date non définie';
+
   return (
     <ModuleContainer
-      header={{
-        title: 'Registre des notes',
-        description: 'Récapitulatif de toutes les notes par classe et par période.',
-        icon: 'clipboardList',
-      }}
-      subModules={{
-        modules: scopedSubModules,
-        activeModuleId: 'registre',
-      }}
+      subModules={{ modules: scopedSubModules, activeModuleId: 'registre' }}
       content={{
         layout: 'full',
         children: (
-          <Suspense fallback={<div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>}>
-              <RegistreContent />
-            </Suspense>
+          <div className="space-y-4">
+            {/* Titre */}
+            <div className="bg-white border-2 border-slate-800 rounded-xl p-4 text-center">
+              <h2 className="text-lg font-bold text-slate-900">
+                REGISTRE DES NOTES — {group.evaluationTypeName}
+              </h2>
+              <div className="text-sm text-slate-600 mt-1">
+                Classe : <strong>{group.className}</strong> • {group.periodName} • {dateRange}
+              </div>
+            </div>
+
+            {/* Action Bar */}
+            <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-3">
+              <Button variant="ghost" onClick={onBack}>
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                Retour à la liste
+              </Button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="outline" className="border-blue-200 text-blue-600 text-xs gap-1">
+                  <Users className="w-3 h-3" />
+                  {rows.length} élèves
+                </Badge>
+                <Badge variant="outline" className="border-emerald-200 text-emerald-600 text-xs gap-1">
+                  <BookOpen className="w-3 h-3" />
+                  {group.subjects.length} matières
+                </Badge>
+                <Badge variant="outline" className="border-emerald-200 text-emerald-600 text-xs gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  Validé
+                </Badge>
+              </div>
+            </div>
+
+            {/* Loading */}
+            {loading ? (
+              <div className="flex items-center justify-center py-20">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                <p className="ml-3 text-sm text-gray-500">Chargement des notes…</p>
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
+                <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-600 font-medium">Aucun élève dans cette classe</p>
+              </div>
+            ) : (
+              /* Tableau en lecture seule (même structure que GradingSheet) */
+              <div className="bg-white border-2 border-slate-800 rounded-xl overflow-x-auto">
+                <div className="px-4 py-2 bg-blue-50 border-b border-blue-200 text-xs text-blue-700 font-semibold flex items-center gap-2">
+                  <Lock className="w-4 h-4" />
+                  Registre des notes validées — lecture seule
+                </div>
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-100">
+                      <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">N°</th>
+                      <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: '180px' }}>Nom et prénom</th>
+                      <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Sexe</th>
+                      {sortedSubjects.map((subject, idx) => (
+                        isMaternelle ? (
+                          <th key={idx} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[100px]">
+                            {subject.name}<div className="text-[9px] text-slate-400 font-normal">TS / S / PS</div>
+                          </th>
+                        ) : isSecondaire ? (
+                          <th key={idx} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[80px]">
+                            {subject.name}<div className="text-[9px] text-slate-400 font-normal">Note /20</div>
+                          </th>
+                        ) : (
+                          <th key={idx} colSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[180px]">{subject.name}</th>
+                        )
+                      ))}
+                      {!isMaternelle && !isSecondaire && (
+                        <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total gén.</th>
+                      )}
+                      <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Rang</th>
+                      <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Seuil fixé</th>
+                      <th colSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-24">Seuil atteint</th>
+                      {isMaternelle && (
+                        <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-32">Appréciation globale</th>
+                      )}
+                    </tr>
+                    {!isSecondaire && !isMaternelle && (
+                      <tr className="bg-slate-50">
+                        {sortedSubjects.map((_, idx) => (
+                          <th key={`cm-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CM /18</th>
+                        ))}
+                        {sortedSubjects.map((_, idx) => (
+                          <th key={`cp-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CP /2</th>
+                        ))}
+                        {sortedSubjects.map((_, idx) => (
+                          <th key={`tot-h-${idx}`} className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Total</th>
+                        ))}
+                        <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Oui</th>
+                        <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Non</th>
+                      </tr>
+                    )}
+                    {isMaternelle && (
+                      <tr className="bg-slate-50">
+                        <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Oui</th>
+                        <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Non</th>
+                      </tr>
+                    )}
+                  </thead>
+                  <tbody>
+                    {rows.map((row, idx) => {
+                      const totalGeneral = isMaternelle ? null : sortedSubjects.reduce((sum, subj) => {
+                        const s = row.scores[subj.id];
+                        return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
+                      }, 0);
+                      const rang = getRang(row);
+                      const seuilAtteint = isMaternelle ? null : (
+                        totalGeneral !== null && totalGeneral >= (10 * sortedSubjects.length * 0.5)
+                      );
+
+                      return (
+                        <tr key={row.studentId} className={cn('hover:bg-slate-50', idx % 2 === 1 && 'bg-slate-50/50')}>
+                          <td className="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-600">{idx + 1}</td>
+                          <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900">{row.studentName}</td>
+                          <td className="border border-slate-300 px-2 py-1 text-center">
+                            {row.gender === 'M' ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-cyan-100 text-cyan-700">M</span>
+                            ) : row.gender === 'F' ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-pink-100 text-pink-700">F</span>
+                            ) : '—'}
+                          </td>
+                          {/* Notes en lecture seule */}
+                          {sortedSubjects.map((subject) => {
+                            const score = row.scores[subject.id] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
+                            if (isMaternelle) {
+                              return (
+                                <td key={subject.id} className="border border-slate-300 px-2 py-1 text-center">
+                                  <span className={cn(
+                                    'inline-flex px-2 py-0.5 rounded text-xs font-bold',
+                                    score.qualitativeCode === 'TS' ? 'bg-emerald-100 text-emerald-700' :
+                                    score.qualitativeCode === 'S' ? 'bg-blue-100 text-blue-700' :
+                                    score.qualitativeCode === 'PS' ? 'bg-amber-100 text-amber-700' :
+                                    'text-slate-300',
+                                    score.isAbsent && 'line-through opacity-50'
+                                  )}>
+                                    {score.isAbsent ? 'ABS' : (score.qualitativeCode || '—')}
+                                  </span>
+                                </td>
+                              );
+                            }
+                            if (isSecondaire) {
+                              return (
+                                <td key={subject.id} className="border border-slate-300 px-2 py-1 text-center font-bold">
+                                  {score.isAbsent ? <span className="text-red-500 text-[10px]">ABS</span> :
+                                    (score.score !== null ? Number(score.score).toFixed(2) : '—')}
+                                </td>
+                              );
+                            }
+                            const cmValue = score.cm ?? null;
+                            const cpValue = score.cp ?? null;
+                            const totalValue = (cmValue !== null ? cmValue : 0) + (cpValue !== null ? cpValue : 0);
+                            return (
+                              <>
+                                <td key={`cm-${subject.id}`} className="border border-slate-300 px-2 py-1 text-center font-semibold">
+                                  {score.isAbsent ? '—' : (cmValue !== null ? cmValue : '—')}
+                                </td>
+                                <td key={`cp-${subject.id}`} className="border border-slate-300 px-2 py-1 text-center font-semibold">
+                                  {score.isAbsent ? '—' : (cpValue !== null ? cpValue : '—')}
+                                </td>
+                                <td key={`tot-${subject.id}`} className="border border-slate-300 px-2 py-1 text-center font-bold bg-slate-50">
+                                  {score.isAbsent ? '—' : (cmValue !== null || cpValue !== null ? Number(totalValue).toFixed(2) : '—')}
+                                </td>
+                              </>
+                            );
+                          })}
+                          {/* Total général */}
+                          {!isMaternelle && !isSecondaire && (
+                            <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-700 bg-blue-50">
+                              {totalGeneral !== null ? totalGeneral.toFixed(2) : '—'}
+                            </td>
+                          )}
+                          {/* Rang */}
+                          <td className="border border-slate-300 px-2 py-1 text-center font-bold text-slate-700">
+                            {formatRang(rang, row.gender)}
+                          </td>
+                          {/* Seuil fixé */}
+                          <td className="border border-slate-300 px-2 py-1 text-center text-slate-600 text-xs">
+                            {isMaternelle ? 'TS/S' : '10/20'}
+                          </td>
+                          {/* Seuil atteint */}
+                          <td className="border border-slate-300 px-2 py-1 text-center">
+                            {(() => {
+                              if (isMaternelle) {
+                                const appreciation = computeAppreciationGlobale(row.scores, sortedSubjects);
+                                return (appreciation === 'Très Satisfaisant' || appreciation === 'Satisfaisant') ?
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-600 mx-auto" /> : null;
+                              }
+                              return seuilAtteint ?
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 mx-auto" /> : null;
+                            })()}
+                          </td>
+                          <td className="border border-slate-300 px-2 py-1 text-center">
+                            {(() => {
+                              if (isMaternelle) {
+                                const appreciation = computeAppreciationGlobale(row.scores, sortedSubjects);
+                                return (appreciation !== 'Très Satisfaisant' && appreciation !== 'Satisfaisant') ?
+                                  <span className="text-red-500 text-xs">✗</span> : null;
+                              }
+                              return !seuilAtteint ?
+                                <span className="text-red-500 text-xs">✗</span> : null;
+                            })()}
+                          </td>
+                          {/* Appréciation (Maternelle) */}
+                          {isMaternelle && (
+                            <td className="border border-slate-300 px-2 py-1 text-center font-bold">
+                              <span className={cn(
+                                'text-xs',
+                                computeAppreciationGlobale(row.scores, sortedSubjects) === 'Très Satisfaisant' && 'text-emerald-600',
+                                computeAppreciationGlobale(row.scores, sortedSubjects) === 'Satisfaisant' && 'text-blue-600',
+                                computeAppreciationGlobale(row.scores, sortedSubjects) === 'Peu Satisfaisant' && 'text-amber-600',
+                              )}>
+                                {computeAppreciationGlobale(row.scores, sortedSubjects)}
+                              </span>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Récapitulatif dynamique */}
+            {!loading && rows.length > 0 && (
+              <div className="bg-white border-2 border-slate-300 rounded-xl p-4">
+                <h3 className="text-sm font-bold text-slate-900 uppercase mb-3">Récapitulatif de l'évaluation</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-slate-100">
+                        <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-left">Indicateur</th>
+                        <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-center">Garçons</th>
+                        <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-center">Filles</th>
+                        <th className="border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 uppercase text-center">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="border border-slate-300 px-3 py-2 font-semibold">Effectif total de la classe</td>
+                        <td className="border border-slate-300 px-3 py-2 text-center">{stats.totalBoys}</td>
+                        <td className="border border-slate-300 px-3 py-2 text-center">{stats.totalGirls}</td>
+                        <td className="border border-slate-300 px-3 py-2 text-center font-bold">{stats.total}</td>
+                      </tr>
+                      <tr>
+                        <td className="border border-slate-300 px-3 py-2 font-semibold">Nombre d'élèves ayant composé</td>
+                        <td className="border border-slate-300 px-3 py-2 text-center">{stats.composedBoys}</td>
+                        <td className="border border-slate-300 px-3 py-2 text-center">{stats.composedGirls}</td>
+                        <td className="border border-slate-300 px-3 py-2 text-center font-bold">{stats.composed}</td>
+                      </tr>
+                      <tr className="bg-emerald-50/50">
+                        <td className="border border-slate-300 px-3 py-2 font-semibold">Ont atteint le seuil de réussite</td>
+                        <td className="border border-slate-300 px-3 py-2 text-center text-emerald-700">{stats.reachedBoys}</td>
+                        <td className="border border-slate-300 px-3 py-2 text-center text-emerald-700">{stats.reachedGirls}</td>
+                        <td className="border border-slate-300 px-3 py-2 text-center font-bold text-emerald-700">{stats.reached}</td>
+                      </tr>
+                      <tr className="bg-red-50/50">
+                        <td className="border border-slate-300 px-3 py-2 font-semibold">N'ont pas atteint le seuil</td>
+                        <td className="border border-slate-300 px-3 py-2 text-center text-red-700">{stats.notReachedBoys}</td>
+                        <td className="border border-slate-300 px-3 py-2 text-center text-red-700">{stats.notReachedGirls}</td>
+                        <td className="border border-slate-300 px-3 py-2 text-center font-bold text-red-700">{stats.notReached}</td>
+                      </tr>
+                      <tr className="bg-blue-50/50">
+                        <td className="border border-slate-300 px-3 py-2 font-bold">% de réussite</td>
+                        <td className="border border-slate-300 px-3 py-2 text-center font-bold text-blue-700">
+                          {stats.composedBoys > 0 ? ((stats.reachedBoys / stats.composedBoys) * 100).toFixed(2) : '—'}%
+                        </td>
+                        <td className="border border-slate-300 px-3 py-2 text-center font-bold text-blue-700">
+                          {stats.composedGirls > 0 ? ((stats.reachedGirls / stats.composedGirls) * 100).toFixed(2) : '—'}%
+                        </td>
+                        <td className="border border-slate-300 px-3 py-2 text-center font-bold text-blue-800">
+                          {stats.pctReussite.toFixed(2)}%
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
         ),
       }}
     />

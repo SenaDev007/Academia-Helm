@@ -5,14 +5,17 @@
  * Parent Portal — Présences (Module dédié)
  * ============================================================================
  *
- * Historique complet de l'assiduité de l'enfant :
- *   - Sélecteur de trimestre (T1, T2, T3)
- *   - Sélecteur de mois ( filtrage par mois dans le trimestre)
- *   - Historique jour par jour avec statut + détail (matin/après-midi)
- *   - Stats: jours enregistrés, présents, absents, demi-journées
+ * Historique complet de l'assiduité de l'enfant, organisé en collapses hiérarchisés :
+ *   ▼ Trimestre 1
+ *       ▼ Septembre 2026
+ *           - Mercredi 30 septembre : Présent
+ *           - Lundi 28 septembre : Demi-journée (Matin: Absent · Après-midi: Présent)
+ *       ▶ Octobre 2026
+ *   ▶ Trimestre 2
+ *   ▶ Trimestre 3
  *
- * Gère les statuts : PRESENT, ABSENT, ABSENT_HALF, LATE
- * + Parse les notes JSON {morning, afternoon, late} pour affichage détaillé
+ * Aucun sélecteur — tout est dépliable/repliable.
+ * Les trimestres et mois sont auto-générés depuis les données réelles.
  * ============================================================================
  */
 
@@ -27,7 +30,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 
-// ─── Attendance helpers (shared with child detail page) ─────────────────────
+// ─── Attendance helpers ──────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
   PRESENT: { label: "Présent", color: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
@@ -73,6 +76,43 @@ function getAttendanceDisplay(record: { status: string; notes?: any }): { label:
   return { label: cfg.label, color: cfg.color, icon: cfg.icon, detail: parsed.raw || '' };
 }
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface AttendanceRecord {
+  date: string;
+  status: string;
+  notes?: any;
+}
+
+interface MonthGroup {
+  monthKey: string; // "2026-08"
+  monthLabel: string; // "Août 2026"
+  records: AttendanceRecord[];
+}
+
+interface TrimesterGroup {
+  trimesterNumber: number;
+  trimesterLabel: string;
+  months: MonthGroup[];
+}
+
+// ─── Determine trimester from date ──────────────────────────────────────────
+// T1: Sep–Dec, T2: Jan–Mar, T3: Apr–Jun
+// (July/Aug are between T3 and T1 — assigned to T1 of next year, but for simplicity
+//  we'll include Jul/Aug in T3 of previous year OR T1 — depends on school calendar)
+// We'll use: Sep-Dec = T1, Jan-Mar = T2, Apr-Jun = T3, Jul-Aug = T1 (summer/preparation)
+
+function getTrimesterNumber(date: Date): number {
+  const month = date.getMonth(); // 0-indexed
+  if (month >= 8 && month <= 11) return 1; // Sep-Dec → T1
+  if (month >= 0 && month <= 2) return 2;  // Jan-Mar → T2
+  if (month >= 3 && month <= 5) return 3;  // Apr-Jun → T3
+  return 1; // Jul-Aug → T1 (summer/preparation for next year)
+}
+
+const monthLabels = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+  "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function ParentAttendancePage() {
@@ -80,10 +120,12 @@ export default function ParentAttendancePage() {
   const { academicYear } = useModuleContext();
   const [children, setChildren] = useState<any[]>([]);
   const [selectedStudent, setSelectedStudent] = useState("");
-  const [records, setRecords] = useState<any[]>([]);
+  const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedTrimester, setSelectedTrimester] = useState<number>(1);
-  const [selectedMonth, setSelectedMonth] = useState<number | "ALL">("ALL");
+
+  // Collapsible state
+  const [openTrimesters, setOpenTrimesters] = useState<Set<number>>(new Set());
+  const [openMonths, setOpenMonths] = useState<Set<string>>(new Set());
 
   // ── Load children ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -99,12 +141,11 @@ export default function ParentAttendancePage() {
     })();
   }, [user?.id, academicYear?.id]);
 
-  // ── Load ALL attendance records (no month filter — we filter client-side) ─
+  // ── Load ALL attendance records ────────────────────────────────────────────
   const loadAttendance = useCallback(async () => {
     if (!selectedStudent) return;
     setLoading(true);
     try {
-      // Fetch all records (no month param) to allow trimester filtering
       const res = await fetch(`/api/parent/attendance/${selectedStudent}`, { credentials: "include" });
       const data = await res.json();
       setRecords(Array.isArray(data) ? data : []);
@@ -116,30 +157,86 @@ export default function ParentAttendancePage() {
     if (selectedStudent) loadAttendance();
   }, [loadAttendance, selectedStudent]);
 
-  // ── Trimester → month ranges ──────────────────────────────────────────────
-  // T1: Sep-Dec, T2: Jan-Mar, T3: Apr-Jun
-  const trimesterMonths: Record<number, number[]> = {
-    1: [8, 9, 10, 11], // Sep, Oct, Nov, Dec (0-indexed)
-    2: [0, 1, 2],      // Jan, Feb, Mar
-    3: [3, 4, 5],      // Apr, May, Jun
-  };
-  const monthLabels = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
-    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+  // ── Group records by trimester → month ─────────────────────────────────────
+  const trimesterGroups = useMemo<TrimesterGroup[]>(() => {
+    const trimesterMap = new Map<number, Map<string, AttendanceRecord[]>>();
 
-  // ── Filter records by trimester + month ───────────────────────────────────
-  const filteredRecords = useMemo(() => {
-    return records.filter(r => {
+    for (const r of records) {
       const d = new Date(r.date);
-      const month = d.getMonth(); // 0-indexed
-      const allowedMonths = trimesterMonths[selectedTrimester] || [];
-      if (!allowedMonths.includes(month)) return false;
-      if (selectedMonth !== "ALL" && month !== selectedMonth) return false;
-      return true;
-    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [records, selectedTrimester, selectedMonth]);
+      const trimNum = getTrimesterNumber(d);
+      const monthKey = `${d.getFullYear()}-${String(d.getMonth()).padStart(2, '0')}`;
 
-  // ── Compute stats ─────────────────────────────────────────────────────────
-  const stats = filteredRecords.reduce((acc, r) => {
+      if (!trimesterMap.has(trimNum)) {
+        trimesterMap.set(trimNum, new Map());
+      }
+      const monthMap = trimesterMap.get(trimNum)!;
+      if (!monthMap.has(monthKey)) {
+        monthMap.set(monthKey, []);
+      }
+      monthMap.get(monthKey)!.push(r);
+    }
+
+    // Build sorted array
+    const groups: TrimesterGroup[] = [];
+    for (const [trimNum, monthMap] of trimesterMap) {
+      const months: MonthGroup[] = [];
+      for (const [monthKey, recs] of monthMap) {
+        const [yearStr, monthStr] = monthKey.split('-');
+        const monthIdx = parseInt(monthStr, 10);
+        const year = parseInt(yearStr, 10);
+        // Sort records within month by date DESC
+        recs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        months.push({
+          monthKey,
+          monthLabel: `${monthLabels[monthIdx]} ${year}`,
+          records: recs,
+        });
+      }
+      // Sort months chronologically within trimester
+      months.sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+      groups.push({
+        trimesterNumber: trimNum,
+        trimesterLabel: `Trimestre ${trimNum}`,
+        months,
+      });
+    }
+    // Sort trimesters 1, 2, 3
+    groups.sort((a, b) => a.trimesterNumber - b.trimesterNumber);
+    return groups;
+  }, [records]);
+
+  // ── Auto-expand first trimester + first month on load ─────────────────────
+  useEffect(() => {
+    if (trimesterGroups.length > 0) {
+      const firstTrim = trimesterGroups[0];
+      setOpenTrimesters(new Set([firstTrim.trimesterNumber]));
+      if (firstTrim.months.length > 0) {
+        setOpenMonths(new Set([firstTrim.months[0].monthKey]));
+      }
+    }
+  }, [trimesterGroups]);
+
+  // ── Toggle handlers ────────────────────────────────────────────────────────
+  const toggleTrimester = (trimNum: number) => {
+    setOpenTrimesters(prev => {
+      const next = new Set(prev);
+      if (next.has(trimNum)) next.delete(trimNum);
+      else next.add(trimNum);
+      return next;
+    });
+  };
+
+  const toggleMonth = (monthKey: string) => {
+    setOpenMonths(prev => {
+      const next = new Set(prev);
+      if (next.has(monthKey)) next.delete(monthKey);
+      else next.add(monthKey);
+      return next;
+    });
+  };
+
+  // ── Compute overall stats (all records) ────────────────────────────────────
+  const stats = records.reduce((acc, r) => {
     acc.total++;
     const display = getAttendanceDisplay(r);
     if (display.label === "Présent") acc.present++;
@@ -147,12 +244,6 @@ export default function ParentAttendancePage() {
     else if (display.label === "Demi-journée" || display.label === "En retard") acc.late++;
     return acc;
   }, { total: 0, present: 0, absent: 0, late: 0 });
-
-  // ── Available months in the selected trimester ────────────────────────────
-  const availableMonths = useMemo(() => {
-    const months = trimesterMonths[selectedTrimester] || [];
-    return months.map(m => ({ value: m, label: monthLabels[m] }));
-  }, [selectedTrimester]);
 
   return (
     <div className="space-y-4">
@@ -178,43 +269,7 @@ export default function ParentAttendancePage() {
         </div>
       )}
 
-      {/* Filters: Trimester + Month */}
-      <div className="bg-white rounded-xl border border-slate-200 p-3 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
-        <div className="flex-1">
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">
-            Trimestre
-          </label>
-          <select
-            value={selectedTrimester}
-            onChange={(e) => {
-              setSelectedTrimester(Number(e.target.value));
-              setSelectedMonth("ALL");
-            }}
-            className="w-full text-sm font-semibold border border-gray-200 bg-gray-50 rounded-lg py-2 px-3 focus:ring-2 focus:ring-blue-500"
-          >
-            <option value={1}>Trimestre 1</option>
-            <option value={2}>Trimestre 2</option>
-            <option value={3}>Trimestre 3</option>
-          </select>
-        </div>
-        <div className="flex-1">
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">
-            Mois
-          </label>
-          <select
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value === "ALL" ? "ALL" : Number(e.target.value))}
-            className="w-full text-sm font-semibold border border-gray-200 bg-gray-50 rounded-lg py-2 px-3 focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="ALL">Tous les mois</option>
-            {availableMonths.map(m => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Stats cards */}
+      {/* Stats cards (overall) */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
           <p className="text-2xl font-bold text-slate-900">{stats.total}</p>
@@ -237,63 +292,124 @@ export default function ParentAttendancePage() {
         </div>
       </div>
 
-      {/* History table */}
+      {/* Hierarchical collapses: Trimester → Month → Records */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-amber-600" />
         </div>
-      ) : filteredRecords.length > 0 ? (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
-            <h3 className="text-sm font-bold text-slate-700">
-              Historique — Trimestre {selectedTrimester}
-              {selectedMonth !== "ALL" && ` · ${monthLabels[selectedMonth as number]}`}
-            </h3>
-            <p className="text-xs text-slate-500">{filteredRecords.length} enregistrement(s)</p>
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="text-left px-4 py-3 font-semibold text-slate-700">Date</th>
-                <th className="text-center px-4 py-3 font-semibold text-slate-700">Statut</th>
-                <th className="text-left px-4 py-3 font-semibold text-slate-700">Détail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRecords.map((r, i) => {
-                const display = getAttendanceDisplay(r);
-                return (
-                  <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="px-4 py-3 text-slate-600 font-medium">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                        {format(new Date(r.date), "EEEE d MMMM yyyy", { locale: fr })}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={cn(
-                        "inline-flex items-center px-2 py-1 rounded text-xs font-bold",
-                        display.color,
-                      )}>
-                        {display.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600 text-xs">
-                      {display.detail || "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : (
+      ) : trimesterGroups.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
           <CalendarCheck className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-          <p className="text-sm text-slate-500">
-            Aucune donnée d'assiduité pour Trimestre {selectedTrimester}
-            {selectedMonth !== "ALL" && ` · ${monthLabels[selectedMonth as number]}`}.
-          </p>
+          <p className="text-sm text-slate-500">Aucune donnée d'assiduité enregistrée pour le moment.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {trimesterGroups.map((trimester) => {
+            const isTrimOpen = openTrimesters.has(trimester.trimesterNumber);
+            const trimRecordCount = trimester.months.reduce((sum, m) => sum + m.records.length, 0);
+
+            return (
+              <div key={trimester.trimesterNumber} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                {/* Trimester header (clickable) */}
+                <button
+                  onClick={() => toggleTrimester(trimester.trimesterNumber)}
+                  className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    {isTrimOpen ? (
+                      <ChevronDown className="w-5 h-5 text-slate-500" />
+                    ) : (
+                      <ChevronRight className="w-5 h-5 text-slate-500" />
+                    )}
+                    <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">
+                      T{trimester.trimesterNumber}
+                    </div>
+                    <div className="text-left">
+                      <h3 className="text-sm font-bold text-slate-900">{trimester.trimesterLabel}</h3>
+                      <p className="text-xs text-slate-500">
+                        {trimester.months.length} mois · {trimRecordCount} enregistrement(s)
+                      </p>
+                    </div>
+                  </div>
+                </button>
+
+                {/* Months (collapsible) */}
+                {isTrimOpen && (
+                  <div className="border-t border-slate-100 divide-y divide-slate-100">
+                    {trimester.months.map((month) => {
+                      const isMonthOpen = openMonths.has(month.monthKey);
+                      const monthPresent = month.records.filter(r => getAttendanceDisplay(r).label === "Présent").length;
+                      const monthAbsent = month.records.filter(r => getAttendanceDisplay(r).label === "Absent").length;
+                      const monthLate = month.records.filter(r => {
+                        const d = getAttendanceDisplay(r);
+                        return d.label === "Demi-journée" || d.label === "En retard";
+                      }).length;
+
+                      return (
+                        <div key={month.monthKey} className="px-4">
+                          {/* Month header (clickable) */}
+                          <button
+                            onClick={() => toggleMonth(month.monthKey)}
+                            className="w-full py-3 flex items-center justify-between hover:bg-slate-50/50 transition-colors"
+                          >
+                            <div className="flex items-center gap-3">
+                              {isMonthOpen ? (
+                                <ChevronDown className="w-4 h-4 text-slate-400" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4 text-slate-400" />
+                              )}
+                              <Calendar className="w-4 h-4 text-slate-400" />
+                              <div className="text-left">
+                                <div className="text-sm font-semibold text-slate-900">{month.monthLabel}</div>
+                                <div className="text-xs text-slate-500">
+                                  {month.records.length} jour(s) · {monthPresent} présent(s) · {monthAbsent} absent(s) · {monthLate} demi-journée(s)
+                                </div>
+                              </div>
+                            </div>
+                          </button>
+
+                          {/* Records (collapsible) */}
+                          {isMonthOpen && (
+                            <div className="pb-3 space-y-2">
+                              {month.records.map((r, i) => {
+                                const display = getAttendanceDisplay(r);
+                                const Icon = display.icon;
+                                return (
+                                  <div key={i} className="flex items-start gap-3 p-3 rounded-lg bg-slate-50/50 border border-slate-100">
+                                    <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0", display.color)}>
+                                      <Icon className="w-4 h-4" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-sm font-semibold text-slate-900">
+                                          {format(new Date(r.date), "EEEE d MMMM yyyy", { locale: fr })}
+                                        </span>
+                                        <span className={cn(
+                                          "inline-flex items-center px-2 py-0.5 rounded text-xs font-bold",
+                                          display.color,
+                                        )}>
+                                          {display.label}
+                                        </span>
+                                      </div>
+                                      {display.detail && (
+                                        <p className="text-xs text-slate-600 mt-1">
+                                          {display.detail}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

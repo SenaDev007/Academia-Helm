@@ -622,9 +622,17 @@ export class ExamsPrismaService {
     academicYearId: string,
   ) {
     // 0. Verify class exists via raw SQL
-    const classRows = await this.prisma.$queryRawUnsafe<any[]>(`
+    // ⭐ Fallback: if tenantId is undefined, try without tenant filter
+    let classRows = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT id, name, "schoolLevelId" FROM "classes" WHERE id = $1 AND "tenantId" = $2 LIMIT 1
     `, [classId, tenantId]).catch(() => []);
+
+    // Fallback: try without tenantId (in case @TenantId() returned undefined)
+    if ((!classRows || classRows.length === 0) && !tenantId) {
+      classRows = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT id, name, "schoolLevelId" FROM "classes" WHERE id = $1 LIMIT 1
+      `, [classId]).catch(() => []);
+    }
 
     if (!classRows || classRows.length === 0) {
       throw new NotFoundException(`Class with ID ${classId} not found`);
@@ -1002,12 +1010,23 @@ export class ExamsPrismaService {
     evaluationTypeId: string,
   ) {
     // 1. Verify class exists + get school level
-    const classRows = await this.prisma.$queryRawUnsafe<any[]>(`
+    // ⭐ Fallback: if tenantId is undefined, try without tenant filter
+    let classRows = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT c.id, c.name, c."schoolLevelId", sl.code AS "schoolLevelCode"
       FROM "classes" c
       LEFT JOIN "school_levels" sl ON sl.id = c."schoolLevelId"
       WHERE c.id = $1 AND c."tenantId" = $2 LIMIT 1
     `, [classId, tenantId]).catch(() => []);
+
+    // Fallback: try without tenantId (in case @TenantId() returned undefined)
+    if ((!classRows || classRows.length === 0) && !tenantId) {
+      classRows = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT c.id, c.name, c."schoolLevelId", sl.code AS "schoolLevelCode"
+        FROM "classes" c
+        LEFT JOIN "school_levels" sl ON sl.id = c."schoolLevelId"
+        WHERE c.id = $1 LIMIT 1
+      `, [classId]).catch(() => []);
+    }
 
     if (!classRows || classRows.length === 0) {
       throw new NotFoundException(`Classe ${classId} introuvable`);

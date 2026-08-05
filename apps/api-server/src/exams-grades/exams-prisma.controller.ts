@@ -14,6 +14,7 @@ import {
   Param,
   Query,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { ExamsPrismaService } from './exams-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -169,10 +170,16 @@ export class ExamsPrismaController {
   @Post('calculate-evaluation-averages')
   async calculateEvaluationAverages(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Body() body: { classId: string; periodId: string; academicYearId: string; evaluationTypeId: string },
   ) {
+    // ⭐ Fallback: if @TenantId() returns undefined, use user.tenantId from JWT
+    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id;
+    if (!resolvedTenantId) {
+      throw new BadRequestException('Tenant ID non résolu — veuillez vous reconnecter.');
+    }
     return this.examsService.calculateEvaluationAverages(
-      tenantId,
+      resolvedTenantId,
       body.classId,
       body.periodId,
       body.academicYearId,

@@ -13,7 +13,7 @@
  * ============================================================================
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import {
@@ -215,8 +215,11 @@ function NotesTab({ studentId, academicYearId, child }: { studentId: string; aca
     });
   };
 
-  const isMaternelle = child?.schoolLevelCode === 'MATERNELLE';
-  const isPrimaire = child?.schoolLevelCode === 'PRIMAIRE';
+  const isMaternelle = useMemo(() => {
+    // Derive from grades data: if any subject has qualitativeCode, it's Maternelle
+    return grades.some(q => q.evaluations.some(ev => ev.subjects.some(s => s.qualitativeCode)));
+  }, [grades]);
+  const isPrimaire = !isMaternelle && child?.schoolLevelCode === 'PRIMAIRE';
   const isSecondaire = child?.schoolLevelCode === 'SECONDAIRE';
 
   if (loading) {

@@ -493,12 +493,7 @@ function RegistreDetailSheet({
     : 'Date non définie';
 
   return (
-    <ModuleContainer
-      subModules={{ modules: scopedSubModules, activeModuleId: 'registre' }}
-      content={{
-        layout: 'full',
-        children: (
-          <div className="space-y-4">
+    <div className="space-y-4">
             {/* Titre */}
             <div className="bg-white border-2 border-slate-800 rounded-xl p-4 text-center">
               <h2 className="text-lg font-bold text-slate-900">
@@ -784,8 +779,5 @@ function RegistreDetailSheet({
               </div>
             )}
           </div>
-        ),
-      }}
-    />
   );
 }

@@ -274,6 +274,7 @@ function AveragesContent() {
         periodId: selectedPeriodId,
         academicYearId: academicYear.id,
         evaluationTypeId: selectedEvalTypeId,
+        language: scopeLang, // ⭐ Pass language track (FR/EN) for subject filtering
       });
 
       const result: CalculationResult = response.data;

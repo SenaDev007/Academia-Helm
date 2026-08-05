@@ -195,6 +195,7 @@ export class ExamsPrismaController {
       body.periodId,
       body.academicYearId,
       body.evaluationTypeId,
+      body.language, // ⭐ Pass language track (FR/EN) for subject filtering
     );
   }
 

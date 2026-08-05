@@ -223,6 +223,10 @@ export class CalculateEvaluationAveragesDto {
   @IsUUID()
   @IsNotEmpty()
   evaluationTypeId: string;
+
+  @IsOptional()
+  @IsString()
+  language?: string; // 'FR' or 'EN' — filters subjects by language track
 }
 
 // ─── Bulletins / Report Cards ───────────────────────────────────

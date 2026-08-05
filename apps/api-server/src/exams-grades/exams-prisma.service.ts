@@ -1008,6 +1008,7 @@ export class ExamsPrismaService {
     periodId: string,
     academicYearId: string,
     evaluationTypeId: string,
+    language?: string, // ⭐ 'FR' or 'EN' — filters subjects by language track
   ) {
     // 1. Verify class exists + get school level
     // ⭐ Fallback: if tenantId is undefined, try without tenant filter
@@ -1068,13 +1069,22 @@ export class ExamsPrismaService {
       evalGradesMap.set(ev.id, grades);
     }
 
-    // 5. Build subject list (FR only — filter Anglophone subjects)
+    // 5. Build subject list — filtered by language track (FR or EN)
+    // ⭐ If language is 'FR', include FR subjects + subjects with no language (legacy)
+    //    If language is 'EN', include EN subjects only
+    //    If language is not specified, include ALL subjects
     const subjects: Array<{ id: string; name: string; code?: string }> = [];
     const seenSubjectIds = new Set<string>();
     for (const ev of evaluations) {
       if (ev.subjectId && !seenSubjectIds.has(ev.subjectId)) {
-        // Filter: only FR subjects (or subjects with no language = legacy)
-        if (!ev.subjectLanguage || ev.subjectLanguage === 'FR') {
+        if (language) {
+          // Filter by language track
+          if (ev.subjectLanguage === language || (!ev.subjectLanguage && language === 'FR')) {
+            subjects.push({ id: ev.subjectId, name: ev.subjectName, code: ev.subjectCode });
+            seenSubjectIds.add(ev.subjectId);
+          }
+        } else {
+          // No language filter — include all
           subjects.push({ id: ev.subjectId, name: ev.subjectName, code: ev.subjectCode });
           seenSubjectIds.add(ev.subjectId);
         }

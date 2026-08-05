@@ -24,6 +24,7 @@ import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
 import {
   FileText, Loader2, ChevronDown, ChevronRight, Download,
   Users, BookOpen, Award, Calendar, Printer, AlertCircle,
+  Calculator,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -53,7 +54,7 @@ const pedagogicalSortIndex = (name: string): number => {
 };
 
 // ─── Evaluation type ordering: EM1 → EM2 → EC ───────────────────────────────
-const EVAL_TYPE_ORDER = ['EM1', 'EM2', 'EC', 'DV', 'INT', 'COMP', 'EB', 'EP', 'ORAL'];
+const EVAL_TYPE_ORDER = ['EM1', 'EM2', 'EC', 'DV', 'INT', 'COMP', 'EB', 'ORAL', 'EP'];
 const evalTypeSortIndex = (code: string): number => {
   const idx = EVAL_TYPE_ORDER.indexOf(code?.toUpperCase() || '');
   return idx === -1 ? EVAL_TYPE_ORDER.length : idx;
@@ -131,6 +132,10 @@ function BulletinsContent() {
   const [bulletinData, setBulletinData] = useState<BulletinData | null>(null);
   const [expandedStudents, setExpandedStudents] = useState<Set<string>>(new Set());
   const [generatingPdf, setGeneratingPdf] = useState<string | null>(null);
+  // ⭐ Sub-tabs: 'bulletin' (current content) | 'moyennes' (trimestriel + annuel)
+  const [activeSubTab, setActiveSubTab] = useState<'bulletin' | 'moyennes'>('bulletin');
+  // ⭐ Sub-sub-tabs within 'moyennes': 'trimestriel' | 'annuel'
+  const [activeMoyenneTab, setActiveMoyenneTab] = useState<'trimestriel' | 'annuel'>('trimestriel');
 
   const isMaternelle = scopeLevel === 'MATERNELLE';
 
@@ -451,9 +456,33 @@ function BulletinsContent() {
     <div className="space-y-4">
       <div className="flex items-center gap-2 mb-2">
         <FileText className="w-5 h-5 text-blue-600" />
-        <h2 className="text-lg font-bold text-gray-900">Bulletins par évaluation</h2>
+        <h2 className="text-lg font-bold text-gray-900">Bulletins</h2>
         <Badge variant="outline" className="text-xs">{scopeLevel || '—'} {scopeLang ? `· ${scopeLang}` : ''}</Badge>
       </div>
+
+      {/* Sub-tabs: Bulletin d'évaluation | Moyenne trimestrielle et annuelle */}
+      <div className="flex items-center gap-2 border-b border-slate-200">
+        <button
+          onClick={() => setActiveSubTab('bulletin')}
+          className={cn('flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors',
+            activeSubTab === 'bulletin' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}
+        >
+          <FileText className="w-4 h-4" />
+          Bulletin d'évaluation
+        </button>
+        <button
+          onClick={() => setActiveSubTab('moyennes')}
+          className={cn('flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors',
+            activeSubTab === 'moyennes' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}
+        >
+          <Calculator className="w-4 h-4" />
+          Moyenne trimestrielle et annuelle
+        </button>
+      </div>
+
+      {/* ═══ Sub-tab: Bulletin d'évaluation ═══ */}
+      {activeSubTab === 'bulletin' && (
+        <>
 
       {/* Control Bar */}
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
@@ -586,6 +615,22 @@ function BulletinsContent() {
             );
           })}
         </div>
+      )}
+        </>
+      )}
+
+      {/* ═══ Sub-tab: Moyenne trimestrielle et annuelle ═══ */}
+      {activeSubTab === 'moyennes' && (
+        <MoyennesTab
+          academicYear={academicYear}
+          schoolLevelUuid={schoolLevelUuid}
+          scopeLang={scopeLang}
+          scopeLevel={scopeLevel || ''}
+          isMaternelle={isMaternelle}
+          classes={classes}
+          activeMoyenneTab={activeMoyenneTab}
+          setActiveMoyenneTab={setActiveMoyenneTab}
+        />
       )}
     </div>
   );
@@ -1009,6 +1054,328 @@ function BulletinPage2({ student, isMaternelle, signatures }: { student: Student
           minHeight="48px"
         />
       </div>
+    </div>
+  );
+}
+
+// ─── Moyennes Tab (Trimestriel + Annuel) ─────────────────────────────────────
+
+function MoyennesTab({
+  academicYear, schoolLevelUuid, scopeLang, scopeLevel, isMaternelle, classes,
+  activeMoyenneTab, setActiveMoyenneTab,
+}: {
+  academicYear: any;
+  schoolLevelUuid?: string;
+  scopeLang?: string;
+  scopeLevel: string;
+  isMaternelle: boolean;
+  classes: any[];
+  activeMoyenneTab: 'trimestriel' | 'annuel';
+  setActiveMoyenneTab: (t: 'trimestriel' | 'annuel') => void;
+}) {
+  const [selectedClassId, setSelectedClassId] = useState(classes[0]?.id || '');
+  const [loading, setLoading] = useState(false);
+  const [trimesterData, setTrimesterData] = useState<any[]>([]);
+  const [annualData, setAnnualData] = useState<any[]>([]);
+
+  // Load trimester averages
+  const loadTrimesterAverages = useCallback(async () => {
+    if (!selectedClassId || !academicYear?.id) return;
+    setLoading(true);
+    try {
+      // Fetch all evaluations for this class (VALIDATED only)
+      const evaluations = await institutionalExamsService.getEvaluations({
+        academicYearId: academicYear.id,
+        classId: selectedClassId,
+        status: 'VALIDATED',
+      });
+      const allEvals = Array.isArray(evaluations) ? evaluations : [];
+
+      // Fetch periods (trimesters)
+      const periodsRes = await fetch(`/api/settings/academic-years/${academicYear.id}/periods`, { credentials: 'include' });
+      const periodsData = await periodsRes.json();
+      const periods = Array.isArray(periodsData) ? periodsData : [];
+
+      // For each trimester, compute averages per student
+      const results: any[] = [];
+      for (const period of periods) {
+        const periodEvals = allEvals.filter((ev: any) => ev.period?.id === period.id);
+        if (periodEvals.length === 0) continue;
+
+        // Group by evaluation type (EM1, EM2, EC, EP)
+        const evalTypeMap = new Map<string, any[]>();
+        for (const ev of periodEvals) {
+          const typeId = ev.evaluationType?.id || '_no_type';
+          if (!evalTypeMap.has(typeId)) evalTypeMap.set(typeId, []);
+          evalTypeMap.get(typeId)!.push(ev);
+        }
+
+        // For each eval type, compute student averages (same pattern as bulletin)
+        const evalTypeAverages: Record<string, Record<string, number | null>> = {}; // studentId → { evalTypeId: avg }
+        for (const [typeId, evals] of evalTypeMap) {
+          // Filter by language
+          const langEvals = scopeLang
+            ? evals.filter((ev: any) => !ev.subject?.language || ev.subject.language === scopeLang || ev.subject.language === 'FR')
+            : evals;
+
+          // Get grades for each eval
+          const evalGradesMap = new Map<string, any[]>();
+          await Promise.all(langEvals.map(async (ev: any) => {
+            try {
+              const res = await apiClient.get(`/institutional-exams/grades/evaluation/${ev.id}`);
+              evalGradesMap.set(ev.id, Array.isArray(res.data) ? res.data : []);
+            } catch { evalGradesMap.set(ev.id, []); }
+          }));
+
+          // Compute per-student average for this eval type
+          const studentScores = new Map<string, { total: number; count: number; tsCount: number; sCount: number; psCount: number }>();
+          for (const ev of langEvals) {
+            const grades = evalGradesMap.get(ev.id) || [];
+            for (const grade of grades) {
+              if (!studentScores.has(grade.studentId)) {
+                studentScores.set(grade.studentId, { total: 0, count: 0, tsCount: 0, sCount: 0, psCount: 0 });
+              }
+              const s = studentScores.get(grade.studentId)!;
+              if (grade.isAbsent) continue;
+              if (isMaternelle) {
+                if (grade.qualitativeCode === 'TS') { s.tsCount++; s.count++; }
+                else if (grade.qualitativeCode === 'S') { s.sCount++; s.count++; }
+                else if (grade.qualitativeCode === 'PS') { s.psCount++; s.count++; }
+              } else {
+                if (grade.score !== null) { s.total += Number(grade.score); s.count++; }
+              }
+            }
+          }
+
+          for (const [studentId, s] of studentScores) {
+            if (!evalTypeAverages[studentId]) evalTypeAverages[studentId] = {};
+            if (isMaternelle && s.count > 0) {
+              evalTypeAverages[studentId][typeId] = (s.tsCount * 3 + s.sCount * 2 + s.psCount * 1) / s.count;
+            } else if (!isMaternelle && s.count > 0) {
+              evalTypeAverages[studentId][typeId] = s.total / s.count;
+            } else {
+              evalTypeAverages[studentId][typeId] = null;
+            }
+          }
+        }
+
+        // Now compute trimester average per student
+        // Formula: ((EM1 + EM2) / 2 + EC) / 2
+        const evalTypeIds = Array.from(evalTypeMap.keys());
+        const em1Id = evalTypeIds.find(id => {
+          const ev = evalTypeMap.get(id)?.[0];
+          return ev?.evaluationType?.code === 'EM1';
+        });
+        const em2Id = evalTypeIds.find(id => {
+          const ev = evalTypeMap.get(id)?.[0];
+          return ev?.evaluationType?.code === 'EM2';
+        });
+        const ecId = evalTypeIds.find(id => {
+          const ev = evalTypeMap.get(id)?.[0];
+          return ev?.evaluationType?.code === 'EC';
+        });
+
+        const studentNames = new Map<string, string>();
+        for (const evals of evalTypeMap.values()) {
+          for (const ev of evals) {
+            // Get student names from grades
+          }
+        }
+
+        // Get student names from the first eval's grades
+        const firstEvals = Array.from(evalTypeMap.values())[0] || [];
+        for (const ev of firstEvals) {
+          const grades = evalGradesMap.get(ev.id) || [];
+          for (const g of grades) {
+            if (!studentNames.has(g.studentId)) {
+              studentNames.set(g.studentId, g.studentName || 'Inconnu');
+            }
+          }
+        }
+
+        for (const [studentId, name] of studentNames) {
+          const avgs = evalTypeAverages[studentId] || {};
+          const em1Avg = em1Id ? avgs[em1Id] : null;
+          const em2Avg = em2Id ? avgs[em2Id] : null;
+          const ecAvg = ecId ? avgs[ecId] : null;
+
+          let trimesterAvg: number | null = null;
+          let appreciation = '—';
+          if (em1Avg !== null && em2Avg !== null && ecAvg !== null) {
+            const emAvg = (em1Avg + em2Avg) / 2;
+            trimesterAvg = (emAvg + ecAvg) / 2;
+          } else if (em1Avg !== null && em2Avg !== null) {
+            trimesterAvg = (em1Avg + em2Avg) / 2;
+          } else if (ecAvg !== null) {
+            trimesterAvg = ecAvg;
+          }
+
+          if (isMaternelle && trimesterAvg !== null) {
+            appreciation = trimesterAvg >= 2.5 ? 'Très Satisfaisant' : trimesterAvg >= 1.5 ? 'Satisfaisant' : 'Peu Satisfaisant';
+          }
+
+          results.push({
+            studentId,
+            studentName: name,
+            periodName: period.name,
+            em1Avg, em2Avg, ecAvg,
+            trimesterAvg,
+            appreciation,
+          });
+        }
+      }
+
+      // Sort by student name
+      results.sort((a, b) => a.studentName.localeCompare(b.studentName, 'fr'));
+      setTrimesterData(results);
+    } catch (err) {
+      console.error('Error loading trimester averages:', err);
+      setTrimesterData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedClassId, academicYear?.id, scopeLang, isMaternelle]);
+
+  useEffect(() => {
+    if (activeMoyenneTab === 'trimestriel') loadTrimesterAverages();
+  }, [loadTrimesterAverages, activeMoyenneTab]);
+
+  return (
+    <div className="space-y-4">
+      {/* Sub-sub-tabs: Trimestriel | Annuel */}
+      <div className="flex items-center gap-2 bg-white p-3 rounded-xl border border-slate-200">
+        <button
+          onClick={() => setActiveMoyenneTab('trimestriel')}
+          className={cn('px-4 py-2 rounded-lg text-sm font-semibold transition-all',
+            activeMoyenneTab === 'trimestriel' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50')}
+        >
+          Moyennes trimestrielles
+        </button>
+        <button
+          onClick={() => setActiveMoyenneTab('annuel')}
+          className={cn('px-4 py-2 rounded-lg text-sm font-semibold transition-all',
+            activeMoyenneTab === 'annuel' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50')}
+        >
+          Moyennes annuelles
+        </button>
+      </div>
+
+      {/* Class selector */}
+      <div className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-200">
+        <span className="text-sm font-semibold text-slate-700">Classe:</span>
+        <select
+          value={selectedClassId}
+          onChange={(e) => setSelectedClassId(e.target.value)}
+          className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium"
+        >
+          {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </div>
+
+      {/* Content */}
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 w-8 animate-spin text-blue-600" />
+          <span className="ml-3 text-sm text-slate-500">Calcul des moyennes…</span>
+        </div>
+      ) : activeMoyenneTab === 'trimestriel' ? (
+        <MoyennesTrimestrielTable data={trimesterData} isMaternelle={isMaternelle} />
+      ) : (
+        <MoyennesAnnuelTable data={[]} isMaternelle={isMaternelle} />
+      )}
+    </div>
+  );
+}
+
+// ─── Moyennes Trimestrielles Table ───────────────────────────────────────────
+
+function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMaternelle: boolean }) {
+  if (data.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+        <Calculator className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+        <p className="text-sm text-slate-500">Aucune donnée disponible. Sélectionnez une classe.</p>
+      </div>
+    );
+  }
+
+  // Group by student
+  const studentMap = new Map<string, any>();
+  for (const row of data) {
+    if (!studentMap.has(row.studentId)) {
+      studentMap.set(row.studentId, { studentName: row.studentName, periods: {} });
+    }
+    studentMap.get(row.studentId).periods[row.periodName] = row;
+  }
+  const students = Array.from(studentMap.values());
+
+  // Get all period names
+  const periodNames = [...new Set(data.map(r => r.periodName))].sort();
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="px-4 py-3 bg-blue-50 border-b border-blue-100">
+        <h3 className="text-sm font-bold text-slate-900">Moyennes trimestrielles</h3>
+        <p className="text-xs text-slate-500">Formule: ((EM1 + EM2) / 2 + EC) / 2</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-xs">
+          <thead>
+            <tr style={{ backgroundColor: '#0A2A5E', color: 'white' }}>
+              <th className="border px-2 py-2 font-bold uppercase text-left" style={{ borderColor: '#0D3B85', minWidth: '180px' }}>Nom et prénom</th>
+              {periodNames.map(p => (
+                <th key={p} className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>{p}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {students.map((student, idx) => (
+              <tr key={idx} className={cn(idx % 2 === 1 && 'bg-slate-50/50')}>
+                <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">{student.studentName}</td>
+                {periodNames.map(p => {
+                  const row = student.periods[p];
+                  if (!row) return <td key={p} className="border border-slate-300 px-2 py-1 text-center text-slate-300">—</td>;
+                  if (isMaternelle) {
+                    return (
+                      <td key={p} className="border border-slate-300 px-2 py-1 text-center">
+                        <span className={cn('inline-flex px-2 py-0.5 rounded text-xs font-bold',
+                          row.appreciation === 'Très Satisfaisant' && 'bg-emerald-100 text-emerald-700',
+                          row.appreciation === 'Satisfaisant' && 'bg-blue-100 text-blue-700',
+                          row.appreciation === 'Peu Satisfaisant' && 'bg-amber-100 text-amber-700',
+                        )}>{row.appreciation || '—'}</span>
+                      </td>
+                    );
+                  }
+                  return (
+                    <td key={p} className="border border-slate-300 px-2 py-1 text-center font-bold">
+                      <span className={cn((row.trimesterAvg || 0) >= 10 ? 'text-emerald-700' : 'text-red-600')}>
+                        {row.trimesterAvg !== null ? row.trimesterAvg.toFixed(2) : '—'}
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── Moyennes Annuelles Table ────────────────────────────────────────────────
+
+function MoyennesAnnuelTable({ data, isMaternelle }: { data: any[]; isMaternelle: boolean }) {
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+      <Calculator className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+      <p className="text-sm text-slate-500 font-medium">Moyennes annuelles</p>
+      <p className="text-xs text-slate-400 mt-1">
+        Formule: ((Moyenne EM annuelle + Moyenne EC annuelle) / 2 + Moyenne EP) / 2
+      </p>
+      <p className="text-xs text-slate-400 mt-2 italic">
+        Les moyennes annuelles seront calculées à la fin de l'année scolaire, après l'évaluation de passage (EP).
+      </p>
     </div>
   );
 }

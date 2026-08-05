@@ -67,7 +67,7 @@ export function HierarchicalEvaluationList({
       map.get(key)!.evaluations.push(g);
     }
     // ⭐ Trier les évaluations par type: EM1 → EM2 → EC
-    const EVAL_ORDER = ['EM1', 'EM2', 'EC', 'DV', 'INT', 'COMP', 'EB', 'EP', 'ORAL'];
+    const EVAL_ORDER = ['EM1', 'EM2', 'EC', 'DV', 'INT', 'COMP', 'EB', 'ORAL', 'EP'];
     for (const trim of map.values()) {
       trim.evaluations.sort((a, b) => {
         const idxA = EVAL_ORDER.indexOf(a.evaluationTypeCode?.toUpperCase() || '');

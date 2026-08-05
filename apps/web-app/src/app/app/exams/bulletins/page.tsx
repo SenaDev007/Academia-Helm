@@ -519,98 +519,20 @@ function BulletinsContent() {
                 </button>
 
                 {isExpanded && (
-                  <div className="border-t border-slate-100 p-4 space-y-4">
-                    {/* Bulletin header */}
-                    <div className="bg-slate-50 rounded-lg p-4 text-center">
-                      <div className="flex items-center justify-center gap-3 mb-2">
-                        {school?.logoUrl && <img src={school.logoUrl} alt="logo" className="h-12 w-12 rounded-lg object-cover" />}
-                        <div>
-                          <h3 className="text-sm font-bold text-slate-900">{school?.schoolName || 'École'}</h3>
-                          <p className="text-xs text-slate-500">{school?.address || ''} · Tél: {school?.phone || ''}</p>
-                        </div>
-                      </div>
-                      <div className="text-xs text-slate-600">
-                        Année scolaire: <strong>{academicYear?.label || ''}</strong> · {selectedPeriodName} · Classe: <strong>{selectedClassName}</strong>
-                      </div>
-                      <div className="text-xs text-slate-600 mt-1">
-                        Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · {selectedEvalTypeCode} {selectedEvalTypeName}
-                      </div>
-                    </div>
-
-                    {/* Notes table */}
-                    <div className="overflow-x-auto">
-                      <table className="w-full border-collapse text-xs">
-                        <thead>
-                          <tr className="bg-slate-100">
-                            <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">N°</th>
-                            <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: '180px' }}>Matière</th>
-                            <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center">{isMaternelle ? 'Appréciation' : 'Note /20'}</th>
-                            <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center">Observation</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {bulletinData.subjects.map((subject, idx) => {
-                            const score = student.subjectScores[subject.id];
-                            return (
-                              <tr key={subject.id} className={cn(idx % 2 === 1 && 'bg-slate-50/50')}>
-                                <td className="border border-slate-300 px-2 py-1 text-center text-slate-600">{idx + 1}</td>
-                                <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
-                                <td className="border border-slate-300 px-2 py-1 text-center">
-                                  {!score || score.isAbsent ? (
-                                    <span className="text-red-500 text-[10px] font-bold">ABS</span>
-                                  ) : isMaternelle ? (
-                                    <span className={cn('inline-flex px-2 py-0.5 rounded text-xs font-bold',
-                                      score.qualitativeCode === 'TS' && 'bg-emerald-100 text-emerald-700',
-                                      score.qualitativeCode === 'S' && 'bg-blue-100 text-blue-700',
-                                      score.qualitativeCode === 'PS' && 'bg-amber-100 text-amber-700',
-                                    )}>{score.qualitativeCode || '—'}</span>
-                                  ) : (
-                                    <span className={cn('font-bold', (score.score || 0) >= 10 ? 'text-emerald-700' : 'text-red-600')}>
-                                      {score.score !== null ? Number(score.score).toFixed(2) : '—'}
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="border border-slate-300 px-2 py-1 text-center text-slate-600 text-xs">{score?.appreciation || '—'}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Synthèse */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      {!isMaternelle && (
-                        <div className="bg-blue-50 rounded-lg p-3 text-center">
-                          <p className="text-[10px] uppercase font-bold text-slate-500">Moyenne</p>
-                          <p className="text-lg font-bold text-blue-700">{student.generalAverage !== null ? student.generalAverage.toFixed(2) : '—'}/20</p>
-                        </div>
-                      )}
-                      <div className="bg-slate-50 rounded-lg p-3 text-center">
-                        <p className="text-[10px] uppercase font-bold text-slate-500">Rang</p>
-                        <p className="text-lg font-bold text-slate-700">{student.classRank}</p>
-                      </div>
-                      <div className="bg-emerald-50 rounded-lg p-3 text-center">
-                        <p className="text-[10px] uppercase font-bold text-slate-500">Mention</p>
-                        <p className="text-sm font-bold text-emerald-700">
-                          {!isMaternelle && student.generalAverage !== null ? (
-                            student.generalAverage >= 16 ? 'Très Bien' : student.generalAverage >= 14 ? 'Bien' :
-                            student.generalAverage >= 12 ? 'Assez Bien' : student.generalAverage >= 10 ? 'Passable' : 'Insuffisant'
-                          ) : student.appreciationGlobale || '—'}
-                        </p>
-                      </div>
-                      <div className="bg-amber-50 rounded-lg p-3 text-center">
-                        <p className="text-[10px] uppercase font-bold text-slate-500">Moy. classe</p>
-                        <p className="text-lg font-bold text-amber-700">{bulletinData.stats.classAverage !== null ? bulletinData.stats.classAverage.toFixed(2) : '—'}</p>
-                      </div>
-                    </div>
-
-                    {/* PDF button */}
-                    <div className="flex justify-end">
-                      <Button onClick={() => handleGeneratePdf(student)} disabled={generatingPdf === student.id} className="bg-blue-600 hover:bg-blue-700 text-white text-sm">
-                        {generatingPdf === student.id ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Génération…</> : <><Download className="w-4 h-4 mr-2" />Générer PDF</>}
-                      </Button>
-                    </div>
+                  <div className="border-t border-slate-100 p-4">
+                    <BulletinTwoPage
+                      student={student}
+                      bulletinData={bulletinData}
+                      isMaternelle={isMaternelle}
+                      school={school}
+                      academicYear={academicYear}
+                      selectedPeriodName={selectedPeriodName}
+                      selectedClassName={selectedClassName}
+                      selectedEvalTypeCode={selectedEvalTypeCode}
+                      selectedEvalTypeName={selectedEvalTypeName}
+                      onGeneratePdf={() => handleGeneratePdf(student)}
+                      generatingPdf={generatingPdf === student.id}
+                    />
                   </div>
                 )}
               </div>
@@ -618,6 +540,348 @@ function BulletinsContent() {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Bulletin 2-Page Component (with flip animation) ────────────────────────
+
+function BulletinTwoPage({
+  student, bulletinData, isMaternelle, school, academicYear,
+  selectedPeriodName, selectedClassName, selectedEvalTypeCode, selectedEvalTypeName,
+  onGeneratePdf, generatingPdf,
+}: {
+  student: StudentResult;
+  bulletinData: BulletinData;
+  isMaternelle: boolean;
+  school: any;
+  academicYear: any;
+  selectedPeriodName: string;
+  selectedClassName: string;
+  selectedEvalTypeCode: string;
+  selectedEvalTypeName: string;
+  onGeneratePdf: () => void;
+  generatingPdf: boolean;
+}) {
+  const [page, setPage] = useState<1 | 2>(1);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => setTouchStart(e.touches[0].clientX);
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStart === null) return;
+    const diff = touchStart - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 50) {
+      if (diff > 0 && page === 1) setPage(2);
+      if (diff < 0 && page === 2) setPage(1);
+    }
+    setTouchStart(null);
+  };
+
+  return (
+    <div className="space-y-3" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+      {/* Bulletin header (école) */}
+      <div className="bg-slate-50 rounded-lg p-3 text-center border border-slate-200">
+        <div className="flex items-center justify-center gap-3 mb-1">
+          {school?.logoUrl && <img src={school.logoUrl} alt="logo" className="h-10 w-10 rounded object-cover" />}
+          <div>
+            <h3 className="text-xs font-bold text-slate-900">{school?.schoolName || 'École'}</h3>
+            <p className="text-[10px] text-slate-500">{school?.address || ''} · Tél: {school?.phone || ''}</p>
+          </div>
+        </div>
+        <div className="text-[10px] text-slate-600">
+          Année: <strong>{academicYear?.label || ''}</strong> · {selectedPeriodName} · Classe: <strong>{selectedClassName}</strong>
+        </div>
+        <div className="text-[10px] text-slate-600 mt-0.5">
+          Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · {selectedEvalTypeCode} {selectedEvalTypeName}
+        </div>
+      </div>
+
+      {/* Page navigation */}
+      <div className="flex items-center justify-between bg-slate-100 rounded-lg px-3 py-1.5">
+        <button
+          onClick={() => setPage(1)}
+          className={cn('text-xs font-bold px-3 py-1 rounded transition-colors', page === 1 ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-200')}
+        >← Page 1: Notes</button>
+        <span className="text-[10px] text-slate-400">Page {page}/2</span>
+        <button
+          onClick={() => setPage(2)}
+          className={cn('text-xs font-bold px-3 py-1 rounded transition-colors', page === 2 ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-200')}
+        >Page 2: Appréciations →</button>
+      </div>
+
+      {/* Page content with flip animation */}
+      <div className="relative overflow-hidden">
+        <div key={page} className="animate-in fade-in slide-in-from-right duration-300">
+          {page === 1 ? (
+            isMaternelle ? (
+              <BulletinMaternellePage1 student={student} bulletinData={bulletinData} />
+            ) : (
+              <BulletinPrimairePage1 student={student} bulletinData={bulletinData} />
+            )
+          ) : (
+            <BulletinPage2 student={student} isMaternelle={isMaternelle} />
+          )}
+        </div>
+      </div>
+
+      {/* PDF button */}
+      <div className="flex justify-end">
+        <Button onClick={onGeneratePdf} disabled={generatingPdf} className="bg-blue-600 hover:bg-blue-700 text-white text-sm">
+          {generatingPdf ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Génération…</> : <><Download className="w-4 h-4 mr-2" />Générer PDF</>}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Maternelle Page 1: Notes table (TS/S/PS columns) ──────────────────────
+
+function BulletinMaternellePage1({ student, bulletinData }: { student: StudentResult; bulletinData: BulletinData }) {
+  return (
+    <div className="overflow-x-auto">
+      <div className="text-center mb-2">
+        <h4 className="text-xs font-bold text-slate-900 uppercase">Évaluation Sommative Mensuelle</h4>
+        <p className="text-[10px] text-slate-500">(à remplir après avoir observé l'enfant)</p>
+      </div>
+      <table className="w-full border-collapse text-[10px]" style={{ border: '2px solid #1e293b' }}>
+        <thead>
+          <tr className="bg-slate-800 text-white">
+            <th rowSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '120px' }}>Matière</th>
+            <th colSpan={3} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center">Résultats</th>
+            <th rowSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '80px' }}>Appréciation enseignant</th>
+            <th rowSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '60px' }}>Visa Directeur</th>
+            <th rowSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '60px' }}>Visa Parents</th>
+          </tr>
+          <tr className="bg-slate-700 text-white">
+            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center">TS</th>
+            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center">S</th>
+            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center">PS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {bulletinData.subjects.map((subject, idx) => {
+            const score = student.subjectScores[subject.id];
+            const code = score?.qualitativeCode;
+            return (
+              <tr key={subject.id} className={cn(idx % 2 === 1 && 'bg-slate-50/50')}>
+                <td className="border border-slate-300 px-1 py-0.5 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center">
+                  {code === 'TS' && <span className="font-bold text-emerald-600">✓</span>}
+                  {score?.isAbsent && <span className="text-red-500 text-[8px]">ABS</span>}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center">
+                  {code === 'S' && <span className="font-bold text-blue-600">✓</span>}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center">
+                  {code === 'PS' && <span className="font-bold text-amber-600">✓</span>}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-600">{score?.appreciation || '—'}</td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-300">—</td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-300">—</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {/* TS/S/PS Legend */}
+      <div className="flex items-center gap-3 mt-2 text-[9px] text-slate-500">
+        <span className="font-bold">TS: Très Satisfaisant</span>
+        <span className="font-bold">S: Satisfaisant</span>
+        <span className="font-bold">PS: Peu Satisfaisant</span>
+      </div>
+      {/* Symbole mérité */}
+      <div className="mt-2 bg-slate-50 rounded-lg p-2 text-center border border-slate-200">
+        <p className="text-[10px] font-bold text-slate-700 uppercase">Symbole mérité par l'élève</p>
+        <span className={cn('inline-block mt-1 px-3 py-1 rounded text-sm font-bold',
+          student.appreciationGlobale === 'Très Satisfaisant' && 'bg-emerald-100 text-emerald-700',
+          student.appreciationGlobale === 'Satisfaisant' && 'bg-blue-100 text-blue-700',
+          student.appreciationGlobale === 'Peu Satisfaisant' && 'bg-amber-100 text-amber-700',
+        )}>{student.appreciationGlobale || '—'}</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Primaire Page 1: Notes table (CM/18, CP/2, Total/20, Seuil, Appréciation) ─
+
+function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResult; bulletinData: BulletinData }) {
+  const totalGeneral = bulletinData.subjects.reduce((sum, subj) => {
+    const s = student.subjectScores[subj.id];
+    return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
+  }, 0);
+  const seuilAtteint = totalGeneral >= (10 * bulletinData.subjects.length);
+  const validSubjects = bulletinData.subjects.filter(subj => {
+    const s = student.subjectScores[subj.id];
+    return s && !s.isAbsent && s.score !== null;
+  }).length;
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="text-center mb-2">
+        <h4 className="text-xs font-bold text-slate-900 uppercase">I — Connaissance et Habiletés</h4>
+      </div>
+      <table className="w-full border-collapse text-[10px]" style={{ border: '2px solid #1e293b' }}>
+        <thead>
+          <tr className="bg-slate-800 text-white">
+            <th rowSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-left" style={{ minWidth: '120px' }}>Champs de formation</th>
+            <th rowSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center w-12">Note min.</th>
+            <th className="border border-slate-600 px-1 py-1 font-bold uppercase text-center">CM</th>
+            <th className="border border-slate-600 px-1 py-1 font-bold uppercase text-center">CP</th>
+            <th rowSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center w-12">Total /20</th>
+            <th colSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center">Maîtrise min.</th>
+            <th colSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center">Seuil réussite</th>
+            <th rowSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '60px' }}>Appréciation</th>
+          </tr>
+          <tr className="bg-slate-700 text-white">
+            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center text-[8px]">/18</th>
+            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center text-[8px]">/02</th>
+            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center text-[8px]">Oui</th>
+            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center text-[8px]">Non</th>
+            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center text-[8px]">Oui</th>
+            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center text-[8px]">Non</th>
+          </tr>
+        </thead>
+        <tbody>
+          {bulletinData.subjects.map((subject, idx) => {
+            const score = student.subjectScores[subject.id];
+            const note = score?.score !== null && typeof score?.score === 'number' ? score.score : null;
+            const reached = note !== null && note >= 10;
+            return (
+              <tr key={subject.id} className={cn(idx % 2 === 1 && 'bg-slate-50/50')}>
+                <td className="border border-slate-300 px-1 py-0.5 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-400 text-[8px]">10</td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-400">—</td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-400">—</td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center font-bold">
+                  {score?.isAbsent ? <span className="text-red-500 text-[8px]">ABS</span> :
+                    note !== null ? <span className={note >= 10 ? 'text-emerald-700' : 'text-red-600'}>{note.toFixed(2)}</span> : '—'}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center">{reached ? '✓' : ''}</td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center">{!reached && note !== null ? '✓' : ''}</td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center">{reached ? '✓' : ''}</td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center">{!reached && note !== null ? '✓' : ''}</td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-600 text-[9px]">{score?.appreciation || '—'}</td>
+              </tr>
+            );
+          })}
+          {/* Total General */}
+          <tr className="bg-slate-200 font-bold">
+            <td className="border border-slate-300 px-1 py-0.5 uppercase text-slate-900" colSpan={4}>TOTAL GENERAL</td>
+            <td className="border border-slate-300 px-1 py-0.5 text-center text-blue-700">{totalGeneral.toFixed(2)}</td>
+            <td className="border border-slate-300 px-1 py-0.5 text-center" colSpan={2}></td>
+            <td className="border border-slate-300 px-1 py-0.5 text-center" colSpan={2}></td>
+            <td className="border border-slate-300 px-1 py-0.5 text-center"></td>
+          </tr>
+        </tbody>
+      </table>
+      {/* Synthèse */}
+      <div className="mt-2 space-y-1 text-[10px] text-slate-700">
+        <div className="flex justify-between bg-slate-50 px-2 py-1 rounded">
+          <span>Moyenne obtenue par l'élève:</span>
+          <strong className="text-blue-700">{student.generalAverage !== null ? student.generalAverage.toFixed(2) : '—'}/20</strong>
+        </div>
+        <div className="flex justify-between bg-slate-50 px-2 py-1 rounded">
+          <span>Plus forte moyenne de la classe:</span>
+          <strong>{bulletinData.stats.classAverage !== null ? Math.max(...bulletinData.results.map(r => r.generalAverage || 0)).toFixed(2) : '—'}/20</strong>
+        </div>
+        <div className="flex justify-between bg-slate-50 px-2 py-1 rounded">
+          <span>Plus faible moyenne de la classe:</span>
+          <strong>{bulletinData.stats.classAverage !== null ? Math.min(...bulletinData.results.map(r => r.generalAverage || 0)).toFixed(2) : '—'}/20</strong>
+        </div>
+        <div className="flex justify-between bg-slate-50 px-2 py-1 rounded">
+          <span>Seuil de réussite globale fixé à:</span>
+          <strong>10/20</strong>
+        </div>
+        <div className="flex justify-between bg-emerald-50 px-2 py-1 rounded font-bold">
+          <span>Seuil de réussite globale atteint:</span>
+          <span className={seuilAtteint ? 'text-emerald-700' : 'text-red-600'}>{seuilAtteint ? 'OUI' : 'NON'}</span>
+        </div>
+        <div className="flex justify-between bg-blue-50 px-2 py-1 rounded">
+          <span>Nombre de matières évaluées:</span>
+          <strong>{validSubjects}</strong>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Page 2: Appréciations + Signatures (Maternelle + Primaire) ────────────
+
+function BulletinPage2({ student, isMaternelle }: { student: StudentResult; isMaternelle: boolean }) {
+  return (
+    <div className="space-y-3">
+      {!isMaternelle && (
+        <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+          <h4 className="text-xs font-bold text-slate-900 uppercase mb-2">II — Attitudes</h4>
+          <div className="space-y-1.5 text-[10px]">
+            <div className="flex gap-2"><span className="font-semibold text-slate-600 min-w-[80px]">Assiduité:</span><span className="text-slate-400 italic">(à remplir)</span></div>
+            <div className="flex gap-2"><span className="font-semibold text-slate-600 min-w-[80px]">Discipline:</span><span className="text-slate-400 italic">(à remplir)</span></div>
+            <div className="flex gap-2"><span className="font-semibold text-slate-600 min-w-[80px]">Défauts majeurs:</span><span className="text-slate-400 italic">(à remplir)</span></div>
+            <div className="flex gap-2"><span className="font-semibold text-slate-600 min-w-[80px]">Qualités remarquables:</span><span className="text-slate-400 italic">(à remplir)</span></div>
+          </div>
+        </div>
+      )}
+
+      {/* Analyse pédagogique */}
+      <div className="bg-white rounded-lg p-3 border border-slate-200">
+        <h4 className="text-xs font-bold text-slate-900 uppercase mb-2">
+          {isMaternelle
+            ? 'Analyse Pédagogique Sommaire des Résultats et Recommandations de l\'Enseignant(e) aux Parents'
+            : 'Analyse des Résultats et Recommandations'}
+        </h4>
+        <div className="bg-slate-50 rounded p-2 min-h-[60px] border border-dashed border-slate-300">
+          <p className="text-[10px] text-slate-400 italic">(Zone de recommandations de l'enseignant — à remplir lors du conseil de classe)</p>
+        </div>
+      </div>
+
+      {/* Symbole mérité */}
+      <div className="bg-slate-50 rounded-lg p-2 text-center border border-slate-200">
+        <p className="text-[10px] font-bold text-slate-700 uppercase">Symbole mérité par l'élève</p>
+        {isMaternelle ? (
+          <span className={cn('inline-block mt-1 px-3 py-1 rounded text-sm font-bold',
+            student.appreciationGlobale === 'Très Satisfaisant' && 'bg-emerald-100 text-emerald-700',
+            student.appreciationGlobale === 'Satisfaisant' && 'bg-blue-100 text-blue-700',
+            student.appreciationGlobale === 'Peu Satisfaisant' && 'bg-amber-100 text-amber-700',
+          )}>{student.appreciationGlobale || '—'}</span>
+        ) : (
+          <span className="inline-block mt-1 px-3 py-1 rounded text-sm font-bold bg-blue-100 text-blue-700">
+            {student.generalAverage !== null ? (
+              student.generalAverage >= 16 ? 'Très Bien' : student.generalAverage >= 14 ? 'Bien' :
+              student.generalAverage >= 12 ? 'Assez Bien' : student.generalAverage >= 10 ? 'Passable' : 'Insuffisant'
+            ) : '—'}
+          </span>
+        )}
+      </div>
+
+      {/* Signatures */}
+      <div className="grid grid-cols-3 gap-2 mt-3">
+        <div className="text-center">
+          <div className="border-t border-slate-300 pt-1">
+            <p className="text-[10px] font-bold text-slate-700">Titulaire de la classe</p>
+            <div className="h-12 flex items-center justify-center text-[9px] text-slate-400 italic">Signature</div>
+          </div>
+        </div>
+        <div className="text-center">
+          <div className="border-t border-slate-300 pt-1">
+            <p className="text-[10px] font-bold text-slate-700">Le Directeur(trice)</p>
+            <div className="h-12 flex items-center justify-center text-[9px] text-slate-400 italic">Visa</div>
+          </div>
+        </div>
+        <div className="text-center">
+          <div className="border-t border-slate-300 pt-1">
+            <p className="text-[10px] font-bold text-slate-700">Les Parents</p>
+            <div className="h-12 flex items-center justify-center text-[9px] text-slate-400 italic">Nom, Prénoms et Signature</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Réponse des parents */}
+      <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+        <h4 className="text-[10px] font-bold text-slate-700 uppercase mb-1">Réponse des parents de l'élève</h4>
+        <div className="bg-white rounded p-2 min-h-[40px] border border-dashed border-slate-300">
+          <p className="text-[10px] text-slate-400 italic">(Zone de réponse des parents)</p>
+        </div>
+      </div>
     </div>
   );
 }

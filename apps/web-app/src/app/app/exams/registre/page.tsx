@@ -80,6 +80,24 @@ function RegistreContent() {
   }, [academicYear?.id, levelCode, language]);
 
   // ── Charger les classes du niveau (pattern identique à evaluations/grades) ──
+  // ⭐ Tri par ordre pédagogique : CI, CP, CE1, CE2, CM1, CM2
+  const PEDAGOGICAL_ORDER = ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2', '6E', '5E', '4E', '3E', '2NDE', '1ERE', 'TERM'];
+
+  const pedagogicalSortKey = (name: string): string => {
+    const upper = (name || '').toUpperCase().trim();
+    // Cherche le préfixe (CI, CP, CE1, CE2, CM1, CM2, etc.)
+    for (const prefix of PEDAGOGICAL_ORDER) {
+      if (upper.startsWith(prefix)) return prefix;
+    }
+    return 'ZZ' + upper; // Inconnu → à la fin
+  };
+
+  const pedagogicalSortIndex = (name: string): number => {
+    const key = pedagogicalSortKey(name);
+    const idx = PEDAGOGICAL_ORDER.indexOf(key);
+    return idx === -1 ? PEDAGOGICAL_ORDER.length : idx;
+  };
+
   const loadClasses = useCallback(async () => {
     if (!schoolLevelUuid) return;
     try {
@@ -106,11 +124,25 @@ function RegistreContent() {
           })
         : levelClasses;
 
+      // ⭐ Tri par ordre pédagogique : CI, CP, CE1, CE2, CM1, CM2
+      // Puis par nom pour les classes avec suffixe (ex: "CI A", "CI B")
+      langClasses.sort((a: any, b: any) => {
+        const idxA = pedagogicalSortIndex(a.name);
+        const idxB = pedagogicalSortIndex(b.name);
+        if (idxA !== idxB) return idxA - idxB;
+        return (a.name || '').localeCompare(b.name || '', 'fr');
+      });
+
       setClasses(langClasses);
+
+      // ⭐ Auto-sélection de la première classe si aucune n'est sélectionnée
+      if (langClasses.length > 0 && !selectedClassId) {
+        setSelectedClassId(langClasses[0].id);
+      }
     } catch {
       setClasses([]);
     }
-  }, [schoolLevelUuid, language]);
+  }, [schoolLevelUuid, language, selectedClassId]);
 
   // ── Charger le registre (toutes les notes pour une classe + période) ──────
   const loadRegistre = useCallback(async () => {

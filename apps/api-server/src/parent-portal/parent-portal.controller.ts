@@ -899,6 +899,174 @@ export class ParentPortalController {
   }
 
   /**
+   * GET /parent/grades/:studentId?academicYearId=Y
+   * Notes détaillées d'un enfant par trimestre + type d'évaluation.
+   *
+   * Retourne les notes VALIDÉES (status=VALIDATED) depuis le Module Examen.
+   * Groupées par trimestre (Quarter) puis par type d'évaluation (EM1, EM2, EC).
+   *
+   * ⭐ Sécurité : assertStudentBelongsToGuardian() vérifie que l'élève
+   *    appartient bien au parent connecté.
+   *
+   * Format de retour :
+   *   [
+   *     {
+   *       quarterId, quarterName, quarterNumber,
+   *       evaluations: [
+   *         {
+   *           evaluationTypeId, evaluationTypeCode, evaluationTypeName,
+   *           evaluationDate,
+   *           subjects: [
+   *             {
+   *               subjectId, subjectName,
+   *               score, maxScore, coefficient,
+   *               isAbsent, qualitativeCode,
+   *               appreciation (calculée depuis le score),
+   *               status
+   *             }
+   *           ]
+   *         }
+   *       ]
+   *     }
+   *   ]
+   */
+  @Get('grades/:studentId')
+  async getStudentGrades(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Param('studentId') studentId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    await this.assertStudentBelongsToGuardian(tenantId, user?.id, studentId);
+
+    // ⭐ Récupérer TOUTES les notes validées de l'élève pour cette année
+    // Jointures :
+    //   grades → evaluations → evaluation_types, academic_periods, subjects
+    //   grades → quarters (grades.periodId → quarters.id)
+    const grades: any = await this.prisma.$queryRawUnsafe(
+      `SELECT
+         g.id AS grade_id,
+         g.score,
+         g."maxScore",
+         g.coefficient,
+         g."isAbsent",
+         g."qualitativeCode",
+         g.status AS grade_status,
+         g."evaluationId",
+         e.title AS evaluation_title,
+         e."evaluationDate",
+         e.status AS evaluation_status,
+         et.id AS "evaluationTypeId",
+         et.code AS "evaluationTypeCode",
+         et.name AS "evaluationTypeName",
+         s.id AS "subjectId",
+         s.name AS "subjectName",
+         s.code AS "subjectCode",
+         s.language AS "subjectLanguage",
+         c.id AS "classId",
+         c.name AS "className",
+         sl.code AS "schoolLevelCode",
+         q.id AS "quarterId",
+         q.name AS "quarterName",
+         q.number AS "quarterNumber",
+         ap.name AS "periodName"
+       FROM grades g
+       JOIN evaluations e ON e.id = g."evaluationId"
+       LEFT JOIN evaluation_types et ON et.id = e."evaluationTypeId"
+       LEFT JOIN subjects s ON s.id = e."subjectId"
+       LEFT JOIN classes c ON c.id = e."classId"
+       LEFT JOIN school_levels sl ON sl.id = c."schoolLevelId"
+       LEFT JOIN quarters q ON q.id = g."periodId"
+       LEFT JOIN academic_periods ap ON ap.id = e."periodId"
+       WHERE g."studentId" = $1
+         AND g."tenantId" = $2
+         AND e."academicYearId" = $3
+         AND e.status = 'VALIDATED'
+       ORDER BY q.number ASC, et.code ASC, s.name ASC`,
+      studentId, tenantId, academicYearId,
+    ).catch(() => []);
+
+    // ⭐ Grouper par trimestre → type d'évaluation → matière
+    const quarterMap = new Map<string, any>();
+
+    for (const g of (grades || [])) {
+      const quarterId = g.quarterId || '_no_quarter';
+      const quarterName = g.quarterName || 'Non spécifié';
+      const quarterNumber = g.quarterNumber || 0;
+
+      if (!quarterMap.has(quarterId)) {
+        quarterMap.set(quarterId, {
+          quarterId,
+          quarterName,
+          quarterNumber,
+          evaluations: new Map<string, any>(),
+        });
+      }
+
+      const quarter = quarterMap.get(quarterId);
+      const evalTypeId = g.evaluationTypeId || '_no_type';
+      const evalTypeCode = g.evaluationTypeCode || 'EVAL';
+      const evalTypeName = g.evaluationTypeName || 'Évaluation';
+
+      if (!quarter.evaluations.has(evalTypeId)) {
+        quarter.evaluations.set(evalTypeId, {
+          evaluationTypeId: evalTypeId,
+          evaluationTypeCode,
+          evaluationTypeName,
+          evaluationDate: g.evaluationDate,
+          subjects: [],
+        });
+      }
+
+      const evalGroup = quarter.evaluations.get(evalTypeId);
+
+      // Calculer l'appréciation selon le niveau scolaire
+      let appreciation = '—';
+      if (g.schoolLevelCode === 'MATERNELLE') {
+        // Maternelle : TS/S/PS
+        if (g.qualitativeCode === 'TS') appreciation = 'Très Satisfaisant';
+        else if (g.qualitativeCode === 'S') appreciation = 'Satisfaisant';
+        else if (g.qualitativeCode === 'PS') appreciation = 'Peu Satisfaisant';
+        else if (g.isAbsent) appreciation = 'Absent';
+      } else {
+        // Primaire/Secondaire : note /20
+        if (g.isAbsent) appreciation = 'Absent';
+        else if (g.score !== null) {
+          if (g.score >= 16) appreciation = 'Très Bien';
+          else if (g.score >= 14) appreciation = 'Bien';
+          else if (g.score >= 12) appreciation = 'Assez Bien';
+          else if (g.score >= 10) appreciation = 'Passable';
+          else appreciation = 'Insuffisant';
+        }
+      }
+
+      evalGroup.subjects.push({
+        subjectId: g.subjectId,
+        subjectName: g.subjectName,
+        subjectCode: g.subjectCode,
+        score: g.isAbsent ? null : (typeof g.score === 'number' ? Number(g.score) : null),
+        maxScore: Number(g.maxScore) || 20,
+        coefficient: Number(g.coefficient) || 1,
+        isAbsent: g.isAbsent || false,
+        qualitativeCode: g.qualitativeCode,
+        appreciation,
+        status: g.grade_status,
+      });
+    }
+
+    // Convertir Maps en arrays + trier
+    const result = Array.from(quarterMap.values())
+      .sort((a, b) => a.quarterNumber - b.quarterNumber)
+      .map(q => ({
+        ...q,
+        evaluations: Array.from(q.evaluations.values())
+          .sort((a, b) => a.evaluationTypeCode.localeCompare(b.evaluationTypeCode)),
+      }));
+
+    return result;
+  }
+
+  /**
    * GET /parent/receipts/:paymentId
    * Infos d'un reçu (JSON — utilisé par le frontend pour générer le PDF côté client).
    *

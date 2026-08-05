@@ -176,11 +176,14 @@ async function main() {
     console.log(`\n── Class: ${cls.name} ──`);
 
     try {
-      // Load subjects
+      // Load subjects — FR ONLY (Francophone track)
+      // ⭐ Important: filter subjects by language='FR' OR language IS NULL
+      // to avoid seeding Anglophone subjects on the Francophone track
       const subjects = (await client.query(`
-        SELECT s.id, s.name, s.code, cs.coefficient
+        SELECT s.id, s.name, s.code, cs.coefficient, s.language
         FROM class_subjects cs JOIN subjects s ON s.id = cs."subjectId"
         WHERE cs."academicClassId" = $1 AND cs."tenantId" = $2
+          AND (s.language = 'FR' OR s.language IS NULL)
         ORDER BY s.name
       `, [cls.officialClassId, TENANT_ID])).rows;
 

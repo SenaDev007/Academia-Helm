@@ -117,17 +117,22 @@ function RegistreContent() {
     if (!selectedClassId || !academicYear?.id) return;
     setLoading(true);
     try {
-      // Récupérer les matières de la classe
+      // Récupérer les matières de la classe (FR only if language filter)
       const subjectsRes = await fetch(
         `/api/pedagogy/subjects?schoolLevelId=${schoolLevelUuid || ''}&academicYearId=${academicYear.id}`,
         { credentials: 'include' }
       );
       const subjectsData = await subjectsRes.json();
-      const subjectList = Array.isArray(subjectsData) ? subjectsData : (subjectsData?.items || []);
+      let subjectList = Array.isArray(subjectsData) ? subjectsData : (subjectsData?.items || []);
+      // ⭐ Filter subjects by language (FR only if user is on FR track)
+      if (language) {
+        subjectList = subjectList.filter((s: any) =>
+          !s.language || s.language === language || s.language === 'FR'
+        );
+      }
       setSubjects(subjectList);
 
-      // Récupérer les notes de tous les élèves pour cette classe
-      // Pour l'instant, on utilise les données disponibles dans examScores
+      // Récupérer les évaluations de la classe pour cette année
       const gradesRes = await fetch(
         `/api/exams/evaluations?academicYearId=${academicYear.id}&classId=${selectedClassId}${language ? `&language=${language}` : ''}`,
         { credentials: 'include' }
@@ -135,15 +140,59 @@ function RegistreContent() {
       const evalsData = await gradesRes.json();
       const evaluations = Array.isArray(evalsData) ? evalsData : (evalsData?.items || []);
 
-      // Récupérer les élèves de la classe
-      const studentsRes = await fetch(
-        `/api/students?classId=${selectedClassId}&academicYearId=${academicYear.id}`,
-        { credentials: 'include' }
-      );
-      const studentsData = await studentsRes.json();
-      const students = Array.isArray(studentsData) ? studentsData : (studentsData?.data || []);
+      // ⭐ Filter evaluations to keep only those for FR subjects (matching subjectList)
+      const subjectIds = new Set(subjectList.map((s: any) => s.id));
+      const frEvaluations = evaluations.filter((ev: any) => subjectIds.has(ev.subjectId));
 
-      // Construire le tableau récapitulatif
+      // ⭐ Récupérer les notes pour chaque évaluation via l'API grades
+      // (l'endpoint /institutional-exams/grades/evaluation/:id retourne la fiche complète)
+      const evalGradesMap = new Map<string, any[]>(); // evaluationId → grades array
+      await Promise.all(
+        frEvaluations.map(async (ev: any) => {
+          try {
+            const r = await fetch(`/api/institutional-exams/grades/evaluation/${ev.id}`, { credentials: 'include' });
+            if (r.ok) {
+              const data = await r.json();
+              evalGradesMap.set(ev.id, Array.isArray(data) ? data : []);
+            } else {
+              evalGradesMap.set(ev.id, []);
+            }
+          } catch {
+            evalGradesMap.set(ev.id, []);
+          }
+        })
+      );
+
+      // ⭐ Récupérer les élèves via la même endpoint (déjà inclus dans les grades)
+      // On prend l'union de tous les students apparaissant dans les grades
+      const studentMap = new Map<string, any>();
+      for (const grades of evalGradesMap.values()) {
+        for (const g of grades) {
+          if (g.studentId && !studentMap.has(g.studentId)) {
+            studentMap.set(g.studentId, {
+              id: g.studentId,
+              lastName: g.studentName?.split(' ')[0] || '',
+              firstName: g.studentName?.split(' ').slice(1).join(' ') || '',
+              matricule: g.matricule || '',
+              gender: g.gender || '',
+            });
+          }
+        }
+      }
+      // Fallback: si pas de grades, essayer /api/students
+      let students = Array.from(studentMap.values());
+      if (students.length === 0) {
+        try {
+          const studentsRes = await fetch(
+            `/api/students?classId=${selectedClassId}&academicYearId=${academicYear.id}`,
+            { credentials: 'include' }
+          );
+          const studentsData = await studentsRes.json();
+          students = Array.isArray(studentsData) ? studentsData : (studentsData?.data || []);
+        } catch { students = []; }
+      }
+
+      // ⭐ Construire le tableau récapitulatif
       // Pour chaque élève, pour chaque matière, récupérer les notes par type d'évaluation
       const registreRows = students.map((student: any) => {
         const row: any = {
@@ -155,26 +204,56 @@ function RegistreContent() {
           average: 0,
         };
 
-        // Pour chaque matière, trouver les notes
+        // Pour chaque matière, trouver les évaluations + notes correspondantes
         subjectList.forEach((subject: any) => {
           const subjectNotes: any = { scores: {}, total: 0, average: null };
           // Trouver les évaluations pour cette matière
-          const subjectEvals = evaluations.filter((ev: any) => ev.subjectId === subject.id);
+          const subjectEvals = frEvaluations.filter((ev: any) => ev.subjectId === subject.id);
           if (subjectEvals.length > 0) {
-            // Pour chaque évaluation, récupérer les scores
+            // Pour chaque évaluation, récupérer le score de cet élève
             subjectEvals.forEach((ev: any) => {
-              // Les scores sont chargés séparément — pour l'instant placeholder
-              subjectNotes.scores[ev.title || ev.evaluationType?.name || ''] = '—';
+              const evalGrades = evalGradesMap.get(ev.id) || [];
+              const studentGrade = evalGrades.find((g: any) => g.studentId === student.id);
+              const evalLabel = ev.evaluationType?.code || ev.evaluationType?.name || ev.title || 'Éval';
+              if (studentGrade) {
+                if (studentGrade.isAbsent) {
+                  subjectNotes.scores[evalLabel] = 'ABS';
+                } else if (studentGrade.qualitativeCode) {
+                  subjectNotes.scores[evalLabel] = studentGrade.qualitativeCode;
+                } else if (typeof studentGrade.score === 'number') {
+                  subjectNotes.scores[evalLabel] = studentGrade.score;
+                  subjectNotes.total += studentGrade.score;
+                } else {
+                  subjectNotes.scores[evalLabel] = '—';
+                }
+              } else {
+                subjectNotes.scores[evalLabel] = '—';
+              }
             });
+            // Calculer la moyenne de la matière
+            const validScores = Object.values(subjectNotes.scores).filter(
+              (v: any) => typeof v === 'number'
+            ) as number[];
+            if (validScores.length > 0) {
+              subjectNotes.average = validScores.reduce((sum, s) => sum + s, 0) / validScores.length;
+            }
           }
           row.subjects[subject.id] = subjectNotes;
         });
+
+        // Total et moyenne générale
+        const allScores = Object.values(row.subjects).flatMap((s: any) =>
+          Object.values(s.scores).filter((v: any) => typeof v === 'number')
+        ) as number[];
+        row.total = allScores.reduce((sum, s) => sum + s, 0);
+        row.average = allScores.length > 0 ? row.total / allScores.length : 0;
 
         return row;
       });
 
       setRegistreData(registreRows);
-    } catch {
+    } catch (err) {
+      console.error('Erreur loadRegistre:', err);
       setRegistreData([]);
       setSubjects([]);
     } finally {

@@ -50,9 +50,9 @@ export const EXAMS_SUB_MODULES = [
     icon: CheckSquare
   },
   {
-    id: 'deverrouillage',
+    id: 'unlock-requests',
     label: 'Déverrouillage',
-    href: '/app/exams/deverrouillage',
+    href: '/app/exams/unlock-requests',
     icon: Lock
   },
   {

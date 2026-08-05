@@ -21,7 +21,8 @@ import { ModuleContainer } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
-import { useExamSubModules } from '../layout';
+import { useExamSubModules, useExamScope } from '../layout';
+import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import apiClient from '@/lib/api/client';
 import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
 import { cn } from '@/lib/utils';
@@ -59,6 +60,8 @@ const STATUS_CONFIG = {
 
 export default function UnlockRequestsPage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
+  const { availableLevels } = useSchoolLevel();
+  const { levelCode: scopeLevel } = useExamScope();
   const [requests, setRequests] = useState<UnlockRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'PENDING' | 'ALL' | 'APPROVED' | 'REJECTED'>('PENDING');

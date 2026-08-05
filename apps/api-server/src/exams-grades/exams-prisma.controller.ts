@@ -156,6 +156,31 @@ export class ExamsPrismaController {
   }
 
   /**
+   * POST /api/exams/calculate-evaluation-averages
+   *
+   * Calcule les moyennes pour un type d'évaluation spécifique (EM1, EM2, EC)
+   * pour tous les élèves d'une classe, sur un trimestre donné.
+   *
+   * Body: { classId, periodId, academicYearId, evaluationTypeId }
+   *
+   * ⭐ Différent de calculate-averages qui consolide toutes les évaluations :
+   *    cette méthode isole UN type d'évaluation précis (EM1, EM2 ou EC).
+   */
+  @Post('calculate-evaluation-averages')
+  async calculateEvaluationAverages(
+    @TenantId() tenantId: string,
+    @Body() body: { classId: string; periodId: string; academicYearId: string; evaluationTypeId: string },
+  ) {
+    return this.examsService.calculateEvaluationAverages(
+      tenantId,
+      body.classId,
+      body.periodId,
+      body.academicYearId,
+      body.evaluationTypeId,
+    );
+  }
+
+  /**
    * GET /api/exams/annual-averages?classId=X&academicYearId=Y
    * Moyennes annuelles + moyenne de passage pour tous les élèves d'une classe.
    */

@@ -976,6 +976,275 @@ export class ExamsPrismaService {
   }
 
   /**
+   * POST /api/exams/calculate-evaluation-averages
+   *
+   * Calcule les moyennes pour un type d'évaluation spécifique (EM1, EM2, EC)
+   * pour tous les élèves d'une classe, sur un trimestre donné.
+   *
+   * ⭐ Contrairement à calculateAverages (qui consolide toutes les évaluations),
+   *    cette méthode isole UN type d'évaluation précis.
+   *
+   * Retourne :
+   *   - Pour chaque élève : moyenne par matière + moyenne générale + rang
+   *   - Pour la maternelle : codes qualitatifs (TS/S/PS) + appréciation globale
+   *   - Pour le primaire : notes /20 par matière + moyenne générale
+   *
+   * @param evaluationTypeId ID du type d'évaluation (EM1, EM2, EC)
+   * @param periodId ID du trimestre
+   * @param classId ID de la classe
+   * @param academicYearId ID de l'année scolaire
+   */
+  async calculateEvaluationAverages(
+    tenantId: string,
+    classId: string,
+    periodId: string,
+    academicYearId: string,
+    evaluationTypeId: string,
+  ) {
+    // 1. Verify class exists + get school level
+    const classRows = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT c.id, c.name, c."schoolLevelId", sl.code AS "schoolLevelCode"
+      FROM "classes" c
+      LEFT JOIN "school_levels" sl ON sl.id = c."schoolLevelId"
+      WHERE c.id = $1 AND c."tenantId" = $2 LIMIT 1
+    `, [classId, tenantId]).catch(() => []);
+
+    if (!classRows || classRows.length === 0) {
+      throw new NotFoundException(`Classe ${classId} introuvable`);
+    }
+    const classRecord = classRows[0];
+    const isMaternelle = classRecord.schoolLevelCode === 'MATERNELLE';
+
+    // 2. Fetch students enrolled in this class
+    const enrollments = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT se."studentId", s."firstName", s."lastName", s."matricule", s.gender
+      FROM "student_enrollments" se
+      INNER JOIN "students" s ON s."id" = se."studentId"
+      WHERE se."classId" = $1 AND se."tenantId" = $2 AND se."academicYearId" = $3
+        AND se."status" IN ('ACTIVE', 'ADMITTED', 'ENROLLED', 'CONFIRMED')
+      ORDER BY s."lastName", s."firstName"
+    `, [classId, tenantId, academicYearId]).catch(() => []);
+
+    // 3. Fetch all evaluations for this class + period + evaluationType
+    const evaluations = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT e.id, e."subjectId", e."evaluationTypeId", e.status,
+             s."name" AS "subjectName", s."code" AS "subjectCode",
+             s.language AS "subjectLanguage"
+      FROM "evaluations" e
+      LEFT JOIN "subjects" s ON s."id" = e."subjectId"
+      WHERE e."classId" = $1 AND e."tenantId" = $2 AND e."academicYearId" = $3
+        AND e."periodId" = $4 AND e."evaluationTypeId" = $5
+        AND e.status = 'VALIDATED'
+      ORDER BY s."name"
+    `, [classId, tenantId, academicYearId, periodId, evaluationTypeId]).catch(() => []);
+
+    // 4. For each evaluation, fetch grades
+    const evalGradesMap = new Map<string, any[]>();
+    for (const ev of evaluations) {
+      const grades = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT g."studentId", g.score, g."qualitativeCode", g."isAbsent", g.coefficient
+        FROM "grades" g
+        WHERE g."evaluationId" = $1 AND g."tenantId" = $2
+      `, [ev.id, tenantId]).catch(() => []);
+      evalGradesMap.set(ev.id, grades);
+    }
+
+    // 5. Build subject list (FR only — filter Anglophone subjects)
+    const subjects: Array<{ id: string; name: string; code?: string }> = [];
+    const seenSubjectIds = new Set<string>();
+    for (const ev of evaluations) {
+      if (ev.subjectId && !seenSubjectIds.has(ev.subjectId)) {
+        // Filter: only FR subjects (or subjects with no language = legacy)
+        if (!ev.subjectLanguage || ev.subjectLanguage === 'FR') {
+          subjects.push({ id: ev.subjectId, name: ev.subjectName, code: ev.subjectCode });
+          seenSubjectIds.add(ev.subjectId);
+        }
+      }
+    }
+
+    // 6. For each student, compute per-subject score + general average
+    const results = enrollments.map((enrollment: any) => {
+      const studentId = enrollment.studentId;
+      const subjectScores: Record<string, {
+        score: number | null;
+        qualitativeCode: string | null;
+        isAbsent: boolean;
+        appreciation: string;
+      }> = {};
+
+      let totalScore = 0;
+      let validSubjectsCount = 0;
+      let tsCount = 0, sCount = 0, psCount = 0;
+
+      for (const subject of subjects) {
+        // Find the evaluation for this subject
+        const ev = evaluations.find(e => e.subjectId === subject.id);
+        if (!ev) {
+          subjectScores[subject.id] = {
+            score: null,
+            qualitativeCode: null,
+            isAbsent: false,
+            appreciation: '—',
+          };
+          continue;
+        }
+
+        const grades = evalGradesMap.get(ev.id) || [];
+        const grade = grades.find(g => g.studentId === studentId);
+
+        if (!grade) {
+          subjectScores[subject.id] = {
+            score: null,
+            qualitativeCode: null,
+            isAbsent: false,
+            appreciation: '—',
+          };
+          continue;
+        }
+
+        if (grade.isAbsent) {
+          subjectScores[subject.id] = {
+            score: null,
+            qualitativeCode: null,
+            isAbsent: true,
+            appreciation: 'Absent',
+          };
+          continue;
+        }
+
+        if (isMaternelle) {
+          // Maternelle : qualitative codes TS/S/PS
+          const code = grade.qualitativeCode;
+          subjectScores[subject.id] = {
+            score: null,
+            qualitativeCode: code,
+            isAbsent: false,
+            appreciation: code === 'TS' ? 'Très Satisfaisant' :
+                          code === 'S' ? 'Satisfaisant' :
+                          code === 'PS' ? 'Peu Satisfaisant' : '—',
+          };
+          if (code === 'TS') { tsCount++; validSubjectsCount++; }
+          else if (code === 'S') { sCount++; validSubjectsCount++; }
+          else if (code === 'PS') { psCount++; validSubjectsCount++; }
+        } else {
+          // Primaire/Secondaire : numeric score /20
+          const score = grade.score !== null ? Number(grade.score) : null;
+          subjectScores[subject.id] = {
+            score,
+            qualitativeCode: null,
+            isAbsent: false,
+            appreciation: score === null ? '—' :
+                          score >= 16 ? 'Très Bien' :
+                          score >= 14 ? 'Bien' :
+                          score >= 12 ? 'Assez Bien' :
+                          score >= 10 ? 'Passable' : 'Insuffisant',
+          };
+          if (score !== null) {
+            totalScore += score;
+            validSubjectsCount++;
+          }
+        }
+      }
+
+      // Compute general average
+      let generalAverage: number | null = null;
+      let appreciationGlobale = '—';
+
+      if (isMaternelle) {
+        // Maternelle : TS=3, S=2, PS=1
+        if (validSubjectsCount > 0) {
+          const total = tsCount * 3 + sCount * 2 + psCount * 1;
+          generalAverage = total / validSubjectsCount;
+          // Appreciation globale
+          if (generalAverage >= 2.5) appreciationGlobale = 'Très Satisfaisant';
+          else if (generalAverage >= 1.5) appreciationGlobale = 'Satisfaisant';
+          else appreciationGlobale = 'Peu Satisfaisant';
+        }
+      } else {
+        if (validSubjectsCount > 0) {
+          generalAverage = totalScore / validSubjectsCount;
+        }
+      }
+
+      return {
+        id: studentId,
+        student: {
+          firstName: enrollment.firstName,
+          lastName: enrollment.lastName,
+          matricule: enrollment.matricule,
+          gender: enrollment.gender,
+        },
+        subjectScores,
+        generalAverage,
+        appreciationGlobale: isMaternelle ? appreciationGlobale : null,
+        isMaternelle,
+        // Stats for maternelle
+        tsCount, sCount, psCount,
+        validSubjectsCount,
+      };
+    });
+
+    // 7. Compute ranks
+    const sorted = [...results].sort((a, b) => {
+      const aAvg = a.generalAverage ?? -1;
+      const bAvg = b.generalAverage ?? -1;
+      return bAvg - aAvg;
+    });
+
+    let currentRank = 0;
+    let previousAvg: number | null = null;
+    let sameRankCount = 0;
+    sorted.forEach((r, idx) => {
+      if (r.generalAverage === null) {
+        r.classRank = idx + 1;
+        return;
+      }
+      if (previousAvg !== null && Math.abs(r.generalAverage - previousAvg) < 0.01) {
+        // Same rank as previous
+        sameRankCount++;
+        r.classRank = currentRank;
+      } else {
+        currentRank = idx + 1;
+        r.classRank = currentRank;
+        sameRankCount = 0;
+      }
+      previousAvg = r.generalAverage;
+    });
+
+    // 8. Compute class stats
+    const validResults = results.filter(r => r.generalAverage !== null);
+    const classAverage = validResults.length > 0
+      ? validResults.reduce((sum, r) => sum + (r.generalAverage || 0), 0) / validResults.length
+      : null;
+
+    // For primaire: passing count (avg >= 10)
+    // For maternelle: passing count (appreciation = TS or S)
+    const passingCount = isMaternelle
+      ? validResults.filter(r => r.appreciationGlobale === 'Très Satisfaisant' || r.appreciationGlobale === 'Satisfaisant').length
+      : validResults.filter(r => (r.generalAverage || 0) >= 10).length;
+    const failingCount = validResults.length - passingCount;
+
+    return {
+      classId,
+      className: classRecord.name,
+      schoolLevelCode: classRecord.schoolLevelCode,
+      isMaternelle,
+      evaluationTypeId,
+      periodId,
+      subjects,
+      results: sorted,
+      stats: {
+        totalStudents: results.length,
+        composedStudents: validResults.length,
+        classAverage,
+        passingCount,
+        failingCount,
+        passingRate: validResults.length > 0 ? (passingCount / validResults.length) * 100 : 0,
+      },
+    };
+  }
+
+  /**
    * GET /api/exams/annual-averages?classId=X&academicYearId=Y
    *
    * Calcule la moyenne annuelle + moyenne de passage pour tous les élèves d'une classe.

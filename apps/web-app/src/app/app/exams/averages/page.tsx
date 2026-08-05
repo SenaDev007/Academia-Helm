@@ -1,995 +1,734 @@
 /**
  * ============================================================================
- * MODULE EXAMENS — MOYENNES & CLASSEMENTS (100% Dynamique)
+ * MODULE EXAMENS — MOYENNES (Refonte par évaluation)
  * ============================================================================
  *
- * PRINCIPE : Aucun seuil, mention, coefficient ou formule n'est codé en dur.
- * Tout provient de la configuration académique active via useAcademicSettings().
+ * Flux utilisateur :
+ *   1. Sélectionner un trimestre (Trimestre 1, 2, 3)
+ *   2. Sélectionner une classe (CI A, CP, CE1, etc.)
+ *   3. Sélectionner un type d'évaluation (EM1, EM2, EC)
+ *   4. Cliquer sur "Lancer le calcul"
+ *   5. Modal de progression s'affiche (élève X / N)
+ *   6. Tableau de résultats s'affiche :
+ *      - Maternelle : TS/S/PS par matière + appréciation globale
+ *      - Primaire : Note /20 par matière + moyenne générale + rang
  *
- * Le calcul des moyennes est déclenché via l'API backend qui utilise le
- * AcademicRulesEngine avec les formules configurées par l'école.
- *
- * La répartition des mentions est générée dynamiquement depuis config.mentions.
+ * Le panneau de droite (stats) est adapté au niveau scolaire :
+ *   - Maternelle : Répartition TS/S/PS (pas de /20, pas de seuil)
+ *   - Primaire : Moyenne de classe + seuil 10/20 + admis/à revoir
+ * ============================================================================
  */
 
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
 import {
-  Calculator,
-  RefreshCcw,
-  TrendingUp,
-  TrendingDown,
-  Users,
-  ArrowRight,
-  AlertCircle,
-  AlertTriangle,
-  CheckCircle,
-  Settings,
-  Loader2,
-  ChevronDown,
+  Calculator, RefreshCcw, Users, AlertCircle, AlertTriangle,
+  CheckCircle, Loader2, ChevronDown, BookOpen, Award, TrendingUp,
+  X,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import {
-  Table, TableBody, TableCell, TableHead,
-  TableHeader, TableRow,
-} from '@/components/ui/table';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { useAcademicSettings } from '@/hooks/useAcademicSettings';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
-import { toast } from '@/components/ui/toast';
+import { institutionalExamsService } from '@/services/institutional-exams.service';
+import apiClient from '@/lib/api/client';
+import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules, useExamScope } from '../layout';
 import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
+import { fr } from 'date-fns/locale';
+
+// ─── Pedagogical class ordering ──────────────────────────────────────────────
+const PEDAGOGICAL_ORDER = ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2', '6E', '5E', '4E', '3E', '2NDE', '1ERE', 'TERM'];
+
+const pedagogicalSortIndex = (name: string): number => {
+  const upper = (name || '').toUpperCase().trim();
+  for (const prefix of PEDAGOGICAL_ORDER) {
+    if (upper.startsWith(prefix)) return PEDAGOGICAL_ORDER.indexOf(prefix);
+  }
+  return PEDAGOGICAL_ORDER.length;
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface SubjectScore {
+  score: number | null;
+  qualitativeCode: string | null;
+  isAbsent: boolean;
+  appreciation: string;
+}
+
 interface StudentResult {
   id: string;
-  student: { lastName: string; firstName: string; matricule?: string };
+  student: {
+    firstName: string;
+    lastName: string;
+    matricule?: string;
+    gender?: string;
+  };
+  subjectScores: Record<string, SubjectScore>;
+  generalAverage: number | null;
+  appreciationGlobale: string | null;
+  isMaternelle: boolean;
+  tsCount: number;
+  sCount: number;
+  psCount: number;
+  validSubjectsCount: number;
   classRank: number;
-  generalAverage: number | string;
-  totalWeighted?: number;
-  previousAverage?: number;
-  subjectAverages?: Record<string, number>;
-  decision?: string;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getTrendIcon(current: number, previous?: number) {
-  if (previous === undefined) return null;
-  const diff = current - previous;
-  if (Math.abs(diff) < 0.1) return <span className="text-xs text-gray-400">—</span>;
-  return diff > 0
-    ? <span className="flex items-center gap-0.5 text-xs font-bold text-emerald-600"><TrendingUp className="w-3 h-3" />+{diff.toFixed(2)}</span>
-    : <span className="flex items-center gap-0.5 text-xs font-bold text-rose-600"><TrendingDown className="w-3 h-3" />{diff.toFixed(2)}</span>;
+interface CalculationResult {
+  classId: string;
+  className: string;
+  schoolLevelCode: string;
+  isMaternelle: boolean;
+  evaluationTypeId: string;
+  periodId: string;
+  subjects: Array<{ id: string; name: string; code?: string }>;
+  results: StudentResult[];
+  stats: {
+    totalStudents: number;
+    composedStudents: number;
+    classAverage: number | null;
+    passingCount: number;
+    failingCount: number;
+    passingRate: number;
+  };
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function AveragesPage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
-  const { academicYear, schoolLevel } = useModuleContext();
-  const {
-    config: academicConfig,
-    loading: configLoading,
-    getScoreColor,
-    getAppreciation,
-    isPassingGrade,
-    maxScore,
-    passingScore,
-    decimals,
-  } = useAcademicSettings();
-  const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
-  const { availableLevels } = useSchoolLevel();
-
-  const [classes, setClasses] = useState<any[]>([]);
-  const [periods, setPeriods] = useState<any[]>([]);
-  const [selectedClassId, setSelectedClassId] = useState('');
-  const [selectedPeriodId, setSelectedPeriodId] = useState('');
-  const [results, setResults] = useState<StudentResult[]>([]);
-  const [loadingClasses, setLoadingClasses] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [calculating, setCalculating] = useState(false);
-  // ✅ Sub-tabs: trimestriel / annuel / niveau / matière
-  const [viewTab, setViewTab] = useState<'trimestriel' | 'annuel' | 'niveau' | 'matiere'>('trimestriel');
-  const [annualResults, setAnnualResults] = useState<any[]>([]);
-  const [levelResults, setLevelResults] = useState<any[]>([]);
-  const [subjectResults, setSubjectResults] = useState<any[]>([]);
-  const [loadingAnnual, setLoadingAnnual] = useState(false);
-  const [loadingLevel, setLoadingLevel] = useState(false);
-  const [loadingSubject, setLoadingSubject] = useState(false);
-
-  // ── Load classes ────────────────────────────────────────────────────────────
-  // ✅ FIX: use /api/all-classes + client-side filter (same pattern as evaluations/grades/registre)
-  // /api/classes?schoolLevelId= fails because of PaginationDto.forbidNonWhitelisted
-  useEffect(() => {
-    async function loadClasses() {
-      if (!scopeLevel || !academicYear?.id) return;
-      setLoadingClasses(true);
-      try {
-        const res = await fetch('/api/all-classes', { credentials: 'include' });
-        const data = await res.json();
-        const allClasses = Array.isArray(data) ? data : (data?.items || []);
-
-        // ✅ Resolve schoolLevelUuid from scope (same pattern as evaluations page)
-        const activeLevel = (availableLevels || []).find(
-          (l: any) => (l.code || '').toUpperCase() === scopeLevel && l.id !== 'ALL'
-        );
-        const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
-
-        // Filter by school level UUID
-        const levelClasses = allClasses.filter((c: any) =>
-          c.schoolLevelId === schoolLevelUuid || c.schoolLevel?.id === schoolLevelUuid
-        );
-
-        // Optional language filter (FR/EN)
-        const langClasses = scopeLang
-          ? levelClasses.filter((c: any) => {
-              const classLang = c.language;
-              const trackCode = c.academicTrack?.code || c.academicTrackCode;
-              if (!classLang && !trackCode) return true;
-              if (classLang === scopeLang) return true;
-              if (trackCode === scopeLang) return true;
-              return false;
-            })
-          : levelClasses;
-
-        if (langClasses.length > 0) {
-          setClasses(langClasses);
-          setSelectedClassId(langClasses[0].id);
-        } else {
-          setClasses([]);
-        }
-      } catch {
-        setClasses([]);
-      } finally {
-        setLoadingClasses(false);
-      }
-    }
-    loadClasses();
-  }, [scopeLevel, scopeLang, academicYear?.id, availableLevels]);
-
-  // ── Load periods from academic_periods table (NOT from config) ──────────────
-  // ✅ FIX: config generates IDs like 'T1' but evaluations use UUIDs from academic_periods
-  // We must fetch the real academic_periods to get the correct periodId
-  useEffect(() => {
-    if (!academicYear?.id) return;
-    async function loadPeriods() {
-      try {
-        const res = await fetch(
-          `/api/settings/academic-years/${academicYear.id}/periods`,
-          { credentials: 'include' },
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const periodList = Array.isArray(data) ? data : (data?.items || []);
-          if (periodList.length > 0) {
-            setPeriods(periodList.map((p: any) => ({
-              id: p.id,
-              label: p.name || p.label,
-              name: p.name,
-              type: p.type,
-            })));
-            setSelectedPeriodId(periodList[0].id);
-          }
-        }
-      } catch {
-        // Fallback: try academic_config periods
-        if (academicConfig) {
-          const configPeriods: any[] = (academicConfig as any).periods ?? [];
-          if (configPeriods.length > 0) {
-            setPeriods(configPeriods);
-            setSelectedPeriodId(configPeriods[0]?.id ?? '');
-          }
-        }
-      }
-    }
-    loadPeriods();
-  }, [academicYear?.id]);
-
-  // ── Load results ────────────────────────────────────────────────────────────
-  const loadResults = useCallback(async () => {
-    if (!selectedClassId || !selectedPeriodId) return;
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        classId: selectedClassId,
-        periodId: selectedPeriodId,
-        academicYearId: academicYear?.id ?? '',
-      });
-      if (scopeLang) params.append('language', scopeLang);
-      const res = await fetch(
-        `/api/exams/averages?${params.toString()}`,
-        { credentials: 'include' }
-      ).then((r) => r.json());
-      setResults(Array.isArray(res) ? res : []);
-    } catch {
-      setResults([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedClassId, selectedPeriodId, academicYear?.id, !!scopeLang, scopeLang]);
-
-  useEffect(() => { if (selectedClassId && selectedPeriodId) loadResults(); }, [loadResults]);
-
-  // ── Calculate averages via backend engine ──────────────────────────────────
-  const handleCalculate = async () => {
-    if (!selectedClassId || !selectedPeriodId || !academicYear?.id) return;
-    setCalculating(true);
-    try {
-      const payload: any = {
-        classId: selectedClassId,
-        periodId: selectedPeriodId,
-        academicYearId: academicYear.id,
-      };
-      if (scopeLang) payload.language = scopeLang;
-      const res = await fetch('/api/exams/calculate-averages', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || 'Calcul échoué');
-      }
-      toast({ title: 'Calcul terminé', description: 'Les moyennes et rangs ont été recalculés selon votre paramétrage.' });
-      loadResults();
-    } catch (err: any) {
-      toast({ title: 'Erreur', description: err.message ?? 'Échec du calcul.', variant: 'destructive' });
-    } finally {
-      setCalculating(false);
-    }
-  };
-
-  // ── Load annual averages (moyennes annuelles + passage) ─────────────────────
-  const loadAnnualAverages = async () => {
-    if (!selectedClassId || !academicYear?.id) return;
-    setLoadingAnnual(true);
-    try {
-      const res = await fetch(
-        `/api/exams/annual-averages?classId=${selectedClassId}&academicYearId=${academicYear.id}`,
-        { credentials: 'include' },
-      );
-      if (!res.ok) throw new Error('Erreur');
-      const data = await res.json();
-      setAnnualResults(Array.isArray(data) ? data : []);
-    } catch {
-      setAnnualResults([]);
-    } finally {
-      setLoadingAnnual(false);
-    }
-  };
-
-  // ── Load level rankings (rangs par niveau) ──────────────────────────────────
-  const loadLevelRankings = async () => {
-    if (!selectedPeriodId || !academicYear?.id) return;
-    // Resolve schoolLevelUuid
-    const activeLevel = (availableLevels || []).find(
-      (l: any) => (l.code || '').toUpperCase() === scopeLevel && l.id !== 'ALL'
-    );
-    const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
-    if (!schoolLevelUuid) return;
-
-    setLoadingLevel(true);
-    try {
-      const res = await fetch(
-        `/api/exams/rankings/by-level?schoolLevelId=${schoolLevelUuid}&periodId=${selectedPeriodId}&academicYearId=${academicYear.id}`,
-        { credentials: 'include' },
-      );
-      if (!res.ok) throw new Error('Erreur');
-      const data = await res.json();
-      setLevelResults(Array.isArray(data) ? data : []);
-    } catch {
-      setLevelResults([]);
-    } finally {
-      setLoadingLevel(false);
-    }
-  };
-
-  // ── Load subject rankings (rangs par matière) ───────────────────────────────
-  const loadSubjectRankings = async () => {
-    if (!selectedClassId || !selectedPeriodId || !academicYear?.id) return;
-    setLoadingSubject(true);
-    try {
-      const res = await fetch(
-        `/api/exams/rankings/by-subject?classId=${selectedClassId}&periodId=${selectedPeriodId}&academicYearId=${academicYear.id}`,
-        { credentials: 'include' },
-      );
-      if (!res.ok) throw new Error('Erreur');
-      const data = await res.json();
-      setSubjectResults(Array.isArray(data) ? data : []);
-    } catch {
-      setSubjectResults([]);
-    } finally {
-      setLoadingSubject(false);
-    }
-  };
-
-  // ── Auto-load when tab changes ──────────────────────────────────────────────
-  useEffect(() => {
-    if (viewTab === 'annuel' && selectedClassId && annualResults.length === 0) {
-      loadAnnualAverages();
-    }
-    if (viewTab === 'niveau' && selectedPeriodId && levelResults.length === 0) {
-      loadLevelRankings();
-    }
-    if (viewTab === 'matiere' && selectedClassId && selectedPeriodId && subjectResults.length === 0) {
-      loadSubjectRankings();
-    }
-  }, [viewTab, selectedClassId, selectedPeriodId]);
-
-  // ── Derived stats ───────────────────────────────────────────────────────────
-  const numericResults = results.map((r) => ({
-    ...r,
-    avg: Number(r.generalAverage),
-  }));
-
-  const classAverage = numericResults.length > 0
-    ? numericResults.reduce((s, r) => s + r.avg, 0) / numericResults.length
-    : null;
-
-  const passingCount = numericResults.filter((r) => isPassingGrade(r.avg)).length;
-  const failingCount = numericResults.length - passingCount;
-
-  // Dynamic mention distribution from config
-  const mentionDistribution = (academicConfig?.mentions ?? []).map((m) => ({
-    label: m.label,
-    color: m.color,
-    count: numericResults.filter((r) => r.avg >= m.min && r.avg <= m.max).length,
-  }));
-
-  const periodLabel = periods.find((p) => p.id === selectedPeriodId)?.label ?? selectedPeriodId;
-
-  // ─── No config warning ─────────────────────────────────────────────────────
-  const noConfig = !configLoading && !academicConfig?.assessmentTypes?.length;
 
   return (
     <ModuleContainer
       header={{
-        title: 'Moyennes & Classements',
-        description: 'Consolidation des résultats. Les calculs utilisent les formules de votre paramétrage académique.',
+        title: 'Moyennes',
+        description: 'Calcul des moyennes par évaluation, classe et trimestre.',
         icon: 'calculator',
       }}
       subModules={{ modules: scopedSubModules, activeModuleId: 'averages' }}
       content={{
         layout: 'full',
         children: (
-          <div className="space-y-6 p-1">
-            {/* Bilingual track selector */}
-
-            {/* No config banner */}
-            {noConfig && (
-              <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200"
-              >
-                <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
-                <div className="flex-1">
-                  <p className="text-sm font-bold text-amber-800">Aucun paramétrage académique actif</p>
-                  <p className="text-xs text-amber-600 mt-1">
-                    Les calculs de moyennes nécessitent un paramétrage actif avec au moins un type d'évaluation et une formule de calcul.{' '}
-                    <a href="/app/exams/settings" className="underline font-bold">Configurer →</a>
-                  </p>
-                </div>
-              </motion.div>
-            )}
-
-            {/* Config info bar */}
-            {academicConfig && !noConfig && (
-              <div className="flex items-center gap-2 text-xs px-4 py-3 rounded-xl bg-blue-50 border border-blue-100 flex-wrap">
-                <Settings className="w-3.5 h-3.5 text-blue-500" />
-                <span className="font-bold text-blue-700">Config active :</span>
-                <span className="text-blue-600">{academicConfig.country} · {academicConfig.educationSystem}</span>
-                <span className="text-blue-400">·</span>
-                <span className="text-blue-600 font-mono">Seuil de passage : {passingScore}/{maxScore}</span>
-                <span className="text-blue-400">·</span>
-                <span className="text-blue-600">{academicConfig.assessmentTypes.length} types d'évaluation</span>
-                <a href="/app/exams/settings" className="ml-auto text-blue-600 hover:underline font-bold">
-                  Modifier →
-                </a>
-              </div>
-            )}
-
-            {/* Control Bar */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-5 rounded-2xl shadow-sm border border-gray-100 gap-4">
-              <div className="flex items-center gap-4">
-                <div className="bg-blue-50 p-3 rounded-xl text-blue-600">
-                  <Calculator className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-black text-gray-900 leading-none mb-1">Moteur de Calcul</h3>
-                  <p className="text-xs text-gray-500">
-                    Période : <span className="font-bold text-blue-600">{periodLabel}</span>
-                    {academicConfig?.subjectAverageFormula && (
-                      <span className="ml-2 font-mono text-gray-400 text-[10px]">
-                        ({academicConfig.subjectAverageFormula})
-                      </span>
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
-                {/* Class selector */}
-                <select
-                  value={selectedClassId}
-                  onChange={(e) => setSelectedClassId(e.target.value)}
-                  className="text-sm font-bold border border-gray-200 bg-gray-50 rounded-xl focus:ring-2 focus:ring-blue-500 py-2.5 px-3 min-w-[160px]"
-                >
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-
-                {/* Period selector — dynamic from config */}
-                <select
-                  value={selectedPeriodId}
-                  onChange={(e) => setSelectedPeriodId(e.target.value)}
-                  className="text-sm font-bold border border-gray-200 bg-gray-50 rounded-xl focus:ring-2 focus:ring-blue-500 py-2.5 px-3 min-w-[140px]"
-                >
-                  {periods.map((p) => (
-                    <option key={p.id} value={p.id}>{p.label ?? p.name}</option>
-                  ))}
-                </select>
-
-                <Button
-                  onClick={handleCalculate}
-                  disabled={calculating || !selectedClassId || noConfig}
-                  className="bg-[#0A2A5E] hover:bg-[#103E91] text-white shadow-lg shadow-blue-200 px-6 font-bold"
-                >
-                  {calculating
-                    ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Calcul en cours…</>
-                    : <><RefreshCcw className="w-4 h-4 mr-2" />Lancer le Calcul</>}
-                </Button>
-              </div>
-            </div>
-
-            {/* ✅ Sub-tabs: Trimestriel / Annuel / Niveau / Matière */}
-            <div className="flex gap-2 flex-wrap">
-              {([
-                { id: 'trimestriel', label: 'Trimestriel' },
-                { id: 'annuel', label: 'Annuel + Passage' },
-                { id: 'niveau', label: 'Classement par niveau' },
-                { id: 'matiere', label: 'Classement par matière' },
-              ] as const).map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setViewTab(tab.id)}
-                  className={cn(
-                    'px-4 py-2 rounded-lg text-sm font-medium transition-all',
-                    viewTab === tab.id
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
-                  )}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {/* ─── Vue Trimestriel (existant) ─── */}
-            {viewTab === 'trimestriel' && (
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-              {/* Ranking Table */}
-              <Card className="lg:col-span-3 border-none shadow-sm overflow-hidden">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-lg font-bold flex items-center gap-2">
-                    Classement — {periodLabel}
-                    {results.length > 0 && (
-                      <Badge variant="outline" className="text-xs border-gray-200 text-gray-500">
-                        {results.length} élèves
-                      </Badge>
-                    )}
-                  </CardTitle>
-                  <CardDescription>Résultats calculés selon la formule configurée.</CardDescription>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {loading ? (
-                    <div className="flex items-center justify-center py-20">
-                      <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
-                    </div>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-gray-50/80 hover:bg-gray-50/80">
-                          <TableHead className="w-20 text-center font-black text-xs uppercase tracking-wider">Rang</TableHead>
-                          <TableHead className="font-black text-xs uppercase tracking-wider">Élève</TableHead>
-                          <TableHead className="text-center font-black text-xs uppercase tracking-wider">
-                            {scopeLevel === 'MATERNELLE' ? 'Appréciation' : `Moy. /${maxScore}`}
-                          </TableHead>
-                          <TableHead className="font-black text-xs uppercase tracking-wider">Mention</TableHead>
-                          <TableHead className="font-black text-xs uppercase tracking-wider">Décision</TableHead>
-                          <TableHead className="font-black text-xs uppercase tracking-wider">Évolution</TableHead>
-                          <TableHead className="text-right px-6 font-black text-xs uppercase tracking-wider">Détail</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        <AnimatePresence>
-                          {numericResults.map((item, index) => {
-                            const passing = isPassingGrade(item.avg);
-                            return (
-                              <motion.tr
-                                key={item.id}
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                className={cn(
-                                  'group transition-colors hover:bg-blue-50/30',
-                                  !passing && 'bg-rose-50/20'
-                                )}
-                              >
-                                <TableCell className="text-center py-3">
-                                  <div className={cn(
-                                    'w-8 h-8 rounded-lg flex items-center justify-center mx-auto text-sm font-black',
-                                    index === 0 ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-300' :
-                                    index === 1 ? 'bg-slate-100 text-slate-700 ring-1 ring-slate-200' :
-                                    index === 2 ? 'bg-orange-100 text-orange-700 ring-1 ring-orange-200' :
-                                    'bg-gray-50 text-gray-400'
-                                  )}>
-                                    {item.classRank}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex flex-col">
-                                    <span className="font-bold text-gray-900 group-hover:text-blue-600 transition-colors text-sm">
-                                      {item.student.lastName} {item.student.firstName}
-                                    </span>
-                                    {item.student.matricule && (
-                                      <span className="text-[10px] text-gray-400 font-mono">{item.student.matricule}</span>
-                                    )}
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  {scopeLevel === 'MATERNELLE' ? (
-                                    <Badge className={cn('font-bold text-sm px-3 border-none',
-                                      item.avg >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
-                                      item.avg >= 1.5 ? 'bg-blue-100 text-blue-700' :
-                                      'bg-amber-100 text-amber-700'
-                                    )}>
-                                      {item.avg >= 2.5 ? 'Très Satisfaisant' :
-                                       item.avg >= 1.5 ? 'Satisfaisant' :
-                                       'Peu Satisfaisant'}
-                                    </Badge>
-                                  ) : (
-                                    <Badge className={cn('font-black text-sm px-3 border-none', getScoreColor(item.avg))}>
-                                      {item.avg.toFixed(decimals)}
-                                    </Badge>
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  {scopeLevel === 'MATERNELLE' ? (
-                                    <span className="text-xs text-gray-400">—</span>
-                                  ) : (
-                                    <span className="text-xs font-semibold text-gray-600">
-                                      {getAppreciation(item.avg)}
-                                    </span>
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  {scopeLevel === 'MATERNELLE' ? (
-                                    <span className="text-xs text-gray-400">—</span>
-                                  ) : passing ? (
-                                    <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 text-xs">
-                                      <CheckCircle className="w-3 h-3 mr-1" />Admis
-                                    </Badge>
-                                  ) : (
-                                    <Badge className="bg-rose-50 text-rose-700 border-rose-100 text-xs">
-                                      <AlertCircle className="w-3 h-3 mr-1" />À revoir
-                                    </Badge>
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  {getTrendIcon(item.avg, item.previousAverage)}
-                                </TableCell>
-                                <TableCell className="text-right px-6">
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-400 hover:text-blue-600">
-                                    <ArrowRight className="w-4 h-4" />
-                                  </Button>
-                                </TableCell>
-                              </motion.tr>
-                            );
-                          })}
-                        </AnimatePresence>
-
-                        {numericResults.length === 0 && !loading && (
-                          <TableRow>
-                            <TableCell colSpan={7} className="text-center py-20 bg-gray-50/50">
-                              <div className="flex flex-col items-center opacity-40">
-                                <Calculator className="w-12 h-12 mb-2" />
-                                <p className="text-sm italic">
-                                  {noConfig
-                                    ? 'Configurez le paramétrage académique avant de calculer.'
-                                    : 'Lancez le calcul pour afficher les moyennes.'}
-                                </p>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Sidebar Stats */}
-              <div className="space-y-5">
-                {/* Class average card */}
-                <Card className="border-none shadow-sm bg-gradient-to-br from-blue-600 to-blue-800 text-white overflow-hidden relative group">
-                  <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700" />
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-xs font-bold uppercase tracking-wider opacity-80">
-                      Moyenne de Classe
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-4xl font-black mb-1">
-                      {classAverage !== null ? classAverage.toFixed(decimals) : '—'}
-                    </div>
-                    <p className="text-[10px] text-blue-200 font-bold uppercase">
-                      Seuil de passage : {passingScore}/{maxScore}
-                    </p>
-                    {classAverage !== null && (
-                      <div className="h-1.5 w-full bg-white/10 rounded-full mt-4 overflow-hidden">
-                        <motion.div
-                          className="h-full bg-white rounded-full"
-                          initial={{ width: 0 }}
-                          animate={{ width: `${(classAverage / maxScore) * 100}%` }}
-                          transition={{ duration: 1 }}
-                        />
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Pass/Fail */}
-                <Card className="border-none shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-xs font-bold text-gray-400 uppercase tracking-widest">Résultats</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-2 text-xs font-bold text-emerald-700">
-                        <CheckCircle className="w-4 h-4" /> Admis
-                      </span>
-                      <span className="text-sm font-black text-emerald-700">{passingCount}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-2 text-xs font-bold text-rose-700">
-                        <AlertCircle className="w-4 h-4" /> À revoir
-                      </span>
-                      <span className="text-sm font-black text-rose-700">{failingCount}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Dynamic mention distribution */}
-                <Card className="border-none shadow-sm overflow-hidden bg-white/60 backdrop-blur-md">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                      Répartition des Mentions
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {mentionDistribution.length === 0 ? (
-                      <p className="text-xs text-gray-400 italic">Aucune mention configurée.</p>
-                    ) : (
-                      mentionDistribution.map((m) => (
-                        <DistributionRow
-                          key={m.label}
-                          label={m.label}
-                          count={m.count}
-                          color={m.color}
-                          total={results.length}
-                        />
-                      ))
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* ORION coherence */}
-                {results.length > 0 && (
-                  <Card className="border-none shadow-sm bg-amber-50 border border-amber-100">
-                    <CardContent className="p-4">
-                      <div className="flex items-start gap-3">
-                        <div className="bg-white p-2 rounded-lg shadow-sm">
-                          <AlertCircle className="w-4 h-4 text-amber-600" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-bold text-amber-900">Vérification ORION</p>
-                          <p className="text-[10px] text-amber-700 mt-1 leading-relaxed">
-                            Toutes les moyennes sont calculées selon la formule active.
-                            Vérifiez visuellement avant publication.
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-            </div>
-            )} {/* end viewTab === 'trimestriel' */}
-
-            {/* ─── Vue Annuel + Passage ─── */}
-            {viewTab === 'annuel' && (
-              <Card className="border-none shadow-sm overflow-hidden">
-                <CardHeader>
-                  <CardTitle className="text-lg font-bold flex items-center gap-2">
-                    Moyennes Annuelles & Passage
-                    {annualResults.length > 0 && (
-                      <Badge variant="outline" className="text-xs border-gray-200 text-gray-500">
-                        {annualResults.length} élèves
-                      </Badge>
-                    )}
-                  </CardTitle>
-                  <CardDescription>
-                    Moyenne annuelle = moyenne des 3 trimestres · Moyenne de passage = (annuelle + EP) / 2
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {loadingAnnual ? (
-                    <div className="flex items-center justify-center py-20">
-                      <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-                    </div>
-                  ) : annualResults.length === 0 ? (
-                    <div className="text-center py-16">
-                      <Calculator className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                      <p className="text-gray-500">Sélectionnez une classe pour voir les moyennes annuelles</p>
-                      <Button onClick={loadAnnualAverages} disabled={!selectedClassId} className="mt-4" size="sm">
-                        Calculer les moyennes annuelles
-                      </Button>
-                    </div>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-gray-50">
-                          <TableHead className="w-12">Rang</TableHead>
-                          <TableHead>Élève</TableHead>
-                          <TableHead className="text-center">Trim 1</TableHead>
-                          <TableHead className="text-center">Trim 2</TableHead>
-                          <TableHead className="text-center">Trim 3</TableHead>
-                          <TableHead className="text-center font-bold">Moy. Annuelle</TableHead>
-                          <TableHead className="text-center font-bold">Moy. Passage</TableHead>
-                          <TableHead className="text-center">Statut</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {annualResults.map((r: any, idx: number) => (
-                          <TableRow key={r.studentId} className={idx < 3 ? 'bg-amber-50/50' : ''}>
-                            <TableCell className="font-bold">
-                              {r.annualRank <= 3 ? '🏆' : ''} {r.annualRank}
-                            </TableCell>
-                            <TableCell>
-                              <div className="font-medium">{r.student?.firstName} {r.student?.lastName}</div>
-                              <div className="text-xs text-gray-400">{r.student?.matricule}</div>
-                            </TableCell>
-                            {(r.trimesterDetails || []).map((t: any) => (
-                              <TableCell key={t.periodId} className="text-center">
-                                {t.average?.toFixed(2) ?? '—'}
-                                <div className="text-[10px] text-gray-400">Rang {t.rank ?? '—'}</div>
-                              </TableCell>
-                            ))}
-                            {/* Fill missing trimesters */}
-                            {Array.from({ length: 3 - (r.trimesterDetails?.length || 0) }).map((_, i) => (
-                              <TableCell key={`empty-${i}`} className="text-center text-gray-300">—</TableCell>
-                            ))}
-                            <TableCell className="text-center font-bold text-blue-700">
-                              {r.annualAverage?.toFixed(2) ?? '0.00'}
-                            </TableCell>
-                            <TableCell className="text-center font-bold">
-                              {r.passageAverage !== null ? (
-                                <span className={r.passageAverage >= 10 ? 'text-emerald-600' : 'text-red-600'}>
-                                  {r.passageAverage.toFixed(2)}
-                                </span>
-                              ) : (
-                                <span className="text-gray-300">—</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {r.passageStatus === 'ADMIS' && (
-                                <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Admis</Badge>
-                              )}
-                              {r.passageStatus === 'REDOUBLANT' && (
-                                <Badge className="bg-red-100 text-red-700 border-red-200">Redoublant</Badge>
-                              )}
-                              {r.passageStatus === 'N/A' && (
-                                <span className="text-gray-300 text-xs">N/A</span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* ─── Vue Classement par Niveau ─── */}
-            {viewTab === 'niveau' && (
-              <Card className="border-none shadow-sm overflow-hidden">
-                <CardHeader>
-                  <CardTitle className="text-lg font-bold flex items-center gap-2">
-                    Classement par Niveau — {scopeLevel}
-                    {levelResults.length > 0 && (
-                      <Badge variant="outline" className="text-xs border-gray-200 text-gray-500">
-                        {levelResults.length} élèves · {levelResults.length > 0 ? `${new Set(levelResults.map((r:any) => r.className)).size} classe(s)` : ''}
-                      </Badge>
-                    )}
-                  </CardTitle>
-                  <CardDescription>Classement de tous les élèves du niveau, toutes classes confondues.</CardDescription>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {loadingLevel ? (
-                    <div className="flex items-center justify-center py-20">
-                      <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-                    </div>
-                  ) : levelResults.length === 0 ? (
-                    <div className="text-center py-16">
-                      <Calculator className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                      <p className="text-gray-500">Sélectionnez une période pour voir le classement par niveau</p>
-                      <Button onClick={loadLevelRankings} disabled={!selectedPeriodId} className="mt-4" size="sm">
-                        Calculer le classement
-                      </Button>
-                    </div>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-gray-50">
-                          <TableHead className="w-12">Rang</TableHead>
-                          <TableHead>Élève</TableHead>
-                          <TableHead>Classe</TableHead>
-                          <TableHead className="text-center">Moy. Classe</TableHead>
-                          <TableHead className="text-center font-bold">Moy. Générale</TableHead>
-                          <TableHead className="text-center">Mention</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {levelResults.map((r: any, idx: number) => (
-                          <TableRow key={r.id} className={idx < 3 ? 'bg-amber-50/50' : ''}>
-                            <TableCell className="font-bold">
-                              {r.levelRank <= 3 ? '🏆' : ''} {r.levelRank}
-                            </TableCell>
-                            <TableCell>
-                              <div className="font-medium">{r.student?.firstName} {r.student?.lastName}</div>
-                              <div className="text-xs text-gray-400">{r.student?.matricule}</div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="text-xs">{r.className}</Badge>
-                            </TableCell>
-                            <TableCell className="text-center text-gray-500">
-                              {r.classRank ?? '—'}
-                            </TableCell>
-                            <TableCell className="text-center font-bold text-blue-700">
-                              {Number(r.generalAverage).toFixed(2)}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {r.decision && (
-                                <Badge className={
-                                  r.decision === 'ADMIS' ? 'bg-emerald-100 text-emerald-700' :
-                                  r.decision === 'REDOUBLANT' ? 'bg-red-100 text-red-700' :
-                                  'bg-gray-100 text-gray-700'
-                                }>{r.decision}</Badge>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* ─── Vue Classement par Matière ─── */}
-            {viewTab === 'matiere' && (
-              <div className="space-y-4">
-                {loadingSubject ? (
-                  <div className="flex items-center justify-center py-20">
-                    <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-                  </div>
-                ) : subjectResults.length === 0 ? (
-                  <div className="text-center py-16">
-                    <Calculator className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500">Sélectionnez une classe et une période</p>
-                    <Button onClick={loadSubjectRankings} disabled={!selectedClassId || !selectedPeriodId} className="mt-4" size="sm">
-                      Calculer les classements par matière
-                    </Button>
-                  </div>
-                ) : (
-                  subjectResults.map((subject: any) => (
-                    <Card key={subject.subjectId} className="border-none shadow-sm overflow-hidden">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-base font-bold flex items-center gap-2">
-                          {subject.subjectName}
-                          <Badge variant="outline" className="text-xs">Coef. {subject.coefficient}</Badge>
-                          {subject.rankings?.length > 0 && (
-                            <Badge variant="outline" className="text-xs text-gray-500">
-                              {subject.rankings.length} élèves
-                            </Badge>
-                          )}
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="p-0">
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="bg-gray-50">
-                              <TableHead className="w-12">Rang</TableHead>
-                              <TableHead>Élève</TableHead>
-                              <TableHead className="text-center font-bold">Moyenne</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {(subject.rankings || []).map((r: any, idx: number) => (
-                              <TableRow key={r.studentId} className={idx < 3 ? 'bg-amber-50/50' : ''}>
-                                <TableCell className="font-bold">
-                                  {r.subjectRank <= 3 ? '🏆' : ''} {r.subjectRank}
-                                </TableCell>
-                                <TableCell className="font-medium">{r.studentName}</TableCell>
-                                <TableCell className="text-center font-bold text-blue-700">
-                                  {r.isQualitative ? (
-                                    <span className="text-purple-600">
-                                      {r.subjectAverage >= 2.5 ? 'TS' : r.subjectAverage >= 1.5 ? 'S' : 'PS'}
-                                    </span>
-                                  ) : (
-                                    r.subjectAverage.toFixed(2)
-                                  )}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </CardContent>
-                    </Card>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
+          <Suspense fallback={<div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>}>
+            <AveragesContent />
+          </Suspense>
         ),
       }}
     />
   );
 }
 
-// ─── Distribution Row ─────────────────────────────────────────────────────────
+// ─── Content ─────────────────────────────────────────────────────────────────
 
-const COLOR_MAP: Record<string, string> = {
-  purple: 'bg-purple-500',
-  blue: 'bg-blue-500',
-  cyan: 'bg-cyan-500',
-  indigo: 'bg-blue-500',
-  green: 'bg-green-500',
-  emerald: 'bg-emerald-500',
-  amber: 'bg-amber-500',
-  orange: 'bg-orange-500',
-  red: 'bg-red-500',
-  rose: 'bg-rose-500',
-};
+function AveragesContent() {
+  const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
+  const { academicYear } = useModuleContext();
+  const { availableLevels } = useSchoolLevel();
+  const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
 
-function DistributionRow({ label, count, color, total }: {
-  label: string; count: number; color: string; total: number;
-}) {
-  const percentage = total > 0 ? (count / total) * 100 : 0;
+  const [classes, setClasses] = useState<any[]>([]);
+  const [periods, setPeriods] = useState<any[]>([]);
+  const [evaluationTypes, setEvaluationTypes] = useState<any[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState('');
+  const [selectedPeriodId, setSelectedPeriodId] = useState('');
+  const [selectedEvalTypeId, setSelectedEvalTypeId] = useState('');
+  const [loadingClasses, setLoadingClasses] = useState(true);
+  const [loadingTypes, setLoadingTypes] = useState(true);
+  const [calculating, setCalculating] = useState(false);
+  const [calculationResult, setCalculationResult] = useState<CalculationResult | null>(null);
+  const [progressModal, setProgressModal] = useState<{
+    open: boolean;
+    current: number;
+    total: number;
+    currentStudent: string;
+  }>({ open: false, current: 0, total: 0, currentStudent: '' });
+
+  const isMaternelle = scopeLevel === 'MATERNELLE';
+  const isPrimaire = scopeLevel === 'PRIMAIRE';
+  const isSecondaire = scopeLevel === 'SECONDAIRE';
+
+  // ── Resolve schoolLevelUuid ────────────────────────────────────────────────
+  const activeLevel = useMemo(() => {
+    if (!scopeLevel) return null;
+    return (availableLevels || []).find(
+      (l: any) => (l.code || '').toUpperCase() === scopeLevel && l.id !== 'ALL'
+    );
+  }, [availableLevels, scopeLevel]);
+  const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
+
+  // ── Load classes (with pedagogical sort + auto-select first) ──────────────
+  const loadClasses = useCallback(async () => {
+    if (!schoolLevelUuid) {
+      setLoadingClasses(false);
+      return;
+    }
+    try {
+      const res = await fetch('/api/all-classes', { credentials: 'include' });
+      const data = await res.json();
+      const allClasses = Array.isArray(data) ? data : (data?.items || []);
+      const levelClasses = allClasses.filter((c: any) =>
+        c.schoolLevelId === schoolLevelUuid || c.schoolLevel?.id === schoolLevelUuid
+      );
+      const langClasses = scopeLang
+        ? levelClasses.filter((c: any) => {
+            const classLang = c.language;
+            const trackCode = c.academicTrack?.code || c.academicTrackCode;
+            if (!classLang && !trackCode) return true;
+            if (classLang === scopeLang) return true;
+            if (trackCode === scopeLang) return true;
+            return false;
+          })
+        : levelClasses;
+      langClasses.sort((a: any, b: any) => {
+        const idxA = pedagogicalSortIndex(a.name);
+        const idxB = pedagogicalSortIndex(b.name);
+        if (idxA !== idxB) return idxA - idxB;
+        return (a.name || '').localeCompare(b.name || '', 'fr');
+      });
+      setClasses(langClasses);
+      if (langClasses.length > 0 && !selectedClassId) {
+        setSelectedClassId(langClasses[0].id);
+      }
+    } catch {
+      setClasses([]);
+    } finally {
+      setLoadingClasses(false);
+    }
+  }, [schoolLevelUuid, scopeLang, selectedClassId]);
+
+  // ── Load periods (trimesters) ──────────────────────────────────────────────
+  const loadPeriods = useCallback(async () => {
+    if (!academicYear?.id) return;
+    try {
+      const res = await fetch(
+        `/api/settings/academic-years/${academicYear.id}/periods`,
+        { credentials: 'include' }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const periodList = Array.isArray(data) ? data : (data?.items || []);
+        setPeriods(periodList);
+        if (periodList.length > 0 && !selectedPeriodId) {
+          setSelectedPeriodId(periodList[0].id);
+        }
+      }
+    } catch {
+      setPeriods([]);
+    }
+  }, [academicYear?.id, selectedPeriodId]);
+
+  // ── Load evaluation types for this school level ────────────────────────────
+  const loadEvaluationTypes = useCallback(async () => {
+    if (!schoolLevelUuid) {
+      setLoadingTypes(false);
+      return;
+    }
+    try {
+      const types = await institutionalExamsService.getEvaluationTypes(schoolLevelUuid);
+      setEvaluationTypes(Array.isArray(types) ? types : []);
+      if (types.length > 0 && !selectedEvalTypeId) {
+        setSelectedEvalTypeId(types[0].id);
+      }
+    } catch {
+      setEvaluationTypes([]);
+    } finally {
+      setLoadingTypes(false);
+    }
+  }, [schoolLevelUuid, selectedEvalTypeId]);
+
+  useEffect(() => { loadClasses(); }, [loadClasses]);
+  useEffect(() => { loadPeriods(); }, [loadPeriods]);
+  useEffect(() => { loadEvaluationTypes(); }, [loadEvaluationTypes]);
+
+  // ── Handle Calculate ───────────────────────────────────────────────────────
+  const handleCalculate = async () => {
+    if (!selectedClassId || !selectedPeriodId || !selectedEvalTypeId || !academicYear?.id) {
+      toastError('Sélection incomplète', {
+        description: 'Veuillez sélectionner un trimestre, une classe et une évaluation.',
+      });
+      return;
+    }
+
+    setCalculating(true);
+    // Open progress modal
+    setProgressModal({
+      open: true,
+      current: 0,
+      total: 0,
+      currentStudent: 'Initialisation…',
+    });
+
+    try {
+      // Simulate progress (the API call is fast, but we show progress for UX)
+      // In a real implementation, we'd use SSE or polling for real progress
+      setProgressModal(prev => ({ ...prev, current: 1, total: 100, currentStudent: 'Récupération des élèves…' }));
+
+      const response = await apiClient.post('/exams/calculate-evaluation-averages', {
+        classId: selectedClassId,
+        periodId: selectedPeriodId,
+        academicYearId: academicYear.id,
+        evaluationTypeId: selectedEvalTypeId,
+      });
+
+      const result: CalculationResult = response.data;
+
+      // Animate progress to 100%
+      setProgressModal(prev => ({ ...prev, current: 100, currentStudent: 'Calcul terminé !' }));
+
+      // Close modal after a short delay
+      setTimeout(() => {
+        setProgressModal({ open: false, current: 0, total: 0, currentStudent: '' });
+      }, 800);
+
+      setCalculationResult(result);
+      toastSuccess('Calcul terminé', {
+        description: `${result.results.length} élèves · ${result.subjects.length} matières`,
+      });
+    } catch (err: any) {
+      setProgressModal({ open: false, current: 0, total: 0, currentStudent: '' });
+      toastError('Erreur lors du calcul', {
+        description: err.response?.data?.message || err.message,
+      });
+    } finally {
+      setCalculating(false);
+    }
+  };
+
+  const selectedClassName = classes.find(c => c.id === selectedClassId)?.name || '';
+  const selectedPeriodName = periods.find(p => p.id === selectedPeriodId)?.name || '';
+  const selectedEvalTypeName = evaluationTypes.find(t => t.id === selectedEvalTypeId)?.name || '';
+  const selectedEvalTypeCode = evaluationTypes.find(t => t.id === selectedEvalTypeId)?.code || '';
+
   return (
-    <div className="space-y-1.5">
-      <div className="flex justify-between items-end text-[10px] font-bold">
-        <span className="text-gray-500">{label}</span>
-        <span className="text-gray-900">{count} élève{count !== 1 ? 's' : ''}</span>
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-2">
+        <Calculator className="w-5 h-5 text-blue-600" />
+        <h2 className="text-lg font-bold text-gray-900">Moyennes par évaluation</h2>
+        <Badge variant="outline" className="text-xs">
+          {scopeLevel || '—'} {scopeLang ? `· ${scopeLang}` : ''}
+        </Badge>
       </div>
-      <div className="h-1 w-full bg-gray-100 rounded-full overflow-hidden">
-        <motion.div
-          className={cn('h-full rounded-full', COLOR_MAP[color] ?? 'bg-blue-500')}
-          initial={{ width: 0 }}
-          animate={{ width: `${percentage}%` }}
-          transition={{ duration: 1 }}
+
+      {/* Control Bar — 3 selectors + Calculate button */}
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+          {/* Trimester selector */}
+          <div className="flex-1">
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">
+              Trimestre
+            </label>
+            <select
+              value={selectedPeriodId}
+              onChange={(e) => setSelectedPeriodId(e.target.value)}
+              className="w-full text-sm font-semibold border border-gray-200 bg-gray-50 rounded-lg py-2 px-3 focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">— Sélectionner —</option>
+              {periods.map(p => (
+                <option key={p.id} value={p.id}>{p.name || p.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Class selector */}
+          <div className="flex-1">
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">
+              Classe
+            </label>
+            <select
+              value={selectedClassId}
+              onChange={(e) => setSelectedClassId(e.target.value)}
+              className="w-full text-sm font-semibold border border-gray-200 bg-gray-50 rounded-lg py-2 px-3 focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">— Sélectionner —</option>
+              {classes.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Evaluation type selector */}
+          <div className="flex-1">
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">
+              Évaluation
+            </label>
+            <select
+              value={selectedEvalTypeId}
+              onChange={(e) => setSelectedEvalTypeId(e.target.value)}
+              className="w-full text-sm font-semibold border border-gray-200 bg-gray-50 rounded-lg py-2 px-3 focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">— Sélectionner —</option>
+              {evaluationTypes.map(t => (
+                <option key={t.id} value={t.id}>
+                  [{t.code}] {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Calculate button */}
+          <div className="flex items-end">
+            <Button
+              onClick={handleCalculate}
+              disabled={calculating || !selectedClassId || !selectedPeriodId || !selectedEvalTypeId}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2.5 rounded-lg shadow-sm w-full md:w-auto"
+            >
+              {calculating ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Calcul…</>
+              ) : (
+                <><Calculator className="w-4 h-4 mr-2" />Lancer le calcul</>
+              )}
+            </Button>
+          </div>
+        </div>
+
+        {/* Summary of selection */}
+        {(selectedClassName || selectedPeriodName || selectedEvalTypeName) && (
+          <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 flex-wrap text-xs text-gray-500">
+            <span className="font-semibold">Sélection :</span>
+            <Badge variant="outline" className="text-xs">{selectedPeriodName || '—'}</Badge>
+            <span>·</span>
+            <Badge variant="outline" className="text-xs">{selectedClassName || '—'}</Badge>
+            <span>·</span>
+            <Badge variant="outline" className="text-xs">
+              {selectedEvalTypeCode ? `[${selectedEvalTypeCode}] ` : ''}{selectedEvalTypeName || '—'}
+            </Badge>
+          </div>
+        )}
+      </div>
+
+      {/* Results */}
+      {!calculationResult ? (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
+          <Calculator className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+          <p className="text-gray-600 font-medium">Aucun calcul lancé</p>
+          <p className="text-sm text-gray-400 mt-1">
+            Sélectionnez un trimestre, une classe et une évaluation, puis cliquez sur « Lancer le calcul ».
+          </p>
+        </div>
+      ) : (
+        <CalculationResults result={calculationResult} />
+      )}
+
+      {/* Progress Modal */}
+      {progressModal.open && (
+        <ProgressModal
+          current={progressModal.current}
+          total={progressModal.total}
+          currentStudent={progressModal.currentStudent}
         />
+      )}
+    </div>
+  );
+}
+
+// ─── Progress Modal ──────────────────────────────────────────────────────────
+
+function ProgressModal({ current, total, currentStudent }: { current: number; total: number; currentStudent: string }) {
+  const pct = total > 0 ? Math.min(100, (current / total) * 100) : 0;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+            <Calculator className="w-5 h-5 text-blue-600" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-gray-900">Calcul des moyennes en cours…</h3>
+            <p className="text-xs text-gray-500">Veuillez patienter</p>
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-gray-600">{currentStudent}</span>
+            <span className="font-bold text-blue-600">{pct.toFixed(0)}%</span>
+          </div>
+          <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-300"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          {total > 0 && (
+            <p className="text-[10px] text-gray-400 text-center">
+              {current} / {total}
+            </p>
+          )}
+        </div>
+
+        <div className="mt-4 flex items-center justify-center">
+          <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Calculation Results (table + stats panel) ──────────────────────────────
+
+function CalculationResults({ result }: { result: CalculationResult }) {
+  const isMaternelle = result.isMaternelle;
+  const isSecondaire = result.schoolLevelCode === 'SECONDAIRE';
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+      {/* Table — 3 columns */}
+      <div className="lg:col-span-3 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        {/* Header */}
+        <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">
+                Classement — {result.className}
+              </h3>
+              <p className="text-xs text-gray-500">
+                {result.results.length} élèves · {result.subjects.length} matières
+              </p>
+            </div>
+            <Badge className="bg-blue-100 text-blue-700 border-blue-200">
+              {result.subjects.length} matières
+            </Badge>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-100">
+                <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Rang</th>
+                <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: '180px' }}>Nom et prénom</th>
+                <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Sexe</th>
+                {result.subjects.map((subject, idx) => (
+                  isMaternelle ? (
+                    <th key={idx} rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[100px]">
+                      {subject.name}
+                      <div className="text-[9px] text-slate-400 font-normal">TS / S / PS</div>
+                    </th>
+                  ) : isSecondaire ? (
+                    <th key={idx} rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[80px]">
+                      {subject.name}
+                      <div className="text-[9px] text-slate-400 font-normal">Note /20</div>
+                    </th>
+                  ) : (
+                    <th key={idx} rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[80px]">
+                      {subject.name}
+                      <div className="text-[9px] text-slate-400 font-normal">Note /20</div>
+                    </th>
+                  )
+                ))}
+                {/* Moyenne générale */}
+                {!isMaternelle && (
+                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Moy. gén.</th>
+                )}
+                {/* Rang */}
+                {/* Already have Rang as first column */}
+                {/* Appréciation globale (Maternelle) */}
+                {isMaternelle && (
+                  <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-32">Appréciation</th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {result.results.map((row, idx) => (
+                <tr key={row.id} className={cn('hover:bg-slate-50', idx % 2 === 1 && 'bg-slate-50/50')}>
+                  {/* Rang */}
+                  <td className="border border-slate-300 px-2 py-1 text-center font-bold text-slate-700">
+                    <div className={cn(
+                      'w-7 h-7 rounded-lg flex items-center justify-center mx-auto text-xs font-black',
+                      idx === 0 ? 'bg-amber-100 text-amber-700' :
+                      idx === 1 ? 'bg-slate-100 text-slate-700' :
+                      idx === 2 ? 'bg-orange-100 text-orange-700' :
+                      'bg-gray-50 text-gray-500'
+                    )}>
+                      {row.classRank}
+                    </div>
+                  </td>
+                  {/* Nom */}
+                  <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">
+                    {row.student.lastName} {row.student.firstName}
+                  </td>
+                  {/* Sexe */}
+                  <td className="border border-slate-300 px-2 py-1 text-center">
+                    {row.student.gender === 'M' ? (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-100 text-cyan-700">M</span>
+                    ) : row.student.gender === 'F' ? (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-pink-100 text-pink-700">F</span>
+                    ) : '—'}
+                  </td>
+                  {/* Notes par matière */}
+                  {result.subjects.map((subject) => {
+                    const score = row.subjectScores[subject.id];
+                    if (!score) {
+                      return (
+                        <td key={subject.id} className="border border-slate-300 px-2 py-1 text-center text-slate-300">—</td>
+                      );
+                    }
+                    if (score.isAbsent) {
+                      return (
+                        <td key={subject.id} className="border border-slate-300 px-2 py-1 text-center">
+                          <span className="text-red-500 text-[10px] font-bold">ABS</span>
+                        </td>
+                      );
+                    }
+                    if (isMaternelle) {
+                      return (
+                        <td key={subject.id} className="border border-slate-300 px-2 py-1 text-center">
+                          <span className={cn(
+                            'inline-flex px-2 py-0.5 rounded text-xs font-bold',
+                            score.qualitativeCode === 'TS' && 'bg-emerald-100 text-emerald-700',
+                            score.qualitativeCode === 'S' && 'bg-blue-100 text-blue-700',
+                            score.qualitativeCode === 'PS' && 'bg-amber-100 text-amber-700',
+                            !score.qualitativeCode && 'text-slate-300',
+                          )}>
+                            {score.qualitativeCode || '—'}
+                          </span>
+                        </td>
+                      );
+                    }
+                    return (
+                      <td key={subject.id} className="border border-slate-300 px-2 py-1 text-center font-bold">
+                        <span className={cn(
+                          (score.score || 0) >= 10 ? 'text-emerald-700' : 'text-red-600'
+                        )}>
+                          {score.score !== null ? Number(score.score).toFixed(2) : '—'}
+                        </span>
+                      </td>
+                    );
+                  })}
+                  {/* Moyenne générale (Primaire/Secondaire) */}
+                  {!isMaternelle && (
+                    <td className="border border-slate-300 px-2 py-1 text-center font-bold bg-blue-50">
+                      <span className={cn(
+                        'text-sm',
+                        (row.generalAverage || 0) >= 10 ? 'text-emerald-700' : 'text-red-600'
+                      )}>
+                        {row.generalAverage !== null ? row.generalAverage.toFixed(2) : '—'}
+                      </span>
+                    </td>
+                  )}
+                  {/* Appréciation globale (Maternelle) */}
+                  {isMaternelle && (
+                    <td className="border border-slate-300 px-2 py-1 text-center font-bold">
+                      <span className={cn(
+                        'text-xs',
+                        row.appreciationGlobale === 'Très Satisfaisant' && 'text-emerald-600',
+                        row.appreciationGlobale === 'Satisfaisant' && 'text-blue-600',
+                        row.appreciationGlobale === 'Peu Satisfaisant' && 'text-amber-600',
+                      )}>
+                        {row.appreciationGlobale || '—'}
+                      </span>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Stats Panel — adapted to school level */}
+      <div className="space-y-4">
+        {/* Class average card (Primaire only — Maternelle has no /20) */}
+        {!isMaternelle && (
+          <div className="bg-gradient-to-br from-blue-600 to-blue-800 text-white rounded-xl p-4 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wider opacity-80 mb-1">
+              Moyenne de Classe
+            </p>
+            <div className="text-3xl font-black mb-1">
+              {result.stats.classAverage !== null ? result.stats.classAverage.toFixed(2) : '—'}
+            </div>
+            <p className="text-[10px] text-blue-200 font-bold uppercase">
+              Seuil de passage : 10/20
+            </p>
+            {result.stats.classAverage !== null && (
+              <div className="h-1.5 w-full bg-white/10 rounded-full mt-3 overflow-hidden">
+                <div
+                  className="h-full bg-white rounded-full transition-all duration-1000"
+                  style={{ width: `${Math.min(100, (result.stats.classAverage / 20) * 100)}%` }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Maternelle: Appreciation distribution (instead of /20) */}
+        {isMaternelle && (
+          <div className="bg-gradient-to-br from-purple-600 to-pink-600 text-white rounded-xl p-4 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wider opacity-80 mb-3">
+              Répartition des Appreciations
+            </p>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold">Très Satisfaisant</span>
+                <span className="text-lg font-black">
+                  {result.results.filter(r => r.appreciationGlobale === 'Très Satisfaisant').length}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold">Satisfaisant</span>
+                <span className="text-lg font-black">
+                  {result.results.filter(r => r.appreciationGlobale === 'Satisfaisant').length}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold">Peu Satisfaisant</span>
+                <span className="text-lg font-black">
+                  {result.results.filter(r => r.appreciationGlobale === 'Peu Satisfaisant').length}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Pass/Fail card — adapted */}
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Résultats</p>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-2 text-xs font-bold text-emerald-700">
+                <CheckCircle className="w-4 h-4" />
+                {isMaternelle ? 'Satisfaisant' : 'Admis'}
+              </span>
+              <span className="text-sm font-black text-emerald-700">{result.stats.passingCount}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-2 text-xs font-bold text-rose-700">
+                <AlertCircle className="w-4 h-4" />
+                {isMaternelle ? 'Peu Satisfaisant' : 'À revoir'}
+              </span>
+              <span className="text-sm font-black text-rose-700">{result.stats.failingCount}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Stats card */}
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Statistiques</p>
+          <div className="space-y-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-600">Effectif total</span>
+              <span className="font-bold text-gray-900">{result.stats.totalStudents}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-gray-600">Ayant composé</span>
+              <span className="font-bold text-gray-900">{result.stats.composedStudents}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-gray-600">% de réussite</span>
+              <span className="font-bold text-blue-700">{result.stats.passingRate.toFixed(1)}%</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

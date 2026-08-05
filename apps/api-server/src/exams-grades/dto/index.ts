@@ -204,6 +204,27 @@ export class CalculateAveragesDto {
   academicYearId: string;
 }
 
+/**
+ * DTO pour calculate-evaluation-averages (par type d'évaluation)
+ */
+export class CalculateEvaluationAveragesDto {
+  @IsUUID()
+  @IsNotEmpty()
+  classId: string;
+
+  @IsUUID()
+  @IsNotEmpty()
+  periodId: string;
+
+  @IsUUID()
+  @IsNotEmpty()
+  academicYearId: string;
+
+  @IsUUID()
+  @IsNotEmpty()
+  evaluationTypeId: string;
+}
+
 // ─── Bulletins / Report Cards ───────────────────────────────────
 
 export class GenerateReportCardsDto {

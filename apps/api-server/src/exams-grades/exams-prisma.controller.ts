@@ -25,6 +25,7 @@ import {
   UpdateExamPrismaDto,
   SaveGradingSheetDto,
   CalculateAveragesDto,
+  CalculateEvaluationAveragesDto,
   GenerateReportCardsDto,
   PublishBulletinsDto,
 } from './dto';
@@ -171,7 +172,7 @@ export class ExamsPrismaController {
   async calculateEvaluationAverages(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
-    @Body() body: { classId: string; periodId: string; academicYearId: string; evaluationTypeId: string },
+    @Body() body: CalculateEvaluationAveragesDto,
   ) {
     // ⭐ Fallback: if @TenantId() returns undefined, use user.tenantId from JWT
     const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id;

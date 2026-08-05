@@ -47,8 +47,69 @@ type Tab = "today" | "attendance" | "payments" | "results";
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
   PRESENT: { label: "Présent", color: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
   ABSENT: { label: "Absent", color: "bg-red-100 text-red-700", icon: XCircle },
+  ABSENT_HALF: { label: "Demi-journée", color: "bg-amber-100 text-amber-700", icon: Clock },
   LATE: { label: "En retard", color: "bg-amber-100 text-amber-700", icon: Clock },
 };
+
+/**
+ * Parse attendance notes to extract morning/afternoon/late info.
+ * Notes can be a JSON string like {"morning":"PRESENT","afternoon":"ABSENT","late":false}
+ * or a plain text string.
+ */
+function parseAttendanceNotes(notes: any): { morning?: string; afternoon?: string; late?: boolean; raw?: string } {
+  if (!notes) return {};
+  if (typeof notes === 'object') return notes;
+  if (typeof notes === 'string') {
+    try {
+      const parsed = JSON.parse(notes);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch {
+      return { raw: notes };
+    }
+  }
+  return { raw: String(notes) };
+}
+
+/**
+ * Generate a human-readable status label from the attendance record.
+ * Handles half-day absences (morning absent, afternoon present, etc.)
+ */
+function getAttendanceDisplay(record: { status: string; notes?: any }): { label: string; color: string; icon: any; detail: string } {
+  const cfg = STATUS_CONFIG[record.status] || STATUS_CONFIG.PRESENT;
+  const parsed = parseAttendanceNotes(record.notes);
+
+  // If notes has morning/afternoon info, build a detailed label
+  if (parsed.morning && parsed.afternoon) {
+    const morningLabel = parsed.morning === 'PRESENT' ? 'Présent' : parsed.morning === 'ABSENT' ? 'Absent' : parsed.morning === 'LATE' ? 'En retard' : parsed.morning;
+    const afternoonLabel = parsed.afternoon === 'PRESENT' ? 'Présent' : parsed.afternoon === 'ABSENT' ? 'Absent' : parsed.afternoon === 'LATE' ? 'En retard' : parsed.afternoon;
+
+    if (parsed.morning === parsed.afternoon) {
+      // Both same — single status
+      return {
+        label: morningLabel,
+        color: cfg.color,
+        icon: cfg.icon,
+        detail: '',
+      };
+    }
+
+    // Different morning/afternoon — show "Demi-journée"
+    return {
+      label: 'Demi-journée',
+      color: 'bg-amber-100 text-amber-700',
+      icon: Clock,
+      detail: `Matin: ${morningLabel} · Après-midi: ${afternoonLabel}`,
+    };
+  }
+
+  // No detailed notes — use status only
+  return {
+    label: cfg.label,
+    color: cfg.color,
+    icon: cfg.icon,
+    detail: parsed.raw || '',
+  };
+}
 
 export default function ParentChildDetailPage() {
   const { user } = useAppSession();
@@ -274,14 +335,18 @@ function TodayTab({ child, todayData }: { child: any; todayData: any }) {
         </h3>
         {todayData.attendance ? (
           (() => {
-            const cfg = STATUS_CONFIG[todayData.attendance.status] || STATUS_CONFIG.PRESENT;
-            const Icon = cfg.icon;
+            const display = getAttendanceDisplay(todayData.attendance);
+            const Icon = display.icon;
             return (
-              <div className={cn("inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold", cfg.color)}>
-                <Icon className="h-5 w-5" />
-                {cfg.label}
-                {todayData.attendance.notes && (
-                  <span className="ml-2 text-xs font-normal opacity-75">— {todayData.attendance.notes}</span>
+              <div className="space-y-2">
+                <div className={cn("inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold", display.color)}>
+                  <Icon className="h-5 w-5" />
+                  {display.label}
+                </div>
+                {display.detail && (
+                  <p className="text-xs text-slate-600 bg-slate-50 rounded-lg px-3 py-2">
+                    {display.detail}
+                  </p>
                 )}
               </div>
             );
@@ -985,20 +1050,32 @@ function BulletinsSubTab({
 // ============================================================================
 
 function AttendanceTab({ child, attendanceData }: { child: any; attendanceData: any[] }) {
+  // ⭐ Compute stats using parsed display info (not raw status)
   const stats = attendanceData.reduce((acc, r) => {
     acc.total++;
-    if (r.status === "PRESENT") acc.present++;
-    if (r.status === "ABSENT") acc.absent++;
-    if (r.status === "LATE") acc.late++;
+    const display = getAttendanceDisplay(r);
+    if (display.label === "Présent") acc.present++;
+    else if (display.label === "Absent") acc.absent++;
+    else if (display.label === "Demi-journée" || display.label === "En retard") acc.late++;
     return acc;
   }, { total: 0, present: 0, absent: 0, late: 0 });
 
+  // Find earliest + latest date for the period label
+  const dates = attendanceData.map(r => new Date(r.date)).sort((a, b) => b.getTime() - a.getTime());
+  const latestDate = dates[0];
+
   return (
     <div className="space-y-4">
+      {/* Stats cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
           <p className="text-2xl font-bold text-slate-900">{stats.total}</p>
-          <p className="text-xs text-slate-500 uppercase">Jours</p>
+          <p className="text-xs text-slate-500 uppercase">Jours enregistrés</p>
+          {latestDate && (
+            <p className="text-[10px] text-slate-400 mt-1">
+              Dernier: {format(latestDate, "d MMM yyyy", { locale: fr })}
+            </p>
+          )}
         </div>
         <div className="bg-emerald-50 rounded-xl border border-emerald-200 p-4 text-center">
           <CheckCircle2 className="h-5 w-5 text-emerald-600 mx-auto mb-1" />
@@ -1013,10 +1090,11 @@ function AttendanceTab({ child, attendanceData }: { child: any; attendanceData: 
         <div className="bg-amber-50 rounded-xl border border-amber-200 p-4 text-center">
           <Clock className="h-5 w-5 text-amber-600 mx-auto mb-1" />
           <p className="text-2xl font-bold text-amber-700">{stats.late}</p>
-          <p className="text-xs text-amber-700 uppercase">Retards</p>
+          <p className="text-xs text-amber-700 uppercase">Demi-journées / Retards</p>
         </div>
       </div>
 
+      {/* History table */}
       {attendanceData.length > 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <table className="w-full text-sm">
@@ -1024,30 +1102,31 @@ function AttendanceTab({ child, attendanceData }: { child: any; attendanceData: 
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="text-left px-4 py-3 font-semibold text-slate-700">Date</th>
                 <th className="text-center px-4 py-3 font-semibold text-slate-700">Statut</th>
-                <th className="text-left px-4 py-3 font-semibold text-slate-700">Observation</th>
+                <th className="text-left px-4 py-3 font-semibold text-slate-700">Détail</th>
               </tr>
             </thead>
             <tbody>
-              {attendanceData.map((r, i) => (
-                <tr key={i} className="border-b border-slate-100">
-                  <td className="px-4 py-3 text-slate-600">
-                    {new Date(r.date).toLocaleDateString("fr-FR", {
-                      weekday: "short", day: "2-digit", month: "long",
-                    })}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={cn(
-                      "inline-flex items-center px-2 py-1 rounded text-xs font-bold",
-                      r.status === "PRESENT" && "bg-emerald-100 text-emerald-700",
-                      r.status === "ABSENT" && "bg-red-100 text-red-700",
-                      r.status === "LATE" && "bg-amber-100 text-amber-700",
-                    )}>
-                      {r.status === "PRESENT" ? "Présent" : r.status === "ABSENT" ? "Absent" : "Retard"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-500 text-xs">{r.notes || "—"}</td>
-                </tr>
-              ))}
+              {attendanceData.map((r, i) => {
+                const display = getAttendanceDisplay(r);
+                return (
+                  <tr key={i} className="border-b border-slate-100">
+                    <td className="px-4 py-3 text-slate-600 font-medium">
+                      {format(new Date(r.date), "EEEE d MMMM yyyy", { locale: fr })}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={cn(
+                        "inline-flex items-center px-2 py-1 rounded text-xs font-bold",
+                        display.color,
+                      )}>
+                        {display.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 text-xs">
+                      {display.detail || "—"}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

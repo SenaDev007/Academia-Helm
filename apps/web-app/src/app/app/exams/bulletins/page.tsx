@@ -426,7 +426,7 @@ function BulletinsContent() {
 
       // Download the PDF
       const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = window.createElement('a');
+      const link = document.createElement('a');
       link.href = url;
       link.download = `bulletin_${student.studentName.replace(/\s+/g, '_')}.pdf`;
       document.body.appendChild(link);
@@ -440,10 +440,10 @@ function BulletinsContent() {
     } finally { setGeneratingPdf(null); }
   };
 
-  const handleGenerateAllPdf = () => {
+  const handleGenerateAllPdf = async () => {
     if (!bulletinData) return;
     for (const student of bulletinData.results) {
-      setTimeout(() => handleGeneratePdf(student), 500);
+      await handleGeneratePdf(student, { teacherSig: null, directorSig: null, parentSig: null });
     }
   };
 

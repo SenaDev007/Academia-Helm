@@ -37,6 +37,7 @@ import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules, useExamScope } from '../layout';
 import { cn } from '@/lib/utils';
+import { RichTextEditor } from '@/components/ui/RichTextEditor';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -808,16 +809,55 @@ function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResu
 // ─── Page 2: Appréciations + Signatures (Maternelle + Primaire) ────────────
 
 function BulletinPage2({ student, isMaternelle }: { student: StudentResult; isMaternelle: boolean }) {
+  // ⭐ Rich text state for each editable zone
+  const [teacherAnalysis, setTeacherAnalysis] = useState('');
+  const [attitudes, setAttitudes] = useState({
+    assiduite: '', discipline: '', defaults: '', qualites: '',
+  });
+  const [parentResponse, setParentResponse] = useState('');
+
   return (
     <div className="space-y-3">
       {!isMaternelle && (
         <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
           <h4 className="text-xs font-bold text-slate-900 uppercase mb-2">II — Attitudes</h4>
-          <div className="space-y-1.5 text-[10px]">
-            <div className="flex gap-2"><span className="font-semibold text-slate-600 min-w-[80px]">Assiduité:</span><span className="text-slate-400 italic">(à remplir)</span></div>
-            <div className="flex gap-2"><span className="font-semibold text-slate-600 min-w-[80px]">Discipline:</span><span className="text-slate-400 italic">(à remplir)</span></div>
-            <div className="flex gap-2"><span className="font-semibold text-slate-600 min-w-[80px]">Défauts majeurs:</span><span className="text-slate-400 italic">(à remplir)</span></div>
-            <div className="flex gap-2"><span className="font-semibold text-slate-600 min-w-[80px]">Qualités remarquables:</span><span className="text-slate-400 italic">(à remplir)</span></div>
+          <div className="space-y-2">
+            <div>
+              <label className="text-[10px] font-semibold text-slate-600">Assiduité</label>
+              <RichTextEditor
+                value={attitudes.assiduite}
+                onChange={(html) => setAttitudes(prev => ({ ...prev, assiduite: html }))}
+                placeholder="Renseigner l'assiduité de l'élève…"
+                minHeight="48px"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold text-slate-600">Discipline</label>
+              <RichTextEditor
+                value={attitudes.discipline}
+                onChange={(html) => setAttitudes(prev => ({ ...prev, discipline: html }))}
+                placeholder="Renseigner la discipline de l'élève…"
+                minHeight="48px"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold text-slate-600">Défauts majeurs identifiés</label>
+              <RichTextEditor
+                value={attitudes.defaults}
+                onChange={(html) => setAttitudes(prev => ({ ...prev, defaults: html }))}
+                placeholder="Renseigner les défauts majeurs…"
+                minHeight="48px"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold text-slate-600">Qualités remarquables</label>
+              <RichTextEditor
+                value={attitudes.qualites}
+                onChange={(html) => setAttitudes(prev => ({ ...prev, qualites: html }))}
+                placeholder="Renseigner les qualités remarquables…"
+                minHeight="48px"
+              />
+            </div>
           </div>
         </div>
       )}
@@ -829,9 +869,12 @@ function BulletinPage2({ student, isMaternelle }: { student: StudentResult; isMa
             ? 'Analyse Pédagogique Sommaire des Résultats et Recommandations de l\'Enseignant(e) aux Parents'
             : 'Analyse des Résultats et Recommandations'}
         </h4>
-        <div className="bg-slate-50 rounded p-2 min-h-[60px] border border-dashed border-slate-300">
-          <p className="text-[10px] text-slate-400 italic">(Zone de recommandations de l'enseignant — à remplir lors du conseil de classe)</p>
-        </div>
+        <RichTextEditor
+          value={teacherAnalysis}
+          onChange={setTeacherAnalysis}
+          placeholder="Saisir l'analyse pédagogique et les recommandations de l'enseignant(e) aux parents… (Ctrl+B gras, Ctrl+I italique, Ctrl+U souligné)"
+          minHeight="80px"
+        />
       </div>
 
       {/* Symbole mérité */}
@@ -878,9 +921,12 @@ function BulletinPage2({ student, isMaternelle }: { student: StudentResult; isMa
       {/* Réponse des parents */}
       <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
         <h4 className="text-[10px] font-bold text-slate-700 uppercase mb-1">Réponse des parents de l'élève</h4>
-        <div className="bg-white rounded p-2 min-h-[40px] border border-dashed border-slate-300">
-          <p className="text-[10px] text-slate-400 italic">(Zone de réponse des parents)</p>
-        </div>
+        <RichTextEditor
+          value={parentResponse}
+          onChange={setParentResponse}
+          placeholder="Zone de réponse des parents…"
+          minHeight="48px"
+        />
       </div>
     </div>
   );

@@ -6,7 +6,7 @@ import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { AcademicYearId } from '../../common/decorators/academic-year-id.decorator';
 import { UserId } from '../../auth/decorators/user-id.decorator';
 import { Permissions } from '../../auth/decorators/permissions.decorator';
-import { PrismaService } from '../../prisma/prisma.service';
+import { PrismaService } from '../../database/prisma.service';
 
 /**
  * ============================================================================

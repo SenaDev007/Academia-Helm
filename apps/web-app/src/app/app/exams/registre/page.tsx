@@ -33,7 +33,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { academicSettingsService } from '@/services/academic-settings.service';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
-import apiClient from '@/lib/api/client';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules, useExamScope } from '../layout';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
@@ -103,9 +102,10 @@ function RegistreContent() {
   const loadClasses = useCallback(async () => {
     if (!schoolLevelUuid) return;
     try {
-      // ✅ Use apiClient (NOT fetch) to include auth headers automatically
-      const res = await apiClient.get(`/all-classes`);
-      const data = res.data;
+      // ✅ Use fetch for BFF routes (Next.js routes on academiahelm.com)
+      // apiClient uses api.academiahelm.com which doesn't have /all-classes
+      const res = await fetch('/api/all-classes', { credentials: 'include' });
+      const data = await res.json();
       const allClasses = Array.isArray(data) ? data : (data?.items || []);
 
       // Filter by school level UUID
@@ -151,19 +151,22 @@ function RegistreContent() {
     setLoading(true);
     try {
       // Récupérer les matières de la classe (FR only if language filter)
-      // ⭐ Use apiClient (NOT fetch) to include auth headers automatically
+      // ⭐ Use fetch for BFF route /api/subjects (apiClient uses api.academiahelm.com)
       let subjectList: any[] = [];
       try {
-        const subjectsRes = await apiClient.get(`/subjects`, {
-          params: { schoolLevelId: schoolLevelUuid || undefined, academicYearId: academicYear.id },
-        });
-        const subjectsData = subjectsRes.data;
-        subjectList = Array.isArray(subjectsData) ? subjectsData : (subjectsData?.items || []);
-        // ⭐ Filter subjects by language (FR only if user is on FR track)
-        if (language) {
-          subjectList = subjectList.filter((s: any) =>
-            !s.language || s.language === language || s.language === 'FR'
-          );
+        const subjectsRes = await fetch(
+          `/api/subjects?schoolLevelId=${schoolLevelUuid || ''}&academicYearId=${academicYear.id}`,
+          { credentials: 'include' }
+        );
+        if (subjectsRes.ok) {
+          const subjectsData = await subjectsRes.json();
+          subjectList = Array.isArray(subjectsData) ? subjectsData : (subjectsData?.items || []);
+          // ⭐ Filter subjects by language (FR only if user is on FR track)
+          if (language) {
+            subjectList = subjectList.filter((s: any) =>
+              !s.language || s.language === language || s.language === 'FR'
+            );
+          }
         }
       } catch (err) {
         console.warn('Subjects endpoint failed, will derive from evaluations:', err);
@@ -242,10 +245,11 @@ function RegistreContent() {
       let students = Array.from(studentMap.values());
       if (students.length === 0) {
         try {
-          const studentsRes = await apiClient.get(`/students`, {
-            params: { classId: selectedClassId, academicYearId: academicYear.id },
-          });
-          const studentsData = studentsRes.data;
+          const studentsRes = await fetch(
+            `/api/students?classId=${selectedClassId}&academicYearId=${academicYear.id}`,
+            { credentials: 'include' }
+          );
+          const studentsData = await studentsRes.json();
           students = Array.isArray(studentsData) ? studentsData : (studentsData?.data || []);
         } catch { students = []; }
       }

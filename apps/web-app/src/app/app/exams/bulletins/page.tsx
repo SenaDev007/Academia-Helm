@@ -375,7 +375,7 @@ function BulletinsContent() {
     });
   };
 
-  const handleGeneratePdf = async (student: StudentResult) => {
+  const handleGeneratePdf = async (student: StudentResult, signatures?: { teacherSig: string | null; directorSig: string | null; parentSig: string | null }) => {
     setGeneratingPdf(student.id);
     try {
       // ⭐ Call backend PDF generation endpoint (same pattern as Module Élèves)
@@ -410,9 +410,9 @@ function BulletinsContent() {
         lowestAverage: bulletinData!.results.length > 0 ? Math.min(...bulletinData!.results.map(r => r.generalAverage || 0)) : null,
         totalStudents: bulletinData!.results.length,
         appreciationGlobale: student.appreciationGlobale,
-        teacherSignature: teacherSig,
-        directorSignature: directorSig,
-        parentSignature: parentSig,
+        teacherSignature: signatures?.teacherSig ?? null,
+        directorSignature: signatures?.directorSig ?? null,
+        parentSignature: signatures?.parentSig ?? null,
       };
 
       const response = await apiClient.post('/institutional-exams/bulletins/generate-pdf', payload, {
@@ -577,7 +577,7 @@ function BulletinsContent() {
                       selectedClassName={selectedClassName}
                       selectedEvalTypeCode={selectedEvalTypeCode}
                       selectedEvalTypeName={selectedEvalTypeName}
-                      onGeneratePdf={() => handleGeneratePdf(student)}
+                      onGeneratePdf={(sigs) => handleGeneratePdf(student, sigs)}
                       generatingPdf={generatingPdf === student.id}
                     />
                   </div>
@@ -607,11 +607,15 @@ function BulletinTwoPage({
   selectedClassName: string;
   selectedEvalTypeCode: string;
   selectedEvalTypeName: string;
-  onGeneratePdf: () => void;
+  onGeneratePdf: (signatures: { teacherSig: string | null; directorSig: string | null; parentSig: string | null }) => void;
   generatingPdf: boolean;
 }) {
   const [page, setPage] = useState<1 | 2>(1);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
+  // ⭐ Signature state (lifted from BulletinPage2 so it's accessible in onGeneratePdf)
+  const [teacherSig, setTeacherSig] = useState<string | null>(null);
+  const [directorSig, setDirectorSig] = useState<string | null>(null);
+  const [parentSig, setParentSig] = useState<string | null>(null);
 
   // ⭐ Only trigger page flip if horizontal swipe is dominant (not vertical scroll)
   //    AND the touch didn't start inside a scrollable table
@@ -678,14 +682,14 @@ function BulletinTwoPage({
               <BulletinPrimairePage1 student={student} bulletinData={bulletinData} />
             )
           ) : (
-            <BulletinPage2 student={student} isMaternelle={isMaternelle} />
+            <BulletinPage2 student={student} isMaternelle={isMaternelle} signatures={{ teacherSig, directorSig, parentSig, setTeacherSig, setDirectorSig, setParentSig }} />
           )}
         </div>
       </div>
 
       {/* PDF button */}
       <div className="flex justify-end">
-        <Button onClick={onGeneratePdf} disabled={generatingPdf} className="bg-blue-600 hover:bg-blue-700 text-white text-sm">
+        <Button onClick={() => onGeneratePdf({ teacherSig, directorSig, parentSig })} disabled={generatingPdf} className="bg-blue-600 hover:bg-blue-700 text-white text-sm">
           {generatingPdf ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Génération…</> : <><Download className="w-4 h-4 mr-2" />Générer PDF</>}
         </Button>
       </div>
@@ -866,17 +870,14 @@ function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResu
 
 // ─── Page 2: Appréciations + Signatures (Maternelle + Primaire) ────────────
 
-function BulletinPage2({ student, isMaternelle }: { student: StudentResult; isMaternelle: boolean }) {
+function BulletinPage2({ student, isMaternelle, signatures }: { student: StudentResult; isMaternelle: boolean; signatures: { teacherSig: string | null; directorSig: string | null; parentSig: string | null; setTeacherSig: (v: string | null) => void; setDirectorSig: (v: string | null) => void; setParentSig: (v: string | null) => void } }) {
   // ⭐ Rich text state for each editable zone
   const [teacherAnalysis, setTeacherAnalysis] = useState('');
   const [attitudes, setAttitudes] = useState({
     assiduite: '', discipline: '', defaults: '', qualites: '',
   });
   const [parentResponse, setParentResponse] = useState('');
-  // ⭐ Signature state
-  const [teacherSig, setTeacherSig] = useState<string | null>(null);
-  const [directorSig, setDirectorSig] = useState<string | null>(null);
-  const [parentSig, setParentSig] = useState<string | null>(null);
+  // ⭐ Signatures are now managed by parent (BulletinTwoPage)
 
   return (
     <div className="space-y-3">
@@ -968,7 +969,7 @@ function BulletinPage2({ student, isMaternelle }: { student: StudentResult; isMa
               <SignatureCanvas
                 width={280}
                 height={100}
-                onSignatureChange={setTeacherSig}
+                onSignatureChange={signatures.setTeacherSig}
                 placeholder="Signature de l'enseignant"
               />
             </div>
@@ -979,7 +980,7 @@ function BulletinPage2({ student, isMaternelle }: { student: StudentResult; isMa
               <SignatureCanvas
                 width={280}
                 height={100}
-                onSignatureChange={setDirectorSig}
+                onSignatureChange={signatures.setDirectorSig}
                 placeholder="Signature du Directeur"
               />
             </div>
@@ -990,7 +991,7 @@ function BulletinPage2({ student, isMaternelle }: { student: StudentResult; isMa
               <SignatureCanvas
                 width={280}
                 height={100}
-                onSignatureChange={setParentSig}
+                onSignatureChange={signatures.setParentSig}
                 placeholder="Signature des parents"
               />
             </div>

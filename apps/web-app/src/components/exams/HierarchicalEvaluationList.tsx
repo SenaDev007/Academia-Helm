@@ -66,6 +66,15 @@ export function HierarchicalEvaluationList({
       }
       map.get(key)!.evaluations.push(g);
     }
+    // ⭐ Trier les évaluations par type: EM1 → EM2 → EC
+    const EVAL_ORDER = ['EM1', 'EM2', 'EC', 'DV', 'INT', 'COMP', 'EB', 'EP', 'ORAL'];
+    for (const trim of map.values()) {
+      trim.evaluations.sort((a, b) => {
+        const idxA = EVAL_ORDER.indexOf(a.evaluationTypeCode?.toUpperCase() || '');
+        const idxB = EVAL_ORDER.indexOf(b.evaluationTypeCode?.toUpperCase() || '');
+        return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
+      });
+    }
     // Trier par nom de période (Trimestre 1, 2, 3)
     return Array.from(map.values()).sort((a, b) =>
       a.periodName.localeCompare(b.periodName, 'fr')

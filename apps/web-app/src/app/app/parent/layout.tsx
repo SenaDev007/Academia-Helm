@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LogoutModal } from "@/components/auth/LogoutModal";
+import AcademicYearSelector from "@/components/pilotage/AcademicYearSelector";
 
 const PARENT_MODULES = [
   { path: "/app/parent", label: "Tableau de bord", icon: LayoutDashboard },
@@ -213,8 +214,8 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
               {currentModuleLabel}
             </h1>
           </div>
-          <div className="text-xs sm:text-sm text-slate-500 flex-shrink-0">
-            {academicYear?.label || ""}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <AcademicYearSelector />
           </div>
         </header>
 

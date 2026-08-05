@@ -15,6 +15,7 @@ import {
   Query,
   UseGuards,
   BadRequestException,
+  Headers,
 } from '@nestjs/common';
 import { ExamsPrismaService } from './exams-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -127,11 +128,15 @@ export class ExamsPrismaController {
   @Get('averages')
   async getAverages(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
     @Query('classId') classId: string,
     @Query('periodId') periodId: string,
     @Query('academicYearId') academicYearId: string,
   ) {
-    return this.examsService.getAverages(tenantId, classId, periodId, academicYearId);
+    // ⭐ Robust tenantId resolution
+    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
+    return this.examsService.getAverages(resolvedTenantId, classId, periodId, academicYearId);
   }
 
   @Get('bulletins')
@@ -147,10 +152,14 @@ export class ExamsPrismaController {
   @Post('calculate-averages')
   async calculateAverages(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
     @Body() body: CalculateAveragesDto,
   ) {
+    // ⭐ Robust tenantId resolution: @TenantId() → user.tenantId → x-tenant-id header
+    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
     return this.examsService.calculateAverages(
-      tenantId,
+      resolvedTenantId,
       body.classId,
       body.periodId,
       body.academicYearId,
@@ -172,10 +181,11 @@ export class ExamsPrismaController {
   async calculateEvaluationAverages(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
+    @Headers() headers: any,
     @Body() body: CalculateEvaluationAveragesDto,
   ) {
-    // ⭐ Fallback: if @TenantId() returns undefined, use user.tenantId from JWT
-    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id;
+    // ⭐ Robust tenantId resolution: @TenantId() → user.tenantId → x-tenant-id header
+    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
     if (!resolvedTenantId) {
       throw new BadRequestException('Tenant ID non résolu — veuillez vous reconnecter.');
     }

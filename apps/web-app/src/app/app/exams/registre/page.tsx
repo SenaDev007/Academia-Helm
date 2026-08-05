@@ -32,6 +32,8 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { academicSettingsService } from '@/services/academic-settings.service';
+import { institutionalExamsService } from '@/services/institutional-exams.service';
+import apiClient from '@/lib/api/client';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules, useExamScope } from '../layout';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
@@ -101,10 +103,9 @@ function RegistreContent() {
   const loadClasses = useCallback(async () => {
     if (!schoolLevelUuid) return;
     try {
-      // ✅ FIX: use /api/all-classes + client-side filter (same as evaluations page)
-      // /api/classes with ?schoolLevelId= fails because of PaginationDto.forbidNonWhitelisted
-      const res = await fetch('/api/all-classes', { credentials: 'include' });
-      const data = await res.json();
+      // ✅ Use apiClient (NOT fetch) to include auth headers automatically
+      const res = await apiClient.get(`/all-classes`);
+      const data = res.data;
       const allClasses = Array.isArray(data) ? data : (data?.items || []);
 
       // Filter by school level UUID
@@ -150,14 +151,13 @@ function RegistreContent() {
     setLoading(true);
     try {
       // Récupérer les matières de la classe (FR only if language filter)
-      // ⭐ Use /api/subjects (NOT /api/pedagogy/subjects which 404s)
-      const subjectsRes = await fetch(
-        `/api/subjects?schoolLevelId=${schoolLevelUuid || ''}&academicYearId=${academicYear.id}`,
-        { credentials: 'include' }
-      );
+      // ⭐ Use apiClient (NOT fetch) to include auth headers automatically
       let subjectList: any[] = [];
-      if (subjectsRes.ok) {
-        const subjectsData = await subjectsRes.json();
+      try {
+        const subjectsRes = await apiClient.get(`/subjects`, {
+          params: { schoolLevelId: schoolLevelUuid || undefined, academicYearId: academicYear.id },
+        });
+        const subjectsData = subjectsRes.data;
         subjectList = Array.isArray(subjectsData) ? subjectsData : (subjectsData?.items || []);
         // ⭐ Filter subjects by language (FR only if user is on FR track)
         if (language) {
@@ -165,18 +165,25 @@ function RegistreContent() {
             !s.language || s.language === language || s.language === 'FR'
           );
         }
-      } else {
-        console.warn('Subjects endpoint failed, will derive from evaluations');
+      } catch (err) {
+        console.warn('Subjects endpoint failed, will derive from evaluations:', err);
       }
       setSubjects(subjectList);
 
       // Récupérer les évaluations de la classe pour cette année
-      const gradesRes = await fetch(
-        `/api/exams/evaluations?academicYearId=${academicYear.id}&classId=${selectedClassId}${language ? `&language=${language}` : ''}`,
-        { credentials: 'include' }
-      );
-      const evalsData = await gradesRes.json();
-      const evaluations = Array.isArray(evalsData) ? evalsData : (evalsData?.items || []);
+      // ⭐ Use institutionalExamsService (apiClient with auth)
+      let evaluations: any[] = [];
+      try {
+        evaluations = await institutionalExamsService.getEvaluations({
+          academicYearId: academicYear.id,
+          classId: selectedClassId,
+          ...(language ? { language } : {}),
+        });
+        evaluations = Array.isArray(evaluations) ? evaluations : [];
+      } catch (err) {
+        console.error('Failed to load evaluations:', err);
+        evaluations = [];
+      }
 
       // ⭐ If subjects endpoint failed, derive subjects from evaluations
       if (subjectList.length === 0 && evaluations.length > 0) {
@@ -207,13 +214,8 @@ function RegistreContent() {
       await Promise.all(
         frEvaluations.map(async (ev: any) => {
           try {
-            const r = await fetch(`/api/institutional-exams/grades/evaluation/${ev.id}`, { credentials: 'include' });
-            if (r.ok) {
-              const data = await r.json();
-              evalGradesMap.set(ev.id, Array.isArray(data) ? data : []);
-            } else {
-              evalGradesMap.set(ev.id, []);
-            }
+            const data = await institutionalExamsService.getGradingSheet(ev.id);
+            evalGradesMap.set(ev.id, Array.isArray(data) ? data : []);
           } catch {
             evalGradesMap.set(ev.id, []);
           }
@@ -240,11 +242,10 @@ function RegistreContent() {
       let students = Array.from(studentMap.values());
       if (students.length === 0) {
         try {
-          const studentsRes = await fetch(
-            `/api/students?classId=${selectedClassId}&academicYearId=${academicYear.id}`,
-            { credentials: 'include' }
-          );
-          const studentsData = await studentsRes.json();
+          const studentsRes = await apiClient.get(`/students`, {
+            params: { classId: selectedClassId, academicYearId: academicYear.id },
+          });
+          const studentsData = studentsRes.data;
           students = Array.isArray(studentsData) ? studentsData : (studentsData?.data || []);
         } catch { students = []; }
       }

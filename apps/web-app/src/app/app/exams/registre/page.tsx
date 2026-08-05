@@ -150,17 +150,23 @@ function RegistreContent() {
     setLoading(true);
     try {
       // Récupérer les matières de la classe (FR only if language filter)
+      // ⭐ Use /api/subjects (NOT /api/pedagogy/subjects which 404s)
       const subjectsRes = await fetch(
-        `/api/pedagogy/subjects?schoolLevelId=${schoolLevelUuid || ''}&academicYearId=${academicYear.id}`,
+        `/api/subjects?schoolLevelId=${schoolLevelUuid || ''}&academicYearId=${academicYear.id}`,
         { credentials: 'include' }
       );
-      const subjectsData = await subjectsRes.json();
-      let subjectList = Array.isArray(subjectsData) ? subjectsData : (subjectsData?.items || []);
-      // ⭐ Filter subjects by language (FR only if user is on FR track)
-      if (language) {
-        subjectList = subjectList.filter((s: any) =>
-          !s.language || s.language === language || s.language === 'FR'
-        );
+      let subjectList: any[] = [];
+      if (subjectsRes.ok) {
+        const subjectsData = await subjectsRes.json();
+        subjectList = Array.isArray(subjectsData) ? subjectsData : (subjectsData?.items || []);
+        // ⭐ Filter subjects by language (FR only if user is on FR track)
+        if (language) {
+          subjectList = subjectList.filter((s: any) =>
+            !s.language || s.language === language || s.language === 'FR'
+          );
+        }
+      } else {
+        console.warn('Subjects endpoint failed, will derive from evaluations');
       }
       setSubjects(subjectList);
 
@@ -172,9 +178,28 @@ function RegistreContent() {
       const evalsData = await gradesRes.json();
       const evaluations = Array.isArray(evalsData) ? evalsData : (evalsData?.items || []);
 
+      // ⭐ If subjects endpoint failed, derive subjects from evaluations
+      if (subjectList.length === 0 && evaluations.length > 0) {
+        const subjectMap = new Map<string, any>();
+        for (const ev of evaluations) {
+          if (ev.subjectId && !subjectMap.has(ev.subjectId)) {
+            subjectMap.set(ev.subjectId, {
+              id: ev.subjectId,
+              name: ev.subject?.name || ev.subjectName || 'Matière',
+              code: ev.subject?.code || ev.subjectCode || '',
+              language: ev.subject?.language || 'FR',
+            });
+          }
+        }
+        subjectList = Array.from(subjectMap.values());
+        setSubjects(subjectList);
+      }
+
       // ⭐ Filter evaluations to keep only those for FR subjects (matching subjectList)
       const subjectIds = new Set(subjectList.map((s: any) => s.id));
-      const frEvaluations = evaluations.filter((ev: any) => subjectIds.has(ev.subjectId));
+      const frEvaluations = evaluations.filter((ev: any) =>
+        subjectIds.size === 0 || subjectIds.has(ev.subjectId)
+      );
 
       // ⭐ Récupérer les notes pour chaque évaluation via l'API grades
       // (l'endpoint /institutional-exams/grades/evaluation/:id retourne la fiche complète)

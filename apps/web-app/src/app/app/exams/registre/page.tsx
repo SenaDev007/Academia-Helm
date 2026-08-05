@@ -86,6 +86,7 @@ export default function RegistrePage() {
 // ─── Content (client component with useSearchParams) ────────────────────────
 
 function RegistreContent() {
+  const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   const { academicYear } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();

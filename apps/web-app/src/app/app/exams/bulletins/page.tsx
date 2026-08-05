@@ -38,6 +38,7 @@ import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules, useExamScope } from '../layout';
 import { cn } from '@/lib/utils';
 import { RichTextEditor } from '@/components/ui/RichTextEditor';
+import { SignatureCanvas } from '@/components/ui/SignatureCanvas';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -379,7 +380,7 @@ function BulletinsContent() {
     try {
       const printWindow = window.open('', '_blank');
       if (!printWindow) { toastError('Erreur', { description: 'Veuillez autoriser les popups' }); return; }
-      const html = generateBulletinHtml(student, bulletinData!, school, academicYear, periods, selectedPeriodId, isMaternelle);
+      const html = generateBulletinHtml(student, bulletinData!, school, academicYear, periods, selectedPeriodId, isMaternelle, selectedEvalTypeCode, selectedEvalTypeName, selectedClassName);
       printWindow.document.write(html);
       printWindow.document.close();
       setTimeout(() => printWindow.print(), 500);
@@ -565,15 +566,27 @@ function BulletinTwoPage({
   generatingPdf: boolean;
 }) {
   const [page, setPage] = useState<1 | 2>(1);
-  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
 
-  const handleTouchStart = (e: React.TouchEvent) => setTouchStart(e.touches[0].clientX);
+  // ⭐ Only trigger page flip if horizontal swipe is dominant (not vertical scroll)
+  //    AND the touch didn't start inside a scrollable table
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const target = e.target as HTMLElement;
+    // Don't track touch if it started inside a scrollable element (table, editor, etc.)
+    if (target.closest('table') || target.closest('[contenteditable]') || target.closest('.overflow-x-auto')) {
+      setTouchStart(null);
+      return;
+    }
+    setTouchStart({ x: e.touches[0].clientX, y: e.touches[0].clientY });
+  };
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (touchStart === null) return;
-    const diff = touchStart - e.changedTouches[0].clientX;
-    if (Math.abs(diff) > 50) {
-      if (diff > 0 && page === 1) setPage(2);
-      if (diff < 0 && page === 2) setPage(1);
+    const diffX = touchStart.x - e.changedTouches[0].clientX;
+    const diffY = touchStart.y - e.changedTouches[0].clientY;
+    // Only flip if horizontal movement is significantly larger than vertical
+    if (Math.abs(diffX) > 80 && Math.abs(diffX) > Math.abs(diffY) * 1.5) {
+      if (diffX > 0 && page === 1) setPage(2);
+      if (diffX < 0 && page === 2) setPage(1);
     }
     setTouchStart(null);
   };
@@ -644,19 +657,19 @@ function BulletinMaternellePage1({ student, bulletinData }: { student: StudentRe
         <h4 className="text-xs font-bold text-slate-900 uppercase">Évaluation Sommative Mensuelle</h4>
         <p className="text-[10px] text-slate-500">(à remplir après avoir observé l'enfant)</p>
       </div>
-      <table className="w-full border-collapse text-[10px]" style={{ border: '2px solid #1e293b' }}>
+      <table className="w-full border-collapse text-[10px]" style={{ border: '2px solid #0A2A5E' }}>
         <thead>
-          <tr className="bg-slate-800 text-white">
-            <th rowSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '120px' }}>Matière</th>
-            <th colSpan={3} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center">Résultats</th>
-            <th rowSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '80px' }}>Appréciation enseignant</th>
-            <th rowSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '60px' }}>Visa Directeur</th>
-            <th rowSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '60px' }}>Visa Parents</th>
+          <tr className="text-white" style={{ backgroundColor: '#0A2A5E' }}>
+            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '120px', borderColor: '#0D3B85' }}>Matière</th>
+            <th colSpan={3} className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Résultats</th>
+            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '80px', borderColor: '#0D3B85' }}>Appréciation enseignant</th>
+            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '60px', borderColor: '#0D3B85' }}>Visa Directeur</th>
+            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '60px', borderColor: '#0D3B85' }}>Visa Parents</th>
           </tr>
-          <tr className="bg-slate-700 text-white">
-            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center">TS</th>
-            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center">S</th>
-            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center">PS</th>
+          <tr className="text-white" style={{ backgroundColor: '#0D3B85' }}>
+            <th className="border px-1 py-0.5 font-bold text-center" style={{ borderColor: '#114FC4' }}>TS</th>
+            <th className="border px-1 py-0.5 font-bold text-center" style={{ borderColor: '#114FC4' }}>S</th>
+            <th className="border px-1 py-0.5 font-bold text-center" style={{ borderColor: '#114FC4' }}>PS</th>
           </tr>
         </thead>
         <tbody>
@@ -721,25 +734,25 @@ function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResu
       <div className="text-center mb-2">
         <h4 className="text-xs font-bold text-slate-900 uppercase">I — Connaissance et Habiletés</h4>
       </div>
-      <table className="w-full border-collapse text-[10px]" style={{ border: '2px solid #1e293b' }}>
+      <table className="w-full border-collapse text-[10px]" style={{ border: '2px solid #0A2A5E' }}>
         <thead>
-          <tr className="bg-slate-800 text-white">
-            <th rowSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-left" style={{ minWidth: '120px' }}>Champs de formation</th>
-            <th rowSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center w-12">Note min.</th>
-            <th className="border border-slate-600 px-1 py-1 font-bold uppercase text-center">CM</th>
-            <th className="border border-slate-600 px-1 py-1 font-bold uppercase text-center">CP</th>
-            <th rowSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center w-12">Total /20</th>
-            <th colSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center">Maîtrise min.</th>
-            <th colSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center">Seuil réussite</th>
-            <th rowSpan={2} className="border border-slate-600 px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '60px' }}>Appréciation</th>
+          <tr className="text-white" style={{ backgroundColor: '#0A2A5E' }}>
+            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-left" style={{ minWidth: '120px', borderColor: '#0D3B85' }}>Champs de formation</th>
+            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center w-12" style={{ borderColor: '#0D3B85' }}>Note min.</th>
+            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>CM</th>
+            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>CP</th>
+            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center w-12" style={{ borderColor: '#0D3B85' }}>Total /20</th>
+            <th colSpan={2} className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Maîtrise min.</th>
+            <th colSpan={2} className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Seuil réussite</th>
+            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '60px', borderColor: '#0D3B85' }}>Appréciation</th>
           </tr>
-          <tr className="bg-slate-700 text-white">
-            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center text-[8px]">/18</th>
-            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center text-[8px]">/02</th>
-            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center text-[8px]">Oui</th>
-            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center text-[8px]">Non</th>
-            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center text-[8px]">Oui</th>
-            <th className="border border-slate-600 px-1 py-0.5 font-bold text-center text-[8px]">Non</th>
+          <tr className="text-white" style={{ backgroundColor: '#0D3B85' }}>
+            <th className="border px-1 py-0.5 font-bold text-center text-[8px]" style={{ borderColor: '#114FC4' }}>/18</th>
+            <th className="border px-1 py-0.5 font-bold text-center text-[8px]" style={{ borderColor: '#114FC4' }}>/02</th>
+            <th className="border px-1 py-0.5 font-bold text-center text-[8px]" style={{ borderColor: '#114FC4' }}>Oui</th>
+            <th className="border px-1 py-0.5 font-bold text-center text-[8px]" style={{ borderColor: '#114FC4' }}>Non</th>
+            <th className="border px-1 py-0.5 font-bold text-center text-[8px]" style={{ borderColor: '#114FC4' }}>Oui</th>
+            <th className="border px-1 py-0.5 font-bold text-center text-[8px]" style={{ borderColor: '#114FC4' }}>Non</th>
           </tr>
         </thead>
         <tbody>
@@ -815,6 +828,10 @@ function BulletinPage2({ student, isMaternelle }: { student: StudentResult; isMa
     assiduite: '', discipline: '', defaults: '', qualites: '',
   });
   const [parentResponse, setParentResponse] = useState('');
+  // ⭐ Signature state
+  const [teacherSig, setTeacherSig] = useState<string | null>(null);
+  const [directorSig, setDirectorSig] = useState<string | null>(null);
+  const [parentSig, setParentSig] = useState<string | null>(null);
 
   return (
     <div className="space-y-3">
@@ -896,24 +913,42 @@ function BulletinPage2({ student, isMaternelle }: { student: StudentResult; isMa
         )}
       </div>
 
-      {/* Signatures */}
-      <div className="grid grid-cols-3 gap-2 mt-3">
-        <div className="text-center">
-          <div className="border-t border-slate-300 pt-1">
-            <p className="text-[10px] font-bold text-slate-700">Titulaire de la classe</p>
-            <div className="h-12 flex items-center justify-center text-[9px] text-slate-400 italic">Signature</div>
+      {/* Signatures électroniques */}
+      <div className="bg-white rounded-lg p-3 border border-slate-200">
+        <h4 className="text-xs font-bold text-slate-900 uppercase mb-3">Signatures</h4>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="text-center">
+            <p className="text-[10px] font-bold text-slate-700 mb-1">Titulaire de la classe</p>
+            <div className="border border-slate-300 rounded-lg p-1 bg-slate-50/50">
+              <SignatureCanvas
+                width={280}
+                height={100}
+                onSignatureChange={setTeacherSig}
+                placeholder="Signature de l'enseignant"
+              />
+            </div>
           </div>
-        </div>
-        <div className="text-center">
-          <div className="border-t border-slate-300 pt-1">
-            <p className="text-[10px] font-bold text-slate-700">Le Directeur(trice)</p>
-            <div className="h-12 flex items-center justify-center text-[9px] text-slate-400 italic">Visa</div>
+          <div className="text-center">
+            <p className="text-[10px] font-bold text-slate-700 mb-1">Le Directeur(trice)</p>
+            <div className="border border-slate-300 rounded-lg p-1 bg-slate-50/50">
+              <SignatureCanvas
+                width={280}
+                height={100}
+                onSignatureChange={setDirectorSig}
+                placeholder="Signature du Directeur"
+              />
+            </div>
           </div>
-        </div>
-        <div className="text-center">
-          <div className="border-t border-slate-300 pt-1">
-            <p className="text-[10px] font-bold text-slate-700">Les Parents</p>
-            <div className="h-12 flex items-center justify-center text-[9px] text-slate-400 italic">Nom, Prénoms et Signature</div>
+          <div className="text-center">
+            <p className="text-[10px] font-bold text-slate-700 mb-1">Les Parents</p>
+            <div className="border border-slate-300 rounded-lg p-1 bg-slate-50/50">
+              <SignatureCanvas
+                width={280}
+                height={100}
+                onSignatureChange={setParentSig}
+                placeholder="Signature des parents"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -942,8 +977,14 @@ function generateBulletinHtml(
   periods: any[],
   selectedPeriodId: string,
   isMaternelle: boolean,
+  evalTypeCode?: string,
+  evalTypeName?: string,
+  className?: string,
 ): string {
   const periodName = periods.find(p => p.id === selectedPeriodId)?.name || '';
+  // Generate a verification token for QR code
+  const qrToken = `${student.id}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent('BULLETIN:' + qrToken + ':' + student.id)}`;
 
   const subjectRows = data.subjects.map((subject, idx) => {
     const score = student.subjectScores[subject.id];
@@ -951,49 +992,116 @@ function generateBulletinHtml(
     if (score?.isAbsent) {
       scoreCell = '<span style="color:red;font-weight:bold">ABS</span>';
     } else if (isMaternelle) {
-      const color = score?.qualitativeCode === 'TS' ? 'green' : score?.qualitativeCode === 'S' ? 'blue' : score?.qualitativeCode === 'PS' ? 'orange' : 'gray';
+      const color = score?.qualitativeCode === 'TS' ? '#059669' : score?.qualitativeCode === 'S' ? '#2563eb' : score?.qualitativeCode === 'PS' ? '#d97706' : '#666';
       scoreCell = `<span style="background:${color}20;color:${color};padding:2px 8px;border-radius:4px;font-weight:bold">${score?.qualitativeCode || '—'}</span>`;
     } else {
       const val = score?.score !== null ? Number(score.score).toFixed(2) : '—';
-      const color = (score?.score || 0) >= 10 ? 'green' : 'red';
+      const color = (score?.score || 0) >= 10 ? '#059669' : '#dc2626';
       scoreCell = `<span style="color:${color};font-weight:bold">${val}</span>`;
     }
     return `<tr><td style="border:1px solid #ccc;padding:4px 8px;text-align:center">${idx + 1}</td><td style="border:1px solid #ccc;padding:4px 8px;font-weight:500">${subject.name}</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center">${scoreCell}</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:center;font-size:11px">${score?.appreciation || '—'}</td></tr>`;
   }).join('');
 
   return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Bulletin - ${student.studentName}</title><style>
-  @page { size: A4 landscape; margin: 1cm; }
-  body { font-family: 'Times New Roman', serif; margin: 0; padding: 20px; }
-  .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 15px; }
-  .header h1 { font-size: 14px; margin: 0; }
-  .header .school-info { font-size: 11px; color: #555; }
-  .student-info { display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 11px; }
-  table { width: 100%; border-collapse: collapse; font-size: 11px; }
-  th { background: #f0f0f0; padding: 6px 8px; border: 1px solid #ccc; text-align: center; font-size: 10px; }
-  .synthesis { display: flex; justify-content: space-around; margin-top: 15px; }
-  .synthesis div { text-align: center; padding: 8px 16px; border: 1px solid #ddd; border-radius: 4px; }
-  .synthesis .label { font-size: 9px; color: #666; text-transform: uppercase; }
-  .synthesis .value { font-size: 16px; font-weight: bold; }
-  .signatures { display: flex; justify-content: space-between; margin-top: 40px; font-size: 11px; }
+  @page { size: A4 landscape; margin: 1.2cm; }
+  body { font-family: 'Times New Roman', serif; margin: 0; padding: 0; color: #1a1a1a; }
+  /* ─── Official header (like Module Élèves) ─── */
+  .official-header { display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 3px solid #0A2A5E; padding-bottom: 10px; margin-bottom: 12px; }
+  .header-left { display: flex; align-items: center; gap: 8px; }
+  .benin-flag { width: 24px; height: 16px; display: inline-block; vertical-align: middle; }
+  .benin-flag .green { float: left; width: 33%; height: 100%; background: #00803D; }
+  .benin-flag .yellow { float: right; width: 67%; height: 50%; background: #FCDE16; }
+  .benin-flag .red { float: right; width: 67%; height: 50%; background: #E8112D; }
+  .header-center { text-align: center; flex: 1; }
+  .header-center .republique { font-size: 11px; font-weight: bold; }
+  .header-center .ministry { font-size: 8px; margin-top: 2px; }
+  .header-center .school-name { font-size: 13px; font-weight: bold; color: #0A2A5E; margin-top: 4px; }
+  .header-center .school-contact { font-size: 7px; color: #666; margin-top: 2px; font-style: italic; }
+  .header-right { text-align: right; }
+  .header-right img.logo { max-height: 50px; max-width: 50px; }
+  /* ─── Bulletin title ─── */
+  .bulletin-title { text-align: center; background: #0A2A5E; color: white; padding: 6px 12px; border-radius: 4px; margin-bottom: 10px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
+  /* ─── Student info ─── */
+  .student-info { display: flex; justify-content: space-between; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px 12px; margin-bottom: 10px; font-size: 10px; }
+  .student-info div { flex: 1; }
+  .student-info strong { color: #0A2A5E; }
+  /* ─── Table ─── */
+  table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  thead th { background: #0A2A5E; color: white; padding: 6px 8px; border: 1px solid #0D3B85; text-align: center; font-size: 9px; }
+  thead tr:nth-child(2) th { background: #0D3B85; }
+  tbody td { border: 1px solid #cbd5e1; padding: 4px 8px; }
+  tbody tr:nth-child(even) { background: #f8fafc; }
+  /* ─── Synthèse ─── */
+  .synthesis { display: flex; justify-content: space-around; margin-top: 12px; gap: 8px; }
+  .synthesis div { text-align: center; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 4px; flex: 1; background: #f8fafc; }
+  .synthesis .label { font-size: 8px; color: #64748b; text-transform: uppercase; font-weight: bold; }
+  .synthesis .value { font-size: 14px; font-weight: bold; margin-top: 2px; }
+  /* ─── Signatures ─── */
+  .signatures { display: flex; justify-content: space-between; margin-top: 30px; gap: 16px; }
+  .sig-box { flex: 1; text-align: center; border-top: 1px solid #94a3b8; padding-top: 6px; }
+  .sig-box .sig-label { font-size: 9px; font-weight: bold; color: #0A2A5E; }
+  .sig-box .sig-line { margin-top: 35px; font-size: 8px; color: #94a3b8; }
+  /* ─── QR Code ─── */
+  .qr-section { display: flex; justify-content: flex-end; margin-top: 15px; align-items: center; gap: 8px; }
+  .qr-section img { width: 60px; height: 60px; }
+  .qr-section .qr-text { font-size: 7px; color: #94a3b8; text-align: right; }
   </style></head><body>
-  <div class="header">
-    ${school?.logoUrl ? `<img src="${school.logoUrl}" style="height:50px;float:left" />` : ''}
-    <h1>${school?.schoolName || 'École'}</h1>
-    <div class="school-info">${school?.address || ''} · Tél: ${school?.phone || ''}</div>
-    <div class="school-info">Année scolaire: ${academicYear?.label || ''} · ${periodName}</div>
+
+  <!-- Official Header -->
+  <div class="official-header">
+    <div class="header-left">
+      <div class="benin-flag"><div class="green"></div><div class="yellow"></div><div class="red"></div></div>
+    </div>
+    <div class="header-center">
+      <div class="republique">République du Bénin</div>
+      <div class="ministry">Ministère des Enseignements Maternel et Primaire</div>
+      <div class="school-name">${school?.schoolName || 'Établissement'}</div>
+      <div class="school-contact">${school?.address || ''} · Tél: ${school?.phone || ''} · ${school?.email || ''}</div>
+    </div>
+    <div class="header-right">
+      ${school?.logoUrl ? `<img class="logo" src="${school.logoUrl}" />` : ''}
+    </div>
   </div>
+
+  <!-- Bulletin Title -->
+  <div class="bulletin-title">
+    Bulletin de ${evalTypeName || 'Évaluation'} ${evalTypeCode ? '(' + evalTypeCode + ')' : ''} — ${periodName} ${academicYear?.label || ''}
+  </div>
+
+  <!-- Student Info -->
   <div class="student-info">
-    <div><strong>Élève:</strong> ${student.studentName}</div>
-    <div><strong>Matricule:</strong> ${student.matricule || '—'}</div>
-    <div><strong>Rang:</strong> ${student.classRank}</div>
+    <div>Élève: <strong>${student.studentName}</strong></div>
+    <div>Matricule: <strong>${student.matricule || '—'}</strong></div>
+    <div>Classe: <strong>${className || '—'}</strong></div>
+    <div>Rang: <strong>${student.classRank}</strong></div>
   </div>
-  <table><thead><tr><th style="width:40px">N°</th><th style="text-align:left">Matière</th><th>${isMaternelle ? 'Appréciation' : 'Note /20'}</th><th>Observation</th></tr></thead><tbody>${subjectRows}</tbody></table>
+
+  <!-- Notes Table -->
+  <table>
+    <thead><tr><th style="width:30px">N°</th><th style="text-align:left">Matière</th><th>${isMaternelle ? 'Appréciation (TS/S/PS)' : 'Note /20'}</th><th>Observation</th></tr></thead>
+    <tbody>${subjectRows}</tbody>
+  </table>
+
+  <!-- Synthèse -->
   <div class="synthesis">
-    ${!isMaternelle ? `<div><div class="label">Moyenne</div><div class="value" style="color:blue">${student.generalAverage?.toFixed(2) || '—'}/20</div></div>` : ''}
-    <div><div class="label">Rang</div><div class="value">${student.classRank}</div></div>
-    <div><div class="label">${isMaternelle ? 'Appréciation' : 'Mention'}</div><div class="value" style="color:green;font-size:13px">${isMaternelle ? (student.appreciationGlobale || '—') : (student.generalAverage !== null ? (student.generalAverage >= 16 ? 'Très Bien' : student.generalAverage >= 14 ? 'Bien' : student.generalAverage >= 12 ? 'Assez Bien' : student.generalAverage >= 10 ? 'Passable' : 'Insuffisant') : '—')}</div></div>
-    <div><div class="label">Moy. classe</div><div class="value" style="color:orange">${data.stats.classAverage?.toFixed(2) || '—'}</div></div>
+    ${!isMaternelle ? `<div><div class="label">Moyenne</div><div class="value" style="color:#0A2A5E">${student.generalAverage?.toFixed(2) || '—'}/20</div></div>` : ''}
+    <div><div class="label">Rang</div><div class="value" style="color:#334155">${student.classRank}</div></div>
+    <div><div class="label">${isMaternelle ? 'Appréciation' : 'Mention'}</div><div class="value" style="color:#059669;font-size:12px">${isMaternelle ? (student.appreciationGlobale || '—') : (student.generalAverage !== null ? (student.generalAverage >= 16 ? 'Très Bien' : student.generalAverage >= 14 ? 'Bien' : student.generalAverage >= 12 ? 'Assez Bien' : student.generalAverage >= 10 ? 'Passable' : 'Insuffisant') : '—')}</div></div>
+    <div><div class="label">Moy. classe</div><div class="value" style="color:#CFA63A">${data.stats.classAverage?.toFixed(2) || '—'}</div></div>
   </div>
-  <div class="signatures"><div>Le Titulaire<br/><br/><br/>_________________</div><div>Le Directeur<br/><br/><br/>_________________</div><div>Les Parents<br/><br/><br/>_________________</div></div>
+
+  <!-- Signatures -->
+  <div class="signatures">
+    <div class="sig-box"><div class="sig-label">Titulaire de la classe</div><div class="sig-line">Signature</div></div>
+    <div class="sig-box"><div class="sig-label">Le Directeur(trice)</div><div class="sig-line">Visa</div></div>
+    <div class="sig-box"><div class="sig-label">Les Parents</div><div class="sig-line">Nom, Prénoms et Signature</div></div>
+  </div>
+
+  <!-- QR Code de vérification -->
+  <div class="qr-section">
+    <div class="qr-text">Code de vérification<br/>${qrToken.substring(0, 20)}…</div>
+    <img src="${qrUrl}" alt="QR Code vérification" />
+  </div>
+
   </body></html>`;
 }

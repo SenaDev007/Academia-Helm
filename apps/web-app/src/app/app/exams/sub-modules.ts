@@ -62,22 +62,16 @@ export const EXAMS_SUB_MODULES = [
     icon: ClipboardList
   },
   {
-    id: 'averages',
-    label: 'Moyennes',
-    href: '/app/exams/averages',
-    icon: Calculator
+    id: 'bulletins',
+    label: 'Bulletins',
+    href: '/app/exams/bulletins',
+    icon: FileText
   },
   {
     id: 'councils',
     label: 'Conseils de classe',
     href: '/app/exams/councils',
     icon: Users
-  },
-  {
-    id: 'bulletins',
-    label: 'Bulletins',
-    href: '/app/exams/bulletins',
-    icon: FileText
   },
   {
     id: 'analytics',

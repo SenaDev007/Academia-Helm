@@ -1,14 +1,6 @@
-import { 
-  Controller, 
-  Get, 
-  Post, 
-  Patch, 
-  Param, 
-  Query, 
-  Body, 
-  UseGuards, 
-  Res, 
-  ForbiddenException 
+import {
+  Controller, Get, Post, Patch, Param, Query, Body,
+  UseGuards, Res, ForbiddenException, Headers,
 } from '@nestjs/common';
 import { BulletinsService } from './services/bulletins.service';
 import { BulletinPdfService } from './services/bulletin-pdf.service';
@@ -21,6 +13,7 @@ import { Permissions } from '../../auth/decorators/permissions.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { AcademicYearId } from '../../common/decorators/academic-year-id.decorator';
 import { UserId } from '../../auth/decorators/user-id.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('institutional-exams/bulletins')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
@@ -96,5 +89,80 @@ export class BulletinsController {
     });
 
     res.end(buffer);
+  }
+
+  /**
+   * ⭐ POST /institutional-exams/bulletins/generate-pdf
+   *
+   * Génère un PDF de bulletin à partir des données envoyées par le frontend.
+   * Le frontend calcule les moyennes (même pattern que registre) et envoie
+   * les données structurées au backend qui génère le PDF professionnel.
+   *
+   * Body: BulletinPdfData (toutes les données du bulletin)
+   * Response: PDF binaire (application/pdf)
+   */
+  @Post('generate-pdf')
+  @Permissions('exams.read')
+  async generateBulletinPdf(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+    @Body() body: any,
+    @Res() res: Response,
+  ) {
+    // ⭐ Robust tenantId resolution (same pattern as exams-prisma.controller)
+    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
+
+    // Récupérer le branding du tenant (nom école, logo, etc.)
+    const branding = await this.getTenantBranding(resolvedTenantId);
+
+    // Fusionner les données du frontend avec le branding
+    const pdfData = {
+      ...body,
+      schoolName: body.schoolName || branding.schoolName,
+      schoolLogo: body.schoolLogo || branding.schoolLogo,
+      schoolAddress: body.schoolAddress || branding.schoolAddress,
+      schoolPhone: body.schoolPhone || branding.schoolPhone,
+      schoolEmail: body.schoolEmail || branding.schoolEmail,
+      schoolSlogan: body.schoolSlogan || branding.schoolSlogan,
+    };
+
+    const buffer = await this.pdfService.generateBulletin(pdfData);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename=bulletin_${body.studentName || 'eleve'}.pdf`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  /**
+   * Récupère le branding du tenant (logo, nom, contact).
+   */
+  private async getTenantBranding(tenantId: string) {
+    try {
+      const profile = await this.prisma.tenantIdentityProfile.findFirst({
+        where: { tenantId, isActive: true },
+        select: { schoolName: true, logoUrl: true, address: true, phonePrimary: true, email: true, slogan: true },
+      });
+
+      if (profile?.schoolName) {
+        const apiBaseUrl = 'https://api.academiahelm.com';
+        return {
+          schoolName: profile.schoolName,
+          schoolLogo: profile.logoUrl ? `${apiBaseUrl}/api/tenants/${tenantId}/logo` : null,
+          schoolAddress: profile.address,
+          schoolPhone: profile.phonePrimary,
+          schoolEmail: profile.email,
+          schoolSlogan: profile.slogan,
+        };
+      }
+
+      const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
+      return { schoolName: tenant?.name || 'Établissement' };
+    } catch {
+      return { schoolName: 'Établissement' };
+    }
   }
 }

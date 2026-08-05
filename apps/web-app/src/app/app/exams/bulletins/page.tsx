@@ -375,18 +375,63 @@ function BulletinsContent() {
     });
   };
 
-  const handleGeneratePdf = (student: StudentResult) => {
+  const handleGeneratePdf = async (student: StudentResult) => {
     setGeneratingPdf(student.id);
     try {
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) { toastError('Erreur', { description: 'Veuillez autoriser les popups' }); return; }
-      const html = generateBulletinHtml(student, bulletinData!, school, academicYear, periods, selectedPeriodId, isMaternelle, selectedEvalTypeCode, selectedEvalTypeName, selectedClassName);
-      printWindow.document.write(html);
-      printWindow.document.close();
-      setTimeout(() => printWindow.print(), 500);
+      // ⭐ Call backend PDF generation endpoint (same pattern as Module Élèves)
+      // Backend uses Puppeteer + official header (République, drapeau, ministère, école)
+      const payload = {
+        schoolName: school?.schoolName,
+        schoolLogo: school?.logoUrl,
+        schoolAddress: school?.address,
+        schoolPhone: school?.phone,
+        schoolEmail: school?.email,
+        schoolSlogan: school?.slogan,
+        academicYearName: academicYear?.label || '',
+        periodName: selectedPeriodName,
+        evaluationTypeName: selectedEvalTypeName,
+        evaluationTypeCode: selectedEvalTypeCode,
+        className: selectedClassName,
+        studentName: student.studentName,
+        studentMatricule: student.matricule,
+        studentGender: student.gender,
+        isMaternelle,
+        subjects: bulletinData!.subjects.map(s => ({
+          name: s.name,
+          score: student.subjectScores[s.id]?.score ?? null,
+          qualitativeCode: student.subjectScores[s.id]?.qualitativeCode ?? null,
+          isAbsent: student.subjectScores[s.id]?.isAbsent ?? false,
+          appreciation: student.subjectScores[s.id]?.appreciation ?? '—',
+        })),
+        generalAverage: student.generalAverage,
+        classRank: student.classRank,
+        classAverage: bulletinData!.stats.classAverage,
+        highestAverage: bulletinData!.results.length > 0 ? Math.max(...bulletinData!.results.map(r => r.generalAverage || 0)) : null,
+        lowestAverage: bulletinData!.results.length > 0 ? Math.min(...bulletinData!.results.map(r => r.generalAverage || 0)) : null,
+        totalStudents: bulletinData!.results.length,
+        appreciationGlobale: student.appreciationGlobale,
+        teacherSignature: teacherSig,
+        directorSignature: directorSig,
+        parentSignature: parentSig,
+      };
+
+      const response = await apiClient.post('/institutional-exams/bulletins/generate-pdf', payload, {
+        responseType: 'blob',
+      });
+
+      // Download the PDF
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = window.createElement('a');
+      link.href = url;
+      link.download = `bulletin_${student.studentName.replace(/\s+/g, '_')}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
       toastSuccess('Bulletin généré', { description: student.studentName });
     } catch (err: any) {
-      toastError('Erreur PDF', { description: err.message });
+      toastError('Erreur PDF', { description: err.response?.data?.message || err.message });
     } finally { setGeneratingPdf(null); }
   };
 

@@ -23,6 +23,7 @@ import {
   ArrowLeft, Loader2, CalendarCheck, Wallet, FileText, BookOpen,
   CheckCircle2, XCircle, Clock, Download, CreditCard, GraduationCap,
   Phone, Mail, RefreshCw,
+  ChevronDown, ChevronRight, Calendar, Award,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -41,7 +42,7 @@ import StudentAvatar from "@/components/parent/StudentAvatar";
 import { ParentPaymentHistory } from "@/components/parent/ParentPaymentHistory";
 import { PaymentSuccessBanner } from "@/components/parent/PaymentSuccessBanner";
 
-type Tab = "today" | "payments" | "results" | "attendance";
+type Tab = "today" | "attendance" | "payments" | "results";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
   PRESENT: { label: "Présent", color: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
@@ -139,9 +140,9 @@ export default function ParentChildDetailPage() {
 
   const tabs: { id: Tab; label: string; icon: any; color: string }[] = [
     { id: "today", label: "Suivi journalier", icon: CalendarCheck, color: "blue" },
+    { id: "attendance", label: "Assiduité", icon: CalendarCheck, color: "amber" },
     { id: "payments", label: "Scolarité", icon: Wallet, color: "emerald" },
     { id: "results", label: "Notes & Bulletins", icon: FileText, color: "purple" },
-    { id: "attendance", label: "Assiduité", icon: CalendarCheck, color: "amber" },
   ];
 
   return (
@@ -631,7 +632,7 @@ function PaymentsTab({ child }: { child: any }) {
 }
 
 // ============================================================================
-// ONGLET 3 : Notes & Bulletins
+// ONGLET 3 : Notes & Bulletins (avec sous-onglets Notes / Bulletins)
 // ============================================================================
 
 function ResultsTab({
@@ -643,8 +644,225 @@ function ResultsTab({
   resultsData: any[];
   schoolHeader: SchoolHeader;
 }) {
+  const [subTab, setSubTab] = useState<"notes" | "bulletins">("notes");
+  const [grades, setGrades] = useState<any[]>([]);
+  const [loadingGrades, setLoadingGrades] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const { academicYear } = useModuleContext();
 
+  // Load grades for "notes" sub-tab
+  useEffect(() => {
+    if (subTab !== "notes" || !child?.id || !academicYear?.id) return;
+    setLoadingGrades(true);
+    fetch(`/api/parent/grades/${child.id}?academicYearId=${academicYear.id}`, { credentials: "include" })
+      .then(r => r.json())
+      .then(data => setGrades(Array.isArray(data) ? data : []))
+      .catch(() => setGrades([]))
+      .finally(() => setLoadingGrades(false));
+  }, [subTab, child?.id, academicYear?.id]);
+
+  return (
+    <div className="space-y-4">
+      {/* Sub-tabs */}
+      <div className="flex items-center gap-2 border-b border-slate-200">
+        <button
+          onClick={() => setSubTab("notes")}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+            subTab === "notes"
+              ? "border-purple-600 text-purple-700"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          Notes et Résultats
+        </button>
+        <button
+          onClick={() => setSubTab("bulletins")}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+            subTab === "bulletins"
+              ? "border-purple-600 text-purple-700"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          <FileText className="w-4 h-4" />
+          Bulletins
+        </button>
+      </div>
+
+      {/* Notes sub-tab */}
+      {subTab === "notes" && (
+        <NotesSubTab grades={grades} loading={loadingGrades} child={child} />
+      )}
+
+      {/* Bulletins sub-tab */}
+      {subTab === "bulletins" && (
+        <BulletinsSubTab
+          resultsData={resultsData}
+          child={child}
+          schoolHeader={schoolHeader}
+          downloadingId={downloadingId}
+          setDownloadingId={setDownloadingId}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Notes Sub-Tab ──────────────────────────────────────────────────────────
+
+function NotesSubTab({ grades, loading, child }: { grades: any[]; loading: boolean; child: any }) {
+  const [expandedQuarters, setExpandedQuarters] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (grades.length > 0) {
+      setExpandedQuarters(new Set([grades[0].quarterId]));
+    }
+  }, [grades]);
+
+  const toggleQuarter = (qid: string) => {
+    setExpandedQuarters(prev => {
+      const next = new Set(prev);
+      if (next.has(qid)) next.delete(qid);
+      else next.add(qid);
+      return next;
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+        <span className="ml-3 text-sm text-slate-500">Chargement des notes…</span>
+      </div>
+    );
+  }
+
+  if (grades.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+        <FileText className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+        <p className="text-sm text-slate-500">Aucune note disponible pour cette période.</p>
+        <p className="text-xs text-slate-400 mt-1">
+          Les notes apparaîtront ici dès que l'enseignant aura saisi et validé les évaluations.
+        </p>
+      </div>
+    );
+  }
+
+  const isMaternelle = child?.schoolLevelCode === "MATERNELLE" || child?.levelName?.toUpperCase().includes("MATERNELLE");
+
+  return (
+    <div className="space-y-3">
+      {grades.map((quarter) => {
+        const isExpanded = expandedQuarters.has(quarter.quarterId);
+        return (
+          <div key={quarter.quarterId} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <button
+              onClick={() => toggleQuarter(quarter.quarterId)}
+              className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-500" /> : <ChevronRight className="w-5 h-5 text-slate-500" />}
+                <div className="text-left">
+                  <h3 className="text-sm font-bold text-slate-900">{quarter.quarterName}</h3>
+                  <p className="text-xs text-slate-500">{quarter.evaluations.length} évaluation(s)</p>
+                </div>
+              </div>
+            </button>
+            {isExpanded && (
+              <div className="border-t border-slate-100 divide-y divide-slate-100">
+                {quarter.evaluations.map((ev: any) => (
+                  <div key={ev.evaluationTypeId} className="p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-purple-100 text-purple-700 text-xs font-bold">
+                        {ev.evaluationTypeCode}
+                      </span>
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">{ev.evaluationTypeName}</div>
+                        {ev.evaluationDate && (
+                          <div className="text-xs text-slate-500 flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {format(new Date(ev.evaluationDate), "d MMM yyyy", { locale: fr })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-slate-50 text-xs uppercase text-slate-500">
+                            <th className="text-left px-3 py-2 font-semibold">Matière</th>
+                            <th className="text-center px-3 py-2 font-semibold">{isMaternelle ? "Appréciation" : "Note"}</th>
+                            {!isMaternelle && <th className="text-center px-3 py-2 font-semibold">Sur</th>}
+                            <th className="text-center px-3 py-2 font-semibold">Coef.</th>
+                            <th className="text-left px-3 py-2 font-semibold">Observation</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ev.subjects.map((s: any, i: number) => (
+                            <tr key={s.subjectId || i} className="border-t border-slate-100">
+                              <td className="px-3 py-2 font-medium text-slate-900">
+                                <div className="flex items-center gap-2">
+                                  <BookOpen className="w-3.5 h-3.5 text-slate-400" />
+                                  {s.subjectName}
+                                </div>
+                              </td>
+                              <td className="text-center px-3 py-2">
+                                {s.isAbsent ? (
+                                  <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700">ABS</span>
+                                ) : isMaternelle ? (
+                                  <span className={`inline-flex px-2 py-0.5 rounded text-xs font-bold ${
+                                    s.qualitativeCode === "TS" ? "bg-emerald-100 text-emerald-700" :
+                                    s.qualitativeCode === "S" ? "bg-blue-100 text-blue-700" :
+                                    s.qualitativeCode === "PS" ? "bg-amber-100 text-amber-700" : ""
+                                  }`}>
+                                    {s.qualitativeCode || "—"}
+                                  </span>
+                                ) : (
+                                  <span className={`font-bold ${(s.score || 0) >= 10 ? "text-emerald-700" : "text-red-600"}`}>
+                                    {s.score !== null ? Number(s.score).toFixed(2) : "—"}
+                                  </span>
+                                )}
+                              </td>
+                              {!isMaternelle && <td className="text-center px-3 py-2 text-slate-500">/{s.maxScore}</td>}
+                              <td className="text-center px-3 py-2 text-slate-500 text-xs">{s.coefficient}</td>
+                              <td className="px-3 py-2 text-slate-600 text-xs">
+                                <span className="inline-flex items-center gap-1">
+                                  <Award className="w-3 h-3" />
+                                  {s.appreciation}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Bulletins Sub-Tab ─────────────────────────────────────────────────────
+
+function BulletinsSubTab({
+  resultsData,
+  child,
+  schoolHeader,
+  downloadingId,
+  setDownloadingId,
+}: {
+  resultsData: any[];
+  child: any;
+  schoolHeader: SchoolHeader;
+  downloadingId: string | null;
+  setDownloadingId: (id: string | null) => void;
+}) {
   if (!resultsData || resultsData.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
@@ -692,7 +910,6 @@ function ResultsTab({
     <div className="space-y-4">
       {resultsData.map((rc) => (
         <div key={rc.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          {/* En-tête bulletin */}
           <div className="bg-purple-50 border-b border-purple-200 p-4 flex items-center justify-between">
             <div>
               <div className="font-bold text-slate-900">
@@ -725,8 +942,6 @@ function ResultsTab({
               Bulletin PDF
             </button>
           </div>
-
-          {/* Items par matière */}
           {rc.items && rc.items.length > 0 ? (
             <table className="w-full text-sm">
               <thead>

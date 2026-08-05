@@ -398,6 +398,7 @@ function RegistreDetailSheet({
     let totalBoys = 0, totalGirls = 0;
     let composedBoys = 0, composedGirls = 0;
     let reachedBoys = 0, reachedGirls = 0;
+    let notReachedBoys = 0, notReachedGirls = 0;
 
     rows.forEach((row) => {
       const isBoy = row.gender === 'M';
@@ -405,30 +406,39 @@ function RegistreDetailSheet({
       if (isBoy) totalBoys++;
       if (isGirl) totalGirls++;
 
+      // ⭐ Composed = au moins une note saisie (pas absent)
       const hasScore = sortedSubjects.some((subj) => {
         const s = row.scores[subj.id];
         if (!s || s.isAbsent) return false;
         return isMaternelle ? !!s.qualitativeCode : (s.cm !== null || s.score !== null);
       });
+
       if (hasScore) {
         if (isBoy) composedBoys++;
         if (isGirl) composedGirls++;
-      }
 
-      if (isMaternelle) {
-        const appreciation = computeAppreciationGlobale(row.scores, sortedSubjects);
-        if (appreciation === 'Très Satisfaisant' || appreciation === 'Satisfaisant') {
-          if (isBoy) reachedBoys++;
-          if (isGirl) reachedGirls++;
+        // ⭐ Seuil atteint : 10/20 par matière (primaire/secondaire)
+        //    ou TS/S (maternelle)
+        let didReach = false;
+        if (isMaternelle) {
+          const appreciation = computeAppreciationGlobale(row.scores, sortedSubjects);
+          didReach = (appreciation === 'Très Satisfaisant' || appreciation === 'Satisfaisant');
+        } else {
+          const totalGeneral = sortedSubjects.reduce((sum, subj) => {
+            const s = row.scores[subj.id];
+            return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
+          }, 0);
+          // ⭐ Seuil = 10/20 par matière → totalGeneral >= 10 * nbMatieres
+          didReach = totalGeneral >= (10 * sortedSubjects.length);
         }
-      } else {
-        const totalGeneral = sortedSubjects.reduce((sum, subj) => {
-          const s = row.scores[subj.id];
-          return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
-        }, 0);
-        if (totalGeneral >= (10 * sortedSubjects.length * 0.5)) {
+
+        if (didReach) {
           if (isBoy) reachedBoys++;
           if (isGirl) reachedGirls++;
+        } else {
+          // ⭐ notReached = a composé mais n'a pas atteint le seuil
+          if (isBoy) notReachedBoys++;
+          if (isGirl) notReachedGirls++;
         }
       }
     });
@@ -436,16 +446,14 @@ function RegistreDetailSheet({
     const total = totalBoys + totalGirls;
     const composed = composedBoys + composedGirls;
     const reached = reachedBoys + reachedGirls;
-    const notReached = composed - reached;
+    const notReached = notReachedBoys + notReachedGirls;
     const pctReussite = composed > 0 ? (reached / composed) * 100 : 0;
 
     return {
       totalBoys, totalGirls, total,
       composedBoys, composedGirls, composed,
       reachedBoys, reachedGirls, reached,
-      notReachedBoys: composedBoys - reachedBoys,
-      notReachedGirls: composedGirls - reachedGirls,
-      notReached,
+      notReachedBoys, notReachedGirls, notReached,
       pctReussite,
     };
   }, [rows, sortedSubjects, isMaternelle]);
@@ -549,11 +557,11 @@ function RegistreDetailSheet({
                       <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Sexe</th>
                       {sortedSubjects.map((subject, idx) => (
                         isMaternelle ? (
-                          <th key={idx} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[100px]">
+                          <th key={idx} rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[100px]">
                             {subject.name}<div className="text-[9px] text-slate-400 font-normal">TS / S / PS</div>
                           </th>
                         ) : isSecondaire ? (
-                          <th key={idx} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[80px]">
+                          <th key={idx} rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[80px]">
                             {subject.name}<div className="text-[9px] text-slate-400 font-normal">Note /20</div>
                           </th>
                         ) : (
@@ -599,8 +607,11 @@ function RegistreDetailSheet({
                         return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
                       }, 0);
                       const rang = getRang(row);
+                      // ⭐ Seuil = 10/20 par matière → totalGeneral >= 10 * nbMatieres
+                      // ⭐ Absent students don't show ✗ (they didn't compose)
+                      const isAllAbsent = sortedSubjects.every((subj) => row.scores[subj.id]?.isAbsent);
                       const seuilAtteint = isMaternelle ? null : (
-                        totalGeneral !== null && totalGeneral >= (10 * sortedSubjects.length * 0.5)
+                        !isAllAbsent && totalGeneral !== null && totalGeneral >= (10 * sortedSubjects.length)
                       );
 
                       return (

@@ -38,9 +38,9 @@ const PARENT_MODULES = [
   { path: "/app/parent", label: "Tableau de bord", icon: LayoutDashboard },
   { path: "/app/parent/children", label: "Mes Enfants", icon: Users },
   { path: "/app/parent/cahier-journal", label: "Cahier journal", icon: BookOpen },
-  { path: "/app/parent/payments", label: "Paiements", icon: CreditCard },
-  { path: "/app/parent/results", label: "Bulletins", icon: FileText },
   { path: "/app/parent/attendance", label: "Présences", icon: CalendarCheck },
+  { path: "/app/parent/payments", label: "Paiements", icon: CreditCard },
+  { path: "/app/parent/results", label: "Notes et Bulletins", icon: FileText },
   { path: "/app/parent/messages", label: "Messages", icon: MessageSquare },
   { path: "/app/parent/documents", label: "Documents", icon: Folder },
 ];

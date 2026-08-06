@@ -1,61 +1,16 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Portal types matching the web app's portal selection page.
-enum PortalType {
-  platform,
-  school,
-  teacher,
-  parent,
-}
-
-/// Extension providing French display names and metadata for [PortalType].
-extension PortalTypeX on PortalType {
-  /// French display name for the portal (matches web app).
-  String get displayName {
-    switch (this) {
-      case PortalType.platform:
-        return 'Plateforme';
-      case PortalType.school:
-        return 'École';
-      case PortalType.teacher:
-        return 'Enseignant';
-      case PortalType.parent:
-        return 'Parent / Élève';
-    }
-  }
-
-  /// French description for the portal (matches web app).
-  String get description {
-    switch (this) {
-      case PortalType.platform:
-        return 'Administration SaaS globale';
-      case PortalType.school:
-        return 'Direction et administration';
-      case PortalType.teacher:
-        return 'Pédagogie et suivi';
-      case PortalType.parent:
-        return 'Suivi et communication';
-    }
-  }
-
-  /// API-safe name used in query parameters.
-  String get apiName {
-    switch (this) {
-      case PortalType.platform:
-        return 'PLATFORM';
-      case PortalType.school:
-        return 'SCHOOL';
-      case PortalType.teacher:
-        return 'TEACHER';
-      case PortalType.parent:
-        return 'PARENT';
-    }
-  }
-}
-
-// ── Providers ──────────────────────────────────────────────────────────
+// Re-export PortalType from the canonical location (user_role.dart) so that
+// all consumers use the SAME PortalType enum. Previously this file defined
+// its own PortalType with only 4 values (no 'public'), which caused a type
+// mismatch with auth_notifier.dart that imports from user_role.dart.
+export '../../core/enums/user_role.dart' show PortalType;
 
 /// Currently selected portal type (null if not yet selected).
+///
+/// Mirrors the web app's sessionStorage['academia_portal_school'] + URL
+/// ?portal= parameter — stores which portal the user picked on the
+/// portal-select screen.
 final selectedPortalProvider = StateProvider<PortalType?>((ref) => null);
 
 /// Derives a French display name from the currently selected portal.

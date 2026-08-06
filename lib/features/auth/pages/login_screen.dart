@@ -8,6 +8,8 @@ import 'package:go_router/go_router.dart';
 import '../../../core/auth/auth_notifier.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/theme/ah_theme.dart';
+import '../providers/portal_provider.dart';
+import '../providers/school_provider.dart';
 import '../widgets/login_form.dart';
 
 /// Login screen with:
@@ -161,50 +163,215 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Widget _buildBrandingHeader() {
+    // Read selected school (null if user came directly without school selection)
+    final selectedSchool = ref.watch(selectedSchoolProvider);
+    final selectedPortal = ref.watch(selectedPortalProvider);
+    final hasSchoolContext = selectedSchool != null;
+
     return Column(
       children: [
-        // ── Logo (matches web LogoCircle) ─────────────────────
-        const AHLogoCircle(size: 80),
+        // ── School logo or Academia Helm logo ──────────────────
+        // If a school is selected, show the school's logo (like web LoginPage).
+        // Otherwise, show the default Academia Helm logo.
+        if (hasSchoolContext && selectedSchool.logoUrl != null && selectedSchool.logoUrl!.isNotEmpty)
+          _buildSchoolLogo(selectedSchool.logoUrl!)
+        else
+          const AHLogoCircle(size: 80),
         const SizedBox(height: AHSpacing.lg),
 
-        // ── Wordmark: "Academia" + "Helm" ─────────────────────
-        const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Academia',
-              style: TextStyle(
-                fontFamily: 'Inter',
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-              ),
+        // ── Portal badge (matches web's portal badge) ──────────
+        if (selectedPortal != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Colors.white.withOpacity(0.25)),
             ),
-            SizedBox(width: 5),
-            Text(
-              'Helm',
-              style: TextStyle(
-                fontFamily: 'Inter',
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                color: AHColors.gold,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _portalIcon(selectedPortal),
+                  size: 12,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'Portail ${selectedPortal.displayName}',
+                  style: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.0,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        if (selectedPortal != null) const SizedBox(height: AHSpacing.md),
+
+        // ── School name or wordmark ────────────────────────────
+        if (hasSchoolContext)
+          Text(
+            selectedSchool.name,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+            ),
+          )
+        else
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Academia',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+              SizedBox(width: 5),
+              Text(
+                'Helm',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: AHColors.gold,
+                ),
+              ),
+            ],
+          ),
         const SizedBox(height: AHSpacing.xs),
 
-        // ── Subtitle ────────────────────────────────────────────
-        Text(
-          'Connectez-vous à votre espace',
-          style: TextStyle(
-            fontFamily: 'Inter',
-            fontSize: 13,
-            color: Colors.white.withOpacity(0.7),
+        // ── Slogan or subtitle ─────────────────────────────────
+        if (hasSchoolContext && selectedSchool.slogan != null && selectedSchool.slogan!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AHSpacing.xl),
+            child: Text(
+              selectedSchool.slogan!,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 12,
+                fontStyle: FontStyle.italic,
+                color: Colors.white.withOpacity(0.8),
+              ),
+            ),
+          )
+        else
+          Text(
+            'Connectez-vous à votre espace',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 13,
+              color: Colors.white.withOpacity(0.7),
+            ),
           ),
-        ),
+
+        // ── City / phone info (if school selected, like web) ──
+        if (hasSchoolContext &&
+            (selectedSchool.city != null || selectedSchool.phone != null)) ...[
+          const SizedBox(height: AHSpacing.sm),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (selectedSchool.city != null && selectedSchool.city!.isNotEmpty) ...[
+                Icon(Icons.location_on, size: 11, color: AHColors.gold),
+                const SizedBox(width: 2),
+                Text(
+                  selectedSchool.city!,
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 10,
+                    color: Colors.white.withOpacity(0.6),
+                  ),
+                ),
+              ],
+              if (selectedSchool.city != null &&
+                  selectedSchool.city!.isNotEmpty &&
+                  selectedSchool.phone != null &&
+                  selectedSchool.phone!.isNotEmpty)
+                Text(
+                  ' • ',
+                  style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.4)),
+                ),
+              if (selectedSchool.phone != null && selectedSchool.phone!.isNotEmpty) ...[
+                Icon(Icons.phone, size: 11, color: AHColors.gold),
+                const SizedBox(width: 2),
+                Text(
+                  selectedSchool.phone!,
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 10,
+                    color: Colors.white.withOpacity(0.6),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
       ],
+    );
+  }
+
+  /// Returns the icon for a portal type (matches web's PORTAL_LOGIN_DEFS).
+  IconData _portalIcon(PortalType portal) {
+    switch (portal) {
+      case PortalType.platform:
+        return Icons.shield_outlined;
+      case PortalType.school:
+        return Icons.business_outlined;
+      case PortalType.teacher:
+        return Icons.school_outlined;
+      case PortalType.parent:
+        return Icons.people_outline;
+    }
+  }
+
+  /// Builds a circular school logo with gold halo (matches web LogoCircle).
+  Widget _buildSchoolLogo(String logoUrl) {
+    final isUrl = logoUrl.startsWith('http://') || logoUrl.startsWith('https://');
+    return Container(
+      width: 80,
+      height: 80,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: AHColors.gold.withOpacity(0.12),
+            blurRadius: 20,
+            spreadRadius: 4,
+          ),
+          BoxShadow(
+            color: AHColors.gold.withOpacity(0.04),
+            blurRadius: 40,
+            spreadRadius: 8,
+          ),
+        ],
+      ),
+      child: ClipOval(
+        child: Container(
+          color: Colors.white,
+          child: isUrl
+              ? Image.network(
+                  logoUrl,
+                  fit: BoxFit.cover,
+                  width: 80,
+                  height: 80,
+                  errorBuilder: (_, __, ___) => const AHLogoCircle(size: 80, animated: false),
+                )
+              : const AHLogoCircle(size: 80, animated: false),
+        ),
+      ),
     );
   }
 

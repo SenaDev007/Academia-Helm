@@ -13,6 +13,7 @@ import '../../features/auth/pages/splash_screen.dart';
 import '../../features/auth/pages/login_screen.dart';
 import '../../features/auth/pages/tenant_select_screen.dart';
 import '../../features/auth/pages/portal_select_screen.dart';
+import '../../features/auth/pages/school_select_screen.dart';
 import '../../features/auth/pages/logout_screen.dart';
 import '../../features/auth/pages/forgot_password_screen.dart';
 import '../../features/auth/pages/reset_password_screen.dart';
@@ -272,6 +273,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/landing',
         name: 'landing',
         builder: (context, state) => const LandingPageScreen(),
+      ),
+      GoRoute(
+        path: '/school-select',
+        name: 'schoolSelect',
+        builder: (context, state) => const SchoolSelectScreen(),
       ),
       GoRoute(
         path: '/login',

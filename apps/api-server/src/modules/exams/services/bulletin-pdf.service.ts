@@ -73,6 +73,17 @@ export interface BulletinPdfData {
   parentSignature?: string | null;
 }
 
+/**
+ * ⭐ Formate un rang en ordinal français :
+ *   1 → "1er", 2 → "2ème", 3 → "3ème", 4 → "4ème", etc.
+ *   Pour le féminin : 1 → "1ère", 2 → "2ème", etc.
+ */
+function formatRank(rank: number | null | undefined, feminine: boolean = false): string {
+  if (rank === null || rank === undefined) return '—';
+  if (rank === 1) return feminine ? '1ère' : '1er';
+  return `${rank}ème`;
+}
+
 @Injectable()
 export class BulletinPdfService {
   private readonly logger = new Logger(BulletinPdfService.name);
@@ -334,7 +345,7 @@ table.notes tbody tr:nth-child(even) { background:#f8fafc; }
   <div>Élève: <strong>${data.studentName}</strong></div>
   <div>Matricule: <strong>${data.studentMatricule || '—'}</strong></div>
   <div>Classe: <strong>${data.className}</strong></div>
-  <div>Rang: <strong>${data.classRank}</strong> / ${data.totalStudents}</div>
+  <div>Rang: <strong>${formatRank(data.classRank)}</strong> / ${data.totalStudents}</div>
 </div>
 
 <!-- ⭐ LAYOUT 2 COLONNES -->

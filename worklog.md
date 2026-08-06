@@ -654,3 +654,84 @@ Stage Summary:
 - All PRIMAIRE classes (CI A, CP, CE1, CE2, CM1, CM2) × 3 trimesters × 3 eval types × 23 subjects covered
 - Maternelle 1, 2 already complete from before (3 trimesters × 3 types × ~26 subjects)
 
+
+---
+Task ID: 13
+Agent: main
+Task: Three coordinated fixes — sidebar revert, dynamic academic year algorithm, "VALIDATED is not defined" exam module crash
+
+Work Log:
+- Read user feedback carefully: module filtering belongs in Paramètres > Onglet Modules (NOT sidebar)
+- Inspected commit ba5276d3 — found it had:
+  * Removed 'Site Institutionnel' from MAIN_MODULES in PilotageSidebar.tsx
+  * Reordered modules (moved Pédagogie below Élèves)
+  * Both changes were unwanted — user only wanted filtering via the existing toggle UI
+
+FIX 1 — Revert sidebar, keep filtering in Paramètres > Modules tab:
+- PilotageSidebar.tsx MAIN_MODULES:
+  * Restored 'Site Institutionnel' entry with featureCode: 'CMS'
+  * Restored canonical order: Tableau de pilotage → Pédagogie → Élèves →
+    Finance → Examens → RH → Communication → Site Institutionnel
+  * Added comment: "Le filtrage par module activé/désactivé se fait dans
+    Paramètres > Onglet Modules"
+- settings/page.tsx:
+  * Added 'CMS' to modulesDisplayOrder array (after COMMUNICATION)
+  * Added `CMS: 'Site Institutionnel'` to featureLabels map
+- Sidebar's existing showModule() logic already reads enabledSet from
+  backend, so toggling CMS off in Paramètres > Modules will hide it from
+  the sidebar automatically — no hard-coded hiding needed
+
+FIX 2 — Verify pré-rentrée/rentrée algorithm is dynamic per year:
+- Confirmed SchoolCalendarConfigService.calculateYearDates(startYear, config):
+  * preEntryDate = Nth Monday of September (default N=1)
+  * officialStartDate = preEntryDate + 1 week
+  * endDate = last Friday of June of startYear+1
+- Confirmed AcademicYearSettingsService.generateNext() calls
+  buildYearDates(nextStartYear, tenantId) — fully dynamic
+- Confirmed promoteToNext() also uses buildYearDates() with computed
+  nextStartYear = startYear + 1
+- Added scripts/verify-academic-year-algorithm.cjs to prove correctness:
+    2024-2025 → pre=Sept 2 (Mon),  rentrée=Sept 9 (Mon)
+    2025-2026 → pre=Sept 1 (Mon),  rentrée=Sept 8 (Mon)
+    2026-2027 → pre=Sept 7 (Mon),  rentrée=Sept 14 (Mon) ✅ matches user's expectation
+    2027-2028 → pre=Sept 6 (Mon),  rentrée=Sept 13 (Mon)
+    2028-2029 → pre=Sept 4 (Mon),  rentrée=Sept 11 (Mon)
+    2029-2030 → pre=Sept 3 (Mon),  rentrée=Sept 10 (Mon)
+    2030-2031 → pre=Sept 2 (Mon),  rentrée=Sept 9 (Mon)
+- Algorithm is fully dynamic — no hard-coded year values
+
+FIX 3 — "VALIDATED is not defined" in Exams module (CRITICAL):
+- Logged into production as promoter via agent-browser:
+  * URL: https://cspeb-eveildafriqueeducation.academiahelm.com/login
+  * Email: salumerhel2036@gmail.com (Erhel DEGBE, PROMOTER)
+  * Navigated to /app/exams → clicked Primaire → clicked Francophone
+  * Reproduced error: "Erreur du module — Détail : VALIDATED is not defined"
+- Root cause: apps/web-app/src/app/app/exams/page.tsx line 149-154
+  The byStatus object used ES2015 shorthand property names:
+    const byStatus = {
+      VALIDATED,           // ← undefined variable!
+      PLANNED,             // ← undefined variable!
+      SUBMITTED,           // ← undefined variable!
+      OPEN_FOR_GRADING,    // ← undefined variable!
+    };
+  These identifiers were NOT in scope. The intent was to map each status
+  key to its pre-computed count variable (validated, planned, submitted,
+  openForGrading).
+- Fix: replaced shorthand with explicit key: value pairs:
+    const byStatus = {
+      VALIDATED: validated,
+      PLANNED: planned,
+      SUBMITTED: submitted,
+      OPEN_FOR_GRADING: openForGrading,
+    };
+- Verified no other exam page has the same shorthand-without-variable bug
+- Committed and pushed (33fc1e24)
+- Vercel deployment pending at time of writing (auto-deploy triggered)
+
+Stage Summary:
+- Sidebar restored to canonical state with all 8 modules (incl. Site Institutionnel)
+- Module filtering lives exclusively in Paramètres > Onglet Modules via toggles
+- Academic year algorithm confirmed dynamic per year (verified 2024→2031)
+- "VALIDATED is not defined" crash fixed — root cause was ES2015 shorthand
+  property names referencing non-existent variables
+- All changes committed in 33fc1e24 and pushed to origin/main

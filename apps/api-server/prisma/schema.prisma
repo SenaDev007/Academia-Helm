@@ -7947,6 +7947,19 @@ model ReportCard {
   // ⭐ Visa du directeur — auto-rempli depuis l'appréciation enseignant mais éditable
   directorVisa             String?
   directorVisaUpdatedAt    DateTime?
+  // ⭐ Workflow de signature + distribution (DRAFT → DIRECTOR_SIGNED → TEACHER_DISTRIBUTED → TEACHER_SIGNED → PARENT_SENT)
+  directorSignature        String?
+  directorSignedAt         DateTime?
+  directorSignedBy         String?
+  teacherSignature         String?
+  teacherSignedAt          DateTime?
+  teacherSignedBy          String?
+  distributedToTeacherAt   DateTime?
+  distributedToTeacherBy   String?
+  sentToParentAt           DateTime?
+  sentToParentBy           String?
+  parentReceivedAt         DateTime?
+  blockedReason            String?
   createdAt                DateTime         @default(now())
   updatedAt                DateTime         @updatedAt
   language                 String?

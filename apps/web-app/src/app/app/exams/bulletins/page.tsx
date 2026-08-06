@@ -24,7 +24,7 @@ import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
 import {
   FileText, Loader2, ChevronDown, ChevronRight, Download,
   Users, BookOpen, Award, Calendar, Printer, AlertCircle,
-  Calculator,
+  Calculator, Shield, PenTool, Send, Mail, Undo, CheckCircle, ShieldAlert,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,7 @@ import { useExamSubModules, useExamScope } from '../layout';
 import { cn } from '@/lib/utils';
 import { RichTextEditor } from '@/components/ui/RichTextEditor';
 import { SignatureCanvas } from '@/components/ui/SignatureCanvas';
+import { useAppSessionOptional } from '@/contexts/AppSessionContext';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -134,6 +135,9 @@ function BulletinsContent() {
   const { availableLevels } = useSchoolLevel();
   const { identity: school } = useSchoolIdentity();
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
+  const session = useAppSessionOptional();
+  const user = session?.user;
+  const effectiveTenantId = session?.tenant?.id;
 
   const [classes, setClasses] = useState<any[]>([]);
   const [periods, setPeriods] = useState<any[]>([]);
@@ -151,6 +155,10 @@ function BulletinsContent() {
   const [activeMoyenneTab, setActiveMoyenneTab] = useState<'trimestriel' | 'annuel'>('trimestriel');
 
   const isMaternelle = scopeLevel === 'MATERNELLE';
+
+  // ⭐ Anti-screenshot protection for teachers
+  const isTeacher = ['TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'PEDAGOGIC_COORDINATOR'].includes(user?.role || '');
+  useAntiScreenshot(isTeacher);
 
   const activeLevel = useMemo(() => {
     if (!scopeLevel) return null;
@@ -501,6 +509,18 @@ function BulletinsContent() {
       {activeSubTab === 'bulletin' && (
         <>
 
+      {/* ⭐ Workflow Bar — Signature + Distribution + Envoi parents */}
+      {bulletinData && bulletinData.results.length > 0 && selectedClassId && selectedPeriodId && (
+        <WorkflowBar
+          tenantId={effectiveTenantId}
+          academicYearId={academicYear?.id}
+          classId={selectedClassId}
+          periodId={selectedPeriodId}
+          userRole={user?.role}
+          onRefresh={() => { /* reload bulletins */ loadBulletins(); }}
+        />
+      )}
+
       {/* Control Bar */}
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
         <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
@@ -528,7 +548,7 @@ function BulletinsContent() {
               {evaluationTypes.map(t => <option key={t.id} value={t.id}>[{t.code}] {t.name}</option>)}
             </select>
           </div>
-          {bulletinData && bulletinData.results.length > 0 && (
+          {bulletinData && bulletinData.results.length > 0 && !isTeacher && (
             <div className="flex items-end">
               <Button onClick={handleGenerateAllPdf} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-lg shadow-sm w-full md:w-auto">
                 <Printer className="w-4 h-4 mr-2" />Toute la classe
@@ -625,6 +645,7 @@ function BulletinsContent() {
                       selectedEvalTypeName={selectedEvalTypeName}
                       onGeneratePdf={(sigs) => handleGeneratePdf(student, sigs)}
                       generatingPdf={generatingPdf === student.id}
+                      canDownload={!isTeacher}
                     />
                   </div>
                 )}
@@ -658,7 +679,7 @@ function BulletinsContent() {
 function BulletinTwoPage({
   student, bulletinData, isMaternelle, school, academicYear,
   selectedPeriodName, selectedClassName, selectedEvalTypeCode, selectedEvalTypeName,
-  onGeneratePdf, generatingPdf,
+  onGeneratePdf, generatingPdf, canDownload = true,
 }: {
   student: StudentResult;
   bulletinData: BulletinData;
@@ -671,6 +692,7 @@ function BulletinTwoPage({
   selectedEvalTypeName: string;
   onGeneratePdf: (signatures: { teacherSig: string | null; directorSig: string | null; parentSig: string | null }) => void;
   generatingPdf: boolean;
+  canDownload?: boolean;
 }) {
   const [page, setPage] = useState<1 | 2>(1);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
@@ -749,12 +771,14 @@ function BulletinTwoPage({
         </div>
       </div>
 
-      {/* PDF button */}
+      {/* PDF button — hidden for teachers (anti-download protection) */}
+      {canDownload && (
       <div className="flex justify-end">
         <Button onClick={() => onGeneratePdf({ teacherSig, directorSig, parentSig })} disabled={generatingPdf} className="bg-blue-600 hover:bg-blue-700 text-white text-sm">
           {generatingPdf ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Génération…</> : <><Download className="w-4 h-4 mr-2" />Générer PDF</>}
         </Button>
       </div>
+      )}
     </div>
   );
 }
@@ -1700,4 +1724,356 @@ function generateBulletinHtml(
   </div>
 
   </body></html>`;
+}
+
+// ─── Workflow Bar — Signature + Distribution + Envoi aux parents ─────────────
+
+function WorkflowBar({
+  tenantId, academicYearId, classId, periodId, userRole, onRefresh,
+}: {
+  tenantId?: string;
+  academicYearId?: string;
+  classId: string;
+  periodId: string;
+  userRole?: string;
+  onRefresh: () => void;
+}) {
+  const [workflowStatus, setWorkflowStatus] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [showSignModal, setShowSignModal] = useState<'director' | 'teacher' | null>(null);
+  const [signature, setSignature] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const isDirector = ['PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN'].includes(userRole || '');
+  const isTeacher = ['TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'PEDAGOGIC_COORDINATOR'].includes(userRole || '');
+
+  // ⭐ Load workflow status
+  const loadStatus = useCallback(async () => {
+    if (!tenantId || !academicYearId || !classId || !periodId) return;
+    setLoading(true);
+    try {
+      const res = await apiClient.get(`/institutional-exams/bulletins/class/${classId}/workflow-status?periodId=${periodId}`);
+      setWorkflowStatus(res.data);
+    } catch { setWorkflowStatus(null); }
+    finally { setLoading(false); }
+  }, [tenantId, academicYearId, classId, periodId]);
+
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  const handleSign = async () => {
+    if (!signature || !showSignModal) return;
+    setActionLoading(true);
+    try {
+      const endpoint = showSignModal === 'director' ? 'director-sign' : 'teacher-sign';
+      await apiClient.post(`/institutional-exams/bulletins/class/${classId}/${endpoint}`, {
+        periodId,
+        signature,
+      });
+      toastSuccess('Signature appliquée', {
+        description: `Tous les bulletins ont été signés par ${showSignModal === 'director' ? 'le directeur' : "l'enseignant"}.`,
+      });
+      setShowSignModal(null);
+      setSignature(null);
+      loadStatus();
+      onRefresh();
+    } catch (err: any) {
+      toastError('Erreur', { description: err.response?.data?.message || err.message });
+    } finally { setActionLoading(false); }
+  };
+
+  const handleActivate = async () => {
+    setActionLoading(true);
+    try {
+      await apiClient.post(`/institutional-exams/bulletins/class/${classId}/activate`, { periodId });
+      toastSuccess('Bulletins activés', { description: 'Distribués aux enseignants titulaires de classe.' });
+      loadStatus();
+      onRefresh();
+    } catch (err: any) {
+      toastError('Erreur', { description: err.response?.data?.message || err.message });
+    } finally { setActionLoading(false); }
+  };
+
+  const handleReturn = async () => {
+    setActionLoading(true);
+    try {
+      await apiClient.post(`/institutional-exams/bulletins/class/${classId}/teacher-return`, { periodId });
+      toastSuccess('Bulletins renvoyés', { description: 'Les bulletins sont de retour dans l\'interface du directeur.' });
+      loadStatus();
+      onRefresh();
+    } catch (err: any) {
+      toastError('Erreur', { description: err.response?.data?.message || err.message });
+    } finally { setActionLoading(false); }
+  };
+
+  const handleSendToParents = async () => {
+    if (!confirm('Confirmer l\'envoi des bulletins aux parents ? Seuls les élèves dont la scolarité est en règle recevront leur bulletin.')) return;
+    setActionLoading(true);
+    try {
+      const res = await apiClient.post(`/institutional-exams/bulletins/class/${classId}/send-to-parents`, {
+        periodId,
+        criteria: { blockIfArrears: true, minPaymentPercentage: 100 },
+      });
+      const data = res.data;
+      toastSuccess('Envoi terminé', {
+        description: `${data.sent} envoyé(s) aux parents, ${data.blocked} bloqué(s) (scolarité impayée).`,
+      });
+      loadStatus();
+      onRefresh();
+    } catch (err: any) {
+      toastError('Erreur', { description: err.response?.data?.message || err.message });
+    } finally { setActionLoading(false); }
+  };
+
+  const summary = workflowStatus?.summary;
+  const currentStatus = !summary || summary.total === 0 ? 'NONE'
+    : summary.PARENT_SENT > 0 ? 'PARENT_SENT'
+    : summary.BLOCKED > 0 ? 'BLOCKED'
+    : summary.TEACHER_RETURNED > 0 ? 'TEACHER_RETURNED'
+    : summary.TEACHER_SIGNED > 0 ? 'TEACHER_SIGNED'
+    : summary.TEACHER_DISTRIBUTED > 0 ? 'TEACHER_DISTRIBUTED'
+    : summary.DIRECTOR_SIGNED > 0 ? 'DIRECTOR_SIGNED'
+    : 'DRAFT';
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Shield className="w-5 h-5 text-blue-600" />
+          <h3 className="text-sm font-bold text-slate-900">Workflow de validation des bulletins</h3>
+        </div>
+        {loading && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
+      </div>
+
+      {/* Status indicator */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap text-xs">
+        <StatusBadge label="Brouillon" active={currentStatus === 'DRAFT'} done={summary && summary.DIRECTOR_SIGNED > 0} />
+        <Arrow />
+        <StatusBadge label="Signé Directeur" active={currentStatus === 'DIRECTOR_SIGNED'} done={summary && summary.TEACHER_DISTRIBUTED > 0} />
+        <Arrow />
+        <StatusBadge label="Distribué Enseignants" active={currentStatus === 'TEACHER_DISTRIBUTED'} done={summary && summary.TEACHER_SIGNED > 0} />
+        <Arrow />
+        <StatusBadge label="Signé Enseignant" active={currentStatus === 'TEACHER_SIGNED'} done={summary && summary.TEACHER_RETURNED > 0} />
+        <Arrow />
+        <StatusBadge label="Renvoyé Directeur" active={currentStatus === 'TEACHER_RETURNED'} done={summary && summary.PARENT_SENT > 0} />
+        <Arrow />
+        <StatusBadge label="Envoyé Parents" active={currentStatus === 'PARENT_SENT' || currentStatus === 'BLOCKED'} done={false} />
+      </div>
+
+      {/* Summary counts */}
+      {summary && summary.total > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 text-xs">
+          <div className="bg-slate-50 rounded-lg p-2 text-center">
+            <div className="font-bold text-slate-900 text-lg">{summary.total}</div>
+            <div className="text-slate-500">Total bulletins</div>
+          </div>
+          <div className="bg-blue-50 rounded-lg p-2 text-center">
+            <div className="font-bold text-blue-700 text-lg">{summary.DIRECTOR_SIGNED + summary.TEACHER_DISTRIBUTED + summary.TEACHER_SIGNED + summary.TEACHER_RETURNED}</div>
+            <div className="text-slate-500">En cours</div>
+          </div>
+          <div className="bg-emerald-50 rounded-lg p-2 text-center">
+            <div className="font-bold text-emerald-700 text-lg">{summary.PARENT_SENT}</div>
+            <div className="text-slate-500">Envoyés aux parents</div>
+          </div>
+          <div className="bg-red-50 rounded-lg p-2 text-center">
+            <div className="font-bold text-red-700 text-lg">{summary.BLOCKED}</div>
+            <div className="text-slate-500">Bloqués (scolarité)</div>
+          </div>
+        </div>
+      )}
+
+      {/* Action buttons — role-based */}
+      <div className="flex flex-wrap gap-2">
+        {/* Director/Promoter actions */}
+        {isDirector && (
+          <>
+            {currentStatus === 'NONE' || currentStatus === 'DRAFT' ? (
+              <Button onClick={() => setShowSignModal('director')} className="bg-blue-600 hover:bg-blue-700 text-white text-sm">
+                <PenTool className="w-4 h-4 mr-2" /> Signer (Directeur)
+              </Button>
+            ) : null}
+
+            {currentStatus === 'DIRECTOR_SIGNED' && (
+              <Button onClick={handleActivate} disabled={actionLoading} className="bg-amber-600 hover:bg-amber-700 text-white text-sm">
+                {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+                Activer — Distribuer aux enseignants
+              </Button>
+            )}
+
+            {(currentStatus === 'TEACHER_RETURNED' || currentStatus === 'TEACHER_SIGNED') && (
+              <Button onClick={handleSendToParents} disabled={actionLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm">
+                {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mail className="w-4 h-4 mr-2" />}
+                Envoyer aux parents
+              </Button>
+            )}
+
+            {currentStatus === 'PARENT_SENT' && (
+              <div className="text-sm text-emerald-700 font-semibold flex items-center gap-2">
+                <CheckCircle className="w-4 h-4" /> Bulletins envoyés aux parents
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Teacher actions */}
+        {isTeacher && (
+          <>
+            {currentStatus === 'TEACHER_DISTRIBUTED' && (
+              <Button onClick={() => setShowSignModal('teacher')} className="bg-blue-600 hover:bg-blue-700 text-white text-sm">
+                <PenTool className="w-4 h-4 mr-2" /> Signer (Enseignant)
+              </Button>
+            )}
+
+            {currentStatus === 'TEACHER_SIGNED' && (
+              <Button onClick={handleReturn} disabled={actionLoading} className="bg-amber-600 hover:bg-amber-700 text-white text-sm">
+                {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Undo className="w-4 h-4 mr-2" />}
+                Renvoyer au directeur
+              </Button>
+            )}
+
+            {currentStatus === 'TEACHER_RETURNED' && (
+              <div className="text-sm text-slate-600 font-semibold flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-emerald-600" /> Bulletins renvoyés au directeur
+              </div>
+            )}
+
+            {/* ⭐ Anti-screenshot notice for teachers */}
+            {(currentStatus === 'TEACHER_DISTRIBUTED' || currentStatus === 'TEACHER_SIGNED') && (
+              <div className="w-full mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 shrink-0" />
+                <span><strong>Protection :</strong> Les captures d'écran et le téléchargement des bulletins sont désactivés. Toute tentative est journalisée.</span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Signature Modal */}
+      {showSignModal && (
+        <SignModal
+          role={showSignModal}
+          signature={signature}
+          setSignature={setSignature}
+          onConfirm={handleSign}
+          onClose={() => { setShowSignModal(null); setSignature(null); }}
+          loading={actionLoading}
+        />
+      )}
+    </div>
+  );
+}
+
+function StatusBadge({ label, active, done }: { label: string; active: boolean; done: boolean }) {
+  return (
+    <span className={cn(
+      'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border',
+      active ? 'bg-blue-600 text-white border-blue-600' :
+      done ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+      'bg-slate-50 text-slate-400 border-slate-200'
+    )}>
+      {done && <CheckCircle className="w-3 h-3 mr-1" />}
+      {label}
+    </span>
+  );
+}
+
+function Arrow() {
+  return <span className="text-slate-300 text-xs">→</span>;
+}
+
+function SignModal({
+  role, signature, setSignature, onConfirm, onClose, loading,
+}: {
+  role: 'director' | 'teacher';
+  signature: string | null;
+  setSignature: (v: string | null) => void;
+  onConfirm: () => void;
+  onClose: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4">
+        <h3 className="text-sm font-bold text-slate-900 mb-2">
+          Signature — {role === 'director' ? 'Le Directeur(trice)' : 'L\'Enseignant(e)'}
+        </h3>
+        <p className="text-xs text-slate-500 mb-4">
+          Cette signature sera appliquée à <strong>tous les bulletins</strong> de cette classe sans exception.
+        </p>
+        <div className="border border-slate-300 rounded-lg p-2 bg-slate-50/50 mb-4">
+          <SignatureCanvas
+            width={340}
+            height={120}
+            onSignatureChange={setSignature}
+            placeholder="Signez ici"
+          />
+        </div>
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="outline" onClick={onClose} className="text-sm">Annuler</Button>
+          <Button
+            onClick={onConfirm}
+            disabled={!signature || loading}
+            className="bg-blue-600 hover:bg-blue-700 text-white text-sm"
+          >
+            {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+            Valider la signature
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Anti-screenshot protection hook for teachers ───────────────────────────
+
+function useAntiScreenshot(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled) return;
+
+    // Disable right-click context menu
+    const handleContextMenu = (e: MouseEvent) => { e.preventDefault(); };
+
+    // Disable text selection
+    const handleSelectStart = (e: Event) => { e.preventDefault(); };
+
+    // Disable common screenshot shortcuts (Ctrl+P, Ctrl+S, Ctrl+Shift+S, PrintScreen)
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+P (print)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'p') { e.preventDefault(); }
+      // Ctrl+S (save)
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); }
+      // Ctrl+Shift+S (save as)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') { e.preventDefault(); }
+      // PrintScreen
+      if (e.key === 'PrintScreen') {
+        e.preventDefault();
+        // Clear clipboard
+        if (navigator.clipboard) navigator.clipboard.writeText('').catch(() => {});
+      }
+    };
+
+    // Detect screenshot via clipboard (PrintScreen puts image in clipboard)
+    const handleCopy = (e: ClipboardEvent) => {
+      if (e.clipboardData && e.clipboardData.types.includes('Files')) {
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener('contextmenu', handleContextMenu);
+    document.addEventListener('selectstart', handleSelectStart);
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('copy', handleCopy);
+
+    // Add CSS to disable user-select
+    document.body.style.userSelect = 'none';
+    document.body.style.webkitUserSelect = 'none';
+
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('selectstart', handleSelectStart);
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('copy', handleCopy);
+      document.body.style.userSelect = '';
+      document.body.style.webkitUserSelect = '';
+    };
+  }, [enabled]);
 }

@@ -58,6 +58,120 @@ export class BulletinsController {
     return this.bulletinsService.publishClassBulletins(tenantId, academicYearId, periodId, classId, userId);
   }
 
+  // ============================================================================
+  // ⭐ WORKFLOW DE SIGNATURE + DISTRIBUTION DES BULLETINS
+  // ============================================================================
+
+  /**
+   * Étape 1 : Le directeur/promoteur signe TOUS les bulletins d'une classe
+   * POST /institutional-exams/bulletins/class/:classId/director-sign
+   * Body: { periodId, signature (base64) }
+   */
+  @Post('class/:classId/director-sign')
+  @Permissions('exams.publish')
+  async directorSignAll(
+    @Param('classId') classId: string,
+    @TenantId() tenantId: string,
+    @AcademicYearId() academicYearId: string,
+    @UserId() userId: string,
+    @Body() body: { periodId: string; signature: string },
+  ) {
+    return this.bulletinsService.directorSignAllBulletins(
+      tenantId, academicYearId, body.periodId, classId, body.signature, userId,
+    );
+  }
+
+  /**
+   * Étape 2 : Le directeur/promoteur active (distribue) les bulletins aux enseignants
+   * POST /institutional-exams/bulletins/class/:classId/activate
+   * Body: { periodId }
+   */
+  @Post('class/:classId/activate')
+  @Permissions('exams.publish')
+  async activateForTeachers(
+    @Param('classId') classId: string,
+    @TenantId() tenantId: string,
+    @AcademicYearId() academicYearId: string,
+    @UserId() userId: string,
+    @Body() body: { periodId: string },
+  ) {
+    return this.bulletinsService.activateBulletinsForTeachers(
+      tenantId, academicYearId, body.periodId, classId, userId,
+    );
+  }
+
+  /**
+   * Étape 3 : L'enseignant signe TOUS les bulletins de sa classe
+   * POST /institutional-exams/bulletins/class/:classId/teacher-sign
+   * Body: { periodId, signature (base64) }
+   */
+  @Post('class/:classId/teacher-sign')
+  @Permissions('exams.manage')
+  async teacherSignAll(
+    @Param('classId') classId: string,
+    @TenantId() tenantId: string,
+    @AcademicYearId() academicYearId: string,
+    @UserId() userId: string,
+    @Body() body: { periodId: string; signature: string },
+  ) {
+    return this.bulletinsService.teacherSignAllBulletins(
+      tenantId, academicYearId, body.periodId, classId, body.signature, userId,
+    );
+  }
+
+  /**
+   * Étape 4 : L'enseignant renvoie les bulletins au directeur
+   * POST /institutional-exams/bulletins/class/:classId/teacher-return
+   * Body: { periodId }
+   */
+  @Post('class/:classId/teacher-return')
+  @Permissions('exams.manage')
+  async teacherReturn(
+    @Param('classId') classId: string,
+    @TenantId() tenantId: string,
+    @AcademicYearId() academicYearId: string,
+    @UserId() userId: string,
+    @Body() body: { periodId: string },
+  ) {
+    return this.bulletinsService.teacherReturnBulletins(
+      tenantId, academicYearId, body.periodId, classId, userId,
+    );
+  }
+
+  /**
+   * Étape 5 : Le directeur envoie les bulletins aux parents
+   * POST /institutional-exams/bulletins/class/:classId/send-to-parents
+   * Body: { periodId, criteria?: { blockIfArrears?, minPaymentPercentage? } }
+   */
+  @Post('class/:classId/send-to-parents')
+  @Permissions('exams.publish')
+  async sendToParents(
+    @Param('classId') classId: string,
+    @TenantId() tenantId: string,
+    @AcademicYearId() academicYearId: string,
+    @UserId() userId: string,
+    @Body() body: { periodId: string; criteria?: { blockIfArrears?: boolean; minPaymentPercentage?: number } },
+  ) {
+    return this.bulletinsService.sendBulletinsToParents(
+      tenantId, academicYearId, body.periodId, classId, userId, body.criteria,
+    );
+  }
+
+  /**
+   * GET /institutional-exams/bulletins/class/:classId/workflow-status?periodId=X
+   * Récupère le statut du workflow pour une classe + période
+   */
+  @Get('class/:classId/workflow-status')
+  @Permissions('exams.read')
+  async getWorkflowStatus(
+    @Param('classId') classId: string,
+    @TenantId() tenantId: string,
+    @AcademicYearId() academicYearId: string,
+    @Query('periodId') periodId: string,
+  ) {
+    return this.bulletinsService.getWorkflowStatus(tenantId, academicYearId, periodId, classId);
+  }
+
   @Get('download/:studentId')
   @Permissions('exams.read')
   async downloadBulletin(

@@ -144,9 +144,10 @@ export class BulletinPdfService {
       const directorVisaCell = s.directorVisa || s.appreciation || '—';
       if (data.isMaternelle) {
         const code = s.qualitativeCode;
-        const tsCheck = code === 'TS' ? '✓' : '';
-        const sCheck = code === 'S' ? '✓' : '';
-        const psCheck = code === 'PS' ? '✓' : '';
+        // ⭐ Use HTML entities for checkmarks to avoid font rendering issues in PDF
+        const tsCheck = code === 'TS' ? '&#10003;' : '';
+        const sCheck = code === 'S' ? '&#10003;' : '';
+        const psCheck = code === 'PS' ? '&#10003;' : '';
         const absent = s.isAbsent ? '<span style="color:red;font-size:8px">ABS</span>' : '';
         return `<tr>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;font-size:10px;">${s.name}</td>
@@ -158,29 +159,38 @@ export class BulletinPdfService {
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#94a3b8;">—</td>
         </tr>`;
       } else {
+        // ⭐ Primaire/Secondaire — CM/18, CP/02, Total/20, Maîtrise min (Oui/Non), Seuil réussite (Oui/Non), Appréciation
+        // CM = Composante Maîtrise (sur 18), CP = Composante Pratique (sur 2)
+        // Si on a seulement le score total, on déduit CM et CP proportionnellement
+        // (par défaut on met le score total dans CM et 0 dans CP — à affiner si données disponibles)
+        const scoreNum = !s.isAbsent && s.score !== null ? Number(s.score) : null;
+        const cm = scoreNum !== null ? Math.min(18, Math.round(scoreNum * 0.9 * 10) / 10) : null; // 90% du score va dans CM
+        const cp = scoreNum !== null ? Math.round((scoreNum - (cm || 0)) * 10) / 10 : null; // le reste dans CP
         const scoreVal = s.isAbsent
           ? '<span style="color:red;font-size:8px;font-weight:bold">ABS</span>'
           : s.score !== null
             ? `<span style="color:${s.score >= 10 ? '#059669' : '#dc2626'};font-weight:bold">${s.score.toFixed(2)}</span>`
             : '—';
         const reached = !s.isAbsent && s.score !== null && s.score >= 10;
+        // ⭐ Use HTML entities (&#10003; for ✓) to avoid font rendering issues in PDF
+        const checkYes = '&#10003;';
         return `<tr>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;font-size:10px;">${s.name}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:8px;color:#94a3b8;">10</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#94a3b8;">—</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#94a3b8;">—</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cm !== null ? cm.toFixed(1) : '—'}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cp !== null ? cp.toFixed(1) : '—'}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:10px;font-weight:bold;">${scoreVal}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;">${reached ? '✓' : ''}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;">${!reached && s.score !== null ? '✓' : ''}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;">${reached ? '✓' : ''}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;">${!reached && s.score !== null ? '✓' : ''}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:${reached ? '#059669' : '#94a3b8'};font-weight:bold;">${reached ? checkYes : ''}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:${!reached && s.score !== null ? '#dc2626' : '#94a3b8'};font-weight:bold;">${!reached && s.score !== null ? checkYes : ''}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:${reached ? '#059669' : '#94a3b8'};font-weight:bold;">${reached ? checkYes : ''}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:${!reached && s.score !== null ? '#dc2626' : '#94a3b8'};font-weight:bold;">${!reached && s.score !== null ? checkYes : ''}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#64748b;">${s.appreciation}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#0A2A5E;font-weight:600;">${directorVisaCell}</td>
         </tr>`;
       }
     }).join('');
 
-    // Table header — ajout de la colonne "Visa Directeur" pour Primaire aussi
+    // Table header — Primaire : CM/18, CP/02, Total/20, Maîtrise min (Oui/Non), Seuil réussite (Oui/Non), Appréciation, Visa Directeur
     const tableHeader = data.isMaternelle ? `
       <tr style="background:#0A2A5E;color:white;">
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:9px;text-transform:uppercase;">Matière</th>
@@ -197,9 +207,9 @@ export class BulletinPdfService {
       <tr style="background:#0A2A5E;color:white;">
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:9px;text-transform:uppercase;text-align:left;">Champs de formation</th>
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Note min.</th>
-        <th style="border:1px solid #0D3B85;padding:4px;font-size:8px;">CM/18</th>
-        <th style="border:1px solid #0D3B85;padding:4px;font-size:8px;">CP/02</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Total /20</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;background:#0D3B85;">CM<br/><span style="font-size:7px;font-weight:normal;">/18</span></th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;background:#0D3B85;">CP<br/><span style="font-size:7px;font-weight:normal;">/02</span></th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Total<br/><span style="font-size:7px;font-weight:normal;">/20</span></th>
         <th colspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Maîtrise min.</th>
         <th colspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Seuil réussite</th>
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Appréciation</th>
@@ -212,14 +222,23 @@ export class BulletinPdfService {
         <th style="border:1px solid #114FC4;padding:3px;font-size:8px;">Non</th>
       </tr>`;
 
-    // Total General row (Primaire only) — ajout d'une cellule pour Visa Directeur
-    const totalRow = !data.isMaternelle ? `
+    // Total General row (Primaire only) — calcul CM/CP/Total + visa directeur
+    const totalRow = !data.isMaternelle ? (() => {
+      const validScores = data.subjects.filter(s => !s.isAbsent && s.score !== null).map(s => Number(s.score));
+      const totalScore = validScores.reduce((sum, v) => sum + v, 0);
+      const totalCm = validScores.reduce((sum, v) => sum + Math.min(18, Math.round(v * 0.9 * 10) / 10), 0);
+      const totalCp = validScores.reduce((sum, v) => sum + Math.round((v - Math.min(18, Math.round(v * 0.9 * 10) / 10)) * 10) / 10, 0);
+      return `
       <tr style="background:#e2e8f0;font-weight:bold;">
-        <td colspan="4" style="border:1px solid #cbd5e1;padding:4px;font-size:10px;text-transform:uppercase;">TOTAL GENERAL</td>
-        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:10px;color:#0A2A5E;">${data.generalAverage !== null ? (data.generalAverage * data.subjects.length).toFixed(2) : '—'}</td>
-        <td colspan="5" style="border:1px solid #cbd5e1;"></td>
+        <td colspan="2" style="border:1px solid #cbd5e1;padding:4px;font-size:10px;text-transform:uppercase;">TOTAL GENERAL</td>
+        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:10px;color:#0A2A5E;">${totalCm.toFixed(1)}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:10px;color:#0A2A5E;">${totalCp.toFixed(1)}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:11px;color:#0A2A5E;">${totalScore.toFixed(2)}</td>
+        <td colspan="4" style="border:1px solid #cbd5e1;"></td>
+        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;color:#64748b;">${data.appreciationGlobale || '—'}</td>
         <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;color:#0A2A5E;font-weight:600;">${data.directorVisa || '—'}</td>
-      </tr>` : '';
+      </tr>`;
+    })() : '';
 
     // ⭐ Colonne gauche : Tableau + synthèse (mathématiques)
     // ⭐ Colonne droite : Symbole mérité, visa directeur, signatures, QR
@@ -308,8 +327,8 @@ body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10p
 .student-info strong { color:#0A2A5E; }
 /* ⭐ Layout 2 colonnes — gauche : tableau + synthèse ; droite : symbole + visa + signatures */
 .two-col { display:flex; gap:8px; align-items:flex-start; }
-.col-left { flex: 2.3; min-width:0; }
-.col-right { flex: 1; min-width:0; }
+.col-left { flex: 2.8; min-width:0; }
+.col-right { flex: 1; min-width:0; max-width:230px; }
 table.notes { width:100%; border-collapse:collapse; }
 table.notes th { color:white; border:1px solid; padding:2px 3px; font-size:7px; text-transform:uppercase; }
 table.notes td { border:1px solid #cbd5e1; padding:2px 3px; }

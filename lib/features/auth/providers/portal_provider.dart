@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 // all consumers use the SAME PortalType enum. Previously this file defined
 // its own PortalType with only 4 values (no 'public'), which caused a type
 // mismatch with auth_notifier.dart that imports from user_role.dart.
-export '../../core/enums/user_role.dart' show PortalType;
+export '../../../core/enums/user_role.dart' show PortalType;
 
 /// Currently selected portal type (null if not yet selected).
 ///

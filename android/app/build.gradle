@@ -17,6 +17,13 @@ def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '
 android {
     namespace "io.academiahelm.mobile"
     compileSdk 36
+    // Pin NDK to the version required by the `jni` plugin (transitive dep of
+    // jni_flutter). Without this, AGP downloads BOTH NDK 27.0.12077973
+    // (its own default) AND NDK 28.2.13676358 (required by jni), which doubles
+    // the download size (~4 GB instead of ~2 GB) and slows down every CI build.
+    // NDK 28 is backward-compatible with NDK 27, so a single version covers
+    // both AGP and the jni plugin.
+    ndkVersion "28.2.13676358"
 
     defaultConfig {
         applicationId "io.academiahelm.mobile"

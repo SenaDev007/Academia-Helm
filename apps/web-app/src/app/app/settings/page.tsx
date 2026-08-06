@@ -2829,7 +2829,6 @@ export default function SettingsPage() {
                           <Archive className="w-3.5 h-3.5" aria-hidden />
                           Clôturer
                         </button>
-                      </div>
                     </div>
                   ))}
                 </div>

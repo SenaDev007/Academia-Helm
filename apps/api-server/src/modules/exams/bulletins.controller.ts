@@ -129,12 +129,133 @@ export class BulletinsController {
 
     const buffer = await this.pdfService.generateBulletin(pdfData);
 
+    // ⭐ Nom du fichier : bulletin_[élève]_[type éval]_[trimestre].pdf
+    const safeName = (body.studentName || 'eleve').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+    const safeEvalType = (body.evaluationTypeCode || body.evaluationTypeName || 'eval').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+    const safePeriod = (body.periodName || 'periode').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+    const filename = `bulletin_${safeName}_${safeEvalType}_${safePeriod}.pdf`;
+
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename=bulletin_${body.studentName || 'eleve'}.pdf`,
+      'Content-Disposition': `attachment; filename="${filename}"`,
       'Content-Length': buffer.length,
     });
     res.end(buffer);
+  }
+
+  /**
+   * ⭐ PATCH /institutional-exams/bulletins/director-visa
+   *
+   * Met à jour le visa du directeur pour un élève donné (par période + année).
+   * Auto-save : appelé à chaque sortie de ligne (blur) côté frontend.
+   * Crée ou met à jour le ReportCard correspondant.
+   *
+   * Body: { studentId, periodId, directorVisa, academicYearId?, schoolLevelId? }
+   */
+  @Patch('director-visa')
+  @Permissions('exams.manage')
+  async updateDirectorVisa(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+    @AcademicYearId() academicYearId: string,
+    @Body() body: {
+      studentId: string;
+      periodId: string;
+      directorVisa: string;
+      schoolLevelId?: string;
+    },
+  ) {
+    const resolvedTenantId = tenantId || user?.tenantId || headers?.['x-tenant-id'];
+    if (!resolvedTenantId) throw new ForbiddenException('Tenant ID requis');
+    if (!body.studentId || !body.periodId) {
+      throw new ForbiddenException('studentId et periodId sont requis');
+    }
+
+    // Récupérer l'enrollment pour schoolLevelId et classId
+    const enrollment = await this.prisma.studentEnrollment.findFirst({
+      where: { tenantId: resolvedTenantId, academicYearId, studentId: body.studentId },
+      select: { schoolLevelId: true, classId: true },
+    });
+    const schoolLevelId = body.schoolLevelId || enrollment?.schoolLevelId;
+    if (!schoolLevelId) {
+      throw new ForbiddenException('schoolLevelId non résolu pour cet élève');
+    }
+
+    // Upsert ReportCard — met à jour directorVisa ou crée le ReportCard
+    const existing = await this.prisma.reportCard.findFirst({
+      where: {
+        tenantId: resolvedTenantId,
+        academicYearId,
+        studentId: body.studentId,
+        quarterId: body.periodId,
+      },
+    });
+
+    const now = new Date();
+    if (existing) {
+      const updated = await this.prisma.reportCard.update({
+        where: { id: existing.id },
+        data: {
+          directorVisa: body.directorVisa,
+          directorVisaUpdatedAt: now,
+        },
+      });
+      return { success: true, reportCardId: updated.id, directorVisa: updated.directorVisa, updatedAt: now };
+    }
+
+    const created = await this.prisma.reportCard.create({
+      data: {
+        tenantId: resolvedTenantId,
+        academicYearId,
+        schoolLevelId,
+        studentId: body.studentId,
+        quarterId: body.periodId,
+        type: 'BULLETIN',
+        overallAverage: 0,
+        status: 'DRAFT',
+        directorVisa: body.directorVisa,
+        directorVisaUpdatedAt: now,
+      },
+    });
+    return { success: true, reportCardId: created.id, directorVisa: created.directorVisa, updatedAt: now, created: true };
+  }
+
+  /**
+   * ⭐ GET /institutional-exams/bulletins/director-visa
+   *
+   * Récupère le visa du directeur pour un élève + période donnés.
+   * Query: ?studentId=X&periodId=Y
+   */
+  @Get('director-visa')
+  @Permissions('exams.read')
+  async getDirectorVisa(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+    @AcademicYearId() academicYearId: string,
+    @Query('studentId') studentId: string,
+    @Query('periodId') periodId: string,
+  ) {
+    const resolvedTenantId = tenantId || user?.tenantId || headers?.['x-tenant-id'];
+    if (!resolvedTenantId || !studentId || !periodId) {
+      return { directorVisa: null, updatedAt: null };
+    }
+
+    const reportCard = await this.prisma.reportCard.findFirst({
+      where: {
+        tenantId: resolvedTenantId,
+        academicYearId,
+        studentId,
+        quarterId: periodId,
+      },
+      select: { directorVisa: true, directorVisaUpdatedAt: true },
+    });
+
+    return {
+      directorVisa: reportCard?.directorVisa ?? null,
+      updatedAt: reportCard?.directorVisaUpdatedAt ?? null,
+    };
   }
 
   /**

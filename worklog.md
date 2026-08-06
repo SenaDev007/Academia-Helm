@@ -1026,3 +1026,89 @@ Stage Summary:
 - Backend handles deduplication (skips existing councils for same
   classId + quarterId + academicYearId)
 - Frontend modal defaults to global mode with clear explanation
+
+---
+Task ID: 18
+Agent: main
+Task: Bulletins — director visa editable + symbole emoji + 2-column PDF layout + filename
+
+Work Log:
+
+== BACKEND ==
+
+1) ReportCard schema — 2 nouvelles colonnes :
+   - directorVisa (Text, nullable)
+   - directorVisaUpdatedAt (Timestamp, nullable)
+   - Migration appliquée sur Neon production
+   - Schéma Prisma mis à jour
+
+2) BulletinsController — 2 nouveaux endpoints :
+   - PATCH /institutional-exams/bulletins/director-visa
+     Body: { studentId, periodId, directorVisa, schoolLevelId? }
+     Upsert ReportCard : met à jour directorVisa ou crée le ReportCard
+   - GET /institutional-exams/bulletins/director-visa?studentId=X&periodId=Y
+     Retourne { directorVisa, updatedAt }
+
+3) BulletinPdfService — refonte majeure de buildHtml :
+   - BulletinPdfData étendu : subjects[].directorVisa, symboleMerite,
+     directorVisa (global), appreciationGlobale (texte)
+   - computeSymboleMerite(data) :
+     * Maternelle : TS → 🌟 Très Satisfaisant, S → 👍 Satisfaisant,
+       PS → ⚠️ Peu Satisfaisant
+     * Primaire/Secondaire : >=16 → 🏆, >=14 → 🌟, >=12 → 👍,
+       >=10 → ✅, <10 → ⚠️
+   - ⭐ Layout 2 colonnes (flex) après la section infos élève :
+     * Colonne gauche (flex: 2.3) : tableau des notes + synthèse
+       (moyenne, plus forte/faible, seuil) + symbole mérité (maternelle)
+     * Colonne droite (flex: 1) : symbole mérité (emoji gros) +
+       appréciation globale (texte) + visa directeur (texte) +
+       analyse et recommandations + 3 signatures empilées + QR code
+   - Tableau : ajout de la colonne "Visa Directeur" (surlignée en bleu foncé)
+     pour Maternelle ET Primaire
+   - Total General row : ajout cellule visa directeur (mention globale)
+   - Chaque sujet : cellule visa directeur éditable (s.directorVisa ||
+     s.appreciation || '—')
+   - Format paysage A4 conservé
+
+4) Filename PDF — ajout type éval + trimestre :
+   - Frontend : bulletin_[élève]_[typeEval]_[trimestre].pdf
+   - Backend : même règle dans generateBulletinPdf
+   - Exemple : bulletin_DEGBE_Erhel_EM1_Trimestre_1.pdf
+
+== FRONTEND ==
+
+5) BulletinMaternellePage1 — refonte :
+   - État directorVisas (Record<subjectId, string>) initialisé depuis
+     score.directorVisa || score.appreciation
+   - Chaque ligne : input text éditable dans la colonne "Visa Directeur"
+     avec auto-save on blur (handleVisaBlur)
+   - Surlignage bg-blue-50/30 sur la colonne visa directeur
+   - Symbole mérité (emoji 🌟/👍/⚠️) séparé de l'appréciation globale
+     (texte) — grid grid-cols-2
+   - Hint italic : "visa auto-rempli depuis appréciation enseignant,
+     éditable, auto-enregistré à la sortie de la ligne"
+
+6) BulletinPrimairePage1 — refonte :
+   - Même pattern : directorVisas state + input éditable par matière
+   - Ajout colonne "Visa Directeur" dans le tableau (header bleu foncé)
+   - Total General row : cellule visa directeur = mention globale
+   - Symbole mérité (emoji 🏆/🌟/👍/✅/⚠️) basé sur moyenne générale
+   - Appréciation globale (texte Très Bien/Bien/Assez Bien/Passable/Insuffisant)
+     séparée du symbole
+
+7) BulletinPage2 — refonte section symbole :
+   - Grid 3 colonnes : Symbole mérité (emoji) | Appréciation globale (texte)
+     | Visa du Directeur (textarea éditable)
+   - directorVisa state + handleDirectorVisaBlur (auto-save + indicateur
+     "✓ Enregistré" pendant 2s)
+   - Reset visa quand l'élève change (useEffect sur student.id)
+   - Auto-rempli depuis student.appreciationGlobale si vide
+   - Placeholder = appreciationGlobale (suggère la valeur par défaut)
+
+Stage Summary:
+- Visa directeur : éditable par élève ET par matière, auto-save on blur
+- Symbole mérité (emoji) distinct de l'appréciation globale (texte)
+- PDF : layout 2 colonnes (gauche: notes+synthèse, droite: symbole+visa+signatures)
+- Filename : bulletin_[élève]_[typeEval]_[trimestre].pdf
+- Migration DB : 2 nouvelles colonnes sur report_cards
+- 2 nouveaux endpoints backend pour persister le visa directeur

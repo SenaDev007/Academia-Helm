@@ -7944,9 +7944,12 @@ model ReportCard {
   validatedAt     DateTime?
   validatedBy     String?
   publishedAt     DateTime?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  language        String?
+  // ⭐ Visa du directeur — auto-rempli depuis l'appréciation enseignant mais éditable
+  directorVisa             String?
+  directorVisaUpdatedAt    DateTime?
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+  language                 String?
   items           ReportCardItem[]
   academicTrack   AcademicTrack?   @relation(fields: [academicTrackId], references: [id])
   academicYear    AcademicYear     @relation(fields: [academicYearId], references: [id])

@@ -28,6 +28,28 @@ import { renderCredentialEmail, TenantBranding } from '../recruitment-email-temp
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
+/**
+ * Politique de mot de passe chargée depuis les SecuritySettings du tenant.
+ * Si aucun paramètre n'est trouvé, on utilise les valeurs par défaut.
+ */
+interface PasswordPolicy {
+  minLength: number;
+  requireUppercase: boolean;
+  requireLowercase: boolean;
+  requireNumbers: boolean;
+  requireSpecial: boolean;
+}
+
+const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
+  minLength: 8,
+  requireUppercase: true,
+  requireLowercase: true,
+  requireNumbers: true,
+  requireSpecial: false,
+};
+
+const SPECIAL_CHARS = '!@#$%^&*?';
+
 // ── Mapping Staff roleType → UserRole ──
 
 const STAFF_ROLE_TO_USER_ROLE: Record<string, UserRole> = {
@@ -176,7 +198,7 @@ export class StaffCredentialService {
       }
 
       // 5. Générer un mot de passe temporaire sécurisé
-      const tempPassword = this.generateSecurePassword();
+      const tempPassword = this.generateSecurePassword(await this.loadPasswordPolicy(tenantId));
       const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
       // 6. Créer l'utilisateur dans la base
@@ -342,7 +364,7 @@ export class StaffCredentialService {
         : (teacherProfile?.matricule || '');
 
       // 5. Générer un mot de passe temporaire sécurisé et le hasher
-      const tempPassword = this.generateSecurePassword();
+      const tempPassword = this.generateSecurePassword(await this.loadPasswordPolicy(tenantId));
       const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
       // 6. Chercher si un user existe déjà avec cet email
@@ -479,24 +501,111 @@ export class StaffCredentialService {
   }
 
   /**
-   * Génère un mot de passe temporaire sécurisé et mémorable.
-   * Format : MotAdjectif3Chiffres (ex: "BraveLion742")
+   * Charge la politique de mot de passe du tenant depuis les SecuritySettings.
+   * Retourne les valeurs par défaut si aucune config n'existe en base.
    */
-  private generateSecurePassword(): string {
+  private async loadPasswordPolicy(tenantId: string): Promise<PasswordPolicy> {
+    try {
+      const settings = await this.prisma.securitySettings.findUnique({
+        where: { tenantId },
+      });
+      if (!settings) return { ...DEFAULT_PASSWORD_POLICY };
+      return {
+        minLength: settings.passwordMinLength ?? DEFAULT_PASSWORD_POLICY.minLength,
+        requireUppercase: settings.passwordRequireUppercase ?? DEFAULT_PASSWORD_POLICY.requireUppercase,
+        requireLowercase: settings.passwordRequireLowercase ?? DEFAULT_PASSWORD_POLICY.requireLowercase,
+        requireNumbers: settings.passwordRequireNumbers ?? DEFAULT_PASSWORD_POLICY.requireNumbers,
+        requireSpecial: settings.passwordRequireSpecial ?? DEFAULT_PASSWORD_POLICY.requireSpecial,
+      };
+    } catch (err: any) {
+      this.logger.warn(`Failed to load password policy for tenant ${tenantId}, using defaults: ${err?.message}`);
+      return { ...DEFAULT_PASSWORD_POLICY };
+    }
+  }
+
+  /**
+   * Génère un mot de passe temporaire sécurisé ET conforme à la politique
+   * de sécurité du tenant (longueur minimale, complexité).
+   *
+   * Construction :
+   *   - On choisit aléatoirement un adjectif (majuscule au début) pour remplir
+   *     l'exigence majuscule.
+   *   - On choisit un nom (minuscules) pour remplir l'exigence minuscule.
+   *   - On ajoute des chiffres pour l'exigence chiffre.
+   *   - On ajoute des caractères spéciaux si exigé.
+   *   - On padde avec caractères aléatoires jusqu'à atteindre minLength.
+   *   - On termine par un mélange (shuffle) pour éviter un format prédictible.
+   */
+  private generateSecurePassword(policy: PasswordPolicy = DEFAULT_PASSWORD_POLICY): string {
     const adjectives = [
       'Brave', 'Noble', 'Fier', 'Sage', 'Rapide', 'Fort', 'Clair', 'Lumineux',
       'Grand', 'Vif', 'Haut', 'Neuf', 'Vrai', 'Doux', 'Calme', 'Solide',
     ];
     const nouns = [
       'Lion', 'Aigle', 'Phare', 'Helm', 'Pilot', 'Guide', 'Cap', 'Voile',
-      'Etoile', 'Flambeau', 'Roc', 'Ocean', 'Mont', 'Arbre', 'Roc', 'Boussole',
+      'Etoile', 'Flambeau', 'Roc', 'Ocean', 'Mont', 'Arbre', 'Boussole',
     ];
 
     const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
-    const noun = nouns[Math.floor(Math.random() * nouns.length)];
-    const digits = crypto.randomInt(100, 999);
+    const noun = nouns[Math.floor(Math.random() * nouns.length)].toLowerCase();
+    const digits = String(crypto.randomInt(100, 999));
+    const parts: string[] = [];
 
-    return `${adj}${noun}${digits}`;
+    if (policy.requireUppercase) parts.push(adj);
+    else parts.push(adj.toLowerCase());
+    if (policy.requireLowercase) parts.push(noun);
+    if (policy.requireNumbers) parts.push(digits);
+    if (policy.requireSpecial) {
+      // 1 à 2 caractères spéciaux aléatoires
+      const n = crypto.randomInt(1, 3);
+      let spec = '';
+      for (let i = 0; i < n; i++) spec += SPECIAL_CHARS[crypto.randomInt(0, SPECIAL_CHARS.length)];
+      parts.push(spec);
+    }
+
+    // Padding aléatoire pour atteindre minLength
+    const allChars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let password = parts.join('');
+    while (password.length < policy.minLength) {
+      password += allChars[crypto.randomInt(0, allChars.length)];
+    }
+
+    // Shuffle pour éviter un format prédictible (maj-min-num-spec)
+    password = this.shuffleString(password);
+
+    // Vérification finale — si une exigence n'est pas satisfaite (cas rare),
+    // on ajoute le caractère manquant à une position aléatoire.
+    if (policy.requireUppercase && !/[A-Z]/.test(password)) {
+      const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ'[crypto.randomInt(0, 23)];
+      password = this.insertAt(password, c, crypto.randomInt(0, password.length));
+    }
+    if (policy.requireLowercase && !/[a-z]/.test(password)) {
+      const c = 'abcdefghjkmnpqrstuvwxyz'[crypto.randomInt(0, 23)];
+      password = this.insertAt(password, c, crypto.randomInt(0, password.length));
+    }
+    if (policy.requireNumbers && !/[0-9]/.test(password)) {
+      const c = String(crypto.randomInt(2, 10));
+      password = this.insertAt(password, c, crypto.randomInt(0, password.length));
+    }
+    if (policy.requireSpecial && !new RegExp(`[${SPECIAL_CHARS}]`).test(password)) {
+      const c = SPECIAL_CHARS[crypto.randomInt(0, SPECIAL_CHARS.length)];
+      password = this.insertAt(password, c, crypto.randomInt(0, password.length));
+    }
+
+    return password;
+  }
+
+  private shuffleString(str: string): string {
+    const arr = str.split('');
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = crypto.randomInt(0, i + 1);
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr.join('');
+  }
+
+  private insertAt(str: string, char: string, pos: number): string {
+    return str.slice(0, pos) + char + str.slice(pos);
   }
 
   /**

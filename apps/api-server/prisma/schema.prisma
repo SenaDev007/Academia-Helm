@@ -3704,6 +3704,10 @@ model SecuritySettings {
   dataRetentionYears       Int      @default(7)
   gdprCompliant            Boolean  @default(false)
   allowInspectionAccess    Boolean  @default(false)
+  // ⭐ Nouveaux champs (session/verrouillage + auth avancée)
+  inactivityLockMinutes    Int      @default(15)
+  deviceFingerprintEnabled Boolean  @default(true)
+  notifyOnNewDevice        Boolean  @default(true)
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
   tenant                   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)

@@ -835,3 +835,121 @@ Stage Summary:
 - RH staff detail page shows attributed roles + status
 - Facturation tab reloads data dynamically + shows empty states
 - All changes TypeScript-clean (no errors in modified files)
+
+---
+Task ID: 16
+Agent: main
+Task: Settings overhaul — Sécurité (politique mot de passe + session + auth avancée) + Appareils (2 sub-tabs)
+
+Work Log:
+
+== ONGLET SÉCURITÉ ==
+
+1) Politique de mots de passe — Refonte professionnelle :
+   - Header enrichi avec badge "Sécurité critique" + explication du
+     lien avec le module RH (génération d'identifiants)
+   - Champs : longueur min (6-20), expiration (0-365 jours),
+     4 cases à cocher complexité (majuscule, minuscule, chiffre, spécial)
+     avec hints visuels (A-Z, a-z, 0-9, !@#$%^&*?)
+   - ⭐ Aperçu live d'un mot de passe généré selon la politique :
+     * Fonction generateSamplePassword(form) côté frontend réplique
+       la logique du backend (adj + noun + digits + special + padding + shuffle)
+     * Badge "Régénérer l'aperçu" pour générer un nouveau sample
+     * Chips visuels montrant les caractéristiques satisfaites
+     * Longueur affichée / minLength configuré
+
+2) Backend StaffCredentialService.generateSecurePassword(policy) :
+   - apps/api-server/src/hr/services/staff-credential.service.ts
+   - Nouvelle méthode loadPasswordPolicy(tenantId) charge les
+     SecuritySettings depuis la DB (avec fallback valeurs par défaut)
+   - generateSecurePassword(policy) construit le mot de passe :
+     * Adjectif (majuscule) si requireUppercase
+     * Nom (minuscule) si requireLowercase
+     * 3 chiffres si requireNumbers
+     * 1-2 caractères spéciaux si requireSpecial
+     * Padding aléatoire jusqu'à minLength
+     * Shuffle Fisher-Yates pour format imprévisible
+     * Vérification finale + insertion caractère manquant si besoin
+   - Les 2 calls (createCredentialsForStaff + generateOrRegenerateCredentials)
+     passent maintenant la policy du tenant
+
+3) Session et verrouillage — Étendu :
+   - Durée de session max (5-480 min) — existant
+   - ⭐ Inactivité avant verrouillage (1-120 min) — NOUVEAU
+   - Tentatives max (3-10) — existant
+   - Durée de blocage (5-60 min) — existant
+   - Chaque champ a maintenant hint + description métier
+   - Bandeau impact expliquant le comportement
+
+4) Authentification avancée — Étendue :
+   - 2FA (existant)
+   - Vérification email (existant)
+   - ⭐ Reconnaissance des appareils (deviceFingerprintEnabled) — NOUVEAU
+   - ⭐ Notification de nouvelle connexion (notifyOnNewDevice) — NOUVEAU
+   - Chaque toggle a description détaillée du comportement
+
+5) Backend SecuritySettings :
+   - 3 nouvelles colonnes ajoutées à security_settings via migration :
+     * inactivityLockMinutes (Int, default 15)
+     * deviceFingerprintEnabled (Bool, default true)
+     * notifyOnNewDevice (Bool, default true)
+   - Migration exécutée sur la DB Neon de production
+   - SecuritySettingsService.updateSecuritySettings accepte les 3 nouveaux champs
+   - validateNewFields() vérifie les plages de valeurs
+   - getSecuritySettings crée les valeurs par défaut pour les nouveaux tenants
+
+== ONGLET APPAREILS AUTORISÉS ==
+
+6) Refonte avec 2 sous-onglets :
+   - "Appareils connectés" : liste filtrée par période (30j / mois / trimestre / année)
+   - "Historique de connexion" : archive paginée de tous les événements
+
+7) Sous-onglet Appareils connectés :
+   - Filtre période : 30 derniers jours / Ce mois / Ce trimestre / Cette année
+   - Tableau enrichi : Appareil (nom + UA), Type (badge visuel),
+     Utilisateur (nom + email + rôle), Adresse IP, Dernière activité,
+     Statut (En attente / Approuvé / Inactif), Actions
+   - ⭐ Détection des appareils en attente (isPendingValidation) :
+     * Ligne surlignée en ambre
+     * Badge "En attente" visible
+     * Bouton "Approuver" (validation admin) à côté de "Révoquer"
+   - DeviceTypeBadge : détecte Smartphone / Tablette / Ordinateur
+     à partir de deviceType + userAgent
+
+8) Sous-onglet Historique de connexion :
+   - Filtres : Action (LOGIN, LOGOUT, LOGIN_FAILED, DEVICE_REVOKED,
+     DEVICE_APPROVED, LOCKOUT, OTP_SENT, OTP_VERIFIED) + Statut (SUCCESS/FAILED)
+   - Tableau : Date/Heure, Utilisateur, Action (badge coloré),
+     Appareil (nom + type + IP), Adresse IP, Statut, Détail (reason)
+   - Pagination (50 par page) avec boutons Précédent/Suivant
+   - Compteur "X entrée(s) — page Y/Z"
+
+9) Backend TenantDevicesController (NOUVEAU) :
+   - apps/api-server/src/auth/controllers/tenant-devices.controller.ts
+   - 3 endpoints :
+     * GET /auth/devices/connected — appareils récents par période
+     * GET /auth/devices/login-history — historique paginé (50/page)
+     * POST /auth/devices/:deviceId/approve — validation manuelle admin
+   - Filtre strict par tenantId (isolation multi-tenant)
+   - Rôles autorisés : SUPER_ADMIN, PLATFORM_OWNER, PLATFORM_SUPER_ADMIN,
+     PLATFORM_ADMIN, PROMOTER, SCHOOL_OWNER, SCHOOL_ADMIN,
+     DIRECTEUR_GENERAL, DIRECTEUR_ETABLISSEMENT, DIRECTEUR
+   - periodToStartDate() convertit '30d'/'month'/'quarter'/'year' en Date
+   - Inclut user + device dans les réponses pour affichage enrichi
+
+10) Frontend settings.service.ts :
+    - getConnectedDevices({ period, tenantId })
+    - getLoginHistory({ page, limit, userId, action, status, from, to, tenantId })
+    - approveDevice(deviceId)
+    - Lazy-load via useEffect quand sous-onglet ouvert ou période change
+
+Stage Summary:
+- Politique mot de passe : génère maintenant des mots de passe conformes
+  à la config du tenant (longueur + complexité)
+- Aperçu live dans l'onglet Sécurité montre le format attendu
+- 3 nouveaux champs security_settings (inactivité, fingerprint, notification)
+- Appareils : 2 sous-onglets avec filtres période + pagination
+- Détection appareils en attente + bouton Approuver
+- Historique complet avec filtres action/statut + pagination
+- Backend : nouveau TenantDevicesController avec 3 endpoints
+- Migration DB appliquée sur Neon production

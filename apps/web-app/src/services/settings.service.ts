@@ -1226,3 +1226,54 @@ export async function revokeDevice(deviceId: string) {
     method: 'DELETE',
   });
 }
+
+/**
+ * Récupère les appareils connectés récents (30 derniers jours par défaut)
+ * avec filtre optionnel par période : 'month' | 'quarter' | 'year'
+ */
+export async function getConnectedDevices(
+  options?: { period?: 'month' | 'quarter' | 'year' | '30d'; tenantId?: string | null },
+) {
+  const params = new URLSearchParams();
+  if (options?.period) params.append('period', options.period);
+  if (options?.tenantId) params.append('tenant_id', options.tenantId);
+  return fetchWithAuth(`/api/auth/devices/connected?${params.toString()}`);
+}
+
+/**
+ * Récupère l'historique complet des connexions (toutes dates confondues).
+ * Inclut le nom de l'appareil, type, IP, user-agent, statut.
+ * Paginé : page (1-indexed) + limit (default 50).
+ */
+export async function getLoginHistory(
+  options?: {
+    page?: number;
+    limit?: number;
+    userId?: string;
+    action?: string;
+    status?: string;
+    tenantId?: string | null;
+    from?: string; // ISO date
+    to?: string; // ISO date
+  },
+) {
+  const params = new URLSearchParams();
+  if (options?.page) params.append('page', String(options.page));
+  if (options?.limit) params.append('limit', String(options.limit));
+  if (options?.userId) params.append('userId', options.userId);
+  if (options?.action) params.append('action', options.action);
+  if (options?.status) params.append('status', options.status);
+  if (options?.tenantId) params.append('tenant_id', options.tenantId);
+  if (options?.from) params.append('from', options.from);
+  if (options?.to) params.append('to', options.to);
+  return fetchWithAuth(`/api/auth/devices/login-history?${params.toString()}`);
+}
+
+/**
+ * Approuve manuellement un appareil en attente (validation admin).
+ */
+export async function approveDevice(deviceId: string) {
+  return fetchWithAuth(`/api/auth/devices/${deviceId}/approve`, {
+    method: 'POST',
+  });
+}

@@ -75,8 +75,10 @@ export interface BulletinPdfData {
 
 /**
  * ⭐ Formate un rang en ordinal français :
- *   1 → "1er", 2 → "2ème", 3 → "3ème", 4 → "4ème", etc.
- *   Pour le féminin : 1 → "1ère", 2 → "2ème", etc.
+ *   1 → "1er" (masculine) or "1ère" (feminine)
+ *   2, 3, 4, … → "2ème", "3ème", "4ème", etc.
+ *   null/undefined → '—'
+ *   feminine = true when the student is a girl (FEMALE gender)
  */
 function formatRank(rank: number | null | undefined, feminine: boolean = false): string {
   if (rank === null || rank === undefined) return '—';
@@ -144,53 +146,53 @@ export class BulletinPdfService {
       const directorVisaCell = s.directorVisa || s.appreciation || '—';
       if (data.isMaternelle) {
         const code = s.qualitativeCode;
-        // ⭐ Use HTML entities for checkmarks to avoid font rendering issues in PDF
-        const tsCheck = code === 'TS' ? '&#10003;' : '';
-        const sCheck = code === 'S' ? '&#10003;' : '';
-        const psCheck = code === 'PS' ? '&#10003;' : '';
+        // ⭐ Use "X" instead of ✓ to avoid font rendering issues in PDF
+        const tsCheck = code === 'TS' ? '<strong style="color:#059669">X</strong>' : '';
+        const sCheck = code === 'S' ? '<strong style="color:#2563eb">X</strong>' : '';
+        const psCheck = code === 'PS' ? '<strong style="color:#d97706">X</strong>' : '';
         const absent = s.isAbsent ? '<span style="color:red;font-size:8px">ABS</span>' : '';
         return `<tr>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;font-size:10px;">${s.name}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:10px;">${tsCheck || absent}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:10px;">${sCheck}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:10px;">${psCheck}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:11px;">${tsCheck || absent}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:11px;">${sCheck}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:11px;">${psCheck}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#64748b;">${s.appreciation}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#0A2A5E;font-weight:600;">${directorVisaCell}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#94a3b8;">—</td>
         </tr>`;
       } else {
-        // ⭐ Primaire/Secondaire — CM/18, CP/02, Total/20, Maîtrise min (Oui/Non), Seuil réussite (Oui/Non), Appréciation
-        // CM = Composante Maîtrise (sur 18), CP = Composante Pratique (sur 2)
-        // Si on a seulement le score total, on déduit CM et CP proportionnellement
-        // (par défaut on met le score total dans CM et 0 dans CP — à affiner si données disponibles)
+        // ⭐ Primaire — Carnet de correspondance column order:
+        // Champs | Note min | CM/18 | Maîtrise min (Oui/Non) | CP/02 | Total/20 | Seuil réussite (Oui/Non) | Appréciation | Visa Directeur
         const scoreNum = !s.isAbsent && s.score !== null ? Number(s.score) : null;
-        const cm = scoreNum !== null ? Math.min(18, Math.round(scoreNum * 0.9 * 10) / 10) : null; // 90% du score va dans CM
-        const cp = scoreNum !== null ? Math.round((scoreNum - (cm || 0)) * 10) / 10 : null; // le reste dans CP
+        const cm = scoreNum !== null ? Math.min(18, Math.round(scoreNum * 0.9 * 10) / 10) : null;
+        const cp = scoreNum !== null ? Math.round((scoreNum - (cm || 0)) * 10) / 10 : null;
         const scoreVal = s.isAbsent
           ? '<span style="color:red;font-size:8px;font-weight:bold">ABS</span>'
           : s.score !== null
             ? `<span style="color:${s.score >= 10 ? '#059669' : '#dc2626'};font-weight:bold">${s.score.toFixed(2)}</span>`
             : '—';
         const reached = !s.isAbsent && s.score !== null && s.score >= 10;
-        // ⭐ Use HTML entities (&#10003; for ✓) to avoid font rendering issues in PDF
-        const checkYes = '&#10003;';
+        // ⭐ Use "Oui" text instead of ✓ to avoid font rendering issues in PDF
+        const yes = '<strong style="color:#059669">Oui</strong>';
+        const no = '<strong style="color:#dc2626">Non</strong>';
         return `<tr>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;font-size:10px;">${s.name}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:8px;color:#94a3b8;">10</td>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cm !== null ? cm.toFixed(1) : '—'}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:8px;">${reached ? yes : ''}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:8px;">${!reached && s.score !== null ? no : ''}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cp !== null ? cp.toFixed(1) : '—'}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:10px;font-weight:bold;">${scoreVal}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:${reached ? '#059669' : '#94a3b8'};font-weight:bold;">${reached ? checkYes : ''}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:${!reached && s.score !== null ? '#dc2626' : '#94a3b8'};font-weight:bold;">${!reached && s.score !== null ? checkYes : ''}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:${reached ? '#059669' : '#94a3b8'};font-weight:bold;">${reached ? checkYes : ''}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:${!reached && s.score !== null ? '#dc2626' : '#94a3b8'};font-weight:bold;">${!reached && s.score !== null ? checkYes : ''}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:8px;">${reached ? yes : ''}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:8px;">${!reached && s.score !== null ? no : ''}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#64748b;">${s.appreciation}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#0A2A5E;font-weight:600;">${directorVisaCell}</td>
         </tr>`;
       }
     }).join('');
 
-    // Table header — Primaire : CM/18, CP/02, Total/20, Maîtrise min (Oui/Non), Seuil réussite (Oui/Non), Appréciation, Visa Directeur
+    // Table header — Primaire column order matches carnet de correspondance:
+    // Champs | Note min | CM/18 | Maîtrise min (Oui/Non) | CP/02 | Total/20 | Seuil réussite (Oui/Non) | Appréciation | Visa Directeur
     const tableHeader = data.isMaternelle ? `
       <tr style="background:#0A2A5E;color:white;">
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:9px;text-transform:uppercase;">Matière</th>
@@ -205,24 +207,25 @@ export class BulletinPdfService {
         <th style="border:1px solid #114FC4;padding:3px;font-size:9px;">PS</th>
       </tr>` : `
       <tr style="background:#0A2A5E;color:white;">
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:9px;text-transform:uppercase;text-align:left;">Champs de formation</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Note min.</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;background:#0D3B85;">CM<br/><span style="font-size:7px;font-weight:normal;">/18</span></th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;background:#0D3B85;">CP<br/><span style="font-size:7px;font-weight:normal;">/02</span></th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Total<br/><span style="font-size:7px;font-weight:normal;">/20</span></th>
-        <th colspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Maîtrise min.</th>
-        <th colspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Seuil réussite</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Appréciation</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;background:#0D3B85;">Visa Directeur</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;text-align:left;">Champs de formation</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Note min.</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;background:#0D3B85;">CM<br/><span style="font-size:6px;font-weight:normal;">/18</span></th>
+        <th colspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Maîtrise min.</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;background:#0D3B85;">CP<br/><span style="font-size:6px;font-weight:normal;">/02</span></th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Total<br/><span style="font-size:6px;font-weight:normal;">/20</span></th>
+        <th colspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Seuil réussite</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Appréciation</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;background:#0D3B85;">Visa Directeur</th>
       </tr>
       <tr style="background:#0D3B85;color:white;">
-        <th style="border:1px solid #114FC4;padding:3px;font-size:8px;">Oui</th>
-        <th style="border:1px solid #114FC4;padding:3px;font-size:8px;">Non</th>
-        <th style="border:1px solid #114FC4;padding:3px;font-size:8px;">Oui</th>
-        <th style="border:1px solid #114FC4;padding:3px;font-size:8px;">Non</th>
+        <th style="border:1px solid #114FC4;padding:3px;font-size:7px;">Oui</th>
+        <th style="border:1px solid #114FC4;padding:3px;font-size:7px;">Non</th>
+        <th style="border:1px solid #114FC4;padding:3px;font-size:7px;">Oui</th>
+        <th style="border:1px solid #114FC4;padding:3px;font-size:7px;">Non</th>
       </tr>`;
 
-    // Total General row (Primaire only) — calcul CM/CP/Total + visa directeur
+    // Total General row (Primaire only) — column order matches carnet:
+    // Champs(colspan=2) | Note min(empty) | CM | Maîtrise(empty colspan=2) | CP | Total | Seuil(empty colspan=2) | Appréciation | Visa
     const totalRow = !data.isMaternelle ? (() => {
       const validScores = data.subjects.filter(s => !s.isAbsent && s.score !== null).map(s => Number(s.score));
       const totalScore = validScores.reduce((sum, v) => sum + v, 0);
@@ -230,11 +233,12 @@ export class BulletinPdfService {
       const totalCp = validScores.reduce((sum, v) => sum + Math.round((v - Math.min(18, Math.round(v * 0.9 * 10) / 10)) * 10) / 10, 0);
       return `
       <tr style="background:#e2e8f0;font-weight:bold;">
-        <td colspan="2" style="border:1px solid #cbd5e1;padding:4px;font-size:10px;text-transform:uppercase;">TOTAL GENERAL</td>
+        <td colspan="2" style="border:1px solid #cbd5e1;padding:4px;font-size:9px;text-transform:uppercase;">TOTAL GENERAL</td>
         <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:10px;color:#0A2A5E;">${totalCm.toFixed(1)}</td>
+        <td colspan="2" style="border:1px solid #cbd5e1;"></td>
         <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:10px;color:#0A2A5E;">${totalCp.toFixed(1)}</td>
         <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:11px;color:#0A2A5E;">${totalScore.toFixed(2)}</td>
-        <td colspan="4" style="border:1px solid #cbd5e1;"></td>
+        <td colspan="2" style="border:1px solid #cbd5e1;"></td>
         <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;color:#64748b;">${data.appreciationGlobale || '—'}</td>
         <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;color:#0A2A5E;font-weight:600;">${data.directorVisa || '—'}</td>
       </tr>`;
@@ -252,7 +256,6 @@ export class BulletinPdfService {
         <div style="margin-top:6px;text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:3px;padding:4px;">
           <span style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;">Symbole mérité par l'élève : </span>
           <span style="font-size:14px;">${symboleMerite}</span>
-          <span style="font-size:9px;color:#64748b;margin-left:4px;">(${data.appreciationGlobale || '—'})</span>
         </div>` : `
         <div style="margin-top:6px;font-size:9px;">
           <div style="display:flex;justify-content:space-between;background:#f8fafc;padding:2px 6px;border-radius:2px;margin-bottom:1px;"><span>Moyenne obtenue :</span><strong style="color:#0A2A5E;">${data.generalAverage !== null ? data.generalAverage.toFixed(2) : '—'}/20</strong></div>
@@ -364,7 +367,7 @@ table.notes tbody tr:nth-child(even) { background:#f8fafc; }
   <div>Élève: <strong>${data.studentName}</strong></div>
   <div>Matricule: <strong>${data.studentMatricule || '—'}</strong></div>
   <div>Classe: <strong>${data.className}</strong></div>
-  <div>Rang: <strong>${formatRank(data.classRank)}</strong> / ${data.totalStudents}</div>
+  <div>Rang: <strong>${formatRank(data.classRank, data.studentGender === 'FEMALE' || data.studentGender === 'F')}</strong> / ${data.totalStudents}</div>
 </div>
 
 <!-- ⭐ LAYOUT 2 COLONNES -->

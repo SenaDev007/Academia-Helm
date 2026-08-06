@@ -585,11 +585,11 @@ function BulletinsContent() {
                   className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors">
                   <div className="flex items-center gap-3">
                     {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-500" /> : <ChevronRight className="w-5 h-5 text-slate-500" />}
-                    <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">{formatRank(student.classRank)}</div>
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">{formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')}</div>
                     <div className="text-left">
                       <div className="text-sm font-bold text-slate-900 whitespace-nowrap">{student.studentName}</div>
                       <div className="text-xs text-slate-500">
-                        {student.matricule || '—'} · Rang {formatRank(student.classRank)}
+                        {student.matricule || '—'} · Rang {formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')}
                         {!isMaternelle && student.generalAverage !== null && ` · ${student.generalAverage.toFixed(2)}/20`}
                         {isMaternelle && student.appreciationGlobale && ` · ${student.appreciationGlobale}`}
                       </div>
@@ -1669,7 +1669,7 @@ function generateBulletinHtml(
     <div>Élève: <strong>${student.studentName}</strong></div>
     <div>Matricule: <strong>${student.matricule || '—'}</strong></div>
     <div>Classe: <strong>${className || '—'}</strong></div>
-    <div>Rang: <strong>${formatRank(student.classRank)}</strong></div>
+    <div>Rang: <strong>${formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')}</strong></div>
   </div>
 
   <!-- Notes Table -->
@@ -1681,7 +1681,7 @@ function generateBulletinHtml(
   <!-- Synthèse -->
   <div class="synthesis">
     ${!isMaternelle ? `<div><div class="label">Moyenne</div><div class="value" style="color:#0A2A5E">${student.generalAverage?.toFixed(2) || '—'}/20</div></div>` : ''}
-    <div><div class="label">Rang</div><div class="value" style="color:#334155">${formatRank(student.classRank)}</div></div>
+    <div><div class="label">Rang</div><div class="value" style="color:#334155">${formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')}</div></div>
     <div><div class="label">${isMaternelle ? 'Appréciation' : 'Mention'}</div><div class="value" style="color:#059669;font-size:12px">${isMaternelle ? (student.appreciationGlobale || '—') : (student.generalAverage !== null ? (student.generalAverage >= 16 ? 'Très Bien' : student.generalAverage >= 14 ? 'Bien' : student.generalAverage >= 12 ? 'Assez Bien' : student.generalAverage >= 10 ? 'Passable' : 'Insuffisant') : '—')}</div></div>
     <div><div class="label">Moy. classe</div><div class="value" style="color:#CFA63A">${data.stats.classAverage?.toFixed(2) || '—'}</div></div>
   </div>

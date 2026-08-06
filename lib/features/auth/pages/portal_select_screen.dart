@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
 import '../../../core/widgets/ah_logo_circle.dart';
 import '../providers/portal_provider.dart';
+import '../providers/school_provider.dart';
 
 /// Portal selection screen matching the web app's TenantPortalSelection.
 ///
@@ -121,6 +123,14 @@ class PortalSelectScreen extends ConsumerWidget {
                           ref.read(selectedPortalProvider.notifier).state = PortalType.parent;
                           context.push('/school-select');
                         },
+                      ),
+                      const SizedBox(height: AHSpacing.md),
+                      _buildPortalCard(
+                        ref: ref,
+                        icon: Icons.public_outlined,
+                        title: 'Public',
+                        description: 'Pré-inscription en ligne',
+                        onTap: () => _selectPublicPortal(ref),
                       ),
                       const SizedBox(height: AHSpacing.xxl),
                       _buildFooter(),
@@ -345,5 +355,23 @@ class PortalSelectScreen extends ConsumerWidget {
     // Use push instead of go so the back button works from /login
     // (returns to /portal-select when user taps back).
     GoRouter.of(ref.context).push('/login');
+  }
+
+  /// Handles the Public portal — same school selection flow, then redirects
+  /// to the web pre-enrollment page (3-step wizard that's too complex to
+  /// replicate natively for now).
+  void _selectPublicPortal(WidgetRef ref) {
+    // Store a special "public" portal marker
+    ref.read(selectedPortalProvider.notifier).state = PortalType.platform; // placeholder
+    // For now, open the web pre-enrollment in a browser
+    // (the 3-step wizard is too complex to replicate natively)
+    _launchUrl('https://app.academiahelm.com/portal');
+  }
+
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 }

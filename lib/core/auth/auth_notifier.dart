@@ -18,13 +18,18 @@ final authNotifierProvider =
 /// Riverpod [AsyncNotifier] that manages the authentication lifecycle.
 ///
 /// Responsibilities:
-/// - Login (email + password)
+/// - Login (email + password, matricule + password, phone/email + password)
 /// - Logout
 /// - Token refresh
 /// - Auto-restore session from secure storage on app start
 /// - Tenant selection after login
 /// - Portal selection
 /// - Forgot / reset password
+///
+/// Login endpoints (matches web app):
+/// - SCHOOL / PLATFORM → POST /auth/login
+/// - TEACHER → POST /portal/auth/teacher
+/// - PARENT → POST /portal/auth/parent
 class AuthNotifier extends AsyncNotifier<AuthState> {
   AuthNotifier();
 
@@ -106,27 +111,43 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 
   // ── Login ─────────────────────────────────────────────────────────────
 
-  /// Authenticates the user with [email] and [password].
+  /// Authenticates the user with [identifier] and [password].
   ///
-  /// On success:
-  /// 1. Stores the access and refresh tokens.
-  /// 2. Parses the user profile and available tenants.
-  /// 3. Updates the state to [AuthAuthenticated].
+  /// The [identifier] can be:
+  /// - An email (for SCHOOL / PLATFORM portals)
+  /// - A matricule (for TEACHER portal)
+  /// - A phone number or email (for PARENT portal)
+  ///
+  /// The [portalType] determines which API endpoint to call:
+  /// - SCHOOL / PLATFORM → POST /auth/login
+  /// - TEACHER → POST /portal/auth/teacher
+  /// - PARENT → POST /portal/auth/parent
+  ///
+  /// The [tenantId] is required for TEACHER and PARENT portals.
   Future<void> login({
-    required String email,
+    required String identifier,
     required String password,
+    PortalType? portalType,
+    String? tenantId,
   }) async {
     state = const AsyncValue<AuthState>.data(AuthState.loginLoading());
 
     try {
       final ApiClient apiClient = ref.read(apiClientProvider);
+
+      // Determine the endpoint and payload based on portal type
+      final String endpoint = _getLoginEndpoint(portalType);
+      final Map<String, dynamic> payload = _buildLoginPayload(
+        identifier: identifier,
+        password: password,
+        portalType: portalType,
+        tenantId: tenantId,
+      );
+
       final ApiResult<Map<String, dynamic>> result =
           await apiClient.postRaw(
-        ApiConfig.loginEndpoint,
-        data: <String, dynamic>{
-          'email': email,
-          'password': password,
-        },
+        endpoint,
+        data: payload,
       );
 
       result.when(
@@ -188,6 +209,68 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       );
       if (e is AuthException) rethrow;
       throw AuthException(e.toString());
+    }
+  }
+
+  /// Returns the correct login endpoint based on portal type.
+  /// Matches the web app's 3-endpoint architecture.
+  String _getLoginEndpoint(PortalType? portalType) {
+    switch (portalType) {
+      case PortalType.teacher:
+        return '/portal/auth/teacher';
+      case PortalType.parent:
+        return '/portal/auth/parent';
+      case PortalType.school:
+      case PortalType.platform:
+      default:
+        return ApiConfig.loginEndpoint; // /auth/login
+    }
+  }
+
+  /// Builds the login payload based on portal type.
+  /// Each portal sends different fields to its endpoint.
+  Map<String, dynamic> _buildLoginPayload({
+    required String identifier,
+    required String password,
+    PortalType? portalType,
+    String? tenantId,
+  }) {
+    switch (portalType) {
+      case PortalType.teacher:
+        return <String, dynamic>{
+          'tenantId': tenantId,
+          'teacherIdentifier': identifier,
+          'password': password,
+          'portal_type': 'TEACHER',
+        };
+      case PortalType.parent:
+        // Parent: auto-detect phone vs email based on '@'
+        final isEmail = identifier.contains('@');
+        final payload = <String, dynamic>{
+          'tenantId': tenantId,
+          'identifierType': isEmail ? 'EMAIL' : 'PHONE',
+          'portal_type': 'PARENT',
+        };
+        if (isEmail) {
+          payload['email'] = identifier;
+          if (password.isNotEmpty) {
+            payload['password'] = password;
+          }
+        } else {
+          payload['phone'] = identifier;
+        }
+        return payload;
+      case PortalType.school:
+      case PortalType.platform:
+      default:
+        return <String, dynamic>{
+          'email': identifier,
+          'password': password,
+          'portal_type': portalType == PortalType.platform
+              ? 'PLATFORM'
+              : 'SCHOOL',
+          if (tenantId != null) 'tenant_id': tenantId,
+        };
     }
   }
 

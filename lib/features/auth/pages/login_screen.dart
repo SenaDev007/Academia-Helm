@@ -4,6 +4,7 @@ import '../../../core/widgets/ah_logo_circle.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/auth/auth_notifier.dart';
 import '../../../core/auth/auth_state.dart';
@@ -33,16 +34,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _isLoading = false;
   String? _error;
 
-  Future<void> _handleLogin(String email, String password) async {
+  Future<void> _handleLogin(String identifier, String password) async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
     try {
+      final selectedPortal = ref.read(selectedPortalProvider);
+      final selectedSchool = ref.read(selectedSchoolProvider);
+      final tenantId = selectedSchool?.id;
+
       await ref.read(authNotifierProvider.notifier).login(
-            email: email,
+            identifier: identifier,
             password: password,
+            portalType: selectedPortal,
+            tenantId: tenantId,
           );
 
       if (!mounted) return;
@@ -86,6 +93,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  /// Handles Google Sign-In for the SCHOOL portal.
+  /// Opens the web Google OAuth flow in an external browser.
+  Future<void> _handleGoogleSignIn() async {
+    final selectedSchool = ref.read(selectedSchoolProvider);
+    final slug = selectedSchool?.slug;
+    final url = slug != null
+        ? 'https://app.academiahelm.com/login?portal=school&tenant=$slug'
+        : 'https://app.academiahelm.com/login?portal=school';
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
@@ -396,6 +417,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         isLoading: _isLoading,
         error: _error,
         portalType: selectedPortal,
+        onGoogleSignIn: _handleGoogleSignIn,
       ),
     );
   }

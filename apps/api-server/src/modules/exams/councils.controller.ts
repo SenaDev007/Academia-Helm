@@ -22,11 +22,14 @@ export class CouncilsController {
     @CurrentUser() user: any,
     @Headers() headers: any,
     @AcademicYearId() academicYearId: string,
-    @Query('periodId') periodId: string,
+    @Query('quarterId') quarterId: string,
+    @Query('periodId') periodId: string, // alias legacy (map vers quarterId)
     @Query('classId') classId: string,
+    @Query('schoolLevelId') schoolLevelId: string,
   ) {
     const resolvedTenantId = tenantId || user?.tenantId || headers?.['x-tenant-id'];
-    return this.councilsService.getCouncils(resolvedTenantId, academicYearId, periodId, classId);
+    const qid = quarterId || periodId; // ⭐ rétro-compat : periodId → quarterId
+    return this.councilsService.getCouncils(resolvedTenantId, academicYearId, qid, classId, schoolLevelId);
   }
 
   @Post()
@@ -38,6 +41,11 @@ export class CouncilsController {
     @Body() data: any,
   ) {
     const resolvedTenantId = tenantId || user?.tenantId || headers?.['x-tenant-id'];
+    // ⭐ Si schoolLevelId est fourni mais pas classId → création GLOBALE
+    // pour toutes les classes du niveau scolaire.
+    if (data.schoolLevelId && !data.classId) {
+      return this.councilsService.createGlobalCouncils(resolvedTenantId, data);
+    }
     return this.councilsService.createCouncil(resolvedTenantId, data);
   }
 
@@ -55,8 +63,14 @@ export class CouncilsController {
 
   @Post(':id/start')
   @Permissions('exams.manage')
-  async start(@Param('id') id: string) {
-    return this.councilsService.startCouncil(id);
+  async start(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+  ) {
+    const resolvedTenantId = tenantId || user?.tenantId || headers?.['x-tenant-id'];
+    return this.councilsService.startCouncil(id, resolvedTenantId);
   }
 
   @Post(':id/decisions/:studentId')
@@ -76,8 +90,14 @@ export class CouncilsController {
 
   @Patch(':id/complete')
   @Permissions('exams.manage')
-  async complete(@Param('id') id: string) {
-    return this.councilsService.closeCouncil(id);
+  async complete(
+    @Param('id') id: string,
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+  ) {
+    const resolvedTenantId = tenantId || user?.tenantId || headers?.['x-tenant-id'];
+    return this.councilsService.closeCouncil(id, resolvedTenantId);
   }
 
   /**
@@ -111,13 +131,15 @@ export class CouncilsController {
     @Res() res: Response,
   ) {
     const resolvedTenantId = tenantId || user?.tenantId || headers?.['x-tenant-id'];
-    const buffer = await this.councilsService.generateMinutesPdf(id, resolvedTenantId);
+    const result = await this.councilsService.generatePV(id, resolvedTenantId);
+    const buffer = Buffer.isBuffer(result.pdf) ? result.pdf : Buffer.from(result.pdf);
 
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename=pv_conseil_${id.substring(0, 8)}.pdf`,
+      'Content-Disposition': `attachment; filename="${result.filename || `pv_conseil_${id.substring(0, 8)}.pdf`}"`,
       'Content-Length': buffer.length,
     });
     res.end(buffer);
   }
 }
+

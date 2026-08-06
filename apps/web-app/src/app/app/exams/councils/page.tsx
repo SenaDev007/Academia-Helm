@@ -148,7 +148,7 @@ function CouncilsContent() {
     setLoading(true);
     try {
       const res = await apiClient.get('/institutional-exams/councils', {
-        params: { academicYearId: academicYear.id },
+        params: { academicYearId: academicYear.id, schoolLevelId: schoolLevelUuid },
       });
       setCouncils(Array.isArray(res.data) ? res.data : []);
     } catch { setCouncils([]); }
@@ -159,13 +159,37 @@ function CouncilsContent() {
   useEffect(() => { loadCouncils(); }, [loadCouncils]);
 
   // ── Create council ────────────────────────────────────────────────────────
+  // ⭐ Si mode global : crée un council pour TOUTES les classes du niveau
+  //    scolaire actuellement sélectionné (scopeLevel). Tous les enseignants
+  //    de ces classes verront le council dans leur UI.
   const handleCreate = async (data: any) => {
     try {
-      await apiClient.post('/institutional-exams/councils', {
-        ...data,
+      const payload: any = {
         academicYearId: academicYear?.id,
-      });
-      toastSuccess('Conseil créé', { description: `${data.title} programmé` });
+        schoolLevelId: schoolLevelUuid,
+        councilDate: data.councilDate,
+        quarterId: data.quarterId || data.periodId, // ⭐ periodId alias legacy
+        notes: data.notes || data.title || null,
+      };
+      if (!data.isGlobal && data.classId) {
+        // Création pour une seule classe
+        payload.classId = data.classId;
+      }
+      // Si isGlobal=true ou pas de classId → le backend crée un council par
+      // classe du niveau scolaire (createGlobalCouncils)
+
+      const res = await apiClient.post('/institutional-exams/councils', payload);
+      const result = res.data || res;
+
+      if (data.isGlobal || !data.classId) {
+        const createdCount = result?.createdCount ?? (Array.isArray(result?.created) ? result.created.length : 0);
+        const skippedCount = result?.skippedCount ?? 0;
+        toastSuccess('Conseils créés', {
+          description: `${createdCount} conseil(s) programmé(s) pour toutes les classes du niveau ${scopeLevel}${skippedCount > 0 ? ` (${skippedCount} déjà existant(s))` : ''}`,
+        });
+      } else {
+        toastSuccess('Conseil créé', { description: `${data.title || 'Conseil'} programmé` });
+      }
       setShowCreateModal(false);
       loadCouncils();
     } catch (err: any) {
@@ -243,6 +267,7 @@ function CouncilsContent() {
           periods={periods}
           onCreate={handleCreate}
           onClose={() => setShowCreateModal(false)}
+          scopeLevel={scopeLevel}
         />
       )}
     </div>
@@ -583,49 +608,79 @@ function DecisionForm({
 // ─── Create Council Modal ───────────────────────────────────────────────────
 
 function CreateCouncilModal({
-  classes, periods, onCreate, onClose,
+  classes, periods, onCreate, onClose, scopeLevel,
 }: {
   classes: any[];
   periods: any[];
   onCreate: (data: any) => void;
   onClose: () => void;
+  scopeLevel?: string;
 }) {
+  const [isGlobal, setIsGlobal] = useState(true); // ⭐ Mode global par défaut
   const [classId, setClassId] = useState(classes[0]?.id || '');
-  const [periodId, setPeriodId] = useState(periods[0]?.id || '');
+  const [quarterId, setQuarterId] = useState(periods[0]?.id || '');
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4">
+      <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
         <h3 className="text-sm font-bold text-slate-900 mb-4">Programmer un conseil de classe</h3>
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs font-semibold text-slate-600">Titre</label>
+
+        {/* ⭐ Mode de création : Global (toutes les classes du niveau) ou Classe unique */}
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center gap-2 mb-2">
             <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Ex: Conseil T1 — CI A"
-              className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 mt-1"
+              type="radio"
+              id="mode-global"
+              checked={isGlobal}
+              onChange={() => setIsGlobal(true)}
+              className="h-4 w-4 text-blue-600"
             />
+            <label htmlFor="mode-global" className="text-sm font-semibold text-slate-700 cursor-pointer">
+              Global — Toutes les classes du niveau {scopeLevel || '—'}
+            </label>
           </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-600">Classe</label>
-            <select value={classId} onChange={(e) => setClassId(e.target.value)}
-              className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 mt-1">
-              {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+          <p className="text-xs text-slate-600 ml-6">
+            Crée un conseil pour <strong>chaque classe</strong> du niveau scolaire en une seule opération.
+            Tous les enseignants verront le conseil dans leur UI.
+          </p>
+          <div className="flex items-center gap-2 mt-3 mb-2">
+            <input
+              type="radio"
+              id="mode-single"
+              checked={!isGlobal}
+              onChange={() => setIsGlobal(false)}
+              className="h-4 w-4 text-blue-600"
+            />
+            <label htmlFor="mode-single" className="text-sm font-semibold text-slate-700 cursor-pointer">
+              Classe unique
+            </label>
           </div>
+          <p className="text-xs text-slate-600 ml-6">
+            Crée un conseil pour une seule classe spécifique.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          {!isGlobal && (
+            <div>
+              <label className="text-xs font-semibold text-slate-600">Classe</label>
+              <select value={classId} onChange={(e) => setClassId(e.target.value)}
+                className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 mt-1">
+                {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <label className="text-xs font-semibold text-slate-600">Trimestre</label>
-            <select value={periodId} onChange={(e) => setPeriodId(e.target.value)}
+            <select value={quarterId} onChange={(e) => setQuarterId(e.target.value)}
               className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 mt-1">
               {periods.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-xs font-semibold text-slate-600">Date & heure</label>
+            <label className="text-xs font-semibold text-slate-600">Date &amp; heure</label>
             <input
               type="datetime-local"
               value={date}
@@ -633,14 +688,24 @@ function CreateCouncilModal({
               className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 mt-1"
             />
           </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600">Note / Intitulé (optionnel)</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={isGlobal ? 'Ex: Conseil T1 — Niveau Maternelle' : 'Ex: Conseil T1 — CI A'}
+              className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 mt-1"
+            />
+          </div>
         </div>
         <div className="flex items-center justify-end gap-2 mt-4">
           <Button variant="outline" onClick={onClose} className="text-sm">Annuler</Button>
           <Button
-            onClick={() => onCreate({ title, classId, periodId, councilDate: date })}
+            onClick={() => onCreate({ title, classId: isGlobal ? undefined : classId, quarterId, councilDate: date, isGlobal, notes: title })}
             className="bg-blue-600 hover:bg-blue-700 text-white text-sm"
           >
-            Programmer
+            {isGlobal ? 'Programmer pour toutes les classes' : 'Programmer'}
           </Button>
         </div>
       </div>

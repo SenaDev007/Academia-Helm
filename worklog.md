@@ -953,3 +953,76 @@ Stage Summary:
 - Historique complet avec filtres action/statut + pagination
 - Backend : nouveau TenantDevicesController avec 3 endpoints
 - Migration DB appliquée sur Neon production
+
+---
+Task ID: 17
+Agent: main
+Task: Fix ClassCouncil Prisma P2010 + add global council creation for all classes of a school level
+
+Work Log:
+
+== BUG: "column periodId of relation class_councils does not exist" ==
+
+1) Diagnostic:
+   - Inspected actual DB schema: class_councils has columns
+     id, tenantId, academicYearId, schoolLevelId, academicTrackId?,
+     classId, quarterId?, councilDate, status, participants[], notes?, createdAt, updatedAt
+   - NO periodId column — the councils.service.ts was using periodId everywhere
+     (legacy code written against a wrong schema)
+   - Also referenced non-existent columns: title, chairedById
+   - All $queryRawUnsafe / $executeRawUnsafe calls were broken
+
+2) Fix — rewrote councils.service.ts completely:
+   - Replaced ALL raw SQL queries with safe Prisma client API calls
+     (this.prisma.classCouncil.findMany, create, updateMany, deleteMany)
+   - Renamed periodId → quarterId everywhere (matches actual schema)
+   - Removed references to title, chairedById (use notes instead)
+   - getCouncils() now uses Prisma findMany with proper includes
+     (class, schoolLevel, quarter, academicTrack, _count)
+   - getCouncilDetails() now uses Prisma findFirst with includes
+   - saveDecision() uses findFirst + create/update (was raw INSERT...ON CONFLICT)
+   - startCouncil/closeCouncil now require tenantId (updateMany for safety)
+   - getAIAnalysis() uses Prisma findMany for evaluations + grades + attendance
+   - Note: Evaluation.periodId references AcademicPeriod (different table
+     from ClassCouncil.quarterId which references Quarter). For AI analysis,
+     we filter by classId + academicYearId + status=VALIDATED only (skip
+     period filter to avoid the table mismatch).
+
+== FEATURE: Global council creation for all classes of a school level ==
+
+3) Backend — createGlobalCouncils(tenantId, data):
+   - Fetches all classes of the school level with active enrollments
+   - Checks for existing councils (same classId + quarterId + academicYearId)
+     to avoid duplicates
+   - Transaction: creates one ClassCouncil per class in a single $transaction
+   - Returns: { created: [...], skipped: [...], totalClasses, createdCount, skippedCount }
+   - Skipped classes have reason: 'already_exists'
+
+4) Controller — POST /institutional-exams/councils:
+   - If data.schoolLevelId is provided WITHOUT data.classId → calls
+     createGlobalCouncils (global mode)
+   - If data.classId is provided → calls createCouncil (single class mode)
+   - GET /institutional-exams/councils now accepts quarterId (and periodId
+     as legacy alias → mapped to quarterId for backward compat)
+   - GET now also accepts schoolLevelId filter
+
+5) Frontend — councils/page.tsx:
+   - CreateCouncilModal: added mode selector (radio buttons)
+     * "Global — Toutes les classes du niveau {scopeLevel}" (default)
+     * "Classe unique"
+   - Global mode: hides class selector, shows info banner explaining
+     that one council will be created per class
+   - handleCreate: sends payload with schoolLevelId (no classId for global)
+     + quarterId (was periodId before)
+   - loadCouncils: now passes schoolLevelId filter so each level shows
+     only its own councils
+   - Toast message: "X conseil(s) programmé(s) pour toutes les classes
+     du niveau MATERNELLE (Y déjà existant(s))"
+
+Stage Summary:
+- Prisma P2010 error fixed (periodId → quarterId, raw SQL → safe Prisma API)
+- Global council creation: one click creates N councils (one per class)
+- All teachers of all classes of the level see the council in their UI
+- Backend handles deduplication (skips existing councils for same
+  classId + quarterId + academicYearId)
+- Frontend modal defaults to global mode with clear explanation

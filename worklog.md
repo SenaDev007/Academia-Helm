@@ -735,3 +735,33 @@ Stage Summary:
 - "VALIDATED is not defined" crash fixed — root cause was ES2015 shorthand
   property names referencing non-existent variables
 - All changes committed in 33fc1e24 and pushed to origin/main
+
+---
+Task ID: 14
+Agent: main
+Task: Fix Vercel build failure — "Unterminated regexp literal" in settings/page.tsx
+
+Work Log:
+- Vercel build failed at line 2833 with "Unterminated regexp literal"
+- Same error in both ba5276d3 and 33fc1e24 deployments
+- Root cause: previous commit ba5276d3 had removed the
+  "Modifier les dates" button from the academic years history list.
+  The button was wrapped in <div className="flex items-center gap-2 shrink-0">.
+  The commit removed:
+    - <div className="flex items-center gap-2 shrink-0">  (wrapper OPEN)
+    - <button>Modifier les dates</button>                  (the button)
+  But KEPT the matching wrapper </div> — leaving an orphan closing tag.
+- The orphan </div> caused Turbopack/SWC to misparse the JSX file.
+  The parser tried to recover and eventually encountered '/' in </div>
+  which it interpreted as the start of a regex literal — hence the
+  misleading "Unterminated regexp literal" error.
+- Fix: removed the orphan </div> on line 2832.
+- Verified with `npx tsc --noEmit` — no more errors on settings/page.tsx
+- Committed 8809172f and pushed to origin/main
+
+Stage Summary:
+- Vercel build should now succeed (one-line fix)
+- The "Activer" and "Clôturer" buttons remain as direct siblings of the
+  inner-left content block, inside the outer row div — same visual layout
+- Combined with the previous fix (33fc1e24 for "VALIDATED is not defined"),
+  the Exams module should now work end-to-end on production

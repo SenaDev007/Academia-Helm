@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Patch, Query, UseGuards, Headers } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch, Query, UseGuards, Headers, Res } from '@nestjs/common';
 import { CouncilsService } from './services/councils.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
@@ -8,6 +8,7 @@ import { UserId } from '../../auth/decorators/user-id.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../auth/decorators/permissions.decorator';
 import { PermissionsGuard } from '../../auth/guards/permissions.guard';
+import { Response } from 'express';
 
 @Controller('institutional-exams/councils')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
@@ -97,7 +98,8 @@ export class CouncilsController {
 
   /**
    * ⭐ GET /institutional-exams/councils/:id/minutes
-   * Génère le PV (procès-verbal) du conseil de classe
+   * Génère le PV (procès-verbal) du conseil de classe en PDF
+   * Backend Puppeteer — même en-tête officiel que le module Élèves
    */
   @Get(':id/minutes')
   @Permissions('exams.read')
@@ -106,8 +108,16 @@ export class CouncilsController {
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
     @Headers() headers: any,
+    @Res() res: Response,
   ) {
     const resolvedTenantId = tenantId || user?.tenantId || headers?.['x-tenant-id'];
-    return this.councilsService.generateMinutes(id, resolvedTenantId);
+    const buffer = await this.councilsService.generateMinutesPdf(id, resolvedTenantId);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename=pv_conseil_${id.substring(0, 8)}.pdf`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
   }
 }

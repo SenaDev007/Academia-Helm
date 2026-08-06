@@ -16,12 +16,18 @@
 
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
+import { PuppeteerPoolService } from '../../../common/services/puppeteer-pool.service';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class CouncilsService {
   private readonly logger = new Logger(CouncilsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly puppeteerPool: PuppeteerPoolService,
+    private readonly configService: ConfigService,
+  ) {}
 
   // ── List councils (with filters) ──────────────────────────────────────────
   async getCouncils(tenantId: string, academicYearId: string, periodId?: string, classId?: string) {
@@ -347,39 +353,282 @@ export class CouncilsService {
     };
   }
 
-  // ── Generate PV (procès-verbal) ───────────────────────────────────────────
-  async generateMinutes(councilId: string, tenantId: string) {
+  // ── Generate PV PDF (procès-verbal) — Backend Puppeteer ──────────────────
+  async generateMinutesPdf(councilId: string, tenantId: string): Promise<Buffer> {
+    // 1. Gather all data
     const council = await this.getCouncilDetails(councilId, tenantId);
     const aiAnalysis = await this.getAIAnalysis(councilId, tenantId);
+    const branding = await this.getTenantBranding(tenantId);
 
-    // Build PV content
-    const pvDate = new Date().toLocaleDateString('fr-FR');
-    const decisions = council.students
-      .filter((s: any) => s.decision)
-      .map((s: any) => ({
-        studentName: `${s.firstName} ${s.lastName}`,
-        decision: s.decision.decision,
-        appreciation: s.decision.appreciation || '',
-        recommendation: s.decision.recommendation || '',
-      }));
+    // 2. Build decisions table
+    const decisionRows = council.students.map((s: any) => {
+      const ai = aiAnalysis.analyses.find((a: any) => a.studentId === s.id);
+      const dec = s.decision;
+      const decisionLabel = dec
+        ? this.getDecisionLabel(dec.decision)
+        : (ai ? this.getDecisionLabel(ai.suggestedDecision) : '—');
+      const avg = ai?.average !== null && ai?.average !== undefined
+        ? (ai.isMaternelle
+          ? (ai.average >= 2.5 ? 'TS' : ai.average >= 1.5 ? 'S' : 'PS')
+          : ai.average.toFixed(2) + '/20')
+        : '—';
+      const attendance = ai ? `${ai.attendanceRate.toFixed(0)}%` : '—';
+      const appreciation = dec?.appreciation || ai?.appreciation || '—';
+      const recommendation = dec?.recommendation || ai?.recommendation || '—';
 
-    return {
-      councilId,
-      councilTitle: council.title || `Conseil de classe — ${council.className}`,
-      className: council.className,
-      periodName: council.periodName,
-      date: pvDate,
-      chairName: council.chairFirstName ? `${council.chairFirstName} ${council.chairLastName}` : '—',
-      totalStudents: council.students.length,
-      decisionsCount: decisions.length,
-      decisions,
-      aiSummary: aiAnalysis.analyses.map((a: any) => ({
-        studentName: a.studentName,
-        average: a.average,
-        appreciation: a.appreciation,
-        recommendation: a.recommendation,
-        suggestedDecision: a.suggestedDecision,
-      })),
+      return `<tr>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;font-size:10px;font-weight:600;">${s.lastName} ${s.firstName}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-size:10px;font-weight:bold;color:${ai && !ai.isMaternelle && ai.average >= 10 ? '#059669' : '#dc2626'};">${avg}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-size:10px;">${attendance}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-size:10px;font-weight:bold;">${decisionLabel}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;font-size:9px;color:#475569;">${appreciation}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;font-size:9px;color:#475569;">${recommendation}</td>
+      </tr>`;
+    }).join('');
+
+    // 3. Build HTML (same official header as class-list-pdf)
+    const html = this.buildPvHtml({
+      council, aiAnalysis, branding, decisionRows,
+    });
+
+    // 4. Generate PDF via Puppeteer
+    const { page } = await this.puppeteerPool.acquirePage();
+    try {
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: { top: '15mm', bottom: '15mm', left: '12mm', right: '12mm' },
+      });
+      return Buffer.from(pdfBuffer);
+    } finally {
+      await this.puppeteerPool.releasePage(page);
+    }
+  }
+
+  private getDecisionLabel(decision: string): string {
+    const labels: Record<string, string> = {
+      PROMOTED: 'Promu(e)',
+      ENCOURAGEMENT: 'Encouragement',
+      HONOR_ROLL: 'Félicitations',
+      WARNING: 'Avertissement',
+      CONDITIONAL_PROMOTION: 'Passage conditionnel',
+      REPEATED: 'Redoublement',
+      TRANSFER_RECOMMENDED: 'Réorientation',
     };
+    return labels[decision] || decision || '—';
+  }
+
+  private async getTenantBranding(tenantId: string) {
+    try {
+      const profile = await this.prisma.tenantIdentityProfile.findFirst({
+        where: { tenantId, isActive: true },
+        select: { schoolName: true, logoUrl: true, address: true, phonePrimary: true, email: true, slogan: true },
+      });
+      if (profile?.schoolName) {
+        const apiBaseUrl = this.configService.get<string>('APP_PUBLIC_URL') || 'https://api.academiahelm.com';
+        return {
+          schoolName: profile.schoolName,
+          schoolLogo: profile.logoUrl ? `${apiBaseUrl}/api/tenants/${tenantId}/logo` : null,
+          schoolAddress: profile.address,
+          schoolPhone: profile.phonePrimary,
+          schoolEmail: profile.email,
+          schoolSlogan: profile.slogan,
+        };
+      }
+      const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
+      return { schoolName: tenant?.name || 'Établissement' };
+    } catch {
+      return { schoolName: 'Établissement' };
+    }
+  }
+
+  private buildPvHtml(data: {
+    council: any;
+    aiAnalysis: any;
+    branding: any;
+    decisionRows: string;
+  }): string {
+    const { council, aiAnalysis, branding, decisionRows } = data;
+    const ministry = "Ministère des Enseignements Maternel et Primaire";
+
+    const beninFlagSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 75 50"><rect width="30" height="50" fill="#008751"/><rect x="30" width="45" height="25" fill="#FCD116"/><rect x="30" y="25" width="45" height="25" fill="#E8112D"/></svg>`;
+    const beninFlag = `data:image/svg+xml;base64,${Buffer.from(beninFlagSvg).toString('base64')}`;
+
+    const councilDate = council.councilDate
+      ? new Date(council.councilDate).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+      : new Date().toLocaleDateString('fr-FR');
+
+    const pvNumber = `PV-CC-${council.id.substring(0, 8).toUpperCase()}`;
+    const totalStudents = council.students?.length || 0;
+    const decisionsCount = council.students?.filter((s: any) => s.decision).length || 0;
+
+    // Class average
+    const validAverages = aiAnalysis.analyses.filter((a: any) => a.average !== null);
+    const classAvg = validAverages.length > 0
+      ? (validAverages.reduce((sum: number, a: any) => sum + a.average, 0) / validAverages.length).toFixed(2)
+      : '—';
+
+    // Stats summary
+    const honorRoll = aiAnalysis.analyses.filter((a: any) => a.suggestedDecision === 'HONOR_ROLL').length;
+    const encouragement = aiAnalysis.analyses.filter((a: any) => a.suggestedDecision === 'ENCOURAGEMENT').length;
+    const warnings = aiAnalysis.analyses.filter((a: any) => a.suggestedDecision === 'WARNING').length;
+
+    return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>PV du Conseil de Classe — ${council.className || ''}</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:11px; }
+.header { margin-bottom:15px; padding-bottom:10px; border-bottom:3px double #0A2A5E; }
+.header-table { width:100%; border-collapse:collapse; }
+.header-table td { vertical-align:middle; padding:4px 8px; }
+.header-left { text-align:center; width:15%; }
+.header-center { text-align:center; width:65%; }
+.header-right { text-align:center; width:20%; }
+.republique { font-size:12px; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px; }
+.divider { margin:4px auto; width:50%; display:flex; align-items:center; justify-content:center; gap:4px; }
+.divider-line { flex:1; height:1px; background:#0A2A5E; }
+.divider-diamond { width:5px; height:5px; background:#0A2A5E; transform:rotate(45deg); flex-shrink:0; }
+.ministere { font-size:9px; font-weight:bold; text-transform:uppercase; letter-spacing:0.3px; line-height:1.3; }
+.school-name { font-size:13px; font-weight:bold; text-transform:uppercase; margin-top:4px; color:#0A2A5E; }
+.school-info { font-size:8px; color:#555; margin-top:2px; font-style:italic; }
+.pv-title { text-align:center; background:#0A2A5E; color:white; padding:6px 12px; border-radius:3px; margin:12px 0 10px; font-size:12px; font-weight:bold; text-transform:uppercase; }
+.pv-meta { display:flex; justify-content:space-between; background:#f8fafc; border:1px solid #e2e8f0; border-radius:3px; padding:6px 10px; margin-bottom:10px; font-size:10px; }
+.pv-meta strong { color:#0A2A5E; }
+.section-title { font-size:11px; font-weight:bold; text-transform:uppercase; color:#0A2A5E; margin:12px 0 6px; border-bottom:1px solid #cbd5e1; padding-bottom:2px; }
+table.decisions { width:100%; border-collapse:collapse; }
+table.decisions th { background:#0A2A5E; color:white; padding:5px 6px; border:1px solid #0D3B85; font-size:9px; text-transform:uppercase; }
+table.decisions td { border:1px solid #cbd5e1; padding:4px 6px; }
+table.decisions tbody tr:nth-child(even) { background:#f8fafc; }
+.stats-row { display:flex; gap:8px; margin:10px 0; }
+.stats-card { flex:1; text-align:center; border:1px solid #e2e8f0; border-radius:4px; padding:8px; background:#f8fafc; }
+.stats-card .label { font-size:8px; color:#64748b; text-transform:uppercase; font-weight:bold; }
+.stats-card .value { font-size:14px; font-weight:bold; margin-top:2px; }
+.attendees { margin-top:10px; font-size:10px; }
+.attendee-line { display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px dotted #cbd5e1; }
+.signatures { display:flex; justify-content:space-between; margin-top:25px; gap:16px; }
+.sig-box { flex:1; text-align:center; }
+.sig-label { font-size:9px; font-weight:bold; color:#0A2A5E; }
+.sig-line { border-top:1px solid #94a3b8; margin-top:30px; padding-top:3px; font-size:7px; color:#94a3b8; }
+.footer { margin-top:15px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; padding-top:5px; }
+</style>
+</head>
+<body>
+
+<!-- EN-TÊTE OFFICIEL -->
+<div class="header">
+  <table class="header-table">
+    <tr>
+      <td class="header-left"><img src="${beninFlag}" alt="Drapeau du Bénin" style="width:40px;height:27px;" /></td>
+      <td class="header-center">
+        <div class="republique">République du Bénin</div>
+        <div class="divider"><div class="divider-line"></div><div class="divider-diamond"></div><div class="divider-line"></div></div>
+        <div class="ministere">${ministry}</div>
+        <div class="divider"><div class="divider-line"></div><div class="divider-diamond"></div><div class="divider-line"></div></div>
+        <div class="school-name">${branding.schoolName}</div>
+        <div class="school-info">${branding.schoolSlogan ? `« ${branding.schoolSlogan} » · ` : ''}${branding.schoolAddress || ''} · Tél: ${branding.schoolPhone || ''} · ${branding.schoolEmail || ''}</div>
+      </td>
+      <td class="header-right">${branding.schoolLogo ? `<img src="${branding.schoolLogo}" style="max-width:50px;max-height:50px;object-fit:contain;" />` : ''}</td>
+    </tr>
+  </table>
+</div>
+
+<!-- TITRE PV -->
+<div class="pv-title">Procès-Verbal du Conseil de Classe</div>
+
+<!-- MÉTADONNÉES -->
+<div class="pv-meta">
+  <div>N° PV: <strong>${pvNumber}</strong></div>
+  <div>Classe: <strong>${council.className || '—'}</strong></div>
+  <div>Période: <strong>${council.periodName || '—'}</strong></div>
+  <div>Date: <strong>${councilDate}</strong></div>
+</div>
+
+<!-- OUVERTURE -->
+<div class="section-title">Ouverture de la séance</div>
+<p style="font-size:10px;line-height:1.5;text-align:justify;">
+Le conseil de classe de la classe de <strong>${council.className || '—'}</strong> pour la période de <strong>${council.periodName || '—'}</strong>
+s'est tenu le <strong>${councilDate}</strong> dans la salle de réunion de l'établissement
+<em>${branding.schoolName}</em>, sous la présidence de
+<strong>${council.chairFirstName ? council.chairFirstName + ' ' + council.chairLastName : 'le Directeur / la Directrice'}</strong>.
+Étaient présents les membres du conseil de classe ci-après désignés. Le quorum étant atteint,
+la séance est ouverte à l'heure prévue.
+</p>
+
+<!-- MEMBRES PRÉSENTS -->
+<div class="section-title">Membres présents</div>
+<div class="attendees">
+  <div class="attendee-line"><span>1. Le/La Directeur(trice) — Président(e) du conseil</span><span style="color:#94a3b8;">Signature</span></div>
+  <div class="attendee-line"><span>2. Le/La Titulaire de la classe — ${council.className || '—'}</span><span style="color:#94a3b8;">Signature</span></div>
+  <div class="attendee-line"><span>3. Les enseignants de la classe</span><span style="color:#94a3b8;">Signatures</span></div>
+  <div class="attendee-line"><span>4. Le/La Censeur / Surveillant(e) général(e)</span><span style="color:#94a3b8;">Signature</span></div>
+</div>
+
+<!-- STATISTIQUES -->
+<div class="section-title">Statistiques de la classe</div>
+<div class="stats-row">
+  <div class="stats-card"><div class="label">Effectif</div><div class="value" style="color:#334155;">${totalStudents}</div></div>
+  <div class="stats-card"><div class="label">Moy. classe</div><div class="value" style="color:#0A2A5E;">${classAvg}${classAvg !== '—' ? '/20' : ''}</div></div>
+  <div class="stats-card"><div class="label">Félicitations</div><div class="value" style="color:#7c3aed;">${honorRoll}</div></div>
+  <div class="stats-card"><div class="label">Encouragements</div><div class="value" style="color:#2563eb;">${encouragement}</div></div>
+  <div class="stats-card"><div class="label">Avertissements</div><div class="value" style="color:#dc2626;">${warnings}</div></div>
+</div>
+
+<!-- DÉLIBÉRATIONS -->
+<div class="section-title">Délibérations par élève</div>
+<p style="font-size:9px;color:#64748b;margin-bottom:6px;">
+Le conseil a examiné les résultats de chaque élève sur la base des notes obtenues aux évaluations,
+de l'assiduité et du comportement général. Les observations et recommandations de l'analyse
+pédagogique automatique (ORION) ont été prises en compte. Les décisions du conseil sont les suivantes :
+</p>
+<table class="decisions">
+  <thead>
+    <tr>
+      <th style="text-align:left;">Nom et Prénom(s)</th>
+      <th style="width:55px;">Moyenne</th>
+      <th style="width:45px;">Assid.</th>
+      <th style="width:90px;">Décision</th>
+      <th>Observations</th>
+      <th>Recommandations</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${decisionRows}
+  </tbody>
+</table>
+
+<!-- CLÔTURE -->
+<div class="section-title">Clôture de la séance</div>
+<p style="font-size:10px;line-height:1.5;text-align:justify;">
+Les décisions du conseil ont été prises à l'unanimité des membres présents. Le procès-verbal
+est dressé pour servir et valoir ce que de droit. La séance est levée à l'heure prévue.
+</p>
+
+<!-- SIGNATURES -->
+<div class="signatures">
+  <div class="sig-box">
+    <div class="sig-label">Le/La Titulaire</div>
+    <div class="sig-line">Signature</div>
+  </div>
+  <div class="sig-box">
+    <div class="sig-label">Le/La Censeur</div>
+    <div class="sig-line">Signature</div>
+  </div>
+  <div class="sig-box">
+    <div class="sig-label">Le/La Directeur(trice)</div>
+    <div class="sig-line">Signature et Cachet</div>
+  </div>
+</div>
+
+<!-- PIED DE PAGE -->
+<div class="footer">
+  Document généré par Academia Helm — ${new Date().toLocaleDateString('fr-FR')} — ${pvNumber}
+</div>
+
+</body>
+</html>`;
   }
 }

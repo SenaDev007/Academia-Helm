@@ -313,6 +313,27 @@ function CouncilDetail({ councilId, councilName, onBack }: { councilId: string; 
     }
   };
 
+  const [downloadingPv, setDownloadingPv] = useState(false);
+  const handleDownloadPv = async () => {
+    setDownloadingPv(true);
+    try {
+      const response = await apiClient.get(`/institutional-exams/councils/${councilId}/minutes`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `pv_conseil_${councilId.substring(0, 8)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toastSuccess('PV généré', { description: 'Le procès-verbal a été téléchargé' });
+    } catch (err: any) {
+      toastError('Erreur PV', { description: err.response?.data?.message || err.message });
+    } finally { setDownloadingPv(false); }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -347,6 +368,10 @@ function CouncilDetail({ councilId, councilName, onBack }: { councilId: string; 
               <CheckCircle2 className="w-4 h-4 mr-2" />Clôturer
             </Button>
           )}
+          <Button onClick={handleDownloadPv} disabled={downloadingPv} className="bg-blue-600 hover:bg-blue-700 text-white text-sm">
+            {downloadingPv ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+            Télécharger le PV
+          </Button>
         </div>
       </div>
 

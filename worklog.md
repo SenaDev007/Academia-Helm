@@ -765,3 +765,73 @@ Stage Summary:
   inner-left content block, inside the outer row div — same visual layout
 - Combined with the previous fix (33fc1e24 for "VALIDATED is not defined"),
   the Exams module should now work end-to-end on production
+
+---
+Task ID: 15
+Agent: main
+Task: Settings page overhaul — multi-role RBAC, sub-tabs, remove 5 tabs, refactor Facturation
+
+Work Log:
+1) Removed emoji 📍 from GPS button (Identité > Localisation GPS)
+   - apps/web-app/src/components/settings/SchoolGeolocationSettings.tsx
+   - Button now shows only the Navigation icon + text
+
+2) Deleted 5 tabs from Settings sidebar:
+   - Communication (géré via module Communication dédié)
+   - Paiements (fusionné avec Facturation)
+   - ORION (accessible via widget flottant)
+   - ATLAS (accessible via widget flottant)
+   - Offline (sync hors-ligne gérée automatiquement)
+   - Removed their case blocks (728 lines) via scripts/strip-removed-tabs-cases.cjs
+   - Old URLs with ?tab=X are auto-redirected via REMOVED_TABS_REDIRECT map
+   - Kept TabId entries for URL backward compatibility
+
+3) Split Rôles tab into two sub-tabs:
+   - "Rôles & Permissions" : gestion des rôles (plateforme + école), création,
+     matrice des permissions — sans la liste des utilisateurs
+   - "Liste des utilisateurs" : attribution/révocation de rôles par utilisateur
+   - Sub-tab state via `rolesSubTab` ('roles' | 'users')
+   - Sub-tab nav uses underline-style tabs (border-b-2 blue when active)
+
+4) Implemented flexible multi-role attribution:
+   - Replaced single-select dropdown with multi-select checkbox panel
+   - User can check multiple roles simultaneously → batch attribution
+   - State `pendingAssignRoleIds: string[]` tracks pending selections
+   - "Attribuer (N)" button shows count of pending roles
+   - Already-assigned roles are filtered out of the checkbox list
+   - Existing roles shown as removable chips with × button
+   - Info banner explains multi-role semantics + RH impact
+
+5) Backend: assignRoleToUser now syncs primary role
+   - apps/api-server/src/settings/services/roles-permissions.service.ts
+   - When user.role is null, sets it to the first assigned role
+   - Allows legacy modules reading user.role to keep working
+   - UserRole table already supports N roles per user (no schema change needed)
+
+6) Multi-role now impacts RH personnel file:
+   - apps/api-server/src/hr/staff-prisma.service.ts findStaffById now loads
+     the matching User + all userRoles (with role details)
+   - Returns `userAccount: { id, email, primaryRole, status, roles[] }`
+   - apps/web-app/src/app/app/hr/staff/[id]/page.tsx now displays:
+     * "Rôles attribués au compte utilisateur" panel in credentials section
+     * Email + status of the user account
+     * List of attributed roles (system vs custom styling)
+     * Hint directing admin to Paramètres > Rôles > Liste des utilisateurs
+       to add/remove roles
+   - No emoji used (per user preference)
+
+7) Refactored Facturation tab:
+   - Added lazy-load effect when user opens billing tab
+     (re-fetches billingSettings + availablePlans + invoices)
+   - Added "Actualiser" button + loading spinner
+   - Header shows the school name from identityProfile
+   - Empty state for invoices (was hidden before)
+   - Shows invoice count in section header
+
+Stage Summary:
+- 5 tabs deleted (Communication, Paiements, ORION, ATLAS, Offline)
+- Rôles tab now has 2 sub-tabs (Rôles & Permissions / Liste des utilisateurs)
+- Multi-role attribution fully supported (frontend + backend)
+- RH staff detail page shows attributed roles + status
+- Facturation tab reloads data dynamically + shows empty states
+- All changes TypeScript-clean (no errors in modified files)

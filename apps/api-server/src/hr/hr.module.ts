@@ -58,6 +58,8 @@ import { DocumentUploadService } from './services/document-upload.service';
 import { DocumentUploadController, DocumentPublicController } from './document-upload.controller';
 import { StaffCardService } from './services/staff-card.service';
 import { StaffCardController, StaffCardPublicController } from './staff-card.controller';
+import { SchoolDirectorsController } from './school-directors.controller';
+import { SchoolDirectorsService } from './school-directors.service';
 import { TaxesModule } from './taxes/taxes.module';
 import { BillingModule } from '../billing/billing.module';
 
@@ -95,6 +97,7 @@ import { BillingModule } from '../billing/billing.module';
     TestQuestionnaireService,
     DocumentUploadService,
     StaffCardService,
+    SchoolDirectorsService,
   ],
   controllers: [
     StaffPrismaController,
@@ -119,6 +122,7 @@ import { BillingModule } from '../billing/billing.module';
     DocumentPublicController,
     StaffCardController,
     StaffCardPublicController,
+    SchoolDirectorsController,
   ],
   exports: [
     StaffPrismaService,

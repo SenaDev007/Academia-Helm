@@ -4,19 +4,32 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/ah_theme.dart';
+import '../providers/portal_provider.dart';
 
 /// Reusable login form widget.
+///
+/// Adapts its fields based on the selected portal type:
+/// - PLATFORM / SCHOOL → Email + Password (standard login)
+/// - TEACHER → Matricule + Password (matches web LoginPage's teacher flow)
+/// - PARENT → handled separately (phone/email + OTP — will be added in step 4)
 class LoginForm extends StatefulWidget {
   const LoginForm({
     super.key,
     required this.onSubmit,
     this.isLoading = false,
     this.error,
+    this.portalType,
   });
 
-  final Future<void> Function(String email, String password) onSubmit;
+  /// Called when the user submits the form.
+  /// First argument is the identifier (email or matricule), second is password.
+  final Future<void> Function(String identifier, String password) onSubmit;
   final bool isLoading;
   final String? error;
+
+  /// Portal type — controls which fields are displayed.
+  /// Defaults to null (standard email login).
+  final PortalType? portalType;
 
   @override
   State<LoginForm> createState() => _LoginFormState();
@@ -24,13 +37,15 @@ class LoginForm extends StatefulWidget {
 
 class _LoginFormState extends State<LoginForm> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _identifierController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
 
+  bool get _isTeacherPortal => widget.portalType == PortalType.teacher;
+
   @override
   void dispose() {
-    _emailController.dispose();
+    _identifierController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -38,7 +53,7 @@ class _LoginFormState extends State<LoginForm> {
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
     widget.onSubmit(
-      _emailController.text.trim(),
+      _identifierController.text.trim(),
       _passwordController.text,
     );
   }
@@ -62,13 +77,11 @@ class _LoginFormState extends State<LoginForm> {
               decoration: BoxDecoration(
                 color: AHColors.errorLight,
                 borderRadius: BorderRadius.circular(AHRadius.md),
-                border: Border.all(
-                    color: AHColors.error.withOpacity(0.3)),
+                border: Border.all(color: AHColors.error.withOpacity(0.3)),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.error_outline,
-                      color: AHColors.error, size: 20),
+                  const Icon(Icons.error_outline, color: AHColors.error, size: 20),
                   const SizedBox(width: AHSpacing.sm),
                   Expanded(
                     child: Text(
@@ -85,27 +98,8 @@ class _LoginFormState extends State<LoginForm> {
               ),
             ),
 
-          // ── Email Field ──────────────────────────────────────────
-          TextFormField(
-            controller: _emailController,
-            keyboardType: TextInputType.emailAddress,
-            textInputAction: TextInputAction.next,
-            autofillHints: const [AutofillHints.email],
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'L\'email est requis';
-              }
-              if (!value.contains('@')) {
-                return 'Veuillez entrer un email valide';
-              }
-              return null;
-            },
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.email_outlined, size: 20),
-              labelText: 'Adresse email',
-              hintText: 'votre@email.com',
-            ),
-          ),
+          // ── Identifier Field (Email or Matricule) ────────────────
+          _buildIdentifierField(),
           const SizedBox(height: AHSpacing.lg),
 
           // ── Password Field ───────────────────────────────────────
@@ -150,9 +144,11 @@ class _LoginFormState extends State<LoginForm> {
           Align(
             alignment: Alignment.centerRight,
             child: TextButton(
-              onPressed: widget.isLoading ? null : () {
-                context.go('/forgot-password');
-              },
+              onPressed: widget.isLoading
+                  ? null
+                  : () {
+                      context.go('/forgot-password');
+                    },
               child: const Text(
                 'Mot de passe oublié ?',
                 style: TextStyle(
@@ -176,8 +172,7 @@ class _LoginFormState extends State<LoginForm> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(AHRadius.md),
                 ),
-                disabledBackgroundColor:
-                    AHColors.navy.withOpacity(0.5),
+                disabledBackgroundColor: AHColors.navy.withOpacity(0.5),
               ),
               child: widget.isLoading
                   ? const SizedBox(
@@ -199,6 +194,57 @@ class _LoginFormState extends State<LoginForm> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Builds the identifier field — Email for SCHOOL/PLATFORM, Matricule for TEACHER.
+  Widget _buildIdentifierField() {
+    if (_isTeacherPortal) {
+      // Teacher portal: Matricule field (matches web LoginPage's teacher flow)
+      return TextFormField(
+        controller: _identifierController,
+        keyboardType: TextInputType.text,
+        textInputAction: TextInputAction.next,
+        textCapitalization: TextCapitalization.characters,
+        autofillHints: const [AutofillHints.username],
+        validator: (value) {
+          if (value == null || value.trim().isEmpty) {
+            return 'Le matricule est requis';
+          }
+          if (value.trim().length < 3) {
+            return 'Veuillez entrer un matricule valide';
+          }
+          return null;
+        },
+        decoration: const InputDecoration(
+          prefixIcon: Icon(Icons.badge_outlined, size: 20),
+          labelText: 'Matricule / Identifiant',
+          hintText: 'EMP001',
+          helperText: 'Votre identifiant professionnel fourni par l\'établissement',
+        ),
+      );
+    }
+
+    // Standard portal (SCHOOL / PLATFORM): Email field
+    return TextFormField(
+      controller: _identifierController,
+      keyboardType: TextInputType.emailAddress,
+      textInputAction: TextInputAction.next,
+      autofillHints: const [AutofillHints.email],
+      validator: (value) {
+        if (value == null || value.trim().isEmpty) {
+          return 'L\'email est requis';
+        }
+        if (!value.contains('@')) {
+          return 'Veuillez entrer un email valide';
+        }
+        return null;
+      },
+      decoration: const InputDecoration(
+        prefixIcon: Icon(Icons.email_outlined, size: 20),
+        labelText: 'Adresse email',
+        hintText: 'votre@email.com',
       ),
     );
   }

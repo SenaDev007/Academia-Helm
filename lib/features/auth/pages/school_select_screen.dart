@@ -51,6 +51,14 @@ class _SchoolSelectScreenState extends ConsumerState<SchoolSelectScreen> {
     final schoolsAsync = ref.watch(schoolsListProvider);
     final filteredSchools = ref.watch(filteredSchoolsProvider);
     final query = ref.watch(schoolSearchQueryProvider);
+    final selectedPortal = ref.watch(selectedPortalProvider);
+
+    // Adaptive title based on selected portal
+    final String screenTitle = selectedPortal == PortalType.teacher
+        ? 'Sélectionnez votre établissement'
+        : selectedPortal == PortalType.parent
+            ? 'Sélectionnez l\'établissement de votre enfant'
+            : 'Sélectionnez votre école';
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -72,7 +80,7 @@ class _SchoolSelectScreenState extends ConsumerState<SchoolSelectScreen> {
                 ),
                 Expanded(
                   child: Text(
-                    'Sélectionnez votre école',
+                    screenTitle,
                     style: TextStyle(
                       fontFamily: 'Inter',
                       fontSize: 16,

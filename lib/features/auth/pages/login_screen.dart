@@ -376,6 +376,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Widget _buildLoginCard() {
+    final selectedPortal = ref.watch(selectedPortalProvider);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(AHSpacing.xl),
@@ -394,6 +395,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         onSubmit: _handleLogin,
         isLoading: _isLoading,
         error: _error,
+        portalType: selectedPortal,
       ),
     );
   }

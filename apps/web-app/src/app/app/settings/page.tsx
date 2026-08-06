@@ -4160,7 +4160,7 @@ export default function SettingsPage() {
       case 'features':
         // Ordre d'affichage des modules (aligné sidebar / backend FEATURE_KEYS)
         const modulesDisplayOrder = [
-          'STUDENTS', 'FINANCE', 'EXAMS', 'PEDAGOGY', 'HR_PAYROLL', 'COMMUNICATION',
+          'STUDENTS', 'FINANCE', 'EXAMS', 'PEDAGOGY', 'HR_PAYROLL', 'COMMUNICATION', 'CMS',
           'LIBRARY', 'TRANSPORT', 'CANTEEN', 'INFIRMARY', 'QHSE', 'EDUCAST', 'SHOP',
           'ORION', 'ATLAS', 'OFFLINE_SYNC',
         ];
@@ -4171,6 +4171,7 @@ export default function SettingsPage() {
           PEDAGOGY: 'Organisation Pédagogique',
           HR_PAYROLL: 'Personnel, RH & Paie',
           COMMUNICATION: 'Communication',
+          CMS: 'Site Institutionnel',
           LIBRARY: 'Bibliothèque',
           TRANSPORT: 'Transport',
           CANTEEN: 'Cantine',

@@ -147,10 +147,10 @@ function DashboardContent() {
 
     // Group by status
     const byStatus = {
-      VALIDATED,
-      PLANNED,
-      SUBMITTED,
-      OPEN_FOR_GRADING,
+      VALIDATED: validated,
+      PLANNED: planned,
+      SUBMITTED: submitted,
+      OPEN_FOR_GRADING: openForGrading,
     };
 
     return { total, validated, planned, submitted, openForGrading, completionRate, byType, byStatus };

@@ -267,20 +267,18 @@ interface PilotageSidebarProps {
   onCloseMobileDrawer?: () => void;
 }
 
-/** Mapping path → featureCode (optionnel). Sans featureCode = toujours affiché. */
+/** Mapping path → featureCode (optionnel). Sans featureCode = toujours affiché.
+ *  L'ordre ici est l'ordre canonique — ne pas réordonner sans demande explicite.
+ *  Le filtrage par module activé/désactivé se fait dans Paramètres > Onglet Modules. */
 const MAIN_MODULES = [
   { path: '/app', label: 'Tableau de pilotage', icon: LayoutDashboard },
+  { path: '/app/pedagogy', label: 'Organisation Pédagogique', icon: School, featureCode: 'PEDAGOGY' },
   { path: '/app/students', label: 'Élèves & Scolarité', icon: Users, featureCode: 'STUDENTS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'SCOLARITE', 'SECRETAIRE', 'SECRETAIRE_GENERAL', 'SECRETAIRE_COMPTABLE', 'COMPTABLE', 'CENSEUR', 'SURVEILLANT', 'SURVEILLANT_GENERAL', 'admin'] },
   { path: '/app/finance', label: 'Finances & Économat', icon: Wallet, featureCode: 'FINANCE', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_BILLING', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'CAISSIER', 'COMPTABLE', 'SECRETAIRE_COMPTABLE', 'ECONOME', 'DIRECTEUR_GENERAL', 'CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER', 'accountant', 'admin'] },
   { path: '/app/exams', label: 'Examens, Notes & Bulletins', icon: GraduationCap, featureCode: 'EXAMS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'CENSEUR', 'TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE', 'RESP_MATERNELLE', 'PEDAGOGIC_COORDINATOR', 'admin'] },
-  { path: '/app/pedagogy', label: 'Organisation Pédagogique', icon: School, featureCode: 'PEDAGOGY' },
   { path: '/app/hr', label: 'Personnel, RH & Paie', icon: UserCog, featureCode: 'HR_PAYROLL', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'HR_MANAGER', 'PAYROLL_MANAGER', 'SCOLARITE', 'admin'] },
   { path: '/app/communication', label: 'Communication', icon: MessageSquare, featureCode: 'COMMUNICATION' },
-  // ⭐ Orion et Atlas — accessibles via widgets AI flottants + page dédiée
-  // { path: '/app/orion', label: 'ORION', icon: Brain },
-  // { path: '/app/atlas', label: 'ATLAS', icon: Bot },
-  // ⭐ Site Institutionnel masqué temporairement
-  // { path: '/app/cms', label: 'Site Institutionnel', icon: Globe, roles: [...] },
+  { path: '/app/cms', label: 'Site Institutionnel', icon: Globe, featureCode: 'CMS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'COMMUNICATION_MANAGER', 'admin'] },
 ];
 
 /**

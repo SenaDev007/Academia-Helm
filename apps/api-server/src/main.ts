@@ -128,12 +128,18 @@ async function bootstrap() {
     }
   }
 
-  // ─── Ensure recruitment tables exist (idempotent SQL fallback) ──────────
-  // Prisma migrate deploy may silently skip migrations that aren't tracked
-  // in _prisma_migrations. This fallback guarantees the HR recruitment tables
-  // exist on every startup. Uses CREATE TABLE IF NOT EXISTS (idempotent).
-  try {
-    const prisma = app.get(PrismaService);
+  // ⭐ CRITICAL: Start listening FIRST so healthcheck passes immediately.
+  // All ensure-tables SQL runs in the background (non-blocking) after listen.
+  // This prevents Railway healthcheck timeout (which was crashing the API every morning).
+  await app.listen(port, '0.0.0.0');
+  logger.log(`🚀 API listening on port ${port}`);
+
+  // ─── Ensure-tables SQL runs in background (non-blocking) ───────────────
+  // Previously this ran BEFORE app.listen(), blocking the healthcheck for 60-120s
+  // and causing Railway to kill the container. Now it runs after listen.
+  setTimeout(async () => {
+    try {
+      const prisma = app.get(PrismaService);
 
     // Execute each CREATE TABLE IF NOT EXISTS statement separately
     // (Prisma $executeRawUnsafe may not handle multi-statement DO $$ blocks)
@@ -1374,8 +1380,7 @@ async function bootstrap() {
   } catch (twErr: any) {
     logger.warn(`Tenant Website tables migration warning: ${twErr.message}`);
   }
-
-  await app.listen(port, '0.0.0.0');
+  }, 1000); // ⭐ Run ensure-tables 1s after listen (non-blocking)
 
   // ─── Auto-sync HR teachers → Pedagogy on startup ──
   // One-time backfill: for each tenant, sync existing Staff TEACHER records

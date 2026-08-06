@@ -20,7 +20,8 @@ import {
   History,
   Calendar,
   ClipboardList,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Lock
 } from 'lucide-react';
 
 export const EXAMS_SUB_MODULES = [
@@ -49,28 +50,28 @@ export const EXAMS_SUB_MODULES = [
     icon: CheckSquare
   },
   {
+    id: 'unlock-requests',
+    label: 'Déverrouillage',
+    href: '/app/exams/unlock-requests',
+    icon: Lock
+  },
+  {
     id: 'registre',
     label: 'Registre des notes',
     href: '/app/exams/registre',
     icon: ClipboardList
   },
   {
-    id: 'averages',
-    label: 'Moyennes',
-    href: '/app/exams/averages',
-    icon: Calculator
+    id: 'bulletins',
+    label: 'Bulletins',
+    href: '/app/exams/bulletins',
+    icon: FileText
   },
   {
     id: 'councils',
     label: 'Conseils de classe',
     href: '/app/exams/councils',
     icon: Users
-  },
-  {
-    id: 'bulletins',
-    label: 'Bulletins',
-    href: '/app/exams/bulletins',
-    icon: FileText
   },
   {
     id: 'analytics',

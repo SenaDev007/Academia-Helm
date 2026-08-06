@@ -86,6 +86,7 @@ import { OrionAiModule } from './orion/orion-ai.module';
 import { CommonModule } from './common/common.module';
 import { SecurityModule } from './security/security.module';
 import { ParentPortalModule } from './parent-portal/parent-portal.module';
+import { StorageMigrationModule } from './storage-migration/storage-migration.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { TenantValidationGuard } from './common/guards/tenant-validation.guard';
 import { TenantIsolationGuard } from './common/guards/tenant-isolation.guard';
@@ -223,6 +224,13 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
 
     // Bibliothèque médias tenant-scoped (CMS institutionnel)
     TenantMediaModule,
+
+    // ⚠️ StorageMigrationModule TEMPORAIREMENT DÉSACTIVÉ — causait un crash DI
+    // au bootstrap. Le service essayait d'injecter StorageService qui était
+    // déclaré dans CommonModule (rendu @Global) MAIS aussi dans 5 feature modules.
+    // Cela créait un conflit de résolution DI qui faisait crasher l'app avant
+    // app.listen(). À réactiver après avoir nettoyé les déclarations dupliquées.
+    // StorageMigrationModule,
 
     // Thèmes du site institutionnel tenant (40 thèmes 21st.dev)
     TenantThemeModule,

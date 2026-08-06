@@ -547,11 +547,11 @@ function ValidationDetailSheet({
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Sexe</th>
                         {sortedSubjects.map((subject, idx) => (
                           isMaternelle ? (
-                            <th key={idx} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[100px]">
+                            <th key={idx} rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[100px]">
                               {subject.name}<div className="text-[9px] text-slate-400 font-normal">TS / S / PS</div>
                             </th>
                           ) : isSecondaire ? (
-                            <th key={idx} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[80px]">
+                            <th key={idx} rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[80px]">
                               {subject.name}<div className="text-[9px] text-slate-400 font-normal">Note /20</div>
                             </th>
                           ) : (

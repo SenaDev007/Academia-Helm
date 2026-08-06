@@ -22,6 +22,7 @@ import { DeviceSessionService } from './services/device-session.service';
 import { SmsService } from './services/sms.service';
 import { OtpController } from './controllers/otp.controller';
 import { AdminDevicesController } from './controllers/admin-devices.controller';
+import { TenantDevicesController } from './controllers/tenant-devices.controller';
 import { ContextualAuthGuard } from './guards/contextual-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
@@ -57,7 +58,7 @@ import { RolesGuard } from './guards/roles.guard';
     JwtAuthGuard,
     RolesGuard,
   ],
-  controllers: [AuthController, OtpController, AdminDevicesController],
+  controllers: [AuthController, OtpController, AdminDevicesController, TenantDevicesController],
   exports: [
     AuthService,
     SmsService,

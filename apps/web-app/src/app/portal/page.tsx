@@ -1,5 +1,8 @@
 'use client';
 
+// ⚠️ 'use client' + export const revalidate sont incompatibles sur Next.js 16.
+// Le cache React Query (staleTime 5min) suffit côté client.
+
 /**
  * ============================================================================
  * PORTAL ACCESS PAGE — ACCÉDER À UN PORTAIL

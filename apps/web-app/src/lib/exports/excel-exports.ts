@@ -505,7 +505,7 @@ function buildStudentAccountsSheet(
   row++;
 
   // En-tête tableau
-  const headers = ['Matricule', 'Nom', 'Prénom', 'Classe', 'Niveau', 'Arriérés', 'Solde dû', 'Payé', 'À payer', 'Statut'];
+  const headers = ['Matricule', 'Nom', 'Prénom', 'Classe', 'Arriérés', 'Inscription', 'Scolarité', 'Solde dû', 'Payé', 'À payer', 'Statut'];
   headers.forEach((h, i) => {
     const cell = ws.getCell(row, i + 1);
     cell.value = h;
@@ -525,6 +525,8 @@ function buildStudentAccountsSheet(
   const totalPaid = accounts.reduce((s, a) => s + (Number(a.totalPaid) || 0), 0);
   const totalBalance = accounts.reduce((s, a) => s + (Number(a.balance) || 0), 0);
   const totalArrears = accounts.reduce((s, a) => s + (Number(a.actualArrears) || 0), 0);
+  const totalInscription = accounts.reduce((s, a) => s + (Number(a.inscriptionFee) || 0), 0);
+  const totalScolarite = accounts.reduce((s, a) => s + (Number(a.tuitionFee) || 0), 0);
 
   accounts.forEach((a, idx) => {
     const isEven = idx % 2 === 0;
@@ -535,16 +537,18 @@ function buildStudentAccountsSheet(
     const className = a.student?.studentEnrollments?.[0]?.class?.name
       || a.studentEnrollments?.[0]?.class?.name
       || '—';
-    const level = a.student?.schoolLevel?.name || a.student?.schoolLevel?.code || '—';
     const arrearAmount = Number(a.actualArrears) || 0;
+    const inscriptionFee = Number(a.inscriptionFee) || 0;
+    const tuitionFee = Number(a.tuitionFee) || 0;
 
     const values = [
       a.student?.studentCode || a.student?.matricule || '—',
       a.student?.lastName || '—',
       a.student?.firstName || '—',
       className,
-      level,
       arrearAmount,
+      inscriptionFee,
+      tuitionFee,
       Number(a.balance) || 0,
       Number(a.totalPaid) || 0,
       Number(a.totalDue) || 0,
@@ -553,13 +557,13 @@ function buildStudentAccountsSheet(
     values.forEach((v, i) => {
       const cell = ws.getCell(row, i + 1);
       cell.value = v;
-      // Colonne statut (index 9) : couleur spéciale
-      if (i === 9) {
+      // Colonne statut (index 10) : couleur spéciale
+      if (i === 10) {
         styleDataCell(cell, { fill: sc.bg, color: sc.text, bold: true, align: 'center' });
-      } else if (i === 5 && arrearAmount > 0) {
+      } else if (i === 4 && arrearAmount > 0) {
         // Colonne Arriérés : surlignage ambre si > 0
         styleDataCell(cell, { fill: COLORS.amberBg, color: COLORS.amberText, bold: true, align: 'right' });
-      } else if (i >= 5 && i <= 8) {
+      } else if (i >= 4 && i <= 9) {
         styleDataCell(cell, { isEven, bold: true, align: 'right' });
       } else if (i === 1 || i === 2) {
         styleDataCell(cell, { isEven, align: 'left' });
@@ -574,18 +578,19 @@ function buildStudentAccountsSheet(
   ws.mergeCells(row, 1, row, 5);
   ws.getCell(row, 1).value = 'TOTAL';
   styleTotalCell(ws.getCell(row, 1), 'right');
-  [totalArrears, totalBalance, totalPaid, totalDue].forEach((v, i) => {
+  [totalArrears, totalInscription, totalScolarite, totalBalance, totalPaid, totalDue].forEach((v, i) => {
     const cell = ws.getCell(row, 6 + i);
     cell.value = v;
     styleTotalCell(cell, 'right');
   });
-  styleTotalCell(ws.getCell(row, 10), 'center');
+  styleTotalCell(ws.getCell(row, 11), 'center');
   ws.getRow(row).height = 24;
 
   // Largeurs colonnes
   ws.columns = [
-    { width: 16 }, { width: 20 }, { width: 20 }, { width: 18 }, { width: 14 },
-    { width: 14 }, { width: 14 }, { width: 14 }, { width: 16 }, { width: 12 },
+    { width: 16 }, { width: 20 }, { width: 20 }, { width: 18 },
+    { width: 14 }, { width: 14 }, { width: 14 },
+    { width: 14 }, { width: 14 }, { width: 16 }, { width: 12 },
   ];
 
   return row;

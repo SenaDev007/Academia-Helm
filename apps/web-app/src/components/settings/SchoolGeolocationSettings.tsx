@@ -171,7 +171,7 @@ export function SchoolGeolocationSettings() {
           {geoLoading ? (
             <><Loader2 className="h-4 w-4 animate-spin" /> Récupération GPS en cours...</>
           ) : (
-            <><Navigation className="h-4 w-4" /> 📍 Utiliser ma position actuelle</>
+            <><Navigation className="h-4 w-4" /> Utiliser ma position actuelle</>
           )}
         </button>
         {geoError && (

@@ -3,14 +3,21 @@
  * SITE CONTENT SERVICE — Contenu dynamique du site public pour SARA
  * ============================================================================
  *
- * Charge dynamiquement le contenu du site public (pricing, modules, contact, etc.)
- * pour l'injecter dans le prompt de SARA. AUCUNE donnée n'est codée en dur :
+ * ⚠️ RÔLE STRICT : Ce service ne charge QUE le PRICING depuis la base de données.
  *
- * - Pricing → vient de la DB via PricingService
- * - Contenu des pages → fetché depuis le site public (avec cache)
- * - Stats avis → vient de la DB via ReviewsService
+ * Sarah (widget landing page) a un accès DB LIMITÉ au pricing uniquement :
+ *   - Plans d'abonnement (SubscriptionPlan)
+ *   - Configuration pricing (PricingConfig — frais de souscription, add-ons)
  *
- * Quand le site est mis à jour, SARA est automatiquement à jour.
+ * Sarah N'A PAS ACCÈS à :
+ *   - Les données opérationnelles des écoles (élèves, paiements, notes, etc.)
+ *   - Les avis/reviews (bien que la table existe, Sarah ne les lit pas)
+ *   - Les contacts (informations statiques intégrées au prompt)
+ *   - Les données multi-tenant d'aucune école
+ *
+ * Le contact et les informations entreprise sont des données STATIQUES
+ * (rarement modifiées) intégrées directement dans le prompt système.
+ *
  * Cache TTL : 1 heure par défaut (configurable)
  * ============================================================================
  */
@@ -20,8 +27,12 @@ import { PrismaService } from '../database/prisma.service';
 
 /** Structure du contenu site injecté dans le prompt SARA */
 export interface SiteContent {
+  /** ⭐ SEULE donnée chargée dynamiquement depuis la DB */
   pricing: string;
+  /** Contact statique (ne change jamais — intégré au prompt) */
   contact: string;
+  /** Avis — NON chargés depuis la DB. Placeholder indiquant que les avis
+   *  sont visibles sur /avis mais que Sarah n'y a pas accès en lecture. */
   reviews: string;
   lastUpdated: Date;
 }
@@ -40,11 +51,28 @@ export class SiteContentService {
     10,
   );
 
+  /** Contact statique Academia Helm — ne change jamais */
+  private static readonly STATIC_CONTACT = `CONTACT :
+- Email : support@academiahelm.com — Réponse sous 48h ouvrées
+- Téléphone : +229 01 41 36 08 03
+- Adresse : Parakou, Bénin — Afrique de l'Ouest
+- WhatsApp : wa.me/2290141360803
+- Horaires : Lun-Jeu 8h-18h | Ven 8h-16h | Dim 9h-17h | Sam fermé
+
+CRÉATEUR : YEHI OR Tech — entreprise technologique béninoise (Parakou, Bénin)
+- Mission : Démocratiser l'accès à une gestion scolaire moderne pour toutes les écoles privées d'Afrique de l'Ouest
+- Vision : Devenir la plateforme de référence pour la gestion éducative en Afrique francophone`;
+
+  /** Placeholder pour les avis — Sarah n'a PAS accès aux avis depuis la DB */
+  private static readonly REVIEWS_PLACEHOLDER = `STATS AVIS : Les avis vérifiés sont visibles publiquement sur la page /avis du site. Pour des statistiques précises, orientez le prospect vers /avis. Sarah n'a pas accès en lecture aux avis depuis la DB — elle s'appuie uniquement sur le pricing pour argumenter.`;
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Récupère le contenu dynamique du site (avec cache).
-   * C'est la seule méthode appelée par SaraService.
+   *
+   * ⚠️ SEUL le pricing est chargé depuis la DB. Le contact et les reviews
+   * sont des données statiques ou placeholders.
    */
   async getSiteContent(): Promise<SiteContent> {
     const now = Date.now();
@@ -54,23 +82,21 @@ export class SiteContentService {
       return this.cachedContent;
     }
 
-    // Recharger le contenu depuis les sources dynamiques
+    // Recharger le pricing depuis la DB (seule source dynamique)
     try {
-      const [pricing, contact, reviews] = await Promise.all([
-        this.loadPricingContent(),
-        this.loadContactContent(),
-        this.loadReviewsContent(),
-      ]);
+      const pricing = await this.loadPricingContent();
 
       this.cachedContent = {
         pricing,
-        contact,
-        reviews,
+        // Contact statique — jamais chargé depuis la DB
+        contact: SiteContentService.STATIC_CONTACT,
+        // Reviews : Sarah n'y a pas accès — placeholder
+        reviews: SiteContentService.REVIEWS_PLACEHOLDER,
         lastUpdated: new Date(),
       };
       this.cacheExpiry = now + this.CACHE_TTL;
 
-      this.logger.log('✅ Site content refreshed from DB');
+      this.logger.log('✅ Site pricing refreshed from DB (contact & reviews are static)');
       return this.cachedContent;
     } catch (error: any) {
       this.logger.warn(`⚠️ Failed to load site content: ${error?.message}`);
@@ -83,15 +109,15 @@ export class SiteContentService {
 
       return {
         pricing: '(Pricing non disponible — consultez /pricing sur le site)',
-        contact: 'support@academiahelm.com | +229 01 41 36 08 03',
-        reviews: '(Avis non disponibles actuellement)',
+        contact: SiteContentService.STATIC_CONTACT,
+        reviews: SiteContentService.REVIEWS_PLACEHOLDER,
         lastUpdated: new Date(),
       };
     }
   }
 
   /**
-   * Invalide le cache manuellement (utile après un update du site)
+   * Invalide le cache manuellement (utile après un update du pricing)
    */
   invalidateCache(): void {
     this.cachedContent = null;
@@ -99,7 +125,7 @@ export class SiteContentService {
     this.logger.log('🗑️ Site content cache invalidated');
   }
 
-  // ─── PRICING (depuis la DB) ──────────────────────────────────────────
+  // ─── PRICING (depuis la DB — SEULE source dynamique) ─────────────────
 
   private async loadPricingContent(): Promise<string> {
     try {
@@ -168,58 +194,6 @@ export class SiteContentService {
     } catch (error: any) {
       this.logger.warn(`Failed to load pricing: ${error?.message}`);
       return '(Pricing non disponible — consultez /pricing sur le site)';
-    }
-  }
-
-  // ─── CONTACT (depuis les settings DB) ─────────────────────────────────
-
-  private async loadContactContent(): Promise<string> {
-    // Le contact est stocké dans les settings du platform ou hardcoded
-    // Pour l'instant, on retourne les infos de base (qui changent rarement)
-    // mais on pourrait les rendre dynamiques via une table PlatformSettings
-    return `CONTACT :
-- Email : support@academiahelm.com — Réponse sous 48h ouvrées
-- Téléphone : +229 01 41 36 08 03
-- Adresse : Parakou, Bénin — Afrique de l'Ouest
-- WhatsApp : wa.me/2290141360803
-- Horaires : Lun-Jeu 8h-18h | Ven 8h-16h | Dim 9h-17h | Sam fermé
-
-CRÉATEUR : YEHI OR Tech — entreprise technologique béninoise (Parakou, Bénin)
-- Mission : Démocratiser l'accès à une gestion scolaire moderne pour toutes les écoles privées d'Afrique de l'Ouest
-- Vision : Devenir la plateforme de référence pour la gestion éducative en Afrique francophone`;
-  }
-
-  // ─── REVIEWS STATS (depuis la DB) ─────────────────────────────────────
-
-  private async loadReviewsContent(): Promise<string> {
-    try {
-      // Compter les avis approuvés et la moyenne
-      const approvedReviews = await this.prisma.review.aggregate({
-        _count: { id: true },
-        _avg: { rating: true },
-        where: { status: 'APPROVED' },
-      });
-
-      const total = approvedReviews._count.id;
-      const average = approvedReviews._avg.rating;
-
-      if (total === 0) {
-        return 'STATS AVIS : Aucun avis publié encore. Les avis vérifiés apparaîtront sur le site dès approbation.';
-      }
-
-      const avgRounded = average ? average.toFixed(1) : '0.0';
-      const satisfactionPercent = average
-        ? Math.round((average / 5) * 100)
-        : 0;
-
-      return `STATS AVIS (en temps réel) :
-- **${total}** avis vérifiés publiés
-- **${satisfactionPercent}%** de satisfaction
-- **${avgRounded}/5** note moyenne
-- Les avis sont modérés avant publication. Tout le monde peut donner son avis : directeurs, enseignants, parents, élèves.`;
-    } catch (error: any) {
-      this.logger.warn(`Failed to load reviews: ${error?.message}`);
-      return '(Stats avis non disponibles)';
     }
   }
 

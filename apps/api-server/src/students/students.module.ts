@@ -101,7 +101,7 @@ import { CommunicationModule } from '../communication/communication.module';
     DisciplinePrismaService,
     DocumentsPrismaService,
     TransfersPrismaService,
-    StorageService,
+    // StorageService fourni par CommonModule (singleton global)
     // Module 1 - Matricule Global & Cartes Scolaires
     StudentIdentifierService,
     StudentIdCardService,

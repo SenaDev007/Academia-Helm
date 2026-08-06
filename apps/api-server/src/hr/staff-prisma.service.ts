@@ -352,11 +352,52 @@ export class StaffPrismaService {
       ? await this.storageService.resolveFileUrl(staff.photo.thumbnailUrl)
       : null;
 
+    // ⭐ Charger le compte utilisateur + tous les rôles attribués (multi-rôles)
+    // pour affichage dans la fiche RH (section Identifiants de connexion).
+    // On cherche l'utilisateur par email (clé de correspondance staff ↔ user).
+    let userAccount: any = null;
+    if (staff.email) {
+      const normalizedEmail = staff.email.trim().toLowerCase();
+      const user = await this.prisma.user.findFirst({
+        where: { email: normalizedEmail },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          status: true,
+          firstName: true,
+          lastName: true,
+          userRoles: {
+            include: {
+              role: {
+                select: { id: true, name: true, description: true, isSystemRole: true },
+              },
+            },
+          },
+        },
+      });
+      if (user) {
+        userAccount = {
+          id: user.id,
+          email: user.email,
+          primaryRole: user.role,
+          status: user.status,
+          roles: user.userRoles.map((ur) => ({
+            id: ur.role.id,
+            name: ur.role.name,
+            description: ur.role.description,
+            isSystemRole: ur.role.isSystemRole,
+          })),
+        };
+      }
+    }
+
     return {
       ...staff,
       staffCode: staff.employeeNumber,
       category: Object.entries(CATEGORY_TO_ROLE).find(([, v]) => v === staff.roleType)?.[0] || staff.roleType,
       photoUrl: resolvedPhotoUrl,
+      userAccount,
     };
   }
 

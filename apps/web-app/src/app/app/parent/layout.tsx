@@ -33,14 +33,15 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LogoutModal } from "@/components/auth/LogoutModal";
+import AcademicYearSelector from "@/components/pilotage/AcademicYearSelector";
 
 const PARENT_MODULES = [
   { path: "/app/parent", label: "Tableau de bord", icon: LayoutDashboard },
   { path: "/app/parent/children", label: "Mes Enfants", icon: Users },
   { path: "/app/parent/cahier-journal", label: "Cahier journal", icon: BookOpen },
-  { path: "/app/parent/payments", label: "Paiements", icon: CreditCard },
-  { path: "/app/parent/results", label: "Bulletins", icon: FileText },
   { path: "/app/parent/attendance", label: "Présences", icon: CalendarCheck },
+  { path: "/app/parent/payments", label: "Paiements", icon: CreditCard },
+  { path: "/app/parent/results", label: "Notes et Bulletins", icon: FileText },
   { path: "/app/parent/messages", label: "Messages", icon: MessageSquare },
   { path: "/app/parent/documents", label: "Documents", icon: Folder },
 ];
@@ -213,8 +214,8 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
               {currentModuleLabel}
             </h1>
           </div>
-          <div className="text-xs sm:text-sm text-slate-500 flex-shrink-0">
-            {academicYear?.label || ""}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <AcademicYearSelector />
           </div>
         </header>
 

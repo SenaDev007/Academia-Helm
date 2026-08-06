@@ -42,6 +42,10 @@ export class SecuritySettingsService {
           dataRetentionYears: 7,
           gdprCompliant: false,
           allowInspectionAccess: false,
+          // ⭐ Nouveaux champs — valeurs par défaut prudentes
+          inactivityLockMinutes: 15,
+          deviceFingerprintEnabled: true,
+          notifyOnNewDevice: true,
         },
       });
     }
@@ -70,11 +74,16 @@ export class SecuritySettingsService {
       dataRetentionYears?: number;
       gdprCompliant?: boolean;
       allowInspectionAccess?: boolean;
+      // ⭐ Nouveaux champs (session/verrouillage + auth avancée)
+      inactivityLockMinutes?: number;
+      deviceFingerprintEnabled?: boolean;
+      notifyOnNewDevice?: boolean;
     },
     userId: string,
     ipAddress?: string,
     userAgent?: string,
   ) {
+    this.validateNewFields(data);
     const existing = await this.getSecuritySettings(tenantId);
 
     // Enregistrer l'historique des changements
@@ -115,6 +124,36 @@ export class SecuritySettingsService {
     await this.checkOrionAlerts(tenantId, changes);
 
     return updated;
+  }
+
+  /**
+   * Validation des plages de valeurs des nouveaux champs.
+   */
+  private validateNewFields(data: any): void {
+    if (data.inactivityLockMinutes !== undefined) {
+      const v = Number(data.inactivityLockMinutes);
+      if (!Number.isInteger(v) || v < 1 || v > 120) {
+        throw new Error('inactivityLockMinutes doit être un entier entre 1 et 120');
+      }
+    }
+    if (data.passwordMinLength !== undefined) {
+      const v = Number(data.passwordMinLength);
+      if (!Number.isInteger(v) || v < 6 || v > 20) {
+        throw new Error('passwordMinLength doit être un entier entre 6 et 20');
+      }
+    }
+    if (data.sessionTimeoutMinutes !== undefined) {
+      const v = Number(data.sessionTimeoutMinutes);
+      if (!Number.isInteger(v) || v < 5 || v > 480) {
+        throw new Error('sessionTimeoutMinutes doit être un entier entre 5 et 480');
+      }
+    }
+    if (data.maxLoginAttempts !== undefined) {
+      const v = Number(data.maxLoginAttempts);
+      if (!Number.isInteger(v) || v < 3 || v > 10) {
+        throw new Error('maxLoginAttempts doit être un entier entre 3 et 10');
+      }
+    }
   }
 
   /**

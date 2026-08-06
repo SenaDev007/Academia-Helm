@@ -14,6 +14,8 @@ import {
   Param,
   Query,
   UseGuards,
+  BadRequestException,
+  Headers,
 } from '@nestjs/common';
 import { ExamsPrismaService } from './exams-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -24,6 +26,7 @@ import {
   UpdateExamPrismaDto,
   SaveGradingSheetDto,
   CalculateAveragesDto,
+  CalculateEvaluationAveragesDto,
   GenerateReportCardsDto,
   PublishBulletinsDto,
 } from './dto';
@@ -125,11 +128,15 @@ export class ExamsPrismaController {
   @Get('averages')
   async getAverages(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
     @Query('classId') classId: string,
     @Query('periodId') periodId: string,
     @Query('academicYearId') academicYearId: string,
   ) {
-    return this.examsService.getAverages(tenantId, classId, periodId, academicYearId);
+    // ⭐ Robust tenantId resolution
+    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
+    return this.examsService.getAverages(resolvedTenantId, classId, periodId, academicYearId);
   }
 
   @Get('bulletins')
@@ -145,14 +152,92 @@ export class ExamsPrismaController {
   @Post('calculate-averages')
   async calculateAverages(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
     @Body() body: CalculateAveragesDto,
   ) {
+    // ⭐ Robust tenantId resolution: @TenantId() → user.tenantId → x-tenant-id header
+    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
     return this.examsService.calculateAverages(
-      tenantId,
+      resolvedTenantId,
       body.classId,
       body.periodId,
       body.academicYearId,
     );
+  }
+
+  /**
+   * POST /api/exams/calculate-evaluation-averages
+   *
+   * Calcule les moyennes pour un type d'évaluation spécifique (EM1, EM2, EC)
+   * pour tous les élèves d'une classe, sur un trimestre donné.
+   *
+   * Body: { classId, periodId, academicYearId, evaluationTypeId }
+   *
+   * ⭐ Différent de calculate-averages qui consolide toutes les évaluations :
+   *    cette méthode isole UN type d'évaluation précis (EM1, EM2 ou EC).
+   */
+  @Post('calculate-evaluation-averages')
+  async calculateEvaluationAverages(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+    @Body() body: CalculateEvaluationAveragesDto,
+  ) {
+    // ⭐ Robust tenantId resolution: @TenantId() → user.tenantId → x-tenant-id header
+    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
+    if (!resolvedTenantId) {
+      throw new BadRequestException('Tenant ID non résolu — veuillez vous reconnecter.');
+    }
+    return this.examsService.calculateEvaluationAverages(
+      resolvedTenantId,
+      body.classId,
+      body.periodId,
+      body.academicYearId,
+      body.evaluationTypeId,
+      body.language, // ⭐ Pass language track (FR/EN) for subject filtering
+    );
+  }
+
+  /**
+   * GET /api/exams/annual-averages?classId=X&academicYearId=Y
+   * Moyennes annuelles + moyenne de passage pour tous les élèves d'une classe.
+   */
+  @Get('annual-averages')
+  async getAnnualAverages(
+    @TenantId() tenantId: string,
+    @Query('classId') classId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.examsService.getAnnualAverages(tenantId, classId, academicYearId);
+  }
+
+  /**
+   * GET /api/exams/rankings/by-level?schoolLevelId=X&periodId=Y&academicYearId=Z
+   * Rangs par niveau (toutes classes d'un niveau confondues).
+   */
+  @Get('rankings/by-level')
+  async getRankingsByLevel(
+    @TenantId() tenantId: string,
+    @Query('schoolLevelId') schoolLevelId: string,
+    @Query('periodId') periodId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.examsService.getRankingsByLevel(tenantId, schoolLevelId, periodId, academicYearId);
+  }
+
+  /**
+   * GET /api/exams/rankings/by-subject?classId=X&periodId=Y&academicYearId=Z
+   * Rangs par matière pour une classe (meilleurs élèves par matière).
+   */
+  @Get('rankings/by-subject')
+  async getRankingsBySubject(
+    @TenantId() tenantId: string,
+    @Query('classId') classId: string,
+    @Query('periodId') periodId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    return this.examsService.getRankingsBySubject(tenantId, classId, periodId, academicYearId);
   }
 
   @Post('generate-report-cards')

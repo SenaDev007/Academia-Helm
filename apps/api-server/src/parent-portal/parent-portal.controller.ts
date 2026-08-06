@@ -51,44 +51,64 @@ export class ParentPortalController {
    * Résoudre l'ID du guardian depuis l'userId du parent connecté.
    * Le parent se connecte avec son User (email/téléphone), mais ses enfants
    * sont liés via la table student_guardians (guardianId).
-   * On cherche par email ou téléphone matching.
+   *
+   * Pattern (même que resolveTeacherId) :
+   *   1. Chercher guardian par userId (colonnes guardians.userId ← users.id)
+   *   2. Fallback : matcher par email (User.email = Guardian.email)
+   *   3. Fallback : matcher par téléphone (User.phone = Guardian.phone)
+   *   4. Dernier recours : retourner userId (peut être un guardianId direct)
    */
   private async resolveGuardianId(tenantId: string, userId: string): Promise<string | null> {
-    // 1. Vérifier si userId est déjà un guardianId (rare — un User peut avoir
+    // 1. ✅ NOUVEAU : Chercher par userId (comme teachers) — le pattern officiel
+    const byUserId: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "id" FROM "guardians" WHERE "userId" = $1 AND "tenantId" = $2 LIMIT 1`,
+      userId, tenantId,
+    ).catch(() => []);
+    if (byUserId && byUserId.length > 0) {
+      this.logger.log(`✅ Guardian resolved via userId: ${userId.substring(0, 8)}... → guardian ${byUserId[0].id.substring(0, 8)}...`);
+      return byUserId[0].id;
+    }
+
+    // 2. Vérifier si userId est déjà un guardianId (rare — un User peut avoir
     //    le même id qu'un Guardian si l'admin a fait une importation manuelle)
     const directGuardian: any = await this.prisma.$queryRawUnsafe(
       `SELECT "id" FROM "guardians" WHERE "id" = $1 AND "tenantId" = $2 LIMIT 1`,
       userId, tenantId,
     ).catch(() => []);
-    if (directGuardian && directGuardian.length > 0) return directGuardian[0].id;
+    if (directGuardian && directGuardian.length > 0) {
+      this.logger.log(`✅ Guardian resolved via direct ID match`);
+      return directGuardian[0].id;
+    }
 
-    // 2. Chercher par User → email/téléphone → Guardian
+    // 3. Chercher par User → email → Guardian
     const user: any = await this.prisma.$queryRawUnsafe(
-      `SELECT "email", "phone" FROM "users" WHERE "id" = $1 AND "tenantId" = $2 LIMIT 1`,
+      `SELECT "email" FROM "users" WHERE "id" = $1 AND "tenantId" = $2 LIMIT 1`,
       userId, tenantId,
     ).catch(() => []);
 
     if (user && user.length > 0) {
       const u = user[0];
-      // Chercher guardian par email
       if (u.email) {
         const guardianByEmail: any = await this.prisma.$queryRawUnsafe(
           `SELECT "id" FROM "guardians" WHERE "email" = $1 AND "tenantId" = $2 LIMIT 1`,
           u.email, tenantId,
         ).catch(() => []);
-        if (guardianByEmail && guardianByEmail.length > 0) return guardianByEmail[0].id;
-      }
-      // Chercher guardian par téléphone
-      if (u.phone) {
-        const guardianByPhone: any = await this.prisma.$queryRawUnsafe(
-          `SELECT "id" FROM "guardians" WHERE "phone" = $1 AND "tenantId" = $2 LIMIT 1`,
-          u.phone, tenantId,
-        ).catch(() => []);
-        if (guardianByPhone && guardianByPhone.length > 0) return guardianByPhone[0].id;
+        if (guardianByEmail && guardianByEmail.length > 0) {
+          this.logger.log(`✅ Guardian resolved via email match: ${u.email}`);
+
+          // ✅ Auto-backfill: set userId on the guardian for future lookups
+          await this.prisma.$executeRawUnsafe(
+            `UPDATE "guardians" SET "userId" = $1 WHERE "id" = $2 AND "userId" IS NULL`,
+            userId, guardianByEmail[0].id,
+          ).catch(() => {});
+
+          return guardianByEmail[0].id;
+        }
       }
     }
 
-    // 3. Fallback : retourner userId directement (peut être un guardianId)
+    // 4. Fallback : retourner userId directement (peut être un guardianId)
+    this.logger.warn(`⚠️ Guardian not resolved via userId/email — falling back to userId as guardianId`);
     return userId;
   }
 
@@ -379,12 +399,14 @@ export class ParentPortalController {
     const acc = account?.[0] || { totalDue: 0, totalPaid: 0, balance: 0, arrearsAmount: 0, status: 'N/A' };
 
     // Historique des paiements (FinanceTransaction)
+    // ⚠️ FIX: finance_transactions n'a PAS de colonne studentId — seulement studentAccountId.
+    // On join via student_accounts pour filtrer par studentId.
     const transactions: any = await this.prisma.$queryRawUnsafe(
       `SELECT ft."id", ft."amount", ft."createdAt", ft."paymentMethod",
-              ft."receiptNumber", ft."reference", ft."status", ft."notes",
-              ft."type"
+              ft."receiptNumber", ft."reference", ft."notes", ft."type"
        FROM "finance_transactions" ft
-       WHERE ft."studentId" = $1 AND ft."tenantId" = $2
+       INNER JOIN "student_accounts" sa ON sa."id" = ft."studentAccountId"
+       WHERE sa."studentId" = $1 AND ft."tenantId" = $2
        AND ft."type" = 'PAYMENT'
        ORDER BY ft."createdAt" DESC LIMIT 50`,
       studentId, tenantId,
@@ -411,6 +433,218 @@ export class ParentPortalController {
       transactions: transactions || [],
       legacyPayments: legacyPayments || [],
     };
+  }
+
+  /**
+   * GET /parent/finance/:studentId/breakdown?academicYearId=Y
+   *
+   * Détail financier complet d'un enfant pour le parent connecté :
+   *   - Frais d'inscription ou réinscription (selon enrollmentType NEW/REPEAT)
+   *   - Frais de scolarité (avec override/personnalisation si applicable)
+   *   - Autres frais (cantine, examen, transport...)
+   *   - Réductions appliquées (motif, montant original, montant personnalisé)
+   *   - Arriérés par année scolaire (année + montant restant)
+   *   - Total dû, total payé, restant à payer
+   *   - Transactions récentes (50 dernières)
+   *
+   * Sécurité : assertStudentBelongsToGuardian() vérifie que l'élève
+   * appartient bien au parent connecté.
+   */
+  @Get('finance/:studentId/breakdown')
+  async getFinanceBreakdown(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Param('studentId') studentId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!academicYearId) throw new BadRequestException('academicYearId est requis');
+    await this.assertStudentBelongsToGuardian(tenantId, user?.id, studentId);
+
+    // 1. StudentAccount
+    const accountRows: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "id", "totalDue", "totalPaid", "balance", "arrearsAmount",
+              "carriedArrears", "status", "isBlocked"
+       FROM "student_accounts"
+       WHERE "studentId" = $1 AND "tenantId" = $2 AND "academicYearId" = $3
+       LIMIT 1`,
+      studentId, tenantId, academicYearId,
+    ).catch(() => []);
+    const account = accountRows?.[0] || null;
+
+    if (!account) {
+      return {
+        hasAccount: false,
+        enrollmentType: null,
+        breakdowns: [],
+        overrides: [],
+        feeArrears: [],
+        transactions: [],
+        totals: { totalDue: 0, totalPaid: 0, balance: 0, arrearsAmount: 0, carriedArrears: 0 },
+      };
+    }
+
+    // 2. Enrollment type (NEW vs REPEAT) pour distinguer inscription/réinscription
+    const enrollmentRows: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "enrollmentType", "isNewStudent"
+       FROM "student_enrollments"
+       WHERE "studentId" = $1 AND "tenantId" = $2 AND "academicYearId" = $3
+       LIMIT 1`,
+      studentId, tenantId, academicYearId,
+    ).catch(() => []);
+    const enrollment = enrollmentRows?.[0] || {};
+    const enrollmentType = enrollment.enrollmentType || 'NEW';
+    const isNewStudent = enrollment.isNewStudent ?? (enrollmentType === 'NEW');
+
+    // 3. AccountBreakdowns avec FeeStructure + Override
+    // ⚠️ account_breakdowns n'a PAS de tenantId — le tenant est sur student_accounts
+    // ✅ On récupère fs."totalAmount" (montant STANDARD de la classe/niveau) pour
+    // comparer avec fo."customAmount" (montant personnalisé) et détecter l'override.
+    // ab."initialAmount" est déjà le montant APRÈS override (calculé à la création).
+    const breakdowns: any = await this.prisma.$queryRawUnsafe(
+      `SELECT ab."id", ab."initialAmount", ab."adjustedAmount", ab."paidAmount",
+              ab."remainingAmount",
+              fs."id" as "feeStructureId", fs."name" as "feeName",
+              fs."feeType", fs."customFeeTypeLabel", fs."isMandatory", fs."isActive",
+              fs."totalAmount" as "standardAmount",
+              fo."customAmount" as "overrideCustomAmount", fo."reason" as "overrideReason"
+       FROM "account_breakdowns" ab
+       INNER JOIN "fee_structures" fs ON fs."id" = ab."feeStructureId"
+       LEFT JOIN "fee_overrides" fo ON fo."feeStructureId" = fs."id" AND fo."studentId" = $1
+       WHERE ab."studentAccountId" = $2
+       ORDER BY
+         CASE fs."feeType"
+           WHEN 'INSCRIPTION' THEN 1
+           WHEN 'REINSCRIPTION' THEN 2
+           WHEN 'TUITION' THEN 3
+           WHEN 'CANTEEN' THEN 4
+           WHEN 'EXAMEN' THEN 5
+           ELSE 6
+         END`,
+      studentId, account.id,
+    ).catch(() => []);
+
+    // 4. FeeArrears (arriérés par année)
+    const feeArrears: any = await this.prisma.$queryRawUnsafe(
+      `SELECT fa."id", fa."academicYearId", fa."totalDue", fa."totalPaid",
+              fa."balanceDue", fa."status", fa."notes",
+              ay."name" as "academicYearName", ay."label" as "academicYearLabel"
+       FROM "fee_arrears" fa
+       LEFT JOIN "academic_years" ay ON ay."id" = fa."academicYearId"
+       WHERE fa."studentId" = $1 AND fa."tenantId" = $2
+       AND fa."status" IN ('OPEN', 'PARTIALLY_PAID')
+       AND fa."balanceDue" > 0
+       ORDER BY ay."startDate" DESC`,
+      studentId, tenantId,
+    ).catch(() => []);
+
+    const actualArrears = (feeArrears || []).reduce(
+      (sum: number, a: any) => sum + Number(a.balanceDue || 0), 0,
+    );
+
+    // 5. Transactions récentes
+    const transactions: any = await this.prisma.$queryRawUnsafe(
+      `SELECT ft."id", ft."amount", ft."createdAt", ft."paymentMethod",
+              ft."receiptNumber", ft."reference", ft."notes", ft."type"
+       FROM "finance_transactions" ft
+       WHERE ft."studentAccountId" = $1 AND ft."tenantId" = $2
+       AND ft."type" = 'PAYMENT'
+       ORDER BY ft."createdAt" DESC LIMIT 50`,
+      account.id, tenantId,
+    ).catch(() => []);
+
+    // 6. Formater les breakdowns pour le frontend
+    // ✅ Détection d'override : comparer le montant STANDARD (fs.totalAmount) avec
+    // le montant PERSONNALISÉ (fo.customAmount). Si ils diffèrent → override actif.
+    // ab.initialAmount/adjustedAmount sont déjà le montant après override.
+    const formattedBreakdowns = (breakdowns || []).map((b: any) => {
+      const standardAmount = Number(b.standardAmount || 0);
+      const overrideCustomAmount = b.overrideCustomAmount ? Number(b.overrideCustomAmount) : null;
+      const hasOverride = overrideCustomAmount !== null && overrideCustomAmount !== standardAmount;
+      const reductionAmount = hasOverride ? standardAmount - overrideCustomAmount : 0;
+      const reductionPercentage = hasOverride && standardAmount > 0
+        ? Math.round((reductionAmount / standardAmount) * 100)
+        : 0;
+      const feeTypeLabel = this.getFeeTypeLabel(b.feeType, enrollmentType);
+      return {
+        id: b.id,
+        feeStructureId: b.feeStructureId,
+        feeName: b.feeName,
+        feeType: b.feeType,
+        feeTypeLabel,
+        customFeeTypeLabel: b.customFeeTypeLabel,
+        isMandatory: b.isMandatory,
+        // Montant standard de la classe/niveau (avant personnalisation)
+        standardAmount,
+        // Montant après personnalisation (ce que l'élève doit réellement)
+        adjustedAmount: Number(b.adjustedAmount),
+        paidAmount: Number(b.paidAmount),
+        remainingAmount: Number(b.remainingAmount),
+        // Personnalisation / Override
+        hasOverride,
+        overrideCustomAmount: hasOverride ? overrideCustomAmount : null,
+        overrideReason: b.overrideReason || null,
+        reductionAmount: hasOverride ? reductionAmount : 0,
+        reductionPercentage: hasOverride ? reductionPercentage : 0,
+        isPersonalized: hasOverride,
+      };
+    });
+
+    return {
+      hasAccount: true,
+      accountId: account.id,
+      enrollmentType,
+      isNewStudent,
+      breakdowns: formattedBreakdowns,
+      feeArrears: (feeArrears || []).map((a: any) => ({
+        id: a.id,
+        academicYearId: a.academicYearId,
+        academicYearName: a.academicYearName || a.academicYearLabel || 'Année précédente',
+        totalDue: Number(a.totalDue),
+        totalPaid: Number(a.totalPaid),
+        balanceDue: Number(a.balanceDue),
+        status: a.status,
+        notes: a.notes,
+      })),
+      actualArrears,
+      transactions: (transactions || []).map((t: any) => ({
+        id: t.id,
+        amount: Number(t.amount),
+        date: t.createdAt,
+        paymentMethod: t.paymentMethod,
+        receiptNumber: t.receiptNumber,
+        reference: t.reference,
+        notes: t.notes,
+      })),
+      totals: {
+        totalDue: Number(account.totalDue),
+        totalPaid: Number(account.totalPaid),
+        balance: Number(account.balance),
+        arrearsAmount: Number(account.arrearsAmount),
+        carriedArrears: Number(account.carriedArrears || 0),
+        status: account.status,
+        isBlocked: account.isBlocked,
+      },
+    };
+  }
+
+  /** Convertit le FeeType en label lisible, en tenant compte du type d'élève. */
+  private getFeeTypeLabel(feeType: string, enrollmentType: string): string {
+    switch (feeType) {
+      case 'INSCRIPTION':
+        return enrollmentType === 'NEW' ? "Frais d'inscription" : 'Frais de réinscription';
+      case 'REINSCRIPTION':
+        return 'Frais de réinscription';
+      case 'TUITION':
+        return 'Scolarité';
+      case 'CANTEEN':
+        return 'Cantine';
+      case 'EXAMEN':
+        return "Frais d'examen";
+      case 'OTHER':
+        return 'Autre frais';
+      default:
+        return feeType;
+    }
   }
 
   /**
@@ -662,6 +896,174 @@ export class ParentPortalController {
     );
 
     return enriched;
+  }
+
+  /**
+   * GET /parent/grades/:studentId?academicYearId=Y
+   * Notes détaillées d'un enfant par trimestre + type d'évaluation.
+   *
+   * Retourne les notes VALIDÉES (status=VALIDATED) depuis le Module Examen.
+   * Groupées par trimestre (Quarter) puis par type d'évaluation (EM1, EM2, EC).
+   *
+   * ⭐ Sécurité : assertStudentBelongsToGuardian() vérifie que l'élève
+   *    appartient bien au parent connecté.
+   *
+   * Format de retour :
+   *   [
+   *     {
+   *       quarterId, quarterName, quarterNumber,
+   *       evaluations: [
+   *         {
+   *           evaluationTypeId, evaluationTypeCode, evaluationTypeName,
+   *           evaluationDate,
+   *           subjects: [
+   *             {
+   *               subjectId, subjectName,
+   *               score, maxScore, coefficient,
+   *               isAbsent, qualitativeCode,
+   *               appreciation (calculée depuis le score),
+   *               status
+   *             }
+   *           ]
+   *         }
+   *       ]
+   *     }
+   *   ]
+   */
+  @Get('grades/:studentId')
+  async getStudentGrades(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Param('studentId') studentId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    await this.assertStudentBelongsToGuardian(tenantId, user?.id, studentId);
+
+    // ⭐ Récupérer TOUTES les notes validées de l'élève pour cette année
+    // Jointures :
+    //   grades → evaluations → evaluation_types, academic_periods, subjects
+    //   grades → quarters (grades.periodId → quarters.id)
+    const grades: any = await this.prisma.$queryRawUnsafe(
+      `SELECT
+         g.id AS grade_id,
+         g.score,
+         g."maxScore",
+         g.coefficient,
+         g."isAbsent",
+         g."qualitativeCode",
+         g.status AS grade_status,
+         g."evaluationId",
+         e.title AS evaluation_title,
+         e."evaluationDate",
+         e.status AS evaluation_status,
+         et.id AS "evaluationTypeId",
+         et.code AS "evaluationTypeCode",
+         et.name AS "evaluationTypeName",
+         s.id AS "subjectId",
+         s.name AS "subjectName",
+         s.code AS "subjectCode",
+         s.language AS "subjectLanguage",
+         c.id AS "classId",
+         c.name AS "className",
+         sl.code AS "schoolLevelCode",
+         q.id AS "quarterId",
+         q.name AS "quarterName",
+         q.number AS "quarterNumber",
+         ap.name AS "periodName"
+       FROM grades g
+       JOIN evaluations e ON e.id = g."evaluationId"
+       LEFT JOIN evaluation_types et ON et.id = e."evaluationTypeId"
+       LEFT JOIN subjects s ON s.id = e."subjectId"
+       LEFT JOIN classes c ON c.id = e."classId"
+       LEFT JOIN school_levels sl ON sl.id = c."schoolLevelId"
+       LEFT JOIN quarters q ON q.id = g."periodId"
+       LEFT JOIN academic_periods ap ON ap.id = e."periodId"
+       WHERE g."studentId" = $1
+         AND g."tenantId" = $2
+         AND e."academicYearId" = $3
+         AND e.status = 'VALIDATED'
+       ORDER BY q.number ASC, et.code ASC, s.name ASC`,
+      studentId, tenantId, academicYearId,
+    ).catch(() => []);
+
+    // ⭐ Grouper par trimestre → type d'évaluation → matière
+    const quarterMap = new Map<string, any>();
+
+    for (const g of (grades || [])) {
+      const quarterId = g.quarterId || '_no_quarter';
+      const quarterName = g.quarterName || 'Non spécifié';
+      const quarterNumber = g.quarterNumber || 0;
+
+      if (!quarterMap.has(quarterId)) {
+        quarterMap.set(quarterId, {
+          quarterId,
+          quarterName,
+          quarterNumber,
+          evaluations: new Map<string, any>(),
+        });
+      }
+
+      const quarter = quarterMap.get(quarterId);
+      const evalTypeId = g.evaluationTypeId || '_no_type';
+      const evalTypeCode = g.evaluationTypeCode || 'EVAL';
+      const evalTypeName = g.evaluationTypeName || 'Évaluation';
+
+      if (!quarter.evaluations.has(evalTypeId)) {
+        quarter.evaluations.set(evalTypeId, {
+          evaluationTypeId: evalTypeId,
+          evaluationTypeCode: evalTypeCode,
+          evaluationTypeName: evalTypeName,
+          evaluationDate: g.evaluationDate,
+          subjects: [],
+        });
+      }
+
+      const evalGroup = quarter.evaluations.get(evalTypeId);
+
+      // Calculer l'appréciation selon le niveau scolaire
+      let appreciation = '—';
+      if (g.schoolLevelCode === 'MATERNELLE') {
+        // Maternelle : TS/S/PS
+        if (g.qualitativeCode === 'TS') appreciation = 'Très Satisfaisant';
+        else if (g.qualitativeCode === 'S') appreciation = 'Satisfaisant';
+        else if (g.qualitativeCode === 'PS') appreciation = 'Peu Satisfaisant';
+        else if (g.isAbsent) appreciation = 'Absent';
+      } else {
+        // Primaire/Secondaire : note /20
+        if (g.isAbsent) appreciation = 'Absent';
+        else if (g.score !== null) {
+          if (g.score >= 16) appreciation = 'Très Bien';
+          else if (g.score >= 14) appreciation = 'Bien';
+          else if (g.score >= 12) appreciation = 'Assez Bien';
+          else if (g.score >= 10) appreciation = 'Passable';
+          else appreciation = 'Insuffisant';
+        }
+      }
+
+      evalGroup.subjects.push({
+        subjectId: g.subjectId,
+        subjectName: g.subjectName,
+        subjectCode: g.subjectCode,
+        score: g.isAbsent ? null : (typeof g.score === 'number' ? Number(g.score) : null),
+        maxScore: Number(g.maxScore) || 20,
+        coefficient: Number(g.coefficient) || 1,
+        isAbsent: g.isAbsent || false,
+        qualitativeCode: g.qualitativeCode,
+        appreciation,
+        status: g.grade_status,
+      });
+    }
+
+    // Convertir Maps en arrays + trier
+    const result = Array.from(quarterMap.values())
+      .sort((a, b) => a.quarterNumber - b.quarterNumber)
+      .map(q => ({
+        ...q,
+        evaluations: Array.from(q.evaluations.values())
+          .sort((a, b) => a.evaluationTypeCode.localeCompare(b.evaluationTypeCode)),
+      }));
+
+    return result;
   }
 
   /**

@@ -85,7 +85,7 @@ export default function ReactivatePage() {
         {/* Logo */}
         <div className="text-center mb-6">
           <Image
-            src="/images/logo-Academia Hub.png"
+            src="/images/logo-Academia Hub.webp"
             alt="Academia Helm"
             width={56}
             height={56}

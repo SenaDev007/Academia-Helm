@@ -1378,11 +1378,45 @@ export default function StaffDetailPage() {
                       <Key size={20} className="text-blue-500" />
                       Identifiants de connexion
                     </h3>
+
+                    {/* ⭐ Bloc multi-rôles : affiche les rôles attribués au compte utilisateur */}
+                    {member?.userAccount && (
+                      <div className="mb-4 p-4 bg-white border border-blue-200 rounded-xl">
+                        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                          <p className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                            <Shield size={16} className="text-blue-600" />
+                            Rôles attribués au compte utilisateur
+                          </p>
+                          <span className="text-xs text-slate-500">
+                            Compte : <strong className="text-slate-700">{member.userAccount.email}</strong>
+                            <span className={`ml-2 px-2 py-0.5 rounded-full text-[11px] font-medium ${member.userAccount.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                              {member.userAccount.status === 'active' ? 'Actif' : member.userAccount.status}
+                            </span>
+                          </span>
+                        </div>
+                        {member.userAccount.roles && member.userAccount.roles.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {member.userAccount.roles.map((r: any) => (
+                              <span key={r.id} className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${r.isSystemRole ? 'bg-slate-100 text-slate-700 border border-slate-200' : 'bg-blue-50 text-blue-800 border border-blue-200'}`}>
+                                {r.name}
+                                {r.isSystemRole && <span className="text-[10px] text-slate-400">(système)</span>}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-500 italic">Aucun rôle RBAC attribué — l&apos;utilisateur se connecte avec son rôle primaire ({member.userAccount.primaryRole || 'non défini'}).</p>
+                        )}
+                        <p className="text-[11px] text-slate-500 mt-2">
+                          Pour attribuer un nouveau rôle à ce personnel (ex. Enseignant + Directeur), rendez-vous dans <strong>Paramètres → Rôles → Liste des utilisateurs</strong>. Les accès sont cumulés (union des permissions de chaque rôle).
+                        </p>
+                      </div>
+                    )}
+
                     <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 flex items-center justify-between">
                       <div>
                         <p className="text-sm font-semibold text-slate-700">Compte utilisateur</p>
                         <p className="text-xs text-slate-500 mt-0.5">
-                          Générez ou régénérez les identifiants de connexion (nom d'utilisateur + mot de passe temporaire).
+                          Générez ou régénérez les identifiants de connexion (nom d&apos;utilisateur + mot de passe temporaire).
                           Un email sera envoyé au personnel avec ses identifiants et le lien de connexion.
                         </p>
                       </div>

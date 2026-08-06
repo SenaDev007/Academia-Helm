@@ -22,7 +22,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { CacheService } from '../../common/services/cache.service';
 
 /** Durée de vie du cache (ms) — 60 secondes */
-const CACHE_TTL_MS = 60_000;
+const CACHE_TTL_MS = 300_000; // 5 minutes — schools rarely change
 
 /** Clés de cache Redis */
 const CACHE_KEY_ALL_SCHOOLS = 'schools:list:all';
@@ -33,7 +33,7 @@ const IDENTITY_PROFILE_SELECT = {
   schoolName: true,
   schoolAcronym: true,
   schoolType: true,
-  logoUrl: true,
+  // logoUrl: true, // REMOVED — logos are too large (2MB each), loaded separately
   address: true,
   city: true,
   department: true,
@@ -50,7 +50,7 @@ const IDENTITY_PROFILE_SELECT = {
 /** Champs sélectionnés sur la table School (fallback) */
 const SCHOOL_SELECT = {
   name: true,
-  logo: true,
+  // logo: true, // REMOVED — too large
   address: true,
   city: true,
   primaryPhone: true,
@@ -155,7 +155,7 @@ export class SchoolSearchService {
           name: tenant.name,
           slug: tenant.slug,
           subdomain: tenant.subdomain || null,
-          logoUrl: data.logoUrl,
+          logoUrl: null, // Removed from list — use /api/public/schools/by-subdomain/:slug for logo
           city: data.city,
           primaryPhone: data.phonePrimary,
           primaryEmail: data.primaryEmail,
@@ -257,7 +257,7 @@ export class SchoolSearchService {
           tenantName: tenant.name,
           slug: tenant.slug,
           subdomain: tenant.subdomain || null,
-          logoUrl: data.logoUrl,
+          logoUrl: null, // Removed from list — use /api/public/schools/by-subdomain/:slug for logo
           address: data.address,
           city: data.city,
           department: data.department,
@@ -338,7 +338,7 @@ export class SchoolSearchService {
           id: tenant.id,
           name: tenant.name,
           slug: tenant.slug,
-          logoUrl: data.logoUrl,
+          logoUrl: null, // Removed from list — use /api/public/schools/by-subdomain/:slug for logo
           city: data.city,
           schoolType: data.schoolType,
         };

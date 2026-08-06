@@ -6,7 +6,7 @@
  * ============================================================================
  *
  * Version optimisée :
- *   - Vrai logo Academia Helm (logo-Academia Hub.png)
+ *   - Vrai logo Academia Helm (logo-Academia Hub.webp)
  *   - Couleurs AH (navy #0B2F73, gold #F5B335)
  *   - Chargement rapide : fetch direct sans logos base64
  *   - Recherche instantanée côté client
@@ -149,7 +149,7 @@ function DesktopSchoolSelector() {
       >
         <div className="text-center text-white">
           <Image
-            src="/images/logo-Academia Hub.png"
+            src="/images/logo-Academia Hub.webp"
             alt="Academia Helm"
             width={80}
             height={80}
@@ -174,7 +174,7 @@ function DesktopSchoolSelector() {
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 shadow-lg mb-4 p-2">
             <Image
-              src="/images/logo-Academia Hub.png"
+              src="/images/logo-Academia Hub.webp"
               alt="Academia Helm"
               width={56}
               height={56}

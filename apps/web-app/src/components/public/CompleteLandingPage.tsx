@@ -506,7 +506,7 @@ export default function CompleteLandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
           <div className="inline-flex items-center justify-center mb-10">
             <Image
-              src="/images/logo-Academia Hub.png"
+              src="/images/logo-Academia Hub.webp"
               alt="Academia Helm - Plateforme de pilotage éducatif"
               width={120}
               height={120}
@@ -923,7 +923,7 @@ export default function CompleteLandingPage() {
               </p>
               <div className="flex justify-center mt-4 mb-0">
                 <Image
-                  src="/images/logoFedaPay.png"
+                  src="/images/logoFedaPay.webp"
                   alt="Fedapay - Paiement sécurisé en ligne"
                   width={120}
                   height={48}
@@ -1036,7 +1036,7 @@ export default function CompleteLandingPage() {
             <div className="absolute inset-0 bg-blue-500 rounded-full blur-xl opacity-75 animate-pulse"></div>
             <div className="relative z-10 w-32 h-32 flex items-center justify-center">
               <Image
-                src="/images/logo-Academia Hub.png"
+                src="/images/logo-Academia Hub.webp"
                 alt="Academia Helm - Plateforme de pilotage éducatif"
                 width={128}
                 height={128}

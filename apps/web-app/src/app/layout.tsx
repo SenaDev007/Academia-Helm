@@ -37,30 +37,30 @@ import I18nWrapper from '@/components/i18n/I18nWrapper';
 // - Fonctionne même si Google Fonts est inaccessible
 // - Meilleure performance et contrôle
 // 
-// Les fichiers de police sont stockés dans : public/fonts/inter/
-// Pour télécharger de nouvelles polices : node scripts/download-fonts.js
-// ✅ POLICES LOCALES — 4 graisses essentielles uniquement (400/500/600/700)
-// Les graisses 100/200/300/800/900 sont rarement utilisées et ajoutent ~1.3 Mo inutiles.
-// Si une page en a besoin, ajouter un font-face dynamique dans ce composant.
+// Les fichiers de police sont stockés dans : src/fonts/inter/
+// ✅ POLICES LOCALES — 4 graisses en WOFF2 (subset Latin) — 79 KB total (vs 1.27 MB en TTF)
+// Conversion TTF → WOFF2 + subset Latin de base : 94% de réduction.
+// Si une page a besoin de plus de glyphs (Cyrillique, Grec, etc.), ajouter
+// un font-face dynamique ou remettre les TTF originaux (backup dans _originals-ttf/).
 const inter = localFont({
   src: [
     {
-      path: '../fonts/inter/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfMZg.ttf',
+      path: '../fonts/inter/inter-400.woff2',
       weight: '400',
       style: 'normal',
     },
     {
-      path: '../fonts/inter/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuI6fMZg.ttf',
+      path: '../fonts/inter/inter-500.woff2',
       weight: '500',
       style: 'normal',
     },
     {
-      path: '../fonts/inter/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuGKYMZg.ttf',
+      path: '../fonts/inter/inter-600.woff2',
       weight: '600',
       style: 'normal',
     },
     {
-      path: '../fonts/inter/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuFuYMZg.ttf',
+      path: '../fonts/inter/inter-700.woff2',
       weight: '700',
       style: 'normal',
     },
@@ -83,10 +83,10 @@ const verification = buildSiteVerification();
  * generateMetadata — détection dynamique du domaine pour l'image Open Graph.
  *
  * - Domaine principal (academiahelm.com, www.academiahelm.com)
- *   → /images/OpenGraph-AcademiaHelm.png
+ *   → /images/OpenGraph-AcademiaHelm.webp
  *
  * - Sous-domaine tenant (*.academiahelm.com)
- *   → /images/OpenGraph-AcademiaHelmTenants.png
+ *   → /images/OpenGraph-AcademiaHelmTenants.webp
  *
  * Les URLs des images OG sont absolues (requis par les crawlers :
  * Facebook, WhatsApp, Twitter/X, LinkedIn, Telegram, etc.).
@@ -207,11 +207,29 @@ export default function RootLayout({
         </I18nWrapper>
         <ServiceWorkerCleanup />
         <ToastContainer />
+
+        {/* ────────────────────────────────────────────────────────────────
+            🚀 Partytown — exécute les scripts tiers dans un Web Worker
+            ────────────────────────────────────────────────────────────────
+            Google Analytics et autres scripts tiers tournent normalement sur
+            le main thread, ce qui bloque le rendu et augmente le TBT
+            (Total Blocking Time). Partytown les déplace dans un Web Worker,
+            libérant le main thread pour les interactions utilisateur.
+
+            Gain estimé : +3-5 pts TBT sur Lighthouse mobile.
+            ──────────────────────────────────────────────────────────────── */}
+        <Script
+          src="https://cdn.jsdelivr.net/npm/@builder.io/partytown@0.10/lib/partytown.js"
+          strategy="beforeInteractive"
+        />
+        {/* ✅ Google Analytics via Partytown (type="text/partytown") —
+            s'exécute dans un Web Worker, ne bloque pas le main thread */}
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-TG29Y7XL8S"
           strategy="lazyOnload"
+          type="text/partytown"
         />
-        <Script id="google-analytics" strategy="lazyOnload">
+        <Script id="google-analytics" strategy="lazyOnload" type="text/partytown">
           {`
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}

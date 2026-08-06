@@ -40,7 +40,7 @@ export const metadata: Metadata = {
     type: 'website',
     images: [
       {
-        url: '/images/Background-SaisieMaster-hero.png',
+        url: '/images/Background-SaisieMaster-hero.webp',
         width: 1200,
         height: 630,
         alt: 'SaisieMaster — Saisie fluide des notes conforme EducMaster',
@@ -51,7 +51,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: `${BRAND.name} — Saisie fluide des notes conforme EducMaster`,
     description: 'Importez votre template Excel EducMaster, saisissez les notes de vos élèves, exportez au format officiel. Gratuit.',
-    images: ['/images/Background-SaisieMaster-hero.png'],
+    images: ['/images/Background-SaisieMaster-hero.webp'],
   },
 };
 

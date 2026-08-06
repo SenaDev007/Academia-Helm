@@ -23,6 +23,7 @@ import {
   ArrowLeft, Loader2, CalendarCheck, Wallet, FileText, BookOpen,
   CheckCircle2, XCircle, Clock, Download, CreditCard, GraduationCap,
   Phone, Mail, RefreshCw,
+  ChevronDown, ChevronRight, Calendar, Award,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -36,16 +37,79 @@ import {
 } from "@/lib/exports/parent-exports";
 import { openFedaPayCheckout } from "@/lib/parent/fedapay-checkout";
 import { financeService } from "@/services/finance.service";
+import ParentFinancePanel from "@/components/parent/ParentFinancePanel";
+import StudentAvatar from "@/components/parent/StudentAvatar";
 import { ParentPaymentHistory } from "@/components/parent/ParentPaymentHistory";
 import { PaymentSuccessBanner } from "@/components/parent/PaymentSuccessBanner";
 
-type Tab = "today" | "payments" | "results" | "attendance";
+type Tab = "today" | "attendance" | "payments" | "results";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
   PRESENT: { label: "Présent", color: "bg-emerald-100 text-emerald-700", icon: CheckCircle2 },
   ABSENT: { label: "Absent", color: "bg-red-100 text-red-700", icon: XCircle },
+  ABSENT_HALF: { label: "Demi-journée", color: "bg-amber-100 text-amber-700", icon: Clock },
   LATE: { label: "En retard", color: "bg-amber-100 text-amber-700", icon: Clock },
 };
+
+/**
+ * Parse attendance notes to extract morning/afternoon/late info.
+ * Notes can be a JSON string like {"morning":"PRESENT","afternoon":"ABSENT","late":false}
+ * or a plain text string.
+ */
+function parseAttendanceNotes(notes: any): { morning?: string; afternoon?: string; late?: boolean; raw?: string } {
+  if (!notes) return {};
+  if (typeof notes === 'object') return notes;
+  if (typeof notes === 'string') {
+    try {
+      const parsed = JSON.parse(notes);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch {
+      return { raw: notes };
+    }
+  }
+  return { raw: String(notes) };
+}
+
+/**
+ * Generate a human-readable status label from the attendance record.
+ * Handles half-day absences (morning absent, afternoon present, etc.)
+ */
+function getAttendanceDisplay(record: { status: string; notes?: any }): { label: string; color: string; icon: any; detail: string } {
+  const cfg = STATUS_CONFIG[record.status] || STATUS_CONFIG.PRESENT;
+  const parsed = parseAttendanceNotes(record.notes);
+
+  // If notes has morning/afternoon info, build a detailed label
+  if (parsed.morning && parsed.afternoon) {
+    const morningLabel = parsed.morning === 'PRESENT' ? 'Présent' : parsed.morning === 'ABSENT' ? 'Absent' : parsed.morning === 'LATE' ? 'En retard' : parsed.morning;
+    const afternoonLabel = parsed.afternoon === 'PRESENT' ? 'Présent' : parsed.afternoon === 'ABSENT' ? 'Absent' : parsed.afternoon === 'LATE' ? 'En retard' : parsed.afternoon;
+
+    if (parsed.morning === parsed.afternoon) {
+      // Both same — single status
+      return {
+        label: morningLabel,
+        color: cfg.color,
+        icon: cfg.icon,
+        detail: '',
+      };
+    }
+
+    // Different morning/afternoon — show "Demi-journée"
+    return {
+      label: 'Demi-journée',
+      color: 'bg-amber-100 text-amber-700',
+      icon: Clock,
+      detail: `Matin: ${morningLabel} · Après-midi: ${afternoonLabel}`,
+    };
+  }
+
+  // No detailed notes — use status only
+  return {
+    label: cfg.label,
+    color: cfg.color,
+    icon: cfg.icon,
+    detail: parsed.raw || '',
+  };
+}
 
 export default function ParentChildDetailPage() {
   const { user } = useAppSession();
@@ -137,9 +201,9 @@ export default function ParentChildDetailPage() {
 
   const tabs: { id: Tab; label: string; icon: any; color: string }[] = [
     { id: "today", label: "Suivi journalier", icon: CalendarCheck, color: "blue" },
+    { id: "attendance", label: "Assiduité", icon: CalendarCheck, color: "amber" },
     { id: "payments", label: "Scolarité", icon: Wallet, color: "emerald" },
     { id: "results", label: "Notes & Bulletins", icon: FileText, color: "purple" },
-    { id: "attendance", label: "Assiduité", icon: CalendarCheck, color: "amber" },
   ];
 
   return (
@@ -152,9 +216,13 @@ export default function ParentChildDetailPage() {
 
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl p-5 text-white shadow-md">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center text-2xl font-bold">
-            {(child.firstName?.[0] || "")}{(child.lastName?.[0] || "")}
-          </div>
+          <StudentAvatar
+            firstName={child.firstName}
+            lastName={child.lastName}
+            photoUrl={child.photoUrl}
+            size="lg"
+            variant="blue"
+          />
           <div className="flex-1">
             <h1 className="text-xl font-bold">{child.firstName} {child.lastName}</h1>
             <p className="text-sm text-blue-100">
@@ -198,7 +266,14 @@ export default function ParentChildDetailPage() {
       ) : (
         <>
           {activeTab === "today" && <TodayTab child={child} todayData={todayData} />}
-          {activeTab === "payments" && <PaymentsTab child={child} />}
+          {activeTab === "payments" && (
+            <ParentFinancePanel
+              studentId={child.id}
+              studentFirstName={child.firstName}
+              studentLastName={child.lastName}
+              studentMatricule={child.matricule}
+            />
+          )}
           {activeTab === "results" && (
             <ResultsTab
               child={child}
@@ -260,14 +335,18 @@ function TodayTab({ child, todayData }: { child: any; todayData: any }) {
         </h3>
         {todayData.attendance ? (
           (() => {
-            const cfg = STATUS_CONFIG[todayData.attendance.status] || STATUS_CONFIG.PRESENT;
-            const Icon = cfg.icon;
+            const display = getAttendanceDisplay(todayData.attendance);
+            const Icon = display.icon;
             return (
-              <div className={cn("inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold", cfg.color)}>
-                <Icon className="h-5 w-5" />
-                {cfg.label}
-                {todayData.attendance.notes && (
-                  <span className="ml-2 text-xs font-normal opacity-75">— {todayData.attendance.notes}</span>
+              <div className="space-y-2">
+                <div className={cn("inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold", display.color)}>
+                  <Icon className="h-5 w-5" />
+                  {display.label}
+                </div>
+                {display.detail && (
+                  <p className="text-xs text-slate-600 bg-slate-50 rounded-lg px-3 py-2">
+                    {display.detail}
+                  </p>
                 )}
               </div>
             );
@@ -618,7 +697,7 @@ function PaymentsTab({ child }: { child: any }) {
 }
 
 // ============================================================================
-// ONGLET 3 : Notes & Bulletins
+// ONGLET 3 : Notes & Bulletins (avec sous-onglets Notes / Bulletins)
 // ============================================================================
 
 function ResultsTab({
@@ -630,8 +709,225 @@ function ResultsTab({
   resultsData: any[];
   schoolHeader: SchoolHeader;
 }) {
+  const [subTab, setSubTab] = useState<"notes" | "bulletins">("notes");
+  const [grades, setGrades] = useState<any[]>([]);
+  const [loadingGrades, setLoadingGrades] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const { academicYear } = useModuleContext();
 
+  // Load grades for "notes" sub-tab
+  useEffect(() => {
+    if (subTab !== "notes" || !child?.id || !academicYear?.id) return;
+    setLoadingGrades(true);
+    fetch(`/api/parent/grades/${child.id}?academicYearId=${academicYear.id}`, { credentials: "include" })
+      .then(r => r.json())
+      .then(data => setGrades(Array.isArray(data) ? data : []))
+      .catch(() => setGrades([]))
+      .finally(() => setLoadingGrades(false));
+  }, [subTab, child?.id, academicYear?.id]);
+
+  return (
+    <div className="space-y-4">
+      {/* Sub-tabs */}
+      <div className="flex items-center gap-2 border-b border-slate-200">
+        <button
+          onClick={() => setSubTab("notes")}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+            subTab === "notes"
+              ? "border-purple-600 text-purple-700"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          Notes et Résultats
+        </button>
+        <button
+          onClick={() => setSubTab("bulletins")}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+            subTab === "bulletins"
+              ? "border-purple-600 text-purple-700"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          <FileText className="w-4 h-4" />
+          Bulletins
+        </button>
+      </div>
+
+      {/* Notes sub-tab */}
+      {subTab === "notes" && (
+        <NotesSubTab grades={grades} loading={loadingGrades} child={child} />
+      )}
+
+      {/* Bulletins sub-tab */}
+      {subTab === "bulletins" && (
+        <BulletinsSubTab
+          resultsData={resultsData}
+          child={child}
+          schoolHeader={schoolHeader}
+          downloadingId={downloadingId}
+          setDownloadingId={setDownloadingId}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Notes Sub-Tab ──────────────────────────────────────────────────────────
+
+function NotesSubTab({ grades, loading, child }: { grades: any[]; loading: boolean; child: any }) {
+  const [expandedQuarters, setExpandedQuarters] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (grades.length > 0) {
+      setExpandedQuarters(new Set([grades[0].quarterId]));
+    }
+  }, [grades]);
+
+  const toggleQuarter = (qid: string) => {
+    setExpandedQuarters(prev => {
+      const next = new Set(prev);
+      if (next.has(qid)) next.delete(qid);
+      else next.add(qid);
+      return next;
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+        <span className="ml-3 text-sm text-slate-500">Chargement des notes…</span>
+      </div>
+    );
+  }
+
+  if (grades.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+        <FileText className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+        <p className="text-sm text-slate-500">Aucune note disponible pour cette période.</p>
+        <p className="text-xs text-slate-400 mt-1">
+          Les notes apparaîtront ici dès que l'enseignant aura saisi et validé les évaluations.
+        </p>
+      </div>
+    );
+  }
+
+  const isMaternelle = child?.schoolLevelCode === "MATERNELLE" || child?.levelName?.toUpperCase().includes("MATERNELLE");
+
+  return (
+    <div className="space-y-3">
+      {grades.map((quarter) => {
+        const isExpanded = expandedQuarters.has(quarter.quarterId);
+        return (
+          <div key={quarter.quarterId} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <button
+              onClick={() => toggleQuarter(quarter.quarterId)}
+              className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-500" /> : <ChevronRight className="w-5 h-5 text-slate-500" />}
+                <div className="text-left">
+                  <h3 className="text-sm font-bold text-slate-900">{quarter.quarterName}</h3>
+                  <p className="text-xs text-slate-500">{quarter.evaluations.length} évaluation(s)</p>
+                </div>
+              </div>
+            </button>
+            {isExpanded && (
+              <div className="border-t border-slate-100 divide-y divide-slate-100">
+                {quarter.evaluations.map((ev: any) => (
+                  <div key={ev.evaluationTypeId} className="p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-purple-100 text-purple-700 text-xs font-bold">
+                        {ev.evaluationTypeCode}
+                      </span>
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">{ev.evaluationTypeName}</div>
+                        {ev.evaluationDate && (
+                          <div className="text-xs text-slate-500 flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {format(new Date(ev.evaluationDate), "d MMM yyyy", { locale: fr })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-slate-50 text-xs uppercase text-slate-500">
+                            <th className="text-left px-3 py-2 font-semibold">Matière</th>
+                            <th className="text-center px-3 py-2 font-semibold">{isMaternelle ? "Appréciation" : "Note"}</th>
+                            {!isMaternelle && <th className="text-center px-3 py-2 font-semibold">Sur</th>}
+                            <th className="text-center px-3 py-2 font-semibold">Coef.</th>
+                            <th className="text-left px-3 py-2 font-semibold">Observation</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ev.subjects.map((s: any, i: number) => (
+                            <tr key={s.subjectId || i} className="border-t border-slate-100">
+                              <td className="px-3 py-2 font-medium text-slate-900">
+                                <div className="flex items-center gap-2">
+                                  <BookOpen className="w-3.5 h-3.5 text-slate-400" />
+                                  {s.subjectName}
+                                </div>
+                              </td>
+                              <td className="text-center px-3 py-2">
+                                {s.isAbsent ? (
+                                  <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700">ABS</span>
+                                ) : isMaternelle ? (
+                                  <span className={`inline-flex px-2 py-0.5 rounded text-xs font-bold ${
+                                    s.qualitativeCode === "TS" ? "bg-emerald-100 text-emerald-700" :
+                                    s.qualitativeCode === "S" ? "bg-blue-100 text-blue-700" :
+                                    s.qualitativeCode === "PS" ? "bg-amber-100 text-amber-700" : ""
+                                  }`}>
+                                    {s.qualitativeCode || "—"}
+                                  </span>
+                                ) : (
+                                  <span className={`font-bold ${(s.score || 0) >= 10 ? "text-emerald-700" : "text-red-600"}`}>
+                                    {s.score !== null ? Number(s.score).toFixed(2) : "—"}
+                                  </span>
+                                )}
+                              </td>
+                              {!isMaternelle && <td className="text-center px-3 py-2 text-slate-500">/{s.maxScore}</td>}
+                              <td className="text-center px-3 py-2 text-slate-500 text-xs">{s.coefficient}</td>
+                              <td className="px-3 py-2 text-slate-600 text-xs">
+                                <span className="inline-flex items-center gap-1">
+                                  <Award className="w-3 h-3" />
+                                  {s.appreciation}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Bulletins Sub-Tab ─────────────────────────────────────────────────────
+
+function BulletinsSubTab({
+  resultsData,
+  child,
+  schoolHeader,
+  downloadingId,
+  setDownloadingId,
+}: {
+  resultsData: any[];
+  child: any;
+  schoolHeader: SchoolHeader;
+  downloadingId: string | null;
+  setDownloadingId: (id: string | null) => void;
+}) {
   if (!resultsData || resultsData.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
@@ -679,7 +975,6 @@ function ResultsTab({
     <div className="space-y-4">
       {resultsData.map((rc) => (
         <div key={rc.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          {/* En-tête bulletin */}
           <div className="bg-purple-50 border-b border-purple-200 p-4 flex items-center justify-between">
             <div>
               <div className="font-bold text-slate-900">
@@ -712,8 +1007,6 @@ function ResultsTab({
               Bulletin PDF
             </button>
           </div>
-
-          {/* Items par matière */}
           {rc.items && rc.items.length > 0 ? (
             <table className="w-full text-sm">
               <thead>
@@ -757,20 +1050,32 @@ function ResultsTab({
 // ============================================================================
 
 function AttendanceTab({ child, attendanceData }: { child: any; attendanceData: any[] }) {
+  // ⭐ Compute stats using parsed display info (not raw status)
   const stats = attendanceData.reduce((acc, r) => {
     acc.total++;
-    if (r.status === "PRESENT") acc.present++;
-    if (r.status === "ABSENT") acc.absent++;
-    if (r.status === "LATE") acc.late++;
+    const display = getAttendanceDisplay(r);
+    if (display.label === "Présent") acc.present++;
+    else if (display.label === "Absent") acc.absent++;
+    else if (display.label === "Demi-journée" || display.label === "En retard") acc.late++;
     return acc;
   }, { total: 0, present: 0, absent: 0, late: 0 });
 
+  // Find earliest + latest date for the period label
+  const dates = attendanceData.map(r => new Date(r.date)).sort((a, b) => b.getTime() - a.getTime());
+  const latestDate = dates[0];
+
   return (
     <div className="space-y-4">
+      {/* Stats cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
           <p className="text-2xl font-bold text-slate-900">{stats.total}</p>
-          <p className="text-xs text-slate-500 uppercase">Jours</p>
+          <p className="text-xs text-slate-500 uppercase">Jours enregistrés</p>
+          {latestDate && (
+            <p className="text-[10px] text-slate-400 mt-1">
+              Dernier: {format(latestDate, "d MMM yyyy", { locale: fr })}
+            </p>
+          )}
         </div>
         <div className="bg-emerald-50 rounded-xl border border-emerald-200 p-4 text-center">
           <CheckCircle2 className="h-5 w-5 text-emerald-600 mx-auto mb-1" />
@@ -785,10 +1090,11 @@ function AttendanceTab({ child, attendanceData }: { child: any; attendanceData: 
         <div className="bg-amber-50 rounded-xl border border-amber-200 p-4 text-center">
           <Clock className="h-5 w-5 text-amber-600 mx-auto mb-1" />
           <p className="text-2xl font-bold text-amber-700">{stats.late}</p>
-          <p className="text-xs text-amber-700 uppercase">Retards</p>
+          <p className="text-xs text-amber-700 uppercase">Demi-journées / Retards</p>
         </div>
       </div>
 
+      {/* History table */}
       {attendanceData.length > 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <table className="w-full text-sm">
@@ -796,30 +1102,31 @@ function AttendanceTab({ child, attendanceData }: { child: any; attendanceData: 
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="text-left px-4 py-3 font-semibold text-slate-700">Date</th>
                 <th className="text-center px-4 py-3 font-semibold text-slate-700">Statut</th>
-                <th className="text-left px-4 py-3 font-semibold text-slate-700">Observation</th>
+                <th className="text-left px-4 py-3 font-semibold text-slate-700">Détail</th>
               </tr>
             </thead>
             <tbody>
-              {attendanceData.map((r, i) => (
-                <tr key={i} className="border-b border-slate-100">
-                  <td className="px-4 py-3 text-slate-600">
-                    {new Date(r.date).toLocaleDateString("fr-FR", {
-                      weekday: "short", day: "2-digit", month: "long",
-                    })}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={cn(
-                      "inline-flex items-center px-2 py-1 rounded text-xs font-bold",
-                      r.status === "PRESENT" && "bg-emerald-100 text-emerald-700",
-                      r.status === "ABSENT" && "bg-red-100 text-red-700",
-                      r.status === "LATE" && "bg-amber-100 text-amber-700",
-                    )}>
-                      {r.status === "PRESENT" ? "Présent" : r.status === "ABSENT" ? "Absent" : "Retard"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-500 text-xs">{r.notes || "—"}</td>
-                </tr>
-              ))}
+              {attendanceData.map((r, i) => {
+                const display = getAttendanceDisplay(r);
+                return (
+                  <tr key={i} className="border-b border-slate-100">
+                    <td className="px-4 py-3 text-slate-600 font-medium">
+                      {format(new Date(r.date), "EEEE d MMMM yyyy", { locale: fr })}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={cn(
+                        "inline-flex items-center px-2 py-1 rounded text-xs font-bold",
+                        display.color,
+                      )}>
+                        {display.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 text-xs">
+                      {display.detail || "—"}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

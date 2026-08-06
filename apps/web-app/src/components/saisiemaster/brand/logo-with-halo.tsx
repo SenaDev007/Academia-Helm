@@ -28,7 +28,7 @@ interface LogoWithHaloProps {
 export function LogoWithHalo({
   size = "md",
   className,
-  src = "/images/Logo-SaisieMaster.png",
+  src = "/images/Logo-SaisieMaster.webp",
   alt = "SaisieMaster",
 }: LogoWithHaloProps) {
   const dim =

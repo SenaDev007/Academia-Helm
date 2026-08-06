@@ -437,4 +437,312 @@ export class BulletinsService {
       }))
     };
   }
+
+  // ============================================================================
+  // ⭐ WORKFLOW DE SIGNATURE + DISTRIBUTION DES BULLETINS
+  // ============================================================================
+  // États : DRAFT → DIRECTOR_SIGNED → TEACHER_DISTRIBUTED → TEACHER_SIGNED → PARENT_SENT
+  // ============================================================================
+
+  /**
+   * Étape 1 : Le directeur/promoteur signe TOUS les bulletins d'une classe
+   * La signature (base64) est appliquée à tous les ReportCards de la classe.
+   */
+  async directorSignAllBulletins(
+    tenantId: string,
+    academicYearId: string,
+    periodId: string,
+    classId: string,
+    directorSignature: string,
+    directorUserId: string,
+  ) {
+    // Récupérer tous les élèves de la classe
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: { tenantId, academicYearId, classId, status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'CONFIRMED'] } },
+      select: { studentId: true, schoolLevelId: true },
+    });
+
+    if (enrollments.length === 0) {
+      throw new NotFoundException('Aucun élève actif dans cette classe');
+    }
+
+    const now = new Date();
+    const results = { signed: 0, created: 0, errors: [] as string[] };
+
+    for (const enrollment of enrollments) {
+      try {
+        // Upsert ReportCard
+        const existing = await this.prisma.reportCard.findFirst({
+          where: { tenantId, academicYearId, studentId: enrollment.studentId, quarterId: periodId },
+        });
+
+        if (existing) {
+          await this.prisma.reportCard.update({
+            where: { id: existing.id },
+            data: {
+              directorSignature,
+              directorSignedAt: now,
+              directorSignedBy: directorUserId,
+              status: 'DIRECTOR_SIGNED',
+            },
+          });
+          results.signed++;
+        } else {
+          await this.prisma.reportCard.create({
+            data: {
+              tenantId,
+              academicYearId,
+              schoolLevelId: enrollment.schoolLevelId,
+              studentId: enrollment.studentId,
+              quarterId: periodId,
+              type: 'BULLETIN',
+              overallAverage: 0,
+              status: 'DIRECTOR_SIGNED',
+              directorSignature,
+              directorSignedAt: now,
+              directorSignedBy: directorUserId,
+            },
+          });
+          results.created++;
+        }
+      } catch (err: any) {
+        results.errors.push(`${enrollment.studentId}: ${err.message}`);
+      }
+    }
+
+    return {
+      success: true,
+      message: `${results.signed + results.created} bulletin(s) signés par le directeur`,
+      ...results,
+    };
+  }
+
+  /**
+   * Étape 2 : Le directeur/promoteur active (distribue) les bulletins aux enseignants
+   * Chaque enseignant titulaire de classe reçoit les bulletins dans son UI.
+   */
+  async activateBulletinsForTeachers(
+    tenantId: string,
+    academicYearId: string,
+    periodId: string,
+    classId: string,
+    activatedBy: string,
+  ) {
+    const now = new Date();
+    const result = await this.prisma.reportCard.updateMany({
+      where: {
+        tenantId,
+        academicYearId,
+        quarterId: periodId,
+        status: 'DIRECTOR_SIGNED',
+      },
+      data: {
+        status: 'TEACHER_DISTRIBUTED',
+        distributedToTeacherAt: now,
+        distributedToTeacherBy: activatedBy,
+      },
+    });
+
+    return {
+      success: true,
+      message: `${result.count} bulletin(s) distribué(s) aux enseignants`,
+      distributedCount: result.count,
+    };
+  }
+
+  /**
+   * Étape 3 : L'enseignant signe TOUS les bulletins de sa classe
+   * La signature (base64) est appliquée à tous les ReportCards TEACHER_DISTRIBUTED.
+   */
+  async teacherSignAllBulletins(
+    tenantId: string,
+    academicYearId: string,
+    periodId: string,
+    classId: string,
+    teacherSignature: string,
+    teacherUserId: string,
+  ) {
+    const now = new Date();
+    const result = await this.prisma.reportCard.updateMany({
+      where: {
+        tenantId,
+        academicYearId,
+        quarterId: periodId,
+        status: 'TEACHER_DISTRIBUTED',
+      },
+      data: {
+        teacherSignature,
+        teacherSignedAt: now,
+        teacherSignedBy: teacherUserId,
+        status: 'TEACHER_SIGNED',
+      },
+    });
+
+    return {
+      success: true,
+      message: `${result.count} bulletin(s) signés par l'enseignant`,
+      signedCount: result.count,
+    };
+  }
+
+  /**
+   * Étape 4 : L'enseignant renvoie les bulletins au directeur
+   * Les bulletins TEACHER_SIGNED sont à nouveau visibles dans l'UI du directeur.
+   * L'enseignant ne voit plus les bulletins (statut = TEACHER_RETURNED).
+   */
+  async teacherReturnBulletins(
+    tenantId: string,
+    academicYearId: string,
+    periodId: string,
+    classId: string,
+    teacherUserId: string,
+  ) {
+    const now = new Date();
+    const result = await this.prisma.reportCard.updateMany({
+      where: {
+        tenantId,
+        academicYearId,
+        quarterId: periodId,
+        status: 'TEACHER_SIGNED',
+      },
+      data: {
+        status: 'TEACHER_RETURNED',
+        updatedAt: now,
+      },
+    });
+
+    return {
+      success: true,
+      message: `${result.count} bulletin(s) renvoyé(s) au directeur`,
+      returnedCount: result.count,
+    };
+  }
+
+  /**
+   * Étape 5 : Le directeur envoie les bulletins aux parents
+   * Seuls les élèves dont la scolarité est en règle reçoivent leur bulletin.
+   * Les autres sont bloqués avec blockedReason = "ARREARS_UNPAID".
+   */
+  async sendBulletinsToParents(
+    tenantId: string,
+    academicYearId: string,
+    periodId: string,
+    classId: string,
+    sentBy: string,
+    criteria?: { blockIfArrears?: boolean; minPaymentPercentage?: number },
+  ) {
+    const blockIfArrears = criteria?.blockIfArrears !== false; // default true
+    const minPct = criteria?.minPaymentPercentage ?? 100;
+
+    // Récupérer tous les bulletins TEACHER_RETURNED ou TEACHER_SIGNED
+    const bulletins = await this.prisma.reportCard.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        quarterId: periodId,
+        status: { in: ['TEACHER_RETURNED', 'TEACHER_SIGNED'] },
+      },
+      include: {
+        student: {
+          select: { id: true, firstName: true, lastName: true, matricule: true },
+        },
+      },
+    });
+
+    const now = new Date();
+    const results = { sent: 0, blocked: 0, blockedStudents: [] as any[] };
+
+    for (const bulletin of bulletins) {
+      let isBlocked = false;
+      let blockedReason: string | null = null;
+
+      if (blockIfArrears) {
+        // Vérifier les arriérés de scolarité
+        const account = await this.prisma.studentAccount.findUnique({
+          where: { studentId_academicYearId: { studentId: bulletin.studentId, academicYearId } },
+        }).catch(() => null);
+
+        if (account) {
+          const arrears = Number(account.arrearsAmount || 0);
+          const totalDue = Number(account.totalDue || 0);
+          const totalPaid = Number(account.totalPaid || 0);
+          const paymentPct = totalDue > 0 ? (totalPaid / totalDue) * 100 : 100;
+
+          if (arrears > 0 || account.isBlocked || paymentPct < minPct) {
+            isBlocked = true;
+            blockedReason = arrears > 0
+              ? `ARREARS_UNPAID:${arrears}`
+              : account.isBlocked
+                ? 'ACCOUNT_BLOCKED'
+                : `INSUFFICIENT_PAYMENT:${paymentPct.toFixed(1)}%`;
+          }
+        }
+      }
+
+      await this.prisma.reportCard.update({
+        where: { id: bulletin.id },
+        data: isBlocked
+          ? { blockedReason, status: 'BLOCKED' }
+          : {
+              status: 'PARENT_SENT',
+              sentToParentAt: now,
+              sentToParentBy: sentBy,
+              blockedReason: null,
+            },
+      });
+
+      if (isBlocked) {
+        results.blocked++;
+        results.blockedStudents.push({
+          studentId: bulletin.studentId,
+          studentName: `${bulletin.student.lastName} ${bulletin.student.firstName}`,
+          reason: blockedReason,
+        });
+      } else {
+        results.sent++;
+      }
+    }
+
+    return {
+      success: true,
+      message: `${results.sent} bulletin(s) envoyé(s) aux parents, ${results.blocked} bloqué(s)`,
+      ...results,
+    };
+  }
+
+  /**
+   * Récupère le statut du workflow pour une classe + période
+   */
+  async getWorkflowStatus(tenantId: string, academicYearId: string, periodId: string, classId: string) {
+    const bulletins = await this.prisma.reportCard.findMany({
+      where: { tenantId, academicYearId, quarterId: periodId },
+      select: {
+        id: true,
+        status: true,
+        directorSignedAt: true,
+        teacherSignedAt: true,
+        distributedToTeacherAt: true,
+        sentToParentAt: true,
+        blockedReason: true,
+        student: { select: { id: true, firstName: true, lastName: true, matricule: true } },
+      },
+    });
+
+    const summary = {
+      total: bulletins.length,
+      DRAFT: 0,
+      DIRECTOR_SIGNED: 0,
+      TEACHER_DISTRIBUTED: 0,
+      TEACHER_SIGNED: 0,
+      TEACHER_RETURNED: 0,
+      PARENT_SENT: 0,
+      BLOCKED: 0,
+    };
+
+    for (const b of bulletins) {
+      summary[b.status as keyof typeof summary]++;
+    }
+
+    return { summary, bulletins };
+  }
 }

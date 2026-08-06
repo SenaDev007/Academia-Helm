@@ -725,6 +725,12 @@ export function GradingSheet({
                           <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Non</th>
                         </tr>
                       )}
+                      {isMaternelle && (
+                        <tr className="bg-slate-50">
+                          <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Oui</th>
+                          <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Non</th>
+                        </tr>
+                      )}
                     </thead>
                     <tbody>
                       {paginatedRows.map((row, idx) => {
@@ -1173,13 +1179,15 @@ export function GradingSheet({
       />
     )}
     {confirmDialog}
-    {/* ⭐ Modal de demande de déverrouillage (remplace prompt()) */}
+    {/* ⭐ Modal de demande de déverrouillage (granulaire : élèves + matières) */}
     <UnlockRequestModal
       open={unlockModalOpen}
       onClose={() => setUnlockModalOpen(false)}
       evaluationIds={group.evaluationIds}
       className={group.className}
       evaluationTypeName={group.evaluationTypeName}
+      students={rows.map(r => ({ studentId: r.studentId, studentName: r.studentName, matricule: r.matricule }))}
+      subjects={sortedSubjects}
     />
     </>
   );

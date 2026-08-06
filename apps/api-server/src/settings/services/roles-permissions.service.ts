@@ -402,7 +402,16 @@ export class RolesPermissionsService {
   }
 
   /**
-   * Assigne un rôle à un utilisateur dans le contexte d'un tenant (audit + isolation)
+   * Assigne un rôle à un utilisateur dans le contexte d'un tenant (audit + isolation).
+   *
+   * ⭐ Attribution multi-rôles : une personne peut cumuler plusieurs rôles
+   *    (table `user_roles`). Le champ `users.role` reste le RÔLE PRIMAIRE
+   *    (utilisé pour la redirection de portail et les fallbacks legacy).
+   *    Si l'utilisateur n'a pas encore de rôle primaire, on le définit ici
+   *    automatiquement avec le premier rôle attribué.
+   *    Si l'utilisateur a un profil staff RH (Teacher/Staff), on envoie un
+   *    email l'informant du nouveau rôle pour qu'il puisse se connecter à
+   *    l'espace dédié.
    */
   async assignRoleToUser(
     tenantId: string,
@@ -448,6 +457,17 @@ export class RolesPermissionsService {
           roleId,
           tenantId: assignmentTenantId,
         },
+      });
+    }
+
+    // ⭐ Synchroniser le rôle primaire si l'utilisateur n'en a pas.
+    // Cela permet aux modules legacy (portal-auth, finance, etc.) qui lisent
+    // `user.role` de fonctionner correctement même pour les utilisateurs
+    // ayant reçu leur premier rôle via Paramètres > Rôles.
+    if (!user.role) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { role: role.name },
       });
     }
 

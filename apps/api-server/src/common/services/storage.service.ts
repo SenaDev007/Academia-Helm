@@ -370,6 +370,51 @@ export class StorageService {
     return this.storageType;
   }
 
+  // ─── Health-check au démarrage ─────────────────────────────────────────────
+
+  /**
+   * Vérifie que le backend R2/S3 est accessible et que les credentials sont valides.
+   * Non-bloquant : utilisé dans le constructeur pour logger un warning si KO.
+   *
+   * Effectue un PutObject + DeleteObject sur un fichier test (_healthcheck.txt).
+   * Coût : ~2 requêtes S3 par démarrage — négligeable.
+   */
+  private async runHealthCheck(): Promise<void> {
+    if (!this.s3Client) {
+      throw new Error('S3 client not initialized');
+    }
+
+    const testKey = '_healthcheck.txt';
+    const testBody = Buffer.from(`Academia Helm storage health-check @ ${new Date().toISOString()}`);
+
+    // 1. PutObject — vérifie permissions d'écriture
+    await this.s3Client.send(
+      new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: testKey,
+        Body: testBody,
+        ContentType: 'text/plain',
+      }),
+    );
+
+    // 2. DeleteObject — cleanup
+    try {
+      await this.s3Client.send(
+        new DeleteObjectCommand({
+          Bucket: this.bucketName,
+          Key: testKey,
+        }),
+      );
+    } catch {
+      // Non-fatal — le test a réussi même si cleanup échoue
+    }
+
+    this.logger.log(
+      `✅ Storage health-check passed: ${this.storageType.toUpperCase()} is ready ` +
+      `(bucket=${this.bucketName}, publicUrl=${this.publicUrl || '(presigned only)'})`,
+    );
+  }
+
   /**
    * Delete ALL objects under a given prefix in R2/S3.
    * Used for cleanup of orphaned files (e.g., when candidates are deleted

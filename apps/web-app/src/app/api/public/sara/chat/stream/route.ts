@@ -38,10 +38,10 @@ function normalizeSaraOutput(raw: string): string {
   let text = String(raw || '').trim();
   if (!text) return text;
 
-  // Remplacer les références à d'autres IA (sécurité)
+  // Remplacer les références à d'autres IA (sécurité) — par Sarah (avec le "h")
   text = text
-    .replace(/\b(ChatGPT|OpenAI|Gemini|Google|Microsoft|Bard)\b/gi, 'SARA')
-    .replace(/\bAnthropic\b/gi, 'notre IA');
+    .replace(/\b(ChatGPT|OpenAI|Gemini|Google|Microsoft|Bard)\b/gi, 'Sarah')
+    .replace(/\bAnthropic\b/gi, 'notre équipe');
 
   // Nettoyer les espaces
   text = text.replace(/\s+/g, ' ').trim();
@@ -119,6 +119,54 @@ function sse(data: unknown) {
 }
 
 /**
+ * ⭐ Construit le contexte UI pour le mode inapp (Sarah Guide)
+ *
+ * Sarah Guide adapte son discours selon l'interface où se trouve l'utilisateur.
+ * Chaque UI a ses propres modules, fonctionnalités et vocabulaire.
+ */
+function buildInAppUIContext(
+  uiType: string,
+  userRole?: string,
+  currentModule?: string,
+): string {
+  const uiLabels: Record<string, string> = {
+    admin: 'Administration école',
+    teacher: 'Espace enseignant',
+    parent: 'Espace parent',
+    promoter: 'Multi-campus',
+    platform: 'Platform Admin',
+  };
+
+  const uiModules: Record<string, string> = {
+    admin: `MODULES ADMIN : Élèves (/app/students), Pédagogie (/app/pedagogy), Examens (/app/exams), Finance (/app/finance), RH (/app/hr), Communication (/app/communication), QHSE (/app/qhse), ORION (/app/orion), ATLAS (/app/atlas), Paramètres (/app/settings)`,
+    teacher: `MODULES ENSEIGNANT : Tableau de bord, Notes & Évaluations (/app/teacher/grades), EDT (/app/teacher/timetable), Bibliothèque péda (/app/teacher/library), Communication parents (/app/teacher/communication), Absences (/app/teacher/attendance), Sara Compose (/app/teacher/sara-compose)`,
+    parent: `MODULES PARENT : Tableau de bord, Notes & Bulletins (/app/parent/grades), Absences (/app/parent/attendance), Paiements (/app/parent/payments — Wave, MTN, Moov), Messages (/app/parent/messages), Calendrier (/app/parent/calendar)`,
+    promoter: `MODULES PROMOTEUR : Dashboard multi-campus (/patronat/dashboard), Écoles (/patronat/schools), Billing (/patronat/billing), Analytics (/patronat/analytics), ORION multi-campus (/patronat/orion)`,
+    platform: `MODULES PLATFORM : Dashboard (/platform), Tenants (/platform/tenants), Users (/platform/users), Monitoring (/platform/monitoring), Features (/platform/features), RBAC (/platform/rbac)`,
+  };
+
+  const adaptationRules: Record<string, string> = {
+    admin: `RÈGLE UI ADMIN : Parle des modules admin complets. Tu peux mentionner ORION et ATLAS. Vocabulaire : "votre école", "vos élèves".`,
+    teacher: `RÈGLE UI ENSEIGNANT : Ne mentionne JAMAIS les modules admin (RH, Finance globale, Paramètres). Concentre-toi sur : notes, EDT, bibliothèque, communication parents, absences, Sara Compose. Vocabulaire : "vos classes", "vos élèves", "votre EDT".`,
+    parent: `RÈGLE UI PARENT : Ne mentionne JAMAIS les modules admin. Concentre-toi sur : notes de l'enfant, paiements en ligne, absences, messages, calendrier. Mentionne toujours Wave, MTN Money, Moov Money pour les paiements. Vocabulaire : "votre enfant", "vos factures".`,
+    promoter: `RÈGLE UI PROMOTEUR : Parle de la vision multi-campus. Concentre-toi sur : établissements, billing, analytics, ROI. Vocabulaire : "vos établissements", "votre groupe scolaire".`,
+    platform: `RÈGLE UI PLATFORM : Parle de l'admin technique. Concentre-toi sur : tenants, users, monitoring, feature flags, RBAC. Vocabulaire technique.`,
+  };
+
+  const label = uiLabels[uiType] || uiLabels.admin;
+  const modules = uiModules[uiType] || uiModules.admin;
+  const rule = adaptationRules[uiType] || adaptationRules.admin;
+
+  return `Interface actuelle : ${label}
+Rôle utilisateur : ${userRole || 'utilisateur'}
+Module courant : ${currentModule || 'dashboard'}
+
+${modules}
+
+${rule}`;
+}
+
+/**
  * Détermine le provider IA à utiliser
  * Priorité : NVIDIA_API_KEY > OPENROUTER_API_KEY > ANTHROPIC_API_KEY
  *
@@ -173,7 +221,40 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({}));
   const messages = sanitizeMessages(body?.messages);
-  const systemPrompt = await readSaraSystemPrompt();
+  const mode = body?.mode || 'landing'; // 'landing' ou 'inapp'
+  const userRole = body?.userRole;
+  const currentModule = body?.currentModule;
+  const uiType = body?.uiType || 'admin'; // admin, teacher, parent, promoter, platform
+
+  // Charger le prompt de base (commun aux deux modes)
+  const basePrompt = await readSaraSystemPrompt();
+
+  // ⭐ Si mode inapp, enrichir le prompt avec le contexte UI
+  let systemPrompt = basePrompt;
+  if (mode === 'inapp') {
+    const uiContext = buildInAppUIContext(uiType, userRole, currentModule);
+    systemPrompt = `${basePrompt}
+
+═══════════════════════════════════════════════════════════
+MODE IN-APP — GUIDE DE NAVIGATION
+═══════════════════════════════════════════════════════════
+Tu es actuellement utilisée comme GUIDE DE NAVIGATION dans l'application Academia Helm.
+Ta mission : aider l'utilisateur à naviguer, comprendre les modules, accomplir des tâches.
+
+${uiContext}
+
+═══════════════════════════════════════════════════════════
+RÈGLES SPÉCIFIQUES AU MODE IN-APP
+═══════════════════════════════════════════════════════════
+- Tu n'accèdes à AUCUNE donnée de l'école (élèves, paiements, notes, etc.)
+- Si l'utilisateur demande des données → redirige vers ORION (Dashboard → ORION)
+- Si l'utilisateur demande une action → redirige vers ATLAS (Dashboard → ATLAS)
+- Indique toujours le chemin de navigation exact (ex: "Dashboard → Finance → Impayés")
+- Adapte ton vocabulaire au rôle de l'utilisateur (${userRole || 'utilisateur'})
+- Maximum 6 phrases par réponse — précis et actionnable
+- Sois chaleureuse mais professionnelle : "Je vous guide", "Laissez-moi vous montrer"`;
+  }
+
   const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
   const outputLanguage = detectOutputLanguage(lastUser);
   const policy = buildPolicyPrompt(outputLanguage);
@@ -228,11 +309,11 @@ export async function POST(request: NextRequest) {
             body: JSON.stringify({
               model,
               messages: chatMessages,
-              max_tokens: 800,
-              temperature: 0.85,
+              max_tokens: 600,
+              temperature: 0.7,
               stream: true,
             }),
-            signal: AbortSignal.timeout(60000),
+            signal: AbortSignal.timeout(45000),
           });
 
           if (!response.ok || !response.body) {
@@ -316,12 +397,12 @@ export async function POST(request: NextRequest) {
             },
             body: JSON.stringify({
               model,
-              max_tokens: 800,
-              temperature: 0.85,
+              max_tokens: 600,
+              temperature: 0.7,
               stream: true,
               messages: anthropicMessages,
             }),
-            signal: AbortSignal.timeout(15000),
+            signal: AbortSignal.timeout(30000),
           });
 
           if (!response.ok || !response.body) {

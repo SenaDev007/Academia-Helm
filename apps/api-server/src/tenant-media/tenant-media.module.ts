@@ -11,7 +11,7 @@ import { ImageOptimizationService } from '../media/image-optimization.service';
  */
 @Module({
   controllers: [TenantMediaController],
-  providers: [TenantMediaService, StorageService, ImageOptimizationService],
+  providers: [TenantMediaService, ImageOptimizationService], // StorageService fourni par CommonModule
   exports: [TenantMediaService],
 })
 export class TenantMediaModule {}

@@ -2920,7 +2920,7 @@ export default function OnboardingWizard() {
                   ) : (
                     <>
                           <img 
-                            src="/images/logoFedaPay.png" 
+                            src="/images/logoFedaPay.webp" 
                             alt="FedaPay" 
                             className="w-16 h-16 mr-3 object-contain"
                           />

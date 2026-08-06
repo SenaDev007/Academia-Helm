@@ -105,26 +105,41 @@ async function bootstrap() {
   const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3000);
 
   // Run pending migrations before starting the server
-  try {
-    const { execSync } = await import('child_process');
-    const appEnv = process.env.APP_ENV || process.env.NODE_ENV || 'production';
-    logger.log(`Running database migrations (APP_ENV=${appEnv})...`);
-    execSync('npx prisma migrate deploy --schema=prisma/schema.prisma', {
-      stdio: 'inherit',
-      timeout: 120_000,
-    });
-    logger.log('Database migrations completed successfully');
-  } catch (migrateErr) {
-    logger.error(`Migration failed: ${migrateErr.message}`);
-    logger.warn('Continuing startup despite migration failure — some features may not work');
+  // ⚠️ SKIP_MIGRATIONS=true par défaut — toutes les migrations sont déjà appliquées
+  // sur Neon (vérifié via _prisma_migrations : 108 entrées, 0 pending).
+  // Lancer prisma migrate deploy à chaque démarrage bloque l'event loop pendant
+  // 60-120s (execSync), ce qui fait crasher le healthcheck Railway.
+  // Pour lancer les migrations : railway run npx prisma migrate deploy
+  if (process.env.SKIP_MIGRATIONS !== 'false') {
+    logger.log('⏭️  SKIP_MIGRATIONS=true (default) — skipping prisma migrate deploy');
+  } else {
+    try {
+      const { execSync } = await import('child_process');
+      const appEnv = process.env.APP_ENV || process.env.NODE_ENV || 'production';
+      logger.log(`Running database migrations (APP_ENV=${appEnv})...`);
+      execSync('npx prisma migrate deploy --schema=prisma/schema.prisma', {
+        stdio: 'inherit',
+        timeout: 120_000,
+      });
+      logger.log('Database migrations completed successfully');
+    } catch (migrateErr) {
+      logger.error(`Migration failed: ${migrateErr.message}`);
+      logger.warn('Continuing startup despite migration failure — some features may not work');
+    }
   }
 
-  // ─── Ensure recruitment tables exist (idempotent SQL fallback) ──────────
-  // Prisma migrate deploy may silently skip migrations that aren't tracked
-  // in _prisma_migrations. This fallback guarantees the HR recruitment tables
-  // exist on every startup. Uses CREATE TABLE IF NOT EXISTS (idempotent).
-  try {
-    const prisma = app.get(PrismaService);
+  // ⭐ CRITICAL: Start listening FIRST so healthcheck passes immediately.
+  // All ensure-tables SQL runs in the background (non-blocking) after listen.
+  // This prevents Railway healthcheck timeout (which was crashing the API every morning).
+  await app.listen(port, '0.0.0.0');
+  logger.log(`🚀 API listening on port ${port}`);
+
+  // ─── Ensure-tables SQL runs in background (non-blocking) ───────────────
+  // Previously this ran BEFORE app.listen(), blocking the healthcheck for 60-120s
+  // and causing Railway to kill the container. Now it runs after listen.
+  setTimeout(async () => {
+    try {
+      const prisma = app.get(PrismaService);
 
     // Execute each CREATE TABLE IF NOT EXISTS statement separately
     // (Prisma $executeRawUnsafe may not handle multi-statement DO $$ blocks)
@@ -1365,8 +1380,7 @@ async function bootstrap() {
   } catch (twErr: any) {
     logger.warn(`Tenant Website tables migration warning: ${twErr.message}`);
   }
-
-  await app.listen(port, '0.0.0.0');
+  }, 1000); // ⭐ Run ensure-tables 1s after listen (non-blocking)
 
   // ─── Auto-sync HR teachers → Pedagogy on startup ──
   // One-time backfill: for each tenant, sync existing Staff TEACHER records

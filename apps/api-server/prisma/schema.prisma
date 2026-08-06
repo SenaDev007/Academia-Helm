@@ -3704,6 +3704,10 @@ model SecuritySettings {
   dataRetentionYears       Int      @default(7)
   gdprCompliant            Boolean  @default(false)
   allowInspectionAccess    Boolean  @default(false)
+  // ⭐ Nouveaux champs (session/verrouillage + auth avancée)
+  inactivityLockMinutes    Int      @default(15)
+  deviceFingerprintEnabled Boolean  @default(true)
+  notifyOnNewDevice        Boolean  @default(true)
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
   tenant                   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -7940,9 +7944,25 @@ model ReportCard {
   validatedAt     DateTime?
   validatedBy     String?
   publishedAt     DateTime?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  language        String?
+  // ⭐ Visa du directeur — auto-rempli depuis l'appréciation enseignant mais éditable
+  directorVisa             String?
+  directorVisaUpdatedAt    DateTime?
+  // ⭐ Workflow de signature + distribution (DRAFT → DIRECTOR_SIGNED → TEACHER_DISTRIBUTED → TEACHER_SIGNED → PARENT_SENT)
+  directorSignature        String?
+  directorSignedAt         DateTime?
+  directorSignedBy         String?
+  teacherSignature         String?
+  teacherSignedAt          DateTime?
+  teacherSignedBy          String?
+  distributedToTeacherAt   DateTime?
+  distributedToTeacherBy   String?
+  sentToParentAt           DateTime?
+  sentToParentBy           String?
+  parentReceivedAt         DateTime?
+  blockedReason            String?
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+  language                 String?
   items           ReportCardItem[]
   academicTrack   AcademicTrack?   @relation(fields: [academicTrackId], references: [id])
   academicYear    AcademicYear     @relation(fields: [academicYearId], references: [id])

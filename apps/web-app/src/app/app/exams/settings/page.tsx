@@ -63,6 +63,7 @@ const DEFAULT_ASSESSMENT_TYPES: Record<string, Record<string, AssessmentType[]>>
       { code: 'EM1', label: 'Évaluation mensuelle 1', required: true, includedInAverage: true, visibleOnReportCard: true },
       { code: 'EM2', label: 'Évaluation mensuelle 2', required: true, includedInAverage: true, visibleOnReportCard: true },
       { code: 'EC', label: 'Évaluation certificative', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EP', label: 'Évaluation de passage', required: false, includedInAverage: true, visibleOnReportCard: true },
     ],
     EN: [
       { code: 'FIRST_CA', label: 'First CA', required: true, includedInAverage: true, visibleOnReportCard: true },
@@ -75,6 +76,7 @@ const DEFAULT_ASSESSMENT_TYPES: Record<string, Record<string, AssessmentType[]>>
       { code: 'EM1', label: 'Évaluation mensuelle 1', required: true, includedInAverage: true, visibleOnReportCard: true },
       { code: 'EM2', label: 'Évaluation mensuelle 2', required: true, includedInAverage: true, visibleOnReportCard: true },
       { code: 'EC', label: 'Évaluation certificative', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'EP', label: 'Évaluation de passage', required: false, includedInAverage: true, visibleOnReportCard: true },
     ],
     EN: [
       { code: 'FIRST_CA', label: 'First CA', required: true, includedInAverage: true, visibleOnReportCard: true },

@@ -67,7 +67,7 @@ export default function FederisHeader() {
           >
             <div className="relative">
               <Image
-                src="/images/logo-Academia Hub.png"
+                src="/images/logo-Academia Hub.webp"
                 alt="Academia Helm - Connexion Super Admin"
                 width={48}
                 height={48}

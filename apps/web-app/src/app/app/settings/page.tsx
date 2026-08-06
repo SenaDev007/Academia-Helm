@@ -76,15 +76,135 @@ function formatRoleDisplayName(name: string | null | undefined): string {
   return String(name).replace(/_/g, ' ');
 }
 
+/**
+ * Génère un mot de passe d'aperçu conforme à la politique de sécurité
+ * renseignée dans le formulaire. Réplique côté frontend la logique du
+ * StaffCredentialService.generateSecurePassword() côté backend — l'aperçu
+ * montre à l'admin à quoi ressemblera le mot de passe temporaire envoyé
+ * aux enseignants/personnel via le module RH.
+ *
+ * Remarque : l'aperçu n'est PAS utilisé comme mot de passe réel. Le backend
+ * génère son propre mot de passe avec crypto.randomInt pour une entropie forte.
+ */
+function generateSamplePassword(form: any): string {
+  const minLength = Math.min(20, Math.max(6, Number(form.passwordMinLength ?? 8)));
+  const requireUppercase = !!form.passwordRequireUppercase;
+  const requireLowercase = !!form.passwordRequireLowercase;
+  const requireNumbers = !!form.passwordRequireNumbers;
+  const requireSpecial = !!form.passwordRequireSpecial;
+
+  const adjectives = ['Brave', 'Noble', 'Fier', 'Sage', 'Rapide', 'Fort', 'Clair', 'Lumineux', 'Grand', 'Vif'];
+  const nouns = ['Lion', 'Aigle', 'Phare', 'Helm', 'Pilot', 'Guide', 'Cap', 'Voile', 'Etoile', 'Flambeau'];
+  const SPECIAL = '!@#$%^&*?';
+  const ALL = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+
+  const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+  const parts: string[] = [];
+  const adj = pick(adjectives);
+  const noun = pick(nouns).toLowerCase();
+  const digits = String(Math.floor(Math.random() * 900) + 100);
+
+  if (requireUppercase) parts.push(adj); else parts.push(adj.toLowerCase());
+  if (requireLowercase) parts.push(noun);
+  if (requireNumbers) parts.push(digits);
+  if (requireSpecial) {
+    const n = Math.floor(Math.random() * 2) + 1;
+    let s = '';
+    for (let i = 0; i < n; i++) s += SPECIAL[Math.floor(Math.random() * SPECIAL.length)];
+    parts.push(s);
+  }
+
+  let pwd = parts.join('');
+  while (pwd.length < minLength) pwd += ALL[Math.floor(Math.random() * ALL.length)];
+
+  // Shuffle (Fisher-Yates)
+  const arr = pwd.split('');
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  pwd = arr.join('');
+
+  // Garanties finales
+  if (requireUppercase && !/[A-Z]/.test(pwd)) pwd = pwd.slice(0, -1) + 'A';
+  if (requireLowercase && !/[a-z]/.test(pwd)) pwd = pwd.slice(0, -1) + 'a';
+  if (requireNumbers && !/[0-9]/.test(pwd)) pwd = pwd.slice(0, -1) + '5';
+  if (requireSpecial && !new RegExp(`[${SPECIAL}]`).test(pwd)) pwd = pwd.slice(0, -1) + '!';
+
+  return pwd;
+}
+
 type TabId = 'identity' | 'academic-year' | 'school-calendar' | 'structure' | 'admin-structure' | 'departments' | 'bilingual' | 'features' |
-             'roles' | 'communication' | 'billing' | 'payments' | 'security' | 'seals' | 'orion' | 'atlas' | 'offline' | 'appareils' | 'history';
+             'roles' | 'billing' | 'security' | 'seals' | 'appareils' | 'history'
+             // Removed tabs (kept in type for URL compat): communication, payments, orion, atlas, offline
+             | 'communication' | 'payments' | 'orion' | 'atlas' | 'offline';
+
+/**
+ * Badge visuel pour le type d'appareil (mobile / tablet / desktop / unknown)
+ * Détecte le type à partir du deviceType ou du userAgent.
+ */
+function DeviceTypeBadge({ type, userAgent }: { type?: string; userAgent?: string }) {
+  const t = (type || '').toLowerCase();
+  const ua = (userAgent || '').toLowerCase();
+  let label = 'Inconnu';
+  let color = 'bg-gray-100 text-gray-700';
+  let icon = '?';
+
+  if (t.includes('mobile') || t.includes('phone') || ua.includes('mobile') || ua.includes('android') || ua.includes('iphone')) {
+    label = 'Smartphone';
+    color = 'bg-purple-100 text-purple-700';
+    icon = 'M';
+  } else if (t.includes('tablet') || t.includes('ipad') || ua.includes('ipad') || ua.includes('tablet')) {
+    label = 'Tablette';
+    color = 'bg-indigo-100 text-indigo-700';
+    icon = 'T';
+  } else if (t.includes('desktop') || t.includes('pc') || t.includes('laptop') || ua.includes('windows') || ua.includes('macintosh') || ua.includes('linux')) {
+    label = 'Ordinateur';
+    color = 'bg-blue-100 text-blue-700';
+    icon = 'D';
+  } else if (t) {
+    label = type;
+  }
+
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${color}`}>
+      <span className="font-mono font-bold">{icon}</span>
+      {label}
+    </span>
+  );
+}
+
+/**
+ * Badge visuel pour le type d'action dans l'historique de connexion.
+ */
+function ActionBadge({ action }: { action: string }) {
+  const map: Record<string, { label: string; color: string }> = {
+    LOGIN: { label: 'Connexion', color: 'bg-blue-100 text-blue-700' },
+    LOGOUT: { label: 'Déconnexion', color: 'bg-gray-100 text-gray-700' },
+    LOGIN_FAILED: { label: 'Échec connexion', color: 'bg-red-100 text-red-700' },
+    DEVICE_REVOKED: { label: 'Appareil révoqué', color: 'bg-red-100 text-red-700' },
+    DEVICE_APPROVED: { label: 'Appareil approuvé', color: 'bg-green-100 text-green-700' },
+    LOCKOUT: { label: 'Verrouillage', color: 'bg-amber-100 text-amber-700' },
+    OTP_SENT: { label: 'OTP envoyé', color: 'bg-purple-100 text-purple-700' },
+    OTP_VERIFIED: { label: 'OTP vérifié', color: 'bg-green-100 text-green-700' },
+  };
+  const cfg = map[action] || { label: action, color: 'bg-gray-100 text-gray-700' };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${cfg.color}`}>
+      {cfg.label}
+    </span>
+  );
+}
 
 const SETTINGS_TAB_IDS: TabId[] = [
   'identity', 'academic-year', 'structure', 'departments', 'bilingual', 'features',
-  'roles', 'communication', 'billing', 'payments', 'security', 'seals', 'orion', 'atlas', 'offline', 'appareils', 'history',
+  'roles', 'billing', 'security', 'seals', 'appareils', 'history',
   // school-calendar et admin-structure conservés dans le type pour compat URL
   // mais retirés de l'affichage (fusionnés dans academic-year et departments)
   'school-calendar', 'admin-structure',
+  // Retirés de l'affichage mais conservés pour compat URL ancienne
+  'communication', 'payments', 'orion', 'atlas', 'offline',
 ];
 
 const SCHOOL_IDENTITY_UPDATED_EVENT = 'settings-school-identity-updated';
@@ -121,8 +241,20 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<TabId>('identity');
 
   const tabFromUrl = searchParams.get('tab');
+  const REMOVED_TABS_REDIRECT: Record<string, TabId> = {
+    communication: 'roles',
+    payments: 'billing',
+    orion: 'security',
+    atlas: 'security',
+    offline: 'security',
+  };
   useEffect(() => {
-    if (tabFromUrl && SETTINGS_TAB_IDS.includes(tabFromUrl as TabId)) {
+    if (!tabFromUrl) return;
+    if (REMOVED_TABS_REDIRECT[tabFromUrl]) {
+      setActiveTab(REMOVED_TABS_REDIRECT[tabFromUrl]);
+      return;
+    }
+    if (SETTINGS_TAB_IDS.includes(tabFromUrl as TabId)) {
       setActiveTab(tabFromUrl as TabId);
     }
   }, [tabFromUrl]);
@@ -149,6 +281,17 @@ export default function SettingsPage() {
     user?: { id: string; email: string; firstName: string | null; lastName: string | null };
   }>>([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
+  // ⭐ Sous-onglets de l'onglet "Appareils autorisés" : 'connected' | 'history'
+  const [devicesSubTab, setDevicesSubTab] = useState<'connected' | 'history'>('connected');
+  // ⭐ Filtre de période pour les appareils connectés : '30d' | 'month' | 'quarter' | 'year'
+  const [devicesPeriod, setDevicesPeriod] = useState<'30d' | 'month' | 'quarter' | 'year'>('30d');
+  // ⭐ Données pour l'historique de connexion
+  const [loginHistory, setLoginHistory] = useState<any[]>([]);
+  const [loginHistoryLoading, setLoginHistoryLoading] = useState(false);
+  const [loginHistoryPage, setLoginHistoryPage] = useState(1);
+  const [loginHistoryTotalPages, setLoginHistoryTotalPages] = useState(1);
+  const [loginHistoryTotal, setLoginHistoryTotal] = useState(0);
+  const [loginHistoryFilter, setLoginHistoryFilter] = useState<{ action?: string; status?: string }>({});
   const [history, setHistory] = useState<any[]>([]);
   const [historyCategoryFilter, setHistoryCategoryFilter] = useState<string | null>(null);
   const [historySearchFilter, setHistorySearchFilter] = useState<string | null>(null);
@@ -176,6 +319,8 @@ export default function SettingsPage() {
   const [permissions, setPermissions] = useState<any[]>([]);
   const [usersWithRoles, setUsersWithRoles] = useState<any[]>([]);
   const [billingSettings, setBillingSettings] = useState<any>(null);
+  // ⭐ Loading state pour le rechargement dynamique des données de facturation
+  const [billingLoading, setBillingLoading] = useState(false);
   const [availablePlans, setAvailablePlans] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
 
@@ -191,6 +336,8 @@ export default function SettingsPage() {
   const [communicationForm, setCommunicationForm] = useState<any>({});
   const [billingForm, setBillingForm] = useState<any>({});
   const [securityForm, setSecurityForm] = useState<any>({});
+  // ⭐ Seed pour régénérer l'aperçu live du mot de passe dans l'onglet Sécurité
+  const [securityPreviewSeed, setSecurityPreviewSeed] = useState(0);
   const [orionForm, setOrionForm] = useState<any>({});
   const [atlasForm, setAtlasForm] = useState<any>({});
   const [offlineForm, setOfflineForm] = useState<any>({});
@@ -700,6 +847,78 @@ export default function SettingsPage() {
       })
       .catch(() => { if (!cancelled) setDevicesList([]); })
       .finally(() => { if (!cancelled) setDevicesLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeTab, effectiveTenantId]);
+
+  // ⭐ Lazy-load des appareils connectés récents quand l'utilisateur ouvre
+  // le sous-onglet "Appareils connectés" (filtre par période).
+  useEffect(() => {
+    if (activeTab !== 'appareils' || devicesSubTab !== 'connected') return;
+    let cancelled = false;
+    setDevicesLoading(true);
+    settingsService.getConnectedDevices({ period: devicesPeriod, tenantId: effectiveTenantId })
+      .then((data) => {
+        if (!cancelled) {
+          const devices = data?.devices ?? (Array.isArray(data) ? data : []);
+          setDevicesList(devices);
+        }
+      })
+      .catch(() => { if (!cancelled) setDevicesList([]); })
+      .finally(() => { if (!cancelled) setDevicesLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeTab, devicesSubTab, devicesPeriod, effectiveTenantId]);
+
+  // ⭐ Lazy-load de l'historique de connexion quand l'utilisateur ouvre
+  // le sous-onglet "Historique".
+  useEffect(() => {
+    if (activeTab !== 'appareils' || devicesSubTab !== 'history') return;
+    let cancelled = false;
+    setLoginHistoryLoading(true);
+    settingsService.getLoginHistory({
+      page: loginHistoryPage,
+      limit: 50,
+      tenantId: effectiveTenantId,
+      action: loginHistoryFilter.action,
+      status: loginHistoryFilter.status,
+    })
+      .then((data) => {
+        if (!cancelled) {
+          setLoginHistory(data?.logs ?? []);
+          setLoginHistoryTotal(data?.pagination?.total ?? 0);
+          setLoginHistoryTotalPages(data?.pagination?.totalPages ?? 1);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLoginHistory([]);
+          setLoginHistoryTotal(0);
+          setLoginHistoryTotalPages(1);
+        }
+      })
+      .finally(() => { if (!cancelled) setLoginHistoryLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeTab, devicesSubTab, loginHistoryPage, loginHistoryFilter, effectiveTenantId]);
+
+  // ⭐ Lazy-load billing data when user opens Facturation tab — ensures fresh
+  // data after tenant changes or after subscription updates.
+  useEffect(() => {
+    if (activeTab !== 'billing') return;
+    let cancelled = false;
+    setBillingLoading(true);
+    const tid = effectiveTenantId ?? undefined;
+    Promise.all([
+      settingsService.getBillingSettings(tid).catch(() => null),
+      settingsService.getAvailablePlans().catch(() => []),
+      settingsService.getBillingInvoices({ limit: 20 }, tid).catch(() => []),
+    ])
+      .then(([billing, plans, invoicesData]) => {
+        if (cancelled) return;
+        setBillingSettings(billing);
+        setBillingForm(billing || {});
+        setAvailablePlans((Array.isArray(plans) ? plans : []) as any[]);
+        setInvoices((Array.isArray(invoicesData) ? invoicesData : []) as any[]);
+      })
+      .finally(() => { if (!cancelled) setBillingLoading(false); });
     return () => { cancelled = true; };
   }, [activeTab, effectiveTenantId]);
 
@@ -1973,8 +2192,12 @@ export default function SettingsPage() {
   const [editingRolePermissionIds, setEditingRolePermissionIds] = useState<string[]>([]);
   const [editingPermissionsRoleId, setEditingPermissionsRoleId] = useState<string | null>(null);
   const [assignRoleUserId, setAssignRoleUserId] = useState<string | null>(null);
+  // ⭐ Rôles en cours de sélection (multi-attribution) pour l'utilisateur en édition
+  const [pendingAssignRoleIds, setPendingAssignRoleIds] = useState<string[]>([]);
   const [permissionFilterModule, setPermissionFilterModule] = useState<string>('');
   const [matrixModuleFilter, setMatrixModuleFilter] = useState<string>('');
+  // ⭐ Sous-onglets de l'onglet "Rôles" : 'roles' (gestion des rôles) | 'users' (liste des utilisateurs)
+  const [rolesSubTab, setRolesSubTab] = useState<'roles' | 'users'>('roles');
 
   const permissionsGrouped = useMemo(() => {
     const g: Record<string, { id: string; name: string; resource: string; action: string }[]> = {};
@@ -2201,14 +2424,9 @@ export default function SettingsPage() {
     ...(billingSettings?.planDetails?.bilingualAllowed !== false ? [{ id: 'bilingual' as TabId, label: 'Bilingue', icon: Languages }] : []),
     { id: 'features' as TabId, label: 'Modules', icon: ToggleLeft },
     { id: 'roles' as TabId, label: 'Rôles', icon: UserCog },
-    { id: 'communication' as TabId, label: 'Communication', icon: Mail },
     { id: 'billing' as TabId, label: 'Facturation', icon: CreditCard },
-    { id: 'payments' as TabId, label: 'Paiements', icon: Wallet },
     { id: 'security' as TabId, label: 'Sécurité', icon: Shield },
     { id: 'seals' as TabId, label: 'Cachets', icon: Stamp },
-    { id: 'orion' as TabId, label: 'ORION', icon: Brain },
-    { id: 'atlas' as TabId, label: 'ATLAS', icon: MessageSquare },
-    { id: 'offline' as TabId, label: 'Offline', icon: CloudOff },
     { id: 'appareils' as TabId, label: 'Appareils autorisés', icon: Smartphone },
     { id: 'history' as TabId, label: 'Historique', icon: History },
   ];
@@ -2618,19 +2836,6 @@ export default function SettingsPage() {
                       <span>{activeAcademicYear._count.classes ?? 0} classes</span>
                     </div>
                   )}
-                  <div className="w-full mt-3 flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handleStartEditAcademicYearDates(activeAcademicYear)}
-                      disabled={editingYearBusy}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-white text-blue-900 rounded-md hover:bg-blue-100 disabled:opacity-50"
-                      title="Modifier la pré-rentrée, la rentrée et la fin d’année"
-                    >
-                      <CalendarRange className="w-4 h-4" aria-hidden />
-                      Modifier les dates
-                    </button>
-                    <span className="text-white/80 text-xs">Pré-rentrée, rentrée officielle, fin d’année</span>
-                  </div>
                 </div>
               ) : (
                 <div className="text-white/90 ml-7">
@@ -2808,17 +3013,6 @@ export default function SettingsPage() {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleStartEditAcademicYearDates(year)}
-                          disabled={editingYearBusy}
-                          title="Modifier les dates (pré-rentrée, rentrée, fin)"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <CalendarRange className="w-3.5 h-3.5" aria-hidden />
-                          Modifier les dates
-                        </button>
                         <button
                           type="button"
                           onClick={() => {
@@ -2853,7 +3047,6 @@ export default function SettingsPage() {
                           <Archive className="w-3.5 h-3.5" aria-hidden />
                           Clôturer
                         </button>
-                      </div>
                     </div>
                   ))}
                 </div>
@@ -4184,7 +4377,7 @@ export default function SettingsPage() {
       case 'features':
         // Ordre d'affichage des modules (aligné sidebar / backend FEATURE_KEYS)
         const modulesDisplayOrder = [
-          'STUDENTS', 'FINANCE', 'EXAMS', 'PEDAGOGY', 'HR_PAYROLL', 'COMMUNICATION',
+          'STUDENTS', 'FINANCE', 'EXAMS', 'PEDAGOGY', 'HR_PAYROLL', 'COMMUNICATION', 'CMS',
           'LIBRARY', 'TRANSPORT', 'CANTEEN', 'INFIRMARY', 'QHSE', 'EDUCAST', 'SHOP',
           'ORION', 'ATLAS', 'OFFLINE_SYNC',
         ];
@@ -4195,6 +4388,7 @@ export default function SettingsPage() {
           PEDAGOGY: 'Organisation Pédagogique',
           HR_PAYROLL: 'Personnel, RH & Paie',
           COMMUNICATION: 'Communication',
+          CMS: 'Site Institutionnel',
           LIBRARY: 'Bibliothèque',
           TRANSPORT: 'Transport',
           CANTEEN: 'Cantine',
@@ -4305,13 +4499,47 @@ export default function SettingsPage() {
                 Contrôle d&apos;accès multi-tenant : <strong>rôles plateforme</strong> (PLATFORM OWNER, PLATFORM ADMIN), <strong>rôles école</strong> (DIRECTEUR, COMPTABLE, ENSEIGNANT, etc.), permissions par module et action (lecture, écriture, suppression, validation). Accès ORION/ATLAS par rôle. Un enseignant ne voit que ses classes ; un parent que son enfant ; un comptable ne modifie pas les notes.
               </p>
 
-              {/* ——— Section 1 : Liste des utilisateurs ——— */}
+              {/* ⭐ Sous-onglets : Rôles (gestion) | Liste des utilisateurs (attribution) */}
+              <div className="border-b border-gray-200 mb-6">
+                <nav className="-mb-px flex gap-6" aria-label="Sous-onglets Rôles">
+                  <button
+                    type="button"
+                    onClick={() => setRolesSubTab('roles')}
+                    className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${
+                      rolesSubTab === 'roles'
+                        ? 'border-blue-600 text-blue-700'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    <UserCog className="inline-block w-4 h-4 mr-1.5 -mt-0.5" />
+                    Rôles & Permissions
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRolesSubTab('users')}
+                    className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${
+                      rolesSubTab === 'users'
+                        ? 'border-blue-600 text-blue-700'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    <Users className="inline-block w-4 h-4 mr-1.5 -mt-0.5" />
+                    Liste des utilisateurs
+                  </button>
+                </nav>
+              </div>
+
+              {/* ——— Sous-onglet "Liste des utilisateurs" ——— */}
+              {rolesSubTab === 'users' && (
               <div className="mb-8">
                 <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
                   <Users className="w-4 h-4" />
                   Liste des utilisateurs du tenant
                 </h4>
-                <p className="text-sm text-gray-600 mb-4">Attribuez ou révoquez des rôles par utilisateur. Isolation stricte : chaque utilisateur n&apos;accède qu&apos;aux données de son tenant.</p>
+                <p className="text-sm text-gray-600 mb-3">Attribuez ou révoquez des rôles par utilisateur. Isolation stricte : chaque utilisateur n&apos;accède qu&apos;aux données de son tenant.</p>
+                <div className="mb-4 p-3 rounded-md bg-blue-50 border border-blue-200 text-sm text-blue-900">
+                  <strong>Attribution multi-rôles :</strong> une même personne peut cumuler plusieurs rôles (ex. <em>Enseignant</em> + <em>Directeur</em>). Les accès sont cumulés (union des permissions). Les rôles attribués sont automatiquement répercutés sur la fiche RH du personnel pour définir les identifiants de connexion à l&apos;espace dédié à chaque rôle.
+                </div>
                 {usersWithRoles.length === 0 ? (
                   <p className="text-gray-500 text-sm py-4">
                     {!effectiveTenantId && isPlatformOwner
@@ -4324,63 +4552,115 @@ export default function SettingsPage() {
                       <thead>
                         <tr className="border-b border-gray-200 bg-gray-50 text-left">
                           <th className="py-2 px-3 font-semibold text-gray-800">Utilisateur</th>
-                          <th className="py-2 px-3 font-semibold text-gray-800">Rôles</th>
+                          <th className="py-2 px-3 font-semibold text-gray-800">Rôles attribués</th>
                           <th className="py-2 px-3 font-semibold text-gray-800 w-44">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {usersWithRoles.map((u: any) => (
-                          <tr key={u.id} className="border-b border-gray-100">
+                        {usersWithRoles.map((u: any) => {
+                          const assignedRoleIds = (u.userRoles || []).map((ur: any) => ur.role?.id).filter(Boolean);
+                          const isEditing = assignRoleUserId === u.id;
+                          return (
+                          <tr key={u.id} className="border-b border-gray-100 align-top">
                             <td className="py-2 px-3">
-                              <span className="font-medium text-gray-800">{u.firstName} {u.lastName}</span>
-                              <span className="text-gray-500 ml-1">({u.email})</span>
-                            </td>
-                            <td className="py-2 px-3">
-                              {(u.userRoles || []).length === 0 ? (
-                                <span className="text-gray-400">Aucun rôle</span>
-                              ) : (
-                                <span className="flex flex-wrap gap-1">
-                                  {(u.userRoles || []).map((ur: any) => (
-                                    <span key={ur.role?.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">
-                                      {formatRoleDisplayName(ur.role?.name)}
-                                      <button type="button" onClick={() => handleRevokeRole(u.id, ur.role?.id)} disabled={saving} className="text-red-600 hover:underline" title="Révoquer">×</button>
-                                    </span>
-                                  ))}
-                                </span>
+                              <div className="font-medium text-gray-800">{u.firstName} {u.lastName}</div>
+                              <div className="text-gray-500 text-xs">{u.email}</div>
+                              {u.role && (
+                                <div className="mt-1 text-[11px] text-gray-400">Rôle principal : {formatRoleDisplayName(u.role)}</div>
                               )}
                             </td>
                             <td className="py-2 px-3">
-                              {assignRoleUserId === u.id ? (
-                                <div className="flex items-center gap-1 flex-wrap">
-                                  <select
-                                    id={`assign-role-${u.id}`}
-                                    className="px-2 py-1 border border-gray-300 rounded text-sm"
-                                    onChange={(e) => {
-                                      const roleId = e.target.value;
-                                      if (roleId) handleAssignRole(u.id, roleId);
-                                    }}
-                                  >
-                                    <option value="">Choisir un rôle…</option>
-                                    {roles.filter((r: any) => !(u.userRoles || []).some((ur: any) => ur.role?.id === r.id)).map((r: any) => (
-                                      <option key={r.id} value={r.id}>{formatRoleDisplayName(r.name)}</option>
-                                    ))}
-                                  </select>
-                                  <button type="button" onClick={() => setAssignRoleUserId(null)} className="text-gray-500 hover:underline text-xs">Annuler</button>
-                                </div>
+                              {assignedRoleIds.length === 0 && !isEditing ? (
+                                <span className="text-gray-400 italic">Aucun rôle</span>
                               ) : (
-                                <button type="button" onClick={() => setAssignRoleUserId(u.id)} className="px-2 py-1 text-sm border border-blue-300 text-blue-600 rounded hover:bg-blue-50">
-                                  Attribuer un rôle
-                        </button>
-                      )}
+                                <span className="flex flex-wrap gap-1">
+                                  {(u.userRoles || []).map((ur: any) => (
+                                    <span key={ur.role?.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 border border-blue-200 text-blue-800 rounded text-xs">
+                                      {formatRoleDisplayName(ur.role?.name)}
+                                      <button type="button" onClick={() => handleRevokeRole(u.id, ur.role?.id)} disabled={saving} className="text-red-600 hover:underline font-bold" title="Révoquer ce rôle">×</button>
+                                    </span>
+                                  ))}
+                                  {isEditing && assignedRoleIds.length === 0 && (
+                                    <span className="text-xs text-gray-500 italic">Sélectionnez un ou plusieurs rôles ci-dessous</span>
+                                  )}
+                                </span>
+                              )}
+                              {isEditing && (
+                                <div className="mt-2 p-2 border border-gray-200 rounded bg-gray-50 max-h-44 overflow-y-auto">
+                                  <div className="text-[11px] text-gray-500 mb-1 uppercase tracking-wide">Cocher les rôles à attribuer :</div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                                    {roles
+                                      .filter((r: any) => !assignedRoleIds.includes(r.id))
+                                      .map((r: any) => (
+                                        <label key={r.id} className="flex items-center gap-1.5 text-xs cursor-pointer hover:bg-white rounded px-1 py-0.5">
+                                          <input
+                                            type="checkbox"
+                                            checked={pendingAssignRoleIds.includes(r.id)}
+                                            onChange={(e) => {
+                                              if (e.target.checked) setPendingAssignRoleIds((ids) => [...ids, r.id]);
+                                              else setPendingAssignRoleIds((ids) => ids.filter((id) => id !== r.id));
+                                            }}
+                                            className="rounded"
+                                          />
+                                          <span className="truncate">{formatRoleDisplayName(r.name)}</span>
+                                        </label>
+                                      ))}
+                                    {roles.filter((r: any) => !assignedRoleIds.includes(r.id)).length === 0 && (
+                                      <span className="text-xs text-gray-400 italic col-span-2">Tous les rôles sont déjà attribués</span>
+                                    )}
+                                  </div>
+                                  <div className="mt-2 flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (pendingAssignRoleIds.length === 0) { setAssignRoleUserId(null); return; }
+                                        try {
+                                          setSaving(true);
+                                          const tid = effectiveTenantId ?? undefined;
+                                          for (const rid of pendingAssignRoleIds) {
+                                            await settingsService.assignRoleToUser(u.id, rid, tid);
+                                          }
+                                          showToast('success', `${pendingAssignRoleIds.length} rôle(s) attribué(s)`);
+                                          const updated = await settingsService.getUsersWithRoles(tid);
+                                          setUsersWithRoles(Array.isArray(updated) ? updated : []);
+                                          setPendingAssignRoleIds([]);
+                                          setAssignRoleUserId(null);
+                                        } catch (error: any) {
+                                          showToast('error', error.message || 'Erreur lors de l\'attribution');
+                                        } finally {
+                                          setSaving(false);
+                                        }
+                                      }}
+                                      disabled={saving || pendingAssignRoleIds.length === 0}
+                                      className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                                    >
+                                      {saving ? 'En cours…' : `Attribuer ${pendingAssignRoleIds.length > 0 ? `(${pendingAssignRoleIds.length})` : ''}`}
+                                    </button>
+                                    <button type="button" onClick={() => { setAssignRoleUserId(null); setPendingAssignRoleIds([]); }} className="text-gray-500 hover:underline text-xs">Annuler</button>
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-2 px-3">
+                              {!isEditing && (
+                                <button type="button" onClick={() => { setAssignRoleUserId(u.id); setPendingAssignRoleIds([]); }} className="px-2 py-1 text-sm border border-blue-300 text-blue-600 rounded hover:bg-blue-50">
+                                  {assignedRoleIds.length > 0 ? 'Ajouter des rôles' : 'Attribuer des rôles'}
+                                </button>
+                              )}
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
-                    </div>
+                  </div>
                 )}
               </div>
+              )} {/* fin sous-onglet "Liste des utilisateurs" */}
 
+              {/* ——— Sous-onglet "Rôles & Permissions" ——— */}
+              {rolesSubTab === 'roles' && (
+              <>
               {/* ——— Section 2 : Rôles (plateforme + école) ——— */}
               <div className="mb-8">
                 <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
@@ -4541,6 +4821,8 @@ export default function SettingsPage() {
                   </div>
                 )}
               </div>
+              </> /* fin sous-onglet "Rôles & Permissions" */
+              )}
             </div>
 
             {/* Modal édition des permissions d'un rôle */}
@@ -4601,253 +4883,49 @@ export default function SettingsPage() {
         );
 
       case 'communication':
-        return (
-          <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Communication & Notifications</h3>
-              <p className="text-sm text-gray-600 mb-6">
-                Configurez les canaux de communication (SMS, Email, WhatsApp) pour les notifications automatiques.
-              </p>
-
-              <div className="space-y-6">
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="font-semibold text-gray-800 flex items-center gap-2">
-                      <Smartphone className="w-5 h-5" />
-                      SMS
-                    </h4>
-                    <button
-                      onClick={() => setCommunicationForm({ ...communicationForm, smsEnabled: !communicationForm.smsEnabled })}
-                      className="p-1"
-                    >
-                      {communicationForm.smsEnabled ? (
-                        <ToggleRight className="w-6 h-6 text-green-600" />
-                      ) : (
-                        <ToggleLeft className="w-6 h-6 text-gray-400" />
-                      )}
-                    </button>
-                  </div>
-                  {communicationForm.smsEnabled && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Provider SMS</label>
-                        <select
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          value={communicationForm.smsProvider || ''}
-                          onChange={(e) => setCommunicationForm({ ...communicationForm, smsProvider: e.target.value })}
-                        >
-                          <option value="">Sélectionner</option>
-                          <option value="twilio">Twilio</option>
-                          <option value="vonage">Vonage</option>
-                          <option value="orange">Orange SMS</option>
-                          <option value="sendchamp">SendChamp</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Limite SMS/jour</label>
-                        <input
-                          type="number"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          value={communicationForm.dailySmsLimit || 100}
-                          onChange={(e) => setCommunicationForm({ ...communicationForm, dailySmsLimit: parseInt(e.target.value) })}
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <button
-                          onClick={handleTestSms}
-                          disabled={saving}
-                          className="text-sm px-3 py-1 border border-blue-300 text-blue-600 rounded-md hover:bg-blue-50"
-                        >
-                          Envoyer un SMS de test
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="font-semibold text-gray-800 flex items-center gap-2">
-                      <Mail className="w-5 h-5" />
-                      Email (SMTP)
-                    </h4>
-                    <button
-                      onClick={() => setCommunicationForm({ ...communicationForm, emailEnabled: !communicationForm.emailEnabled })}
-                      className="p-1"
-                    >
-                      {communicationForm.emailEnabled ? (
-                        <ToggleRight className="w-6 h-6 text-green-600" />
-                      ) : (
-                        <ToggleLeft className="w-6 h-6 text-gray-400" />
-                      )}
-                    </button>
-                  </div>
-                  {communicationForm.emailEnabled && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Hôte SMTP</label>
-                        <input
-                          type="text"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          value={communicationForm.smtpHost || ''}
-                          onChange={(e) => setCommunicationForm({ ...communicationForm, smtpHost: e.target.value })}
-                          placeholder="smtp.example.com"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Port SMTP</label>
-                        <input
-                          type="number"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          value={communicationForm.smtpPort || 587}
-                          onChange={(e) => setCommunicationForm({ ...communicationForm, smtpPort: parseInt(e.target.value) })}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Utilisateur SMTP</label>
-                        <input
-                          type="text"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          value={communicationForm.smtpUser || ''}
-                          onChange={(e) => setCommunicationForm({ ...communicationForm, smtpUser: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Mot de passe SMTP</label>
-                        <input
-                          type="password"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          value={communicationForm.smtpPassword || ''}
-                          onChange={(e) => setCommunicationForm({ ...communicationForm, smtpPassword: e.target.value })}
-                          placeholder="••••••••"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Email expéditeur</label>
-                        <input
-                          type="email"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          value={communicationForm.smtpFromEmail || ''}
-                          onChange={(e) => setCommunicationForm({ ...communicationForm, smtpFromEmail: e.target.value })}
-                          placeholder="noreply@ecole.com"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Nom expéditeur</label>
-                        <input
-                          type="text"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          value={communicationForm.smtpFromName || ''}
-                          onChange={(e) => setCommunicationForm({ ...communicationForm, smtpFromName: e.target.value })}
-                          placeholder="Mon Établissement"
-                        />
-                      </div>
-                      <div className="md:col-span-2 flex items-center gap-4">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={communicationForm.smtpSecure !== false}
-                            onChange={(e) => setCommunicationForm({ ...communicationForm, smtpSecure: e.target.checked })}
-                            className="rounded"
-                          />
-                          <span className="text-sm text-gray-700">Connexion sécurisée (TLS)</span>
-                        </label>
-                        <button
-                          onClick={handleTestEmail}
-                          disabled={saving}
-                          className="text-sm px-3 py-1 border border-blue-300 text-blue-600 rounded-md hover:bg-blue-50"
-                        >
-                          Envoyer un email de test
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="font-semibold text-gray-800 flex items-center gap-2">
-                      <MessageSquare className="w-5 h-5" />
-                      WhatsApp
-                    </h4>
-                    <button
-                      onClick={() => setCommunicationForm({ ...communicationForm, whatsappEnabled: !communicationForm.whatsappEnabled })}
-                      className="p-1"
-                    >
-                      {communicationForm.whatsappEnabled ? (
-                        <ToggleRight className="w-6 h-6 text-green-600" />
-                      ) : (
-                        <ToggleLeft className="w-6 h-6 text-gray-400" />
-                      )}
-                    </button>
-                  </div>
-                  {communicationForm.whatsappEnabled && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Provider WhatsApp</label>
-                        <select
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          value={communicationForm.whatsappProvider || ''}
-                          onChange={(e) => setCommunicationForm({ ...communicationForm, whatsappProvider: e.target.value })}
-                        >
-                          <option value="">Sélectionner</option>
-                          <option value="twilio">Twilio WhatsApp</option>
-                          <option value="meta">Meta Business API</option>
-                          <option value="360dialog">360dialog</option>
-                        </select>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nom expéditeur par défaut</label>
-                    <input
-                      type="text"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={communicationForm.defaultSenderName || ''}
-                      onChange={(e) => setCommunicationForm({ ...communicationForm, defaultSenderName: e.target.value })}
-                      placeholder="Mon Établissement"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone expéditeur</label>
-                    <input
-                      type="tel"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={communicationForm.defaultSenderPhone || ''}
-                      onChange={(e) => setCommunicationForm({ ...communicationForm, defaultSenderPhone: e.target.value })}
-                      placeholder="+229 XX XX XX XX"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-6 flex justify-end">
-                <button
-                  onClick={handleSaveCommunication}
-                  disabled={saving}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Enregistrer
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-
+        return null; // Removed tab — communication géré via module Communication
       case 'billing':
         return (
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Facturation & Abonnement SaaS</h3>
-              <p className="text-sm text-gray-600 mb-6">
-                Gérez votre abonnement, consultez vos factures et modifiez votre plan.
-              </p>
+              <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800">Facturation & Abonnement SaaS</h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Abonnement, plan et factures de <strong>{identityProfile?.schoolName || effectiveTenantId || 'votre établissement'}</strong>.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBillingLoading(true);
+                    const tid = effectiveTenantId ?? undefined;
+                    Promise.all([
+                      settingsService.getBillingSettings(tid).catch(() => null),
+                      settingsService.getBillingInvoices({ limit: 20 }, tid).catch(() => []),
+                    ])
+                      .then(([billing, invoicesData]) => {
+                        setBillingSettings(billing);
+                        setBillingForm(billing || {});
+                        setInvoices((Array.isArray(invoicesData) ? invoicesData : []) as any[]);
+                        showToast('success', 'Données de facturation rechargées');
+                      })
+                      .finally(() => setBillingLoading(false));
+                  }}
+                  disabled={billingLoading}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {billingLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  Actualiser
+                </button>
+              </div>
 
-              {billingSettings ? (
+              {billingLoading ? (
+                <div className="py-12 flex flex-col items-center justify-center text-gray-500">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-3" />
+                  <p className="text-sm">Chargement des données de facturation…</p>
+                </div>
+              ) : billingSettings ? (
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
@@ -4949,11 +5027,11 @@ export default function SettingsPage() {
                     </div>
                   )}
 
-                  {invoices.length > 0 && (
+                  {invoices.length > 0 ? (
                     <div className="border border-gray-200 rounded-lg p-4">
                       <h4 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
                         <Receipt className="w-5 h-5" />
-                        Factures récentes
+                        Factures récentes ({invoices.length})
                       </h4>
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -4992,6 +5070,11 @@ export default function SettingsPage() {
                         </table>
                       </div>
                     </div>
+                  ) : (
+                    <div className="border border-dashed border-gray-300 rounded-lg p-6 text-center text-gray-500">
+                      <Receipt className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                      <p className="text-sm">Aucune facture pour le moment. Les factures générées par le système de paiement apparaîtront ici.</p>
+                    </div>
                   )}
                 </div>
               ) : (
@@ -5005,25 +5088,38 @@ export default function SettingsPage() {
         );
 
       case 'payments':
-        return <PaymentsSettingsSection />;
-
+        return null; // Removed tab — paiements gérés via Facturation
       case 'security':
         return (
           <div className="space-y-6">
             {/* ── Politique de mots de passe ── */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-1">Politique de mots de passe</h3>
-              <p className="text-sm text-gray-500 mb-4">Configurez les exigences de complexité et d&#39;expiration des mots de passe.</p>
+              <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800">Politique de mots de passe</h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Configurez les exigences de complexité et d&apos;expiration des mots de passe.
+                    Ces règles sont <strong>appliquées automatiquement</strong> lors de la génération
+                    d&apos;identifiants pour les enseignants et le personnel dans le module RH
+                    (bouton « Régénérer les identifiants » sur la fiche personnel).
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-full">
+                  <Shield className="w-3.5 h-3.5" />
+                  Sécurité critique
+                </span>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Longueur minimale du mot de passe
+                    <span className="ml-1 text-xs text-gray-400">(6–20 caractères)</span>
                   </label>
                   <input
                     type="number"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={securityForm.passwordMinLength ?? 8}
-                    onChange={(e) => setSecurityForm({ ...securityForm, passwordMinLength: parseInt(e.target.value) || 8 })}
+                    onChange={(e) => setSecurityForm({ ...securityForm, passwordMinLength: Math.min(20, Math.max(6, parseInt(e.target.value) || 8)) })}
                     min={6}
                     max={20}
                   />
@@ -5031,6 +5127,7 @@ export default function SettingsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Expiration mot de passe (jours, 0 = jamais)
+                    <span className="ml-1 text-xs text-gray-400">(0–365 jours)</span>
                   </label>
                   <input
                     type="number"
@@ -5044,10 +5141,10 @@ export default function SettingsPage() {
               </div>
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                 {[
-                  { key: 'passwordRequireUppercase', label: 'Majuscule requise' },
-                  { key: 'passwordRequireLowercase', label: 'Minuscule requise' },
-                  { key: 'passwordRequireNumbers', label: 'Chiffre requis' },
-                  { key: 'passwordRequireSpecial', label: 'Caractère spécial requis' },
+                  { key: 'passwordRequireUppercase', label: 'Majuscule requise', hint: 'A–Z' },
+                  { key: 'passwordRequireLowercase', label: 'Minuscule requise', hint: 'a–z' },
+                  { key: 'passwordRequireNumbers', label: 'Chiffre requis', hint: '0–9' },
+                  { key: 'passwordRequireSpecial', label: 'Caractère spécial requis', hint: '!@#$%^&*?' },
                 ].map((item) => (
                   <label key={item.key} className="flex items-center gap-2 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
                     <input
@@ -5056,20 +5153,63 @@ export default function SettingsPage() {
                       onChange={(e) => setSecurityForm({ ...securityForm, [item.key]: e.target.checked })}
                       className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                     />
-                    <span className="text-sm text-gray-700">{item.label}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-gray-700">{item.label}</div>
+                      <div className="text-[11px] text-gray-400 font-mono">{item.hint}</div>
+                    </div>
                   </label>
                 ))}
+              </div>
+
+              {/* ⭐ Aperçu live d'un mot de passe généré selon la politique */}
+              <div className="mt-5 p-4 bg-gradient-to-br from-blue-50 to-slate-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                  <div>
+                    <h4 className="font-semibold text-gray-800 text-sm flex items-center gap-1.5">
+                      <Key className="w-4 h-4 text-blue-600" />
+                      Aperçu d&apos;un mot de passe généré
+                    </h4>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Aperçu en temps réel — Voici à quoi ressemblera le mot de passe temporaire envoyé aux enseignants et au personnel via le module RH.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSecurityPreviewSeed((s) => s + 1)}
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    Régénérer l&apos;aperçu
+                  </button>
+                </div>
+                <div className="font-mono text-base bg-white border border-gray-200 rounded-md px-3 py-2 break-all">
+                  {/* eslint-disable-next-line @typescript-eslint/no-unused-expressions */}
+                  {securityPreviewSeed /* trigger re-render on seed change */}
+                  {generateSamplePassword(securityForm)}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                  <span className="px-2 py-0.5 bg-white border border-gray-200 rounded text-gray-600">
+                    Longueur : {generateSamplePassword(securityForm).length} / {securityForm.passwordMinLength ?? 8} min
+                  </span>
+                  {securityForm.passwordRequireUppercase && <span className="px-2 py-0.5 bg-green-50 border border-green-200 rounded text-green-700">A–Z</span>}
+                  {securityForm.passwordRequireLowercase && <span className="px-2 py-0.5 bg-green-50 border border-green-200 rounded text-green-700">a–z</span>}
+                  {securityForm.passwordRequireNumbers && <span className="px-2 py-0.5 bg-green-50 border border-green-200 rounded text-green-700">0–9</span>}
+                  {securityForm.passwordRequireSpecial && <span className="px-2 py-0.5 bg-green-50 border border-green-200 rounded text-green-700">!@#$</span>}
+                </div>
               </div>
             </div>
 
             {/* ── Session et verrouillage ── */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-1">Session et verrouillage</h3>
-              <p className="text-sm text-gray-500 mb-4">Gérez la durée des sessions et les règles de blocage après échecs.</p>
+              <p className="text-sm text-gray-500 mb-4">
+                Gérez la durée des sessions, l&apos;inactivité avant déconnexion automatique, et les règles de blocage après échecs de connexion.
+                Ces règles protègent contre le piratage de session et les attaques par force brute.
+              </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Durée de session (minutes)
+                    Durée de session max (minutes)
+                    <span className="ml-1 text-xs text-gray-400">(5–480)</span>
                   </label>
                   <input
                     type="number"
@@ -5079,10 +5219,27 @@ export default function SettingsPage() {
                     min={5}
                     max={480}
                   />
+                  <p className="text-[11px] text-gray-500 mt-1">Durée maximale d&apos;une session avant déconnexion forcée.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Inactivité avant verrouillage (minutes)
+                    <span className="ml-1 text-xs text-gray-400">(1–120)</span>
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={securityForm.inactivityLockMinutes ?? 15}
+                    onChange={(e) => setSecurityForm({ ...securityForm, inactivityLockMinutes: Math.min(120, Math.max(1, parseInt(e.target.value) || 15)) })}
+                    min={1}
+                    max={120}
+                  />
+                  <p className="text-[11px] text-gray-500 mt-1">Verrouille l&apos;écran après inactivité prolongée (réauthentification requise).</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Tentatives de connexion max
+                    <span className="ml-1 text-xs text-gray-400">(3–10)</span>
                   </label>
                   <input
                     type="number"
@@ -5092,10 +5249,12 @@ export default function SettingsPage() {
                     min={3}
                     max={10}
                   />
+                  <p className="text-[11px] text-gray-500 mt-1">Après ce nombre d&apos;échecs, le compte est bloqué temporairement.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Durée de blocage (minutes)
+                    <span className="ml-1 text-xs text-gray-400">(5–60)</span>
                   </label>
                   <input
                     type="number"
@@ -5105,19 +5264,27 @@ export default function SettingsPage() {
                     min={5}
                     max={60}
                   />
+                  <p className="text-[11px] text-gray-500 mt-1">Durée pendant laquelle le compte reste bloqué après échecs.</p>
                 </div>
+              </div>
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-900">
+                <strong>Impact :</strong> ces paramètres sont appliqués à la connexion par le middleware d&apos;authentification.
+                Une session inactive sera automatiquement fermée et l&apos;utilisateur devra se reconnecter.
               </div>
             </div>
 
             {/* ── Authentification avancée ── */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-1">Authentification avancée</h3>
-              <p className="text-sm text-gray-500 mb-4">Activez l&#39;authentification à deux facteurs et la vérification d&#39;e-mail.</p>
+              <p className="text-sm text-gray-500 mb-4">
+                Activez l&apos;authentification à deux facteurs, la vérification d&apos;e-mail et la reconnaissance des appareils.
+                Ces protections réduisent fortement le risque d&apos;accès non autorisé même en cas de vol de mot de passe.
+              </p>
               <div className="space-y-3">
                 <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                   <div>
                     <h4 className="font-semibold text-gray-800">Authentification à deux facteurs (2FA)</h4>
-                    <p className="text-sm text-gray-600">Exiger une vérification supplémentaire lors de la connexion</p>
+                    <p className="text-sm text-gray-600">Exiger un code temporaire (SMS ou app d&apos;authentification) lors de la connexion.</p>
                   </div>
                   <button
                     onClick={() => setSecurityForm({ ...securityForm, twoFactorEnabled: !securityForm.twoFactorEnabled })}
@@ -5132,14 +5299,52 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
                   <div>
-                    <h4 className="font-semibold text-gray-800">Vérification d&#39;e-mail obligatoire</h4>
-                    <p className="text-sm text-gray-600">Les utilisateurs doivent vérifier leur adresse e-mail avant d&#39;accéder à l&#39;application</p>
+                    <h4 className="font-semibold text-gray-800">Vérification d&apos;e-mail obligatoire</h4>
+                    <p className="text-sm text-gray-600">Les utilisateurs doivent vérifier leur adresse e-mail avant d&apos;accéder à l&apos;application.</p>
                   </div>
                   <button
                     onClick={() => setSecurityForm({ ...securityForm, requireEmailVerification: !securityForm.requireEmailVerification })}
                     className="p-2"
                   >
                     {securityForm.requireEmailVerification ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                  <div>
+                    <h4 className="font-semibold text-gray-800">Reconnaissance des appareils</h4>
+                    <p className="text-sm text-gray-600">
+                      Le système mémorise les appareils connus de chaque utilisateur. Tout nouvel appareil déclenche une alerte admin
+                      et requiert une validation manuelle avant l&apos;accès. Voir l&apos;onglet « Appareils autorisés ».
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setSecurityForm({ ...securityForm, deviceFingerprintEnabled: !securityForm.deviceFingerprintEnabled })}
+                    className="p-2"
+                  >
+                    {securityForm.deviceFingerprintEnabled ? (
+                      <ToggleRight className="w-6 h-6 text-green-600" />
+                    ) : (
+                      <ToggleLeft className="w-6 h-6 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                  <div>
+                    <h4 className="font-semibold text-gray-800">Notification de nouvelle connexion</h4>
+                    <p className="text-sm text-gray-600">
+                      Envoie un e-mail à l&apos;utilisateur à chaque connexion depuis un nouvel appareil ou une nouvelle adresse IP,
+                      avec option de révocation immédiate si l&apos;auteur n&apos;est pas reconnu.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setSecurityForm({ ...securityForm, notifyOnNewDevice: !securityForm.notifyOnNewDevice })}
+                    className="p-2"
+                  >
+                    {securityForm.notifyOnNewDevice ? (
                       <ToggleRight className="w-6 h-6 text-green-600" />
                     ) : (
                       <ToggleLeft className="w-6 h-6 text-gray-400" />
@@ -5241,492 +5446,11 @@ export default function SettingsPage() {
         );
 
       case 'orion':
-        return (
-          <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-1">Paramètres ORION</h3>
-              <p className="text-sm text-gray-500 mb-4">Configurez l&#39;IA de pilotage ORION pour l&#39;analyse prédictive et les alertes.</p>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                  <div>
-                    <h4 className="font-semibold text-gray-800">Activer ORION</h4>
-                    <p className="text-sm text-gray-600">Activez l&#39;IA de pilotage ORION pour votre établissement</p>
-                  </div>
-                  <button
-                    onClick={() => setOrionForm({ ...orionForm, isEnabled: !orionForm.isEnabled })}
-                    className="p-2"
-                  >
-                    {orionForm.isEnabled ? (
-                      <ToggleRight className="w-6 h-6 text-green-600" />
-                    ) : (
-                      <ToggleLeft className="w-6 h-6 text-gray-400" />
-                    )}
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Seuil d&#39;alerte critique
-                    </label>
-                    <input
-                      type="number"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={orionForm.alertThresholdCritical ?? 5}
-                      onChange={(e) => setOrionForm({ ...orionForm, alertThresholdCritical: parseInt(e.target.value) || 5 })}
-                      min={1}
-                      max={100}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Seuil d&#39;alerte warning
-                    </label>
-                    <input
-                      type="number"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={orionForm.alertThresholdWarning ?? 10}
-                      onChange={(e) => setOrionForm({ ...orionForm, alertThresholdWarning: parseInt(e.target.value) || 10 })}
-                      min={1}
-                      max={100}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-1">Fréquence et insights</h3>
-              <p className="text-sm text-gray-500 mb-4">Configurez la fréquence de calcul des KPI et la génération automatique d&#39;insights.</p>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Fréquence de calcul des KPI
-                  </label>
-                  <select
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    value={orionForm.kpiCalculationFrequency ?? 'daily'}
-                    onChange={(e) => setOrionForm({ ...orionForm, kpiCalculationFrequency: e.target.value })}
-                  >
-                    <option value="realtime">Temps réel</option>
-                    <option value="hourly">Toutes les heures</option>
-                    <option value="daily">Quotidien</option>
-                    <option value="weekly">Hebdomadaire</option>
-                  </select>
-                </div>
-                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                  <div>
-                    <h4 className="font-semibold text-gray-800">Génération automatique d&#39;insights</h4>
-                    <p className="text-sm text-gray-600">ORION génère automatiquement des analyses et recommandations</p>
-                  </div>
-                  <button
-                    onClick={() => setOrionForm({ ...orionForm, autoGenerateInsights: !orionForm.autoGenerateInsights })}
-                    className="p-2"
-                  >
-                    {orionForm.autoGenerateInsights ? (
-                      <ToggleRight className="w-6 h-6 text-green-600" />
-                    ) : (
-                      <ToggleLeft className="w-6 h-6 text-gray-400" />
-                    )}
-                  </button>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Fréquence des insights
-                  </label>
-                  <select
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    value={orionForm.insightsFrequency ?? 'daily'}
-                    onChange={(e) => setOrionForm({ ...orionForm, insightsFrequency: e.target.value })}
-                  >
-                    <option value="hourly">Toutes les heures</option>
-                    <option value="daily">Quotidien</option>
-                    <option value="weekly">Hebdomadaire</option>
-                    <option value="monthly">Mensuel</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-1">Catégories KPI et exports</h3>
-              <p className="text-sm text-gray-500 mb-4">Sélectionnez les catégories de KPI visibles et autorisez les exports de données.</p>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Catégories KPI visibles
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-                    {[
-                      { value: 'attendance', label: 'Présence' },
-                      { value: 'grades', label: 'Notes' },
-                      { value: 'finance', label: 'Finance' },
-                      { value: 'discipline', label: 'Discipline' },
-                      { value: 'pedagogy', label: 'Pédagogie' },
-                      { value: 'hr', label: 'RH' },
-                      { value: 'enrollment', label: 'Inscriptions' },
-                      { value: 'exams', label: 'Examens' },
-                      { value: 'communication', label: 'Communication' },
-                      { value: 'infrastructure', label: 'Infrastructure' },
-                    ].map((cat) => {
-                      const selected = Array.isArray(orionForm.visibleKPICategories) ? orionForm.visibleKPICategories.includes(cat.value) : false;
-                      return (
-                        <label key={cat.value} className="flex items-center gap-2 p-2 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
-                          <input
-                            type="checkbox"
-                            checked={selected}
-                            onChange={(e) => {
-                              const current = Array.isArray(orionForm.visibleKPICategories) ? orionForm.visibleKPICategories : [];
-                              const updated = e.target.checked
-                                ? [...current, cat.value]
-                                : current.filter((c: string) => c !== cat.value);
-                              setOrionForm({ ...orionForm, visibleKPICategories: updated });
-                            }}
-                            className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-700">{cat.label}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                  <div>
-                    <h4 className="font-semibold text-gray-800">Autoriser les exports ORION</h4>
-                    <p className="text-sm text-gray-600">Permettre l&#39;export des données et rapports générés par ORION</p>
-                  </div>
-                  <button
-                    onClick={() => setOrionForm({ ...orionForm, allowOrionExports: !orionForm.allowOrionExports })}
-                    className="p-2"
-                  >
-                    {orionForm.allowOrionExports ? (
-                      <ToggleRight className="w-6 h-6 text-green-600" />
-                    ) : (
-                      <ToggleLeft className="w-6 h-6 text-gray-400" />
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <button
-                onClick={handleSaveOrion}
-                disabled={saving}
-                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
-              >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Enregistrer les paramètres ORION
-              </button>
-            </div>
-          </div>
-        );
-
+        return null; // Removed tab — ORION accessible via widget flottant
       case 'atlas':
-        return (
-          <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-1">Paramètres ATLAS</h3>
-              <p className="text-sm text-gray-500 mb-4">Configurez le chatbot IA ATLAS pour l&#39;assistance aux utilisateurs.</p>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                  <div>
-                    <h4 className="font-semibold text-gray-800">Activer ATLAS</h4>
-                    <p className="text-sm text-gray-600">Activez le chatbot IA ATLAS pour votre établissement</p>
-                  </div>
-                  <button
-                    onClick={() => setAtlasForm({ ...atlasForm, isEnabled: !atlasForm.isEnabled })}
-                    className="p-2"
-                  >
-                    {atlasForm.isEnabled ? (
-                      <ToggleRight className="w-6 h-6 text-green-600" />
-                    ) : (
-                      <ToggleLeft className="w-6 h-6 text-gray-400" />
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-1">Portée et modules</h3>
-              <p className="text-sm text-gray-500 mb-4">Définissez le périmètre d&#39;action d&#39;ATLAS et les modules accessibles.</p>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Portée d&#39;ATLAS
-                  </label>
-                  <select
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    value={atlasForm.scope ?? 'all'}
-                    onChange={(e) => setAtlasForm({ ...atlasForm, scope: e.target.value })}
-                  >
-                    <option value="all">Tous les modules</option>
-                    <option value="students">Élèves et scolarité uniquement</option>
-                    <option value="finance">Finances uniquement</option>
-                    <option value="pedagogy">Pédagogie uniquement</option>
-                    <option value="hr">RH uniquement</option>
-                    <option value="custom">Personnalisé</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Modules autorisés
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                    {[
-                      { value: 'students', label: 'Élèves' },
-                      { value: 'finance', label: 'Finances' },
-                      { value: 'pedagogy', label: 'Pédagogie' },
-                      { value: 'hr', label: 'RH & Paie' },
-                      { value: 'exams', label: 'Examens' },
-                      { value: 'communication', label: 'Communication' },
-                      { value: 'discipline', label: 'Discipline' },
-                      { value: 'attendance', label: 'Présence' },
-                    ].map((mod) => {
-                      const selected = Array.isArray(atlasForm.allowedModules) ? atlasForm.allowedModules.includes(mod.value) : false;
-                      return (
-                        <label key={mod.value} className="flex items-center gap-2 p-2 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
-                          <input
-                            type="checkbox"
-                            checked={selected}
-                            onChange={(e) => {
-                              const current = Array.isArray(atlasForm.allowedModules) ? atlasForm.allowedModules : [];
-                              const updated = e.target.checked
-                                ? [...current, mod.value]
-                                : current.filter((m: string) => m !== mod.value);
-                              setAtlasForm({ ...atlasForm, allowedModules: updated });
-                            }}
-                            className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-700">{mod.label}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-1">Conversation et langue</h3>
-              <p className="text-sm text-gray-500 mb-4">Configurez les limites de conversation et les options de transfert.</p>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                  <div>
-                    <h4 className="font-semibold text-gray-800">Transfert humain</h4>
-                    <p className="text-sm text-gray-600">Permettre le transfert vers un opérateur humain quand ATLAS ne peut répondre</p>
-                  </div>
-                  <button
-                    onClick={() => setAtlasForm({ ...atlasForm, allowHumanHandoff: !atlasForm.allowHumanHandoff })}
-                    className="p-2"
-                  >
-                    {atlasForm.allowHumanHandoff ? (
-                      <ToggleRight className="w-6 h-6 text-green-600" />
-                    ) : (
-                      <ToggleLeft className="w-6 h-6 text-gray-400" />
-                    )}
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Historique de conversation (jours)
-                    </label>
-                    <input
-                      type="number"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={atlasForm.conversationHistoryDays ?? 30}
-                      onChange={(e) => setAtlasForm({ ...atlasForm, conversationHistoryDays: parseInt(e.target.value) || 30 })}
-                      min={7}
-                      max={365}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Max conversations par jour
-                    </label>
-                    <input
-                      type="number"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={atlasForm.maxConversationsPerDay ?? 50}
-                      onChange={(e) => setAtlasForm({ ...atlasForm, maxConversationsPerDay: parseInt(e.target.value) || 50 })}
-                      min={1}
-                      max={1000}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Langue principale
-                  </label>
-                  <select
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    value={atlasForm.language ?? 'fr'}
-                    onChange={(e) => setAtlasForm({ ...atlasForm, language: e.target.value })}
-                  >
-                    <option value="fr">Français</option>
-                    <option value="en">Anglais</option>
-                    <option value="ar">Arabe</option>
-                    <option value="es">Espagnol</option>
-                    <option value="pt">Portugais</option>
-                    <option value="bilingual">Bilingue (FR/EN)</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <button
-                onClick={handleSaveAtlas}
-                disabled={saving}
-                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
-              >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Enregistrer les paramètres ATLAS
-              </button>
-            </div>
-          </div>
-        );
-
+        return null; // Removed tab — ATLAS accessible via widget flottant
       case 'offline':
-        return (
-          <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-1">Synchronisation Offline</h3>
-              <p className="text-sm text-gray-500 mb-4">Configurez le mode hors ligne pour permettre l&#39;utilisation de l&#39;application sans connexion internet.</p>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                  <div>
-                    <h4 className="font-semibold text-gray-800">Activer le mode offline</h4>
-                    <p className="text-sm text-gray-600">Permet l&#39;utilisation de l&#39;application hors ligne avec synchronisation automatique</p>
-                  </div>
-                  <button
-                    onClick={() => setOfflineForm({ ...offlineForm, isEnabled: !offlineForm.isEnabled })}
-                    className="p-2"
-                  >
-                    {offlineForm.isEnabled ? (
-                      <ToggleRight className="w-6 h-6 text-green-600" />
-                    ) : (
-                      <ToggleLeft className="w-6 h-6 text-gray-400" />
-                    )}
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Fréquence de sync (minutes)
-                    </label>
-                    <input
-                      type="number"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={offlineForm.syncFrequencyMinutes ?? 15}
-                      onChange={(e) => setOfflineForm({ ...offlineForm, syncFrequencyMinutes: parseInt(e.target.value) || 15 })}
-                      min={1}
-                      max={60}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Durée max hors ligne (jours)
-                    </label>
-                    <input
-                      type="number"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={offlineForm.maxOfflineDays ?? 7}
-                      onChange={(e) => setOfflineForm({ ...offlineForm, maxOfflineDays: parseInt(e.target.value) || 7 })}
-                      min={1}
-                      max={30}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-1">Résolution de conflits et comportement</h3>
-              <p className="text-sm text-gray-500 mb-4">Définissez comment les conflits de données sont résolus et le comportement de la synchronisation.</p>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Stratégie de résolution de conflits
-                  </label>
-                  <select
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    value={offlineForm.conflictResolution ?? 'SERVER_WINS'}
-                    onChange={(e) => setOfflineForm({ ...offlineForm, conflictResolution: e.target.value })}
-                  >
-                    <option value="SERVER_WINS">Le serveur a priorité (SERVER_WINS)</option>
-                    <option value="CLIENT_WINS">Le client a priorité (CLIENT_WINS)</option>
-                    <option value="LAST_WRITE_WINS">Dernière écriture gagne (LAST_WRITE_WINS)</option>
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    En cas de données modifiées simultanément en local et sur le serveur, cette stratégie détermine quelle version est conservée.
-                  </p>
-                </div>
-                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                  <div>
-                    <h4 className="font-semibold text-gray-800">Sync automatique à la reconnexion</h4>
-                    <p className="text-sm text-gray-600">Synchroniser automatiquement les données locales dès que la connexion est rétablie</p>
-                  </div>
-                  <button
-                    onClick={() => setOfflineForm({ ...offlineForm, autoSyncOnConnect: !offlineForm.autoSyncOnConnect })}
-                    className="p-2"
-                  >
-                    {offlineForm.autoSyncOnConnect ? (
-                      <ToggleRight className="w-6 h-6 text-green-600" />
-                    ) : (
-                      <ToggleLeft className="w-6 h-6 text-gray-400" />
-                    )}
-                  </button>
-                </div>
-                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                  <div>
-                    <h4 className="font-semibold text-gray-800">Autoriser les modifications hors ligne</h4>
-                    <p className="text-sm text-gray-600">Permettre la création et modification de données en mode hors ligne</p>
-                  </div>
-                  <button
-                    onClick={() => setOfflineForm({ ...offlineForm, allowOfflineModification: !offlineForm.allowOfflineModification })}
-                    className="p-2"
-                  >
-                    {offlineForm.allowOfflineModification ? (
-                      <ToggleRight className="w-6 h-6 text-green-600" />
-                    ) : (
-                      <ToggleLeft className="w-6 h-6 text-gray-400" />
-                    )}
-                  </button>
-                </div>
-                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                  <div>
-                    <h4 className="font-semibold text-gray-800">Synchronisation en arrière-plan</h4>
-                    <p className="text-sm text-gray-600">Continuer la synchronisation même quand l&#39;application est en arrière-plan</p>
-                  </div>
-                  <button
-                    onClick={() => setOfflineForm({ ...offlineForm, syncOnBackground: !offlineForm.syncOnBackground })}
-                    className="p-2"
-                  >
-                    {offlineForm.syncOnBackground ? (
-                      <ToggleRight className="w-6 h-6 text-green-600" />
-                    ) : (
-                      <ToggleLeft className="w-6 h-6 text-gray-400" />
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <button
-                onClick={handleSaveOffline}
-                disabled={saving}
-                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
-              >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Enregistrer les paramètres offline
-              </button>
-            </div>
-          </div>
-        );
-
+        return null; // Removed tab — sync hors-ligne gérée automatiquement
       case 'appareils':
         if (!canAccessDevices) {
           return (
@@ -5740,72 +5464,321 @@ export default function SettingsPage() {
         return (
           <div className="space-y-6">
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <Shield className="w-5 h-5 text-blue-600" />
-                Appareils autorisés
-              </h3>
-              <p className="text-sm text-gray-600 mb-4">
-                Liste des appareils ayant accès à cet établissement. Révoquez un appareil pour invalider ses sessions et sa synchronisation offline.
-              </p>
-              {devicesLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+              <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                    <Shield className="w-5 h-5 text-blue-600" />
+                    Appareils autorisés
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Suivez les appareils connectés à cet établissement, validez les nouveaux appareils et révoquez ceux qui sont suspects.
+                  </p>
                 </div>
-              ) : devicesList.length === 0 ? (
-                <p className="text-gray-500 py-4">Aucun appareil enregistré.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full border border-gray-200 rounded-lg">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Nom appareil</th>
-                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Utilisateur</th>
-                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Dernière sync</th>
-                        <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Statut</th>
-                        <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 border-b">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {devicesList.map((d) => (
-                        <tr key={d.id} className="border-b border-gray-100 hover:bg-gray-50">
-                          <td className="px-4 py-2 text-sm">{d.deviceName || d.deviceType || '—'}</td>
-                          <td className="px-4 py-2 text-sm">
-                            {d.user ? `${d.user.firstName || ''} ${d.user.lastName || ''}`.trim() || d.user.email : '—'}
-                          </td>
-                          <td className="px-4 py-2 text-sm text-gray-600">
-                            {d.lastSyncAt ? new Date(d.lastSyncAt).toLocaleString('fr-FR') : d.lastUsedAt ? new Date(d.lastUsedAt).toLocaleString('fr-FR') : '—'}
-                          </td>
-                          <td className="px-4 py-2">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Actif</span>
-                          </td>
-                          <td className="px-4 py-2 text-right">
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const ok = await confirmDialog.warning('Les sessions et la sync offline de cet appareil seront invalidées. Voulez-vous continuer ?', 'Révoquer l\'appareil');
-                                if (!ok) return;
-                                try {
-                                  // fetchWithAuth returns parsed JSON, not a Response object
-                                  const data = await settingsService.revokeDevice(d.id) as any;
-                                  if (data?.success || data?.message) {
-                                    showToast('success', data?.message || 'Appareil révoqué avec succès');
-                                    setDevicesList((prev) => prev.filter((x) => x.id !== d.id));
-                                  } else {
-                                    showToast('error', data?.message || data?.error || 'Erreur lors de la révocation');
-                                  }
-                                } catch {
-                                  showToast('error', 'Erreur lors de la révocation');
-                                }
-                              }}
-                              className="text-sm text-red-600 hover:text-red-800 font-medium"
-                            >
-                              Révoquer
-                            </button>
-                          </td>
-                        </tr>
+              </div>
+
+              {/* ⭐ Sous-onglets : Appareils connectés | Historique */}
+              <div className="border-b border-gray-200 mb-5">
+                <nav className="-mb-px flex gap-6" aria-label="Sous-onglets Appareils">
+                  <button
+                    type="button"
+                    onClick={() => setDevicesSubTab('connected')}
+                    className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${
+                      devicesSubTab === 'connected'
+                        ? 'border-blue-600 text-blue-700'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    <Smartphone className="inline-block w-4 h-4 mr-1.5 -mt-0.5" />
+                    Appareils connectés
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDevicesSubTab('history')}
+                    className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${
+                      devicesSubTab === 'history'
+                        ? 'border-blue-600 text-blue-700'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    <History className="inline-block w-4 h-4 mr-1.5 -mt-0.5" />
+                    Historique de connexion
+                  </button>
+                </nav>
+              </div>
+
+              {/* ───── Sous-onglet : Appareils connectés ───── */}
+              {devicesSubTab === 'connected' && (
+                <div>
+                  {/* Filtre période */}
+                  <div className="mb-4 flex items-center gap-3 flex-wrap">
+                    <label className="text-sm font-medium text-gray-700">Période :</label>
+                    <div className="inline-flex rounded-md border border-gray-300 overflow-hidden">
+                      {([['30d', '30 derniers jours'], ['month', 'Ce mois'], ['quarter', 'Ce trimestre'], ['year', 'Cette année']] as const).map(([k, label]) => (
+                        <button
+                          key={k}
+                          type="button"
+                          onClick={() => setDevicesPeriod(k)}
+                          className={`px-3 py-1.5 text-xs font-medium ${
+                            devicesPeriod === k ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          {label}
+                        </button>
                       ))}
-                    </tbody>
-                  </table>
+                    </div>
+                    <span className="text-xs text-gray-500">{devicesList.length} appareil(s)</span>
+                  </div>
+
+                  {devicesLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+                    </div>
+                  ) : devicesList.length === 0 ? (
+                    <div className="py-8 text-center text-gray-500">
+                      <Smartphone className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                      <p>Aucun appareil connecté sur cette période.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full border border-gray-200 rounded-lg">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Appareil</th>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Type</th>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Utilisateur</th>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Adresse IP</th>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Dernière activité</th>
+                            <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Statut</th>
+                            <th className="px-4 py-2 text-right text-sm font-medium text-gray-700 border-b">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {devicesList.map((d: any) => {
+                            const isPending = d.isPendingValidation || (!d.isTrusted && !d.revokedAt);
+                            return (
+                              <tr key={d.id} className={`border-b border-gray-100 hover:bg-gray-50 ${isPending ? 'bg-amber-50/50' : ''}`}>
+                                <td className="px-4 py-2 text-sm">
+                                  <div className="font-medium text-gray-800">{d.deviceName || '—'}</div>
+                                  {d.userAgent && <div className="text-[11px] text-gray-500 truncate max-w-xs">{d.userAgent}</div>}
+                                </td>
+                                <td className="px-4 py-2 text-sm">
+                                  <DeviceTypeBadge type={d.deviceType} />
+                                </td>
+                                <td className="px-4 py-2 text-sm">
+                                  {d.user ? (
+                                    <div>
+                                      <div className="font-medium text-gray-800">
+                                        {`${d.user.firstName || ''} ${d.user.lastName || ''}`.trim() || d.user.email}
+                                      </div>
+                                      <div className="text-[11px] text-gray-500">{d.user.email}</div>
+                                      {d.user.role && <div className="text-[11px] text-gray-400">{d.user.role}</div>}
+                                    </div>
+                                  ) : '—'}
+                                </td>
+                                <td className="px-4 py-2 text-sm font-mono text-gray-700">{d.ipAddress || '—'}</td>
+                                <td className="px-4 py-2 text-sm text-gray-600">
+                                  {d.lastUsedAt ? new Date(d.lastUsedAt).toLocaleString('fr-FR') : d.lastSyncAt ? new Date(d.lastSyncAt).toLocaleString('fr-FR') : '—'}
+                                </td>
+                                <td className="px-4 py-2">
+                                  {isPending ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                                      En attente
+                                    </span>
+                                  ) : d.isTrusted ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                      Approuvé
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                                      Inactif
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2 text-right whitespace-nowrap">
+                                  {isPending && (
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        try {
+                                          const data = await settingsService.approveDevice(d.id) as any;
+                                          if (data?.success) {
+                                            showToast('success', data?.message || 'Appareil approuvé');
+                                            setDevicesList((prev: any[]) => prev.map((x) => x.id === d.id ? { ...x, isTrusted: true, isPendingValidation: false } : x));
+                                          } else {
+                                            showToast('error', data?.error || 'Erreur');
+                                          }
+                                        } catch {
+                                          showToast('error', 'Erreur lors de l\'approbation');
+                                        }
+                                      }}
+                                      className="text-sm text-green-600 hover:text-green-800 font-medium mr-3"
+                                    >
+                                      Approuver
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const ok = await confirmDialog.warning('Les sessions et la sync offline de cet appareil seront invalidées. Voulez-vous continuer ?', 'Révoquer l\'appareil');
+                                      if (!ok) return;
+                                      try {
+                                        const data = await settingsService.revokeDevice(d.id) as any;
+                                        if (data?.success || data?.message) {
+                                          showToast('success', data?.message || 'Appareil révoqué avec succès');
+                                          setDevicesList((prev: any[]) => prev.filter((x) => x.id !== d.id));
+                                        } else {
+                                          showToast('error', data?.message || data?.error || 'Erreur lors de la révocation');
+                                        }
+                                      } catch {
+                                        showToast('error', 'Erreur lors de la révocation');
+                                      }
+                                    }}
+                                    className="text-sm text-red-600 hover:text-red-800 font-medium"
+                                  >
+                                    Révoquer
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ───── Sous-onglet : Historique de connexion ───── */}
+              {devicesSubTab === 'history' && (
+                <div>
+                  {/* Filtres */}
+                  <div className="mb-4 flex items-center gap-3 flex-wrap">
+                    <label className="text-sm font-medium text-gray-700">Action :</label>
+                    <select
+                      value={loginHistoryFilter.action ?? ''}
+                      onChange={(e) => { setLoginHistoryFilter((f) => ({ ...f, action: e.target.value || undefined })); setLoginHistoryPage(1); }}
+                      className="px-2 py-1 border border-gray-300 rounded text-sm"
+                    >
+                      <option value="">Toutes</option>
+                      <option value="LOGIN">Connexion</option>
+                      <option value="LOGOUT">Déconnexion</option>
+                      <option value="LOGIN_FAILED">Échec connexion</option>
+                      <option value="DEVICE_REVOKED">Appareil révoqué</option>
+                      <option value="DEVICE_APPROVED">Appareil approuvé</option>
+                      <option value="LOCKOUT">Verrouillage</option>
+                    </select>
+                    <label className="text-sm font-medium text-gray-700 ml-2">Statut :</label>
+                    <select
+                      value={loginHistoryFilter.status ?? ''}
+                      onChange={(e) => { setLoginHistoryFilter((f) => ({ ...f, status: e.target.value || undefined })); setLoginHistoryPage(1); }}
+                      className="px-2 py-1 border border-gray-300 rounded text-sm"
+                    >
+                      <option value="">Tous</option>
+                      <option value="SUCCESS">Succès</option>
+                      <option value="FAILED">Échec</option>
+                    </select>
+                    <span className="text-xs text-gray-500 ml-auto">{loginHistoryTotal} entrée(s) — page {loginHistoryPage}/{loginHistoryTotalPages}</span>
+                  </div>
+
+                  {loginHistoryLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+                    </div>
+                  ) : loginHistory.length === 0 ? (
+                    <div className="py-8 text-center text-gray-500">
+                      <History className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                      <p>Aucune entrée dans l&apos;historique de connexion.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full border border-gray-200 rounded-lg">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Date / Heure</th>
+                              <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Utilisateur</th>
+                              <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Action</th>
+                              <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Appareil</th>
+                              <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Adresse IP</th>
+                              <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Statut</th>
+                              <th className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b">Détail</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {loginHistory.map((log: any) => (
+                              <tr key={log.id} className="border-b border-gray-100 hover:bg-gray-50">
+                                <td className="px-4 py-2 text-sm text-gray-700 whitespace-nowrap">
+                                  {new Date(log.createdAt).toLocaleString('fr-FR')}
+                                </td>
+                                <td className="px-4 py-2 text-sm">
+                                  {log.user ? (
+                                    <div>
+                                      <div className="font-medium text-gray-800">
+                                        {`${log.user.firstName || ''} ${log.user.lastName || ''}`.trim() || log.user.email}
+                                      </div>
+                                      <div className="text-[11px] text-gray-500">{log.user.email}</div>
+                                    </div>
+                                  ) : '—'}
+                                </td>
+                                <td className="px-4 py-2 text-sm">
+                                  <ActionBadge action={log.action} />
+                                </td>
+                                <td className="px-4 py-2 text-sm">
+                                  {log.device ? (
+                                    <div>
+                                      <div className="font-medium text-gray-800">{log.device.name || log.device.type || '—'}</div>
+                                      <div className="text-[11px] text-gray-500">
+                                        <DeviceTypeBadge type={log.device.type} />
+                                        {log.device.ip && <span className="ml-2 font-mono">{log.device.ip}</span>}
+                                      </div>
+                                    </div>
+                                  ) : '—'}
+                                </td>
+                                <td className="px-4 py-2 text-sm font-mono text-gray-700">{log.ipAddress || '—'}</td>
+                                <td className="px-4 py-2">
+                                  {log.status === 'SUCCESS' ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Succès</span>
+                                  ) : log.status === 'FAILED' ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Échec</span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">{log.status}</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2 text-xs text-gray-600 max-w-xs">
+                                  {log.reason || '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Pagination */}
+                      {loginHistoryTotalPages > 1 && (
+                        <div className="mt-4 flex items-center justify-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setLoginHistoryPage((p) => Math.max(1, p - 1))}
+                            disabled={loginHistoryPage === 1}
+                            className="px-3 py-1 text-sm border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50"
+                          >
+                            Précédent
+                          </button>
+                          <span className="text-sm text-gray-600">
+                            Page {loginHistoryPage} / {loginHistoryTotalPages}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setLoginHistoryPage((p) => Math.min(loginHistoryTotalPages, p + 1))}
+                            disabled={loginHistoryPage === loginHistoryTotalPages}
+                            className="px-3 py-1 text-sm border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50"
+                          >
+                            Suivant
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
             </div>

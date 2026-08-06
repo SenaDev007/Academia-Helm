@@ -19,7 +19,7 @@
  *   - Fond : #ffffff (blanc, style GitHub)
  *   - Texte : #1e293b / #64748b (gris)
  *
- * Logo : /images/logo-Academia Hub.png (couleurs originales, pas noir/blanc)
+ * Logo : /images/logo-Academia Hub.webp (couleurs originales, pas noir/blanc)
  * ============================================================================
  */
 

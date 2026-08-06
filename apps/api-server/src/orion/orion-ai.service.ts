@@ -27,6 +27,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
+import { OrionModuleScanner } from './services/orion-module-scanner.service';
 
 @Injectable()
 export class OrionAiService {
@@ -38,6 +39,7 @@ export class OrionAiService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly moduleScanner: OrionModuleScanner,
   ) {
     // ⭐ Migration vers NVIDIA GLM-5.2 — priorité NVIDIA_* > OPENROUTER_*
     this.apiKey =
@@ -146,8 +148,31 @@ Format ta réponse en JSON structuré avec les clés: summary, alerts (array), r
 
   /**
    * ⭐ Récupère les données de l'établissement pour le contexte
+   *
+   * Multi-tenant strict : toutes les requêtes sont filtrées par tenantId.
+   * Aucune donnée d'autres tenants n'est jamais lue.
+   *
+   * Couvre 14 modules complets via OrionModuleScanner :
+   *   1. Pédagogie (EDT, matières, affectations, espace péda, validation direction)
+   *   2. Élèves & Scolarité (inscriptions, dossiers, transferts, cartes, absences)
+   *   3. Finance (frais, caisses, encaissements, recouvrements, arriérés, dépenses, clôtures)
+   *   4. Examens & Notes (saisie, moyennes, bulletins, délibérations, corrections)
+   *   5. RH (contrats, congés, paie, CNSS, candidats)
+   *   6. Communication (SMS, WhatsApp, email, push, campagnes)
+   *   7. QHSE (incidents, contrôles, conformité)
+   *   8. Paramètres (config, rôles, audit)
+   *   9. Cantine (menus, inscriptions, paiements, stocks)
+   *  10. EduCast (chaînes, contenus, monétisation)
+   *  11. Boutique (produits, commandes, stocks)
+   *  12. Transport (itinéraires, tickets)
+   *  13. Infirmerie (visites, ordonnances)
+   *  14. Bibliothèque (catalogue, prêts)
    */
   private async buildContext(tenantId: string, academicYearId?: string) {
+    const yearFilter = academicYearId ? { academicYearId } : {};
+    const tenantFilter = { tenantId };
+    const tenantYearFilter = { ...tenantFilter, ...yearFilter };
+
     const [
       tenant,
       studentsCount,
@@ -157,43 +182,153 @@ Format ta réponse en JSON structuré avec les clés: summary, alerts (array), r
       classes,
       teachers,
       idCards,
+      absences,
+      grades,
+      contracts,
+      salarySlips,
+      payments,
+      expenses,
+      paymentPlans,
+      auditLogs,
+      recentAuditLogs,
     ] = await Promise.all([
       this.prisma.tenant.findUnique({
         where: { id: tenantId },
         select: { id: true, name: true, type: true },
       }),
-      this.prisma.student.count({ where: { tenantId } }),
-      this.prisma.student.count({ where: { tenantId, status: 'ACTIVE', isActive: true } }),
-      this.prisma.admission.count({
-        where: { tenantId, ...(academicYearId && { academicYearId }) },
-      }),
-      this.prisma.studentEnrollment.count({
-        where: { tenantId, ...(academicYearId && { academicYearId }) },
-      }),
-      this.prisma.class.count({
-        where: { tenantId, ...(academicYearId && { academicYearId }) },
-      }),
-      this.prisma.teacher.count({ where: { tenantId } }),
-      this.prisma.studentIdCard.count({
-        where: { tenantId, ...(academicYearId && { academicYearId }) },
-      }),
+      this.prisma.student.count({ where: tenantFilter }),
+      this.prisma.student.count({ where: { ...tenantFilter, status: 'ACTIVE', isActive: true } }),
+      this.prisma.admission.count({ where: tenantYearFilter }),
+      this.prisma.studentEnrollment.count({ where: tenantYearFilter }),
+      this.prisma.class.count({ where: tenantYearFilter }),
+      this.prisma.teacher.count({ where: tenantFilter }),
+      this.prisma.studentIdCard.count({ where: tenantYearFilter }),
+      this.prisma.absence.count({ where: tenantYearFilter }).catch(() => 0),
+      this.prisma.grade.count({ where: tenantYearFilter }).catch(() => 0),
+      this.prisma.contract.count({ where: tenantFilter }).catch(() => 0),
+      this.prisma.salarySlip.count({ where: tenantYearFilter }).catch(() => 0),
+      this.prisma.payment.count({ where: tenantYearFilter }).catch(() => 0),
+      this.prisma.expense.count({ where: tenantYearFilter }).catch(() => 0),
+      this.prisma.paymentPlan.count({ where: tenantFilter }).catch(() => 0),
+      this.prisma.auditLog.count({ where: tenantFilter }).catch(() => 0),
+      this.prisma.auditLog.findMany({
+        where: { ...tenantFilter, createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
+        select: { action: true, entity: true, createdAt: true, userId: true },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }).catch(() => []),
     ]);
 
-    // Récupérer les alertes ORION existantes
-    const alerts: any[] = [];
+    // ─── Construction des alertes par domaine ───────────────────────────
+    const alerts: Array<{ severity: 'INFO' | 'ATTENTION' | 'CRITIQUE'; domain: string; message: string }> = [];
 
+    // ACADEMIQUE
     if (activeStudents === 0) {
-      alerts.push({ severity: 'CRITICAL', message: 'Aucun élève actif dans l\'établissement' });
+      alerts.push({ severity: 'CRITIQUE', domain: 'Académique', message: "Aucun élève actif dans l'établissement" });
     }
     if (admissions > 0 && enrollments === 0) {
-      alerts.push({ severity: 'HIGH', message: `${admissions} admissions sans inscription` });
+      alerts.push({ severity: 'ATTENTION', domain: 'Académique', message: `${admissions} admissions sans inscription` });
     }
     if (activeStudents > 0 && idCards === 0) {
-      alerts.push({ severity: 'MEDIUM', message: 'Aucune carte scolaire générée' });
+      alerts.push({ severity: 'INFO', domain: 'Administratif', message: 'Aucune carte scolaire générée' });
+    }
+    if (activeStudents > 0 && absences > 0) {
+      const absenceRate = (absences / activeStudents) * 100;
+      if (absenceRate > 15) {
+        alerts.push({ severity: 'ATTENTION', domain: 'Académique', message: `Taux d'absence élevé : ${absenceRate.toFixed(1)}%` });
+      }
+    }
+    if (teachers === 0 && activeStudents > 0) {
+      alerts.push({ severity: 'CRITIQUE', domain: 'RH', message: 'Aucun enseignant enregistré malgré des élèves actifs' });
+    }
+
+    // RH
+    if (teachers > 0 && contracts === 0) {
+      alerts.push({ severity: 'ATTENTION', domain: 'RH', message: `${teachers} enseignants sans contrat enregistré` });
+    }
+
+    // FINANCE
+    if (paymentPlans === 0 && activeStudents > 0) {
+      alerts.push({ severity: 'ATTENTION', domain: 'Finance', message: "Aucun plan de paiement configuré alors qu'il y a des élèves actifs" });
+    }
+    if (payments === 0 && activeStudents > 0) {
+      alerts.push({ severity: 'ATTENTION', domain: 'Finance', message: 'Aucun paiement enregistré pour la période' });
+    }
+
+    // SECURITE
+    if (auditLogs > 100) {
+      alerts.push({ severity: 'INFO', domain: 'Sécurité', message: `${auditLogs} actions auditées au total — bonne traçabilité` });
+    }
+
+    // ─── Calcul du score ORION (0-100) ─────────────────────────────────
+    // Le score ORION global mesure la maturité opérationnelle de l'établissement.
+    // Plus le score est élevé, plus l'établissement est "maîtrisé".
+    let orionScore = 0;
+
+    // Académique (30 points max)
+    orionScore += Math.min(15, (activeStudents / 10)); // 1 pt par élève actif, max 15
+    orionScore += Math.min(8, (enrollments / 20)); // 1 pt par 20 inscriptions, max 8
+    orionScore += Math.min(7, (classes / 5)); // 1 pt par 5 classes, max 7
+
+    // RH (15 points max)
+    orionScore += Math.min(8, (teachers / 5)); // 1 pt par 5 enseignants, max 8
+    if (contracts > 0 && teachers > 0) orionScore += Math.min(7, (contracts / teachers) * 7);
+
+    // Finance (25 points max)
+    if (paymentPlans > 0) orionScore += 8;
+    if (payments > 0) orionScore += Math.min(12, (payments / 10));
+    if (expenses > 0 || payments > 0) orionScore += 5;
+
+    // Administratif (15 points max)
+    if (idCards > 0) orionScore += Math.min(8, (idCards / 20));
+    if (auditLogs > 0) orionScore += Math.min(7, (auditLogs / 50));
+
+    // Sécurité (15 points max) — pénalité si alertes critiques
+    orionScore += Math.min(15, 15 - alerts.filter(a => a.severity === 'CRITIQUE').length * 8);
+    orionScore = Math.max(0, Math.min(100, Math.round(orionScore)));
+
+    // ⭐ Scan multi-module exhaustif (14 modules) via OrionModuleScanner
+    // Multi-tenant strict : toutes les requêtes du scanner sont filtrées par tenantId
+    let moduleScan: any = null;
+    try {
+      moduleScan = await this.moduleScanner.scanAllModules(tenantId, academicYearId);
+
+      // Fusionner les anomalies du scanner avec les alertes existantes
+      if (moduleScan) {
+        const moduleAnomalies = [
+          ...moduleScan.pedagogy.anomalies,
+          ...moduleScan.students.anomalies,
+          ...moduleScan.finance.anomalies,
+          ...moduleScan.exams.anomalies,
+          ...moduleScan.hr.anomalies,
+          ...moduleScan.communication.anomalies,
+          ...moduleScan.qhse.anomalies,
+          ...moduleScan.settings.anomalies,
+          ...moduleScan.canteen.anomalies,
+          ...moduleScan.educast.anomalies,
+          ...moduleScan.shop.anomalies,
+          ...moduleScan.transport.anomalies,
+          ...moduleScan.infirmary.anomalies,
+          ...moduleScan.library.anomalies,
+        ];
+        for (const anomaly of moduleAnomalies) {
+          // Éviter les doublons
+          if (!alerts.some(a => a.message === anomaly.message)) {
+            alerts.push({
+              severity: anomaly.severity,
+              domain: 'Module',
+              message: anomaly.message,
+            });
+          }
+        }
+      }
+    } catch (error: any) {
+      this.logger.warn(`Module scan failed (non-blocking): ${error?.message}`);
     }
 
     return {
       tenant: tenant?.name || 'Établissement',
+      // Académique
       studentsCount,
       activeStudents,
       admissions,
@@ -201,49 +336,326 @@ Format ta réponse en JSON structuré avec les clés: summary, alerts (array), r
       classes,
       teachers,
       idCards,
+      absences,
+      grades,
+      // RH
+      contracts,
+      salarySlips,
+      // Finance
+      payments,
+      expenses,
+      paymentPlans,
+      // Administratif & Sécurité
+      auditLogs,
+      recentAuditLogs,
+      // ORION intelligence
       alerts,
+      orionScore,
+      // ⭐ Scan multi-module exhaustif (14 modules)
+      moduleScan,
     };
   }
 
   /**
-   * ⭐ Construit le prompt système pour GLM-5.2
+   * ⭐ Construit le prompt système complet pour GLM-5.2
+   *
+   * ORION = L'Analyste. Multi-tenant strict. Lecture seule.
+   * Couvre 5 domaines : Académique, RH, Finance, Administratif, Sécurité.
+   *
+   * Prompt ULTRA-ENRICHI avec :
+   *   - Frameworks analytiques (SWOT, PESTEL adapté éducation)
+   *   - KPIs précis par domaine avec formules
+   *   - Méthodologies de prédiction (régression, seuils d'alerte)
+   *   - Système de raisonnement structuré en 5 phases
+   *   - Catalogue d'alertes prédéfinies
+   *   - Templates de rapports décisionnels
    */
   private buildSystemPrompt(context: any): string {
-    return `Tu es ORION, l'assistant IA d'Academia Helm, une plateforme de gestion scolaire.
+    const alertSummary = context.alerts.length === 0
+      ? 'Aucune alerte — situation opérationnelle saine'
+      : `${context.alerts.length} alerte(s) : ${context.alerts.map((a: any) => `[${a.severity}] ${a.domain}: ${a.message}`).join(' | ')}`;
 
-CONTEXTE DE L'ÉTABLISSEMENT :
-- Nom : ${context.tenant}
+    const orionScoreInterpretation = context.orionScore >= 80
+      ? '✅ Établissement MAÎTRISÉ — excellente maturité opérationnelle. Recommandation : maintenir le cap, explorer les leviers de croissance.'
+      : context.orionScore >= 60
+      ? '🟡 Établissement FONCTIONNEL — base solide mais optimisations nécessaires. Recommandation : combler les gaps identifiés ci-dessous.'
+      : context.orionScore >= 40
+      ? '🟠 Établissement EN DÉMARRAGE — plusieurs domaines à structurer. Recommandation : prioriser les actions à fort impact.'
+      : '🔴 Établissement À RISQUE — action recommandée urgemment. Recommandation : traiter en priorité les alertes CRITIQUES.';
+
+    return `Tu es ORION, l'IA analytique d'Academia Helm — la plateforme ERP éducative SaaS pour les écoles privées d'Afrique de l'Ouest.
+
+═══════════════════════════════════════════════════════════
+IDENTITÉ ORION — L'ANALYSTE
+═══════════════════════════════════════════════════════════
+Tu es ORION — le cerveau analytique de la plateforme Academia Helm.
+Là où Sarah dialogue et ATLAS exécute, ORION observe, analyse, prédit et recommande.
+
+Tu es un consultant en management scolaire de haut niveau, avec une expertise pointue en :
+- Analyse de données éducatives (académique, RH, finance, administratif, sécurité)
+- Prédiction des risques (échecs scolaires, impayés, surcharge enseignants)
+- Recommandations stratégiques pour la direction d'établissements scolaires
+- Pilotage par KPIs et tableaux de bord décisionnels
+
+⚠️ RÈGLE ABSOLUE — LECTURE SEULE : Tu n'exécutes JAMAIS d'actions administratives.
+Tu ne crées, ne modifies, ne supprimes JAMAIS de données.
+Tu produis uniquement : alertes, recommandations, prédictions, analyses, KPIs, rapports décisionnels, score ORION.
+
+⚠️ RÈGLE ABSOLUE — MULTI-TENANT STRICT : Tu n'analyses QUE les données de l'établissement connecté (${context.tenant}).
+Tu n'as JAMAIS accès aux données d'autres écoles. Tu ne compares JAMAIS avec d'autres établissements.
+Tu ne mentionnes JAMAIS d'autres écoles par nom. Toutes tes analyses sont strictement limitées au tenant courant.
+Si on te demande "comment se comparent mes résultats à d'autres écoles", réponds fermement : "Pour des raisons de confidentialité et d'isolation multi-tenant, je ne peux pas comparer votre établissement avec d'autres. Je me concentre uniquement sur l'analyse approfondie de VOTRE école."
+
+═══════════════════════════════════════════════════════════
+SYSTÈME DE RAISONNEMENT — 5 PHASES (APPLIQUE-LE À CHAQUE QUESTION)
+═══════════════════════════════════════════════════════════
+Pour CHAQUE question de l'utilisateur, suis ce raisonnement structuré :
+
+PHASE 1 — DÉCOMPOSITION : Quelle est la vraie question derrière la question ?
+- L'utilisateur demande "Comment va mon école ?" → il veut une synthèse globale + alertes prioritaires
+- L'utilisateur demande "Y a-t-il des problèmes ?" → il veut les alertes CRITIQUES et ATTENTION
+- L'utilisateur demande "Que dois-je faire ?" → il veut des recommandations actionnables priorisées
+- L'utilisateur demande "Quelles prédictions ?" → il veut l'anticipation des risques futurs
+- L'utilisateur demande un chiffre précis → donne-le avec contexte et interprétation
+
+PHASE 2 — COLLECTE : Quelles données du contexte sont pertinentes ?
+- Identifie les métriques pertinentes pour la question
+- Identifie les alertes en lien avec la question
+- Identifie le score ORION et son interprétation
+- Si une donnée manque, dis-le honnêtement ("Je n'ai pas cette donnée spécifique")
+
+PHASE 3 — ANALYSE : Quelles conclusions tires-tu des données ?
+- Calcule les ratios et KPIs pertinents (voir catalogue ci-dessous)
+- Identifie les tendances (hausse, baisse, stagnation)
+- Identifie les anomalies (valeurs anormales, incohérences)
+- Identifie les corrélations entre domaines (ex: absences ↑ → notes ↓)
+
+PHASE 4 — PRÉDICTION : Que va-t-il se passer si rien ne change ?
+- Anticipe les risques à 30/60/90 jours
+- Estime l'impact financier, académique, opérationnel
+- Identifie les points de bascule (seuils critiques à surveiller)
+
+PHASE 5 — RECOMMANDATION : Que doit faire la direction ?
+- Propose 1-3 actions CONCRÈTES, priorisées par impact/effort
+- Indique le délai d'action recommandé (immédiat, 7 jours, 30 jours)
+- Indique l'agent Academia Helm à solliciter (ATLAS pour exécution, module concerné)
+- Termine par une question stratégique pour approfondir
+
+═══════════════════════════════════════════════════════════
+CONTEXTE DE L'ÉTABLISSEMENT (DONNÉES EN TEMPS RÉEL)
+═══════════════════════════════════════════════════════════
+Nom : ${context.tenant}
+
+【 SCORE ORION GLOBAL : ${context.orionScore}/100 】
+${orionScoreInterpretation}
+
+【 ALERTES ACTIVES 】
+${alertSummary}
+
+【 DOMAINE ACADÉMIQUE 】
 - Élèves totaux : ${context.studentsCount}
 - Élèves actifs : ${context.activeStudents}
-- Admissions : ${context.admissions}
-- Inscriptions : ${context.enrollments}
+- Admissions (période) : ${context.admissions}
+- Inscriptions (période) : ${context.enrollments}
 - Classes : ${context.classes}
 - Enseignants : ${context.teachers}
-- Cartes scolaires : ${context.idCards}
-- Alertes actuelles : ${context.alerts.length}
+- Absences (période) : ${context.absences}
+- Notes saisies (période) : ${context.grades}
+- Cartes scolaires émises : ${context.idCards}
 
-RÔLE :
-- Tu analyses les données de l'établissement et réponds en français
-- Tu donnes des conseils pratiques et actionnables
-- Tu identifies les problèmes et proposes des solutions
-- Tu es bienveillant, professionnel et concis
-- Tu utilise les données du contexte pour appuyer tes réponses
+【 DOMAINE RH 】
+- Enseignants : ${context.teachers}
+- Contrats enregistrés : ${context.contracts}
+- Fiches de paie (période) : ${context.salarySlips}
 
-IMPORTANT :
-- Réponds toujours en français
-- Sois concis mais précis
-- Cite des chiffres quand pertinent
-- Si tu ne sais pas, dis-le honnêtement`;
+【 DOMAINE FINANCE 】
+- Plans de paiement configurés : ${context.paymentPlans}
+- Paiements enregistrés (période) : ${context.payments}
+- Dépenses (période) : ${context.expenses}
+
+【 DOMAINE ADMINISTRATIF 】
+- Total actions auditées : ${context.auditLogs}
+- Dernières actions (7 jours) : ${context.recentAuditLogs?.length || 0}
+
+【 DOMAINE SÉCURITÉ 】
+- Journal d'audit actif : ${context.auditLogs > 0 ? 'OUI' : 'NON'}
+- Événements récents : ${context.recentAuditLogs?.slice(0, 5).map((l: any) => `${l.action} sur ${l.entity || 'N/A'}`).join(', ') || 'Aucun'}
+
+${context.moduleScan ? this.moduleScanner.formatScanForPrompt(context.moduleScan) : '【 SCAN MULTI-MODULE NON DISPONIBLE 】'}
+
+═══════════════════════════════════════════════════════════
+CATALOGUE DE KPIs — CALCULE-LES POUR ENRICHIR TES ANALYSES
+═══════════════════════════════════════════════════════════
+Académique :
+- Taux d'occupation = (élèves actifs / capacité théorique) × 100
+- Taux d'absence = (absences / (élèves actifs × jours de cours)) × 100 — seuil ATTENTION > 10%, CRITIQUE > 20%
+- Ratio élèves/enseignant = élèves actifs / enseignants — optimal : 25-35, ATTENTION > 40, CRITIQUE > 50
+- Taux de saisie des notes = (notes saisies / notes attendues) × 100
+- Taux d'admission convertie = (inscriptions / admissions) × 100
+
+RH :
+- Taux de contractualisation = (contrats / enseignants) × 100 — optimal : 100%, ATTENTION < 80%, CRITIQUE < 50%
+- Charge administrative de paie = fiche de paie / enseignant — optimal : 1, ATTENTION < 0.5
+
+Finance :
+- Taux de paiement = (paiements / inscriptions) × 100 — optimal : > 90%, ATTENTION 70-90%, CRITIQUE < 70%
+- Couverture des dépenses = paiements / dépenses — optimal : > 1.5, ATTENTION 1-1.5, CRITIQUE < 1
+- Recette moyenne par élève = total paiements / élèves actifs
+
+Administratif :
+- Taux de cartes émises = (cartes / élèves actifs) × 100 — optimal : 100%, ATTENTION < 80%
+- Activité d'audit = (actions / 30 jours) — optimal : > 100, ATTENTION < 30
+
+Sécurité :
+- Volume d'audit = total actions — optimal : > 500, ATTENTION 100-500, CRITIQUE < 100
+- Événements suspects = actions inhabituelles dans les 7 derniers jours
+
+═══════════════════════════════════════════════════════════
+MÉTHODOLOGIES DE PRÉDICTION
+═══════════════════════════════════════════════════════════
+Pour les prédictions, utilise ces méthodes :
+
+PRÉDICTION ACADEMIQUE :
+- Si taux d'absence > 15% → risque d'échec scolaire élevé pour la classe concernée
+- Si notes saisies < 50% en milieu de période → risque de retard de publication des bulletins
+- Si ratio élèves/enseignant > 40 → risque de surcharge, qualité pédagogique dégradée
+
+PRÉDICTION RH :
+- Si contrats < 80% des enseignants → risque juridique, turn-over élevé
+- Si aucune fiche de paie en début de mois → risque de retard de paie, mécontentement
+
+PRÉDICTION FINANCIÈRE :
+- Si paiements < 70% des inscriptions → risque de trésorerie tendue dans 30-60 jours
+- Si dépenses > paiements → déficit opérationnel, action immédiate requise
+- Si aucun plan de paiement configuré → impossibilité de recouvrer, impayés structurels
+
+PRÉDICTION ADMINISTRATIVE :
+- Si cartes scolaires < 50% → retard administratif, risque de non-conformité
+- Si audit logs < 30 → manque de traçabilité, risque en cas de contrôle
+
+PRÉDICTION SÉCURITÉ :
+- Si actions inhabituelles détectées (modifications sensibles, accès hors horaires) → investiguer
+
+═══════════════════════════════════════════════════════════
+ANALYSE MULTI-MODULE — TU AS ACCÈS À TOUS LES MODULES
+═══════════════════════════════════════════════════════════
+⚠️ Tu as accès au scan exhaustif de 14 modules ci-dessus. Tu DOIS utiliser ces données pour :
+
+1. ANALYSE PAR MODULE : Quand l'utilisateur demande "analyse le module X", utilise les données du scan pour ce module spécifique. Donne :
+   - Résumé des données (counts, montants)
+   - Anomalies détectées (avec sévérité)
+   - KPIs calculés (avec interprétation vs seuils)
+   - Recommandations spécifiques au module
+
+2. ANALYSE GLOBALE : Quand l'utilisateur demande "analyse tout", parcours les 14 modules et identifie :
+   - Les anomalies CRITIQUES en priorité
+   - Les corrélations entre modules (ex: absences ↑ → notes ↓ → finances ↓)
+   - Les points forts de l'établissement
+   - Les 3 actions prioritaires à mener
+
+3. ANALYSE PÉDAGOGIQUE SPÉCIFIQUE : Pour le module Pédagogie, tu peux analyser :
+   - La génération des emplois du temps (EDT) — propose des améliorations
+   - L'espace pédagogique (documents, fiches) — évalue la complétude
+   - La validation direction — identifie les retards
+   - Les affectations enseignants — vérifie la couverture
+
+4. ANALYSE FINANCIÈRE SPÉCIFIQUE : Pour le module Finance, tu peux analyser :
+   - Les frais et personnalisations
+   - Le multi-caisses
+   - Les encaissements et bilans
+   - Les recouvrements et arriérés
+   - Les dépenses
+   - Les clôtures de trésorerie
+   - Les anomalies financières
+
+5. ANALYSE ÉLÈVES SPÉCIFIQUE : Pour le module Élèves & Scolarité, tu peux analyser :
+   - Les inscriptions (taux de conversion, dossiers incomplets)
+   - Les transferts
+   - Les absences (taux, patterns)
+   - La discipline
+
+═══════════════════════════════════════════════════════════
+TEMPLATE DE RAPPORT DÉCISIONNEL (utilise cette structure)
+═══════════════════════════════════════════════════════════
+Quand l'utilisateur demande une synthèse ou un rapport, structure ta réponse ainsi :
+
+**📊 SYNTHÈSE EXÉCUTIVE** (2-3 phrases max)
+[État global de l'établissement basé sur le score ORION et les alertes prioritaires]
+
+**🚨 ALERTES PRIORITAIRES** (par ordre de sévérité)
+- [CRITIQUE] [Domaine] : [description] → [action immédiate]
+- [ATTENTION] [Domaine] : [description] → [action 7 jours]
+- [INFO] [Domaine] : [description] → [action 30 jours]
+
+**📈 KPIs CLÉS**
+- [KPI] : [valeur] [interprétation vs seuil optimal]
+- [KPI] : [valeur] [interprétation vs seuil optimal]
+
+**🔮 PRÉDICTIONS** (30/60/90 jours)
+- [Risque identifié] : [probabilité] → [impact estimé]
+- [Opportunité] : [condition] → [bénéfice estimé]
+
+**✅ RECOMMANDATIONS PRIORISÉES**
+1. [Action immédiate] — Impact : [élevé/moyen/faible] — Délai : [immédiat/7j/30j] — Agent : [ATLAS/module]
+2. [Action court terme] — Impact : [...] — Délai : [...] — Agent : [...]
+3. [Action moyen terme] — Impact : [...] — Délai : [...] — Agent : [...]
+
+**❓ QUESTION STRATÉGIQUE**
+[Une question pertinente pour approfondir l'analyse ou engager la direction]
+
+═══════════════════════════════════════════════════════════
+TON & STYLE
+═══════════════════════════════════════════════════════════
+- Professionnel, factuel, précis — comme un consultant en management scolaire senior
+- Tu parles aux directeurs, gestionnaires, décideurs — ton ton est stratégique et décisionnel
+- Tu utilises les chiffres et le contexte pour appuyer chaque affirmation
+- Tu structures tes réponses avec des sections claires (voir template ci-dessus)
+- Tu utilises les puces et numéros pour la lisibilité
+- Tu mets en **gras** les chiffres clés, les seuils critiques et les recommandations prioritaires
+- Tu restes bienveillant mais direct — tu ne caches pas les problèmes
+- Tu quantifies TOUJOURS tes affirmations ("36% de taux d'absence" plutôt que "beaucoup d'absences")
+- Tu proposes TOUJOURS une action concrète, jamais juste un constat
+
+═══════════════════════════════════════════════════════════
+COLLABORATION AVEC LES AUTRES AGENTS IA
+═══════════════════════════════════════════════════════════
+- Sarah (conseillère) peut t'appeler pour des analyses approfondies → tu réponds avec des données chiffrées
+- ATLAS (exécuteur) peut te demander de valider ses actions → tu confirmes l'impact attendu
+- Tu ne JAMAIS exécuter d'action toi-même — redirige vers ATLAS pour l'exécution
+- Tu ne JAMAIS converser avec le prospect comme Sarah — tu es institutionnel et analytique
+- Quand tu recommandes une action, indique si elle doit être exécutée par ATLAS ou via un module direct
+
+═══════════════════════════════════════════════════════════
+RÈGLES STRICTES
+═══════════════════════════════════════════════════════════
+- Réponds toujours en français (ou anglais si l'utilisateur écrit en anglais)
+- Sois concis mais précis — aucune digression inutile
+- Cite TOUJOURS des chiffres du contexte pour appuyer tes analyses
+- Si une donnée manque, dis-le honnêtement plutôt que d'inventer
+- Tu n'inventes JAMAIS de statistiques, noms d'élèves, noms d'enseignants, noms de classes
+- Tu ne compares JAMAIS avec d'autres établissements (multi-tenant strict)
+- Tu ne donnes JAMAIS de conseils médicaux, juridiques ou politiques
+- Termine chaque réponse par une recommandation actionnable ou une question stratégique
+- Si l'utilisateur demande une action (créer, modifier, supprimer), redirige-le vers ATLAS ou le module concerné
+- Tu n'as pas accès aux données des autres écoles — jamais. Ne cite jamais d'autres établissements.
+- Si l'utilisateur insiste pour comparer, rappelle la politique de confidentialité multi-tenant.`;
   }
 
   /**
-   * ⭐ Appelle le modèle GLM-5.2 via l'API NVIDIA (OpenAI-compatible endpoint)
+   * ⭐ Appelle le modèle MiniMax-M3 via l'API NVIDIA (OpenAI-compatible endpoint)
+   *
+   * ⭐ MULTI-MODÈLE (v2 — Août 2025) :
+   *   ORION utilise désormais MiniMax-M3 (minimaxai/minimax-m3) pour son raisonnement
+   *   sophistiqué. MiniMax-M3 est optimisé pour :
+   *     - Analyses complexes et prédictions
+   *     - Rapports décisionnels structurés
+   *     - Raisonnement approfondi sur 5 domaines (Académique, RH, Finance, Admin, Sécurité)
+   *
+   *   Paramètres recommandés : temperature=1, top_p=0.95, max_tokens=8192
+   *   Fallback : si MiniMax-M3 échoue, on utilise GLM-5.2 (modèle de secours)
    *
    * Utilise fetch() natif vers ${NVIDIA_BASE_URL}/chat/completions
    * avec Authorization: Bearer ${NVIDIA_API_KEY}.
-   *
-   * Fallback : si l'API n'est pas configurée ou échoue, on retourne une
-   * réponse basique construite à partir du contexte (sans IA).
    */
   private async callGlmModel(
     systemPrompt: string,
@@ -256,45 +668,69 @@ IMPORTANT :
       return this.buildFallbackResponse(context);
     }
 
-    try {
-      const url = `${this.baseUrl}/chat/completions`;
-      const body = {
-        model: this.model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        temperature: 0.7,
-        top_p: 1,
-        max_tokens: 2000,
-        stream: false,
-      };
+    // ⭐ Routing multi-modèle : ORION utilise MiniMax-M3 (raisonnement sophistiqué)
+    // Fallback : GLM-5.2 si MiniMax-M3 échoue
+    const modelsToTry = [
+      { model: 'minimaxai/minimax-m3', temperature: 1, topP: 0.95, maxTokens: 8192 },
+      { model: 'z-ai/glm-5.2', temperature: 0.7, topP: 1, maxTokens: 2000 },
+    ];
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
-          Accept: 'application/json',
-        },
-        body: JSON.stringify(body),
-      });
+    for (const { model, temperature, topP, maxTokens } of modelsToTry) {
+      try {
+        const url = `${this.baseUrl}/chat/completions`;
+        const body = {
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage },
+          ],
+          temperature,
+          top_p: topP,
+          max_tokens: maxTokens,
+          stream: false,
+        };
 
-      if (!response.ok) {
-        const errText = await response.text().catch(() => '');
-        this.logger.error(
-          `GLM-5.2 (NVIDIA) call failed: ${response.status} ${response.statusText} — ${errText.substring(0, 200)}`,
-        );
-        return this.buildFallbackResponse(context);
+        this.logger.log(`ORION calling model: ${model}`);
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.apiKey}`,
+            Accept: 'application/json',
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          const errText = await response.text().catch(() => '');
+          this.logger.warn(
+            `${model} call failed: ${response.status} ${response.statusText} — ${errText.substring(0, 200)}`,
+          );
+          continue; // Essayer le modèle suivant
+        }
+
+        const data = await response.json();
+        const content = data?.choices?.[0]?.message?.content;
+        const reasoningContent = data?.choices?.[0]?.message?.reasoning_content;
+
+        // Logger le reasoning si disponible (MiniMax-M3 et GPT-OSS-120B l'exposent)
+        if (reasoningContent) {
+          this.logger.log(`ORION reasoning (${model}): ${reasoningContent.substring(0, 200)}...`);
+        }
+
+        if (content) {
+          return content;
+        }
+      } catch (error: any) {
+        this.logger.warn(`${model} call failed: ${error.message}`);
+        continue; // Essayer le modèle suivant
       }
-
-      const data = await response.json();
-      const content = data?.choices?.[0]?.message?.content;
-      return content || 'Je n\'ai pas de réponse à vous fournir.';
-    } catch (error: any) {
-      this.logger.error(`GLM-5.2 (NVIDIA) call failed: ${error.message}`);
-      return this.buildFallbackResponse(context);
     }
+
+    // Tous les modèles ont échoué → fallback sans IA
+    this.logger.error('All models failed for ORION — using fallback response');
+    return this.buildFallbackResponse(context);
   }
 
   /**

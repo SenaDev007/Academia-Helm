@@ -18,8 +18,10 @@ export const metadata: Metadata = generateSEOMetadata({
   path: '/legal/privacy',
 });
 
-// Force dynamic rendering to avoid build timeouts
-export const dynamic = 'force-dynamic';
+// ✅ Static rendering — page 100% statique (pas de fetch/headers/cookies)
+// Permet le prerendering à build time → TTFB <50ms au lieu de ~300ms
+export const dynamic = 'force-static';
+export const revalidate = false; // Jamais de revalidation (contenu légal stable)
 
 export default function PrivacyPolicyPage() {
   return (

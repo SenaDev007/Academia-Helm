@@ -66,6 +66,9 @@ const nextConfig = {
       { protocol: 'https', hostname: 'api.academiahelm.com' },
       { protocol: 'https', hostname: 'www.academiahelm.com' },
       { protocol: 'https', hostname: 'academiahelm.com' },
+      // ✅ Cloudflare R2 — logos + documents migrés depuis base64 Neon
+      // Permet à next/image d'optimiser les URLs https://downloads.academiahelm.com/logos/...
+      { protocol: 'https', hostname: 'downloads.academiahelm.com' },
       // Vercel blob storage
       { protocol: 'https', hostname: '**.public.blob.vercel-storage.com' },
       // Développement local
@@ -76,33 +79,30 @@ const nextConfig = {
 
   // ✅ Compression et optimisation
   compress: true,
-  
+
   // ✅ Optimisation de performance
   poweredByHeader: false, // Masquer X-Powered-By
   generateEtags: true, // ETags pour le cache
-  
+  productionBrowserSourceMaps: false, // Ne pas exposer les source maps en production
+
   // ✅ Optimisation des bundles
   experimental: {
+    // ✅ Reduce initial JS bundle by tree-shaking
     optimizePackageImports: [
       // ✅ Tree-shaking optimisé pour réduire le bundle et la mémoire de build
       // Ces packages sont lourds et doivent être importés de manière sélective
       'lucide-react',
-      '@base-ui/react',
       'date-fns',
       'framer-motion',
       'recharts',
-      '@aws-sdk/client-s3',
-      '@aws-sdk/s3-request-presigner',
       '@tanstack/react-query',
-      '@clerk/nextjs',
-      'lodash',
-      'cloudinary',
-      'socket.io-client',
       'zod',
-      '@sentry/nextjs',
-      '@react-pdf/renderer',
-      'next-mdx-remote',
     ],
+    // ⚠️ TEMPORAIREMENT DÉSACTIVÉ — optimizeCss (critters) peut causer des erreurs
+    // Turbopack "Missing content when trying to generate the content hash for StaticOutputAsset"
+    // sur Next.js 16.2. À réactiver après validation du build.
+    // Requires `critters` package (déjà dans devDependencies)
+    // optimizeCss: true,
   },
 
   // ✅ Paquets natifs qui ne doivent pas être bundlés côté serveur
@@ -177,6 +177,16 @@ const nextConfig = {
           { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, proxy-revalidate' },
           { key: 'Pragma', value: 'no-cache' },
           { key: 'Expires', value: '0' },
+        ],
+      },
+      // ✅ ANTI-CACHE pour les routes API (évite que le browser ne cache les réponses BFF)
+      // Permet aussi d'exclure /api/* du middleware (les headers sont déjà set ici)
+      {
+        source: '/api/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, proxy-revalidate' },
+          { key: 'Pragma', value: 'no-cache' },
+          { key: 'X-Accel-Buffering', value: 'no' },
         ],
       },
       // Headers de sécurité globaux

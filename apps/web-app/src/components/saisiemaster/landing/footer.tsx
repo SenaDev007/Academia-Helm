@@ -52,7 +52,7 @@ export function Footer() {
           <p className="flex items-center">
             Copyright 2026 SaisieMaster — YEHI OR Tech
             <img
-              src="/images/logo YEHI OR Tech 4.png"
+              src="/images/logo YEHI OR Tech 4.webp"
               alt="YEHI OR Tech"
               className="h-10 inline-block ml-2"
             />

@@ -50,7 +50,7 @@ export default function ExamsDashboardPage() {
     <ModuleContainer
       header={{
         title: 'Tableau de bord',
-        description: 'Vue d'ensemble du module examen : évaluations, notes et bulletins.',
+        description: "Vue d'ensemble du module examen : évaluations, notes et bulletins.",
         icon: 'fileText',
       }}
       subModules={{ modules: scopedSubModules, activeModuleId: 'dashboard' }}

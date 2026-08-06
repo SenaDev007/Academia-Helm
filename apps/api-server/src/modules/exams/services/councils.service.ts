@@ -270,21 +270,21 @@ export class CouncilsService {
         if (!isMaternelle) {
           if (average >= 14) {
             observations.push(`Excellentes performances académiques avec une moyenne de ${average.toFixed(2)}/20.`);
-            recommendations.push('Encourager l'élève à maintenir ce niveau d'excellence.');
+            recommendations.push("Encourager l'élève à maintenir ce niveau d'excellence.");
           } else if (average >= 10) {
             observations.push(`Performances satisfaisantes avec une moyenne de ${average.toFixed(2)}/20.`);
-            recommendations.push('Continuer les efforts pour améliorer les résultats dans les matières faibles.');
+            recommendations.push("Continuer les efforts pour améliorer les résultats dans les matières faibles.");
           } else {
             observations.push(`Performances insuffisantes avec une moyenne de ${average.toFixed(2)}/20, en dessous du seuil de réussite.`);
-            recommendations.push('Mise en place d'un accompagnement renforcé et suivi individualisé.');
+            recommendations.push("Mise en place d'un accompagnement renforcé et suivi individualisé.");
           }
         } else {
           if (average >= 2.5) {
-            observations.push('Évaluation très satisfaisante. L'enfant maîtrise les compétences attendues.');
+            observations.push("Évaluation très satisfaisante. L'enfant maîtrise les compétences attendues.");
           } else if (average >= 1.5) {
-            observations.push('Évaluation satisfaisante. L'enfant progresse bien.');
+            observations.push("Évaluation satisfaisante. L'enfant progresse bien.");
           } else {
-            observations.push('Évaluation peu satisfaisante. L'enfant nécessite un accompagnement particulier.');
+            observations.push("Évaluation peu satisfaisante. L'enfant nécessite un accompagnement particulier.");
           }
         }
       }
@@ -292,7 +292,7 @@ export class CouncilsService {
       // Attendance observations
       if (attendanceRate < 75) {
         observations.push(`Taux d'assiduité préoccupant (${attendanceRate.toFixed(0)}%). L'élève a été absent ${absentTotal} fois.`);
-        recommendations.push('Sensibiliser les parents sur l'importance de la régularité scolaire.');
+        recommendations.push("Sensibiliser les parents sur l'importance de la régularité scolaire.");
       } else if (attendanceRate < 90) {
         observations.push(`Assiduité à améliorer (${attendanceRate.toFixed(0)}%). Quelques absences constatées.`);
       } else {

@@ -42,6 +42,7 @@ class _LoginFormState extends State<LoginForm> {
   bool _obscurePassword = true;
 
   bool get _isTeacherPortal => widget.portalType == PortalType.teacher;
+  bool get _isParentPortal => widget.portalType == PortalType.parent;
 
   @override
   void dispose() {
@@ -198,7 +199,8 @@ class _LoginFormState extends State<LoginForm> {
     );
   }
 
-  /// Builds the identifier field — Email for SCHOOL/PLATFORM, Matricule for TEACHER.
+  /// Builds the identifier field — Email for SCHOOL/PLATFORM,
+  /// Matricule for TEACHER, Phone for PARENT.
   Widget _buildIdentifierField() {
     if (_isTeacherPortal) {
       // Teacher portal: Matricule field (matches web LoginPage's teacher flow)
@@ -222,6 +224,34 @@ class _LoginFormState extends State<LoginForm> {
           labelText: 'Matricule / Identifiant',
           hintText: 'EMP001',
           helperText: 'Votre identifiant professionnel fourni par l\'établissement',
+        ),
+      );
+    }
+
+    if (_isParentPortal) {
+      // Parent portal: Phone field (matches web LoginPage's parent flow —
+      // direct phone+password login, OTP step currently disabled)
+      return TextFormField(
+        controller: _identifierController,
+        keyboardType: TextInputType.phone,
+        textInputAction: TextInputAction.next,
+        autofillHints: const [AutofillHints.telephoneNumber],
+        validator: (value) {
+          if (value == null || value.trim().isEmpty) {
+            return 'Le numéro de téléphone est requis';
+          }
+          // Accept +229 90 00 00 00 or 90000000 — min 8 digits
+          final digits = value.replaceAll(RegExp(r'[^\d]'), '');
+          if (digits.length < 8) {
+            return 'Veuillez entrer un numéro de téléphone valide';
+          }
+          return null;
+        },
+        decoration: const InputDecoration(
+          prefixIcon: Icon(Icons.phone_outlined, size: 20),
+          labelText: 'Numéro de téléphone',
+          hintText: '+229 90 00 00 00',
+          helperText: 'Le numéro associé à votre compte parent',
         ),
       );
     }

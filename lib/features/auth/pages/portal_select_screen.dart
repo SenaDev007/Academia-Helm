@@ -117,7 +117,10 @@ class PortalSelectScreen extends ConsumerWidget {
                         icon: Icons.people_outline,
                         title: 'Parent / Élève',
                         description: 'Suivi et communication',
-                        onTap: () => _selectPortal(ref, PortalType.parent),
+                        onTap: () {
+                          ref.read(selectedPortalProvider.notifier).state = PortalType.parent;
+                          context.push('/school-select');
+                        },
                       ),
                       const SizedBox(height: AHSpacing.xxl),
                       _buildFooter(),

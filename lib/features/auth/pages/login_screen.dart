@@ -142,35 +142,59 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget _buildBrandingHeader() {
     return Column(
       children: [
-        // ── Shield Logo ──────────────────────────────────────────
+        // ── Official Logo with gold halo ──────────────────────
         Container(
-          width: 72,
-          height: 72,
+          width: 80,
+          height: 80,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.2),
-              width: 2,
-            ),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: AHColors.gold.withOpacity(0.3),
+                blurRadius: 20,
+                spreadRadius: 4,
+              ),
+              BoxShadow(
+                color: AHColors.gold.withOpacity(0.1),
+                blurRadius: 40,
+                spreadRadius: 8,
+              ),
+            ],
           ),
-          child: const Icon(
-            Icons.shield,
-            color: AHColors.gold,
-            size: 40,
+          child: ClipOval(
+            child: Image.asset(
+              'assets/images/logo_academia_helm.png',
+              fit: BoxFit.cover,
+            ),
           ),
         ),
         const SizedBox(height: AHSpacing.lg),
 
-        // ── App Name ────────────────────────────────────────────
-        const Text(
-          'Academia Helm',
-          style: TextStyle(
-            fontFamily: 'Inter',
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
-          ),
+        // ── Wordmark: "Academia" + "Helm" ─────────────────────
+        const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Academia',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
+            ),
+            SizedBox(width: 5),
+            Text(
+              'Helm',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: AHColors.gold,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: AHSpacing.xs),
 
@@ -179,7 +203,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           'Connectez-vous à votre espace',
           style: TextStyle(
             fontFamily: 'Inter',
-            fontSize: 14,
+            fontSize: 13,
             color: Colors.white.withOpacity(0.7),
           ),
         ),

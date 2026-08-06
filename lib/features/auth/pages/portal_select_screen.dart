@@ -1,54 +1,100 @@
-import '../../../core/theme/ah_spacing.dart';
-import '../../../core/theme/ah_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/theme/ah_theme.dart';
+import '../../../core/theme/ah_colors.dart';
+import '../../../core/theme/ah_spacing.dart';
 import '../providers/portal_provider.dart';
 
-/// Portal selection screen matching the web app's `/portal` page.
+/// Portal selection screen matching the web app's TenantPortalSelection.
 ///
-/// Shows 4 portal cards (PLATFORM, SCHOOL, TEACHER, PARENT) with icons,
-/// descriptions, and gradient backgrounds. On tap → store selection and
-/// navigate to `/login`.
-///
-/// Responsive layout:
-/// - Phone: 2×2 grid
-/// - Tablet: Horizontal cards
+/// Design (1:1 with web):
+/// - Light background (white)
+/// - Branded header: logo + "Academia Helm" wordmark + subtitle
+/// - 4 portal cards in a vertical list (not 2x2 grid)
+/// - Unified Helm palette (navy/blue/gold), not per-portal colored cards
+/// - Each card: icon container + title + description + chevron arrow
+/// - On tap → store selection and navigate to /login
 class PortalSelectScreen extends ConsumerWidget {
   const PortalSelectScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isTablet = screenWidth >= 600;
-
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [AHColors.navyDark, AHColors.navy],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
+        color: Colors.white,
         child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(AHSpacing.xl),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 720),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _buildBrandingHeader(),
-                    const SizedBox(height: AHSpacing.xxl),
-                    isTablet
-                        ? _buildTabletCards(ref)
-                        : _buildPhoneCards(ref),
-                  ],
-                ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(AHSpacing.xl),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: AHSpacing.xxl),
+                  _buildBrandingHeader(),
+                  const SizedBox(height: AHSpacing.xxl),
+                  _buildBadge(),
+                  const SizedBox(height: AHSpacing.lg),
+                  Text(
+                    'Accéder à votre espace',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: AHColors.navy,
+                    ),
+                  ),
+                  const SizedBox(height: AHSpacing.sm),
+                  Text(
+                    'Sélectionnez le portail correspondant à votre profil pour vous connecter.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 13,
+                      color: AHColors.grey500,
+                    ),
+                  ),
+                  const SizedBox(height: AHSpacing.xxl),
+                  _buildPortalCard(
+                    ref: ref,
+                    portalType: PortalType.platform,
+                    icon: Icons.shield_outlined,
+                    title: 'Plateforme',
+                    description: 'Administration SaaS globale',
+                    onTap: () => _selectPortal(ref, PortalType.platform),
+                  ),
+                  const SizedBox(height: AHSpacing.md),
+                  _buildPortalCard(
+                    ref: ref,
+                    portalType: PortalType.school,
+                    icon: Icons.business_outlined,
+                    title: 'École',
+                    description: 'Direction et administration',
+                    onTap: () => _selectPortal(ref, PortalType.school),
+                  ),
+                  const SizedBox(height: AHSpacing.md),
+                  _buildPortalCard(
+                    ref: ref,
+                    portalType: PortalType.teacher,
+                    icon: Icons.school_outlined,
+                    title: 'Enseignant',
+                    description: 'Pédagogie et suivi',
+                    onTap: () => _selectPortal(ref, PortalType.teacher),
+                  ),
+                  const SizedBox(height: AHSpacing.md),
+                  _buildPortalCard(
+                    ref: ref,
+                    portalType: PortalType.parent,
+                    icon: Icons.people_outline,
+                    title: 'Parent / Élève',
+                    description: 'Suivi et communication',
+                    onTap: () => _selectPortal(ref, PortalType.parent),
+                  ),
+                  const SizedBox(height: AHSpacing.xxl),
+                  _buildFooter(),
+                ],
               ),
             ),
           ),
@@ -62,334 +108,232 @@ class PortalSelectScreen extends ConsumerWidget {
   Widget _buildBrandingHeader() {
     return Column(
       children: [
-        // Shield logo
+        // Logo with gold halo
         Container(
-          width: 72,
-          height: 72,
+          width: 80,
+          height: 80,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.2),
-              width: 2,
-            ),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: AHColors.gold.withOpacity(0.3),
+                blurRadius: 20,
+                spreadRadius: 4,
+              ),
+              BoxShadow(
+                color: AHColors.gold.withOpacity(0.1),
+                blurRadius: 40,
+                spreadRadius: 8,
+              ),
+            ],
           ),
-          child: const Icon(
-            Icons.shield,
-            color: AHColors.gold,
-            size: 40,
+          child: ClipOval(
+            child: Image.asset(
+              'assets/images/logo_academia_helm.png',
+              fit: BoxFit.cover,
+            ),
           ),
         ),
         const SizedBox(height: AHSpacing.lg),
-
-        // App name
-        const Text(
-          'Academia Helm',
-          style: TextStyle(
-            fontFamily: 'Inter',
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
-          ),
+        // Wordmark
+        const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Academia',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: AHColors.navy,
+              ),
+            ),
+            SizedBox(width: 5),
+            Text(
+              'Helm',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: AHColors.gold,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: AHSpacing.xs),
-
-        // Subtitle
         Text(
-          'Choisissez votre espace',
+          'Plateforme de pilotage éducatif',
           style: TextStyle(
             fontFamily: 'Inter',
-            fontSize: 14,
-            color: Colors.white.withOpacity(0.7),
+            fontSize: 12,
+            fontStyle: FontStyle.italic,
+            color: AHColors.grey500,
           ),
         ),
       ],
     );
   }
 
-  // ── Phone Layout: 2×2 Grid ──────────────────────────────────────────
+  // ── Badge ───────────────────────────────────────────────────────────
 
-  Widget _buildPhoneCards(WidgetRef ref) {
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: AHSpacing.md,
-      crossAxisSpacing: AHSpacing.md,
-      childAspectRatio: 0.85,
-      children: [
-        _PortalCard(
-          portalType: PortalType.platform,
-          icon: Icons.cloud,
-          title: PortalType.platform.displayName,
-          description: PortalType.platform.description,
-          gradientColors: const [Color(0xFF0B2F73), Color(0xFF1A3F8B)],
-          onTap: () => _selectPortal(ref, PortalType.platform),
+  Widget _buildBadge() {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        decoration: BoxDecoration(
+          color: AHColors.navy.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: AHColors.navy.withOpacity(0.2), width: 1),
         ),
-        _PortalCard(
-          portalType: PortalType.school,
-          icon: Icons.school,
-          title: PortalType.school.displayName,
-          description: PortalType.school.description,
-          gradientColors: const [Color(0xFF1D4FA5), Color(0xFF2E60C0)],
-          onTap: () => _selectPortal(ref, PortalType.school),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.shield, size: 14, color: AHColors.navy),
+            const SizedBox(width: 6),
+            Text(
+              'PORTAIL OFFICIEL — ACADEMIA HELM',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.2,
+                color: AHColors.navy,
+              ),
+            ),
+          ],
         ),
-        _PortalCard(
-          portalType: PortalType.teacher,
-          icon: Icons.cast_for_education,
-          title: PortalType.teacher.displayName,
-          description: PortalType.teacher.description,
-          gradientColors: const [Color(0xFF0D9488), Color(0xFF14B8A6)],
-          onTap: () => _selectPortal(ref, PortalType.teacher),
-        ),
-        _PortalCard(
-          portalType: PortalType.parent,
-          icon: Icons.family_restroom,
-          title: PortalType.parent.displayName,
-          description: PortalType.parent.description,
-          gradientColors: const [Color(0xFF92400E), Color(0xFFB45309)],
-          onTap: () => _selectPortal(ref, PortalType.parent),
-        ),
-      ],
+      ),
     );
   }
 
-  // ── Tablet Layout: Horizontal Cards ─────────────────────────────────
+  // ── Portal Card ────────────────────────────────────────────────────
 
-  Widget _buildTabletCards(WidgetRef ref) {
-    return Column(
-      children: [
-        _PortalCardWide(
-          portalType: PortalType.platform,
-          icon: Icons.cloud,
-          title: PortalType.platform.displayName,
-          description: PortalType.platform.description,
-          gradientColors: const [Color(0xFF0B2F73), Color(0xFF1A3F8B)],
-          onTap: () => _selectPortal(ref, PortalType.platform),
-        ),
-        const SizedBox(height: AHSpacing.md),
-        _PortalCardWide(
-          portalType: PortalType.school,
-          icon: Icons.school,
-          title: PortalType.school.displayName,
-          description: PortalType.school.description,
-          gradientColors: const [Color(0xFF1D4FA5), Color(0xFF2E60C0)],
-          onTap: () => _selectPortal(ref, PortalType.school),
-        ),
-        const SizedBox(height: AHSpacing.md),
-        _PortalCardWide(
-          portalType: PortalType.teacher,
-          icon: Icons.cast_for_education,
-          title: PortalType.teacher.displayName,
-          description: PortalType.teacher.description,
-          gradientColors: const [Color(0xFF0D9488), Color(0xFF14B8A6)],
-          onTap: () => _selectPortal(ref, PortalType.teacher),
-        ),
-        const SizedBox(height: AHSpacing.md),
-        _PortalCardWide(
-          portalType: PortalType.parent,
-          icon: Icons.family_restroom,
-          title: PortalType.parent.displayName,
-          description: PortalType.parent.description,
-          gradientColors: const [Color(0xFF92400E), Color(0xFFB45309)],
-          onTap: () => _selectPortal(ref, PortalType.parent),
-        ),
-      ],
-    );
-  }
-
-  // ── Portal Selection Handler ────────────────────────────────────────
-
-  void _selectPortal(WidgetRef ref, PortalType portal) {
-    ref.read(selectedPortalProvider.notifier).state = portal;
-    // Navigate to login with the selected portal context.
-    // The login screen can read the portal from the provider.
-    GoRouter.of(ref.context).go('/login');
-  }
-}
-
-// ── Portal Card (Phone: Square) ───────────────────────────────────────
-
-class _PortalCard extends StatelessWidget {
-  const _PortalCard({
-    required this.portalType,
-    required this.icon,
-    required this.title,
-    required this.description,
-    required this.gradientColors,
-    required this.onTap,
-  });
-
-  final PortalType portalType;
-  final IconData icon;
-  final String title;
-  final String description;
-  final List<Color> gradientColors;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildPortalCard({
+    required WidgetRef ref,
+    required PortalType portalType,
+    required IconData icon,
+    required String title,
+    required String description,
+    required VoidCallback onTap,
+  }) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(AHSpacing.r16),
+        borderRadius: BorderRadius.circular(12),
         child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: gradientColors,
+              colors: [
+                AHColors.navy.withOpacity(0.04),
+                AHColors.blue.withOpacity(0.02),
+              ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            borderRadius: BorderRadius.circular(AHSpacing.r16),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: AHColors.navy.withOpacity(0.15),
+              width: 1,
+            ),
             boxShadow: [
               BoxShadow(
-                color: gradientColors[0].withOpacity(0.3),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+                color: AHColors.navy.withOpacity(0.06),
+                blurRadius: 2,
+                offset: const Offset(0, 1),
               ),
             ],
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(AHSpacing.md),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(AHSpacing.r12),
+          child: Row(
+            children: [
+              // Icon container
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      AHColors.navy.withOpacity(0.14),
+                      AHColors.blue.withOpacity(0.08),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                  child: Icon(icon, color: Colors.white, size: 28),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                const SizedBox(height: AHSpacing.sm),
-                Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
+                child: Icon(icon, color: AHColors.navy, size: 20),
+              ),
+              const SizedBox(width: 12),
+              // Title + description
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AHColors.navy,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      description,
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 12,
+                        color: AHColors.grey500,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: AHSpacing.xxs),
-                Text(
-                  description,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontSize: 11,
-                    color: Colors.white.withOpacity(0.8),
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
+              ),
+              // Arrow
+              Icon(
+                Icons.chevron_right,
+                color: AHColors.grey300,
+                size: 20,
+              ),
+            ],
           ),
         ),
       ),
     );
   }
-}
 
-// ── Portal Card (Tablet: Wide Horizontal) ─────────────────────────────
+  // ── Footer ─────────────────────────────────────────────────────────
 
-class _PortalCardWide extends StatelessWidget {
-  const _PortalCardWide({
-    required this.portalType,
-    required this.icon,
-    required this.title,
-    required this.description,
-    required this.gradientColors,
-    required this.onTap,
-  });
-
-  final PortalType portalType;
-  final IconData icon;
-  final String title;
-  final String description;
-  final List<Color> gradientColors;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AHSpacing.r16),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: gradientColors,
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-            ),
-            borderRadius: BorderRadius.circular(AHSpacing.r16),
-            boxShadow: [
-              BoxShadow(
-                color: gradientColors[0].withOpacity(0.3),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AHSpacing.xl,
-              vertical: AHSpacing.lg,
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(AHSpacing.r12),
-                  ),
-                  child: Icon(icon, color: Colors.white, size: 32),
-                ),
-                const SizedBox(width: AHSpacing.lg),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontFamily: 'Inter',
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: AHSpacing.xxs),
-                      Text(
-                        description,
-                        style: TextStyle(
-                          fontFamily: 'Inter',
-                          fontSize: 13,
-                          color: Colors.white.withOpacity(0.8),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(
-                  Icons.arrow_forward_ios,
-                  color: Colors.white54,
-                  size: 18,
-                ),
-              ],
+  Widget _buildFooter() {
+    return Center(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.shield_outlined, size: 12, color: AHColors.grey400),
+          const SizedBox(width: 4),
+          Text(
+            'Portail officiel sécurisé Academia Helm',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 10,
+              color: AHColors.grey400,
             ),
           ),
-        ),
+        ],
       ),
     );
+  }
+
+  // ── Portal Selection Handler ───────────────────────────────────────
+
+  void _selectPortal(WidgetRef ref, PortalType portal) {
+    ref.read(selectedPortalProvider.notifier).state = portal;
+    GoRouter.of(ref.context).go('/login');
   }
 }

@@ -1,18 +1,20 @@
-import '../../../core/theme/ah_spacing.dart';
-import '../../../core/theme/ah_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/auth/auth_notifier.dart';
 import '../../../core/auth/auth_state.dart';
-import '../../../core/theme/ah_theme.dart';
+import '../../../core/theme/ah_colors.dart';
+import '../../../core/theme/ah_spacing.dart';
 
-/// Splash screen with:
-/// - AH logo (shield icon placeholder)
-/// - "Academia Helm" text
-/// - Animated loading indicator
-/// - Navy gradient background
+/// Branded splash screen matching the web app's AcademiaLoader.
+///
+/// Design (1:1 with web):
+/// - Royal Blue background (#1A237E)
+/// - Logo with pulsing gold halo
+/// - "Academia" (white) + "Helm" (gold) wordmark
+/// - Subtitle: "PLATEFORME DE PILOTAGE ÉDUCATIF"
+/// - Animated loading dots
 /// - Auto-navigates after 2 seconds based on auth state
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -22,34 +24,35 @@ class SplashScreen extends ConsumerStatefulWidget {
 }
 
 class _SplashScreenState extends ConsumerState<SplashScreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _fadeAnimation;
-  late Animation<double> _scaleAnimation;
+    with TickerProviderStateMixin {
+  late AnimationController _haloController;
+  late AnimationController _logoController;
+  late Animation<double> _haloAnimation;
+  late Animation<double> _logoScale;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
+
+    // Halo pulse animation (3s loop, matching web's academiaPulse)
+    _haloController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 3000),
     );
-
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
-      ),
+    _haloAnimation = Tween<double>(begin: 0.6, end: 1.0).animate(
+      CurvedAnimation(parent: _haloController, curve: Curves.easeInOut),
     );
+    _haloController.repeat(reverse: true);
 
-    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.0, 0.6, curve: Curves.easeOutBack),
-      ),
+    // Logo entrance animation
+    _logoController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
     );
-
-    _controller.forward();
+    _logoScale = Tween<double>(begin: 0.5, end: 1.0).animate(
+      CurvedAnimation(parent: _logoController, curve: Curves.easeOutBack),
+    );
+    _logoController.forward();
 
     // Auto-navigate after 2 seconds.
     Future.delayed(const Duration(seconds: 2), _navigate);
@@ -72,7 +75,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
   @override
   void dispose() {
-    _controller.dispose();
+    _haloController.dispose();
+    _logoController.dispose();
     super.dispose();
   }
 
@@ -80,45 +84,55 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [AHColors.navyDark, AHColors.navy, AHColors.navyLight],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
+        color: const Color(0xFF1A237E), // Royal Blue (web AcademiaLoader bg)
         child: SafeArea(
           child: Center(
-            child: FadeTransition(
-              opacity: _fadeAnimation,
-              child: ScaleTransition(
-                scale: _scaleAnimation,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // ── Shield Logo ──────────────────────────────────
-                    Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.2),
-                          width: 2,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // ── Logo with pulsing gold halo ──────────────────────
+                AnimatedBuilder(
+                  animation: _haloAnimation,
+                  builder: (context, child) {
+                    return ScaleTransition(
+                      scale: _logoScale,
+                      child: Container(
+                        width: 96,
+                        height: 96,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: AHColors.gold.withOpacity(0.3 * _haloAnimation.value),
+                              blurRadius: 20,
+                              spreadRadius: 4,
+                            ),
+                            BoxShadow(
+                              color: AHColors.gold.withOpacity(0.1 * _haloAnimation.value),
+                              blurRadius: 40,
+                              spreadRadius: 8,
+                            ),
+                          ],
+                        ),
+                        child: ClipOval(
+                          child: Image.asset(
+                            'assets/images/logo_academia_helm.png',
+                            fit: BoxFit.cover,
+                          ),
                         ),
                       ),
-                      child: const Icon(
-                        Icons.shield,
-                        color: AHColors.gold,
-                        size: 56,
-                      ),
-                    ),
-                    const SizedBox(height: AHSpacing.xl),
+                    );
+                  },
+                ),
+                const SizedBox(height: AHSpacing.xl),
 
-                    // ── App Name ────────────────────────────────────
-                    const Text(
-                      'Academia Helm',
+                // ── Wordmark: "Academia" + "Helm" ────────────────────
+                const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Academia',
                       style: TextStyle(
                         fontFamily: 'Inter',
                         fontSize: 28,
@@ -127,36 +141,121 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                         letterSpacing: -0.5,
                       ),
                     ),
-                    const SizedBox(height: AHSpacing.sm),
-
-                    // ── Tagline ─────────────────────────────────────
+                    SizedBox(width: 6),
                     Text(
-                      'Gestion Scolaire Intelligente',
+                      'Helm',
                       style: TextStyle(
                         fontFamily: 'Inter',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                        color: Colors.white.withOpacity(0.7),
-                      ),
-                    ),
-                    const SizedBox(height: AHSpacing.xxl),
-
-                    // ── Loading Indicator ───────────────────────────
-                    SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: CircularProgressIndicator(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
                         color: AHColors.gold,
-                        strokeWidth: 2.5,
+                        letterSpacing: -0.5,
                       ),
                     ),
                   ],
                 ),
-              ),
+                const SizedBox(height: AHSpacing.sm),
+
+                // ── Subtitle ──────────────────────────────────────────
+                const Text(
+                  'PLATEFORME DE PILOTAGE ÉDUCATIF',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 10,
+                    fontWeight: FontWeight.w400,
+                    letterSpacing: 2.5,
+                    color: Color(0xFFBBDEFB),
+                  ),
+                ),
+                const SizedBox(height: AHSpacing.xxl),
+
+                // ── Animated loading dots ─────────────────────────────
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _LoadingDot(
+                      color: const Color(0xFF3F51B5).withOpacity(0.7),
+                      size: 6,
+                      delay: 0,
+                    ),
+                    const SizedBox(width: 8),
+                    _LoadingDot(
+                      color: const Color(0xFF3F51B5),
+                      size: 8,
+                      delay: 200,
+                    ),
+                    const SizedBox(width: 8),
+                    _LoadingDot(
+                      color: AHColors.gold,
+                      size: 6,
+                      delay: 400,
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Animated bouncing dot for the loading indicator.
+class _LoadingDot extends StatefulWidget {
+  const _LoadingDot({
+    required this.color,
+    required this.size,
+    required this.delay,
+  });
+
+  final Color color;
+  final double size;
+  final int delay;
+
+  @override
+  State<_LoadingDot> createState() => _LoadingDotState();
+}
+
+class _LoadingDotState extends State<_LoadingDot>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    Future.delayed(Duration(milliseconds: widget.delay), () {
+      if (mounted) _controller.repeat(reverse: true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Transform.translate(
+          offset: Offset(0, -4 * _controller.value),
+          child: Container(
+            width: widget.size,
+            height: widget.size,
+            decoration: BoxDecoration(
+              color: widget.color,
+              shape: BoxShape.circle,
+            ),
+          ),
+        );
+      },
     );
   }
 }

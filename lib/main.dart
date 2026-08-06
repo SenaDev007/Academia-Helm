@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -148,25 +149,102 @@ class _AcademiaHelmAppState extends ConsumerState<AcademiaHelmApp> {
       darkTheme: AHTheme.dark,
       themeMode: ThemeMode.system,
       routerConfig: router,
+      locale: const Locale('fr'),
       supportedLocales: const [
         Locale('fr'),
         Locale('en'),
       ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       builder: (context, child) {
         if (!_initialized) {
-          // Show a loading screen while Hive/storage initializes.
+          // Show a branded loading screen while Hive/storage initializes.
+          // Matches the web app's AcademiaLoader: Royal Blue background,
+          // gold-haloed logo, "Academia Helm" wordmark.
           return Container(
             decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF071D4A), Color(0xFF0B2F73), Color(0xFF1A3F8B)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              color: Color(0xFF1A237E),
             ),
-            child: const Center(
-              child: CircularProgressIndicator(
-                color: Color(0xFFF5B335),
-                strokeWidth: 2.5,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Logo with gold halo
+                  Container(
+                    width: 96,
+                    height: 96,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Color(0xFFF5B335).withOpacity(0.3),
+                          blurRadius: 20,
+                          spreadRadius: 4,
+                        ),
+                        BoxShadow(
+                          color: Color(0xFFF5B335).withOpacity(0.1),
+                          blurRadius: 40,
+                          spreadRadius: 8,
+                        ),
+                      ],
+                    ),
+                    child: ClipOval(
+                      child: Image.asset(
+                        'assets/images/logo_academia_helm.png',
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  // "Academia Helm" wordmark
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Academia',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                      SizedBox(width: 6),
+                      Text(
+                        'Helm',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFFF5B335),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'PLATEFORME DE PILOTAGE ÉDUCATIF',
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 10,
+                      letterSpacing: 2.5,
+                      color: Color(0xFFBBDEFB),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  const SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      color: Color(0xFFF5B335),
+                      strokeWidth: 2.5,
+                    ),
+                  ),
+                ],
               ),
             ),
           );

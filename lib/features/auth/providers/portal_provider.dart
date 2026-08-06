@@ -10,7 +10,7 @@ enum PortalType {
 
 /// Extension providing French display names and metadata for [PortalType].
 extension PortalTypeX on PortalType {
-  /// French display name for the portal.
+  /// French display name for the portal (matches web app).
   String get displayName {
     switch (this) {
       case PortalType.platform:
@@ -20,21 +20,21 @@ extension PortalTypeX on PortalType {
       case PortalType.teacher:
         return 'Enseignant';
       case PortalType.parent:
-        return 'Parent';
+        return 'Parent / Élève';
     }
   }
 
-  /// French description for the portal.
+  /// French description for the portal (matches web app).
   String get description {
     switch (this) {
       case PortalType.platform:
-        return 'Gestion multi-établissements';
+        return 'Administration SaaS globale';
       case PortalType.school:
         return 'Direction et administration';
       case PortalType.teacher:
-        return 'Pédagogie et évaluation';
+        return 'Pédagogie et suivi';
       case PortalType.parent:
-        return 'Suivi scolaire et paiements';
+        return 'Suivi et communication';
     }
   }
 

@@ -29,7 +29,7 @@ import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/p
  */
 export const DEFAULT_CALENDAR_CONFIG = {
   startMonth: 8, // Septembre (0-indexed)
-  preEntryWeekNumber: 2, // 2e semaine du mois
+  preEntryWeekNumber: 1, // 1er lundi du mois (pré-rentrée)
   preEntryDayOfWeek: 1, // Lundi (0=Dim, 1=Lun, ..., 6=Sam)
   entryWeekOffset: 1, // +1 semaine entre pré-rentrée et rentrée
   endMonth: 5, // Juin

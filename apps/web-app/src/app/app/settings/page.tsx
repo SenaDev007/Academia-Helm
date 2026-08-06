@@ -2618,19 +2618,6 @@ export default function SettingsPage() {
                       <span>{activeAcademicYear._count.classes ?? 0} classes</span>
                     </div>
                   )}
-                  <div className="w-full mt-3 flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handleStartEditAcademicYearDates(activeAcademicYear)}
-                      disabled={editingYearBusy}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-white text-blue-900 rounded-md hover:bg-blue-100 disabled:opacity-50"
-                      title="Modifier la pré-rentrée, la rentrée et la fin d’année"
-                    >
-                      <CalendarRange className="w-4 h-4" aria-hidden />
-                      Modifier les dates
-                    </button>
-                    <span className="text-white/80 text-xs">Pré-rentrée, rentrée officielle, fin d’année</span>
-                  </div>
                 </div>
               ) : (
                 <div className="text-white/90 ml-7">
@@ -2808,17 +2795,6 @@ export default function SettingsPage() {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleStartEditAcademicYearDates(year)}
-                          disabled={editingYearBusy}
-                          title="Modifier les dates (pré-rentrée, rentrée, fin)"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <CalendarRange className="w-3.5 h-3.5" aria-hidden />
-                          Modifier les dates
-                        </button>
                         <button
                           type="button"
                           onClick={() => {

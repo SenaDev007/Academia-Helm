@@ -90,3 +90,54 @@ scripts/node_modules/
 tool-results/
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
+
+# ============================================================================
+# Flutter (mobile app at apps/mobile-app/)
+# ============================================================================
+
+# Flutter/Dart build outputs
+apps/mobile-app/build/
+apps/mobile-app/.dart_tool/
+apps/mobile-app/.flutter-plugins
+apps/mobile-app/.flutter-plugins-dependencies
+apps/mobile-app/.packages
+apps/mobile-app/.pub-cache/
+apps/mobile-app/.pub/
+apps/mobile-app/pubspec.lock
+
+# NOTE: .g.dart and .freezed.dart files ARE tracked in the mobile app
+# (they are committed alongside their source files). This is intentional
+# so that the project builds without requiring `dart run build_runner`
+# on every clone. Do NOT add ignore rules for these files.
+
+# Flutter SDK (if installed locally in the project)
+apps/mobile-app/.flutter-sdk/
+
+# Android (mobile)
+apps/mobile-app/android/.gradle/
+apps/mobile-app/android/local.properties
+apps/mobile-app/android/key.properties
+apps/mobile-app/android/app/upload-keystore.jks
+apps/mobile-app/android/app/release/*.jks
+apps/mobile-app/**/GeneratedPluginRegistrant.java
+apps/mobile-app/android/captures/
+apps/mobile-app/android/app/build/
+apps/mobile-app/android/build/
+apps/mobile-app/.idea/
+
+# iOS (mobile) — currently disabled, will be regenerated when needed
+apps/mobile-app/ios/Pods/
+apps/mobile-app/ios/.symlinks/
+apps/mobile-app/ios/Flutter/App.framework
+apps/mobile-app/ios/Flutter/Flutter.framework
+apps/mobile-app/ios/Flutter/Flutter.podspec
+apps/mobile-app/ios/Flutter/Generated.xcconfig
+apps/mobile-app/ios/Flutter/app.flx
+apps/mobile-app/ios/Flutter/app.zip
+apps/mobile-app/ios/Flutter/flutter_assets/
+apps/mobile-app/ios/Flutter/flutter_export_environment.sh
+apps/mobile-app/ios/ServiceDefinitions.json
+apps/mobile-app/ios/Runner/GeneratedPluginRegistrant.*
+
+# Local properties (machine-specific)
+apps/mobile-app/android/local.properties

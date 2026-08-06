@@ -1,0 +1,76 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "dev.flutter.flutter-gradle-plugin"
+    id "com.google.gms.google-services"
+}
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
+}
+
+def flutterVersionCode = localProperties.getProperty('flutter.versionCode') ?: '1'
+def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '1.0.0'
+
+android {
+    namespace "io.academiahelm.mobile"
+    compileSdk 36
+    // Pin NDK to the version required by the `jni` plugin (transitive dep of
+    // jni_flutter). Without this, AGP downloads BOTH NDK 27.0.12077973
+    // (its own default) AND NDK 28.2.13676358 (required by jni), which doubles
+    // the download size (~4 GB instead of ~2 GB) and slows down every CI build.
+    // NDK 28 is backward-compatible with NDK 27, so a single version covers
+    // both AGP and the jni plugin.
+    ndkVersion "28.2.13676358"
+
+    defaultConfig {
+        applicationId "io.academiahelm.mobile"
+        minSdk 24
+        targetSdk 36
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
+        multiDexEnabled true
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            signingConfig signingConfigs.debug
+        }
+        debug {
+            minifyEnabled false
+            debuggable true
+            // applicationIdSuffix ".debug" removed:
+            // google-services.json only declares io.academiahelm.mobile.
+            // To re-enable side-by-side debug/release install, register
+            // io.academiahelm.mobile.debug in Firebase Console and
+            // download an updated google-services.json.
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+        coreLibraryDesugaringEnabled true
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+    implementation 'androidx.multidex:multidex:2.0.1'
+    implementation 'androidx.window:window:1.2.0'
+
+    // Required by flutter_local_notifications for Java 8+ time API on minSdk 24
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+
+    implementation platform('com.google.firebase:firebase-bom:33.7.0')
+    implementation 'com.google.firebase:firebase-analytics'
+    implementation 'com.google.firebase:firebase-messaging'
+}

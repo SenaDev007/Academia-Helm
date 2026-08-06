@@ -110,12 +110,18 @@ export class BulletinPdfService {
       // 3. Generate PDF via Puppeteer
       const { page } = await this.puppeteerPool.acquirePage();
       try {
-        await page.setContent(html, { waitUntil: 'networkidle0' });
+        // ⭐ Use 'domcontentloaded' instead of 'networkidle0' — faster, doesn't wait
+        // for all network traffic to stop (which can timeout with base64 images).
+        // The PDF is generated from inline HTML/CSS, no external resources needed.
+        await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        // Small delay to let any inline images (base64 signatures, SVG flag) render
+        await new Promise(resolve => setTimeout(resolve, 500));
         const pdfBuffer = await page.pdf({
           format: 'A4',
           landscape: true,
           printBackground: true,
           margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
+          timeout: 60000, // ⭐ 60s timeout for PDF generation
         });
         return Buffer.from(pdfBuffer);
       } finally {

@@ -443,6 +443,7 @@ function BulletinsContent() {
 
       const response = await apiClient.post('/institutional-exams/bulletins/generate-pdf', payload, {
         responseType: 'blob',
+        timeout: 120000, // ⭐ 2 minutes — la génération PDF via Puppeteer peut prendre du temps
       });
 
       // Download the PDF
@@ -1825,6 +1826,8 @@ function WorkflowBar({
       const res = await apiClient.post(`/institutional-exams/bulletins/class/${classId}/send-to-parents`, {
         periodId,
         criteria: { blockIfArrears: true, minPaymentPercentage: 100 },
+      }, {
+        timeout: 60000, // ⭐ 1 minute — peut itérer sur de nombreux élèves
       });
       const data = res.data;
       toastSuccess('Envoi terminé', {

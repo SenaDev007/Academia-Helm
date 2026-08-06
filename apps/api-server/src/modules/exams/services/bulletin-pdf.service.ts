@@ -143,7 +143,6 @@ export class BulletinPdfService {
 
     // Build subject rows
     const subjectRows = data.subjects.map((s) => {
-      const directorVisaCell = s.directorVisa || s.appreciation || '—';
       if (data.isMaternelle) {
         const code = s.qualitativeCode;
         // ⭐ Use "X" instead of ✓ to avoid font rendering issues in PDF
@@ -151,6 +150,7 @@ export class BulletinPdfService {
         const sCheck = code === 'S' ? '<strong style="color:#2563eb">X</strong>' : '';
         const psCheck = code === 'PS' ? '<strong style="color:#d97706">X</strong>' : '';
         const absent = s.isAbsent ? '<span style="color:red;font-size:8px">ABS</span>' : '';
+        const directorVisaCell = s.directorVisa || s.appreciation || '—';
         return `<tr>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;font-size:10px;">${s.name}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:11px;">${tsCheck || absent}</td>
@@ -161,8 +161,9 @@ export class BulletinPdfService {
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#94a3b8;">—</td>
         </tr>`;
       } else {
-        // ⭐ Primaire — Carnet de correspondance column order:
-        // Champs | Note min | CM/18 | Maîtrise min (Oui/Non) | CP/02 | Total/20 | Seuil réussite (Oui/Non) | Appréciation | Visa Directeur
+        // ⭐ Primaire — Carnet de correspondance exact column order:
+        // Champs | Note min | CM/18 | Maîtrise min (Oui/Non) | CP/02 | Total/20 | Seuil réussite (Oui/Non) | Appréciation
+        // NO Visa Directeur column in the table (it's in the signatures section below)
         const scoreNum = !s.isAbsent && s.score !== null ? Number(s.score) : null;
         const cm = scoreNum !== null ? Math.min(18, Math.round(scoreNum * 0.9 * 10) / 10) : null;
         const cp = scoreNum !== null ? Math.round((scoreNum - (cm || 0)) * 10) / 10 : null;
@@ -172,7 +173,7 @@ export class BulletinPdfService {
             ? `<span style="color:${s.score >= 10 ? '#059669' : '#dc2626'};font-weight:bold">${s.score.toFixed(2)}</span>`
             : '—';
         const reached = !s.isAbsent && s.score !== null && s.score >= 10;
-        // ⭐ Use "Oui" text instead of ✓ to avoid font rendering issues in PDF
+        // ⭐ Use "Oui"/"Non" text instead of ✓ to avoid font rendering issues in PDF
         const yes = '<strong style="color:#059669">Oui</strong>';
         const no = '<strong style="color:#dc2626">Non</strong>';
         return `<tr>
@@ -186,20 +187,22 @@ export class BulletinPdfService {
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:8px;">${reached ? yes : ''}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:8px;">${!reached && s.score !== null ? no : ''}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#64748b;">${s.appreciation}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#0A2A5E;font-weight:600;">${directorVisaCell}</td>
         </tr>`;
       }
     }).join('');
 
-    // Table header — Primaire column order matches carnet de correspondance:
-    // Champs | Note min | CM/18 | Maîtrise min (Oui/Non) | CP/02 | Total/20 | Seuil réussite (Oui/Non) | Appréciation | Visa Directeur
+    // Table header — Maternelle matches carnet exactly:
+    // Domaine | RÉSULTATS (TS/S/PS) | Appréciation de l'enseignant(e) | Visa du Directeur (trice) | Impression et visa des parents
+    // Primaire matches carnet exactly:
+    // Champs | Note min | CM/18 | Maîtrise min (Oui/Non) | CP/02 | Total/20 | Seuil réussite (Oui/Non) | Appréciation
+    // NO Visa Directeur column for Primaire (it's in the signatures section)
     const tableHeader = data.isMaternelle ? `
       <tr style="background:#0A2A5E;color:white;">
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:9px;text-transform:uppercase;">Matière</th>
-        <th colspan="3" style="border:1px solid #0D3B85;padding:4px;font-size:9px;text-transform:uppercase;">Résultats</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Appréciation ens.</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;background:#0D3B85;">Visa Directeur</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Visa Parents</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Domaine</th>
+        <th colspan="3" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Résultats</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Appréciation de l'enseignant(e)</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;background:#0D3B85;">Visa du Directeur (trice)</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Impression et visa des parents</th>
       </tr>
       <tr style="background:#0D3B85;color:white;">
         <th style="border:1px solid #114FC4;padding:3px;font-size:9px;">TS</th>
@@ -210,12 +213,11 @@ export class BulletinPdfService {
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;text-align:left;">Champs de formation</th>
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Note min.</th>
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;background:#0D3B85;">CM<br/><span style="font-size:6px;font-weight:normal;">/18</span></th>
-        <th colspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Maîtrise min.</th>
+        <th colspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Maîtrise minimale</th>
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;background:#0D3B85;">CP<br/><span style="font-size:6px;font-weight:normal;">/02</span></th>
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Total<br/><span style="font-size:6px;font-weight:normal;">/20</span></th>
-        <th colspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Seuil réussite</th>
+        <th colspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Seuil de réussite</th>
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Appréciation</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;background:#0D3B85;">Visa Directeur</th>
       </tr>
       <tr style="background:#0D3B85;color:white;">
         <th style="border:1px solid #114FC4;padding:3px;font-size:7px;">Oui</th>
@@ -224,8 +226,8 @@ export class BulletinPdfService {
         <th style="border:1px solid #114FC4;padding:3px;font-size:7px;">Non</th>
       </tr>`;
 
-    // Total General row (Primaire only) — column order matches carnet:
-    // Champs(colspan=2) | Note min(empty) | CM | Maîtrise(empty colspan=2) | CP | Total | Seuil(empty colspan=2) | Appréciation | Visa
+    // Total General row (Primaire only) — column order matches carnet (NO Visa Directeur column):
+    // Champs(colspan=2) | CM | Maîtrise(empty colspan=2) | CP | Total | Seuil(empty colspan=2) | Appréciation
     const totalRow = !data.isMaternelle ? (() => {
       const validScores = data.subjects.filter(s => !s.isAbsent && s.score !== null).map(s => Number(s.score));
       const totalScore = validScores.reduce((sum, v) => sum + v, 0);
@@ -240,7 +242,6 @@ export class BulletinPdfService {
         <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:11px;color:#0A2A5E;">${totalScore.toFixed(2)}</td>
         <td colspan="2" style="border:1px solid #cbd5e1;"></td>
         <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;color:#64748b;">${data.appreciationGlobale || '—'}</td>
-        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;color:#0A2A5E;font-weight:600;">${data.directorVisa || '—'}</td>
       </tr>`;
     })() : '';
 

@@ -355,6 +355,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         return Icons.school_outlined;
       case PortalType.parent:
         return Icons.people_outline;
+      case PortalType.public:
+        return Icons.public_outlined;
     }
   }
 

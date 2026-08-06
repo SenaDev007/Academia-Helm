@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
+import '../../../core/widgets/ah_logo_circle.dart';
 import '../providers/portal_provider.dart';
 
 /// Portal selection screen matching the web app's TenantPortalSelection.
@@ -21,83 +22,105 @@ class PortalSelectScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
-      body: Container(
-        color: Colors.white,
-        child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(AHSpacing.xl),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: AHSpacing.xxl),
-                  _buildBrandingHeader(),
-                  const SizedBox(height: AHSpacing.xxl),
-                  _buildBadge(),
-                  const SizedBox(height: AHSpacing.lg),
-                  Text(
-                    'Accéder à votre espace',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                      color: AHColors.navy,
-                    ),
-                  ),
-                  const SizedBox(height: AHSpacing.sm),
-                  Text(
-                    'Sélectionnez le portail correspondant à votre profil pour vous connecter.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontSize: 13,
-                      color: AHColors.grey500,
-                    ),
-                  ),
-                  const SizedBox(height: AHSpacing.xxl),
-                  _buildPortalCard(
-                    ref: ref,
-                    portalType: PortalType.platform,
-                    icon: Icons.shield_outlined,
-                    title: 'Plateforme',
-                    description: 'Administration SaaS globale',
-                    onTap: () => _selectPortal(ref, PortalType.platform),
-                  ),
-                  const SizedBox(height: AHSpacing.md),
-                  _buildPortalCard(
-                    ref: ref,
-                    portalType: PortalType.school,
-                    icon: Icons.business_outlined,
-                    title: 'École',
-                    description: 'Direction et administration',
-                    onTap: () => _selectPortal(ref, PortalType.school),
-                  ),
-                  const SizedBox(height: AHSpacing.md),
-                  _buildPortalCard(
-                    ref: ref,
-                    portalType: PortalType.teacher,
-                    icon: Icons.school_outlined,
-                    title: 'Enseignant',
-                    description: 'Pédagogie et suivi',
-                    onTap: () => _selectPortal(ref, PortalType.teacher),
-                  ),
-                  const SizedBox(height: AHSpacing.md),
-                  _buildPortalCard(
-                    ref: ref,
-                    portalType: PortalType.parent,
-                    icon: Icons.people_outline,
-                    title: 'Parent / Élève',
-                    description: 'Suivi et communication',
-                    onTap: () => _selectPortal(ref, PortalType.parent),
-                  ),
-                  const SizedBox(height: AHSpacing.xxl),
-                  _buildFooter(),
-                ],
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // ── Top bar with back button ──────────────────────────
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8, top: 8),
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: AHColors.navy),
+                  onPressed: () {
+                    // If we can pop (came from another screen), pop.
+                    // Otherwise, do nothing (we're at the root of the auth flow).
+                    if (Navigator.of(context).canPop()) {
+                      Navigator.of(context).pop();
+                    }
+                  },
+                ),
               ),
             ),
-          ),
+            // ── Scrollable content ─────────────────────────────────
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(AHSpacing.xl),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: AHSpacing.xl),
+                      _buildBrandingHeader(),
+                      const SizedBox(height: AHSpacing.xxl),
+                      _buildBadge(),
+                      const SizedBox(height: AHSpacing.lg),
+                      Text(
+                        'Accéder à votre espace',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          color: AHColors.navy,
+                        ),
+                      ),
+                      const SizedBox(height: AHSpacing.sm),
+                      Text(
+                        'Sélectionnez le portail correspondant à votre profil pour vous connecter.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 13,
+                          color: AHColors.grey500,
+                        ),
+                      ),
+                      const SizedBox(height: AHSpacing.xxl),
+                      // ── Academia Helm button (replaces old "Plateforme") ──
+                      _buildPortalCard(
+                        ref: ref,
+                        icon: Icons.language_outlined,
+                        title: 'Academia Helm',
+                        description: 'Plateforme de pilotage éducatif',
+                        onTap: () => context.push('/landing'),
+                      ),
+                      const SizedBox(height: AHSpacing.md),
+                      _buildPortalCard(
+                        ref: ref,
+                        portalType: PortalType.school,
+                        icon: Icons.business_outlined,
+                        title: 'École',
+                        description: 'Direction et administration',
+                        onTap: () => _selectPortal(ref, PortalType.school),
+                      ),
+                      const SizedBox(height: AHSpacing.md),
+                      _buildPortalCard(
+                        ref: ref,
+                        portalType: PortalType.teacher,
+                        icon: Icons.school_outlined,
+                        title: 'Enseignant',
+                        description: 'Pédagogie et suivi',
+                        onTap: () => _selectPortal(ref, PortalType.teacher),
+                      ),
+                      const SizedBox(height: AHSpacing.md),
+                      _buildPortalCard(
+                        ref: ref,
+                        portalType: PortalType.parent,
+                        icon: Icons.people_outline,
+                        title: 'Parent / Élève',
+                        description: 'Suivi et communication',
+                        onTap: () => _selectPortal(ref, PortalType.parent),
+                      ),
+                      const SizedBox(height: AHSpacing.xxl),
+                      _buildFooter(),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -108,32 +131,8 @@ class PortalSelectScreen extends ConsumerWidget {
   Widget _buildBrandingHeader() {
     return Column(
       children: [
-        // Logo with gold halo
-        Container(
-          width: 80,
-          height: 80,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: AHColors.gold.withOpacity(0.3),
-                blurRadius: 20,
-                spreadRadius: 4,
-              ),
-              BoxShadow(
-                color: AHColors.gold.withOpacity(0.1),
-                blurRadius: 40,
-                spreadRadius: 8,
-              ),
-            ],
-          ),
-          child: ClipOval(
-            child: Image.asset(
-              'assets/images/logo_academia_helm.png',
-              fit: BoxFit.cover,
-            ),
-          ),
-        ),
+        // Logo (matches web LogoCircle exactly)
+        const AHLogoCircle(size: 80),
         const SizedBox(height: AHSpacing.lg),
         // Wordmark
         const Row(
@@ -210,8 +209,8 @@ class PortalSelectScreen extends ConsumerWidget {
   // ── Portal Card ────────────────────────────────────────────────────
 
   Widget _buildPortalCard({
-    required WidgetRef ref,
-    required PortalType portalType,
+    WidgetRef? ref,
+    PortalType? portalType,
     required IconData icon,
     required String title,
     required String description,
@@ -334,6 +333,8 @@ class PortalSelectScreen extends ConsumerWidget {
 
   void _selectPortal(WidgetRef ref, PortalType portal) {
     ref.read(selectedPortalProvider.notifier).state = portal;
-    GoRouter.of(ref.context).go('/login');
+    // Use push instead of go so the back button works from /login
+    // (returns to /portal-select when user taps back).
+    GoRouter.of(ref.context).push('/login');
   }
 }

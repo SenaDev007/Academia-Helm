@@ -1,5 +1,6 @@
 import '../../../core/theme/ah_spacing.dart';
 import '../../../core/theme/ah_colors.dart';
+import '../../../core/widgets/ah_logo_circle.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -101,13 +102,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         ),
         child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(AHSpacing.xl),
-              child: isTablet
-                  ? _buildTabletLayout()
-                  : _buildPhoneLayout(),
-            ),
+          child: Stack(
+            children: [
+              // ── Back button (top-left, returns to /portal-select) ──
+              Positioned(
+                top: 8,
+                left: 8,
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () {
+                    if (Navigator.of(context).canPop()) {
+                      Navigator.of(context).pop();
+                    } else {
+                      context.go('/portal-select');
+                    }
+                  },
+                ),
+              ),
+              // ── Centered scrollable content ─────────────────────────
+              Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(AHSpacing.xl),
+                  child: isTablet
+                      ? _buildTabletLayout()
+                      : _buildPhoneLayout(),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -142,32 +163,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget _buildBrandingHeader() {
     return Column(
       children: [
-        // ── Official Logo with gold halo ──────────────────────
-        Container(
-          width: 80,
-          height: 80,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: AHColors.gold.withOpacity(0.3),
-                blurRadius: 20,
-                spreadRadius: 4,
-              ),
-              BoxShadow(
-                color: AHColors.gold.withOpacity(0.1),
-                blurRadius: 40,
-                spreadRadius: 8,
-              ),
-            ],
-          ),
-          child: ClipOval(
-            child: Image.asset(
-              'assets/images/logo_academia_helm.png',
-              fit: BoxFit.cover,
-            ),
-          ),
-        ),
+        // ── Logo (matches web LogoCircle) ─────────────────────
+        const AHLogoCircle(size: 80),
         const SizedBox(height: AHSpacing.lg),
 
         // ── Wordmark: "Academia" + "Helm" ─────────────────────

@@ -16,6 +16,7 @@ import '../../features/auth/pages/portal_select_screen.dart';
 import '../../features/auth/pages/logout_screen.dart';
 import '../../features/auth/pages/forgot_password_screen.dart';
 import '../../features/auth/pages/reset_password_screen.dart';
+import '../../features/landing/pages/landing_page_screen.dart';
 import '../../features/dashboard/pages/dashboard_screen.dart';
 import '../../features/profile/pages/profile_screen.dart';
 import '../../features/students/pages/students_screen.dart';
@@ -266,6 +267,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/portal-select',
         name: 'portalSelect',
         builder: (context, state) => const PortalSelectScreen(),
+      ),
+      GoRoute(
+        path: '/landing',
+        name: 'landing',
+        builder: (context, state) => const LandingPageScreen(),
       ),
       GoRoute(
         path: '/login',

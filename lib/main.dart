@@ -9,6 +9,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'core/theme/ah_theme.dart';
 import 'core/router/app_router.dart';
+import 'core/widgets/ah_logo_circle.dart';
 
 /// Background message handler for Firebase Messaging.
 /// MUST be a top-level function (not a class method or closure)
@@ -172,32 +173,8 @@ class _AcademiaHelmAppState extends ConsumerState<AcademiaHelmApp> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Logo with gold halo
-                  Container(
-                    width: 96,
-                    height: 96,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Color(0xFFF5B335).withOpacity(0.3),
-                          blurRadius: 20,
-                          spreadRadius: 4,
-                        ),
-                        BoxShadow(
-                          color: Color(0xFFF5B335).withOpacity(0.1),
-                          blurRadius: 40,
-                          spreadRadius: 8,
-                        ),
-                      ],
-                    ),
-                    child: ClipOval(
-                      child: Image.asset(
-                        'assets/images/logo_academia_helm.png',
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
+                  // Logo (matches web LogoCircle exactly)
+                  const AHLogoCircle(size: 96),
                   const SizedBox(height: 24),
                   // "Academia Helm" wordmark
                   const Row(

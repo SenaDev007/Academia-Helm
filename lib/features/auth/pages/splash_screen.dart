@@ -6,6 +6,7 @@ import '../../../core/auth/auth_notifier.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
+import '../../../core/widgets/ah_logo_circle.dart';
 
 /// Branded splash screen matching the web app's AcademiaLoader.
 ///
@@ -90,39 +91,10 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // ── Logo with pulsing gold halo ──────────────────────
-                AnimatedBuilder(
-                  animation: _haloAnimation,
-                  builder: (context, child) {
-                    return ScaleTransition(
-                      scale: _logoScale,
-                      child: Container(
-                        width: 96,
-                        height: 96,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: AHColors.gold.withOpacity(0.3 * _haloAnimation.value),
-                              blurRadius: 20,
-                              spreadRadius: 4,
-                            ),
-                            BoxShadow(
-                              color: AHColors.gold.withOpacity(0.1 * _haloAnimation.value),
-                              blurRadius: 40,
-                              spreadRadius: 8,
-                            ),
-                          ],
-                        ),
-                        child: ClipOval(
-                          child: Image.asset(
-                            'assets/images/logo_academia_helm.png',
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
+                // ── Logo (matches web LogoCircle) ───────────────────────
+                ScaleTransition(
+                  scale: _logoScale,
+                  child: const AHLogoCircle(size: 96),
                 ),
                 const SizedBox(height: AHSpacing.xl),
 

@@ -326,6 +326,7 @@ model Tenant {
   recruiterProfile                 RecruiterProfile?
   reportCardItems                  ReportCardItem[]
   reportCards                      ReportCard[]
+  bulletinSendingCriteria         BulletinSendingCriteria?
   resourceAccessSchoolTenants      ResourceAccessLog[]               @relation("ResourceAccessSchoolTenant")
   resourceAccessLogs               ResourceAccessLog[]
   reviews                          Review[]
@@ -7976,6 +7977,26 @@ model ReportCard {
   @@index([status])
   @@index([quarterId])
   @@map("report_cards")
+}
+
+/// ⭐ Critères d'envoi des bulletins aux parents (config par tenant)
+model BulletinSendingCriteria {
+  id                       String   @id @default(uuid())
+  tenantId                 String   @unique
+  blockIfArrears           Boolean  @default(true)
+  minPaymentPercentage     Int      @default(100)
+  allowDownloadByParents   Boolean  @default(true)
+  requireDirectorSignature Boolean  @default(true)
+  requireTeacherSignature  Boolean  @default(true)
+  autoSendAfterTeacherSign Boolean  @default(false)
+  notifyParentOnSend       Boolean  @default(true)
+  reminderDaysBeforeBlock  Int      @default(7)
+  customMessage            String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  tenant                   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("bulletin_sending_criteria")
 }
 
 model ReportCardItem {

@@ -107,25 +107,95 @@ class ApiConfig {
   static const String settingsCommunication = '/settings/communication';
   static const String settingsSeals = '/settings/seals';
 
-  // ── Exams Endpoints ──────────────────────────────────────────────────
+  // ── Exams Endpoints (aligned with web /institutional-exams/*) ─────────
 
-  static const String institutionalExams = '/exams/institutional';
-  static const String examSaveGrades = '/exams/grades/save';
-  static const String examGrades = '/exams/grades';
-  static const String examBulletins = '/exams/bulletins';
-  static const String examCouncils = '/exams/councils';
-  static const String examConfig = '/exams/config';
+  static const String institutionalExams = '/institutional-exams';
+  static const String institutionalExamsEvaluations = '/institutional-exams/evaluations';
+  static const String institutionalExamsBulk = '/institutional-exams/evaluations/bulk';
+  static const String institutionalExamsConfig = '/institutional-exams/config';
+  static const String institutionalExamsDashboard = '/institutional-exams/dashboard/kpi';
+  static const String institutionalExamsBulletins = '/institutional-exams/bulletins';
+  static const String institutionalExamsCouncils = '/institutional-exams/councils';
+  static const String institutionalExamsUnlockRequests = '/institutional-exams/unlock-requests';
+  static const String institutionalExamsAudit = '/institutional-exams/audit/logs';
 
-  static String examEvaluationById(String id) => '/exams/evaluations/$id';
-  static String examGradesByEvaluation(String evaluationId) => '/exams/evaluations/$evaluationId/grades';
-  static String examBulletinByClass(String classId) => '/exams/bulletins/class/$classId';
-  static String examCouncilById(String id) => '/exams/councils/$id';
-  static String examDashboard(String academicYearId) => '/exams/dashboard/$academicYearId';
+  static String examEvaluationById(String id) => '/institutional-exams/evaluations/$id';
+  static String examGradesByEvaluation(String evaluationId) => '/institutional-exams/grades/evaluation/$evaluationId';
+  static String examGradesBulkByEvaluation(String evaluationId) => '/institutional-exams/grades/evaluation/$evaluationId/bulk';
+  static String examEvaluationOpen(String id) => '/institutional-exams/evaluations/$id/open';
+  static String examEvaluationSubmit(String id) => '/institutional-exams/evaluations/$id/submit';
+  static String examEvaluationValidate(String id) => '/institutional-exams/evaluations/$id/validate';
+  static String examEvaluationCancel(String id) => '/institutional-exams/evaluations/$id/cancel';
+  static String examBulletinByClass(String classId) => '/institutional-exams/bulletins/class/$classId';
+  static String examBulletinGenerate(String classId) => '/institutional-exams/bulletins/class/$classId/generate';
+  static String examBulletinPublish(String classId) => '/institutional-exams/bulletins/class/$classId/publish';
+  static String examBulletinDownload(String studentId) => '/institutional-exams/bulletins/download/$studentId';
+  static String examCouncilById(String id) => '/institutional-exams/councils/$id';
+  static String examDashboard(String academicYearId) => '/institutional-exams/dashboard/kpi';
+  static String examUnlockApprove(String id) => '/institutional-exams/unlock-requests/$id/approve';
+  static String examUnlockReject(String id) => '/institutional-exams/unlock-requests/$id/reject';
 
-  // ── Exams Endpoints (extra aliases) ───────────────────────────────────
+  // ── Exams Endpoints (legacy aliases — will be removed) ─────────────────
 
-  static const String exams = '/exams';
-  static const String examEvaluations = '/exams/evaluations';
+  static const String examSaveGrades = '/institutional-exams/grades/save';
+  static const String examGrades = '/institutional-exams/grades';
+  static const String examBulletins = '/institutional-exams/bulletins';
+  static const String examCouncils = '/institutional-exams/councils';
+  static const String examConfig = '/institutional-exams/config';
+  static const String exams = '/institutional-exams';
+  static const String examEvaluations = '/institutional-exams/evaluations';
+
+  // ── Pedagogy Space Endpoints (aligned with web /pedagogy-space/*) ───────
+
+  static const String pedagogySpace = '/pedagogy-space';
+  static const String pedagogySpaceMyClasses = '/pedagogy-space/my-classes';
+  static const String pedagogySpaceAttendance = '/pedagogy-space/attendance';
+  static const String pedagogySpaceAttendanceRegisters = '/pedagogy-space/attendance-registers';
+  static const String pedagogySpaceCahierJournal = '/pedagogy-space/cahier-journal';
+  static const String pedagogySpaceFiches = '/pedagogy-space/fiches';
+  static const String pedagogySpaceHomeworks = '/pedagogy-space/homeworks';
+  static const String pedagogySpaceSubjectsAvailable = '/pedagogy-space/subjects/available';
+  static const String pedagogySpaceMonthlyEvaluations = '/pedagogy-space/monthly-evaluations';
+  static const String pedagogySpaceMonthlySummaries = '/pedagogy-space/monthly-summaries';
+  static const String pedagogySpaceSubmitUnified = '/pedagogy-space/submit-unified';
+  static const String pedagogySpaceNotifyDirector = '/pedagogy-space/notify-director';
+  static const String pedagogySpaceSeminarConfig = '/pedagogy-space/seminar-config';
+  static const String pedagogySpaceCahierTextes = '/pedagogy-space/cahier-textes';
+  static const String pedagogySpaceCahierTests = '/pedagogy-space/cahier-tests';
+
+  static String pedagogySpaceAttendanceByClass(String classId) => '/pedagogy-space/attendance/$classId';
+  static String pedagogySpaceCahierJournalById(String id) => '/pedagogy-space/cahier-journal/$id';
+  static String pedagogySpaceCahierJournalSubmitWithFiches(String id) => '/pedagogy-space/cahier-journal/$id/submit-with-fiches';
+  static String pedagogySpaceCahierJournalExport(String id) => '/pedagogy-space/cahier-journal/$id/export';
+  static String pedagogySpaceFicheById(String id) => '/pedagogy-space/fiches/$id';
+  static String pedagogySpaceFicheSubmit(String id) => '/pedagogy-space/fiches/$id/submit';
+  static String pedagogySpaceHomeworkById(String id) => '/pedagogy-space/homeworks/$id';
+  static String pedagogySpaceHomeworkStudents(String id) => '/pedagogy-space/homeworks/$id/students';
+  static String pedagogySpaceTaskStudents(String taskId) => '/pedagogy-space/task-students/$taskId';
+  static String pedagogySpaceMonthlySummariesRefresh(String classId) => '/pedagogy-space/monthly-summaries/refresh';
+  static String pedagogySpaceCahierTexteById(String id) => '/pedagogy-space/cahier-textes/$id';
+  static String pedagogySpaceCahierTexteSubmit(String id) => '/pedagogy-space/cahier-textes/$id/submit';
+  static String pedagogySpaceCahierTexteInitStudents(String id) => '/pedagogy-space/cahier-textes/$id/init-students';
+
+  // ── Parent Endpoints (aligned with web /parent/*) ──────────────────────
+
+  static const String parentChildren = '/parent/children';
+  static const String parentAttendance = '/parent/attendance';
+  static const String parentFinance = '/parent/finance';
+  static const String parentGrades = '/parent/grades';
+  static const String parentResults = '/parent/results';
+  static const String parentToday = '/parent/today';
+  static const String parentCahierJournal = '/parent/cahier-journal';
+  static const String parentWeeks = '/parent/weeks';
+
+  static String parentChildById(String childId) => '/parent/children/$childId';
+  static String parentTodayByChild(String childId) => '/parent/today/$childId';
+  static String parentAttendanceByChild(String childId) => '/parent/attendance/$childId';
+  static String parentFinanceBreakdown(String studentId) => '/parent/finance/$studentId/breakdown';
+  static String parentGradesByChild(String childId) => '/parent/grades/$childId';
+  static String parentResultsByChild(String childId) => '/parent/results/$childId';
+  static String parentCahierJournalByClass(String classId) => '/parent/cahier-journal/$classId';
+  static String parentWeeksByClass(String classId) => '/parent/weeks/$classId';
 
   // ── Finance Endpoints ────────────────────────────────────────────────
 

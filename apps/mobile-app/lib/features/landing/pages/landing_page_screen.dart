@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
 import '../../../core/widgets/ah_logo_circle.dart';
+import '../../../core/widgets/social_icons.dart';
 
 /// Mobile version of the public Academia Helm landing page.
 ///
@@ -111,118 +112,146 @@ class LandingPageScreen extends ConsumerWidget {
   // ── HERO ─────────────────────────────────────────────────────────────
 
   Widget _buildHeroSection(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [AHColors.navyDark, AHColors.navy, AHColors.blue],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
+    return Stack(
+      children: [
+        // Layer 1: Background image (matches web's PremiumLandingPage hero)
+        // Image at 45% opacity, with navy 64% overlay + gold radial 12% overlay
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/ah_background.webp',
+            fit: BoxFit.cover,
+            opacity: const AlwaysStoppedAnimation<double>(0.45),
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          ),
         ),
-      ),
-      padding: const EdgeInsets.symmetric(
-        horizontal: AHSpacing.xl,
-        vertical: AHSpacing.xxl,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        // Layer 2: Navy overlay at 64% opacity
+        Positioned.fill(
+          child: Container(color: AHColors.navy.withOpacity(0.64)),
+        ),
+        // Layer 3: Gold radial gradient at 12% opacity (top-right glow)
+        Positioned.fill(
+          child: Container(
             decoration: BoxDecoration(
-              color: AHColors.gold.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: AHColors.gold.withOpacity(0.3)),
-            ),
-            child: const Text(
-              'PLATEFORME DE PILOTAGE ÉDUCATIF',
-              style: TextStyle(
-                fontFamily: 'Inter',
-                fontSize: 9,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.2,
-                color: AHColors.gold,
+              gradient: RadialGradient(
+                center: const Alignment(0.7, -0.5),
+                radius: 0.8,
+                colors: [
+                  AHColors.gold.withOpacity(0.12),
+                  Colors.transparent,
+                ],
+                stops: const [0.0, 0.45],
               ),
             ),
           ),
-          const SizedBox(height: AHSpacing.lg),
-          const Text(
-            'Le cockpit digital de votre établissement.',
-            style: TextStyle(
-              fontFamily: 'Inter',
-              fontSize: 28,
-              fontWeight: FontWeight.w800,
-              color: Colors.white,
-              height: 1.2,
-            ),
+        ),
+        // Layer 4: Content
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AHSpacing.xl,
+            vertical: AHSpacing.xxl,
           ),
-          const SizedBox(height: AHSpacing.md),
-          const Text(
-            'Academia Helm unifie toute la gestion scolaire dans une interface claire, élégante et robuste. Vous pilotez, vos équipes exécutent, l\'institution progresse.',
-            style: TextStyle(
-              fontFamily: 'Inter',
-              fontSize: 14,
-              color: Colors.white70,
-              height: 1.5,
-            ),
-          ),
-          const SizedBox(height: AHSpacing.xl),
-          Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () => _launchUrl('https://app.academiahelm.com/signup'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AHColors.gold,
-                    foregroundColor: AHColors.navy,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text(
-                    'Démarrer maintenant',
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AHColors.gold.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: AHColors.gold.withOpacity(0.3)),
+                ),
+                child: const Text(
+                  'PLATEFORME DE PILOTAGE ÉDUCATIF',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                    color: AHColors.gold,
                   ),
                 ),
               ),
-              const SizedBox(width: AHSpacing.md),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => context.go('/portal-select'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: BorderSide(color: Colors.white.withOpacity(0.4)),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text(
-                    'Accéder au portail',
-                    style: TextStyle(
-                      fontFamily: 'Inter',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+              const SizedBox(height: AHSpacing.lg),
+              const Text(
+                'Le cockpit digital de votre établissement.',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  height: 1.2,
                 ),
+              ),
+              const SizedBox(height: AHSpacing.md),
+              const Text(
+                'Academia Helm unifie toute la gestion scolaire dans une interface claire, élégante et robuste. Vous pilotez, vos équipes exécutent, l\'institution progresse.',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 14,
+                  color: Colors.white70,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: AHSpacing.xl),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => _launchUrl('https://app.academiahelm.com/signup'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AHColors.gold,
+                        foregroundColor: AHColors.navy,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'Démarrer maintenant',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AHSpacing.md),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => context.go('/portal-select'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: BorderSide(color: Colors.white.withOpacity(0.4)),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'Accéder au portail',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AHSpacing.xl),
+              Row(
+                children: [
+                  Expanded(child: _buildStatTile('+12%', 'Taux de recouvrement')),
+                  const SizedBox(width: AHSpacing.md),
+                  Expanded(child: _buildStatTile('-8%', 'Absentéisme')),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: AHSpacing.xl),
-          Row(
-            children: [
-              Expanded(child: _buildStatTile('+12%', 'Taux de recouvrement')),
-              const SizedBox(width: AHSpacing.md),
-              Expanded(child: _buildStatTile('-8%', 'Absentéisme')),
-            ],
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1145,13 +1174,33 @@ class LandingPageScreen extends ConsumerWidget {
           const SizedBox(height: AHSpacing.xl),
           Row(
             children: [
-              _buildSocialIcon(Icons.facebook, 'https://facebook.com/academiahub'),
+              SocialIcons.buildSocialIcon(
+                svgString: SocialIcons.facebookSvg,
+                brandColor: const Color(0xFF1877F2),
+                url: 'https://facebook.com/academiahub',
+                label: 'Facebook',
+              ),
               const SizedBox(width: 12),
-              _buildSocialIcon(Icons.work_outline, 'https://linkedin.com/company/academiahub'),
+              SocialIcons.buildSocialIcon(
+                svgString: SocialIcons.linkedInSvg,
+                brandColor: const Color(0xFF0A66C2),
+                url: 'https://linkedin.com/company/academiahub',
+                label: 'LinkedIn',
+              ),
               const SizedBox(width: 12),
-              _buildSocialIcon(Icons.alternate_email, 'https://twitter.com/academiahub'),
+              SocialIcons.buildSocialIcon(
+                svgString: SocialIcons.xSvg,
+                brandColor: const Color(0xFF000000),
+                url: 'https://twitter.com/academiahub',
+                label: 'X (Twitter)',
+              ),
               const SizedBox(width: 12),
-              _buildSocialIcon(Icons.play_circle_outline, 'https://youtube.com/@academiahub'),
+              SocialIcons.buildSocialIcon(
+                svgString: SocialIcons.youTubeSvg,
+                brandColor: const Color(0xFFFF0000),
+                url: 'https://youtube.com/@academiahub',
+                label: 'YouTube',
+              ),
             ],
           ),
           const SizedBox(height: AHSpacing.xl),

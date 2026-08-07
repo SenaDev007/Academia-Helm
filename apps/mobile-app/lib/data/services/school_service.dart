@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/api_config.dart';
@@ -6,9 +7,14 @@ import '../../domain/entities/tenant_school.dart';
 
 /// Service that fetches the public list of schools from the backend.
 ///
-/// Mirrors the web app's `GET /api/public/schools/list` endpoint.
-/// The response is a JSON array of school objects, normalized to
-/// `TenantSchool` entities.
+/// IMPORTANT: The mobile app routes public schools requests through the
+/// WEB APP's BFF (https://academiahelm.com/api/public/schools/list) instead
+/// of calling NestJS directly. This is because Cloudflare Managed Challenge
+/// blocks requests from mobile User-Agents (returns 403 HTML 'Just a
+/// moment...'). The web app's BFF route already adds the correct
+/// User-Agent header + Accept: application/json to bypass Cloudflare.
+///
+/// Mirrors the web app's `usePublicSchools()` hook behavior.
 class SchoolService {
   SchoolService(this._dio);
 
@@ -16,8 +22,9 @@ class SchoolService {
 
   /// Fetches all public schools (one-shot, no auth required).
   ///
-  /// The backend endpoint is `GET /public/schools/list` (relative to
-  /// ApiConfig.baseUrl which already includes `/api`).
+  /// Calls the web app's BFF route: `GET https://academiahelm.com/api/public/schools/list`
+  /// which proxies to NestJS with the correct headers to bypass Cloudflare.
+  ///
   /// Returns an empty list on timeout/error so the UI can still render.
   Future<List<TenantSchool>> fetchSchools() async {
     try {
@@ -26,15 +33,19 @@ class SchoolService {
         options: Options(
           // Public endpoint — no auth token needed
           extra: <String, dynamic>{'skipAuth': true},
-          receiveTimeout: const Duration(seconds: 15),
-          sendTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 20),
+          sendTimeout: const Duration(seconds: 20),
+          headers: <String, dynamic>{
+            'Accept': 'application/json',
+            'User-Agent': 'AcademiaHelm-Mobile/1.0 (Flutter)',
+          },
         ),
       );
 
       final data = response.data;
       List<dynamic> rawList;
 
-      // The backend may return: array | { schools: [...] } | { tenants: [...] }
+      // The BFF may return: array | { schools: [...] } | { tenants: [...] } | { error: 'timeout' }
       if (data is List) {
         rawList = data;
       } else if (data is Map<String, dynamic>) {
@@ -45,6 +56,7 @@ class SchoolService {
         } else if (data['data'] is List) {
           rawList = data['data'] as List;
         } else {
+          // BFF returns { schools: [], tenants: [], error: 'timeout' } on timeout
           rawList = <dynamic>[];
         }
       } else {
@@ -56,7 +68,9 @@ class SchoolService {
           .map(_parseSchool)
           .where((s) => s.name.isNotEmpty)
           .toList();
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('SchoolService.fetchSchools() error: $e');
+      debugPrint('Stack trace: $st');
       // Graceful fallback: return empty list (matches web behavior on timeout)
       return <TenantSchool>[];
     }
@@ -89,20 +103,34 @@ class SchoolService {
   }
 }
 
-/// Riverpod provider for a Dio instance configured for public endpoints
-/// (no /v1 suffix, no auth interceptor).
+/// Riverpod provider for a Dio instance configured for the web app's BFF.
+///
+/// The BFF (Backend For Frontend) is the Next.js web app at
+/// https://academiahelm.com — it proxies public API requests to NestJS
+/// with the correct headers to bypass Cloudflare Managed Challenge.
+///
+/// We use the BFF instead of calling NestJS directly because Cloudflare
+/// blocks mobile User-Agents with a 403 HTML challenge page.
 final _publicDioProvider = Provider<Dio>((ref) {
+  // BFF base URL — the web app's Next.js API routes
+  // Production: https://academiahelm.com
+  // The BFF route /api/public/schools/list proxies to NestJS
+  const bffBaseUrl = 'https://academiahelm.com/api';
+
   return Dio(
     BaseOptions(
-      baseUrl: ApiConfig.baseUrl, // https://api.academiahelm.com/api (no /v1)
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 15),
-      sendTimeout: const Duration(seconds: 15),
+      baseUrl: bffBaseUrl,
+      connectTimeout: const Duration(seconds: 20),
+      receiveTimeout: const Duration(seconds: 20),
+      sendTimeout: const Duration(seconds: 20),
       headers: <String, dynamic>{
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        'User-Agent': 'AcademiaHelm-Mobile/1.0 (Flutter)',
       },
       responseType: ResponseType.json,
+      // Don't validate status — the BFF may return 200 with empty array on timeout
+      validateStatus: (status) => status != null && status >= 200 && status < 400,
     ),
   );
 });

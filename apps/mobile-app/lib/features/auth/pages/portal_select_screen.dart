@@ -357,15 +357,14 @@ class PortalSelectScreen extends ConsumerWidget {
     GoRouter.of(ref.context).push('/login');
   }
 
-  /// Handles the Public portal — same school selection flow, then redirects
-  /// to the web pre-enrollment page (3-step wizard that's too complex to
-  /// replicate natively for now).
+  /// Handles the Public portal — same school selection flow as the other
+  /// portals, but the login page will redirect to the web pre-enrollment
+  /// (3-step wizard too complex to replicate natively for now).
   void _selectPublicPortal(WidgetRef ref) {
-    // Store a special "public" portal marker
-    ref.read(selectedPortalProvider.notifier).state = PortalType.platform; // placeholder
-    // For now, open the web pre-enrollment in a browser
-    // (the 3-step wizard is too complex to replicate natively)
-    _launchUrl('https://app.academiahelm.com/portal');
+    // Store the Public portal type
+    ref.read(selectedPortalProvider.notifier).state = PortalType.public;
+    // Go through the same school selection flow as other portals
+    context.push('/school-select');
   }
 
   Future<void> _launchUrl(String url) async {

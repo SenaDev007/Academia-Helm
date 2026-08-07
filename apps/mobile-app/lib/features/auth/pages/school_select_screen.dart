@@ -65,7 +65,7 @@ class _SchoolSelectScreenState extends ConsumerState<SchoolSelectScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // ── Top bar with back button + title ────────────────────
+            // ── Top bar with back button + refresh button + title ──
             Row(
               children: [
                 IconButton(
@@ -88,6 +88,13 @@ class _SchoolSelectScreenState extends ConsumerState<SchoolSelectScreen> {
                       color: AHColors.navy,
                     ),
                   ),
+                ),
+                // Refresh button — always visible so user can retry on failure
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: AHColors.navy),
+                  onPressed: () {
+                    ref.invalidate(schoolsListProvider);
+                  },
                 ),
               ],
             ),

@@ -158,13 +158,13 @@ export class BulletinPdfService {
         const absent = s.isAbsent ? '<span style="color:red;font-size:8px">ABS</span>' : '';
         const directorVisaCell = s.directorVisa || s.appreciation || '—';
         return `<tr>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;font-size:10px;">${s.name}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:11px;">${tsCheck || absent}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:11px;">${sCheck}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:11px;">${psCheck}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#64748b;">${s.appreciation}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#0A2A5E;font-weight:600;">${directorVisaCell}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#94a3b8;">—</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;font-size:10px;">${s.name}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:11px;">${tsCheck || absent}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:11px;">${sCheck}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:11px;">${psCheck}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:9px;color:#64748b;">${s.appreciation}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:9px;color:#0A2A5E;font-weight:600;">${directorVisaCell}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:9px;color:#94a3b8;">—</td>
         </tr>`;
       } else {
         // ⭐ Primaire — Carnet de correspondance exact column order:
@@ -183,16 +183,16 @@ export class BulletinPdfService {
         const yes = '<strong style="color:#059669">Oui</strong>';
         const no = '<strong style="color:#dc2626">Non</strong>';
         return `<tr>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;font-size:10px;">${s.name}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:8px;color:#94a3b8;">10</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cm !== null ? cm.toFixed(1) : '—'}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:8px;">${reached ? yes : ''}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:8px;">${!reached && s.score !== null ? no : ''}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cp !== null ? cp.toFixed(1) : '—'}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:10px;font-weight:bold;">${scoreVal}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:8px;">${reached ? yes : ''}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:8px;">${!reached && s.score !== null ? no : ''}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 4px;text-align:center;font-size:9px;color:#64748b;">${s.appreciation}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;font-size:10px;">${s.name}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:8px;color:#94a3b8;">10</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cm !== null ? cm.toFixed(1) : '—'}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:8px;">${reached ? yes : ''}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:8px;">${!reached && s.score !== null ? no : ''}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cp !== null ? cp.toFixed(1) : '—'}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:10px;font-weight:bold;">${scoreVal}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:8px;">${reached ? yes : ''}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:8px;">${!reached && s.score !== null ? no : ''}</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:9px;color:#64748b;">${s.appreciation}</td>
         </tr>`;
       }
     }).join('');
@@ -289,54 +289,54 @@ export class BulletinPdfService {
     const rightColumn = data.isMaternelle ? `
       <div class="col-right">
         <!-- ANALYSE PÉDAGOGIQUE SOMMAIRE -->
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:8px;width:100%;">
-          <div style="font-size:7px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:4px;line-height:1.3;">
+        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
+          <div style="font-size:8px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;line-height:1.4;">
             ANALYSE PEDAGOGIQUE SOMMAIRE DES RESULTATS ET RECOMMANDATIONS DE L'ENSEIGNANT(E) AUX PARENTS
           </div>
-          ${[1,2,3,4,5,6,7,8].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:4px 0;height:10px;"></div>').join('')}
+          ${[1,2,3,4,5,6,7,8,9,10].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:12px;"></div>').join('')}
         </div>
 
         <!-- 3 SIGNATURES verticales (aéré, pleine largeur) -->
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:8px;">
+        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;">
           <table style="width:100%;border-collapse:collapse;">
             <tr>
-              <td style="width:33%;text-align:center;vertical-align:bottom;padding:4px 2px;">
-                <div style="height:30px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:30px;max-width:80px;object-fit:contain;" />` : ''}</div>
-                <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:7px;font-weight:bold;color:#0A2A5E;">Titulaire de la classe</div>
-                <div style="font-size:6px;color:#64748b;">Signature</div>
+              <td style="width:33%;text-align:center;vertical-align:bottom;padding:8px 2px;">
+                <div style="height:40px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:40px;max-width:80px;object-fit:contain;" />` : ''}</div>
+                <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:8px;font-weight:bold;color:#0A2A5E;">Titulaire de la classe</div>
+                <div style="font-size:7px;color:#64748b;">Signature</div>
               </td>
-              <td style="width:34%;text-align:center;vertical-align:bottom;padding:4px 2px;">
-                <div style="height:30px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:30px;max-width:80px;object-fit:contain;" />` : ''}</div>
-                <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:7px;font-weight:bold;color:#0A2A5E;">Le (la) Directeur(trice)</div>
-                <div style="font-size:6px;color:#64748b;">Visa</div>
+              <td style="width:34%;text-align:center;vertical-align:bottom;padding:8px 2px;">
+                <div style="height:40px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:40px;max-width:80px;object-fit:contain;" />` : ''}</div>
+                <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:8px;font-weight:bold;color:#0A2A5E;">Le (la) Directeur(trice)</div>
+                <div style="font-size:7px;color:#64748b;">Visa</div>
               </td>
-              <td style="width:33%;text-align:center;vertical-align:bottom;padding:4px 2px;">
-                <div style="height:30px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:30px;max-width:80px;object-fit:contain;" />` : ''}</div>
-                <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:7px;font-weight:bold;color:#0A2A5E;">Les Parents</div>
-                <div style="font-size:6px;color:#64748b;">Nom, Prénoms et Signature</div>
+              <td style="width:33%;text-align:center;vertical-align:bottom;padding:8px 2px;">
+                <div style="height:40px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:40px;max-width:80px;object-fit:contain;" />` : ''}</div>
+                <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:8px;font-weight:bold;color:#0A2A5E;">Les Parents</div>
+                <div style="font-size:7px;color:#64748b;">Nom, Prénoms et Signature</div>
               </td>
             </tr>
           </table>
         </div>
 
         <!-- QR code (séparé, en bas) -->
-        <div style="text-align:center;margin-top:8px;">
-          <img src="${qrCode}" style="width:40px;height:40px;" alt="QR" />
-          <div style="font-size:6px;color:#94a3b8;">Code de vérification</div>
+        <div style="text-align:center;margin-top:10px;">
+          <img src="${qrCode}" style="width:45px;height:45px;" alt="QR" />
+          <div style="font-size:7px;color:#94a3b8;">Code de vérification</div>
         </div>
       </div>` : `
       <div class="col-right">
         <!-- STATS (pleine largeur) -->
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:8px;width:100%;">
+        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
           <table style="width:100%;border-collapse:collapse;"><tr>
-            <td style="font-size:8px;padding:2px 0;">Nombre de matières évaluées :</td>
-            <td style="font-size:8px;text-align:right;font-weight:bold;padding:2px 0;">${data.subjects.filter(s => !s.isAbsent && s.score !== null).length}</td>
+            <td style="font-size:9px;padding:3px 0;">Nombre de matières évaluées :</td>
+            <td style="font-size:9px;text-align:right;font-weight:bold;padding:3px 0;">${data.subjects.filter(s => !s.isAbsent && s.score !== null).length}</td>
           </tr><tr>
-            <td style="font-size:8px;padding:2px 0;">Nombre de compétences max. + min. atteintes :</td>
-            <td style="font-size:8px;text-align:right;font-weight:bold;padding:2px 0;">${data.subjects.filter(s => !s.isAbsent && s.score !== null && s.score >= 10).length}</td>
+            <td style="font-size:9px;padding:3px 0;">Nombre de compétences max. + min. atteintes :</td>
+            <td style="font-size:9px;text-align:right;font-weight:bold;padding:3px 0;">${data.subjects.filter(s => !s.isAbsent && s.score !== null && s.score >= 10).length}</td>
           </tr><tr>
-            <td style="font-size:8px;font-weight:bold;padding:2px 0;">Seuil de réussite globale atteint :</td>
-            <td style="font-size:8px;text-align:right;font-weight:bold;padding:2px 0;">
+            <td style="font-size:9px;font-weight:bold;padding:3px 0;">Seuil de réussite globale atteint :</td>
+            <td style="font-size:9px;text-align:right;font-weight:bold;padding:3px 0;">
               <span style="color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#94a3b8'};">${(data.generalAverage || 0) >= 10 ? 'X OUI' : '☐ OUI'}</span>
               &nbsp;
               <span style="color:${(data.generalAverage || 0) < 10 ? '#dc2626' : '#94a3b8'};">${(data.generalAverage || 0) < 10 ? 'X NON' : '☐ NON'}</span>
@@ -344,54 +344,54 @@ export class BulletinPdfService {
           </tr></table>
         </div>
 
-        <!-- II - ATTITUDES (pleine largeur) -->
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:8px;width:100%;">
-          <div style="font-size:8px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:5px;">II - Attitudes</div>
-          <div style="font-size:8px;margin-bottom:4px;">
-            <strong>Assiduité :</strong> <span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:10px;"></span>
+        <!-- II - ATTITUDES (pleine largeur, plus aéré) -->
+        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
+          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:6px;">II - Attitudes</div>
+          <div style="font-size:9px;margin-bottom:5px;">
+            <strong>Assiduité :</strong> <span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:12px;"></span>
           </div>
-          <div style="font-size:8px;margin-bottom:4px;">
-            <strong>Discipline :</strong> <span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:10px;"></span>
+          <div style="font-size:9px;margin-bottom:5px;">
+            <strong>Discipline :</strong> <span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:12px;"></span>
           </div>
-          <div style="font-size:8px;margin-bottom:3px;"><strong>Défauts majeurs identifiés :</strong></div>
-          ${[1,2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:3px 0;height:8px;"></div>').join('')}
-          <div style="font-size:8px;margin-top:4px;margin-bottom:3px;"><strong>Qualités remarquables :</strong></div>
-          ${[1,2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:3px 0;height:8px;"></div>').join('')}
+          <div style="font-size:9px;margin-bottom:4px;"><strong>Défauts majeurs identifiés :</strong></div>
+          ${[1,2,3].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:4px 0;height:10px;"></div>').join('')}
+          <div style="font-size:9px;margin-top:5px;margin-bottom:4px;"><strong>Qualités remarquables :</strong></div>
+          ${[1,2,3].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:4px 0;height:10px;"></div>').join('')}
         </div>
 
-        <!-- ANALYSE DES RESULTATS (pleine largeur) -->
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:8px;width:100%;">
-          <div style="font-size:8px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Analyse des résultats et recommandations</div>
-          ${[1,2,3,4].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:4px 0;height:8px;"></div>').join('')}
+        <!-- ANALYSE DES RESULTATS (pleine largeur, plus de lignes) -->
+        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
+          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:5px;">Analyse des résultats et recommandations</div>
+          ${[1,2,3,4,5,6].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:5px 0;height:10px;"></div>').join('')}
         </div>
 
         <!-- 3 SIGNATURES (pleine largeur, aérées) -->
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:8px;width:100%;">
+        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
           <table style="width:100%;border-collapse:collapse;">
             <tr>
-              <td style="width:33%;text-align:center;vertical-align:bottom;padding:4px 2px;">
-                <div style="height:35px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:35px;max-width:85px;object-fit:contain;" />` : ''}</div>
-                <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:7px;font-weight:bold;color:#0A2A5E;">Enseignant(e)</div>
-                <div style="font-size:6px;color:#64748b;">Signature du titulaire</div>
+              <td style="width:33%;text-align:center;vertical-align:bottom;padding:8px 2px;">
+                <div style="height:40px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:40px;max-width:85px;object-fit:contain;" />` : ''}</div>
+                <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:8px;font-weight:bold;color:#0A2A5E;">Enseignant(e)</div>
+                <div style="font-size:7px;color:#64748b;">Signature du titulaire</div>
               </td>
-              <td style="width:34%;text-align:center;vertical-align:bottom;padding:4px 2px;">
-                <div style="height:35px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:35px;max-width:85px;object-fit:contain;" />` : ''}</div>
-                <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:7px;font-weight:bold;color:#0A2A5E;">Parent</div>
-                <div style="font-size:6px;color:#64748b;">Signature et nom</div>
+              <td style="width:34%;text-align:center;vertical-align:bottom;padding:8px 2px;">
+                <div style="height:40px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:40px;max-width:85px;object-fit:contain;" />` : ''}</div>
+                <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:8px;font-weight:bold;color:#0A2A5E;">Parent</div>
+                <div style="font-size:7px;color:#64748b;">Signature et nom</div>
               </td>
-              <td style="width:33%;text-align:center;vertical-align:bottom;padding:4px 2px;">
-                <div style="height:35px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:35px;max-width:85px;object-fit:contain;" />` : ''}</div>
-                <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:7px;font-weight:bold;color:#0A2A5E;">VISA du Directeur</div>
-                <div style="font-size:6px;color:#64748b;">Visa</div>
+              <td style="width:33%;text-align:center;vertical-align:bottom;padding:8px 2px;">
+                <div style="height:40px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:40px;max-width:85px;object-fit:contain;" />` : ''}</div>
+                <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:8px;font-weight:bold;color:#0A2A5E;">VISA du Directeur</div>
+                <div style="font-size:7px;color:#64748b;">Visa</div>
               </td>
             </tr>
           </table>
         </div>
 
         <!-- QR code (séparé, en bas) -->
-        <div style="text-align:center;margin-top:6px;">
-          <img src="${qrCode}" style="width:40px;height:40px;" alt="QR" />
-          <div style="font-size:6px;color:#94a3b8;">Code de vérification</div>
+        <div style="text-align:center;margin-top:8px;">
+          <img src="${qrCode}" style="width:45px;height:45px;" alt="QR" />
+          <div style="font-size:7px;color:#94a3b8;">Code de vérification</div>
         </div>
       </div>`;
 
@@ -424,10 +424,10 @@ body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10p
 .two-col-table { width:100%; border-collapse:collapse; }
 .two-col-table > tr > td { vertical-align:top; }
 .col-left { width:62%; padding-right:6px; border-right:1px solid #0A2A5E; }
-.col-right { width:38%; padding-left:6px; position:relative; }
+.col-right { width:38%; padding-left:6px; }
 table.notes { width:100%; border-collapse:collapse; }
-table.notes th { color:white; border:1px solid; padding:2px 3px; font-size:7px; text-transform:uppercase; }
-table.notes td { border:1px solid #cbd5e1; padding:2px 3px; }
+table.notes th { color:white; border:1px solid; padding:5px 3px; font-size:7px; text-transform:uppercase; }
+table.notes td { border:1px solid #cbd5e1; padding:5px 3px; }
 table.notes tbody tr:nth-child(even) { background:#f8fafc; }
 .footer { margin-top:4px; text-align:center; font-size:6px; color:#999; border-top:1px solid #eee; padding-top:3px; }
 </style>

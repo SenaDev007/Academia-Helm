@@ -714,8 +714,20 @@ export class BulletinsService {
    * Récupère le statut du workflow pour une classe + période
    */
   async getWorkflowStatus(tenantId: string, academicYearId: string, periodId: string, classId: string) {
+    // ⭐ Filter by classId — only return bulletins for students in THIS class
+    // (not all students in the tenant, to avoid cross-level signature leakage)
     const bulletins = await this.prisma.reportCard.findMany({
-      where: { tenantId, academicYearId, quarterId: periodId },
+      where: {
+        tenantId,
+        academicYearId,
+        quarterId: periodId,
+        // Filter by students enrolled in this specific class
+        student: {
+          studentEnrollments: {
+            some: { classId, academicYearId, tenantId },
+          },
+        },
+      },
       select: {
         id: true,
         status: true,

@@ -718,6 +718,7 @@ function BulletinsContent() {
                       canDownload={!isTeacher}
                       directorSignature={workflowSignatures[student.id]?.directorSig}
                       teacherSignature={workflowSignatures[student.id]?.teacherSig}
+                      selectedPeriodId={selectedPeriodId}
                     />
                   </div>
                 )}
@@ -757,6 +758,7 @@ function BulletinTwoPage({
   student, bulletinData, isMaternelle, school, academicYear,
   selectedPeriodName, selectedClassName, selectedEvalTypeCode, selectedEvalTypeName,
   onGeneratePdf, generatingPdf, canDownload = true, directorSignature, teacherSignature,
+  selectedPeriodId,
 }: {
   student: StudentResult;
   bulletinData: BulletinData;
@@ -772,6 +774,7 @@ function BulletinTwoPage({
   canDownload?: boolean;
   directorSignature?: string | null;
   teacherSignature?: string | null;
+  selectedPeriodId?: string;
 }) {
   const [page, setPage] = useState<1 | 2>(1);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);

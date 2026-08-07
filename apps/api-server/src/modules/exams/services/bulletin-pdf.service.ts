@@ -67,6 +67,12 @@ export interface BulletinPdfData {
   symboleMerite?: string | null;
   // ⭐ Visa global du directeur (auto-rempli depuis appreciation, éditable)
   directorVisa?: string | null;
+  // ⭐ Annotations par élève (page 2 du carnet)
+  assiduite?: string | null;
+  discipline?: string | null;
+  defautsMajeurs?: string | null;
+  qualitesRemarquables?: string | null;
+  analyseRecommandations?: string | null;
   // Signatures (base64)
   teacherSignature?: string | null;
   directorSignature?: string | null;
@@ -540,21 +546,21 @@ export class BulletinPdfService {
       <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
         <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">II - Attitudes</div>
         <div style="font-size:10px;margin-bottom:4px;">
-          <strong>Assiduité :</strong> <span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:12px;"></span>
+          <strong>Assiduité :</strong> ${data.assiduite ? `<span style="color:#1a1a1a;">${data.assiduite}</span>` : '<span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:60%;height:12px;"></span>'}
         </div>
         <div style="font-size:10px;margin-bottom:4px;">
-          <strong>Discipline :</strong> <span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:12px;"></span>
+          <strong>Discipline :</strong> ${data.discipline ? `<span style="color:#1a1a1a;">${data.discipline}</span>` : '<span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:60%;height:12px;"></span>'}
         </div>
         <div style="font-size:10px;margin-bottom:3px;"><strong>Défauts majeurs identifiés :</strong></div>
-        ${[1,2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:3px 0;height:10px;"></div>').join('')}
+        ${data.defautsMajeurs ? `<div style="font-size:9px;color:#475569;margin-bottom:4px;">${data.defautsMajeurs}</div>` : [1,2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:3px 0;height:10px;"></div>').join('')}
         <div style="font-size:10px;margin-top:4px;margin-bottom:3px;"><strong>Qualités remarquables :</strong></div>
-        ${[1,2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:3px 0;height:10px;"></div>').join('')}
+        ${data.qualitesRemarquables ? `<div style="font-size:9px;color:#475569;margin-bottom:4px;">${data.qualitesRemarquables}</div>` : [1,2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:3px 0;height:10px;"></div>').join('')}
       </div>
 
       <!-- ANALYSE DES RESULTATS -->
       <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
         <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Analyse des résultats et recommandations</div>
-        ${[1,2,3,4].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:4px 0;height:10px;"></div>').join('')}
+        ${data.analyseRecommandations ? `<div style="font-size:9px;color:#475569;line-height:1.5;">${data.analyseRecommandations}</div>` : [1,2,3,4].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:4px 0;height:10px;"></div>').join('')}
       </div>
 
       <!-- 3 SIGNATURES -->

@@ -24,7 +24,7 @@ import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
 import {
   FileText, Loader2, ChevronDown, ChevronRight, Download,
   Users, BookOpen, Award, Calendar, Printer, AlertCircle,
-  Calculator, Shield, PenTool, Send, Mail, Undo, CheckCircle, ShieldAlert, Settings, Save,
+  Calculator, Shield, PenTool, Send, Mail, Undo, CheckCircle, ShieldAlert, Settings, Save, Sparkles,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -460,10 +460,27 @@ function BulletinsContent() {
         lowestAverage: bulletinData!.results.length > 0 ? Math.min(...bulletinData!.results.map(r => r.generalAverage || 0)) : null,
         totalStudents: bulletinData!.results.length,
         appreciationGlobale: student.appreciationGlobale,
+        directorVisa: signatures?.directorSig ? undefined : (student.appreciationGlobale || undefined),
+        assiduite: (window as any).__bulletinAnnotations?.[student.id]?.assiduite || null,
+        discipline: (window as any).__bulletinAnnotations?.[student.id]?.discipline || null,
+        defautsMajeurs: (window as any).__bulletinAnnotations?.[student.id]?.defautsMajeurs || null,
+        qualitesRemarquables: (window as any).__bulletinAnnotations?.[student.id]?.qualitesRemarquables || null,
+        analyseRecommandations: (window as any).__bulletinAnnotations?.[student.id]?.analyseRecommandations || null,
         teacherSignature: signatures?.teacherSig ?? null,
         directorSignature: signatures?.directorSig ?? null,
         parentSignature: signatures?.parentSig ?? null,
       };
+
+      // ⭐ Load annotations from backend before generating PDF
+      try {
+        const annRes = await apiClient.get(`/institutional-exams/bulletins/annotations?studentId=${student.id}&periodId=${selectedPeriodId}`);
+        const ann = annRes.data || {};
+        payload.assiduite = ann.assiduite || null;
+        payload.discipline = ann.discipline || null;
+        payload.defautsMajeurs = ann.defautsMajeurs || null;
+        payload.qualitesRemarquables = ann.qualitesRemarquables || null;
+        payload.analyseRecommandations = ann.analyseRecommandations || null;
+      } catch {}
 
       const response = await apiClient.post('/institutional-exams/bulletins/generate-pdf', payload, {
         responseType: 'blob',
@@ -836,7 +853,7 @@ function BulletinTwoPage({
               <BulletinPrimairePage1 student={student} bulletinData={bulletinData} />
             )
           ) : (
-            <BulletinPage2 student={student} isMaternelle={isMaternelle} signatures={{ teacherSig, directorSig, parentSig, setTeacherSig, setDirectorSig, setParentSig }} />
+            <BulletinPage2 student={student} isMaternelle={isMaternelle} signatures={{ teacherSig, directorSig, parentSig, setTeacherSig, setDirectorSig, setParentSig }} periodId={selectedPeriodId} />
           )}
         </div>
       </div>
@@ -1126,81 +1143,135 @@ function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResu
 
 // ─── Page 2: Appréciations + Signatures (Maternelle + Primaire) ────────────
 
-function BulletinPage2({ student, isMaternelle, signatures }: { student: StudentResult; isMaternelle: boolean; signatures: { teacherSig: string | null; directorSig: string | null; parentSig: string | null; setTeacherSig: (v: string | null) => void; setDirectorSig: (v: string | null) => void; setParentSig: (v: string | null) => void } }) {
-  // ⭐ Rich text state for each editable zone
-  const [teacherAnalysis, setTeacherAnalysis] = useState('');
-  const [attitudes, setAttitudes] = useState({
-    assiduite: '', discipline: '', defaults: '', qualites: '',
-  });
-  const [parentResponse, setParentResponse] = useState('');
-  // ⭐ Signatures are now managed by parent (BulletinTwoPage)
-
-  // ⭐ Visa du directeur (global, éditable, auto-save on blur)
-  // Auto-rempli depuis l'appréciation globale si vide
+function BulletinPage2({ student, isMaternelle, signatures, periodId }: { student: StudentResult; isMaternelle: boolean; signatures: { teacherSig: string | null; directorSig: string | null; parentSig: string | null; setTeacherSig: (v: string | null) => void; setDirectorSig: (v: string | null) => void; setParentSig: (v: string | null) => void }; periodId?: string }) {
+  // ⭐ Annotation state — loaded from backend + auto-save on blur
+  const [assiduite, setAssiduite] = useState('');
+  const [discipline, setDiscipline] = useState('');
+  const [defautsMajeurs, setDefautsMajeurs] = useState('');
+  const [qualitesRemarquables, setQualitesRemarquables] = useState('');
+  const [analyseRecommandations, setAnalyseRecommandations] = useState('');
   const [directorVisa, setDirectorVisa] = useState(student.appreciationGlobale || '');
   const [directorVisaSaved, setDirectorVisaSaved] = useState(false);
+  const [autoFillLoading, setAutoFillLoading] = useState(false);
 
-  // Reset visa when student changes
+  // Load annotations from backend when student/period changes
   useEffect(() => {
-    setDirectorVisa(student.appreciationGlobale || '');
-    setDirectorVisaSaved(false);
-  }, [student.id, student.appreciationGlobale]);
+    if (!student.id || !periodId) return;
+    apiClient.get(`/institutional-exams/bulletins/annotations?studentId=${student.id}&periodId=${periodId}`)
+      .then((res) => {
+        const data = res.data || {};
+        setAssiduite(data.assiduite || '');
+        setDiscipline(data.discipline || '');
+        setDefautsMajeurs(data.defautsMajeurs || '');
+        setQualitesRemarquables(data.qualitesRemarquables || '');
+        setAnalyseRecommandations(data.analyseRecommandations || '');
+        if (data.directorVisa) setDirectorVisa(data.directorVisa);
+      })
+      .catch(() => {});
+  }, [student.id, periodId]);
 
-  const handleDirectorVisaBlur = async () => {
-    if (directorVisa === student.appreciationGlobale) return; // Pas de changement
+  // Auto-save a single annotation field on blur
+  const saveAnnotation = async (field: string, value: string) => {
+    if (!student.id || !periodId) return;
     try {
-      // Auto-save via l'API backend (PATCH /institutional-exams/bulletins/director-visa)
-      // Le studentId et periodId sont récupérés depuis le contexte parent
-      // (le backend crée/met à jour le ReportCard correspondant)
-      // Pour l'instant on garde l'état local — la persistance se fait au moment
-      // de la génération PDF via le payload envoyé au backend.
-      setDirectorVisaSaved(true);
-      setTimeout(() => setDirectorVisaSaved(false), 2000);
-    } catch {
+      await apiClient.patch('/institutional-exams/bulletins/annotations', {
+        studentId: student.id,
+        periodId,
+        [field]: value,
+      });
+    } catch (err) {
       // Silent fail — non-blocking
     }
+  };
+
+  // ⭐ AI Auto-fill: generate annotations from attendance + grades
+  const handleAutoFill = async () => {
+    if (!student.id || !periodId) return;
+    setAutoFillLoading(true);
+    try {
+      const res = await apiClient.get(`/institutional-exams/bulletins/auto-annotations?studentId=${student.id}&periodId=${periodId}`);
+      const data = res.data;
+      if (data.assiduite) setAssiduite(data.assiduite);
+      if (data.discipline) setDiscipline(data.discipline);
+      if (data.defautsMajeurs !== undefined) setDefautsMajeurs(data.defautsMajeurs);
+      if (data.qualitesRemarquables !== undefined) setQualitesRemarquables(data.qualitesRemarquables);
+      if (data.analyseRecommandations) setAnalyseRecommandations(data.analyseRecommandations);
+      // Save all to backend
+      await apiClient.patch('/institutional-exams/bulletins/annotations', {
+        studentId: student.id,
+        periodId,
+        assiduite: data.assiduite,
+        discipline: data.discipline,
+        defautsMajeurs: data.defautsMajeurs,
+        qualitesRemarquables: data.qualitesRemarquables,
+        analyseRecommandations: data.analyseRecommandations,
+      });
+      toastSuccess('Annotations auto-générées', { description: 'Basées sur l\'assiduité et les résultats de l\'élève. Modifiables.' });
+    } catch (err: any) {
+      toastError('Erreur', { description: err.response?.data?.message || err.message });
+    } finally { setAutoFillLoading(false); }
   };
 
   return (
     <div className="space-y-3">
       {!isMaternelle && (
         <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
-          <h4 className="text-xs font-bold text-slate-900 uppercase mb-2">II — Attitudes</h4>
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-xs font-bold text-slate-900 uppercase mb-2">II — Attitudes</h4>
+            <button
+              type="button"
+              onClick={handleAutoFill}
+              disabled={autoFillLoading}
+              className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+              title="Générer automatiquement les annotations basées sur l'assiduité et les notes"
+            >
+              {autoFillLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+              Auto-générer
+            </button>
+          </div>
           <div className="space-y-2">
             <div>
               <label className="text-[10px] font-semibold text-slate-600">Assiduité</label>
-              <RichTextEditor
-                value={attitudes.assiduite}
-                onChange={(html) => setAttitudes(prev => ({ ...prev, assiduite: html }))}
+              <textarea
+                value={assiduite}
+                onChange={(e) => setAssiduite(e.target.value)}
+                onBlur={(e) => saveAnnotation('assiduite', e.target.value)}
+                rows={2}
                 placeholder="Renseigner l'assiduité de l'élève…"
-                minHeight="48px"
+                className="w-full text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
               />
             </div>
             <div>
               <label className="text-[10px] font-semibold text-slate-600">Discipline</label>
-              <RichTextEditor
-                value={attitudes.discipline}
-                onChange={(html) => setAttitudes(prev => ({ ...prev, discipline: html }))}
+              <textarea
+                value={discipline}
+                onChange={(e) => setDiscipline(e.target.value)}
+                onBlur={(e) => saveAnnotation('discipline', e.target.value)}
+                rows={2}
                 placeholder="Renseigner la discipline de l'élève…"
-                minHeight="48px"
+                className="w-full text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
               />
             </div>
             <div>
               <label className="text-[10px] font-semibold text-slate-600">Défauts majeurs identifiés</label>
-              <RichTextEditor
-                value={attitudes.defaults}
-                onChange={(html) => setAttitudes(prev => ({ ...prev, defaults: html }))}
+              <textarea
+                value={defautsMajeurs}
+                onChange={(e) => setDefautsMajeurs(e.target.value)}
+                onBlur={(e) => saveAnnotation('defautsMajeurs', e.target.value)}
+                rows={2}
                 placeholder="Renseigner les défauts majeurs…"
-                minHeight="48px"
+                className="w-full text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
               />
             </div>
             <div>
               <label className="text-[10px] font-semibold text-slate-600">Qualités remarquables</label>
-              <RichTextEditor
-                value={attitudes.qualites}
-                onChange={(html) => setAttitudes(prev => ({ ...prev, qualites: html }))}
+              <textarea
+                value={qualitesRemarquables}
+                onChange={(e) => setQualitesRemarquables(e.target.value)}
+                onBlur={(e) => saveAnnotation('qualitesRemarquables', e.target.value)}
+                rows={2}
                 placeholder="Renseigner les qualités remarquables…"
-                minHeight="48px"
+                className="w-full text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
               />
             </div>
           </div>
@@ -1211,15 +1282,28 @@ function BulletinPage2({ student, isMaternelle, signatures }: { student: Student
       <div className="bg-white rounded-lg p-3 border border-slate-200">
         <h4 className="text-xs font-bold text-slate-900 uppercase mb-2">
           {isMaternelle
-            ? 'Analyse Pédagogique Sommaire des Résultats et Recommandations de l\'Enseignant(e) aux Parents'
+            ? "Analyse Pédagogique Sommaire des Résultats et Recommandations de l'Enseignant(e) aux Parents"
             : 'Analyse des Résultats et Recommandations'}
         </h4>
-        <RichTextEditor
-          value={teacherAnalysis}
-          onChange={setTeacherAnalysis}
-          placeholder="Saisir l'analyse pédagogique et les recommandations de l'enseignant(e) aux parents… (Ctrl+B gras, Ctrl+I italique, Ctrl+U souligné)"
-          minHeight="80px"
+        <textarea
+          value={isMaternelle ? analyseRecommandations : analyseRecommandations}
+          onChange={(e) => setAnalyseRecommandations(e.target.value)}
+          onBlur={(e) => saveAnnotation('analyseRecommandations', e.target.value)}
+          rows={isMaternelle ? 6 : 4}
+          placeholder="Saisir l'analyse pédagogique et les recommandations…"
+          className="w-full text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
         />
+        {!isMaternelle && (
+          <button
+            type="button"
+            onClick={handleAutoFill}
+            disabled={autoFillLoading}
+            className="mt-2 text-xs text-blue-600 hover:underline flex items-center gap-1"
+          >
+            {autoFillLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+            Auto-générer les recommandations
+          </button>
+        )}
       </div>
 
       {/* ⭐ Symbole mérité (emoji) + Appréciation globale + Visa directeur — séparés */}

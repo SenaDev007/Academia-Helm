@@ -846,4 +846,228 @@ export class BulletinsService {
 
     return { success: true, criteria: result };
   }
+
+  // ============================================================================
+  // ⭐ ANNOTATIONS PAR ÉLÈVE (page 2 du carnet)
+  // ============================================================================
+
+  /**
+   * Sauvegarde les annotations d'un élève (assiduité, discipline, défauts, qualités, analyse)
+   */
+  async saveAnnotations(
+    tenantId: string,
+    academicYearId: string,
+    periodId: string,
+    studentId: string,
+    data: {
+      assiduite?: string;
+      discipline?: string;
+      defautsMajeurs?: string;
+      qualitesRemarquables?: string;
+      analyseRecommandations?: string;
+      directorVisa?: string;
+    },
+    userId: string,
+  ) {
+    const existing = await this.prisma.reportCard.findFirst({
+      where: { tenantId, academicYearId, studentId, quarterId: periodId },
+    });
+
+    const now = new Date();
+    if (existing) {
+      const updated = await this.prisma.reportCard.update({
+        where: { id: existing.id },
+        data: {
+          ...data,
+          directorVisaUpdatedAt: data.directorVisa !== undefined ? now : existing.directorVisaUpdatedAt,
+          updatedAt: now,
+        },
+      });
+      return { success: true, reportCardId: updated.id };
+    }
+
+    // Get schoolLevelId from enrollment
+    const enrollment = await this.prisma.studentEnrollment.findFirst({
+      where: { tenantId, academicYearId, studentId },
+      select: { schoolLevelId: true },
+    });
+
+    const created = await this.prisma.reportCard.create({
+      data: {
+        tenantId,
+        academicYearId,
+        schoolLevelId: enrollment?.schoolLevelId || '',
+        studentId,
+        quarterId: periodId,
+        type: 'BULLETIN',
+        overallAverage: 0,
+        status: 'DRAFT',
+        ...data,
+      },
+    });
+    return { success: true, reportCardId: created.id, created: true };
+  }
+
+  /**
+   * Récupère les annotations d'un élève
+   */
+  async getAnnotations(
+    tenantId: string,
+    academicYearId: string,
+    periodId: string,
+    studentId: string,
+  ) {
+    const reportCard = await this.prisma.reportCard.findFirst({
+      where: { tenantId, academicYearId, studentId, quarterId: periodId },
+      select: {
+        id: true,
+        assiduite: true,
+        discipline: true,
+        defautsMajeurs: true,
+        qualitesRemarquables: true,
+        analyseRecommandations: true,
+        directorVisa: true,
+        status: true,
+      },
+    });
+
+    return reportCard || {
+      id: null,
+      assiduite: null,
+      discipline: null,
+      defautsMajeurs: null,
+      qualitesRemarquables: null,
+      analyseRecommandations: null,
+      directorVisa: null,
+      status: null,
+    };
+  }
+
+  /**
+   * ⭐ IA Auto-fill: Génère automatiquement les annotations basées sur
+   * l'assiduité (absences/retards) et les performances (notes) de l'élève.
+   * L'enseignant peut ensuite modifier ces suggestions.
+   */
+  async autoGenerateAnnotations(
+    tenantId: string,
+    academicYearId: string,
+    periodId: string,
+    studentId: string,
+  ) {
+    // 1. Récupérer les absences de l'élève pour cette période
+    const absences = await this.prisma.absence.findMany({
+      where: { tenantId, studentId, academicYearId },
+      select: { type: true, justified: true, date: true },
+    }).catch(() => []);
+
+    // 2. Récupérer les enregistrements d'assiduité
+    const attendanceRecords = await this.prisma.attendanceRecord.findMany({
+      where: { tenantId, studentId },
+      select: { status: true, date: true },
+    }).catch(() => []);
+
+    // 3. Récupérer les notes de l'élève
+    const grades = await this.prisma.grade.findMany({
+      where: { tenantId, studentId },
+      select: { score: true, isAbsent: true },
+    }).catch(() => []);
+
+    // 4. Récupérer les records disciplinaires
+    const disciplines = await this.prisma.discipline.findMany({
+      where: { tenantId, studentId },
+      select: { type: true, severity: true, date: true },
+    }).catch(() => []);
+
+    // Calculer les statistiques
+    const totalAbsences = absences.filter(a => !a.justified).length;
+    const totalRetards = absences.filter(a => a.type === 'LATE' || a.type === 'RETARD').length;
+    const totalAbsencesJustified = absences.filter(a => a.justified).length;
+    const absentRecords = attendanceRecords.filter(r => r.status === 'ABSENT').length;
+    const lateRecords = attendanceRecords.filter(r => r.status === 'LATE').length;
+
+    const validGrades = grades.filter(g => !g.isAbsent && g.score !== null).map(g => Number(g.score));
+    const avgScore = validGrades.length > 0
+      ? validGrades.reduce((sum, v) => sum + v, 0) / validGrades.length
+      : null;
+
+    const disciplineIssues = disciplines.filter(d => d.severity === 'HIGH' || d.severity === 'CRITICAL').length;
+
+    // 5. Générer les annotations automatiques
+    let assiduite = '';
+    let discipline = '';
+    let defautsMajeurs = '';
+    let qualitesRemarquables = '';
+    let analyseRecommandations = '';
+
+    // Assiduité
+    if (totalAbsences === 0 && lateRecords === 0) {
+      assiduite = 'Excellente assiduité. Aucune absence ni retard enregistré.';
+    } else if (totalAbsences <= 2 && lateRecords <= 3) {
+      assiduite = `Bonne assiduité. ${totalAbsences} absence(s) non justifiée(s), ${lateRecords} retard(s).`;
+    } else if (totalAbsences <= 5) {
+      assiduite = `Assiduité moyenne. ${totalAbsences} absence(s) non justifiée(s), ${lateRecords} retard(s). Peut mieux faire.`;
+    } else {
+      assiduite = `Assiduité insuffisante. ${totalAbsences} absence(s) non justifiée(s), ${lateRecords} retard(s). Une amélioration est nécessaire.`;
+    }
+
+    // Discipline
+    if (disciplineIssues === 0) {
+      discipline = 'Bonne discipline. Aucun incident majeur enregistré.';
+    } else if (disciplineIssues <= 2) {
+      discipline = `${disciplineIssues} incident(s) disciplinaire(s) enregistré(s). Comportement acceptable mais perfectible.`;
+    } else {
+      discipline = `${disciplineIssues} incidents disciplinaires enregistrés. Une attention particulière est requise.`;
+    }
+
+    // Défauts majeurs
+    if (avgScore !== null && avgScore < 8) {
+      defautsMajeurs = 'Difficultés d\'apprentissage dans plusieurs matières. Manque de concentration observé.';
+    } else if (totalAbsences > 5) {
+      defautsMajeurs = 'Absentéisme fréquent qui impacte les résultats scolaires.';
+    } else if (disciplineIssues > 2) {
+      defautsMajeurs = 'Comportement perturbateur en classe signalé à plusieurs reprises.';
+    } else {
+      defautsMajeurs = '';
+    }
+
+    // Qualités remarquables
+    if (avgScore !== null && avgScore >= 14) {
+      qualitesRemarquables = 'Élève brillant, sérieux et travailleur. Excellentes performances scolaires.';
+    } else if (avgScore !== null && avgScore >= 10) {
+      qualitesRemarquables = 'Élève appliqué, progresse régulièrement. Bonne attitude face au travail.';
+    } else if (totalAbsences === 0 && lateRecords === 0) {
+      qualitesRemarquables = 'Élève régulier et ponctuel. Efforts constants malgré les difficultés.';
+    } else {
+      qualitesRemarquables = '';
+    }
+
+    // Analyse et recommandations
+    if (avgScore !== null && avgScore >= 14) {
+      analyseRecommandations = 'Excellents résultats. Encourager l\'élève à maintenir ce niveau et à viser l\'excellence.';
+    } else if (avgScore !== null && avgScore >= 10) {
+      analyseRecommandations = 'Résultats satisfaisants. L\'élève peut progresser avec un accompagnement ciblé dans les matières faibles.';
+    } else if (avgScore !== null && avgScore < 10) {
+      analyseRecommandations = 'Résultats insuffisants. Un soutien pédagogique renforcé est recommandé. Organiser des séances de rattrapage.';
+    } else {
+      analyseRecommandations = 'Évaluation en cours. Suivre l\'évolution de l\'élève durant la prochaine période.';
+    }
+
+    return {
+      assiduite,
+      discipline,
+      defautsMajeurs,
+      qualitesRemarquables,
+      analyseRecommandations,
+      stats: {
+        totalAbsences,
+        totalRetards,
+        totalAbsencesJustified,
+        lateRecords,
+        absentRecords,
+        avgScore: avgScore !== null ? Number(avgScore.toFixed(2)) : null,
+        disciplineIssues,
+        totalGrades: validGrades.length,
+      },
+    };
+  }
 }

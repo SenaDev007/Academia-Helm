@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
@@ -40,10 +41,29 @@ class _SchoolSelectScreenState extends ConsumerState<SchoolSelectScreen> {
   }
 
   void _selectSchool(TenantSchool school) {
-    // Store the selected school — login screen will read it from this provider
+    final selectedPortal = ref.read(selectedPortalProvider);
+
+    // PUBLIC portal: no login required — open the web pre-enrollment page
+    // directly (3-step wizard too complex to replicate natively for now).
+    // Matches web behavior: /portal → click Public → school-select →
+    // redirect to /public/pre-enrollment?school=<slug> (no auth).
+    if (selectedPortal == PortalType.public) {
+      final slug = school.slug.isNotEmpty ? school.slug : school.id;
+      final url = 'https://app.academiahelm.com/public/pre-enrollment?school=$slug';
+      _launchUrl(url);
+      return;
+    }
+
+    // Other portals: store the selected school + navigate to login
     ref.read(selectedSchoolProvider.notifier).state = school;
-    // Push (not go) so back button returns to school-select
     context.push('/login');
+  }
+
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   @override

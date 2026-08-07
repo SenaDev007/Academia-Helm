@@ -239,9 +239,11 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
               return null;
             },
             decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.email_outlined, size: 20),
+              prefixIcon: Icon(Icons.email_outlined, size: 18),
               labelText: 'Adresse email',
               hintText: 'votre@email.com',
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             ),
           ),
           const SizedBox(height: AHSpacing.xl),

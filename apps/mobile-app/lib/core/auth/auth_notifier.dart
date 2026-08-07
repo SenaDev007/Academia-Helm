@@ -152,9 +152,20 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 
       result.when(
         success: (Map<String, dynamic> data) async {
-          final String accessToken = data['accessToken'] as String;
-          final String refreshToken = data['refreshToken'] as String;
-          final int? expiresIn = data['expiresIn'] as int?;
+          // Defensive parsing — backend may nest tokens in a sub-object
+          // (e.g., data['accessToken'] = {value: "...", expiresAt: "..."})
+          // or return them as flat strings. Handle both cases.
+          final dynamic accessTokenRaw = data['accessToken'] ?? data['access_token'];
+          final dynamic refreshTokenRaw = data['refreshToken'] ?? data['refresh_token'];
+          final dynamic expiresInRaw = data['expiresIn'] ?? data['expires_in'];
+
+          final String accessToken = _extractString(accessTokenRaw);
+          final String refreshToken = _extractString(refreshTokenRaw);
+          final int? expiresIn = _extractInt(expiresInRaw);
+
+          if (accessToken.isEmpty) {
+            throw AuthException('Token d\'accès manquant dans la réponse du serveur.');
+          }
 
           // Persist tokens.
           await TokenStorage.saveTokens(
@@ -167,9 +178,10 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 
           _cachedAccessToken = accessToken;
 
-          // Parse user data.
+          // Parse user data — may be nested in data['user'], data['data'], or flat
+          final dynamic userRaw = data['user'] ?? data['data'] ?? data;
           final Map<String, dynamic> userData =
-              data['user'] as Map<String, dynamic>? ?? data;
+              userRaw is Map<String, dynamic> ? userRaw : <String, dynamic>{};
 
           final AuthUser user = AuthUser.fromJson(userData);
 
@@ -442,10 +454,19 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 
       return result.when(
         success: (Map<String, dynamic> data) async {
-          final String newAccessToken = data['accessToken'] as String;
-          final String newRefreshToken =
-              data['refreshToken'] as String? ?? refreshToken;
-          final int? expiresIn = data['expiresIn'] as int?;
+          // Defensive parsing — same as login()
+          final dynamic newAccessTokenRaw = data['accessToken'] ?? data['access_token'];
+          final dynamic newRefreshTokenRaw = data['refreshToken'] ?? data['refresh_token'];
+          final dynamic expiresInRaw = data['expiresIn'] ?? data['expires_in'];
+
+          final String newAccessToken = _extractString(newAccessTokenRaw);
+          if (newAccessToken.isEmpty) {
+            return false;
+          }
+          final String newRefreshToken = _extractString(newRefreshTokenRaw).isNotEmpty
+              ? _extractString(newRefreshTokenRaw)
+              : refreshToken;
+          final int? expiresIn = _extractInt(expiresInRaw);
 
           await TokenStorage.saveTokens(
             accessToken: newAccessToken,
@@ -511,6 +532,34 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       }
     }
     return [];
+  }
+
+  /// Safely extracts a String from a dynamic value.
+  /// Handles: String, int, double, bool, Map (tries 'value' or 'token' key), List (first element).
+  String _extractString(dynamic value) {
+    if (value == null) return '';
+    if (value is String) return value;
+    if (value is Map<String, dynamic>) {
+      // Try common nested keys for tokens
+      return (value['value'] ?? value['token'] ?? value['access_token'] ?? '').toString();
+    }
+    if (value is List && value.isNotEmpty) {
+      return value.first.toString();
+    }
+    return value.toString();
+  }
+
+  /// Safely extracts an int from a dynamic value.
+  int? _extractInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is String) return int.tryParse(value);
+    if (value is double) return value.toInt();
+    if (value is Map<String, dynamic>) {
+      final dynamic inner = value['value'] ?? value['seconds'] ?? value['expiresIn'];
+      return _extractInt(inner);
+    }
+    return null;
   }
 }
 

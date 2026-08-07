@@ -18,6 +18,7 @@ import '../../features/auth/pages/logout_screen.dart';
 import '../../features/auth/pages/forgot_password_screen.dart';
 import '../../features/auth/pages/reset_password_screen.dart';
 import '../../features/landing/pages/landing_page_screen.dart';
+import '../../features/teacher/pages/teacher_dashboard_screen.dart';
 import '../../features/dashboard/pages/dashboard_screen.dart';
 import '../../features/profile/pages/profile_screen.dart';
 import '../../features/students/pages/students_screen.dart';
@@ -326,6 +327,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             pageBuilder: (context, state) => const NoTransitionPage(
               child: DashboardScreen(),
             ),
+          ),
+          GoRoute(
+            path: '/teacher-dashboard',
+            name: 'teacherDashboard',
+            builder: (context, state) => const TeacherDashboardScreen(),
           ),
           GoRoute(
             path: '/students',

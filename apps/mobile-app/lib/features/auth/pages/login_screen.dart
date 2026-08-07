@@ -57,6 +57,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final authState = ref.read(authNotifierProvider).valueOrNull;
       if (authState?.isAuthenticated == true) {
         final tenants = authState?.availableTenantsOrNull ?? [];
+        final selectedPortal = ref.read(selectedPortalProvider);
+
+        // Route based on portal type (matches web's getEffectivePortal logic)
+        if (selectedPortal == PortalType.teacher) {
+          if (mounted) context.go('/teacher-dashboard');
+          return;
+        }
+        if (selectedPortal == PortalType.parent) {
+          // Parent dashboard will be implemented in a future commit
+          // For now, route to the generic dashboard
+          if (mounted) context.go('/dashboard');
+          return;
+        }
 
         if (tenants.length == 1) {
           // Auto-select the only tenant and go to dashboard.

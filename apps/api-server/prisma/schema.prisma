@@ -7962,6 +7962,12 @@ model ReportCard {
   sentToParentBy           String?
   parentReceivedAt         DateTime?
   blockedReason            String?
+  // ⭐ Annotations par élève (page 2 du carnet)
+  assiduite                String?
+  discipline               String?
+  defautsMajeurs           String?
+  qualitesRemarquables     String?
+  analyseRecommandations   String?
   createdAt                DateTime         @default(now())
   updatedAt                DateTime         @updatedAt
   language                 String?

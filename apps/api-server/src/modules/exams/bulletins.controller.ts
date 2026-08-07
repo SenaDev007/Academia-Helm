@@ -213,6 +213,81 @@ export class BulletinsController {
     return this.bulletinsService.updateSendingCriteria(resolvedTenantId, body, user?.id);
   }
 
+  // ============================================================================
+  // ⭐ ANNOTATIONS PAR ÉLÈVE (page 2 du carnet)
+  // ============================================================================
+
+  /**
+   * GET /institutional-exams/bulletins/annotations?studentId=X&periodId=Y
+   * Récupère les annotations sauvegardées pour un élève
+   */
+  @Get('annotations')
+  @Permissions('exams.read')
+  async getAnnotations(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+    @AcademicYearId() academicYearId: string,
+    @Query('studentId') studentId: string,
+    @Query('periodId') periodId: string,
+  ) {
+    const resolvedTenantId = tenantId || user?.tenantId || headers?.['x-tenant-id'];
+    return this.bulletinsService.getAnnotations(resolvedTenantId, academicYearId, periodId, studentId);
+  }
+
+  /**
+   * PATCH /institutional-exams/bulletins/annotations
+   * Sauvegarde les annotations d'un élève (assiduité, discipline, etc.)
+   * Body: { studentId, periodId, assiduite?, discipline?, defautsMajeurs?,
+   *         qualitesRemarquables?, analyseRecommandations?, directorVisa? }
+   */
+  @Patch('annotations')
+  @Permissions('exams.manage')
+  async saveAnnotations(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+    @AcademicYearId() academicYearId: string,
+    @UserId() userId: string,
+    @Body() body: {
+      studentId: string;
+      periodId: string;
+      assiduite?: string;
+      discipline?: string;
+      defautsMajeurs?: string;
+      qualitesRemarquables?: string;
+      analyseRecommandations?: string;
+      directorVisa?: string;
+    },
+  ) {
+    const resolvedTenantId = tenantId || user?.tenantId || headers?.['x-tenant-id'];
+    const { studentId, periodId, ...data } = body;
+    return this.bulletinsService.saveAnnotations(
+      resolvedTenantId, academicYearId, periodId, studentId, data, userId,
+    );
+  }
+
+  /**
+   * GET /institutional-exams/bulletins/auto-annotations?studentId=X&periodId=Y
+   * ⭐ IA Auto-fill: Génère automatiquement les annotations basées sur
+   * l'assiduité et les performances de l'élève
+   */
+  @Get('auto-annotations')
+  @Permissions('exams.read')
+  async autoGenerateAnnotations(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+    @AcademicYearId() academicYearId: string,
+    @Query('studentId') studentId: string,
+    @Query('periodId') periodId: string,
+  ) {
+    const resolvedTenantId = tenantId || user?.tenantId || headers?.['x-tenant-id'];
+    return this.bulletinsService.autoGenerateAnnotations(
+      resolvedTenantId, academicYearId, periodId, studentId,
+    );
+  }
+
   @Get('download/:studentId')
   @Permissions('exams.read')
   async downloadBulletin(

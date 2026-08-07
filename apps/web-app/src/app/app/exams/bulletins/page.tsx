@@ -1187,6 +1187,22 @@ function BulletinPage2({ student, isMaternelle, signatures, periodId }: { studen
     }
   };
 
+  // ⭐ Director visa auto-save on blur
+  const handleDirectorVisaBlur = async () => {
+    if (!student.id || !periodId) return;
+    try {
+      await apiClient.patch('/institutional-exams/bulletins/annotations', {
+        studentId: student.id,
+        periodId,
+        directorVisa: directorVisa,
+      });
+      setDirectorVisaSaved(true);
+      setTimeout(() => setDirectorVisaSaved(false), 2000);
+    } catch {
+      // Silent fail — non-blocking
+    }
+  };
+
   // ⭐ AI Auto-fill: generate annotations from attendance + grades
   const handleAutoFill = async () => {
     if (!student.id || !periodId) return;

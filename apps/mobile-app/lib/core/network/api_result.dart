@@ -235,14 +235,33 @@ class ApiError {
   // ─── Private helpers for response parsing ───────────────────────────────
 
   /// Extracts a human-readable message from a Dio response body.
+  /// DEFENSIVE: handles Map<String, dynamic>, Map<String, Object>, nested
+  /// message objects, and plain strings — never throws.
   static String? _extractServerMessage(dynamic data) {
-    if (data is Map<String, dynamic>) {
-      return data['message'] as String? ??
-          data['error'] as String? ??
-          data['msg'] as String?;
+    if (data is Map) {
+      // Use .cast<String, dynamic>() to handle Map<String, Object> too
+      final Map<String, dynamic> map;
+      try {
+        map = (data as Map).cast<String, dynamic>();
+      } catch (_) {
+        return data.toString();
+      }
+
+      // Try 'message' first, then 'error', then 'msg' — but DON'T use
+      // 'as String?' because the value might be a Map (nested error object)
+      final dynamic message = map['message'] ?? map['error'] ?? map['msg'];
+      if (message is String) return message;
+      if (message is Map) {
+        // Nested error object — try to extract 'message' or 'error' from it
+        final nested = message['message'] ?? message['error'] ?? message['msg'];
+        if (nested is String) return nested;
+        return message.toString();
+      }
+      if (message != null) return message.toString();
+      return null;
     }
     if (data is String) return data;
-    return null;
+    return data?.toString();
   }
 
   /// Extracts field-level validation errors from a 422 response body.

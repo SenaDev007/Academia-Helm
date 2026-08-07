@@ -1064,14 +1064,12 @@ export class BulletinsService {
       analyseRecommandations = 'Évaluation en cours. Suivre l\'évolution de l\'élève durant la prochaine période.';
     }
 
-    // ⭐ Visa du directeur auto-généré
-    let directorVisa = '';
-    if (avgScore !== null) {
-      const mention = avgScore >= 16 ? 'Excellent' : avgScore >= 14 ? 'Très Bien' : avgScore >= 12 ? 'Assez Bien' : avgScore >= 10 ? 'Passable' : 'Insuffisant';
-      directorVisa = `Vu ce ${avgScore.toFixed(2)}/20 — ${mention}`;
-    } else {
-      directorVisa = 'Vu et approuvé';
-    }
+    // ⭐ Visa du directeur auto-généré — format: "Vu ce JJ/MM/AAAA"
+    const today = new Date();
+    const dateStr = String(today.getDate()).padStart(2, '0') + '/' +
+      String(today.getMonth() + 1).padStart(2, '0') + '/' +
+      today.getFullYear();
+    let directorVisa = `Vu ce ${dateStr}`;
 
     return {
       assiduite,

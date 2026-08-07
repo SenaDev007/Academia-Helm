@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Official brand SVG icons for social media.
 ///
@@ -81,6 +82,3 @@ class SocialIcons {
     );
   }
 }
-
-// Re-export launchUrl for convenience
-export 'package:url_launcher/url_launcher.dart' show canLaunchUrl, launchUrl, LaunchMode;

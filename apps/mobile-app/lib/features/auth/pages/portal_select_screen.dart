@@ -130,7 +130,7 @@ class PortalSelectScreen extends ConsumerWidget {
                         icon: Icons.public_outlined,
                         title: 'Public',
                         description: 'Pré-inscription en ligne',
-                        onTap: () => _selectPublicPortal(ref),
+                        onTap: () => _selectPublicPortal(context, ref),
                       ),
                       const SizedBox(height: AHSpacing.xxl),
                       _buildFooter(),
@@ -360,11 +360,11 @@ class PortalSelectScreen extends ConsumerWidget {
   /// Handles the Public portal — same school selection flow as the other
   /// portals, but the login page will redirect to the web pre-enrollment
   /// (3-step wizard too complex to replicate natively for now).
-  void _selectPublicPortal(WidgetRef ref) {
+  void _selectPublicPortal(BuildContext context, WidgetRef ref) {
     // Store the Public portal type
     ref.read(selectedPortalProvider.notifier).state = PortalType.public;
     // Go through the same school selection flow as other portals
-    context.push('/school-select');
+    GoRouter.of(context).push('/school-select');
   }
 
   Future<void> _launchUrl(String url) async {

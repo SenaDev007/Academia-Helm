@@ -162,9 +162,9 @@ final _apiDioProvider = Provider<Dio>((ref) {
   return Dio(
     BaseOptions(
       baseUrl: ApiConfig.baseUrl, // https://api.academiahelm.com/api
-      connectTimeout: const Duration(seconds: 8),
-      receiveTimeout: const Duration(seconds: 8),
-      sendTimeout: const Duration(seconds: 8),
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 15),
+      sendTimeout: const Duration(seconds: 15),
       headers: <String, dynamic>{
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -180,9 +180,9 @@ final _bffDioProvider = Provider<Dio>((ref) {
   return Dio(
     BaseOptions(
       baseUrl: 'https://academiahelm.com/api',
-      connectTimeout: const Duration(seconds: 8),
-      receiveTimeout: const Duration(seconds: 8),
-      sendTimeout: const Duration(seconds: 8),
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 15),
+      sendTimeout: const Duration(seconds: 15),
       headers: <String, dynamic>{
         'Content-Type': 'application/json',
         'Accept': 'application/json',

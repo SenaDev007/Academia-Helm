@@ -181,12 +181,28 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 
           _cachedAccessToken = accessToken;
 
-          // Parse user data — may be nested in data['user'], data['data'], or flat
+          // Parse user data — FULLY DEFENSIVE (no freezed fromJson)
+          // The generated AuthUser.fromJson() does `json['field'] as String?`
+          // which crashes if the backend returns a Map where a String is expected.
+          // We parse manually with safe type extraction.
           final dynamic userRaw = data['user'] ?? data['data'] ?? data;
           final Map<String, dynamic> userData =
-              userRaw is Map<String, dynamic> ? userRaw : <String, dynamic>{};
+              userRaw is Map ? (userRaw as Map).cast<String, dynamic>() : <String, dynamic>{};
 
-          final AuthUser user = AuthUser.fromJson(userData);
+          final AuthUser user = AuthUser(
+            id: _extractString(userData['id'] ?? userData['userId'] ?? userData['sub']),
+            email: _extractString(userData['email'] ?? userData['mail']),
+            firstName: _extractString(userData['firstName'] ?? userData['given_name'] ?? userData['firstname'] ?? ''),
+            lastName: _extractString(userData['lastName'] ?? userData['family_name'] ?? userData['lastname'] ?? ''),
+            avatarUrl: _extractStringOptional(userData['avatarUrl'] ?? userData['avatar'] ?? userData['photo'] ?? userData['photoUrl']),
+            phone: _extractStringOptional(userData['phone'] ?? userData['phoneNumber'] ?? userData['mobile']),
+            role: _extractStringOptional(userData['role'] ?? userData['userType'] ?? userData['type']),
+          );
+
+          // If we don't have a valid user id, the login failed silently
+          if (user.id.isEmpty) {
+            throw AuthException('Réponse de connexion invalide : identifiant utilisateur manquant.');
+          }
 
           // Parse available tenants from the response.
           final List<TenantBasic> availableTenants = _parseTenants(data);
@@ -547,13 +563,21 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     if (value == null) return '';
     if (value is String) return value;
     if (value is Map<String, dynamic>) {
-      // Try common nested keys for tokens
+      return (value['value'] ?? value['token'] ?? value['access_token'] ?? '').toString();
+    }
+    if (value is Map) {
       return (value['value'] ?? value['token'] ?? value['access_token'] ?? '').toString();
     }
     if (value is List && value.isNotEmpty) {
       return value.first.toString();
     }
     return value.toString();
+  }
+
+  /// Like _extractString but returns null for empty values (for optional fields).
+  String? _extractStringOptional(dynamic value) {
+    final result = _extractString(value);
+    return result.isEmpty ? null : result;
   }
 
   /// Safely extracts an int from a dynamic value.

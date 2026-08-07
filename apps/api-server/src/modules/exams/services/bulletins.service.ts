@@ -719,7 +719,9 @@ export class BulletinsService {
       select: {
         id: true,
         status: true,
+        directorSignature: true,
         directorSignedAt: true,
+        teacherSignature: true,
         teacherSignedAt: true,
         distributedToTeacherAt: true,
         sentToParentAt: true,

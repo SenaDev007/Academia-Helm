@@ -335,10 +335,12 @@ body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10p
 .bulletin-title { text-align:center; background:#0A2A5E; color:white; padding:4px 8px; border-radius:3px; margin-bottom:6px; font-size:10px; font-weight:bold; text-transform:uppercase; }
 .student-info { display:flex; justify-content:space-between; background:#f8fafc; border:1px solid #e2e8f0; border-radius:3px; padding:4px 8px; margin-bottom:8px; font-size:9px; }
 .student-info strong { color:#0A2A5E; }
-/* ⭐ Layout 2 colonnes — gauche : tableau + synthèse ; droite : symbole + visa + signatures */
-.two-col { display:flex; gap:8px; align-items:flex-start; }
-.col-left { flex: 2.8; min-width:0; }
-.col-right { flex: 1; min-width:0; max-width:230px; }
+/* ⭐ Layout 2 colonnes — gauche : tableau + synthèse ; droite : symbole + visa + signatures
+   Using table-based layout instead of flexbox for better Puppeteer rendering */
+.two-col-table { width:100%; border-collapse:collapse; }
+.two-col-table > tr > td { vertical-align:top; }
+.col-left { width:70%; padding-right:4px; }
+.col-right { width:30%; padding-left:4px; }
 table.notes { width:100%; border-collapse:collapse; }
 table.notes th { color:white; border:1px solid; padding:2px 3px; font-size:7px; text-transform:uppercase; }
 table.notes td { border:1px solid #cbd5e1; padding:2px 3px; }
@@ -377,11 +379,11 @@ table.notes tbody tr:nth-child(even) { background:#f8fafc; }
   <div>Rang: <strong>${formatRank(data.classRank, data.studentGender === 'FEMALE' || data.studentGender === 'F')}</strong> / ${data.totalStudents}</div>
 </div>
 
-<!-- ⭐ LAYOUT 2 COLONNES -->
-<div class="two-col">
-  ${leftColumn}
-  ${rightColumn}
-</div>
+<!-- ⭐ LAYOUT 2 COLONNES (table-based for Puppeteer compatibility) -->
+<table class="two-col-table"><tr>
+  <td class="col-left">${leftColumn}</td>
+  <td class="col-right">${rightColumn}</td>
+</tr></table>
 
 <!-- PIED DE PAGE -->
 <div class="footer">Document généré par Academia Helm — ${new Date().toLocaleDateString('fr-FR')} · ID: ${bulletinId}</div>

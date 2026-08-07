@@ -22,13 +22,18 @@ String? authGuardRedirect(Ref ref, GoRouterState state) {
   final isForgotPasswordRoute = state.matchedLocation == '/forgot-password';
   final isResetPasswordRoute = state.matchedLocation == '/reset-password';
   final isPortalSelectRoute = state.matchedLocation == '/portal-select';
+  // NEW public routes (added for school-select + landing flows)
+  final isSchoolSelectRoute = state.matchedLocation == '/school-select';
+  final isLandingRoute = state.matchedLocation == '/landing';
 
   // Public routes accessible without authentication.
   final isPublicRoute = isLoginRoute ||
       isSplashRoute ||
       isForgotPasswordRoute ||
       isResetPasswordRoute ||
-      isPortalSelectRoute;
+      isPortalSelectRoute ||
+      isSchoolSelectRoute ||
+      isLandingRoute;
 
   // Allow splash unconditionally.
   if (isSplashRoute) return null;

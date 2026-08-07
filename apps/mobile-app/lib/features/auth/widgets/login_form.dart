@@ -263,10 +263,12 @@ class _LoginFormState extends State<LoginForm> {
           return null;
         },
         decoration: const InputDecoration(
-          prefixIcon: Icon(Icons.badge_outlined, size: 20),
+          prefixIcon: Icon(Icons.badge_outlined, size: 18),
           labelText: 'Matricule / Identifiant',
           hintText: 'EMP001',
           helperText: 'Votre matricule vous a été communiqué par l\'établissement',
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         ),
       );
     }
@@ -303,13 +305,15 @@ class _LoginFormState extends State<LoginForm> {
         decoration: InputDecoration(
           prefixIcon: Icon(
             isEmail ? Icons.email_outlined : Icons.phone_outlined,
-            size: 20,
+            size: 18,
           ),
           labelText: isEmail ? 'Adresse email' : 'Numéro de téléphone',
           hintText: isEmail ? 'parent@exemple.com' : '+229 90 00 00 00',
           helperText: isEmail
               ? 'Email utilisé lors de l\'inscription de votre enfant'
               : 'Numéro ou email utilisé lors de l\'inscription de votre enfant',
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         ),
       );
     }
@@ -330,11 +334,13 @@ class _LoginFormState extends State<LoginForm> {
         return null;
       },
       decoration: InputDecoration(
-        prefixIcon: const Icon(Icons.email_outlined, size: 20),
+        prefixIcon: const Icon(Icons.email_outlined, size: 18),
         labelText: 'Adresse email',
         hintText: widget.portalType == PortalType.platform
             ? 'admin@academiahelm.com'
             : 'votre.email@etablissement.com',
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       ),
     );
   }
@@ -361,18 +367,20 @@ class _LoginFormState extends State<LoginForm> {
         return null;
       },
       decoration: InputDecoration(
-        prefixIcon: const Icon(Icons.lock_outline, size: 20),
+        prefixIcon: const Icon(Icons.lock_outline, size: 18),
         labelText: isOptional ? 'Mot de passe (optionnel)' : 'Mot de passe',
         hintText: isOptional ? '•••••••• (laisser vide pour OTP)' : '••••••••',
         helperText: isOptional
             ? 'Optionnel : si vous avez un mot de passe, saisissez-le. Sinon, laissez vide.'
             : null,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         suffixIcon: IconButton(
           icon: Icon(
             _obscurePassword
                 ? Icons.visibility_off_outlined
                 : Icons.visibility_outlined,
-            size: 20,
+            size: 18,
             color: AHColors.gray400,
           ),
           onPressed: () {
@@ -385,35 +393,92 @@ class _LoginFormState extends State<LoginForm> {
     );
   }
 
-  /// Builds the 4-color Google logo (matches web's Google SVG).
+  /// Builds the official 4-color Google "G" logo using a custom widget.
+  /// Renders the G as 4 colored arcs forming the classic Google logo:
+  ///   blue (top-right), red (top-left), yellow (bottom-left), green (bottom-right)
   Widget _buildGoogleIcon() {
     return SizedBox(
       width: 18,
       height: 18,
-      child: CustomPaint(
-        painter: _GoogleLogoPainter(),
-      ),
+      child: CustomPaint(painter: _GoogleLogoPainter()),
     );
   }
 }
 
-/// Paints the Google "G" logo with its 4 colors.
+/// Paints the official Google "G" logo with its 4 brand colors.
+/// The G is composed of 4 arcs that together form the iconic Google logo.
 class _GoogleLogoPainter extends CustomPainter {
+  static const _blue = Color(0xFF4285F4);
+  static const _red = Color(0xFFEA4335);
+  static const _yellow = Color(0xFFFBBC05);
+  static const _green = Color(0xFF34A853);
+
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
+    final outerRadius = size.width / 2;
+    final strokeWidth = size.width * 0.22;
+    final ringRadius = outerRadius - strokeWidth / 2;
 
-    // Blue (top-right arc)
-    final bluePaint = Paint()..color = const Color(0xFF4285F4);
+    // Draw 4 arcs forming the Google G
+    // Top-right quadrant (blue): 0° to -90°
     canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      -pi / 2,
-      pi / 2,
+      Rect.fromCircle(center: center, radius: ringRadius),
+      -pi / 2, // start at top
+      pi / 2, // sweep 90° clockwise
       false,
-      bluePaint,
+      Paint()
+        ..color = _blue
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeCap = StrokeCap.round,
     );
-    // ... (simplified — a real implementation would draw the full 4-color G)
+    // Top-left quadrant (red): -90° to -180°
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: ringRadius),
+      pi, // start at left
+      pi / 2, // sweep 90° clockwise
+      false,
+      Paint()
+        ..color = _red
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeCap = StrokeCap.round,
+    );
+    // Bottom-left quadrant (yellow): 180° to 270°
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: ringRadius),
+      pi / 2, // start at bottom
+      pi / 2, // sweep 90° clockwise
+      false,
+      Paint()
+        ..color = _yellow
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeCap = StrokeCap.round,
+    );
+    // Bottom-right quadrant (green): 270° to 360°
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: ringRadius),
+      0, // start at right
+      pi / 2, // sweep 90° clockwise
+      false,
+      Paint()
+        ..color = _green
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeCap = StrokeCap.round,
+    );
+
+    // Draw the horizontal bar (the G's inner horizontal stroke, blue)
+    canvas.drawRect(
+      Rect.fromCenter(
+        center: Offset(center.dx + ringRadius * 0.35, center.dy),
+        width: ringRadius * 0.65,
+        height: strokeWidth,
+      ),
+      Paint()..color = _blue,
+    );
   }
 
   @override

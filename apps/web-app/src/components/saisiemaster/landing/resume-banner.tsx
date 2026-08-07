@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { RotateCcw, FileSpreadsheet, PlayCircle } from "lucide-react";
-import { useSaisieMasterStore, restoreFromStorage } from "@/lib/saisiemaster/store";
+import { useSaisieMasterStore, restoreFromStorage, restoreFromBackend } from "@/lib/saisiemaster/store";
 
 interface ResumeBannerProps {
   onResume: () => void;
@@ -15,22 +15,56 @@ interface RestoredInfo {
   savedAt: string;
 }
 
-/** Lit localStorage une seule fois (lazy initializer — pas d'effet). */
-function readRestored(): RestoredInfo | null {
-  if (typeof window === "undefined") return null;
-  const data = restoreFromStorage();
-  if (!data || data.classes.length === 0) return null;
-  return {
-    classes: data.classes.map((c) => ({
-      className: c.className,
-      students: c.students,
-    })),
-    savedAt: data.savedAt,
-  };
+/** ⭐ Tente d'abord restoreFromBackend (Neon DB), puis fallback localStorage. */
+function useRestoredInfo(): [RestoredInfo | null, (v: RestoredInfo | null) => void] {
+  const [restored, setRestored] = useState<RestoredInfo | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      // 1. Try backend first (authoritative source)
+      const backendData = await restoreFromBackend();
+      if (cancelled) return;
+      if (backendData && backendData.classes.length > 0) {
+        // Also update localStorage to match backend
+        try {
+          window.localStorage.setItem("saisiemaster:autosave", JSON.stringify({
+            classes: backendData.classes,
+            activeClassIndex: backendData.activeClassIndex,
+            savedAt: backendData.savedAt,
+          }));
+        } catch {}
+        setRestored({
+          classes: backendData.classes.map((c) => ({
+            className: c.className,
+            students: c.students,
+          })),
+          savedAt: backendData.savedAt,
+        });
+        return;
+      }
+
+      // 2. Fallback to localStorage if backend returns nothing
+      const localData = restoreFromStorage();
+      if (cancelled) return;
+      if (localData && localData.classes.length > 0) {
+        setRestored({
+          classes: localData.classes.map((c) => ({
+            className: c.className,
+            students: c.students,
+          })),
+          savedAt: localData.savedAt,
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  return [restored, setRestored];
 }
 
 export function ResumeBanner({ onResume }: ResumeBannerProps) {
-  const [restored, setRestored] = useState<RestoredInfo | null>(readRestored);
+  const [restored, setRestored] = useRestoredInfo();
   const clearAll = useSaisieMasterStore((s) => s.clearAll);
 
   if (!restored) return null;

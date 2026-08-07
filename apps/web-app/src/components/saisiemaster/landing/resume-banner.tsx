@@ -15,11 +15,17 @@ interface RestoredInfo {
   savedAt: string;
 }
 
-/** ⭐ Tente d'abord restoreFromBackend (Neon DB), puis fallback localStorage. */
+/** ⭐ Tente d'abord restoreFromBackend (Neon DB), puis fallback localStorage.
+ *  Le fallback localStorage n'est utilisé QUE si un prospect est authentifié
+ *  (les données localStorage lui appartiennent donc — setAuth efface localStorage
+ *  lors d'un changement d'utilisateur). */
 function useRestoredInfo(): [RestoredInfo | null, (v: RestoredInfo | null) => void] {
   const [restored, setRestored] = useState<RestoredInfo | null>(null);
+  const prospect = useSaisieMasterStore((s) => s.prospect);
+  const token = useSaisieMasterStore((s) => s.token);
 
   useEffect(() => {
+    if (!prospect || !token) return; // Only restore if authenticated
     let cancelled = false;
     (async () => {
       // 1. Try backend first (authoritative source)
@@ -44,7 +50,7 @@ function useRestoredInfo(): [RestoredInfo | null, (v: RestoredInfo | null) => vo
         return;
       }
 
-      // 2. Fallback to localStorage if backend returns nothing
+      // 2. Fallback to localStorage ONLY if authenticated (data belongs to this user)
       const localData = restoreFromStorage();
       if (cancelled) return;
       if (localData && localData.classes.length > 0) {
@@ -58,7 +64,7 @@ function useRestoredInfo(): [RestoredInfo | null, (v: RestoredInfo | null) => vo
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [prospect?.id, token]);
 
   return [restored, setRestored];
 }

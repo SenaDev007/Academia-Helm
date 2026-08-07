@@ -38,6 +38,7 @@ import {
   getStoredProspect,
   setAuth as persistAuth,
   clearAuth as clearPersistedAuth,
+  STORAGE_KEYS,
 } from "./api";
 
 /** Editor-internal navigation (separate from `AppView`). */
@@ -356,6 +357,27 @@ export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
   // --- Auth ---
 
   setAuth: (prospect, token) => {
+    // ⭐ CRITICAL: Clear any previous user's data from localStorage before
+    // setting the new auth. Without this, a new user would see the previous
+    // user's grades data (stored in saisiemaster:autosave localStorage key).
+    if (typeof window !== "undefined") {
+      // Only clear if the prospect ID is different from what's stored
+      const oldProspectRaw = window.localStorage.getItem(STORAGE_KEYS.prospect);
+      if (oldProspectRaw) {
+        try {
+          const oldProspect = JSON.parse(oldProspectRaw);
+          if (oldProspect.id !== prospect.id) {
+            // Different user — clear old autosave data
+            window.localStorage.removeItem(STORAGE_KEY);
+          }
+        } catch {
+          // Corrupt prospect data — clear everything
+          window.localStorage.removeItem(STORAGE_KEY);
+        }
+      }
+      // Also clear the in-memory classes to avoid showing stale data
+      set({ classes: [], activeClassIndex: 0 });
+    }
     set({ prospect, token });
     persistAuth(prospect, token);
     // Track login for lead scoring (best-effort, non-blocking).
@@ -368,8 +390,16 @@ export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
       token: null,
       view: "landing",
       editorView: "notes",
+      classes: [],
+      activeClassIndex: 0,
     });
     clearPersistedAuth();
+    // ⭐ CRITICAL: Also clear the autosave data (grades) from localStorage.
+    // Without this, the next user who logs in on the same browser would see
+    // the previous user's grades.
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(STORAGE_KEY);
+    }
     if (backendSyncTimer) {
       clearTimeout(backendSyncTimer);
       backendSyncTimer = null;

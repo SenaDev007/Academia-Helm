@@ -160,6 +160,26 @@ function BulletinsContent() {
   const isTeacher = ['TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'PEDAGOGIC_COORDINATOR'].includes(user?.role || '');
   useAntiScreenshot(isTeacher);
 
+  // ⭐ Workflow signatures — loaded from backend to display in bulletin preview
+  const [workflowSignatures, setWorkflowSignatures] = useState<Record<string, { directorSig?: string; teacherSig?: string }>>({});
+
+  // Load workflow status to get signatures per student
+  useEffect(() => {
+    if (!effectiveTenantId || !academicYear?.id || !selectedClassId || !selectedPeriodId) return;
+    apiClient.get(`/institutional-exams/bulletins/class/${selectedClassId}/workflow-status?periodId=${selectedPeriodId}`)
+      .then((res) => {
+        const sigs: Record<string, { directorSig?: string; teacherSig?: string }> = {};
+        for (const b of (res.data?.bulletins || [])) {
+          sigs[b.studentId] = {
+            directorSig: b.directorSignature || undefined,
+            teacherSig: b.teacherSignature || undefined,
+          };
+        }
+        setWorkflowSignatures(sigs);
+      })
+      .catch(() => {});
+  }, [effectiveTenantId, academicYear?.id, selectedClassId, selectedPeriodId]);
+
   const activeLevel = useMemo(() => {
     if (!scopeLevel) return null;
     return (availableLevels || []).find((l: any) => (l.code || '').toUpperCase() === scopeLevel && l.id !== 'ALL');
@@ -526,7 +546,24 @@ function BulletinsContent() {
           classId={selectedClassId}
           periodId={selectedPeriodId}
           userRole={user?.role}
-          onRefresh={() => { /* reload bulletins */ loadBulletins(); }}
+          onRefresh={() => {
+            loadBulletins();
+            // ⭐ Force re-load of workflow signatures
+            if (effectiveTenantId && academicYear?.id && selectedClassId && selectedPeriodId) {
+              apiClient.get(`/institutional-exams/bulletins/class/${selectedClassId}/workflow-status?periodId=${selectedPeriodId}`)
+                .then((res) => {
+                  const sigs: Record<string, { directorSig?: string; teacherSig?: string }> = {};
+                  for (const b of (res.data?.bulletins || [])) {
+                    sigs[b.studentId] = {
+                      directorSig: b.directorSignature || undefined,
+                      teacherSig: b.teacherSignature || undefined,
+                    };
+                  }
+                  setWorkflowSignatures(sigs);
+                })
+                .catch(() => {});
+            }
+          }}
         />
       )}
 
@@ -655,6 +692,8 @@ function BulletinsContent() {
                       onGeneratePdf={(sigs) => handleGeneratePdf(student, sigs)}
                       generatingPdf={generatingPdf === student.id}
                       canDownload={!isTeacher}
+                      directorSignature={workflowSignatures[student.id]?.directorSig}
+                      teacherSignature={workflowSignatures[student.id]?.teacherSig}
                     />
                   </div>
                 )}
@@ -693,7 +732,7 @@ function BulletinsContent() {
 function BulletinTwoPage({
   student, bulletinData, isMaternelle, school, academicYear,
   selectedPeriodName, selectedClassName, selectedEvalTypeCode, selectedEvalTypeName,
-  onGeneratePdf, generatingPdf, canDownload = true,
+  onGeneratePdf, generatingPdf, canDownload = true, directorSignature, teacherSignature,
 }: {
   student: StudentResult;
   bulletinData: BulletinData;
@@ -707,13 +746,23 @@ function BulletinTwoPage({
   onGeneratePdf: (signatures: { teacherSig: string | null; directorSig: string | null; parentSig: string | null }) => void;
   generatingPdf: boolean;
   canDownload?: boolean;
+  directorSignature?: string | null;
+  teacherSignature?: string | null;
 }) {
   const [page, setPage] = useState<1 | 2>(1);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
-  // ⭐ Signature state (lifted from BulletinPage2 so it's accessible in onGeneratePdf)
-  const [teacherSig, setTeacherSig] = useState<string | null>(null);
-  const [directorSig, setDirectorSig] = useState<string | null>(null);
+  // ⭐ Signature state — initialized from workflow signatures (backend) if available
+  const [teacherSig, setTeacherSig] = useState<string | null>(teacherSignature ?? null);
+  const [directorSig, setDirectorSig] = useState<string | null>(directorSignature ?? null);
   const [parentSig, setParentSig] = useState<string | null>(null);
+
+  // ⭐ Update signatures when backend data changes (e.g. after director signs)
+  useEffect(() => {
+    if (directorSignature) setDirectorSig(directorSignature);
+  }, [directorSignature]);
+  useEffect(() => {
+    if (teacherSignature) setTeacherSig(teacherSignature);
+  }, [teacherSignature]);
 
   // ⭐ Only trigger page flip if horizontal swipe is dominant (not vertical scroll)
   //    AND the touch didn't start inside a scrollable table
@@ -1232,23 +1281,49 @@ function BulletinPage2({ student, isMaternelle, signatures }: { student: Student
           <div className="text-center">
             <p className="text-[10px] font-bold text-slate-700 mb-1">Titulaire de la classe</p>
             <div className="border border-slate-300 rounded-lg p-1 bg-slate-50/50">
-              <SignatureCanvas
-                width={280}
-                height={100}
-                onSignatureChange={signatures.setTeacherSig}
-                placeholder="Signature de l'enseignant"
-              />
+              {signatures.teacherSig ? (
+                <div className="flex flex-col items-center">
+                  <img src={signatures.teacherSig} alt="Signature de l'enseignant" className="max-h-24 max-w-[280px] object-contain" />
+                  <button
+                    type="button"
+                    onClick={() => signatures.setTeacherSig(null)}
+                    className="text-[9px] text-red-500 hover:underline mt-1"
+                  >
+                    Effacer et resigner
+                  </button>
+                </div>
+              ) : (
+                <SignatureCanvas
+                  width={280}
+                  height={100}
+                  onSignatureChange={signatures.setTeacherSig}
+                  placeholder="Signature de l'enseignant"
+                />
+              )}
             </div>
           </div>
           <div className="text-center">
             <p className="text-[10px] font-bold text-slate-700 mb-1">Le Directeur(trice)</p>
             <div className="border border-slate-300 rounded-lg p-1 bg-slate-50/50">
-              <SignatureCanvas
-                width={280}
-                height={100}
-                onSignatureChange={signatures.setDirectorSig}
-                placeholder="Signature du Directeur"
-              />
+              {signatures.directorSig ? (
+                <div className="flex flex-col items-center">
+                  <img src={signatures.directorSig} alt="Signature du Directeur" className="max-h-24 max-w-[280px] object-contain" />
+                  <button
+                    type="button"
+                    onClick={() => signatures.setDirectorSig(null)}
+                    className="text-[9px] text-red-500 hover:underline mt-1"
+                  >
+                    Effacer et resigner
+                  </button>
+                </div>
+              ) : (
+                <SignatureCanvas
+                  width={280}
+                  height={100}
+                  onSignatureChange={signatures.setDirectorSig}
+                  placeholder="Signature du Directeur"
+                />
+              )}
             </div>
           </div>
           <div className="text-center">

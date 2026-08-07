@@ -467,8 +467,8 @@ export class BulletinPdfService {
       </div>`}
 
       <!-- PIED DE PAGE PAGE 1 -->
-      <div style="margin-top:20px;"></div>
-      <div class="footer">Document généré par Academia Helm — ${new Date().toLocaleDateString('fr-FR')} · ID: ${bulletinId}</div>
+      <div style="margin-top:30px;"></div>
+      <div class="footer">Document généré par Academia Helm — ${new Date().toLocaleString('fr-FR')}</div>
       <!-- SAUT DE PAGE -->
       <div style="page-break-after:always;"></div>`;
 
@@ -600,7 +600,7 @@ export class BulletinPdfService {
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; position:relative; }
-.watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) rotate(-15deg); opacity:0.07; z-index:0; pointer-events:none; }
+.watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) rotate(-15deg); opacity:0.08; z-index:0; pointer-events:none; }
 .content { position:relative; z-index:1; }
 .header { margin-bottom:6px; padding-bottom:4px; border-bottom:2px solid #0A2A5E; }
 .header-table { width:100%; border-collapse:collapse; }
@@ -619,12 +619,12 @@ table.notes { width:100%; border-collapse:collapse; }
 table.notes th { color:white; border:1px solid; padding:5px 3px; font-size:7px; text-transform:uppercase; }
 table.notes td { border:1px solid #cbd5e1; padding:5px 3px; }
 table.notes tbody tr:nth-child(even) { background:#f8fafc; }
-.footer { margin-top:4px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; padding-top:3px; }
+.footer { margin-top:4px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; padding-top:3px; position:fixed; bottom:5mm; left:0; right:0; }
 </style>
 </head>
 <body>
 
-${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="width:200px;height:200px;object-fit:contain;" alt="" />` : ''}
+${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="width:400px;height:400px;object-fit:contain;" alt="" />` : ''}
 
 <div class="content">
 
@@ -655,7 +655,7 @@ ${page2Content}
     const avg = data.generalAverage;
     if (avg >= 16) return '🏆 Excellent';
     if (avg >= 14) return '😄 Très Bien';
-    if (avg >= 12) return '😊 Bien';
+    if (avg >= 12) return '😊 Assez Bien';
     if (avg >= 10) return '😐 Passable';
     return '😞 Insuffisant';
   }

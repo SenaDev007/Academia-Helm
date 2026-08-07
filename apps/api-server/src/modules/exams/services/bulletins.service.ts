@@ -1064,12 +1064,22 @@ export class BulletinsService {
       analyseRecommandations = 'Évaluation en cours. Suivre l\'évolution de l\'élève durant la prochaine période.';
     }
 
+    // ⭐ Visa du directeur auto-généré
+    let directorVisa = '';
+    if (avgScore !== null) {
+      const mention = avgScore >= 16 ? 'Excellent' : avgScore >= 14 ? 'Très Bien' : avgScore >= 12 ? 'Assez Bien' : avgScore >= 10 ? 'Passable' : 'Insuffisant';
+      directorVisa = `Vu ce ${avgScore.toFixed(2)}/20 — ${mention}`;
+    } else {
+      directorVisa = 'Vu et approuvé';
+    }
+
     return {
       assiduite,
       discipline,
       defautsMajeurs,
       qualitesRemarquables,
       analyseRecommandations,
+      directorVisa,
       stats: {
         totalAbsences,
         totalRetards,

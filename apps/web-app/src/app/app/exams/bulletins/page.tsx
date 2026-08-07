@@ -170,10 +170,14 @@ function BulletinsContent() {
       .then((res) => {
         const sigs: Record<string, { directorSig?: string; teacherSig?: string }> = {};
         for (const b of (res.data?.bulletins || [])) {
-          sigs[b.studentId] = {
-            directorSig: b.directorSignature || undefined,
-            teacherSig: b.teacherSignature || undefined,
-          };
+          // ⭐ b.student.id is the studentId (Prisma includes relation as nested object)
+          const studentId = b.studentId || b.student?.id;
+          if (studentId) {
+            sigs[studentId] = {
+              directorSig: b.directorSignature || undefined,
+              teacherSig: b.teacherSignature || undefined,
+            };
+          }
         }
         setWorkflowSignatures(sigs);
       })
@@ -554,10 +558,13 @@ function BulletinsContent() {
                 .then((res) => {
                   const sigs: Record<string, { directorSig?: string; teacherSig?: string }> = {};
                   for (const b of (res.data?.bulletins || [])) {
-                    sigs[b.studentId] = {
-                      directorSig: b.directorSignature || undefined,
-                      teacherSig: b.teacherSignature || undefined,
-                    };
+                    const studentId = b.studentId || b.student?.id;
+                    if (studentId) {
+                      sigs[studentId] = {
+                        directorSig: b.directorSignature || undefined,
+                        teacherSig: b.teacherSignature || undefined,
+                      };
+                    }
                   }
                   setWorkflowSignatures(sigs);
                 })

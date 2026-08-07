@@ -265,10 +265,19 @@ export class BulletinPdfService {
           <span style="font-size:14px;">${symboleMerite}</span>
         </div>` : `
         <div style="margin-top:6px;font-size:9px;">
-          <div style="display:flex;justify-content:space-between;background:#f8fafc;padding:2px 6px;border-radius:2px;margin-bottom:1px;"><span>Moyenne obtenue :</span><strong style="color:#0A2A5E;">${data.generalAverage !== null ? data.generalAverage.toFixed(2) : '—'}/20</strong></div>
-          <div style="display:flex;justify-content:space-between;background:#f8fafc;padding:2px 6px;border-radius:2px;margin-bottom:1px;"><span>Plus forte moyenne :</span><strong>${data.highestAverage !== null ? data.highestAverage.toFixed(2) : '—'}/20</strong></div>
-          <div style="display:flex;justify-content:space-between;background:#f8fafc;padding:2px 6px;border-radius:2px;margin-bottom:1px;"><span>Plus faible moyenne :</span><strong>${data.lowestAverage !== null ? data.lowestAverage.toFixed(2) : '—'}/20</strong></div>
-          <div style="display:flex;justify-content:space-between;background:#ecfdf5;padding:2px 6px;border-radius:2px;font-weight:bold;"><span>Seuil réussite (10/20) atteint :</span><span style="color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#dc2626'};">${(data.generalAverage || 0) >= 10 ? 'OUI' : 'NON'}</span></div>
+          <table style="width:100%;border-collapse:collapse;"><tr>
+            <td style="background:#f8fafc;padding:1px 4px;font-size:9px;">Moyenne obtenue :</td>
+            <td style="background:#f8fafc;padding:1px 4px;text-align:right;font-size:9px;font-weight:bold;color:#0A2A5E;">${data.generalAverage !== null ? data.generalAverage.toFixed(2) : '—'}/20</td>
+          </tr><tr>
+            <td style="background:#f8fafc;padding:1px 4px;font-size:9px;">Plus forte moyenne :</td>
+            <td style="background:#f8fafc;padding:1px 4px;text-align:right;font-size:9px;font-weight:bold;">${data.highestAverage !== null ? data.highestAverage.toFixed(2) : '—'}/20</td>
+          </tr><tr>
+            <td style="background:#f8fafc;padding:1px 4px;font-size:9px;">Plus faible moyenne :</td>
+            <td style="background:#f8fafc;padding:1px 4px;text-align:right;font-size:9px;font-weight:bold;">${data.lowestAverage !== null ? data.lowestAverage.toFixed(2) : '—'}/20</td>
+          </tr><tr>
+            <td style="background:#ecfdf5;padding:1px 4px;font-size:9px;font-weight:bold;">Seuil réussite (10/20) atteint :</td>
+            <td style="background:#ecfdf5;padding:1px 4px;text-align:right;font-size:9px;font-weight:bold;color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#dc2626'};">${(data.generalAverage || 0) >= 10 ? 'OUI' : 'NON'}</td>
+          </tr></table>
         </div>`}
       </div>`;
 
@@ -328,14 +337,19 @@ export class BulletinPdfService {
 
         <!-- STATS -->
         <div style="border:1px solid #cbd5e1;border-radius:2px;padding:5px;margin-bottom:5px;font-size:8px;">
-          <div style="display:flex;justify-content:space-between;margin-bottom:2px;"><span>Nombre de matières évaluées:</span><strong>${data.subjects.filter(s => !s.isAbsent && s.score !== null).length}</strong></div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:2px;"><span>Nombre de compétences max. + min. atteintes:</span><strong>${data.subjects.filter(s => !s.isAbsent && s.score !== null && s.score >= 10).length}</strong></div>
-          <div style="display:flex;justify-content:space-between;font-weight:bold;"><span>Seuil de réussite globale atteint:</span>
-            <span style="display:flex;gap:8px;">
+          <table style="width:100%;border-collapse:collapse;"><tr>
+            <td style="font-size:8px;">Nombre de matières évaluées:</td>
+            <td style="font-size:8px;text-align:right;font-weight:bold;">${data.subjects.filter(s => !s.isAbsent && s.score !== null).length}</td>
+          </tr><tr>
+            <td style="font-size:8px;">Nombre de compétences max. + min. atteintes:</td>
+            <td style="font-size:8px;text-align:right;font-weight:bold;">${data.subjects.filter(s => !s.isAbsent && s.score !== null && s.score >= 10).length}</td>
+          </tr><tr>
+            <td style="font-size:8px;font-weight:bold;">Seuil de réussite globale atteint:</td>
+            <td style="font-size:8px;text-align:right;font-weight:bold;">
               <span style="color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#94a3b8'};">${(data.generalAverage || 0) >= 10 ? 'X OUI' : '☐ OUI'}</span>
               <span style="color:${(data.generalAverage || 0) < 10 ? '#dc2626' : '#94a3b8'};">${(data.generalAverage || 0) < 10 ? 'X NON' : '☐ NON'}</span>
-            </span>
-          </div>
+            </td>
+          </tr></table>
         </div>
 
         <!-- II - ATTITUDES -->

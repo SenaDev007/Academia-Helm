@@ -128,30 +128,31 @@ export class SecuritySettingsService {
 
   /**
    * Validation des plages de valeurs des nouveaux champs.
+   * Ignore les valeurs undefined/null — ne valide que les champs explicitement fournis.
    */
   private validateNewFields(data: any): void {
-    if (data.inactivityLockMinutes !== undefined) {
+    if (data.inactivityLockMinutes !== undefined && data.inactivityLockMinutes !== null) {
       const v = Number(data.inactivityLockMinutes);
-      if (!Number.isInteger(v) || v < 1 || v > 120) {
-        throw new Error('inactivityLockMinutes doit être un entier entre 1 et 120');
+      if (isNaN(v) || v < 1 || v > 120) {
+        throw new BadRequestException('inactivityLockMinutes doit être entre 1 et 120');
       }
     }
-    if (data.passwordMinLength !== undefined) {
+    if (data.passwordMinLength !== undefined && data.passwordMinLength !== null) {
       const v = Number(data.passwordMinLength);
-      if (!Number.isInteger(v) || v < 6 || v > 20) {
-        throw new Error('passwordMinLength doit être un entier entre 6 et 20');
+      if (isNaN(v) || v < 6 || v > 20) {
+        throw new BadRequestException('passwordMinLength doit être entre 6 et 20');
       }
     }
-    if (data.sessionTimeoutMinutes !== undefined) {
+    if (data.sessionTimeoutMinutes !== undefined && data.sessionTimeoutMinutes !== null) {
       const v = Number(data.sessionTimeoutMinutes);
-      if (!Number.isInteger(v) || v < 5 || v > 480) {
-        throw new Error('sessionTimeoutMinutes doit être un entier entre 5 et 480');
+      if (isNaN(v) || v < 5 || v > 480) {
+        throw new BadRequestException('sessionTimeoutMinutes doit être entre 5 et 480');
       }
     }
-    if (data.maxLoginAttempts !== undefined) {
+    if (data.maxLoginAttempts !== undefined && data.maxLoginAttempts !== null) {
       const v = Number(data.maxLoginAttempts);
-      if (!Number.isInteger(v) || v < 3 || v > 10) {
-        throw new Error('maxLoginAttempts doit être un entier entre 3 et 10');
+      if (isNaN(v) || v < 3 || v > 10) {
+        throw new BadRequestException('maxLoginAttempts doit être entre 3 et 10');
       }
     }
   }

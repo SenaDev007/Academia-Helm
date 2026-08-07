@@ -2603,7 +2603,8 @@ model Quarter {
   creator                User?                   @relation(fields: [createdBy], references: [id])
   tenant                 Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   rankings               Ranking[]
-  reportCards            ReportCard[]
+  // ⚠️ RETIRÉ : reportCards ReportCard[] — la relation ReportCard.quarterId
+  // ne pointe plus vers Quarter (FK constraint dropped, quarterId est générique)
   // ⚠️ RETIRÉ : evaluations Evaluation[] — la relation Evaluation.period
   // pointe maintenant vers AcademicPeriod (pas Quarter). Voir migration
   // 20260724100000_fix_evaluations_schema pour détails.

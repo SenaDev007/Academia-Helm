@@ -683,6 +683,9 @@ export async function updateSecuritySettings(data: {
   dataRetentionYears?: number;
   gdprCompliant?: boolean;
   allowInspectionAccess?: boolean;
+  inactivityLockMinutes?: number;
+  deviceFingerprintEnabled?: boolean;
+  notifyOnNewDevice?: boolean;
 }, tenantId?: string | null) {
   const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
   return fetchWithAuth(`${BASE_URL}/security${qs}`, {

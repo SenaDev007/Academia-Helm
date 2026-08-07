@@ -2,11 +2,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
 import '../../../core/widgets/ah_logo_circle.dart';
+import '../../../core/widgets/webview_screen.dart';
 import '../../../domain/entities/tenant_school.dart';
 import '../providers/portal_provider.dart';
 import '../providers/school_provider.dart';
@@ -45,17 +45,21 @@ class _SchoolSelectScreenState extends ConsumerState<SchoolSelectScreen> {
     final selectedPortal = ref.read(selectedPortalProvider);
 
     // PUBLIC portal: no login required — open the web pre-enrollment page
-    // directly (3-step wizard too complex to replicate natively for now).
+    // INSIDE the app using a WebView (not the external browser).
     // Matches web behavior: /portal → click Public → school-select →
     // redirect to /public/pre-enrollment?school=<slug> (no auth).
     if (selectedPortal == PortalType.public) {
       final slug = school.slug.isNotEmpty ? school.slug : school.id;
       final url = 'https://app.academiahelm.com/public/pre-enrollment?school=$slug';
-      debugPrint('[Public] Opening URL: $url');
-      // Launch directly without canLaunchUrl check — on Android, canLaunchUrl
-      // requires a <queries> declaration in AndroidManifest.xml and often
-      // returns false even for valid https URLs.
-      launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      debugPrint('[Public] Opening URL in WebView: $url');
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => WebViewScreen(
+            url: url,
+            title: 'Pré-inscription — ${school.name}',
+          ),
+        ),
+      );
       return;
     }
 

@@ -123,12 +123,14 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   /// - TEACHER → POST /portal/auth/teacher
   /// - PARENT → POST /portal/auth/parent
   ///
-  /// The [tenantId] is required for TEACHER and PARENT portals.
+  /// The [tenantId] is required for all portals (the web app sends it always).
+  /// The [tenantSubdomain] (school slug) is also sent for SCHOOL portal.
   Future<void> login({
     required String identifier,
     required String password,
     PortalType? portalType,
     String? tenantId,
+    String? tenantSubdomain,
   }) async {
     state = const AsyncValue<AuthState>.data(AuthState.loginLoading());
 
@@ -142,6 +144,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
         password: password,
         portalType: portalType,
         tenantId: tenantId,
+        tenantSubdomain: tenantSubdomain,
       );
 
       final ApiResult<Map<String, dynamic>> result =
@@ -240,15 +243,17 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   }
 
   /// Builds the login payload based on portal type.
-  /// Each portal sends different fields to its endpoint.
+  /// Matches the web app's LoginPage.tsx payload structure EXACTLY.
   Map<String, dynamic> _buildLoginPayload({
     required String identifier,
     required String password,
     PortalType? portalType,
     String? tenantId,
+    String? tenantSubdomain,
   }) {
     switch (portalType) {
       case PortalType.teacher:
+        // Web sends: { tenantId, teacherIdentifier, password, portal_type, turnstileToken }
         return <String, dynamic>{
           'tenantId': tenantId,
           'teacherIdentifier': identifier,
@@ -256,7 +261,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           'portal_type': 'TEACHER',
         };
       case PortalType.parent:
-        // Parent: auto-detect phone vs email based on '@'
+        // Web sends: { tenantId, identifierType, phone|email, [password], portal_type, turnstileToken }
         final isEmail = identifier.contains('@');
         final payload = <String, dynamic>{
           'tenantId': tenantId,
@@ -275,6 +280,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       case PortalType.school:
       case PortalType.platform:
       default:
+        // Web sends: { email, password, tenant_id, tenantSubdomain, portal_type, turnstileToken }
         return <String, dynamic>{
           'email': identifier,
           'password': password,
@@ -282,6 +288,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
               ? 'PLATFORM'
               : 'SCHOOL',
           if (tenantId != null) 'tenant_id': tenantId,
+          if (tenantSubdomain != null) 'tenantSubdomain': tenantSubdomain,
         };
     }
   }

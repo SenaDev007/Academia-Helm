@@ -44,12 +44,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final selectedPortal = ref.read(selectedPortalProvider);
       final selectedSchool = ref.read(selectedSchoolProvider);
       final tenantId = selectedSchool?.id;
+      final tenantSubdomain = selectedSchool?.slug;
 
       await ref.read(authNotifierProvider.notifier).login(
             identifier: identifier,
             password: password,
             portalType: selectedPortal,
             tenantId: tenantId,
+            tenantSubdomain: tenantSubdomain,
           );
 
       if (!mounted) return;

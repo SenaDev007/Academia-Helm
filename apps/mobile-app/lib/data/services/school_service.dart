@@ -29,10 +29,11 @@ class SchoolService {
   /// Last error message (for debugging — displayed in the UI error state).
   String? lastError;
 
-  /// Fetches all public schools with parallel fallback strategy.
+  /// Fetches all public schools with sequential fallback.
   ///
-  /// Throws on error so the FutureProvider enters error state and the UI
-  /// can show the error message + retry button.
+  /// Strategy: try API direct first (fastest — 0.37s measured).
+  /// If it fails or times out (8s), try BFF.
+  /// Throws on error so the FutureProvider enters error state.
   Future<List<TenantSchool>> fetchSchools() async {
     // Check cache first
     if (_cache != null && _cacheTime != null &&
@@ -41,39 +42,24 @@ class SchoolService {
       return _cache!;
     }
 
-    // Run both API + BFF in parallel — first to succeed wins
-    final apiFuture = _tryFetch(_apiDio, 'API').then((result) {
-      if (result != null) {
-        debugPrint('[SchoolService] API won the race with ${result.length} schools');
-      }
-      return result;
-    });
-    final bffFuture = _tryFetch(_bffDio, 'BFF').then((result) {
-      if (result != null) {
-        debugPrint('[SchoolService] BFF won the race with ${result.length} schools');
-      }
-      return result;
-    });
-
-    // Wait for the FIRST to succeed (Race pattern)
-    try {
-      final result = await Future.any<List<TenantSchool>?>([
-        apiFuture,
-        bffFuture,
-      ]);
-      if (result != null) {
-        _cache = result;
-        _cacheTime = DateTime.now();
-        lastError = null;
-        return result;
-      }
-    } catch (_) {
-      // Future.any throws if ALL throw — ignore, we'll handle below
+    // Attempt 1: Direct API (fastest — 0.37s)
+    final apiResult = await _tryFetch(_apiDio, 'API');
+    if (apiResult != null) {
+      _cache = apiResult;
+      _cacheTime = DateTime.now();
+      return apiResult;
     }
 
-    // Both returned null — throw with last error
-    throw Exception('Impossible de charger les écoles. '
-        'Dernière erreur: $lastError');
+    // Attempt 2: BFF (fallback — slower but bypasses Cloudflare)
+    final bffResult = await _tryFetch(_bffDio, 'BFF');
+    if (bffResult != null) {
+      _cache = bffResult;
+      _cacheTime = DateTime.now();
+      return bffResult;
+    }
+
+    // Both failed — throw with last error
+    throw Exception('Impossible de charger les écoles. Dernière erreur: $lastError');
   }
 
   Future<List<TenantSchool>?> _tryFetch(Dio dio, String label) async {

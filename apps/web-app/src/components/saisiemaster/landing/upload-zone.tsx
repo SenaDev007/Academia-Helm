@@ -129,14 +129,97 @@ export function UploadZone({
     [loadClasses, addClasses, existingClasses, setImportError, setView, onProcessed, requireAuth],
   );
 
+  const processFiles = useCallback(
+    async (files: File[]) => {
+      // ⭐ Vérifier l'auth avant de traiter les fichiers
+      if (!requireAuth()) return;
+
+      const excelFiles = files.filter(isExcelFile);
+      if (excelFiles.length === 0) {
+        toast.error("Format non supporté", {
+          description: "Veuillez sélectionner des fichiers .xlsx ou .xls",
+        });
+        return;
+      }
+
+      if (excelFiles.length === 1) {
+        // Single file — use processFile for backward compat
+        return processFile(excelFiles[0]);
+      }
+
+      // ⭐ Multiple files — process sequentially and addClasses for each
+      setSelectedFile(excelFiles[0]);
+      setIsProcessing(true);
+      setProgress(5);
+
+      let totalClassesAdded = 0;
+      let totalStudentsAdded = 0;
+      const errors: string[] = [];
+      let isFirstBatch = true;
+
+      for (let i = 0; i < excelFiles.length; i++) {
+        const file = excelFiles[i];
+        setProgress(Math.round(((i + 1) / (excelFiles.length + 1)) * 100));
+
+        try {
+          const buffer = await file.arrayBuffer();
+          const classes = parseEducMasterFile(buffer, file.name);
+
+          if (classes.length === 0) {
+            errors.push(`${file.name}: aucune classe détectée`);
+            continue;
+          }
+
+          totalClassesAdded += classes.length;
+          totalStudentsAdded += classes.reduce((acc, c) => acc + c.students.length, 0);
+
+          // First file uses loadClasses (sets initial), subsequent files use addClasses
+          if (isFirstBatch) {
+            loadClasses(classes);
+            isFirstBatch = false;
+          } else {
+            // addClasses reads the latest store state, so it accumulates correctly
+            addClasses(classes);
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Erreur de lecture";
+          errors.push(`${file.name}: ${msg}`);
+        }
+      }
+
+      setProgress(100);
+
+      if (totalClassesAdded > 0) {
+        toast.success(`${excelFiles.length} fichier(s) importé(s)`, {
+          description: `${totalClassesAdded} classe(s) ajoutée(s), ${totalStudentsAdded} élève(s) au total${errors.length > 0 ? `, ${errors.length} erreur(s)` : ''}.`,
+        });
+
+        setTimeout(() => {
+          setView("editor");
+          onProcessed?.();
+        }, 400);
+      } else {
+        toast.error("Aucune classe importée", {
+          description: errors.join("; ") || "Vérifiez vos fichiers Excel.",
+        });
+      }
+
+      setIsProcessing(false);
+      setTimeout(() => setProgress(0), 800);
+    },
+    [processFile, loadClasses, addClasses, setView, onProcessed, requireAuth],
+  );
+
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) processFile(file);
+      const fileList = e.target.files;
+      if (!fileList || fileList.length === 0) return;
+      const files = Array.from(fileList);
+      processFiles(files);
       // Reset input pour permettre de re-sélectionner le même fichier
       if (inputRef.current) inputRef.current.value = "";
     },
-    [processFile],
+    [processFiles],
   );
 
   const handleDrop = useCallback(
@@ -145,10 +228,10 @@ export function UploadZone({
       setIsDragging(false);
       // ⭐ Vérifier l'auth avant d'accepter le drop
       if (!requireAuth()) return;
-      const file = e.dataTransfer.files?.[0];
-      if (file) processFile(file);
+      const files = e.dataTransfer.files ? Array.from(e.dataTransfer.files) : [];
+      if (files.length > 0) processFiles(files);
     },
-    [processFile, requireAuth],
+    [processFiles, requireAuth],
   );
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -171,10 +254,11 @@ export function UploadZone({
       <input
         ref={inputRef}
         type="file"
+        multiple
         accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
         onChange={handleFileSelect}
         className="sr-only"
-        aria-label="Importer un fichier Excel EducMaster"
+        aria-label="Importer un ou plusieurs fichiers Excel EducMaster"
       />
 
       <div
@@ -240,13 +324,14 @@ export function UploadZone({
 
             <div className="space-y-1.5">
               <p className={cn("font-semibold text-foreground", compact ? "text-base" : "text-lg")}>
-                {selectedFile ? selectedFile.name : "Glissez votre template Excel ici"}
+                {selectedFile ? selectedFile.name : "Glissez vos templates Excel ici"}
               </p>
               <p className="text-sm text-muted-foreground">
                 ou{" "}
                 <span className="text-[#008751] font-medium underline-offset-2 group-hover:underline">
                   parcourez vos fichiers
                 </span>
+                <span className="text-muted-foreground/70"> (plusieurs fichiers possibles)</span>
               </p>
             </div>
 
@@ -266,7 +351,7 @@ export function UploadZone({
               <div className="pt-3">
                 <Button type="button" variant="outline" size="sm">
                   <Upload className="h-4 w-4" />
-                  Choisir un fichier
+                  Choisir des fichiers
                 </Button>
               </div>
             )}

@@ -31,8 +31,7 @@ class SchoolService {
 
   /// Fetches all public schools with sequential fallback.
   ///
-  /// Strategy: try API direct first (fastest — 0.37s measured).
-  /// If it fails or times out (8s), try BFF.
+  /// Strategy: try BFF FIRST (returns 200 from Bénin), then API direct (404 from Bénin).
   /// Throws on error so the FutureProvider enters error state.
   Future<List<TenantSchool>> fetchSchools() async {
     // Check cache first
@@ -42,20 +41,20 @@ class SchoolService {
       return _cache!;
     }
 
-    // Attempt 1: Direct API (fastest — 0.37s)
-    final apiResult = await _tryFetch(_apiDio, 'API');
-    if (apiResult != null) {
-      _cache = apiResult;
-      _cacheTime = DateTime.now();
-      return apiResult;
-    }
-
-    // Attempt 2: BFF (fallback — slower but bypasses Cloudflare)
+    // Attempt 1: BFF (verified working from Bénin — returns 200 + 2 schools)
     final bffResult = await _tryFetch(_bffDio, 'BFF');
     if (bffResult != null) {
       _cache = bffResult;
       _cacheTime = DateTime.now();
       return bffResult;
+    }
+
+    // Attempt 2: Direct API (fallback — returns 404 from Bénin but works from other regions)
+    final apiResult = await _tryFetch(_apiDio, 'API');
+    if (apiResult != null) {
+      _cache = apiResult;
+      _cacheTime = DateTime.now();
+      return apiResult;
     }
 
     // Both failed — throw with last error

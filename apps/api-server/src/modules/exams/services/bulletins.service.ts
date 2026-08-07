@@ -745,4 +745,103 @@ export class BulletinsService {
 
     return { summary, bulletins };
   }
+
+  // ============================================================================
+  // ⭐ CRITÈRES D'ENVOI DES BULLETINS AUX PARENTS
+  // ============================================================================
+
+  /**
+   * Récupère les critères d'envoi configurés pour un tenant.
+   * Si aucune config n'existe, retourne les valeurs par défaut.
+   */
+  async getSendingCriteria(tenantId: string) {
+    const criteria = await this.prisma.bulletinSendingCriteria.findUnique({
+      where: { tenantId },
+    });
+
+    if (!criteria) {
+      // Retourne les valeurs par défaut sans créer en base
+      return {
+        tenantId,
+        blockIfArrears: true,
+        minPaymentPercentage: 100,
+        allowDownloadByParents: true,
+        requireDirectorSignature: true,
+        requireTeacherSignature: true,
+        autoSendAfterTeacherSign: false,
+        notifyParentOnSend: true,
+        reminderDaysBeforeBlock: 7,
+        customMessage: null,
+        isDefault: true,
+      };
+    }
+
+    return { ...criteria, isDefault: false };
+  }
+
+  /**
+   * Met à jour (ou crée) les critères d'envoi pour un tenant.
+   */
+  async updateSendingCriteria(
+    tenantId: string,
+    data: {
+      blockIfArrears?: boolean;
+      minPaymentPercentage?: number;
+      allowDownloadByParents?: boolean;
+      requireDirectorSignature?: boolean;
+      requireTeacherSignature?: boolean;
+      autoSendAfterTeacherSign?: boolean;
+      notifyParentOnSend?: boolean;
+      reminderDaysBeforeBlock?: number;
+      customMessage?: string | null;
+    },
+    userId: string,
+  ) {
+    // Validation
+    if (data.minPaymentPercentage !== undefined) {
+      const v = Number(data.minPaymentPercentage);
+      if (!Number.isInteger(v) || v < 0 || v > 100) {
+        throw new Error('minPaymentPercentage doit être un entier entre 0 et 100');
+      }
+    }
+    if (data.reminderDaysBeforeBlock !== undefined) {
+      const v = Number(data.reminderDaysBeforeBlock);
+      if (!Number.isInteger(v) || v < 0 || v > 90) {
+        throw new Error('reminderDaysBeforeBlock doit être un entier entre 0 et 90');
+      }
+    }
+
+    const existing = await this.prisma.bulletinSendingCriteria.findUnique({
+      where: { tenantId },
+    });
+
+    let result;
+    if (existing) {
+      result = await this.prisma.bulletinSendingCriteria.update({
+        where: { tenantId },
+        data,
+      });
+    } else {
+      result = await this.prisma.bulletinSendingCriteria.create({
+        data: {
+          tenantId,
+          ...data,
+        },
+      });
+    }
+
+    // Logger l'audit
+    await this.prisma.authAuditLog.create({
+      data: {
+        tenantId,
+        userId,
+        action: 'BULLETIN_CRITERIA_UPDATED',
+        status: 'SUCCESS',
+        reason: `Critères d'envoi des bulletins mis à jour`,
+        metadata: data as any,
+      },
+    }).catch(() => {}); // Non-blocking
+
+    return { success: true, criteria: result };
+  }
 }

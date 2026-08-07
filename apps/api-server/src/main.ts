@@ -1382,6 +1382,22 @@ async function bootstrap() {
   }
   }, 1000); // ⭐ Run ensure-tables 1s after listen (non-blocking)
 
+  // ─── Neon DB Keep-Alive — ping every 4 minutes to prevent auto-suspend ───
+  // Neon is a serverless PostgreSQL that suspends after ~5 min of inactivity.
+  // When suspended, the next request triggers a cold start (2-10s) which
+  // causes "Connexion indisponible" errors for users.
+  // This interval sends a lightweight SELECT 1 every 4 minutes to keep
+  // the database warm.
+  setInterval(async () => {
+    try {
+      const prisma = app.get(PrismaService);
+      await prisma.$queryRaw`SELECT 1`;
+      // Silent — don't log every 4 minutes
+    } catch (err: any) {
+      logger.warn(`Neon keep-alive ping failed: ${err.message}`);
+    }
+  }, 4 * 60 * 1000); // 4 minutes
+
   // ─── Auto-sync HR teachers → Pedagogy on startup ──
   // One-time backfill: for each tenant, sync existing Staff TEACHER records
   // to the Pedagogy Teacher table so they appear in class assignments.

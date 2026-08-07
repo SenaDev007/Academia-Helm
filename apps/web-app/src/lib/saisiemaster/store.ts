@@ -561,3 +561,51 @@ export function restoreFromStorage(): {
     return null;
   }
 }
+
+/**
+ * ⭐ Restore from backend (Neon DB) — fetches all sessions for the
+ * authenticated prospect and converts them to ClassData[].
+ * Falls back to localStorage if backend fails or returns no sessions.
+ */
+export async function restoreFromBackend(): Promise<{
+  classes: ClassData[];
+  activeClassIndex: number;
+  savedAt: string;
+} | null> {
+  try {
+    // Dynamic import to avoid circular dependency
+    const { getSessions } = await import("./api");
+    const sessions = await getSessions();
+    if (!sessions || sessions.length === 0) return null;
+
+    // Convert each session back to ClassData
+    const classes: ClassData[] = sessions.map((session: any) => {
+      const gd = session.gradesData || {};
+      return {
+        sheetName: gd.sheetName || session.className,
+        className: gd.className || session.className,
+        schoolName: gd.schoolName || "",
+        academicYear: gd.academicYear || session.academicYear || "2025-2026",
+        students: gd.students || [],
+        subjects: gd.subjects || [],
+        evaluations: gd.evaluations || { EF1: {}, ES1: {}, ES2: {}, ES3: {} },
+        customEvaluationTypes: gd.customEvaluationTypes || [],
+        notes: gd.notes || {},
+        sourceFileName: gd.sourceFileName || null,
+        importedAt: gd.importedAt || session.createdAt,
+      };
+    });
+
+    // Apply migration
+    const migratedClasses = classes.map(migrateClassDataEvaluations);
+
+    return {
+      classes: migratedClasses,
+      activeClassIndex: 0,
+      savedAt: sessions[0]?.updatedAt || new Date().toISOString(),
+    };
+  } catch (e) {
+    console.warn("[saisiemaster] restoreFromBackend failed:", e);
+    return null;
+  }
+}

@@ -24,7 +24,7 @@ import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
 import {
   FileText, Loader2, ChevronDown, ChevronRight, Download,
   Users, BookOpen, Award, Calendar, Printer, AlertCircle,
-  Calculator, Shield, PenTool, Send, Mail, Undo, CheckCircle, ShieldAlert,
+  Calculator, Shield, PenTool, Send, Mail, Undo, CheckCircle, ShieldAlert, Settings, Save,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -149,8 +149,8 @@ function BulletinsContent() {
   const [bulletinData, setBulletinData] = useState<BulletinData | null>(null);
   const [expandedStudents, setExpandedStudents] = useState<Set<string>>(new Set());
   const [generatingPdf, setGeneratingPdf] = useState<string | null>(null);
-  // ⭐ Sub-tabs: 'bulletin' (current content) | 'moyennes' (trimestriel + annuel)
-  const [activeSubTab, setActiveSubTab] = useState<'bulletin' | 'moyennes'>('bulletin');
+  // ⭐ Sub-tabs: 'bulletin' | 'moyennes' | 'criteria'
+  const [activeSubTab, setActiveSubTab] = useState<'bulletin' | 'moyennes' | 'criteria'>('bulletin');
   // ⭐ Sub-sub-tabs within 'moyennes': 'trimestriel' | 'annuel'
   const [activeMoyenneTab, setActiveMoyenneTab] = useState<'trimestriel' | 'annuel'>('trimestriel');
 
@@ -443,6 +443,7 @@ function BulletinsContent() {
 
       const response = await apiClient.post('/institutional-exams/bulletins/generate-pdf', payload, {
         responseType: 'blob',
+        timeout: 120000, // ⭐ 2 minutes — la génération PDF via Puppeteer peut prendre du temps
       });
 
       // Download the PDF
@@ -502,6 +503,14 @@ function BulletinsContent() {
         >
           <Calculator className="w-4 h-4" />
           Moyenne trimestrielle et annuelle
+        </button>
+        <button
+          onClick={() => setActiveSubTab('criteria')}
+          className={cn('flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors',
+            activeSubTab === 'criteria' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}
+        >
+          <Settings className="w-4 h-4" />
+          Critères d'envoi
         </button>
       </div>
 
@@ -669,6 +678,11 @@ function BulletinsContent() {
           activeMoyenneTab={activeMoyenneTab}
           setActiveMoyenneTab={setActiveMoyenneTab}
         />
+      )}
+
+      {/* ═══ Sub-tab: Critères d'envoi ═══ */}
+      {activeSubTab === 'criteria' && (
+        <SendingCriteriaTab tenantId={effectiveTenantId} />
       )}
     </div>
   );
@@ -1812,6 +1826,8 @@ function WorkflowBar({
       const res = await apiClient.post(`/institutional-exams/bulletins/class/${classId}/send-to-parents`, {
         periodId,
         criteria: { blockIfArrears: true, minPaymentPercentage: 100 },
+      }, {
+        timeout: 60000, // ⭐ 1 minute — peut itérer sur de nombreux élèves
       });
       const data = res.data;
       toastSuccess('Envoi terminé', {
@@ -2076,4 +2092,226 @@ function useAntiScreenshot(enabled: boolean) {
       document.body.style.webkitUserSelect = '';
     };
   }, [enabled]);
+}
+
+// ─── Sending Criteria Tab — Configuration des critères d'envoi ──────────────
+
+function SendingCriteriaTab({ tenantId }: { tenantId?: string }) {
+  const [criteria, setCriteria] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  // Load existing criteria
+  useEffect(() => {
+    if (!tenantId) { setLoading(false); return; }
+    setLoading(true);
+    apiClient.get('/institutional-exams/bulletins/sending-criteria')
+      .then((res) => setCriteria(res.data))
+      .catch(() => setCriteria(null))
+      .finally(() => setLoading(false));
+  }, [tenantId]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await apiClient.patch('/institutional-exams/bulletins/sending-criteria', {
+        blockIfArrears: criteria.blockIfArrears,
+        minPaymentPercentage: criteria.minPaymentPercentage,
+        allowDownloadByParents: criteria.allowDownloadByParents,
+        requireDirectorSignature: criteria.requireDirectorSignature,
+        requireTeacherSignature: criteria.requireTeacherSignature,
+        autoSendAfterTeacherSign: criteria.autoSendAfterTeacherSign,
+        notifyParentOnSend: criteria.notifyParentOnSend,
+        reminderDaysBeforeBlock: criteria.reminderDaysBeforeBlock,
+        customMessage: criteria.customMessage,
+      });
+      toastSuccess('Critères enregistrés', { description: 'Les règles d\'envoi des bulletins ont été mises à jour.' });
+    } catch (err: any) {
+      toastError('Erreur', { description: err.response?.data?.message || err.message });
+    } finally { setSaving(false); }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <span className="ml-3 text-sm text-slate-500">Chargement des critères…</span>
+      </div>
+    );
+  }
+
+  if (!criteria) {
+    return <div className="text-center py-8 text-slate-500">Impossible de charger les critères.</div>;
+  }
+
+  return (
+    <div className="space-y-4 max-w-3xl">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Settings className="w-5 h-5 text-blue-600" />
+          <h3 className="text-lg font-bold text-slate-900">Critères d'envoi des bulletins aux parents</h3>
+        </div>
+        <p className="text-sm text-slate-500 mb-6">
+          Configurez les règles qui déterminent quels élèves reçoivent leur bulletin et dans quelles conditions.
+          Ces critères sont appliqués automatiquement lors du clic sur « Envoyer aux parents ».
+        </p>
+
+        {/* Section 1: Conditions financières */}
+        <div className="mb-6">
+          <h4 className="text-sm font-bold text-slate-700 uppercase mb-3 pb-2 border-b border-slate-100">
+            Conditions financières
+          </h4>
+          <div className="space-y-3">
+            <ToggleRow
+              label="Bloquer si arriérés de scolarité impayés"
+              description="Les élèves dont le compte présente des arriérés ne recevront pas leur bulletin."
+              checked={criteria.blockIfArrears}
+              onChange={(v) => setCriteria({ ...criteria, blockIfArrears: v })}
+            />
+            <div className="flex items-center justify-between p-3 border border-slate-200 rounded-lg">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-slate-700">Pourcentage minimum de paiement</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Les élèves doivent avoir payé au moins ce pourcentage de leur scolarité pour recevoir le bulletin.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 ml-4">
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={criteria.minPaymentPercentage}
+                  onChange={(e) => setCriteria({ ...criteria, minPaymentPercentage: parseInt(e.target.value) })}
+                  className="w-32 accent-blue-600"
+                />
+                <span className="font-bold text-blue-700 text-sm w-12 text-right">{criteria.minPaymentPercentage}%</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between p-3 border border-slate-200 rounded-lg">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-slate-700">Jours de rappel avant blocage</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Nombre de jours avant l'envoi pour rappeler aux parents en retard de paiement.
+                </p>
+              </div>
+              <input
+                type="number"
+                min={0}
+                max={90}
+                value={criteria.reminderDaysBeforeBlock}
+                onChange={(e) => setCriteria({ ...criteria, reminderDaysBeforeBlock: parseInt(e.target.value) || 0 })}
+                className="w-16 px-2 py-1 border border-slate-300 rounded text-sm text-center"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Section 2: Signatures requises */}
+        <div className="mb-6">
+          <h4 className="text-sm font-bold text-slate-700 uppercase mb-3 pb-2 border-b border-slate-100">
+            Signatures requises
+          </h4>
+          <div className="space-y-3">
+            <ToggleRow
+              label="Exiger la signature du Directeur"
+              description="Les bulletins ne peuvent être envoyés aux parents qu'après signature du directeur."
+              checked={criteria.requireDirectorSignature}
+              onChange={(v) => setCriteria({ ...criteria, requireDirectorSignature: v })}
+            />
+            <ToggleRow
+              label="Exiger la signature de l'Enseignant"
+              description="Les bulletins ne peuvent être envoyés aux parents qu'après signature de l'enseignant titulaire."
+              checked={criteria.requireTeacherSignature}
+              onChange={(v) => setCriteria({ ...criteria, requireTeacherSignature: v })}
+            />
+          </div>
+        </div>
+
+        {/* Section 3: Envoi et notification */}
+        <div className="mb-6">
+          <h4 className="text-sm font-bold text-slate-700 uppercase mb-3 pb-2 border-b border-slate-100">
+            Envoi et notification
+          </h4>
+          <div className="space-y-3">
+            <ToggleRow
+              label="Envoi automatique après signature de l'enseignant"
+              description="Les bulletins sont automatiquement envoyés aux parents dès que l'enseignant signe (sans attendre le clic manuel)."
+              checked={criteria.autoSendAfterTeacherSign}
+              onChange={(v) => setCriteria({ ...criteria, autoSendAfterTeacherSign: v })}
+            />
+            <ToggleRow
+              label="Autoriser le téléchargement par les parents"
+              description="Les parents peuvent télécharger le PDF du bulletin depuis leur interface."
+              checked={criteria.allowDownloadByParents}
+              onChange={(v) => setCriteria({ ...criteria, allowDownloadByParents: v })}
+            />
+            <ToggleRow
+              label="Notifier les parents à l'envoi"
+              description="Un email/SMS est envoyé aux parents lors de la mise à disposition du bulletin."
+              checked={criteria.notifyParentOnSend}
+              onChange={(v) => setCriteria({ ...criteria, notifyParentOnSend: v })}
+            />
+          </div>
+        </div>
+
+        {/* Section 4: Message personnalisé */}
+        <div className="mb-6">
+          <h4 className="text-sm font-bold text-slate-700 uppercase mb-3 pb-2 border-b border-slate-100">
+            Message personnalisé (optionnel)
+          </h4>
+          <textarea
+            value={criteria.customMessage || ''}
+            onChange={(e) => setCriteria({ ...criteria, customMessage: e.target.value })}
+            placeholder="Message accompagnant le bulletin lors de l'envoi aux parents (ex: informations sur la réunion parents-professeurs, dates de reprise, etc.)"
+            rows={3}
+            className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
+          />
+        </div>
+
+        {/* Save button */}
+        <div className="flex justify-end pt-4 border-t border-slate-100">
+          <Button
+            onClick={handleSave}
+            disabled={saving}
+            className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-6 py-2.5"
+          >
+            {saving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Enregistrement…</> : <><Save className="w-4 h-4 mr-2" />Enregistrer les critères</>}
+          </Button>
+        </div>
+
+        {criteria.isDefault && (
+          <div className="mt-3 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-2">
+            Les valeurs par défaut sont actuellement utilisées. Modifiez et enregistrez pour personnaliser.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ToggleRow({
+  label, description, checked, onChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between p-3 border border-slate-200 rounded-lg">
+      <div className="flex-1">
+        <p className="text-sm font-medium text-slate-700">{label}</p>
+        <p className="text-xs text-slate-500 mt-0.5">{description}</p>
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange(!checked)}
+        className={cn('relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 ml-4',
+          checked ? 'bg-blue-600' : 'bg-slate-300')}
+      >
+        <span className={cn('inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+          checked ? 'translate-x-6' : 'translate-x-1')} />
+      </button>
+    </div>
+  );
 }

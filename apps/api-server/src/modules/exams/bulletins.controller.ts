@@ -142,6 +142,7 @@ export class BulletinsController {
    * Étape 5 : Le directeur envoie les bulletins aux parents
    * POST /institutional-exams/bulletins/class/:classId/send-to-parents
    * Body: { periodId, criteria?: { blockIfArrears?, minPaymentPercentage? } }
+   * Si criteria n'est pas fourni, utilise les critères configurés pour le tenant.
    */
   @Post('class/:classId/send-to-parents')
   @Permissions('exams.publish')
@@ -152,8 +153,17 @@ export class BulletinsController {
     @UserId() userId: string,
     @Body() body: { periodId: string; criteria?: { blockIfArrears?: boolean; minPaymentPercentage?: number } },
   ) {
+    // ⭐ Si aucun criteria n'est fourni dans le body, charger les critères configurés
+    let criteria = body.criteria;
+    if (!criteria) {
+      const config = await this.bulletinsService.getSendingCriteria(tenantId);
+      criteria = {
+        blockIfArrears: config.blockIfArrears,
+        minPaymentPercentage: config.minPaymentPercentage,
+      };
+    }
     return this.bulletinsService.sendBulletinsToParents(
-      tenantId, academicYearId, body.periodId, classId, userId, body.criteria,
+      tenantId, academicYearId, body.periodId, classId, userId, criteria,
     );
   }
 
@@ -170,6 +180,37 @@ export class BulletinsController {
     @Query('periodId') periodId: string,
   ) {
     return this.bulletinsService.getWorkflowStatus(tenantId, academicYearId, periodId, classId);
+  }
+
+  /**
+   * GET /institutional-exams/bulletins/sending-criteria
+   * Récupère les critères d'envoi des bulletins configurés pour le tenant
+   */
+  @Get('sending-criteria')
+  @Permissions('exams.read')
+  async getSendingCriteria(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+  ) {
+    const resolvedTenantId = tenantId || user?.tenantId || headers?.['x-tenant-id'];
+    return this.bulletinsService.getSendingCriteria(resolvedTenantId);
+  }
+
+  /**
+   * PUT /institutional-exams/bulletins/sending-criteria
+   * Met à jour les critères d'envoi des bulletins
+   */
+  @Patch('sending-criteria')
+  @Permissions('exams.publish')
+  async updateSendingCriteria(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+    @Body() body: any,
+  ) {
+    const resolvedTenantId = tenantId || user?.tenantId || headers?.['x-tenant-id'];
+    return this.bulletinsService.updateSendingCriteria(resolvedTenantId, body, user?.id);
   }
 
   @Get('download/:studentId')

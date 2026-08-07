@@ -138,8 +138,9 @@ export function EditorPage({ onHome }: EditorPageProps) {
       setAutoSaveStatus("saving");
       try {
         const state = useSaisieMasterStore.getState();
-        const { classes: cls, activeClassIndex: idx } = state;
+        const { classes: cls, activeClassIndex: idx, token, prospect } = state;
         if (typeof window !== "undefined" && cls.length > 0) {
+          // ⭐ 1. Sauvegarder en localStorage (fallback hors-ligne)
           window.localStorage.setItem(
             "saisiemaster:autosave",
             JSON.stringify({
@@ -149,6 +150,39 @@ export function EditorPage({ onHome }: EditorPageProps) {
             }),
           );
         }
+
+        // ⭐ 2. Sauvegarder AUSSI dans la base de données Neon via le backend
+        if (token && prospect) {
+          for (const clsItem of cls) {
+            try {
+              await fetch("/api/saisiemaster/sessions", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                  className: clsItem.className || clsItem.sheetName || "Classe",
+                  academicYear: clsItem.academicYear || "2025-2026",
+                  studentCount: clsItem.students?.length || 0,
+                  subjectCount: clsItem.subjects?.length || 0,
+                  gradesData: {
+                    students: clsItem.students,
+                    subjects: clsItem.subjects,
+                    evaluations: clsItem.evaluations,
+                    notes: clsItem.notes,
+                    customEvaluationTypes: clsItem.customEvaluationTypes,
+                    sourceFileName: clsItem.sourceFileName,
+                    importedAt: clsItem.importedAt,
+                  },
+                }),
+              });
+            } catch (backendErr) {
+              console.warn("[saisiemaster] Backend save failed (non-blocking):", backendErr);
+            }
+          }
+        }
+
         lastSaveRef.current = Date.now();
         setAutoSaveStatus("saved");
         // Retour à idle après 2s
@@ -290,15 +324,14 @@ export function EditorPage({ onHome }: EditorPageProps) {
     onHome();
   };
 
-  // Le "Save" manuel déclenche une persistance explicite vers localStorage
-  // (l'auto-save existe déjà, mais cela donne un feedback clair à l'utilisateur
-  //  comme attendu dans le screenshot : "Modifications enregistrées avec succès").
-  const handleSave = () => {
+  // Le "Save" manuel déclenche une persistance explicite vers localStorage + backend
+  const handleSave = async () => {
     setSaveStatus("saving");
     try {
       const state = useSaisieMasterStore.getState();
-      const { classes, activeClassIndex } = state;
+      const { classes, activeClassIndex, token, prospect } = state;
       if (typeof window !== "undefined" && classes.length > 0) {
+        // 1. localStorage
         window.localStorage.setItem(
           "saisiemaster:autosave",
           JSON.stringify({
@@ -307,6 +340,38 @@ export function EditorPage({ onHome }: EditorPageProps) {
             savedAt: new Date().toISOString(),
           }),
         );
+
+        // 2. Backend Neon DB
+        if (token && prospect) {
+          for (const clsItem of classes) {
+            try {
+              await fetch("/api/saisiemaster/sessions", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                  className: clsItem.className || clsItem.sheetName || "Classe",
+                  academicYear: clsItem.academicYear || "2025-2026",
+                  studentCount: clsItem.students?.length || 0,
+                  subjectCount: clsItem.subjects?.length || 0,
+                  gradesData: {
+                    students: clsItem.students,
+                    subjects: clsItem.subjects,
+                    evaluations: clsItem.evaluations,
+                    notes: clsItem.notes,
+                    customEvaluationTypes: clsItem.customEvaluationTypes,
+                    sourceFileName: clsItem.sourceFileName,
+                    importedAt: clsItem.importedAt,
+                  },
+                }),
+              });
+            } catch (backendErr) {
+              console.warn("[saisiemaster] Manual save backend failed:", backendErr);
+            }
+          }
+        }
       }
       // Simule un mini-délai pour le feedback visuel.
       setTimeout(() => {

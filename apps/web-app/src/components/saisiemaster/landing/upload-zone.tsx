@@ -35,6 +35,8 @@ export function UploadZone({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const loadClasses = useSaisieMasterStore((s) => s.loadClasses);
+  const addClasses = useSaisieMasterStore((s) => s.addClasses);
+  const existingClasses = useSaisieMasterStore((s) => s.classes);
   const setImportError = useSaisieMasterStore((s) => s.setImportError);
   const setView = useSaisieMasterStore((s) => s.setView);
   const setAuthView = useSaisieMasterStore((s) => s.setAuthView);
@@ -87,11 +89,16 @@ export function UploadZone({
           return;
         }
 
-        loadClasses(classes);
+        // ⭐ Si l'utilisateur a déjà des classes, AJOUTE les nouvelles au lieu de remplacer
+        if (existingClasses.length > 0) {
+          addClasses(classes);
+        } else {
+          loadClasses(classes);
+        }
         setProgress(100);
 
         toast.success("Fichier importé avec succès", {
-          description: `${classes.length} classe(s) détectée(s), ${classes.reduce(
+          description: `${classes.length} classe(s) ${existingClasses.length > 0 ? "ajoutée(s)" : "détectée(s)"}, ${classes.reduce(
             (acc, c) => acc + c.students.length,
             0,
           )} élève(s) au total.`,
@@ -119,7 +126,7 @@ export function UploadZone({
         setTimeout(() => setProgress(0), 800);
       }
     },
-    [loadClasses, setImportError, setView, onProcessed, requireAuth],
+    [loadClasses, addClasses, existingClasses, setImportError, setView, onProcessed, requireAuth],
   );
 
   const handleFileSelect = useCallback(

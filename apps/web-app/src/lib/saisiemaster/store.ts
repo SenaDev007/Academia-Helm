@@ -84,6 +84,7 @@ interface SaisieMasterState {
   setAuthView: (mode: "signup" | "login") => void;
   setEditorView: (view: EditorView) => void;
   loadClasses: (classes: ClassData[]) => void;
+  addClasses: (newClasses: ClassData[]) => void;
   setActiveClass: (index: number) => void;
   /** Change le type d'évaluation actif (EF1, ES1, ES2, ES3, ou personnalisé). */
   setActiveEvalType: (evalType: EvaluationType) => void;
@@ -200,6 +201,31 @@ export const useSaisieMasterStore = create<SaisieMasterState>((set, get) => ({
     if (migratedClasses.length > 0 && getToken()) {
       void trackActivity("grade_entered");
       scheduleBackendSync(migratedClasses, 0);
+    }
+  },
+
+  addClasses: (newClasses) => {
+    // ⭐ AJOUTE les nouvelles classes aux existantes (ne remplace pas).
+    // Utilisé lors d'un nouvel import quand l'utilisateur a déjà des classes.
+    const migratedNew = newClasses.map(migrateClassDataEvaluations);
+    const existing = get().classes;
+    const allClasses = [...existing, ...migratedNew];
+    const newIndex = existing.length; // Sélectionne la première nouvelle classe
+    set({
+      classes: allClasses,
+      activeClassIndex: newIndex,
+      activeEvalType: DEFAULT_EVALUATION_TYPE,
+      importError: null,
+      editorView: "notes",
+      view: "editor",
+    });
+    persistClassesToStorage(allClasses, newIndex);
+    // Sync vers le backend pour les nouvelles classes
+    if (migratedNew.length > 0 && getToken()) {
+      void trackActivity("grade_entered");
+      for (const cls of migratedNew) {
+        scheduleBackendSync(allClasses, allClasses.indexOf(cls));
+      }
     }
   },
 

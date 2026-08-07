@@ -937,9 +937,9 @@ function BulletinMaternellePage1({ student, bulletinData }: { student: StudentRe
         <div className="bg-slate-50 rounded-lg p-2 text-center border border-slate-200">
           <p className="text-[10px] font-bold text-slate-700 uppercase">Symbole mérité par l'élève</p>
           <span className="inline-block mt-1 text-2xl">
-            {student.appreciationGlobale === 'Très Satisfaisant' ? '🌟' :
-             student.appreciationGlobale === 'Satisfaisant' ? '👍' :
-             student.appreciationGlobale === 'Peu Satisfaisant' ? '⚠️' : '—'}
+            {student.appreciationGlobale === 'Très Satisfaisant' ? '😄' :
+             student.appreciationGlobale === 'Satisfaisant' ? '😊' :
+             student.appreciationGlobale === 'Peu Satisfaisant' ? '😞' : '—'}
           </span>
         </div>
         <div className="bg-white rounded-lg p-2 text-center border border-slate-200">
@@ -986,9 +986,9 @@ function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResu
   // ⭐ Symbole mérité (emoji) basé sur la moyenne générale
   const symboleMerite = student.generalAverage === null ? '—' :
     student.generalAverage >= 16 ? '🏆' :
-    student.generalAverage >= 14 ? '🌟' :
-    student.generalAverage >= 12 ? '👍' :
-    student.generalAverage >= 10 ? '✅' : '⚠️';
+    student.generalAverage >= 14 ? '😄' :
+    student.generalAverage >= 12 ? '😊' :
+    student.generalAverage >= 10 ? '😐' : '😞';
   const mentionGenerale = student.generalAverage === null ? '—' :
     student.generalAverage >= 16 ? 'Très Bien' :
     student.generalAverage >= 14 ? 'Bien' :
@@ -1222,17 +1222,17 @@ function BulletinPage2({ student, isMaternelle, signatures }: { student: Student
           <p className="text-[10px] font-bold text-slate-700 uppercase">Symbole mérité par l'élève</p>
           {isMaternelle ? (
             <span className="inline-block mt-2 text-3xl">
-              {student.appreciationGlobale === 'Très Satisfaisant' ? '🌟' :
-               student.appreciationGlobale === 'Satisfaisant' ? '👍' :
-               student.appreciationGlobale === 'Peu Satisfaisant' ? '⚠️' : '—'}
+              {student.appreciationGlobale === 'Très Satisfaisant' ? '😄' :
+               student.appreciationGlobale === 'Satisfaisant' ? '😊' :
+               student.appreciationGlobale === 'Peu Satisfaisant' ? '😞' : '—'}
             </span>
           ) : (
             <span className="inline-block mt-2 text-3xl">
               {student.generalAverage === null ? '—' :
                student.generalAverage >= 16 ? '🏆' :
-               student.generalAverage >= 14 ? '🌟' :
-               student.generalAverage >= 12 ? '👍' :
-               student.generalAverage >= 10 ? '✅' : '⚠️'}
+               student.generalAverage >= 14 ? '😄' :
+               student.generalAverage >= 12 ? '😊' :
+               student.generalAverage >= 10 ? '😐' : '😞'}
             </span>
           )}
         </div>

@@ -117,11 +117,11 @@ export class BulletinPdfService {
         // Small delay to let any inline images (base64 signatures, SVG flag) render
         await new Promise(resolve => setTimeout(resolve, 500));
         const pdfBuffer = await page.pdf({
-          format: 'A4',
-          landscape: true,
+          format: 'A5',
+          landscape: false,
           printBackground: true,
-          margin: { top: '5mm', bottom: '5mm', left: '5mm', right: '5mm' },
-          timeout: 60000, // ⭐ 60s timeout for PDF generation
+          margin: { top: '8mm', bottom: '8mm', left: '8mm', right: '8mm' },
+          timeout: 60000,
           preferCSSPageSize: false,
         });
         return Buffer.from(pdfBuffer);
@@ -396,6 +396,197 @@ export class BulletinPdfService {
         </div>
       </div>`;
 
+    // ⭐ PAGE 1 : Header + Tableau des notes + Synthèse + Symbole mérité
+    const page1Content = `
+      <!-- EN-TÊTE OFFICIEL -->
+      <div class="header">
+        <table class="header-table">
+          <tr>
+            <td class="header-left"><img src="${beninFlag}" alt="Drapeau du Bénin" style="width:30px;height:20px;" /></td>
+            <td class="header-center">
+              <div class="republique">République du Bénin</div>
+              <div class="divider"><div class="divider-line"></div></div>
+              <div class="ministere">${ministry}</div>
+              <div class="divider"><div class="divider-line"></div></div>
+              <div class="school-name">${data.schoolName}</div>
+              <div class="school-info">${data.schoolSlogan ? `« ${data.schoolSlogan} » · ` : ''}${data.schoolAddress || ''} · Tél: ${data.schoolPhone || ''} · ${data.schoolEmail || ''}</div>
+            </td>
+            <td class="header-right">${data.schoolLogo ? `<img src="${data.schoolLogo}" style="max-width:35px;max-height:35px;object-fit:contain;" />` : ''}</td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- TITRE BULLETIN -->
+      <div class="bulletin-title">Bulletin de ${data.evaluationTypeName} ${data.evaluationTypeCode ? '(' + data.evaluationTypeCode + ')' : ''} — ${data.periodName} ${data.academicYearName}</div>
+
+      <!-- INFOS ÉLÈVE -->
+      <table style="width:100%;border-collapse:collapse;background:#f8fafc;border:1px solid #e2e8f0;border-radius:2px;margin-bottom:6px;">
+      <tr>
+        <td style="padding:3px 5px;font-size:9px;">Élève: <strong style="color:#0A2A5E;">${data.studentName}</strong></td>
+        <td style="padding:3px 5px;font-size:9px;text-align:center;">Matricule: <strong style="color:#0A2A5E;">${data.studentMatricule || '—'}</strong></td>
+        <td style="padding:3px 5px;font-size:9px;text-align:right;">Rang: <strong style="color:#0A2A5E;">${formatRank(data.classRank, data.studentGender === 'FEMALE' || data.studentGender === 'F')}</strong> / ${data.totalStudents}</td>
+      </tr>
+      </table>
+
+      <!-- TABLEAU DES NOTES -->
+      <table class="notes">
+        <thead>${tableHeader}</thead>
+        <tbody>${subjectRows}${totalRow}</tbody>
+      </table>
+
+      <!-- SYNTHÈSE -->
+      ${data.isMaternelle ? `
+      <div style="margin-top:6px;text-align:center;border:1px solid #0A2A5E;border-radius:3px;padding:6px;">
+        <span style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;">Symbole mérité par l'élève</span>
+        <div style="font-size:20px;margin-top:3px;">${symboleMerite}</div>
+      </div>` : `
+      <div style="margin-top:6px;font-size:10px;">
+        <table style="width:100%;border-collapse:collapse;"><tr>
+          <td style="background:#f8fafc;padding:3px 5px;font-size:10px;">Moyenne obtenue :</td>
+          <td style="background:#f8fafc;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;color:#0A2A5E;">${data.generalAverage !== null ? data.generalAverage.toFixed(2) : '—'}/20</td>
+        </tr><tr>
+          <td style="background:#f8fafc;padding:3px 5px;font-size:10px;">Plus forte moyenne :</td>
+          <td style="background:#f8fafc;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;">${data.highestAverage !== null ? data.highestAverage.toFixed(2) : '—'}/20</td>
+        </tr><tr>
+          <td style="background:#f8fafc;padding:3px 5px;font-size:10px;">Plus faible moyenne :</td>
+          <td style="background:#f8fafc;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;">${data.lowestAverage !== null ? data.lowestAverage.toFixed(2) : '—'}/20</td>
+        </tr><tr>
+          <td style="background:#ecfdf5;padding:3px 5px;font-size:10px;font-weight:bold;">Seuil réussite (10/20) atteint :</td>
+          <td style="background:#ecfdf5;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#dc2626'};">${(data.generalAverage || 0) >= 10 ? 'OUI' : 'NON'}</td>
+        </tr></table>
+      </div>
+      <div style="margin-top:6px;text-align:center;border:1px solid #0A2A5E;border-radius:3px;padding:6px;">
+        <span style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;">Symbole mérité par l'élève</span>
+        <div style="font-size:20px;margin-top:3px;">${symboleMerite}</div>
+      </div>`}
+
+      <!-- PIED DE PAGE PAGE 1 -->
+      <div class="footer">Document généré par Academia Helm — ${new Date().toLocaleDateString('fr-FR')} · ID: ${bulletinId}</div>
+      <!-- SAUT DE PAGE -->
+      <div style="page-break-after:always;"></div>`;
+
+    // ⭐ PAGE 2 : Header (raccourci) + Appréciations + Signatures
+    const page2Content = data.isMaternelle ? `
+      <!-- HEADER RACCOURCI PAGE 2 -->
+      <div style="text-align:center;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #0A2A5E;">
+        <div style="font-size:9px;font-weight:bold;color:#0A2A5E;">${data.schoolName} — ${data.studentName} — ${data.periodName}</div>
+      </div>
+
+      <!-- ANALYSE PÉDAGOGIQUE SOMMAIRE -->
+      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
+        <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;line-height:1.4;">
+          Analyse pédagogique sommaire des résultats et recommandations de l'enseignant(e) aux parents
+        </div>
+        ${[1,2,3,4,5,6,7,8,9,10,11,12].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:14px;"></div>').join('')}
+      </div>
+
+      <!-- SYMBOLE MÉRITÉ -->
+      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;text-align:center;width:100%;">
+        <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Symbole mérité par l'élève</div>
+        <div style="font-size:28px;">${symboleMerite}</div>
+      </div>
+
+      <!-- 3 SIGNATURES -->
+      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
+        <table style="width:100%;border-collapse:collapse;">
+          <tr>
+            <td style="width:33%;text-align:center;vertical-align:bottom;padding:10px 3px;">
+              <div style="height:50px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:50px;max-width:100px;object-fit:contain;" />` : ''}</div>
+              <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:10px;font-weight:bold;color:#0A2A5E;">Titulaire de la classe</div>
+              <div style="font-size:8px;color:#64748b;">Signature</div>
+            </td>
+            <td style="width:34%;text-align:center;vertical-align:bottom;padding:10px 3px;">
+              <div style="height:50px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:50px;max-width:100px;object-fit:contain;" />` : ''}</div>
+              <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:10px;font-weight:bold;color:#0A2A5E;">Le (la) Directeur(trice)</div>
+              <div style="font-size:8px;color:#64748b;">Visa</div>
+            </td>
+            <td style="width:33%;text-align:center;vertical-align:bottom;padding:10px 3px;">
+              <div style="height:50px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:50px;max-width:100px;object-fit:contain;" />` : ''}</div>
+              <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:10px;font-weight:bold;color:#0A2A5E;">Les Parents</div>
+              <div style="font-size:8px;color:#64748b;">Nom, Prénoms et Signature</div>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- QR code -->
+      <div style="text-align:center;margin-top:8px;">
+        <img src="${qrCode}" style="width:50px;height:50px;" alt="QR" />
+        <div style="font-size:8px;color:#94a3b8;">Code de vérification</div>
+      </div>` : `
+      <!-- HEADER RACCOURCI PAGE 2 -->
+      <div style="text-align:center;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #0A2A5E;">
+        <div style="font-size:9px;font-weight:bold;color:#0A2A5E;">${data.schoolName} — ${data.studentName} — ${data.periodName}</div>
+      </div>
+
+      <!-- STATS -->
+      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
+        <table style="width:100%;border-collapse:collapse;"><tr>
+          <td style="font-size:10px;padding:4px 0;">Nombre de matières évaluées :</td>
+          <td style="font-size:10px;text-align:right;font-weight:bold;padding:4px 0;">${data.subjects.filter(s => !s.isAbsent && s.score !== null).length}</td>
+        </tr><tr>
+          <td style="font-size:10px;padding:4px 0;">Nombre de compétences max. + min. atteintes :</td>
+          <td style="font-size:10px;text-align:right;font-weight:bold;padding:4px 0;">${data.subjects.filter(s => !s.isAbsent && s.score !== null && s.score >= 10).length}</td>
+        </tr><tr>
+          <td style="font-size:10px;font-weight:bold;padding:4px 0;">Seuil de réussite globale atteint :</td>
+          <td style="font-size:10px;text-align:right;font-weight:bold;padding:4px 0;">
+            <span style="color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#94a3b8'};">${(data.generalAverage || 0) >= 10 ? 'X OUI' : '☐ OUI'}</span>
+            &nbsp;
+            <span style="color:${(data.generalAverage || 0) < 10 ? '#dc2626' : '#94a3b8'};">${(data.generalAverage || 0) < 10 ? 'X NON' : '☐ NON'}</span>
+          </td>
+        </tr></table>
+      </div>
+
+      <!-- II - ATTITUDES -->
+      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
+        <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:6px;">II - Attitudes</div>
+        <div style="font-size:10px;margin-bottom:6px;">
+          <strong>Assiduité :</strong> <span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:14px;"></span>
+        </div>
+        <div style="font-size:10px;margin-bottom:6px;">
+          <strong>Discipline :</strong> <span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:14px;"></span>
+        </div>
+        <div style="font-size:10px;margin-bottom:5px;"><strong>Défauts majeurs identifiés :</strong></div>
+        ${[1,2,3,4,5].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:5px 0;height:12px;"></div>').join('')}
+        <div style="font-size:10px;margin-top:6px;margin-bottom:5px;"><strong>Qualités remarquables :</strong></div>
+        ${[1,2,3,4,5].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:5px 0;height:12px;"></div>').join('')}
+      </div>
+
+      <!-- ANALYSE DES RESULTATS -->
+      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
+        <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:6px;">Analyse des résultats et recommandations</div>
+        ${[1,2,3,4,5,6,7,8,9,10].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:12px;"></div>').join('')}
+      </div>
+
+      <!-- 3 SIGNATURES -->
+      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
+        <table style="width:100%;border-collapse:collapse;">
+          <tr>
+            <td style="width:33%;text-align:center;vertical-align:bottom;padding:10px 3px;">
+              <div style="height:50px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:50px;max-width:100px;object-fit:contain;" />` : ''}</div>
+              <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:10px;font-weight:bold;color:#0A2A5E;">Enseignant(e)</div>
+              <div style="font-size:8px;color:#64748b;">Signature du titulaire</div>
+            </td>
+            <td style="width:34%;text-align:center;vertical-align:bottom;padding:10px 3px;">
+              <div style="height:50px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:50px;max-width:100px;object-fit:contain;" />` : ''}</div>
+              <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:10px;font-weight:bold;color:#0A2A5E;">Parent</div>
+              <div style="font-size:8px;color:#64748b;">Signature et nom</div>
+            </td>
+            <td style="width:33%;text-align:center;vertical-align:bottom;padding:10px 3px;">
+              <div style="height:50px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:50px;max-width:100px;object-fit:contain;" />` : ''}</div>
+              <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:10px;font-weight:bold;color:#0A2A5E;">VISA du Directeur</div>
+              <div style="font-size:8px;color:#64748b;">Visa</div>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- QR code -->
+      <div style="text-align:center;margin-top:8px;">
+        <img src="${qrCode}" style="width:50px;height:50px;" alt="QR" />
+        <div style="font-size:8px;color:#94a3b8;">Code de vérification</div>
+      </div>`;
+
     return `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -404,72 +595,31 @@ export class BulletinPdfService {
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; }
-.header { margin-bottom:4px; padding-bottom:3px; border-bottom:2px solid #0A2A5E; }
+.header { margin-bottom:6px; padding-bottom:4px; border-bottom:2px solid #0A2A5E; }
 .header-table { width:100%; border-collapse:collapse; }
-.header-table td { vertical-align:middle; padding:1px 3px; }
-.header-left { text-align:center; width:10%; }
-.header-center { text-align:center; width:70%; }
+.header-table td { vertical-align:middle; padding:2px 4px; }
+.header-left { text-align:center; width:12%; }
+.header-center { text-align:center; width:68%; }
 .header-right { text-align:center; width:20%; }
 .republique { font-size:11px; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px; }
-.divider { margin:1px auto; width:50%; }
+.divider { margin:2px auto; width:50%; }
 .divider-line { height:1px; background:#0A2A5E; }
 .ministere { font-size:8px; font-weight:bold; text-transform:uppercase; letter-spacing:0.3px; line-height:1.3; }
-.school-name { font-size:12px; font-weight:bold; text-transform:uppercase; margin-top:2px; color:#0A2A5E; }
-.school-info { font-size:7px; color:#555; margin-top:1px; font-style:italic; }
-.bulletin-title { text-align:center; background:#0A2A5E; color:white; padding:3px 8px; border-radius:2px; margin-bottom:4px; font-size:10px; font-weight:bold; text-transform:uppercase; }
-/* ⭐ Layout 2 colonnes — table-based for Puppeteer */
-.two-col-table { width:100%; border-collapse:collapse; }
-.two-col-table > tr > td { vertical-align:top; }
-.col-left { width:60%; padding-right:4px; border-right:1px solid #0A2A5E; }
-.col-right { width:40%; padding-left:4px; }
+.school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:3px; color:#0A2A5E; }
+.school-info { font-size:7px; color:#555; margin-top:2px; font-style:italic; }
+.bulletin-title { text-align:center; background:#0A2A5E; color:white; padding:4px 8px; border-radius:2px; margin-bottom:6px; font-size:10px; font-weight:bold; text-transform:uppercase; }
 table.notes { width:100%; border-collapse:collapse; }
 table.notes th { color:white; border:1px solid; padding:5px 3px; font-size:7px; text-transform:uppercase; }
 table.notes td { border:1px solid #cbd5e1; padding:5px 3px; }
 table.notes tbody tr:nth-child(even) { background:#f8fafc; }
-.footer { margin-top:2px; text-align:center; font-size:6px; color:#999; border-top:1px solid #eee; padding-top:2px; }
+.footer { margin-top:4px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; padding-top:3px; }
 </style>
 </head>
 <body>
 
-<!-- EN-TÊTE OFFICIEL -->
-<div class="header">
-  <table class="header-table">
-    <tr>
-      <td class="header-left"><img src="${beninFlag}" alt="Drapeau du Bénin" style="width:35px;height:23px;" /></td>
-      <td class="header-center">
-        <div class="republique">République du Bénin</div>
-        <div class="divider"><div class="divider-line"></div><div class="divider-diamond"></div><div class="divider-line"></div></div>
-        <div class="ministere">${ministry}</div>
-        <div class="divider"><div class="divider-line"></div><div class="divider-diamond"></div><div class="divider-line"></div></div>
-        <div class="school-name">${data.schoolName}</div>
-        <div class="school-info">${data.schoolSlogan ? `« ${data.schoolSlogan} » · ` : ''}${data.schoolAddress || ''} · Tél: ${data.schoolPhone || ''} · ${data.schoolEmail || ''}</div>
-      </td>
-      <td class="header-right">${data.schoolLogo ? `<img src="${data.schoolLogo}" style="max-width:45px;max-height:45px;object-fit:contain;" />` : ''}</td>
-    </tr>
-  </table>
-</div>
+${page1Content}
 
-<!-- TITRE BULLETIN -->
-<div class="bulletin-title">Bulletin de ${data.evaluationTypeName} ${data.evaluationTypeCode ? '(' + data.evaluationTypeCode + ')' : ''} — ${data.periodName} ${data.academicYearName}</div>
-
-<!-- INFOS ÉLÈVE -->
-<table style="width:100%;border-collapse:collapse;background:#f8fafc;border:1px solid #e2e8f0;border-radius:2px;margin-bottom:4px;">
-<tr>
-  <td style="padding:3px 6px;font-size:9px;">Élève: <strong style="color:#0A2A5E;">${data.studentName}</strong></td>
-  <td style="padding:3px 6px;font-size:9px;text-align:center;">Matricule: <strong style="color:#0A2A5E;">${data.studentMatricule || '—'}</strong></td>
-  <td style="padding:3px 6px;font-size:9px;text-align:center;">Classe: <strong style="color:#0A2A5E;">${data.className}</strong></td>
-  <td style="padding:3px 6px;font-size:9px;text-align:right;">Rang: <strong style="color:#0A2A5E;">${formatRank(data.classRank, data.studentGender === 'FEMALE' || data.studentGender === 'F')}</strong> / ${data.totalStudents}</td>
-</tr>
-</table>
-
-<!-- ⭐ LAYOUT 2 COLONNES (table-based for Puppeteer compatibility) -->
-<table class="two-col-table"><tr>
-  <td class="col-left">${leftColumn}</td>
-  <td class="col-right">${rightColumn}</td>
-</tr></table>
-
-<!-- PIED DE PAGE -->
-<div class="footer">Document généré par Academia Helm — ${new Date().toLocaleDateString('fr-FR')} · ID: ${bulletinId}</div>
+${page2Content}
 
 </body>
 </html>`;

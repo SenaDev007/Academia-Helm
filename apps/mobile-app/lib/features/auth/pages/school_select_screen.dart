@@ -206,6 +206,7 @@ class _SchoolSelectScreenState extends ConsumerState<SchoolSelectScreen> {
                   ),
                 ),
                 error: (error, _) => _buildErrorState(
+                  message: error.toString(),
                   onRetry: () => ref.invalidate(schoolsListProvider),
                 ),
               ),
@@ -415,7 +416,7 @@ class _SchoolSelectScreenState extends ConsumerState<SchoolSelectScreen> {
 
   // ── Error State ───────────────────────────────────────────────────────
 
-  Widget _buildErrorState({required VoidCallback onRetry}) {
+  Widget _buildErrorState({required String message, required VoidCallback onRetry}) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(AHSpacing.xl),
@@ -424,13 +425,35 @@ class _SchoolSelectScreenState extends ConsumerState<SchoolSelectScreen> {
           children: [
             Icon(Icons.wifi_off, size: 48, color: AHColors.error),
             const SizedBox(height: AHSpacing.md),
-            Text(
+            const Text(
               'Impossible de charger la liste des écoles',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: 'Inter',
                 fontSize: 14,
+                fontWeight: FontWeight.w700,
                 color: AHColors.grey600,
+              ),
+            ),
+            const SizedBox(height: AHSpacing.sm),
+            // Show the actual error message for debugging
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AHColors.grey100,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                message,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 10,
+                  color: AHColors.grey500,
+                ),
+                maxLines: 5,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
             const SizedBox(height: AHSpacing.sm),

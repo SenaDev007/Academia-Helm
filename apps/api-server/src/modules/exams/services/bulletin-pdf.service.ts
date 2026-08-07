@@ -251,8 +251,7 @@ export class BulletinPdfService {
       </tr>`;
     })() : '';
 
-    // ⭐ Colonne gauche : Tableau + synthèse (mathématiques)
-    // ⭐ Colonne droite : Symbole mérité, visa directeur, signatures, QR
+    // ⭐ Colonne gauche : Tableau + synthèse + Symbole mérité (en bas)
     const leftColumn = `
       <div class="col-left">
         <table class="notes">
@@ -278,130 +277,121 @@ export class BulletinPdfService {
             <td style="background:#ecfdf5;padding:1px 4px;font-size:9px;font-weight:bold;">Seuil réussite (10/20) atteint :</td>
             <td style="background:#ecfdf5;padding:1px 4px;text-align:right;font-size:9px;font-weight:bold;color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#dc2626'};">${(data.generalAverage || 0) >= 10 ? 'OUI' : 'NON'}</td>
           </tr></table>
+        </div>
+        <!-- ⭐ Symbole mérité en bas de la colonne gauche (après seuil de réussite) -->
+        <div style="margin-top:6px;text-align:center;border:1px solid #0A2A5E;border-radius:3px;padding:6px;">
+          <span style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;">Symbole mérité par l'élève</span>
+          <div style="font-size:18px;margin-top:2px;">${symboleMerite}</div>
         </div>`}
       </div>`;
 
-    // ⭐ Colonne droite = PAGE 2 du carnet de correspondance (exact replica)
-    // Maternelle : ANALYSE PÉDAGOGIQUE + SYMBOLE MÉRITÉ + Signatures
-    // Primaire : SYMBOLE MÉRITÉ + Stats + II-ATTITUDES + ANALYSE + Signatures
+    // ⭐ Colonne droite = PAGE 2 du carnet (sans Symbole — il est à gauche maintenant)
     const rightColumn = data.isMaternelle ? `
       <div class="col-right">
         <!-- ANALYSE PÉDAGOGIQUE SOMMAIRE -->
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;">
+        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:8px;width:100%;">
           <div style="font-size:7px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:4px;line-height:1.3;">
             ANALYSE PEDAGOGIQUE SOMMAIRE DES RESULTATS ET RECOMMANDATIONS DE L'ENSEIGNANT(E) AUX PARENTS
           </div>
-          ${[1,2,3,4,5,6,7].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:3px 0;height:8px;"></div>').join('')}
+          ${[1,2,3,4,5,6,7,8].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:4px 0;height:10px;"></div>').join('')}
         </div>
 
-        <!-- SYMBOLE MERITE PAR L'ELEVE -->
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;text-align:center;">
-          <div style="font-size:8px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Symbole mérité par l'élève</div>
-          <div style="font-size:20px;line-height:1.2;">${symboleMerite}</div>
+        <!-- 3 SIGNATURES verticales (aéré, pleine largeur) -->
+        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:8px;">
+          <table style="width:100%;border-collapse:collapse;">
+            <tr>
+              <td style="width:33%;text-align:center;vertical-align:bottom;padding:4px 2px;">
+                <div style="height:30px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:30px;max-width:80px;object-fit:contain;" />` : ''}</div>
+                <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:7px;font-weight:bold;color:#0A2A5E;">Titulaire de la classe</div>
+                <div style="font-size:6px;color:#64748b;">Signature</div>
+              </td>
+              <td style="width:34%;text-align:center;vertical-align:bottom;padding:4px 2px;">
+                <div style="height:30px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:30px;max-width:80px;object-fit:contain;" />` : ''}</div>
+                <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:7px;font-weight:bold;color:#0A2A5E;">Le (la) Directeur(trice)</div>
+                <div style="font-size:6px;color:#64748b;">Visa</div>
+              </td>
+              <td style="width:33%;text-align:center;vertical-align:bottom;padding:4px 2px;">
+                <div style="height:30px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:30px;max-width:80px;object-fit:contain;" />` : ''}</div>
+                <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:7px;font-weight:bold;color:#0A2A5E;">Les Parents</div>
+                <div style="font-size:6px;color:#64748b;">Nom, Prénoms et Signature</div>
+              </td>
+            </tr>
+          </table>
         </div>
 
-        <!-- 3 SIGNATURES (côte à côte comme dans le carnet) -->
-        <table style="width:100%;border-collapse:collapse;margin-top:6px;">
-          <tr>
-            <td style="width:33%;vertical-align:top;padding:0 2px;">
-              <div style="font-size:7px;font-weight:bold;text-align:center;margin-bottom:20px;">Titulaire de la classe</div>
-              <div style="border-top:1px solid #000;margin-top:15px;padding-top:2px;font-size:6px;text-align:center;color:#64748b;">Signature</div>
-              ${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:30px;max-width:70px;object-fit:contain;margin:-15px auto 0;display:block;" />` : ''}
-            </td>
-            <td style="width:34%;vertical-align:top;padding:0 2px;">
-              <div style="font-size:7px;font-weight:bold;text-align:center;margin-bottom:20px;">Le (la) Directeur (trice)</div>
-              <div style="border-top:1px solid #000;margin-top:15px;padding-top:2px;font-size:6px;text-align:center;color:#64748b;">Visa</div>
-              ${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:30px;max-width:70px;object-fit:contain;margin:-15px auto 0;display:block;" />` : ''}
-            </td>
-            <td style="width:33%;vertical-align:top;padding:0 2px;">
-              <div style="font-size:7px;font-weight:bold;text-align:center;margin-bottom:4px;">Réponse des parents de l'élève</div>
-              ${[1,2,3].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:3px 0;height:6px;"></div>').join('')}
-              <div style="border-top:1px solid #000;margin-top:8px;padding-top:2px;font-size:6px;text-align:center;color:#64748b;">Nom, Prénoms et Signature</div>
-              ${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:25px;max-width:70px;object-fit:contain;margin:2px auto 0;display:block;" />` : ''}
-            </td>
-          </tr>
-        </table>
-
-        <!-- QR code -->
-        <div style="position:absolute;bottom:5px;right:5px;display:flex;align-items:center;gap:3px;">
-          <img src="${qrCode}" style="width:35px;height:35px;" alt="QR" />
-          <div style="font-size:5px;color:#94a3b8;">Vérification</div>
+        <!-- QR code (séparé, en bas) -->
+        <div style="text-align:center;margin-top:8px;">
+          <img src="${qrCode}" style="width:40px;height:40px;" alt="QR" />
+          <div style="font-size:6px;color:#94a3b8;">Code de vérification</div>
         </div>
       </div>` : `
       <div class="col-right">
-        <!-- SYMBOLE MERITE PAR L'ELEVE -->
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;text-align:center;">
-          <div style="font-size:8px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Symbole mérité par l'élève</div>
-          <div style="font-size:18px;line-height:1.2;">${symboleMerite}</div>
-        </div>
-
-        <!-- STATS -->
-        <div style="border:1px solid #cbd5e1;border-radius:2px;padding:5px;margin-bottom:5px;font-size:8px;">
+        <!-- STATS (pleine largeur) -->
+        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:8px;width:100%;">
           <table style="width:100%;border-collapse:collapse;"><tr>
-            <td style="font-size:8px;">Nombre de matières évaluées:</td>
-            <td style="font-size:8px;text-align:right;font-weight:bold;">${data.subjects.filter(s => !s.isAbsent && s.score !== null).length}</td>
+            <td style="font-size:8px;padding:2px 0;">Nombre de matières évaluées :</td>
+            <td style="font-size:8px;text-align:right;font-weight:bold;padding:2px 0;">${data.subjects.filter(s => !s.isAbsent && s.score !== null).length}</td>
           </tr><tr>
-            <td style="font-size:8px;">Nombre de compétences max. + min. atteintes:</td>
-            <td style="font-size:8px;text-align:right;font-weight:bold;">${data.subjects.filter(s => !s.isAbsent && s.score !== null && s.score >= 10).length}</td>
+            <td style="font-size:8px;padding:2px 0;">Nombre de compétences max. + min. atteintes :</td>
+            <td style="font-size:8px;text-align:right;font-weight:bold;padding:2px 0;">${data.subjects.filter(s => !s.isAbsent && s.score !== null && s.score >= 10).length}</td>
           </tr><tr>
-            <td style="font-size:8px;font-weight:bold;">Seuil de réussite globale atteint:</td>
-            <td style="font-size:8px;text-align:right;font-weight:bold;">
+            <td style="font-size:8px;font-weight:bold;padding:2px 0;">Seuil de réussite globale atteint :</td>
+            <td style="font-size:8px;text-align:right;font-weight:bold;padding:2px 0;">
               <span style="color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#94a3b8'};">${(data.generalAverage || 0) >= 10 ? 'X OUI' : '☐ OUI'}</span>
+              &nbsp;
               <span style="color:${(data.generalAverage || 0) < 10 ? '#dc2626' : '#94a3b8'};">${(data.generalAverage || 0) < 10 ? 'X NON' : '☐ NON'}</span>
             </td>
           </tr></table>
         </div>
 
-        <!-- II - ATTITUDES -->
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:5px;margin-bottom:5px;">
-          <div style="font-size:8px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:3px;">II - Attitudes</div>
-          <div style="font-size:7px;margin-bottom:3px;">
-            <strong>Assiduité:</strong> <span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:60%;height:8px;"></span>
+        <!-- II - ATTITUDES (pleine largeur) -->
+        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:8px;width:100%;">
+          <div style="font-size:8px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:5px;">II - Attitudes</div>
+          <div style="font-size:8px;margin-bottom:4px;">
+            <strong>Assiduité :</strong> <span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:10px;"></span>
           </div>
-          <div style="font-size:7px;margin-bottom:3px;">
-            <strong>Discipline:</strong> <span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:60%;height:8px;"></span>
+          <div style="font-size:8px;margin-bottom:4px;">
+            <strong>Discipline :</strong> <span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:10px;"></span>
           </div>
-          <div style="font-size:7px;margin-bottom:3px;">
-            <strong>Défauts majeurs identifiés:</strong>
-          </div>
-          ${[1,2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:2px 0;height:6px;"></div>').join('')}
-          <div style="font-size:7px;margin-top:3px;margin-bottom:3px;">
-            <strong>Qualités remarquables:</strong>
-          </div>
-          ${[1,2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:2px 0;height:6px;"></div>').join('')}
+          <div style="font-size:8px;margin-bottom:3px;"><strong>Défauts majeurs identifiés :</strong></div>
+          ${[1,2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:3px 0;height:8px;"></div>').join('')}
+          <div style="font-size:8px;margin-top:4px;margin-bottom:3px;"><strong>Qualités remarquables :</strong></div>
+          ${[1,2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:3px 0;height:8px;"></div>').join('')}
         </div>
 
-        <!-- ANALYSE DES RESULTATS ET RECOMMANDATIONS -->
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:5px;margin-bottom:5px;">
-          <div style="font-size:7px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:3px;">Analyse des résultats et recommandations</div>
-          ${[1,2,3].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:3px 0;height:7px;"></div>').join('')}
+        <!-- ANALYSE DES RESULTATS (pleine largeur) -->
+        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:8px;width:100%;">
+          <div style="font-size:8px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Analyse des résultats et recommandations</div>
+          ${[1,2,3,4].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:4px 0;height:8px;"></div>').join('')}
         </div>
 
-        <!-- 3 SIGNATURES -->
-        <table style="width:100%;border-collapse:collapse;margin-top:5px;">
-          <tr>
-            <td style="width:33%;vertical-align:top;padding:0 2px;">
-              <div style="font-size:7px;font-weight:bold;text-align:center;margin-bottom:15px;">Enseignant(e)</div>
-              ${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:25px;max-width:65px;object-fit:contain;display:block;margin:0 auto;" />` : '<div style="height:20px;"></div>'}
-              <div style="border-top:1px solid #000;margin-top:5px;padding-top:2px;font-size:6px;text-align:center;color:#64748b;">Signature du titulaire</div>
-            </td>
-            <td style="width:34%;vertical-align:top;padding:0 2px;">
-              <div style="font-size:7px;font-weight:bold;text-align:center;margin-bottom:15px;">Parent</div>
-              ${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:25px;max-width:65px;object-fit:contain;display:block;margin:0 auto;" />` : '<div style="height:20px;"></div>'}
-              <div style="border-top:1px solid #000;margin-top:5px;padding-top:2px;font-size:6px;text-align:center;color:#64748b;">Signature et nom du parent</div>
-            </td>
-            <td style="width:33%;vertical-align:top;padding:0 2px;">
-              <div style="font-size:7px;font-weight:bold;text-align:center;margin-bottom:15px;">VISA du / de la Direct…</div>
-              ${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:25px;max-width:65px;object-fit:contain;display:block;margin:0 auto;" />` : '<div style="height:20px;"></div>'}
-              <div style="border-top:1px solid #000;margin-top:5px;padding-top:2px;font-size:6px;text-align:center;color:#64748b;">Visa du Directeur</div>
-            </td>
-          </tr>
-        </table>
+        <!-- 3 SIGNATURES (pleine largeur, aérées) -->
+        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:8px;width:100%;">
+          <table style="width:100%;border-collapse:collapse;">
+            <tr>
+              <td style="width:33%;text-align:center;vertical-align:bottom;padding:4px 2px;">
+                <div style="height:35px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:35px;max-width:85px;object-fit:contain;" />` : ''}</div>
+                <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:7px;font-weight:bold;color:#0A2A5E;">Enseignant(e)</div>
+                <div style="font-size:6px;color:#64748b;">Signature du titulaire</div>
+              </td>
+              <td style="width:34%;text-align:center;vertical-align:bottom;padding:4px 2px;">
+                <div style="height:35px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:35px;max-width:85px;object-fit:contain;" />` : ''}</div>
+                <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:7px;font-weight:bold;color:#0A2A5E;">Parent</div>
+                <div style="font-size:6px;color:#64748b;">Signature et nom</div>
+              </td>
+              <td style="width:33%;text-align:center;vertical-align:bottom;padding:4px 2px;">
+                <div style="height:35px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:35px;max-width:85px;object-fit:contain;" />` : ''}</div>
+                <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:7px;font-weight:bold;color:#0A2A5E;">VISA du Directeur</div>
+                <div style="font-size:6px;color:#64748b;">Visa</div>
+              </td>
+            </tr>
+          </table>
+        </div>
 
-        <!-- QR code -->
-        <div style="position:absolute;bottom:5px;right:5px;display:flex;align-items:center;gap:3px;">
-          <img src="${qrCode}" style="width:35px;height:35px;" alt="QR" />
-          <div style="font-size:5px;color:#94a3b8;">Vérification</div>
+        <!-- QR code (séparé, en bas) -->
+        <div style="text-align:center;margin-top:6px;">
+          <img src="${qrCode}" style="width:40px;height:40px;" alt="QR" />
+          <div style="font-size:6px;color:#94a3b8;">Code de vérification</div>
         </div>
       </div>`;
 

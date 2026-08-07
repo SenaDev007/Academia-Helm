@@ -147,24 +147,35 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
         tenantSubdomain: tenantSubdomain,
       );
 
+      debugPrint('[LOGIN] Endpoint: $endpoint');
+      debugPrint('[LOGIN] Payload: $payload');
+
       final ApiResult<Map<String, dynamic>> result =
           await apiClient.postRaw(
         endpoint,
         data: payload,
       );
 
+      debugPrint('[LOGIN] API call completed, processing result...');
+
       result.when(
         success: (Map<String, dynamic> data) async {
+          debugPrint('[LOGIN] Success! Response keys: ${data.keys.toList()}');
+          debugPrint('[LOGIN] Response data: $data');
+
           // Defensive parsing — backend may nest tokens in a sub-object
-          // (e.g., data['accessToken'] = {value: "...", expiresAt: "..."})
-          // or return them as flat strings. Handle both cases.
           final dynamic accessTokenRaw = data['accessToken'] ?? data['access_token'];
           final dynamic refreshTokenRaw = data['refreshToken'] ?? data['refresh_token'];
           final dynamic expiresInRaw = data['expiresIn'] ?? data['expires_in'];
 
+          debugPrint('[LOGIN] accessTokenRaw type: ${accessTokenRaw.runtimeType}');
+          debugPrint('[LOGIN] refreshTokenRaw type: ${refreshTokenRaw.runtimeType}');
+
           final String accessToken = _extractString(accessTokenRaw);
           final String refreshToken = _extractString(refreshTokenRaw);
           final int? expiresIn = _extractInt(expiresInRaw);
+
+          debugPrint('[LOGIN] accessToken length: ${accessToken.length}');
 
           if (accessToken.isEmpty) {
             throw AuthException('Token d\'accès manquant dans la réponse du serveur.');
@@ -182,12 +193,13 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           _cachedAccessToken = accessToken;
 
           // Parse user data — FULLY DEFENSIVE (no freezed fromJson)
-          // The generated AuthUser.fromJson() does `json['field'] as String?`
-          // which crashes if the backend returns a Map where a String is expected.
-          // We parse manually with safe type extraction.
           final dynamic userRaw = data['user'] ?? data['data'] ?? data;
+          debugPrint('[LOGIN] userRaw type: ${userRaw.runtimeType}');
+
           final Map<String, dynamic> userData =
               userRaw is Map ? (userRaw as Map).cast<String, dynamic>() : <String, dynamic>{};
+
+          debugPrint('[LOGIN] userData keys: ${userData.keys.toList()}');
 
           final AuthUser user = AuthUser(
             id: _extractString(userData['id'] ?? userData['userId'] ?? userData['sub']),
@@ -199,6 +211,8 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
             role: _extractStringOptional(userData['role'] ?? userData['userType'] ?? userData['type']),
           );
 
+          debugPrint('[LOGIN] Parsed user: id=${user.id}, email=${user.email}, role=${user.role}');
+
           // If we don't have a valid user id, the login failed silently
           if (user.id.isEmpty) {
             throw AuthException('Réponse de connexion invalide : identifiant utilisateur manquant.');
@@ -208,6 +222,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           final List<TenantBasic> availableTenants = _parseTenants(data);
 
           // Persist session data.
+          debugPrint('[LOGIN] Persisting session...');
           await TokenStorage.persistSession(
             user: userData,
             tenant: null,
@@ -216,6 +231,8 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           // Update last activity.
           await TokenStorage.updateLastActivity();
 
+          debugPrint('[LOGIN] Login complete, updating state...');
+
           state = AsyncValue<AuthState>.data(
             AuthState.authenticated(
               user,
@@ -223,6 +240,8 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
               availableTenants: availableTenants,
             ),
           );
+
+          debugPrint('[LOGIN] State updated successfully');
         },
         failure: (ApiError error) {
           state = AsyncValue<AuthState>.data(
@@ -235,6 +254,9 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
         },
       );
     } catch (e, st) {
+      debugPrint('[LOGIN] CATCH: Error type: ${e.runtimeType}');
+      debugPrint('[LOGIN] CATCH: Error: $e');
+      debugPrint('[LOGIN] CATCH: Stack trace: $st');
       state = AsyncValue<AuthState>.data(
         const AuthState.unauthenticated(),
       );

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -260,8 +262,13 @@ class ApiClient {
     try {
       final Response<dynamic> response = await call();
 
-      if (response.data is Map<String, dynamic>) {
-        return ApiResult<T>.success(fromJson(response.data as Map<String, dynamic>));
+      // Defensive: response.data may be Map<String, dynamic> OR Map<String, Object>
+      // (Dart doesn't auto-cast Map<String, Object> to Map<String, dynamic>).
+      // Also handle String (raw JSON) and Map with wrong type params.
+      if (response.data is Map) {
+        final Map<String, dynamic> data =
+            (response.data as Map).cast<String, dynamic>();
+        return ApiResult<T>.success(fromJson(data));
       }
 
       // Some endpoints may return a list or a plain value — try to wrap.
@@ -269,6 +276,20 @@ class ApiClient {
         return ApiResult<T>.success(
           fromJson({'data': response.data}),
         );
+      }
+
+      // Fallback: maybe response.data is a raw String (JSON not parsed)
+      if (response.data is String) {
+        try {
+          final decoded = jsonDecode(response.data as String);
+          if (decoded is Map) {
+            final Map<String, dynamic> data =
+                (decoded as Map).cast<String, dynamic>();
+            return ApiResult<T>.success(fromJson(data));
+          }
+        } catch (_) {
+          // Not JSON — fall through to empty map
+        }
       }
 
       // Fallback for non-map responses.

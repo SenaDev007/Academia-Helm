@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -50,20 +51,17 @@ class _SchoolSelectScreenState extends ConsumerState<SchoolSelectScreen> {
     if (selectedPortal == PortalType.public) {
       final slug = school.slug.isNotEmpty ? school.slug : school.id;
       final url = 'https://app.academiahelm.com/public/pre-enrollment?school=$slug';
-      _launchUrl(url);
+      debugPrint('[Public] Opening URL: $url');
+      // Launch directly without canLaunchUrl check — on Android, canLaunchUrl
+      // requires a <queries> declaration in AndroidManifest.xml and often
+      // returns false even for valid https URLs.
+      launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       return;
     }
 
     // Other portals: store the selected school + navigate to login
     ref.read(selectedSchoolProvider.notifier).state = school;
     context.push('/login');
-  }
-
-  Future<void> _launchUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
   }
 
   @override

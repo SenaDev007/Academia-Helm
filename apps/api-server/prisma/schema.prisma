@@ -7967,7 +7967,7 @@ model ReportCard {
   items           ReportCardItem[]
   academicTrack   AcademicTrack?   @relation(fields: [academicTrackId], references: [id])
   academicYear    AcademicYear     @relation(fields: [academicYearId], references: [id])
-  quarter         Quarter?         @relation(fields: [quarterId], references: [id])
+  // ⭐ quarterId is now a generic period ID (academic_period or quarter) — no FK constraint
   schoolLevel     SchoolLevel      @relation(fields: [schoolLevelId], references: [id])
   student         Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
   tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)

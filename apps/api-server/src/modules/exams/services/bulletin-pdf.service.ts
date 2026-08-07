@@ -415,12 +415,12 @@ body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10p
 .bulletin-title { text-align:center; background:#0A2A5E; color:white; padding:4px 8px; border-radius:3px; margin-bottom:6px; font-size:10px; font-weight:bold; text-transform:uppercase; }
 .student-info { display:flex; justify-content:space-between; background:#f8fafc; border:1px solid #e2e8f0; border-radius:3px; padding:4px 8px; margin-bottom:8px; font-size:9px; }
 .student-info strong { color:#0A2A5E; }
-/* ⭐ Layout 2 colonnes — gauche : tableau + synthèse ; droite : symbole + visa + signatures
+/* ⭐ Layout 2 colonnes — gauche : tableau + synthèse ; droite : page 2 carnet
    Using table-based layout instead of flexbox for better Puppeteer rendering */
 .two-col-table { width:100%; border-collapse:collapse; }
 .two-col-table > tr > td { vertical-align:top; }
-.col-left { width:70%; padding-right:4px; }
-.col-right { width:30%; padding-left:4px; position:relative; }
+.col-left { width:62%; padding-right:6px; border-right:1px solid #0A2A5E; }
+.col-right { width:38%; padding-left:6px; position:relative; }
 table.notes { width:100%; border-collapse:collapse; }
 table.notes th { color:white; border:1px solid; padding:2px 3px; font-size:7px; text-transform:uppercase; }
 table.notes td { border:1px solid #cbd5e1; padding:2px 3px; }
@@ -474,23 +474,23 @@ table.notes tbody tr:nth-child(even) { background:#f8fafc; }
 
   /**
    * ⭐ Calcule le symbole mérité (emoji) en fonction de l'appréciation ou de la moyenne.
-   * Maternelle : TS → 🌟, S → 👍, PS → ⚠️
-   * Primaire/Secondaire : >=16 → 🏆, >=14 → 🌟, >=12 → 👍, >=10 → ✅, <10 → ⚠️
+   * Maternelle : TS → 😄, S → 😊, PS → 😞
+   * Primaire/Secondaire : >=16 → 🏆, >=14 → 😄, >=12 → 😊, >=10 → 😐, <10 → 😞
    */
   private computeSymboleMerite(data: BulletinPdfData): string {
     if (data.isMaternelle) {
       const app = (data.appreciationGlobale || '').toLowerCase();
-      if (app.includes('très')) return '🌟 Très Satisfaisant';
-      if (app.includes('peu')) return '⚠️ Peu Satisfaisant';
-      if (app.includes('satisfaisant')) return '👍 Satisfaisant';
+      if (app.includes('très')) return '😄 Très Satisfaisant';
+      if (app.includes('peu')) return '😞 Peu Satisfaisant';
+      if (app.includes('satisfaisant')) return '😊 Satisfaisant';
       return '—';
     }
     if (data.generalAverage === null) return '—';
     const avg = data.generalAverage;
     if (avg >= 16) return '🏆 Excellent';
-    if (avg >= 14) return '🌟 Très Bien';
-    if (avg >= 12) return '👍 Bien';
-    if (avg >= 10) return '✅ Passable';
-    return '⚠️ Insuffisant';
+    if (avg >= 14) return '😄 Très Bien';
+    if (avg >= 12) return '😊 Bien';
+    if (avg >= 10) return '😐 Passable';
+    return '😞 Insuffisant';
   }
 }

@@ -1453,11 +1453,10 @@ function BulletinPage2({ student, isMaternelle, signatures, periodId }: { studen
       {/* Réponse des parents */}
       <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
         <h4 className="text-[10px] font-bold text-slate-700 uppercase mb-1">Réponse des parents de l'élève</h4>
-        <RichTextEditor
-          value={parentResponse}
-          onChange={setParentResponse}
+        <textarea
+          rows={2}
           placeholder="Zone de réponse des parents…"
-          minHeight="48px"
+          className="w-full text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
         />
       </div>
     </div>

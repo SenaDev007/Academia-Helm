@@ -84,6 +84,7 @@ final teacherClassesProvider = FutureProvider.autoDispose
           .toList();
     },
     failure: (_) => <TeacherClass>[],
+    loading: () => <TeacherClass>[],
   );
 });
 

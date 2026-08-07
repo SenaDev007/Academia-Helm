@@ -43,7 +43,14 @@ class ChildrenScreen extends ConsumerWidget {
             itemCount: children.length,
             itemBuilder: (context, index) {
               final child = children[index];
-              return _ChildCard(child: child);
+              return _ChildCard(
+                child: child,
+                onTap: () {
+                  // Fix: navigate to parent-dashboard with child selected
+                  // (not /students/:id which is a staff screen)
+                  context.push('/parent-dashboard');
+                },
+              );
             },
           );
         },
@@ -55,19 +62,19 @@ class ChildrenScreen extends ConsumerWidget {
 // ── Carte enfant ──
 
 class _ChildCard extends StatelessWidget {
-  const _ChildCard({required this.child});
+  const _ChildCard({required this.child, this.onTap});
 
   final Child child;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.only(bottom: AHSpacing.sm),
       child: InkWell(
-        onTap: () {
-          // Navigation vers le détail de l'enfant
-          // On peut naviguer vers /grades, /payments, /absences avec le childId
-          context.go('/students/${child.id}');
+        onTap: onTap ?? () {
+          // Default: navigate to parent dashboard (not /students/:id which is staff)
+          context.push('/parent-dashboard');
         },
         borderRadius: BorderRadius.circular(12),
         child: Padding(

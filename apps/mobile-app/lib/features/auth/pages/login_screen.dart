@@ -65,9 +65,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           return;
         }
         if (selectedPortal == PortalType.parent) {
-          // Parent dashboard will be implemented in a future commit
-          // For now, route to the generic dashboard
-          if (mounted) context.go('/dashboard');
+          if (mounted) context.go('/parent-dashboard');
           return;
         }
 

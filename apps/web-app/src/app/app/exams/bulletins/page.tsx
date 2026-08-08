@@ -1328,30 +1328,32 @@ function BulletinPage2({ student, isMaternelle, signatures, periodId }: { studen
 
       {/* Analyse pédagogique */}
       <div className="bg-white rounded-lg p-3 border border-slate-200">
-        <h4 className="text-xs font-bold text-slate-900 uppercase mb-2">
-          {isMaternelle
-            ? "Analyse Pédagogique Sommaire des Résultats et Recommandations de l'Enseignant(e) aux Parents"
-            : 'Analyse des Résultats et Recommandations'}
-        </h4>
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <h4 className="text-xs font-bold text-slate-900 uppercase">
+            {isMaternelle
+              ? "Analyse Pédagogique Sommaire des Résultats et Recommandations de l'Enseignant(e) aux Parents"
+              : 'Analyse des Résultats et Recommandations'}
+          </h4>
+          {/* ⭐ Auto-générer l'analyse + visa directeur + date — disponible pour MATERNELLE et PRIMAIRE */}
+          <button
+            type="button"
+            onClick={handleAutoFill}
+            disabled={autoFillLoading}
+            className="text-xs text-blue-600 hover:underline flex items-center gap-1 disabled:opacity-50"
+            title="Générer automatiquement l'analyse pédagogique, le visa du directeur et la date, basés sur l'assiduité et les résultats de l'élève."
+          >
+            {autoFillLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+            {isMaternelle ? 'Auto-générer (analyse + visa + date)' : 'Auto-générer les recommandations'}
+          </button>
+        </div>
         <textarea
-          value={isMaternelle ? analyseRecommandations : analyseRecommandations}
+          value={analyseRecommandations}
           onChange={(e) => setAnalyseRecommandations(e.target.value)}
           onBlur={(e) => saveAnnotation('analyseRecommandations', e.target.value)}
           rows={isMaternelle ? 6 : 4}
           placeholder="Saisir l'analyse pédagogique et les recommandations…"
           className={`w-full text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none resize-none ${autoStyle} ${autoFont}`}
         />
-        {!isMaternelle && (
-          <button
-            type="button"
-            onClick={handleAutoFill}
-            disabled={autoFillLoading}
-            className="mt-2 text-xs text-blue-600 hover:underline flex items-center gap-1"
-          >
-            {autoFillLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-            Auto-générer les recommandations
-          </button>
-        )}
       </div>
 
       {/* ⭐ Symbole mérité (emoji) + Appréciation globale + Visa directeur — séparés */}
@@ -1399,7 +1401,20 @@ function BulletinPage2({ student, isMaternelle, signatures, periodId }: { studen
         </div>
         {/* ⭐ Visa du directeur (global, éditable, auto-save on blur) */}
         <div className="bg-amber-50 rounded-lg p-2 border border-amber-200">
-          <p className="text-[10px] font-bold text-amber-900 uppercase">Visa du Directeur</p>
+          <div className="flex items-center justify-between gap-1">
+            <p className="text-[10px] font-bold text-amber-900 uppercase">Visa du Directeur</p>
+            {/* ⭐ Auto-fill visa + date — disponible pour MATERNELLE et PRIMAIRE */}
+            <button
+              type="button"
+              onClick={handleAutoFill}
+              disabled={autoFillLoading}
+              className="text-[10px] text-amber-700 hover:text-amber-900 underline flex items-center gap-0.5 disabled:opacity-50"
+              title="Générer automatiquement le visa du directeur avec la date du jour."
+            >
+              {autoFillLoading ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Sparkles className="w-2.5 h-2.5" />}
+              Auto-remplir
+            </button>
+          </div>
           <textarea
             value={directorVisa}
             onChange={(e) => setDirectorVisa(e.target.value)}

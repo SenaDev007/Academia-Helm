@@ -291,7 +291,13 @@ export class BulletinsController {
   /**
    * GET /institutional-exams/bulletins/teacher-bulletins?periodId=Y
    * ⭐ Récupère les bulletins distribués à l'enseignant connecté
-   * (pour ses classes uniquement)
+   * (pour ses classes uniquement) — groupés par classe.
+   *
+   * Retourne :
+   *   - `bulletins` : liste complète des bulletins (avec classId pour chacun)
+   *   - `classes` : résumé par classe (id, name, total, counts par statut,
+   *     currentStatus) — pour afficher directement la liste des classes
+   *     sans avoir à rappeler workflow-status pour chaque classe.
    */
   @Get('teacher-bulletins')
   @Permissions('exams.read')
@@ -312,7 +318,7 @@ export class BulletinsController {
       select: { id: true },
     }).catch(() => null);
 
-    let classIds: string[] = [];
+    let teacherClassIds: string[] = [];
 
     if (teacher) {
       // Get classes assigned to this teacher
@@ -320,7 +326,7 @@ export class BulletinsController {
         where: { teacherId: teacher.id, tenantId: resolvedTenantId },
         select: { classId: true },
       }).catch(() => []);
-      classIds = assignments.map(a => a.classId);
+      teacherClassIds = assignments.map(a => a.classId);
     }
 
     // Also check if user is a Staff with TEACHER role — they might be the
@@ -336,47 +342,119 @@ export class BulletinsController {
       },
       select: { id: true, name: true },
     }).catch(() => []);
-    classIds = [...new Set([...classIds, ...staffClasses.map(c => c.id)])];
+    teacherClassIds = [...new Set([...teacherClassIds, ...staffClasses.map(c => c.id)])];
 
-    if (classIds.length === 0) {
-      return { bulletins: [], total: 0, message: 'Aucune classe assignée à cet enseignant.' };
+    // Build a map classId → className for fast lookup
+    const classNameMap = new Map<string, string>();
+    staffClasses.forEach(c => classNameMap.set(c.id, c.name));
+
+    if (teacherClassIds.length === 0) {
+      return {
+        bulletins: [],
+        classes: [],
+        total: 0,
+        message: 'Aucune classe assignée à cet enseignant.',
+      };
     }
 
     // Get report cards with TEACHER_DISTRIBUTED or TEACHER_SIGNED status
-    const bulletins = await this.prisma.reportCard.findMany({
+    // (or any status if we want a complete workflow view)
+    // ⭐ On récupère TOUS les bulletins (tous statuts) pour pouvoir afficher
+    //    le workflow complet, mais on ne garde que les classes qui ont au moins
+    //    un bulletin en TEACHER_DISTRIBUTED ou TEACHER_SIGNED (les "actifs").
+    const allBulletins = await this.prisma.reportCard.findMany({
       where: {
         tenantId: resolvedTenantId,
         academicYearId,
         quarterId: periodId,
-        status: { in: ['TEACHER_DISTRIBUTED', 'TEACHER_SIGNED'] },
         student: {
           studentEnrollments: {
-            some: { classId: { in: classIds }, academicYearId, tenantId: resolvedTenantId },
+            some: { classId: { in: teacherClassIds }, academicYearId, tenantId: resolvedTenantId },
           },
         },
       },
       include: {
         student: {
-          select: { id: true, firstName: true, lastName: true, matricule: true, gender: true },
+          select: {
+            id: true, firstName: true, lastName: true, matricule: true, gender: true,
+            // Récupérer l'enrollment pour résoudre la classe de l'élève
+            studentEnrollments: {
+              where: { academicYearId, tenantId: resolvedTenantId, classId: { in: teacherClassIds } },
+              select: { classId: true },
+              take: 1,
+            },
+          },
         },
       },
       orderBy: { student: { lastName: 'asc' } },
     });
 
-    return {
-      bulletins: bulletins.map(b => ({
+    // Build the bulletins list with classId resolved
+    const bulletinsWithClass = allBulletins.map(b => {
+      const enrollment = b.student.studentEnrollments?.[0];
+      const classId = enrollment?.classId || '';
+      return {
         id: b.id,
         studentId: b.studentId,
         studentName: `${b.student.lastName} ${b.student.firstName}`,
         matricule: b.student.matricule,
         status: b.status,
+        classId,
+        className: classNameMap.get(classId) || '',
         directorSignedAt: b.directorSignedAt,
         distributedAt: b.distributedToTeacherAt,
         teacherSignedAt: b.teacherSignedAt,
         directorSignature: b.directorSignature,
         teacherSignature: b.teacherSignature,
-      })),
-      total: bulletins.length,
+      };
+    }).filter(b => b.classId); // ne garder que ceux dont on a pu résoudre la classe
+
+    // ⭐ Build per-class summary
+    const classesMap = new Map<string, {
+      classId: string;
+      className: string;
+      total: number;
+      counts: Record<string, number>;
+    }>();
+
+    for (const b of bulletinsWithClass) {
+      if (!classesMap.has(b.classId)) {
+        classesMap.set(b.classId, {
+          classId: b.classId,
+          className: b.className,
+          total: 0,
+          counts: {
+            DRAFT: 0, DIRECTOR_SIGNED: 0, TEACHER_DISTRIBUTED: 0,
+            TEACHER_SIGNED: 0, TEACHER_RETURNED: 0, PARENT_SENT: 0, BLOCKED: 0,
+          },
+        });
+      }
+      const c = classesMap.get(b.classId)!;
+      c.total += 1;
+      if (c.counts[b.status] !== undefined) c.counts[b.status] += 1;
+    }
+
+    // Build final classes list with currentStatus — ne garder que les classes
+    // qui ont au moins un bulletin TEACHER_DISTRIBUTED ou TEACHER_SIGNED
+    const classes = Array.from(classesMap.values())
+      .filter(c => c.counts.TEACHER_DISTRIBUTED > 0 || c.counts.TEACHER_SIGNED > 0)
+      .map(c => {
+        const currentStatus =
+          c.counts.PARENT_SENT > 0 ? 'PARENT_SENT' :
+          c.counts.BLOCKED > 0 ? 'BLOCKED' :
+          c.counts.TEACHER_RETURNED > 0 ? 'TEACHER_RETURNED' :
+          c.counts.TEACHER_SIGNED > 0 ? 'TEACHER_SIGNED' :
+          c.counts.TEACHER_DISTRIBUTED > 0 ? 'TEACHER_DISTRIBUTED' :
+          c.counts.DIRECTOR_SIGNED > 0 ? 'DIRECTOR_SIGNED' :
+          'DRAFT';
+        return { ...c, currentStatus };
+      })
+      .sort((a, b) => a.className.localeCompare(b.className, 'fr'));
+
+    return {
+      bulletins: bulletinsWithClass,
+      classes,
+      total: bulletinsWithClass.length,
     };
   }
 

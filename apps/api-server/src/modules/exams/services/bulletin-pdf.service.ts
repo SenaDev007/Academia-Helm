@@ -504,6 +504,7 @@ export class BulletinPdfService {
             </td>
             <td style="width:34%;text-align:center;vertical-align:bottom;padding:10px 3px;">
               <div style="height:50px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:50px;max-width:100px;object-fit:contain;" />` : ''}</div>
+              ${data.directorVisa ? `<div style="font-size:9px;color:#dc2626;font-style:italic;margin-top:2px;">${data.directorVisa}</div>` : ''}
               <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:10px;font-weight:bold;color:#0A2A5E;">Le (la) Directeur(trice)</div>
               <div style="font-size:8px;color:#64748b;">Visa</div>
             </td>
@@ -579,6 +580,7 @@ export class BulletinPdfService {
             </td>
             <td style="width:33%;text-align:center;vertical-align:bottom;padding:6px 3px;">
               <div style="height:35px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:35px;max-width:90px;object-fit:contain;" />` : ''}</div>
+              ${data.directorVisa ? `<div style="font-size:8px;color:#dc2626;font-style:italic;margin-top:2px;">${data.directorVisa}</div>` : ''}
               <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:10px;font-weight:bold;color:#0A2A5E;">VISA du Directeur</div>
               <div style="font-size:8px;color:#64748b;">Visa</div>
             </td>

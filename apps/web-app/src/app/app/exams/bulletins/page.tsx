@@ -149,8 +149,8 @@ function BulletinsContent() {
   const [bulletinData, setBulletinData] = useState<BulletinData | null>(null);
   const [expandedStudents, setExpandedStudents] = useState<Set<string>>(new Set());
   const [generatingPdf, setGeneratingPdf] = useState<string | null>(null);
-  // ⭐ Sub-tabs: 'bulletin' | 'moyennes' | 'criteria'
-  const [activeSubTab, setActiveSubTab] = useState<'bulletin' | 'moyennes' | 'criteria'>('bulletin');
+  // ⭐ Sub-tabs: 'bulletin' | 'moyennes' | 'criteria' | 'received'
+  const [activeSubTab, setActiveSubTab] = useState<'bulletin' | 'moyennes' | 'criteria' | 'received'>('bulletin');
   // ⭐ Sub-sub-tabs within 'moyennes': 'trimestriel' | 'annuel'
   const [activeMoyenneTab, setActiveMoyenneTab] = useState<'trimestriel' | 'annuel'>('trimestriel');
 
@@ -460,7 +460,6 @@ function BulletinsContent() {
         lowestAverage: bulletinData!.results.length > 0 ? Math.min(...bulletinData!.results.map(r => r.generalAverage || 0)) : null,
         totalStudents: bulletinData!.results.length,
         appreciationGlobale: student.appreciationGlobale,
-        directorVisa: signatures?.directorSig ? undefined : (student.appreciationGlobale || undefined),
         assiduite: (window as any).__bulletinAnnotations?.[student.id]?.assiduite || null,
         discipline: (window as any).__bulletinAnnotations?.[student.id]?.discipline || null,
         defautsMajeurs: (window as any).__bulletinAnnotations?.[student.id]?.defautsMajeurs || null,
@@ -480,6 +479,7 @@ function BulletinsContent() {
         payload.defautsMajeurs = ann.defautsMajeurs || null;
         payload.qualitesRemarquables = ann.qualitesRemarquables || null;
         payload.analyseRecommandations = ann.analyseRecommandations || null;
+        payload.directorVisa = ann.directorVisa || null;
       } catch {}
 
       const response = await apiClient.post('/institutional-exams/bulletins/generate-pdf', payload, {
@@ -553,6 +553,16 @@ function BulletinsContent() {
           <Settings className="w-4 h-4" />
           Critères d'envoi
         </button>
+        {isTeacher && (
+          <button
+            onClick={() => setActiveSubTab('received')}
+            className={cn('flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors',
+              activeSubTab === 'received' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}
+          >
+            <Mail className="w-4 h-4" />
+            Bulletins reçus
+          </button>
+        )}
       </div>
 
       {/* ═══ Sub-tab: Bulletin d'évaluation ═══ */}
@@ -747,6 +757,15 @@ function BulletinsContent() {
       {/* ═══ Sub-tab: Critères d'envoi ═══ */}
       {activeSubTab === 'criteria' && (
         <SendingCriteriaTab tenantId={effectiveTenantId} />
+      )}
+
+      {/* ═══ Sub-tab: Bulletins reçus (enseignants) ═══ */}
+      {activeSubTab === 'received' && isTeacher && (
+        <ReceivedBulletinsTab
+          tenantId={effectiveTenantId}
+          academicYearId={academicYear?.id}
+          user={user}
+        />
       )}
     </div>
   );
@@ -2506,6 +2525,232 @@ function ToggleRow({
         <span className={cn('inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
           checked ? 'translate-x-6' : 'translate-x-1')} />
       </button>
+    </div>
+  );
+}
+
+// ─── Received Bulletins Tab (for teachers) ──────────────────────────────────
+
+function ReceivedBulletinsTab({ tenantId, academicYearId, user }: { tenantId?: string; academicYearId?: string; user?: any }) {
+  const [bulletins, setBulletins] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [periods, setPeriods] = useState<any[]>([]);
+  const [selectedPeriodId, setSelectedPeriodId] = useState('');
+  const [showSignModal, setShowSignModal] = useState(false);
+  const [signature, setSignature] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // Load periods
+  useEffect(() => {
+    if (!academicYearId) return;
+    fetch(`/api/settings/academic-years/${academicYearId}/periods`, { credentials: 'include' })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        const list = Array.isArray(data) ? data : [];
+        setPeriods(list);
+        if (list.length > 0 && !selectedPeriodId) setSelectedPeriodId(list[0].id);
+      })
+      .catch(() => setPeriods([]));
+  }, [academicYearId]);
+
+  // Load received bulletins
+  const loadBulletins = useCallback(async () => {
+    if (!selectedPeriodId) return;
+    setLoading(true);
+    try {
+      const res = await apiClient.get(`/institutional-exams/bulletins/teacher-bulletins?periodId=${selectedPeriodId}`);
+      setBulletins(res.data?.bulletins || []);
+    } catch { setBulletins([]); }
+    finally { setLoading(false); }
+  }, [selectedPeriodId]);
+
+  useEffect(() => { loadBulletins(); }, [loadBulletins]);
+
+  const handleSignAll = async () => {
+    if (!signature || bulletins.length === 0) return;
+    setActionLoading(true);
+    try {
+      // Sign all bulletins — use the first student's class
+      const firstBulletin = bulletins[0];
+      // Find classId from first student
+      const classRes = await apiClient.get(`/institutional-exams/bulletins/annotations?studentId=${firstBulletin.studentId}&periodId=${selectedPeriodId}`);
+      // Use a class-level sign endpoint
+      // We need to find the class — use the workflow endpoint
+      // For now, sign each bulletin individually via the annotations endpoint
+      // Actually, we need to use teacher-sign which requires classId
+      // Let's find the class from the student's enrollment
+      const enrollRes = await apiClient.get(`/api/students/${firstBulletin.studentId}/enrollment?academicYearId=${academicYearId}`);
+      const classId = enrollRes.data?.classId;
+      if (!classId) {
+        toastError('Erreur', { description: 'Impossible de déterminer la classe' });
+        return;
+      }
+      await apiClient.post(`/institutional-exams/bulletins/class/${classId}/teacher-sign`, {
+        periodId: selectedPeriodId,
+        signature,
+      });
+      toastSuccess('Bulletins signés', { description: `${bulletins.length} bulletin(s) signé(s) par l'enseignant.` });
+      setShowSignModal(false);
+      setSignature(null);
+      loadBulletins();
+    } catch (err: any) {
+      toastError('Erreur', { description: err.response?.data?.message || err.message });
+    } finally { setActionLoading(false); }
+  };
+
+  const handleReturn = async () => {
+    if (bulletins.length === 0) return;
+    setActionLoading(true);
+    try {
+      const firstBulletin = bulletins[0];
+      const enrollRes = await apiClient.get(`/api/students/${firstBulletin.studentId}/enrollment?academicYearId=${academicYearId}`);
+      const classId = enrollRes.data?.classId;
+      if (!classId) {
+        toastError('Erreur', { description: 'Impossible de déterminer la classe' });
+        return;
+      }
+      await apiClient.post(`/institutional-exams/bulletins/class/${classId}/teacher-return`, {
+        periodId: selectedPeriodId,
+      });
+      toastSuccess('Bulletins renvoyés', { description: 'Les bulletins sont de retour chez le directeur.' });
+      loadBulletins();
+    } catch (err: any) {
+      toastError('Erreur', { description: err.response?.data?.message || err.message });
+    } finally { setActionLoading(false); }
+  };
+
+  const allSigned = bulletins.length > 0 && bulletins.every(b => b.status === 'TEACHER_SIGNED');
+  const hasDistributed = bulletins.some(b => b.status === 'TEACHER_DISTRIBUTED');
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Mail className="w-5 h-5 text-blue-600" />
+            <h3 className="text-lg font-bold text-slate-900">Bulletins reçus du Directeur</h3>
+          </div>
+          <select
+            value={selectedPeriodId}
+            onChange={(e) => setSelectedPeriodId(e.target.value)}
+            className="text-sm border border-gray-200 bg-gray-50 rounded-lg py-2 px-3"
+          >
+            <option value="">— Période —</option>
+            {periods.map(p => <option key={p.id} value={p.id}>{p.name || p.label}</option>)}
+          </select>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          </div>
+        ) : bulletins.length === 0 ? (
+          <div className="text-center py-8">
+            <Mail className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+            <p className="text-gray-600 font-medium">Aucun bulletin reçu</p>
+            <p className="text-sm text-gray-400 mt-1">Les bulletins distribués par le directeur apparaîtront ici.</p>
+          </div>
+        ) : (
+          <>
+            {/* Summary + Actions */}
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <div className="flex gap-2 text-xs">
+                <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full">
+                  {bulletins.length} bulletin(s)
+                </span>
+                <span className="bg-amber-50 text-amber-700 px-3 py-1 rounded-full">
+                  {bulletins.filter(b => b.status === 'TEACHER_DISTRIBUTED').length} à signer
+                </span>
+                <span className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full">
+                  {bulletins.filter(b => b.status === 'TEACHER_SIGNED').length} signé(s)
+                </span>
+              </div>
+              <div className="flex gap-2">
+                {hasDistributed && !allSigned && (
+                  <Button onClick={() => setShowSignModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white text-sm">
+                    <PenTool className="w-4 h-4 mr-2" /> Signer tous les bulletins
+                  </Button>
+                )}
+                {allSigned && (
+                  <Button onClick={handleReturn} disabled={actionLoading} className="bg-amber-600 hover:bg-amber-700 text-white text-sm">
+                    {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Undo className="w-4 h-4 mr-2" />}
+                    Renvoyer au directeur
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50">
+                    <th className="text-left py-2 px-3 font-semibold text-gray-700">Élève</th>
+                    <th className="text-left py-2 px-3 font-semibold text-gray-700">Matricule</th>
+                    <th className="text-left py-2 px-3 font-semibold text-gray-700">Statut</th>
+                    <th className="text-left py-2 px-3 font-semibold text-gray-700">Distribué le</th>
+                    <th className="text-left py-2 px-3 font-semibold text-gray-700">Signé le</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bulletins.map((b) => (
+                    <tr key={b.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-2 px-3 font-medium text-gray-800">{b.studentName}</td>
+                      <td className="py-2 px-3 text-gray-500">{b.matricule || '—'}</td>
+                      <td className="py-2 px-3">
+                        {b.status === 'TEACHER_DISTRIBUTED' ? (
+                          <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium">À signer</span>
+                        ) : b.status === 'TEACHER_SIGNED' ? (
+                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs font-medium">Signé</span>
+                        ) : (
+                          <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">{b.status}</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-gray-500 text-xs">
+                        {b.distributedAt ? new Date(b.distributedAt).toLocaleString('fr-FR') : '—'}
+                      </td>
+                      <td className="py-2 px-3 text-gray-500 text-xs">
+                        {b.teacherSignedAt ? new Date(b.teacherSignedAt).toLocaleString('fr-FR') : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Sign Modal */}
+      {showSignModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-sm font-bold text-slate-900 mb-2">Signature — Enseignant(e)</h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Cette signature sera appliquée à <strong>tous les bulletins reçus</strong> sans exception.
+            </p>
+            <div className="border border-slate-300 rounded-lg p-2 bg-slate-50/50 mb-4">
+              <SignatureCanvas
+                width={340}
+                height={120}
+                onSignatureChange={setSignature}
+                placeholder="Signez ici"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="outline" onClick={() => { setShowSignModal(false); setSignature(null); }} className="text-sm">Annuler</Button>
+              <Button
+                onClick={handleSignAll}
+                disabled={!signature || actionLoading}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-sm"
+              >
+                {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+                Valider la signature
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

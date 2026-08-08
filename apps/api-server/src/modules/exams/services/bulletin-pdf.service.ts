@@ -73,6 +73,10 @@ export interface BulletinPdfData {
   defautsMajeurs?: string | null;
   qualitesRemarquables?: string | null;
   analyseRecommandations?: string | null;
+  // ⭐ Noms auto-résolus (depuis TeacherClassAssignment / Staff)
+  teacherName?: string | null;   // ex: "Mme YAROU Elodie" (titulaire de la classe)
+  teacherGender?: string | null; // 'M' | 'F' | null — pour "M." vs "Mme"
+  directorName?: string | null;  // réservé pour plus tard
   // Signatures (base64)
   teacherSignature?: string | null;
   directorSignature?: string | null;
@@ -484,7 +488,10 @@ export class BulletinPdfService {
         <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;line-height:1.4;">
           Analyse pédagogique sommaire des résultats et recommandations de l'enseignant(e) aux parents
         </div>
-        ${[1,2,3,4,5,6,7,8,9,10,11,12].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:14px;"></div>').join('')}
+        ${data.analyseRecommandations
+          ? `<div style="font-size:9px;color:#1a1a1a;line-height:1.5;text-align:justify;">${data.analyseRecommandations}</div>`
+          : [1,2,3,4,5,6,7,8,9,10,11,12].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:14px;"></div>').join('')
+        }
       </div>
 
       <!-- SYMBOLE MÉRITÉ -->
@@ -500,7 +507,7 @@ export class BulletinPdfService {
             <td style="width:33%;text-align:center;vertical-align:bottom;padding:10px 3px;">
               <div style="height:50px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:50px;max-width:100px;object-fit:contain;" />` : ''}</div>
               <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:10px;font-weight:bold;color:#0A2A5E;">Titulaire de la classe</div>
-              <div style="font-size:8px;color:#64748b;">Signature</div>
+              ${data.teacherName ? `<div style="font-size:9px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.teacherName}</div>` : '<div style="font-size:8px;color:#64748b;margin-top:1px;">Signature</div>'}
             </td>
             <td style="width:34%;text-align:center;vertical-align:bottom;padding:10px 3px;">
               <div style="height:50px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:50px;max-width:100px;object-fit:contain;" />` : ''}</div>
@@ -571,7 +578,7 @@ export class BulletinPdfService {
             <td style="width:33%;text-align:center;vertical-align:bottom;padding:6px 3px;">
               <div style="height:35px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:35px;max-width:90px;object-fit:contain;" />` : ''}</div>
               <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:10px;font-weight:bold;color:#0A2A5E;">Enseignant(e)</div>
-              <div style="font-size:8px;color:#64748b;">Signature du titulaire</div>
+              ${data.teacherName ? `<div style="font-size:9px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.teacherName}</div>` : '<div style="font-size:8px;color:#64748b;margin-top:1px;">Signature du titulaire</div>'}
             </td>
             <td style="width:34%;text-align:center;vertical-align:bottom;padding:6px 3px;">
               <div style="height:35px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:35px;max-width:90px;object-fit:contain;" />` : ''}</div>

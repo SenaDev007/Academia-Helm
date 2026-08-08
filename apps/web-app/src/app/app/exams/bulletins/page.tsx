@@ -577,6 +577,9 @@ function BulletinsContent() {
           classId={selectedClassId}
           periodId={selectedPeriodId}
           userRole={user?.role}
+          evaluationTypeId={selectedEvalTypeId || undefined}
+          evaluationTypeName={selectedEvalTypeName || undefined}
+          evaluationTypeCode={selectedEvalTypeCode || undefined}
           onRefresh={() => {
             loadBulletins();
             // ⭐ Force re-load of workflow signatures
@@ -1972,6 +1975,7 @@ function generateBulletinHtml(
 
 function WorkflowBar({
   tenantId, academicYearId, classId, periodId, userRole, onRefresh,
+  evaluationTypeId, evaluationTypeName, evaluationTypeCode,
 }: {
   tenantId?: string;
   academicYearId?: string;
@@ -1979,6 +1983,9 @@ function WorkflowBar({
   periodId: string;
   userRole?: string;
   onRefresh: () => void;
+  evaluationTypeId?: string;
+  evaluationTypeName?: string;
+  evaluationTypeCode?: string;
 }) {
   const [workflowStatus, setWorkflowStatus] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -2007,12 +2014,19 @@ function WorkflowBar({
     setActionLoading(true);
     try {
       const endpoint = showSignModal === 'director' ? 'director-sign' : 'teacher-sign';
-      await apiClient.post(`/institutional-exams/bulletins/class/${classId}/${endpoint}`, {
-        periodId,
-        signature,
-      });
+      // ⭐ Pour la signature du directeur, on envoie aussi evaluationTypeId
+      //    pour que le bulletin soit lié au type d'évaluation sélectionné
+      const body: any = { periodId, signature };
+      if (showSignModal === 'director' && evaluationTypeId) {
+        body.evaluationTypeId = evaluationTypeId;
+        body.evaluationTypeName = evaluationTypeName;
+        body.evaluationTypeCode = evaluationTypeCode;
+      }
+      await apiClient.post(`/institutional-exams/bulletins/class/${classId}/${endpoint}`, body);
       toastSuccess('Signature appliquée', {
-        description: `Tous les bulletins ont été signés par ${showSignModal === 'director' ? 'le directeur' : "l'enseignant"}.`,
+        description: showSignModal === 'director'
+          ? `Tous les bulletins${evaluationTypeName ? ` de ${evaluationTypeName}` : ''} ont été signés par le directeur.`
+          : "Tous les bulletins ont été signés par l'enseignant.",
       });
       setShowSignModal(null);
       setSignature(null);

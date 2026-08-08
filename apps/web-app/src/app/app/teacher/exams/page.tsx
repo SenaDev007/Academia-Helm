@@ -1195,6 +1195,11 @@ interface ClassBulletinSummary {
   className: string;
   periodId: string;
   periodName: string;
+  // ⭐ Infos du type d'évaluation (EM1, EM2, EC, EP, etc.) — peuvent être null
+  //    pour les anciens bulletins sans evaluationTypeId
+  evaluationTypeId: string | null;
+  evaluationTypeName: string;
+  evaluationTypeCode: string;
   total: number;
   counts: {
     DRAFT: number;
@@ -1266,6 +1271,10 @@ function TeacherBulletinsToSign({
         className: cls.className || `Classe ${cls.classId.slice(-4)}`,
         periodId: selectedPeriodId,
         periodName: periods.find(p => p.id === selectedPeriodId)?.name || '',
+        // ⭐ Infos du type d'évaluation (peuvent être null pour les anciens)
+        evaluationTypeId: cls.evaluationTypeId || null,
+        evaluationTypeName: cls.evaluationTypeName || 'Bulletin',
+        evaluationTypeCode: cls.evaluationTypeCode || '',
         total: cls.total || 0,
         counts: {
           DRAFT: cls.counts?.DRAFT || 0,
@@ -1296,12 +1305,17 @@ function TeacherBulletinsToSign({
     if (!signingClass || !signature || !selectedPeriodId) return;
     setActionLoading(true);
     try {
+      // ⭐ Passer evaluationTypeId pour ne signer QUE ce type d'éval
+      const body: any = { periodId: selectedPeriodId, signature };
+      if (signingClass.evaluationTypeId) {
+        body.evaluationTypeId = signingClass.evaluationTypeId;
+      }
       await apiClient.post(
         `/institutional-exams/bulletins/class/${signingClass.classId}/teacher-sign`,
-        { periodId: selectedPeriodId, signature }
+        body
       );
       toastSuccess('Signature appliquée', {
-        description: `Tous les bulletins de ${signingClass.className} ont été signés.`,
+        description: `Tous les bulletins${signingClass.evaluationTypeName && signingClass.evaluationTypeName !== 'Bulletin' ? ` de ${signingClass.evaluationTypeName}` : ''} ont été signés par l'enseignant.`,
       });
       setSigningClass(null);
       setSignature(null);
@@ -1325,16 +1339,24 @@ function TeacherBulletinsToSign({
     if (!returnClass || !selectedPeriodId) return;
     setActionLoading(true);
     try {
+      // ⭐ Passer evaluationTypeId pour ne renvoyer QUE ce type d'éval
+      const body: any = { periodId: selectedPeriodId };
+      if (returnClass.evaluationTypeId) {
+        body.evaluationTypeId = returnClass.evaluationTypeId;
+      }
       const res = await apiClient.post(
         `/institutional-exams/bulletins/class/${returnClass.classId}/teacher-return`,
-        { periodId: selectedPeriodId }
+        body
       );
       const data = res.data || {};
       const signaturesReapplied = data.signaturesReapplied || 0;
+      const returnedCount = data.returnedCount || 0;
+      const evalTypeSuffix = returnClass.evaluationTypeName && returnClass.evaluationTypeName !== 'Bulletin'
+        ? ` de ${returnClass.evaluationTypeName}` : '';
       toastSuccess('Bulletins renvoyés au directeur', {
         description: signaturesReapplied > 0
-          ? `${data.returnedCount} bulletin(s) renvoyé(s) avec votre signature (${signaturesReapplied} signature(s) ré-appliquée(s) sur des bulletins récents).`
-          : `${data.returnedCount} bulletin(s) renvoyé(s) avec votre signature appliquée sur chacun.`,
+          ? `${returnedCount} bulletin(s)${evalTypeSuffix} renvoyé(s) avec votre signature (${signaturesReapplied} signature(s) ré-appliquée(s) sur des bulletins récents).`
+          : `${returnedCount} bulletin(s)${evalTypeSuffix} renvoyé(s) avec votre signature appliquée sur chacun.`,
       });
       setReturnClass(null);
       loadTeacherBulletins();
@@ -1436,11 +1458,22 @@ function TeacherBulletinsToSign({
           <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4">
             <h3 className="text-sm font-bold text-slate-900 mb-2 flex items-center gap-2">
               <PenTool className="w-4 h-4 text-blue-600" />
-              Signature enseignant — {signingClass.className}
+              Signature enseignant
             </h3>
+            {/* ⭐ Récap clair : type d'éval + période + classe */}
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 mb-3">
+              <p className="text-sm font-bold text-slate-900">
+                {signingClass.evaluationTypeName && signingClass.evaluationTypeName !== 'Bulletin'
+                  ? `${signingClass.evaluationTypeName}${signingClass.evaluationTypeCode ? ` [${signingClass.evaluationTypeCode}]` : ''}`
+                  : 'Bulletin'}
+              </p>
+              <p className="text-xs text-slate-600">
+                {signingClass.periodName} · {signingClass.className} · {signingClass.total} bulletin(s)
+              </p>
+            </div>
             <p className="text-xs text-slate-500 mb-4">
               Cette signature sera appliquée à <strong>tous les bulletins</strong> de
-              cette classe sans exception.
+              ce groupe sans exception.
             </p>
             <div className="border border-slate-300 rounded-lg p-2 bg-slate-50/50 mb-4">
               <SignatureCanvas
@@ -1487,6 +1520,8 @@ function TeacherBulletinsToSign({
 }
 
 // ─── Modal personnalisé de confirmation pour "Renvoyer au directeur" ──────────
+// ⭐ Affiche clairement : "Bulletin de l'évaluation [Type] — [Période]"
+//    au lieu du générique "bulletins de la classe X pour la période Y".
 function ReturnConfirmModal({
   cls, onConfirm, onClose, loading,
 }: {
@@ -1495,6 +1530,17 @@ function ReturnConfirmModal({
   onClose: () => void;
   loading: boolean;
 }) {
+  // ⭐ Construction du libellé lisible du bulletin
+  //    Ex: "Bulletin de l'Évaluation mensuelle 1 — Trimestre 1"
+  //    Ex: "Bulletin — Trimestre 1" (si pas de type d'éval)
+  const evalTypeLabel = cls.evaluationTypeName && cls.evaluationTypeName !== 'Bulletin'
+    ? `Bulletin de l'${cls.evaluationTypeName}`
+    : 'Bulletin';
+  const periodLabel = cls.periodName || 'période en cours';
+  const fullBulletinLabel = `${evalTypeLabel} — ${periodLabel}`;
+  // ⭐ Suffixe avec code (ex: "[EM1]") si dispo
+  const codeSuffix = cls.evaluationTypeCode ? ` [${cls.evaluationTypeCode}]` : '';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
@@ -1506,18 +1552,38 @@ function ReturnConfirmModal({
             </div>
             <div className="min-w-0">
               <h3 className="text-base font-bold text-white">Renvoyer au directeur</h3>
-              <p className="text-xs text-white/90 truncate">Classe : {cls.className}</p>
+              <p className="text-xs text-white/90 truncate">
+                {fullBulletinLabel}{codeSuffix} · {cls.className}
+              </p>
             </div>
           </div>
         </div>
 
         {/* Body */}
         <div className="p-5 space-y-3">
+          {/* ⭐ Libellé clair : "Bulletin de l'évaluation X — Trimestre Y" */}
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+            <p className="text-[10px] font-bold text-slate-600 uppercase mb-1">
+              Bulletin concerné
+            </p>
+            <p className="text-sm font-bold text-slate-900">
+              {evalTypeLabel}{codeSuffix}
+            </p>
+            <p className="text-xs text-slate-600 mt-0.5">
+              Période : <strong>{periodLabel}</strong>
+            </p>
+            <p className="text-xs text-slate-600">
+              Classe : <strong>{cls.className}</strong>
+            </p>
+            <p className="text-xs text-slate-600">
+              Nombre de bulletins : <strong>{cls.total}</strong>
+            </p>
+          </div>
+
           <p className="text-sm text-slate-700">
             Vous êtes sur le point de <strong>renvoyer au directeur</strong> les
-            <strong> {cls.total} bulletin(s)</strong> de la classe
-            <strong> {cls.className}</strong> pour la période
-            <strong> {cls.periodName}</strong>.
+            <strong> {cls.total} bulletin(s)</strong> ci-dessus. Votre signature
+            sera appliquée sur chacun.
           </p>
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900 flex items-start gap-2">
@@ -1538,7 +1604,7 @@ function ReturnConfirmModal({
             <div>
               <p className="font-semibold mb-1">À noter</p>
               <p>
-                Après cette action, les bulletins ne seront plus accessibles dans
+                Après cette action, ces bulletins ne seront plus accessibles dans
                 votre interface. Le directeur prendra le relais pour la suite du
                 workflow (envoi aux parents).
               </p>
@@ -1593,6 +1659,13 @@ function ClassBulletinCard({
   const isReturned = cls.currentStatus === 'TEACHER_RETURNED';
   const isParentSent = cls.currentStatus === 'PARENT_SENT';
 
+  // ⭐ Libellé du bulletin — affiche le type d'évaluation en priorité
+  //    Ex: "Évaluation mensuelle 1 [EM1]" ou "Bulletin" si pas de type
+  const hasEvalType = cls.evaluationTypeName && cls.evaluationTypeName !== 'Bulletin';
+  const evalTypeDisplay = hasEvalType
+    ? `${cls.evaluationTypeName}${cls.evaluationTypeCode ? ` [${cls.evaluationTypeCode}]` : ''}`
+    : 'Bulletin';
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
       <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
@@ -1607,15 +1680,18 @@ function ClassBulletinCard({
           )}>
             <FileText className="w-5 h-5" />
           </div>
-          <div>
-            <p className="font-bold text-gray-900">{cls.className}</p>
+          <div className="min-w-0">
+            {/* ⭐ Titre : type d'évaluation (EM1, EM2, EC, etc.) */}
+            <p className="font-bold text-gray-900 truncate">
+              {evalTypeDisplay}
+            </p>
             <p className="text-xs text-gray-500">
-              {cls.total} bulletin(s) · {cls.periodName}
+              {cls.className} · {cls.periodName} · {cls.total} bulletin(s)
             </p>
           </div>
         </div>
         <span className={cn(
-          'text-xs font-semibold px-3 py-1 rounded-full',
+          'text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap',
           isDistributed ? 'bg-amber-100 text-amber-700' :
           isSigned ? 'bg-blue-100 text-blue-700' :
           isReturned ? 'bg-purple-100 text-purple-700' :
@@ -1654,7 +1730,7 @@ function ClassBulletinCard({
             className="bg-blue-600 hover:bg-blue-700 text-white text-sm"
           >
             <PenTool className="w-4 h-4 mr-2" />
-            Signer les bulletins
+            Signer les bulletins{hasEvalType ? ` — ${cls.evaluationTypeName}` : ''}
           </Button>
         )}
         {isSigned && (
@@ -1664,7 +1740,7 @@ function ClassBulletinCard({
             className="bg-amber-600 hover:bg-amber-700 text-white text-sm"
           >
             {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Undo className="w-4 h-4 mr-2" />}
-            Renvoyer au directeur
+            Renvoyer au directeur{hasEvalType ? ` — ${cls.evaluationTypeName}` : ''}
           </Button>
         )}
         {isReturned && (

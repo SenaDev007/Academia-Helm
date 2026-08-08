@@ -455,6 +455,11 @@ export class BulletinsService {
     classId: string,
     directorSignature: string,
     directorUserId: string,
+    evalTypeInfo?: {
+      evaluationTypeId?: string;
+      evaluationTypeName?: string;
+      evaluationTypeCode?: string;
+    },
   ) {
     // Récupérer tous les élèves de la classe
     const enrollments = await this.prisma.studentEnrollment.findMany({
@@ -471,10 +476,27 @@ export class BulletinsService {
 
     for (const enrollment of enrollments) {
       try {
-        // Upsert ReportCard
-        const existing = await this.prisma.reportCard.findFirst({
-          where: { tenantId, academicYearId, studentId: enrollment.studentId, quarterId: periodId },
-        });
+        // Upsert ReportCard — la clé d'unicité est désormais
+        // (tenantId, academicYearId, studentId, quarterId, evaluationTypeId)
+        // pour permettre plusieurs bulletins par période (un par type d'éval).
+        const where: any = {
+          tenantId,
+          academicYearId,
+          studentId: enrollment.studentId,
+          quarterId: periodId,
+        };
+        if (evalTypeInfo?.evaluationTypeId) {
+          where.evaluationTypeId = evalTypeInfo.evaluationTypeId;
+        } else {
+          // Pour rétro-compat : si pas d'eval type fourni, on match aussi les
+          // anciens bulletins sans eval type (NULL).
+          where.OR = [
+            { evaluationTypeId: null },
+            { evaluationTypeId: '' },
+          ];
+        }
+
+        const existing = await this.prisma.reportCard.findFirst({ where });
 
         if (existing) {
           await this.prisma.reportCard.update({
@@ -484,6 +506,12 @@ export class BulletinsService {
               directorSignedAt: now,
               directorSignedBy: directorUserId,
               status: 'DIRECTOR_SIGNED',
+              // ⭐ Mettre à jour les infos du type d'éval si elles sont fournies
+              ...(evalTypeInfo?.evaluationTypeId ? {
+                evaluationTypeId: evalTypeInfo.evaluationTypeId,
+                evaluationTypeName: evalTypeInfo.evaluationTypeName,
+                evaluationTypeCode: evalTypeInfo.evaluationTypeCode,
+              } : {}),
             },
           });
           results.signed++;
@@ -501,6 +529,10 @@ export class BulletinsService {
               directorSignature,
               directorSignedAt: now,
               directorSignedBy: directorUserId,
+              // ⭐ Stocker le type d'évaluation (nullable pour rétro-compat)
+              evaluationTypeId: evalTypeInfo?.evaluationTypeId || null,
+              evaluationTypeName: evalTypeInfo?.evaluationTypeName || null,
+              evaluationTypeCode: evalTypeInfo?.evaluationTypeCode || null,
             },
           });
           results.created++;
@@ -572,21 +604,27 @@ export class BulletinsService {
     classId: string,
     teacherSignature: string,
     teacherUserId: string,
+    evaluationTypeId?: string,
   ) {
     const now = new Date();
-    const result = await this.prisma.reportCard.updateMany({
-      where: {
-        tenantId,
-        academicYearId,
-        quarterId: periodId,
-        status: 'TEACHER_DISTRIBUTED',
-        // ⭐ Filtrer par la classe spécifique demandée
-        student: {
-          studentEnrollments: {
-            some: { classId, academicYearId, tenantId },
-          },
+    // ⭐ Construction du WHERE : par classe (via enrollment) + optionnellement
+    //    par evaluationTypeId (si fourni — permet de signer un type d'éval précis)
+    const where: any = {
+      tenantId,
+      academicYearId,
+      quarterId: periodId,
+      status: 'TEACHER_DISTRIBUTED',
+      student: {
+        studentEnrollments: {
+          some: { classId, academicYearId, tenantId },
         },
       },
+    };
+    if (evaluationTypeId) {
+      where.evaluationTypeId = evaluationTypeId;
+    }
+    const result = await this.prisma.reportCard.updateMany({
+      where,
       data: {
         teacherSignature,
         teacherSignedAt: now,
@@ -610,6 +648,8 @@ export class BulletinsService {
    * ⭐ Vérifie que chaque bulletin a bien une teacherSignature avant de le renvoyer
    *    (sécurité : si la signature est manquante pour une raison quelconque,
    *    on la ré-applique avec la dernière signature connue de la classe).
+   *
+   * ⭐ Si evaluationTypeId est fourni, ne renvoie QUE les bulletins de ce type d'éval.
    */
   async teacherReturnBulletins(
     tenantId: string,
@@ -617,39 +657,35 @@ export class BulletinsService {
     periodId: string,
     classId: string,
     teacherUserId: string,
+    evaluationTypeId?: string,
   ) {
     const now = new Date();
 
-    // ⭐ Étape 4a : vérifier qu'aucun bulletin n'est sans signature.
-    // Si certains n'ont pas de signature (par ex. bulletins créés après la signature),
-    // on récupère la dernière signature connue de la classe et on l'applique.
-    const signedBulletins = await this.prisma.reportCard.findFirst({
-      where: {
-        tenantId,
-        academicYearId,
-        quarterId: periodId,
-        status: 'TEACHER_SIGNED',
-        student: {
-          studentEnrollments: {
-            some: { classId, academicYearId, tenantId },
-          },
+    // Construction du WHERE de base : par classe + optionnellement par eval type
+    const baseWhere: any = {
+      tenantId,
+      academicYearId,
+      quarterId: periodId,
+      status: 'TEACHER_SIGNED',
+      student: {
+        studentEnrollments: {
+          some: { classId, academicYearId, tenantId },
         },
-        teacherSignature: { not: null },
       },
+    };
+    if (evaluationTypeId) {
+      baseWhere.evaluationTypeId = evaluationTypeId;
+    }
+
+    // ⭐ Étape 4a : vérifier qu'aucun bulletin n'est sans signature.
+    const signedBulletins = await this.prisma.reportCard.findFirst({
+      where: { ...baseWhere, teacherSignature: { not: null } },
       select: { teacherSignature: true },
     });
 
     const missingSignaturesCount = await this.prisma.reportCard.count({
       where: {
-        tenantId,
-        academicYearId,
-        quarterId: periodId,
-        status: 'TEACHER_SIGNED',
-        student: {
-          studentEnrollments: {
-            some: { classId, academicYearId, tenantId },
-          },
-        },
+        ...baseWhere,
         OR: [
           { teacherSignature: null },
           { teacherSignature: '' },
@@ -661,15 +697,7 @@ export class BulletinsService {
       // Ré-appliquer la signature sur les bulletins sans signature
       await this.prisma.reportCard.updateMany({
         where: {
-          tenantId,
-          academicYearId,
-          quarterId: periodId,
-          status: 'TEACHER_SIGNED',
-          student: {
-            studentEnrollments: {
-              some: { classId, academicYearId, tenantId },
-            },
-          },
+          ...baseWhere,
           OR: [
             { teacherSignature: null },
             { teacherSignature: '' },
@@ -683,20 +711,9 @@ export class BulletinsService {
       });
     }
 
-    // ⭐ Étape 4b : changer le statut à TEACHER_RETURNED — uniquement pour
-    //    les bulletins de CETTE classe (filtre par classId).
+    // ⭐ Étape 4b : changer le statut à TEACHER_RETURNED
     const result = await this.prisma.reportCard.updateMany({
-      where: {
-        tenantId,
-        academicYearId,
-        quarterId: periodId,
-        status: 'TEACHER_SIGNED',
-        student: {
-          studentEnrollments: {
-            some: { classId, academicYearId, tenantId },
-          },
-        },
-      },
+      where: baseWhere,
       data: {
         status: 'TEACHER_RETURNED',
         updatedAt: now,

@@ -7,8 +7,8 @@ class ApiConfig {
 
   // ── Base URLs ─────────────────────────────────────────────────────────
 
-  static const String _productionBaseUrl = 'https://api.academiahelm.com/api';
-  static const String _stagingBaseUrl = 'https://api-staging.academiahelm.com/api';
+  static const String _productionBaseUrl = 'https://academiahelm.com/api';
+  static const String _stagingBaseUrl = 'https://academiahelm.com/api';
 
   // ── Timeouts ──────────────────────────────────────────────────────────
 

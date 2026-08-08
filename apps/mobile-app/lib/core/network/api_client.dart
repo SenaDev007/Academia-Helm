@@ -19,8 +19,9 @@ import 'api_result.dart';
 final dioProvider = Provider<Dio>((Ref ref) {
   final Dio dio = Dio(
     BaseOptions(
-      // Use baseUrl WITHOUT /v1 — the NestJS backend has setGlobalPrefix('api')
-      // but does NOT use /v1 for auth endpoints. Most endpoints are flat /api/...
+      // Use the BFF (academiahelm.com/api) — same as the web app.
+      // The BFF proxies to NestJS with correct headers, bypassing Cloudflare.
+      // Direct calls to api.academiahelm.com timeout from mobile devices.
       baseUrl: ApiConfig.baseUrl,
       connectTimeout: ApiConfig.connectTimeout,
       receiveTimeout: ApiConfig.receiveTimeout,
@@ -28,6 +29,7 @@ final dioProvider = Provider<Dio>((Ref ref) {
       headers: <String, dynamic>{
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        'User-Agent': 'AcademiaHelm-Mobile/1.0 (Flutter)',
       },
       responseType: ResponseType.json,
       validateStatus: (int? status) {

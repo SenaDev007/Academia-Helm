@@ -106,7 +106,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       debugPrint('[LOGIN_SCREEN] Stack: $st');
       if (mounted) {
         setState(() {
-          _error = 'Une erreur s'est produite : $e';
+          _error = "Une erreur s'est produite : $e";
           _isLoading = false;
         });
       }

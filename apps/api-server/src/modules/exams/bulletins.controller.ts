@@ -311,42 +311,46 @@ export class BulletinsController {
     const resolvedTenantId = tenantId || user?.tenantId || headers?.['x-tenant-id'];
     const userId = user?.id;
 
-    // Find classes where this teacher is assigned (TeacherClassAssignment or Staff)
-    // First try via Staff → Teacher → ClassSubject/TeacherClassAssignment
-    const teacher = await this.prisma.teacher.findFirst({
-      where: { userId },
-      select: { id: true },
-    }).catch(() => null);
+    // ⭐ Resolve user.id → Teacher.id via email matching
+    //    (same pattern as evaluations.service.ts and pedagogical-space.service.ts)
+    //    The teachers table does NOT have a userId column — the link is by email.
+    let teacherId: string | null = null;
+    if (userId) {
+      const userRow = await this.prisma.user.findFirst({
+        where: { id: userId, tenantId: resolvedTenantId },
+        select: { email: true },
+      }).catch(() => null);
 
-    let teacherClassIds: string[] = [];
-
-    if (teacher) {
-      // Get classes assigned to this teacher
-      const assignments = await this.prisma.teacherClassAssignment.findMany({
-        where: { teacherId: teacher.id, tenantId: resolvedTenantId },
-        select: { classId: true },
-      }).catch(() => []);
-      teacherClassIds = assignments.map(a => a.classId);
+      if (userRow?.email) {
+        const teacherRow = await this.prisma.teacher.findFirst({
+          where: { email: userRow.email, tenantId: resolvedTenantId },
+          select: { id: true },
+        }).catch(() => null);
+        teacherId = teacherRow?.id || null;
+      }
     }
 
-    // Also check if user is a Staff with TEACHER role — they might be the
-    // "titulaire de classe" via classes table
-    const staffClasses = await this.prisma.class.findMany({
-      where: {
-        tenantId: resolvedTenantId,
-        academicYearId,
-        // Check if any teacher assignment links to this user
-        teacherClassAssignments: {
-          some: teacher ? { teacherId: teacher.id } : { teacher: { userId } },
-        },
-      },
-      select: { id: true, name: true },
-    }).catch(() => []);
-    teacherClassIds = [...new Set([...teacherClassIds, ...staffClasses.map(c => c.id)])];
+    // Get classes assigned to this teacher via TeacherClassAssignment
+    let teacherClassIds: string[] = [];
+    if (teacherId) {
+      const assignments = await this.prisma.teacherClassAssignment.findMany({
+        where: { teacherId: teacherId, tenantId: resolvedTenantId },
+        select: { classId: true },
+      }).catch(() => []);
+      teacherClassIds = Array.from(new Set(
+        assignments.map(a => a.classId).filter(Boolean) as string[]
+      ));
+    }
 
     // Build a map classId → className for fast lookup
     const classNameMap = new Map<string, string>();
-    staffClasses.forEach(c => classNameMap.set(c.id, c.name));
+    if (teacherClassIds.length > 0) {
+      const classes = await this.prisma.class.findMany({
+        where: { id: { in: teacherClassIds }, tenantId: resolvedTenantId },
+        select: { id: true, name: true },
+      }).catch(() => []);
+      classes.forEach(c => classNameMap.set(c.id, c.name));
+    }
 
     if (teacherClassIds.length === 0) {
       return {

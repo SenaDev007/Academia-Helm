@@ -150,7 +150,7 @@ class _PayrollContent extends ConsumerWidget {
       onRetry: () => ref.invalidate(payrollProvider),
       itemBuilder: (item) => ListItemCard(
         title: (item['label'] as String?) ?? (item['reference'] as String?) ?? 'Fiche de paie',
-        subtitle: '${(item['amount'] as String?) ?? '—'} €',
+        subtitle: '${(item['amount'] as String?) ?? '—'} FCFA',
         leadingIcon: Icons.payments,
         badge: StatusBadge(label: (item['status'] as String?) ?? 'En préparation', type: _st(item['status'])),
       ),

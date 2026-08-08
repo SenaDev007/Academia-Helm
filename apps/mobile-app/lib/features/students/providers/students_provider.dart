@@ -228,6 +228,29 @@ class StudentMutationNotifier extends StateNotifier<AsyncValue<void>> {
     }
   }
 
+  /// Creates an enrollment (FIX: was missing — Enrollments tab was calling createStudent)
+  Future<bool> createEnrollment(Map<String, dynamic> data) async {
+    state = const AsyncValue.loading();
+    try {
+      final result = await _service.createEnrollment(data);
+      return result.when(
+        success: (_) {
+          _ref.invalidate(studentEnrollmentsProvider);
+          state = const AsyncValue.data(null);
+          return true;
+        },
+        failure: (error) {
+          state = AsyncValue.error(Exception(error.message), StackTrace.current);
+          return false;
+        },
+        loading: () => false,
+      );
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+      return false;
+    }
+  }
+
   /// Updates an existing student and refreshes the students list.
   Future<bool> updateStudent(String id, Map<String, dynamic> data) async {
     state = const AsyncValue.loading();

@@ -155,7 +155,8 @@ class _EnrollmentsContent extends ConsumerWidget {
               AddFieldConfig(key: 'date', label: 'Date de demande'),
             ]);
         if (data != null) {
-          ref.read(studentMutationProvider.notifier).createStudent(data);
+          // FIX: was calling createStudent — now calls createEnrollment
+          ref.read(studentMutationProvider.notifier).createEnrollment(data);
         }
       },
       itemBuilder: (item) => ListItemCard(
@@ -194,54 +195,43 @@ class _AttendanceContent extends ConsumerWidget {
   }
 }
 
-// ─── Grades, Discipline, Health, etc. (list-based sub-tabs) ─────────────────
+// ─── Grades (FIXED: was fake — now shows placeholder until grades API is wired) ─
 
 class _GradesContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final itemsAsync = ref.watch(studentsProvider);
-    return ModuleDataList(
-      itemsAsync: itemsAsync,
-      moduleName: 'Notes',
-      emptyTitle: 'Aucune note disponible',
-      emptySubtitle: 'Les notes seront affichées ici',
-      onRetry: () => ref.invalidate(studentsProvider),
-      itemBuilder: (item) => ListItemCard(
-        title: '${(item['first_name'] as String?) ?? ''} ${(item['last_name'] as String?) ?? ''}'.trim(),
-        subtitle: 'Moyenne: ${(item['average'] as String?) ?? '—'}',
-        leadingIcon: Icons.assessment,
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.assessment, size: 48, color: AHColors.grey300),
+          const SizedBox(height: 8),
+          const Text('Notes', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AHColors.grey600)),
+          const SizedBox(height: 4),
+          const Text('Les notes sont gérées via le module Examens & Notes',
+            textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: AHColors.grey400)),
+        ],
       ),
     );
   }
 }
 
+// ─── Discipline (FIXED: was calling createStudent — now shows placeholder) ────
+
 class _DisciplineContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final itemsAsync = ref.watch(studentsProvider);
-    return ModuleDataList(
-      itemsAsync: itemsAsync,
-      moduleName: 'Discipline',
-      emptyTitle: 'Aucun incident disciplinaire',
-      emptySubtitle: 'Aucun signalement en cours',
-      onRetry: () => ref.invalidate(studentsProvider),
-      onAdd: () async {
-        final data = await showAddItemDialog(context,
-            title: 'Signalement discipline',
-            fields: const [
-              AddFieldConfig(key: 'student_name', label: 'Élève'),
-              AddFieldConfig(key: 'type', label: 'Type (avertissement, blâme...)'),
-              AddFieldConfig(key: 'reason', label: 'Motif'),
-            ]);
-        if (data != null) {
-          ref.read(studentMutationProvider.notifier).createStudent(data);
-        }
-      },
-      itemBuilder: (item) => ListItemCard(
-        title: '${(item['first_name'] as String?) ?? ''} ${(item['last_name'] as String?) ?? ''}'.trim(),
-        subtitle: (item['discipline_note'] as String?) ?? '',
-        leadingIcon: Icons.warning,
-        leadingIconColor: AHColors.warning,
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.warning_amber, size: 48, color: AHColors.grey300),
+          const SizedBox(height: 8),
+          const Text('Discipline', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AHColors.grey600)),
+          const SizedBox(height: 4),
+          const Text('Les incidents disciplinaires sont gérés depuis le module Élèves (version web)',
+            textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: AHColors.grey400)),
+        ],
       ),
     );
   }

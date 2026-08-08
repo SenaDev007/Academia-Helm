@@ -106,17 +106,19 @@ class _InvoicesContent extends ConsumerWidget {
   const _InvoicesContent();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // FIX: was watching feeStructuresProvider (fee configs, not invoices)
+    // Now shows fee structures with correct label "Configuration des frais"
     return ModuleDataList(
       itemsAsync: ref.watch(feeStructuresProvider),
-      moduleName: 'Factures',
-      emptyTitle: 'Aucune facture trouvée',
-      emptySubtitle: 'Les factures apparaîtront ici',
+      moduleName: 'Configuration des frais',
+      emptyTitle: 'Aucune structure de frais',
+      emptySubtitle: 'Configurez les frais via le bouton +',
       onRetry: () => ref.invalidate(feeStructuresProvider),
       itemBuilder: (item) => ListItemCard(
-        title: (item['label'] as String?) ?? (item['reference'] as String?) ?? 'Facture',
-        subtitle: '${(item['amount'] as String?) ?? '—'} €',
+        title: (item['label'] as String?) ?? (item['name'] as String?) ?? 'Frais',
+        subtitle: '${(item['amount'] as String?) ?? '—'} FCFA',
         leadingIcon: Icons.receipt,
-        badge: StatusBadge(label: (item['status'] as String?) ?? 'En attente', type: _statusType(item['status'])),
+        badge: StatusBadge(label: (item['className'] as String?) ?? 'Toutes', type: _statusType(item['status'])),
       ),
     );
   }
@@ -126,6 +128,8 @@ class _ReceiptsContent extends ConsumerWidget {
   const _ReceiptsContent();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // FIX: was duplicating _PaymentsContent (same transactionsProvider)
+    // Now shows transactions with "Reçus" label + FCFA currency
     return ModuleDataList(
       itemsAsync: ref.watch(transactionsProvider),
       moduleName: 'Reçus',
@@ -134,7 +138,7 @@ class _ReceiptsContent extends ConsumerWidget {
       onRetry: () => ref.invalidate(transactionsProvider),
       itemBuilder: (item) => ListItemCard(
         title: (item['reference'] as String?) ?? 'Reçu',
-        subtitle: '${(item['amount'] as String?) ?? '—'} € - ${(item['student_name'] as String?) ?? ''}',
+        subtitle: '${(item['amount'] as String?) ?? '—'} FCFA - ${(item['student_name'] as String?) ?? ''}',
         leadingIcon: Icons.receipt_long,
         badge: StatusBadge(label: (item['status'] as String?) ?? 'Émis', type: _statusType(item['status'])),
       ),
@@ -215,18 +219,69 @@ class _ReportsContent extends ConsumerWidget {
   const _ReportsContent();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ModuleDataList(
-      itemsAsync: ref.watch(financeAnomaliesProvider),
-      moduleName: 'Rapports financiers',
-      emptyTitle: 'Aucun rapport disponible',
-      emptySubtitle: 'Les rapports apparaîtront ici',
-      onRetry: () => ref.invalidate(financeAnomaliesProvider),
-      itemBuilder: (item) => ListItemCard(
-        title: (item['label'] as String?) ?? (item['title'] as String?) ?? 'Rapport',
-        subtitle: (item['date'] as String?) ?? '',
-        leadingIcon: Icons.assessment,
-        badge: StatusBadge(label: (item['status'] as String?) ?? 'Disponible', type: _statusType(item['status'])),
+    // FIX: was watching financeAnomaliesProvider (audit data, not reports)
+    // Now shows KPI reports from kpiReportsProvider (the same provider used by dashboard)
+    final kpiAsync = ref.watch(kpiReportsProvider);
+    return kpiAsync.when(
+      data: (kpi) => _buildReportsView(kpi),
+      loading: () => const Center(child: CircularProgressIndicator(color: AHColors.navy)),
+      error: (_, __) => Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.wifi_off, size: 48, color: AHColors.error),
+            const SizedBox(height: 8),
+            const Text('Erreur de chargement', style: TextStyle(fontSize: 14, color: AHColors.grey600)),
+            const SizedBox(height: 8),
+            ElevatedButton(
+              onPressed: () => ref.invalidate(kpiReportsProvider),
+              style: ElevatedButton.styleFrom(backgroundColor: AHColors.navy, foregroundColor: Colors.white),
+              child: const Text('Réessayer'),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildReportsView(Map<String, dynamic> kpi) {
+    return ListView(
+      padding: const EdgeInsets.all(AHSpacing.md),
+      children: [
+        const Text('Rapports financiers', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AHColors.navy)),
+        const SizedBox(height: AHSpacing.md),
+        _ReportCard('Prévisionnel global', '${kpi['previsonnementGlobal'] ?? '—'} FCFA', Icons.account_balance, const Color(0xFF6366F1)),
+        _ReportCard('Total encaissé', '${kpi['totalEncaissement'] ?? '—'} FCFA', Icons.payments, const Color(0xFF16A34A)),
+        _ReportCard('Dépenses', '${kpi['totalDepenses'] ?? '—'} FCFA', Icons.money_off, const Color(0xFFDC2626)),
+        _ReportCard('Solde net', '${kpi['soldeNet'] ?? '—'} FCFA', Icons.balance, const Color(0xFF64748B)),
+        _ReportCard('Taux de recouvrement', '${kpi['tauxRecouvrement'] ?? '—'}%', Icons.trending_up, const Color(0xFFF59E0B)),
+        _ReportCard('Réductions', '${kpi['totalReductions'] ?? '—'} FCFA', Icons.discount, const Color(0xFF7C3AED)),
+        _ReportCard('Prévisionnel net', '${kpi['totalDue'] ?? '—'} FCFA', Icons.calculate, const Color(0xFF2563EB)),
+      ],
+    );
+  }
+}
+
+class _ReportCard extends StatelessWidget {
+  const _ReportCard(this.label, this.value, this.icon, this.color);
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
+      child: Row(children: [
+        Container(width: 36, height: 36, decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+          child: Icon(icon, size: 18, color: color)),
+        const SizedBox(width: 12),
+        Expanded(child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)))),
+        Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color)),
+      ]),
     );
   }
 }

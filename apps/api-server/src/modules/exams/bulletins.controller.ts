@@ -539,6 +539,10 @@ export class BulletinsController {
    * Le frontend calcule les moyennes (même pattern que registre) et envoie
    * les données structurées au backend qui génère le PDF professionnel.
    *
+   * ⭐ Le backend résout automatiquement le nom de l'enseignant titulaire
+   *    de la classe de l'élève (via TeacherClassAssignment → Teacher).
+   *    Le frontend n'a pas besoin de l'envoyer.
+   *
    * Body: BulletinPdfData (toutes les données du bulletin)
    * Response: PDF binaire (application/pdf)
    */
@@ -548,6 +552,7 @@ export class BulletinsController {
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
     @Headers() headers: any,
+    @AcademicYearId() academicYearId: string,
     @Body() body: any,
     @Res() res: Response,
   ) {
@@ -557,7 +562,54 @@ export class BulletinsController {
     // Récupérer le branding du tenant (nom école, logo, etc.)
     const branding = await this.getTenantBranding(resolvedTenantId);
 
-    // Fusionner les données du frontend avec le branding
+    // ⭐ Résolution automatique du nom de l'enseignant titulaire de la classe
+    //    de l'élève (via StudentEnrollment → TeacherClassAssignment → Teacher)
+    let teacherName: string | null = null;
+    let teacherGender: string | null = null;
+    if (body.studentMatricule && resolvedTenantId && academicYearId) {
+      try {
+        // 1. Trouver l'élève par matricule
+        const student = await this.prisma.student.findFirst({
+          where: { matricule: body.studentMatricule, tenantId: resolvedTenantId },
+          select: { id: true },
+        }).catch(() => null);
+
+        if (student) {
+          // 2. Trouver l'enrollment (pour récupérer la classe)
+          const enrollment = await this.prisma.studentEnrollment.findFirst({
+            where: { studentId: student.id, academicYearId, tenantId: resolvedTenantId },
+            select: { classId: true },
+          }).catch(() => null);
+
+          if (enrollment?.classId) {
+            // 3. Trouver le teacher assignment pour cette classe
+            const tca = await this.prisma.teacherClassAssignment.findFirst({
+              where: { classId: enrollment.classId, tenantId: resolvedTenantId },
+              select: { teacherId: true },
+            }).catch(() => null);
+
+            if (tca?.teacherId) {
+              const teacher = await this.prisma.teacher.findFirst({
+                where: { id: tca.teacherId },
+                select: { firstName: true, lastName: true, gender: true },
+              }).catch(() => null);
+
+              if (teacher) {
+                const last = (teacher.lastName || '').trim().toUpperCase();
+                const first = (teacher.firstName || '').trim();
+                const civility = teacher.gender === 'F' ? 'Mme' : (teacher.gender === 'M' ? 'M.' : '');
+                teacherName = civility ? `${civility} ${last} ${first}`.trim() : `${last} ${first}`.trim();
+                teacherGender = teacher.gender || null;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // Silent fail — on n'a pas réussi à résoudre le teacher, le PDF est quand même généré
+      }
+    }
+
+    // Fusionner les données du frontend avec le branding + teacherName résolu
     const pdfData = {
       ...body,
       schoolName: body.schoolName || branding.schoolName,
@@ -566,6 +618,10 @@ export class BulletinsController {
       schoolPhone: body.schoolPhone || branding.schoolPhone,
       schoolEmail: body.schoolEmail || branding.schoolEmail,
       schoolSlogan: body.schoolSlogan || branding.schoolSlogan,
+      // ⭐ Nom du titulaire : priorité au backend (résolu via Teacher),
+      //    fallback sur ce que le frontend a envoyé (pour rétro-compat)
+      teacherName: teacherName || body.teacherName || null,
+      teacherGender: teacherGender || body.teacherGender || null,
     };
 
     const buffer = await this.pdfService.generateBulletin(pdfData);

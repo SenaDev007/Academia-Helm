@@ -460,7 +460,6 @@ function BulletinsContent() {
         lowestAverage: bulletinData!.results.length > 0 ? Math.min(...bulletinData!.results.map(r => r.generalAverage || 0)) : null,
         totalStudents: bulletinData!.results.length,
         appreciationGlobale: student.appreciationGlobale,
-        directorVisa: signatures?.directorSig ? undefined : (student.appreciationGlobale || undefined),
         assiduite: (window as any).__bulletinAnnotations?.[student.id]?.assiduite || null,
         discipline: (window as any).__bulletinAnnotations?.[student.id]?.discipline || null,
         defautsMajeurs: (window as any).__bulletinAnnotations?.[student.id]?.defautsMajeurs || null,
@@ -480,6 +479,7 @@ function BulletinsContent() {
         payload.defautsMajeurs = ann.defautsMajeurs || null;
         payload.qualitesRemarquables = ann.qualitesRemarquables || null;
         payload.analyseRecommandations = ann.analyseRecommandations || null;
+        payload.directorVisa = ann.directorVisa || null;
       } catch {}
 
       const response = await apiClient.post('/institutional-exams/bulletins/generate-pdf', payload, {

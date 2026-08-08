@@ -332,8 +332,8 @@ class ApiConfig {
   static const String hr = '/hr';
   static const String hrStaff = '/hr/staff';
   static const String hrContracts = '/hr/contracts';
-  static const String hrLeaves = '/hr/leaves';
-  static const String hrPayroll = '/hr/payroll';
+  static const String hrLeaves = '/hr/leaves/requests'; // aligned with web
+  static const String hrPayroll = '/hr/payroll/periods'; // aligned with web
   static const String hrCredentials = '/hr/credentials';
 
   static String hrStaffById(String id) => '/hr/staff/$id';

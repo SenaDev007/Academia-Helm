@@ -180,4 +180,84 @@ class HrService extends BaseCrudService {
         data,
         offlineEntityType: SyncEntityType.leave,
       );
+
+  // ─── Detail methods (were MISSING — caused runtime crashes) ────────────
+
+  /// Récupère un membre du personnel par ID.
+  Future<ApiResult<Map<String, dynamic>>> getStaffById(String id) =>
+      apiGetWithFallback<Map<String, dynamic>>(
+        '${ApiConfig.hrStaff}/$id',
+        localCollection: 'hr',
+        localFilters: {'type': 'staff', 'id': id},
+      );
+
+  /// Récupère un contrat par ID.
+  Future<ApiResult<Map<String, dynamic>>> getContractById(String id) =>
+      apiGetWithFallback<Map<String, dynamic>>(
+        '${ApiConfig.hrContracts}/$id',
+        localCollection: 'hr',
+        localFilters: {'type': 'contract', 'id': id},
+      );
+
+  /// Récupère une fiche de paie par ID.
+  Future<ApiResult<Map<String, dynamic>>> getPayrollById(String id) =>
+      apiGetWithFallback<Map<String, dynamic>>(
+        '${ApiConfig.hrPayroll}/$id',
+        localCollection: 'hr',
+        localFilters: {'type': 'payroll', 'id': id},
+      );
+
+  /// Récupère les credentials RH.
+  Future<ApiResult<List<Map<String, dynamic>>>> getCredentials({
+    Map<String, dynamic>? params,
+  }) =>
+      apiGetWithFallback<List<Map<String, dynamic>>>(
+        '${ApiConfig.hr}/credentials',
+        params: params,
+        localCollection: 'hr',
+        localFilters: {'type': 'credentials'},
+      );
+
+  // ─── Update / Approve / Reject methods (were MISSING) ──────────────────
+
+  /// Met à jour un membre du personnel.
+  Future<ApiResult<Map<String, dynamic>>> updateStaff(
+    String id,
+    Map<String, dynamic> data,
+  ) =>
+      apiUpdateWithOfflineFallback<Map<String, dynamic>>(
+        '${ApiConfig.hrStaff}/$id',
+        data,
+        offlineEntityType: SyncEntityType.staff,
+      );
+
+  /// Met à jour un contrat.
+  Future<ApiResult<Map<String, dynamic>>> updateContract(
+    String id,
+    Map<String, dynamic> data,
+  ) =>
+      apiUpdateWithOfflineFallback<Map<String, dynamic>>(
+        '${ApiConfig.hrContracts}/$id',
+        data,
+        offlineEntityType: SyncEntityType.contract,
+      );
+
+  /// Approuve une demande de congé.
+  Future<ApiResult<Map<String, dynamic>>> approveLeave(String id) =>
+      apiPostWithOfflineFallback<Map<String, dynamic>>(
+        '${ApiConfig.hrLeaves}/$id/approve',
+        {},
+        offlineEntityType: SyncEntityType.leave,
+      );
+
+  /// Rejette une demande de congé avec un commentaire.
+  Future<ApiResult<Map<String, dynamic>>> rejectLeave(
+    String id,
+    String comment,
+  ) =>
+      apiPostWithOfflineFallback<Map<String, dynamic>>(
+        '${ApiConfig.hrLeaves}/$id/reject',
+        {'comment': comment},
+        offlineEntityType: SyncEntityType.leave,
+      );
 }

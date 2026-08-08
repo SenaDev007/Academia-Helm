@@ -236,15 +236,33 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 
           debugPrint('[LOGIN] Login complete, updating state...');
 
+          // Extract tenant ID from the response (the backend returns it in the login response)
+          final dynamic tenantRaw = data['tenant'];
+          String? tenantIdFromResponse;
+          if (tenantRaw is Map) {
+            tenantIdFromResponse = (tenantRaw['id'] ?? '').toString();
+          }
+
+          // Also persist the tenant data
+          if (tenantIdFromResponse != null && tenantIdFromResponse.isNotEmpty) {
+            await TokenStorage.persistSession(
+              user: userData,
+              tenant: tenantRaw is Map
+                  ? (tenantRaw as Map).cast<String, dynamic>()
+                  : {'id': tenantIdFromResponse},
+            );
+          }
+
           state = AsyncValue<AuthState>.data(
             AuthState.authenticated(
               user,
               accessToken,
               availableTenants: availableTenants,
+              selectedTenantId: tenantIdFromResponse,
             ),
           );
 
-          debugPrint('[LOGIN] State updated successfully');
+          debugPrint('[LOGIN] State updated successfully (tenantId: $tenantIdFromResponse)');
           return true;
         },
         failure: (ApiError error) async {

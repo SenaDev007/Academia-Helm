@@ -1,24 +1,10 @@
-/// ============================================================================
-/// DASHBOARD PROVIDER — Academia Helm Mobile
-/// ============================================================================
-///
-/// ⭐ P0-4: Remplacement des MOCK data par des appels API réels.
-///
-/// Stratégie :
-///   - FutureProvider qui appelle l'API selon le rôle de l'utilisateur
-///   - Admin → /api/dashboard/admin (effectifs, finances, présences)
-///   - Enseignant → /api/dashboard/teacher (classes, élèves, évaluations)
-///   - Parent → /api/profile/children (compte enfants + moyennes + absences)
-///   - Si l'API échoue → fallback sur des données par défaut (vides)
-///
-/// ============================================================================
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/auth_providers.dart';
 import '../../../core/network/api_client.dart';
-import '../../../core/network/api_result.dart';
+import '../../../core/network/api_config.dart';
 
 // ── Models ────────────────────────────────────────────────────────────
 
@@ -52,163 +38,203 @@ class QuickAction {
   });
 }
 
-// ── Dashboard Stats Provider (API réelle) ─────────────────────────────
+// ── Dashboard Stats Provider ───────────────────────────────────────────
 
-/// Provider qui récupère les statistiques du dashboard depuis l'API.
-/// Adapte l'endpoint selon le rôle de l'utilisateur.
+/// Fetches dashboard stats from the real API.
+/// Uses /general/consolidated-report for admin/school portal.
+/// Uses /finance/reports/kpi for financial KPIs.
 final dashboardStatsProvider =
     FutureProvider<List<DashboardStat>>((ref) async {
   final role = ref.watch(currentUserRoleProvider);
   final apiClient = ref.watch(apiClientProvider);
 
-  // Choisir l'endpoint selon le rôle
-  String endpoint;
   switch (role?.toUpperCase()) {
     case 'TEACHER':
     case 'ENSEIGNANT':
-      endpoint = '/api/dashboard/teacher';
-      break;
+      return _fetchTeacherStats(apiClient);
     case 'PARENT':
     case 'PARENT_PRIMARY':
     case 'LEGAL_GUARDIAN':
     case 'GUARDIAN':
-      endpoint = '/api/profile/children';
-      break;
+      return _fetchParentStats(apiClient);
     default:
-      endpoint = '/api/dashboard/admin';
+      return _fetchAdminStats(apiClient);
   }
-
-  final result = await apiClient.getRaw(endpoint);
-
-  return result.when(
-    success: (data) {
-      // Parser les données selon le rôle
-      switch (role?.toUpperCase()) {
-        case 'TEACHER':
-        case 'ENSEIGNANT':
-          return _parseTeacherStats(data);
-        case 'PARENT':
-        case 'PARENT_PRIMARY':
-        case 'LEGAL_GUARDIAN':
-        case 'GUARDIAN':
-          return _parseParentStats(data);
-        default:
-          return _parseAdminStats(data);
-      }
-    },
-    failure: (error) {
-      // Fallback silencieux sur données par défaut
-      return _defaultStats(role);
-    },
-    loading: () => _defaultStats(role),
-  );
 });
 
-// ── Parsers ───────────────────────────────────────────────────────────
-
-List<DashboardStat> _parseAdminStats(Map<String, dynamic> data) {
+Future<List<DashboardStat>> _fetchAdminStats(ApiClient apiClient) async {
   final stats = <DashboardStat>[];
-  final studentsCount = data['studentsCount'] ?? data['totalStudents'] ?? 0;
-  final teachersCount = data['teachersCount'] ?? data['totalTeachers'] ?? 0;
-  final pendingPayments = data['pendingPayments'] ?? 0;
-  final attendanceRate = data['attendanceRate'] ?? 0;
 
-  stats.add(DashboardStat(
-    label: 'Élèves inscrits',
-    value: _formatNumber(studentsCount),
-    icon: Icons.school,
-    color: const Color(0xFF0B2F73),
-  ));
-  stats.add(DashboardStat(
-    label: 'Enseignants',
-    value: _formatNumber(teachersCount),
-    icon: Icons.person,
-    color: const Color(0xFFF5B335),
-  ));
-  stats.add(DashboardStat(
-    label: 'Paiements en attente',
-    value: _formatNumber(pendingPayments),
-    icon: Icons.payment,
-    color: const Color(0xFFEF4444),
-  ));
-  stats.add(DashboardStat(
-    label: 'Taux de présence',
-    value: '${attendanceRate}%',
-    icon: Icons.check_circle,
-    color: const Color(0xFF10B981),
-  ));
+  // Fetch consolidated report (same as web's PilotageDashboardV2)
+  final reportResult = await apiClient.getRaw('/general/consolidated-report');
 
+  reportResult.when(
+    success: (data) {
+      final enrollment = data['enrollment'] ?? {};
+      final attendance = data['attendance'] ?? {};
+      final revenue = data['revenue'] ?? {};
+      final alerts = data['alerts'] ?? {};
+      final weightedAvg = data['weightedAverage'] ?? {};
+
+      stats.add(DashboardStat(
+        label: 'Effectifs',
+        value: _fmt(enrollment['total']),
+        icon: Icons.school,
+        color: const Color(0xFF0B2F73),
+      ));
+      stats.add(DashboardStat(
+        label: 'Taux présence',
+        value: '${_fmt(attendance['rate'])}%',
+        icon: Icons.check_circle,
+        color: const Color(0xFF10B981),
+      ));
+      stats.add(DashboardStat(
+        label: 'Recettes',
+        value: '${_fmt(revenue['total'])} FCFA',
+        icon: Icons.payments,
+        color: const Color(0xFFF5B335),
+      ));
+      stats.add(DashboardStat(
+        label: 'Moyenne générale',
+        value: _fmt(weightedAvg['value']),
+        icon: Icons.assessment,
+        color: const Color(0xFF3B82F6),
+      ));
+    },
+    failure: (_) {
+      stats.addAll(_defaultAdminStats());
+    },
+    loading: () {},
+  );
+
+  // Also fetch finance KPIs for the dashboard
+  final kpiResult = await apiClient.getRaw(ApiConfig.financeKpiReports);
+  kpiResult.when(
+    success: (data) {
+      // Replace revenue stat with more accurate data if available
+      final totalEncaissement = data['totalEncaissement'];
+      if (totalEncaissement != null && stats.length >= 3) {
+        stats[2] = DashboardStat(
+          label: 'Encaissé',
+          value: '${_fmt(totalEncaissement)} FCFA',
+          icon: Icons.payments,
+          color: const Color(0xFF10B981),
+        );
+      }
+    },
+    failure: (_) {},
+    loading: () {},
+  );
+
+  if (stats.isEmpty) return _defaultAdminStats();
   return stats;
 }
 
-List<DashboardStat> _parseTeacherStats(Map<String, dynamic> data) {
+Future<List<DashboardStat>> _fetchTeacherStats(ApiClient apiClient) async {
   final stats = <DashboardStat>[];
-  final classesCount = data['classesCount'] ?? data['totalClasses'] ?? 0;
-  final studentsCount = data['studentsCount'] ?? data['totalStudents'] ?? 0;
-  final evaluationsCount = data['evaluationsCount'] ?? 0;
-  final upcomingClasses = data['upcomingClasses'] ?? 0;
 
-  stats.add(DashboardStat(
-    label: 'Mes classes',
-    value: _formatNumber(classesCount),
-    icon: Icons.class_,
-    color: const Color(0xFF0B2F73),
-  ));
-  stats.add(DashboardStat(
-    label: 'Élèves',
-    value: _formatNumber(studentsCount),
-    icon: Icons.school,
-    color: const Color(0xFFF5B335),
-  ));
-  stats.add(DashboardStat(
-    label: 'Évaluations',
-    value: _formatNumber(evaluationsCount),
-    icon: Icons.assignment,
-    color: const Color(0xFF3B82F6),
-  ));
-  stats.add(DashboardStat(
-    label: 'Prochains cours',
-    value: _formatNumber(upcomingClasses),
-    icon: Icons.schedule,
-    color: const Color(0xFF10B981),
-  ));
+  // Fetch my-classes for teacher stats
+  final result = await apiClient.getRaw(ApiConfig.pedagogySpaceMyClasses);
 
+  result.when(
+    success: (data) {
+      final list = data['data'] ?? data['classes'] ?? data;
+      int classCount = 0;
+      int totalStudents = 0;
+      int totalBoys = 0;
+      int totalGirls = 0;
+
+      if (list is List) {
+        classCount = list.length;
+        for (final item in list) {
+          if (item is Map<String, dynamic>) {
+            totalStudents += _toInt(item['totalStudents'] ?? item['students']);
+            totalBoys += _toInt(item['boys']);
+            totalGirls += _toInt(item['girls']);
+          }
+        }
+      }
+
+      stats.add(DashboardStat(
+        label: 'Mes Classes',
+        value: classCount.toString(),
+        icon: Icons.class_,
+        color: const Color(0xFF0B2F73),
+      ));
+      stats.add(DashboardStat(
+        label: 'Garçons',
+        value: totalBoys.toString(),
+        icon: Icons.male,
+        color: const Color(0xFF0891B2),
+      ));
+      stats.add(DashboardStat(
+        label: 'Filles',
+        value: totalGirls.toString(),
+        icon: Icons.female,
+        color: const Color(0xFFDB2777),
+      ));
+      stats.add(DashboardStat(
+        label: 'Total élèves',
+        value: totalStudents.toString(),
+        icon: Icons.people,
+        color: const Color(0xFF059669),
+      ));
+    },
+    failure: (_) {
+      stats.addAll(_defaultTeacherStats());
+    },
+    loading: () {},
+  );
+
+  if (stats.isEmpty) return _defaultTeacherStats();
   return stats;
 }
 
-List<DashboardStat> _parseParentStats(Map<String, dynamic> data) {
+Future<List<DashboardStat>> _fetchParentStats(ApiClient apiClient) async {
   final stats = <DashboardStat>[];
 
-  // data peut être une liste d'enfants ou un objet avec stats
-  final children = data['data'] ?? data['children'] ?? data;
-  int childrenCount = 0;
-  if (children is List) {
-    childrenCount = children.length;
-  } else if (children is Map) {
-    childrenCount = (children['count'] ?? 0) as int;
-  }
+  final result = await apiClient.getRaw(ApiConfig.parentChildren);
 
-  stats.add(DashboardStat(
-    label: 'Enfants',
-    value: _formatNumber(childrenCount),
-    icon: Icons.child_care,
-    color: const Color(0xFF0B2F73),
-  ));
+  result.when(
+    success: (data) {
+      final list = data['data'] ?? data['children'] ?? data;
+      int childrenCount = 0;
+      if (list is List) childrenCount = list.length;
+
+      stats.add(DashboardStat(
+        label: 'Mes Enfants',
+        value: childrenCount.toString(),
+        icon: Icons.child_care,
+        color: const Color(0xFF0B2F73),
+      ));
+    },
+    failure: (_) {
+      stats.add(DashboardStat(
+        label: 'Mes Enfants',
+        value: '0',
+        icon: Icons.child_care,
+        color: const Color(0xFF0B2F73),
+      ));
+    },
+    loading: () {},
+  );
+
+  // Add placeholder stats for parent
   stats.add(DashboardStat(
     label: 'Moyenne générale',
-    value: data['overallAverage']?.toString() ?? '—',
+    value: '—',
     icon: Icons.grade,
     color: const Color(0xFFF5B335),
   ));
   stats.add(DashboardStat(
-    label: 'Absences ce mois',
-    value: _formatNumber(data['absencesThisMonth'] ?? 0),
+    label: 'Absences',
+    value: '—',
     icon: Icons.event_busy,
     color: const Color(0xFFEF4444),
   ));
   stats.add(DashboardStat(
-    label: 'Paiements en attente',
-    value: _formatNumber(data['pendingPayments'] ?? 0),
+    label: 'Paiements',
+    value: '—',
     icon: Icons.payment,
     color: const Color(0xFF3B82F6),
   ));
@@ -216,43 +242,26 @@ List<DashboardStat> _parseParentStats(Map<String, dynamic> data) {
   return stats;
 }
 
-// ── Données par défaut (fallback si API indisponible) ──
+// ── Defaults ──────────────────────────────────────────────────────────
 
-List<DashboardStat> _defaultStats(String? role) {
-  switch (role?.toUpperCase()) {
-    case 'TEACHER':
-    case 'ENSEIGNANT':
-      return const [
-        DashboardStat(label: 'Mes classes', value: '—', icon: Icons.class_, color: Color(0xFF0B2F73)),
-        DashboardStat(label: 'Élèves', value: '—', icon: Icons.school, color: Color(0xFFF5B335)),
-        DashboardStat(label: 'Évaluations', value: '—', icon: Icons.assignment, color: Color(0xFF3B82F6)),
-        DashboardStat(label: 'Prochains cours', value: '—', icon: Icons.schedule, color: Color(0xFF10B981)),
-      ];
-    case 'PARENT':
-    case 'PARENT_PRIMARY':
-    case 'LEGAL_GUARDIAN':
-    case 'GUARDIAN':
-      return const [
-        DashboardStat(label: 'Enfants', value: '—', icon: Icons.child_care, color: Color(0xFF0B2F73)),
-        DashboardStat(label: 'Moyenne générale', value: '—', icon: Icons.grade, color: Color(0xFFF5B335)),
-        DashboardStat(label: 'Absences ce mois', value: '—', icon: Icons.event_busy, color: Color(0xFFEF4444)),
-        DashboardStat(label: 'Paiements en attente', value: '—', icon: Icons.payment, color: Color(0xFF3B82F6)),
-      ];
-    default:
-      return const [
-        DashboardStat(label: 'Élèves inscrits', value: '—', icon: Icons.school, color: Color(0xFF0B2F73)),
-        DashboardStat(label: 'Enseignants', value: '—', icon: Icons.person, color: Color(0xFFF5B335)),
-        DashboardStat(label: 'Paiements en attente', value: '—', icon: Icons.payment, color: Color(0xFFEF4444)),
-        DashboardStat(label: 'Taux de présence', value: '—', icon: Icons.check_circle, color: Color(0xFF10B981)),
-      ];
-  }
-}
+List<DashboardStat> _defaultAdminStats() => const [
+  DashboardStat(label: 'Effectifs', value: '0', icon: Icons.school, color: Color(0xFF0B2F73)),
+  DashboardStat(label: 'Taux présence', value: '0%', icon: Icons.check_circle, color: Color(0xFF10B981)),
+  DashboardStat(label: 'Recettes', value: '0 FCFA', icon: Icons.payments, color: Color(0xFFF5B335)),
+  DashboardStat(label: 'Moyenne générale', value: '0', icon: Icons.assessment, color: Color(0xFF3B82F6)),
+];
 
-// ── Quick Actions (statiques, routes déjà corrigées) ──
+List<DashboardStat> _defaultTeacherStats() => const [
+  DashboardStat(label: 'Mes Classes', value: '0', icon: Icons.class_, color: Color(0xFF0B2F73)),
+  DashboardStat(label: 'Garçons', value: '0', icon: Icons.male, color: Color(0xFF0891B2)),
+  DashboardStat(label: 'Filles', value: '0', icon: Icons.female, color: Color(0xFFDB2777)),
+  DashboardStat(label: 'Total élèves', value: '0', icon: Icons.people, color: Color(0xFF059669)),
+];
+
+// ── Quick Actions ─────────────────────────────────────────────────────
 
 final dashboardQuickActionsProvider = Provider<List<QuickAction>>((ref) {
   final role = ref.watch(currentUserRoleProvider);
-
   switch (role?.toUpperCase()) {
     case 'TEACHER':
     case 'ENSEIGNANT':
@@ -271,15 +280,15 @@ final dashboardQuickActionsProvider = Provider<List<QuickAction>>((ref) {
 
 const _adminActions = [
   QuickAction(label: 'Élèves', icon: Icons.school, route: '/students'),
-  QuickAction(label: 'Notes', icon: Icons.grade, route: '/grades'),
   QuickAction(label: 'Finances', icon: Icons.payment, route: '/finance'),
-  QuickAction(label: 'Messages', icon: Icons.message, route: '/messages'),
+  QuickAction(label: 'RH', icon: Icons.people, route: '/hr'),
+  QuickAction(label: 'Pédagogie', icon: Icons.menu_book, route: '/pedagogy'),
 ];
 
 const _teacherActions = [
   QuickAction(label: 'Mes élèves', icon: Icons.school, route: '/students'),
   QuickAction(label: 'Notes', icon: Icons.grade, route: '/grades'),
-  QuickAction(label: 'Faire l\'appel', icon: Icons.check_circle, route: '/absences'),
+  QuickAction(label: 'Appel', icon: Icons.check_circle, route: '/absences'),
   QuickAction(label: 'Emploi du temps', icon: Icons.schedule, route: '/schedule'),
 ];
 
@@ -297,11 +306,20 @@ const _studentActions = [
   QuickAction(label: 'Messages', icon: Icons.message, route: '/messages'),
 ];
 
-// ── Utilitaires ──
+// ── Helpers ───────────────────────────────────────────────────────────
 
-String _formatNumber(dynamic value) {
+String _fmt(dynamic value) {
+  if (value == null) return '0';
   if (value is int) return value.toString();
   if (value is double) return value.toStringAsFixed(0);
   if (value is String) return value;
   return '0';
+}
+
+int _toInt(dynamic value) {
+  if (value == null) return 0;
+  if (value is int) return value;
+  if (value is String) return int.tryParse(value) ?? 0;
+  if (value is double) return value.toInt();
+  return 0;
 }

@@ -8,6 +8,7 @@ import '../auth/auth_notifier.dart';
 import '../auth/auth_providers.dart';
 import '../auth/auth_state.dart';
 import '../theme/ah_theme.dart';
+import '../auth/token_storage.dart';
 
 /// Custom AH App Bar with:
 /// - School name + acronym
@@ -31,8 +32,15 @@ class AHAppBar extends ConsumerWidget implements PreferredSizeWidget {
     final tenant = tenantId != null
         ? tenants.where((t) => t.id == tenantId).firstOrNull
         : null;
-    final tenantName = tenant?.name ?? 'Academia Helm';
-    final acronym = tenant?.acronym ?? 'AH';
+
+    // Try to get tenant name from session storage (stored during login)
+    final sessionTenant = TenantStorage.getSessionTenantSync();
+    final tenantName = tenant?.name ??
+        sessionTenant?['name'] as String? ??
+        'Academia Helm';
+    final acronym = tenant?.acronym ??
+        sessionTenant?['acronym'] as String? ??
+        _getAcronym(tenantName);
     final fullName = user?.displayName ?? 'Utilisateur';
     final initials = _getInitials(fullName);
 
@@ -160,5 +168,21 @@ class AHAppBar extends ConsumerWidget implements PreferredSizeWidget {
       return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
     }
     return name.substring(0, name.length > 2 ? 2 : name.length).toUpperCase();
+  }
+
+  /// Generate an acronym from a long school name.
+  /// e.g. "Complexe Scolaire Privé..." → "CSP"
+  String _getAcronym(String name) {
+    if (name.isEmpty || name == 'Academia Helm') return 'AH';
+    final words = name.trim().split(RegExp(r'\s+'));
+    if (words.length <= 2) return name.substring(0, name.length > 2 ? 2 : name.length).toUpperCase();
+    final acronym = StringBuffer();
+    for (final w in words.take(4)) {
+      if (w.isNotEmpty && !['de', 'et', 'le', 'la', 'les', 'du', 'des', 'à', 'en'].contains(w.toLowerCase())) {
+        acronym.write(w[0].toUpperCase());
+      }
+    }
+    final result = acronym.toString();
+    return result.isEmpty ? 'AH' : result;
   }
 }

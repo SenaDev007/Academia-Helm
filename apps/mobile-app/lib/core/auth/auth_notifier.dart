@@ -159,7 +159,9 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 
       debugPrint('[LOGIN] API call completed, processing result...');
 
-      result.when(
+      // Don't use result.when() — the success callback is async but when()
+      // doesn't await it. Handle success/failure manually instead.
+      return await result.when(
         success: (Map<String, dynamic> data) async {
           debugPrint('[LOGIN] Success! Response keys: ${data.keys.toList()}');
           debugPrint('[LOGIN] Response data: $data');
@@ -245,15 +247,16 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           debugPrint('[LOGIN] State updated successfully');
           return true;
         },
-        failure: (ApiError error) {
+        failure: (ApiError error) async {
           debugPrint('[LOGIN] FAILURE: ${error.displayMessage}');
           state = AsyncValue<AuthState>.data(
             const AuthState.unauthenticated(),
           );
           throw AuthException(error.displayMessage);
         },
-        loading: () {
+        loading: () async {
           // Should not happen for a completed call.
+          return false;
         },
       );
     } catch (e, st) {

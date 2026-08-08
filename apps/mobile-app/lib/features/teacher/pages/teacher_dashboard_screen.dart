@@ -34,7 +34,7 @@ class TeacherDashboardScreen extends ConsumerWidget {
         : null;
     final schoolName = tenant?.name ?? 'École';
 
-    final params = (teacherId: teacherId, academicYearId: academicYearId);
+    final params = TeacherParams(teacherId: teacherId, academicYearId: academicYearId);
     final stats = ref.watch(teacherStatsProvider(params));
     final classesAsync = ref.watch(teacherClassesProvider(params));
 

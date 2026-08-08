@@ -1314,17 +1314,29 @@ function TeacherBulletinsToSign({
   };
 
   // ── Renvoyer au directeur ────────────────────────────────────────────────────
-  const handleReturn = async (cls: ClassBulletinSummary) => {
-    if (!confirm(`Confirmer le renvoi des bulletins de ${cls.className} au directeur ?`)) return;
+  // ⭐ Utilise un modal personnalisé au lieu du confirm() natif
+  const [returnClass, setReturnClass] = useState<ClassBulletinSummary | null>(null);
+
+  const handleReturnClick = (cls: ClassBulletinSummary) => {
+    setReturnClass(cls);
+  };
+
+  const handleReturnConfirm = async () => {
+    if (!returnClass || !selectedPeriodId) return;
     setActionLoading(true);
     try {
-      await apiClient.post(
-        `/institutional-exams/bulletins/class/${cls.classId}/teacher-return`,
+      const res = await apiClient.post(
+        `/institutional-exams/bulletins/class/${returnClass.classId}/teacher-return`,
         { periodId: selectedPeriodId }
       );
-      toastSuccess('Bulletins renvoyés', {
-        description: 'Les bulletins sont de retour dans l\'interface du directeur.',
+      const data = res.data || {};
+      const signaturesReapplied = data.signaturesReapplied || 0;
+      toastSuccess('Bulletins renvoyés au directeur', {
+        description: signaturesReapplied > 0
+          ? `${data.returnedCount} bulletin(s) renvoyé(s) avec votre signature (${signaturesReapplied} signature(s) ré-appliquée(s) sur des bulletins récents).`
+          : `${data.returnedCount} bulletin(s) renvoyé(s) avec votre signature appliquée sur chacun.`,
       });
+      setReturnClass(null);
       loadTeacherBulletins();
     } catch (err: any) {
       toastError('Erreur', { description: err.response?.data?.message || err.message });
@@ -1411,7 +1423,7 @@ function TeacherBulletinsToSign({
               key={cls.classId}
               cls={cls}
               onSign={() => { setSigningClass(cls); setSignature(null); }}
-              onReturn={() => handleReturn(cls)}
+              onReturn={() => handleReturnClick(cls)}
               actionLoading={actionLoading}
             />
           ))}
@@ -1460,6 +1472,109 @@ function TeacherBulletinsToSign({
           </div>
         </div>
       )}
+
+      {/* ⭐ Modal personnalisé de confirmation "Renvoyer au directeur" */}
+      {returnClass && (
+        <ReturnConfirmModal
+          cls={returnClass}
+          onConfirm={handleReturnConfirm}
+          onClose={() => setReturnClass(null)}
+          loading={actionLoading}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Modal personnalisé de confirmation pour "Renvoyer au directeur" ──────────
+function ReturnConfirmModal({
+  cls, onConfirm, onClose, loading,
+}: {
+  cls: ClassBulletinSummary;
+  onConfirm: () => void;
+  onClose: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+        {/* Header coloré */}
+        <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0">
+              <Undo className="w-5 h-5 text-white" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-base font-bold text-white">Renvoyer au directeur</h3>
+              <p className="text-xs text-white/90 truncate">Classe : {cls.className}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="p-5 space-y-3">
+          <p className="text-sm text-slate-700">
+            Vous êtes sur le point de <strong>renvoyer au directeur</strong> les
+            <strong> {cls.total} bulletin(s)</strong> de la classe
+            <strong> {cls.className}</strong> pour la période
+            <strong> {cls.periodName}</strong>.
+          </p>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900 flex items-start gap-2">
+            <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold mb-1">Signature appliquée</p>
+              <p>
+                Votre signature électronique sera présente sur chaque bulletin
+                renvoyé au directeur — exactement comme pour la signature
+                directeurs. Le directeur verra votre signature sur chaque bulletin
+                dans son interface.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold mb-1">À noter</p>
+              <p>
+                Après cette action, les bulletins ne seront plus accessibles dans
+                votre interface. Le directeur prendra le relais pour la suite du
+                workflow (envoi aux parents).
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+          <Button
+            variant="outline"
+            onClick={onClose}
+            disabled={loading}
+            className="text-sm"
+          >
+            Annuler
+          </Button>
+          <Button
+            onClick={onConfirm}
+            disabled={loading}
+            className="bg-amber-600 hover:bg-amber-700 text-white text-sm"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Renvoi en cours...
+              </>
+            ) : (
+              <>
+                <Undo className="w-4 h-4 mr-2" />
+                Confirmer le renvoi
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -319,7 +319,9 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       case PortalType.school:
       case PortalType.platform:
       default:
-        // Web sends: { email, password, tenant_id, tenantSubdomain, portal_type, turnstileToken }
+        // Web sends: { email, password, tenant_id, portal_type }
+        // NOTE: tenantSubdomain is NOT sent — backend rejects it with 400
+        // "property tenantSubdomain should not exist"
         return <String, dynamic>{
           'email': identifier,
           'password': password,
@@ -327,7 +329,6 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
               ? 'PLATFORM'
               : 'SCHOOL',
           if (tenantId != null) 'tenant_id': tenantId,
-          if (tenantSubdomain != null) 'tenantSubdomain': tenantSubdomain,
         };
     }
   }

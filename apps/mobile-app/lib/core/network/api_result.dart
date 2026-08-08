@@ -239,7 +239,6 @@ class ApiError {
   /// message objects, and plain strings — never throws.
   static String? _extractServerMessage(dynamic data) {
     if (data is Map) {
-      // Use .cast<String, dynamic>() to handle Map<String, Object> too
       final Map<String, dynamic> map;
       try {
         map = (data as Map).cast<String, dynamic>();
@@ -247,14 +246,16 @@ class ApiError {
         return data.toString();
       }
 
-      // Try 'message' first, then 'error', then 'msg' — but DON'T use
-      // 'as String?' because the value might be a Map (nested error object)
       final dynamic message = map['message'] ?? map['error'] ?? map['msg'];
       if (message is String) return message;
+      if (message is List) {
+        // NestJS validation returns message as array: ["property X should not exist"]
+        return message.whereType<String>().join('; ');
+      }
       if (message is Map) {
-        // Nested error object — try to extract 'message' or 'error' from it
         final nested = message['message'] ?? message['error'] ?? message['msg'];
         if (nested is String) return nested;
+        if (nested is List) return nested.whereType<String>().join('; ');
         return message.toString();
       }
       if (message != null) return message.toString();

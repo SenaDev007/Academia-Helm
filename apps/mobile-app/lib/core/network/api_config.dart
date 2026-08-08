@@ -21,7 +21,7 @@ class ApiConfig {
   /// Current environment. Change this value to switch between staging and
   /// production builds. In a real app this would be driven by compile-time
   /// `--dart-define` flags or flavor configurations.
-  static ApiEnvironment environment = ApiEnvironment.staging;
+  static ApiEnvironment environment = ApiEnvironment.production;
 
   // ── Helpers ───────────────────────────────────────────────────────────
 

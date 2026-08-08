@@ -3,6 +3,7 @@
 //   dart run build_runner build --delete-conflicting-outputs
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 part 'api_result.freezed.dart';
@@ -93,9 +94,13 @@ class ApiError {
 
         case DioExceptionType.badResponse:
           final int? statusCode = error.response?.statusCode;
+          debugPrint('[API_ERROR] statusCode: $statusCode');
+          debugPrint('[API_ERROR] data type: ${error.response?.data.runtimeType}');
+          debugPrint('[API_ERROR] data: ${error.response?.data}');
           final String serverMessage =
               _extractServerMessage(error.response?.data) ??
                   'Erreur serveur';
+          debugPrint('[API_ERROR] extracted message: $serverMessage');
 
           if (statusCode == 401) {
             return ApiError(

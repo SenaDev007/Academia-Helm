@@ -126,7 +126,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   ///
   /// The [tenantId] is required for all portals (the web app sends it always).
   /// The [tenantSubdomain] (school slug) is also sent for SCHOOL portal.
-  Future<void> login({
+  Future<bool> login({
     required String identifier,
     required String password,
     PortalType? portalType,
@@ -243,8 +243,10 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           );
 
           debugPrint('[LOGIN] State updated successfully');
+          return true;
         },
         failure: (ApiError error) {
+          debugPrint('[LOGIN] FAILURE: ${error.displayMessage}');
           state = AsyncValue<AuthState>.data(
             const AuthState.unauthenticated(),
           );
@@ -264,6 +266,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       if (e is AuthException) rethrow;
       throw AuthException(e.toString());
     }
+    return false;
   }
 
   /// Returns the correct login endpoint based on portal type.

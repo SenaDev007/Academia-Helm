@@ -47,7 +47,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final tenantId = selectedSchool?.id;
       final tenantSubdomain = selectedSchool?.slug;
 
-      await ref.read(authNotifierProvider.notifier).login(
+      final success = await ref.read(authNotifierProvider.notifier).login(
             identifier: identifier,
             password: password,
             portalType: selectedPortal,
@@ -57,36 +57,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
       if (!mounted) return;
 
-      final authState = ref.read(authNotifierProvider).valueOrNull;
-      if (authState?.isAuthenticated == true) {
-        final tenants = authState?.availableTenantsOrNull ?? [];
-        final selectedPortal = ref.read(selectedPortalProvider);
+      debugPrint('[LOGIN_SCREEN] login() returned: $success');
 
-        // Route based on portal type (matches web's getEffectivePortal logic)
+      if (success) {
+        final selectedPortal = ref.read(selectedPortalProvider);
+        // Route based on portal type
         if (selectedPortal == PortalType.teacher) {
-          if (mounted) context.go('/teacher-dashboard');
+          context.go('/teacher-dashboard');
           return;
         }
         if (selectedPortal == PortalType.parent) {
-          if (mounted) context.go('/parent-dashboard');
+          context.go('/parent-dashboard');
           return;
         }
-
-        if (tenants.length == 1) {
-          // Auto-select the only tenant and go to dashboard.
-          await ref
-              .read(authNotifierProvider.notifier)
-              .selectTenant(tenants.first.id);
-          if (mounted) {
-            context.go('/dashboard');
-          }
-        } else if (tenants.length > 1) {
-          // Multiple tenants → tenant selection screen.
-          context.go('/tenant-select');
-        } else {
-          // No tenants → go directly to dashboard.
-          context.go('/dashboard');
-        }
+        // SCHOOL / PLATFORM → dashboard
+        context.go('/dashboard');
       } else {
         setState(() {
           _error = 'Identifiants incorrects';

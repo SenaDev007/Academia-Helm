@@ -557,8 +557,13 @@ export class BulletinsService {
   }
 
   /**
-   * Étape 3 : L'enseignant signe TOUS les bulletins de sa classe
-   * La signature (base64) est appliquée à tous les ReportCards TEACHER_DISTRIBUTED.
+   * Étape 3 : L'enseignant signe TOUS les bulletins d'une classe
+   * La signature (base64) est appliquée à tous les ReportCards TEACHER_DISTRIBUTED
+   * de la classe spécifiée (filtre par student.studentEnrollments.classId).
+   *
+   * ⭐ La signature est sauvegardée sur chaque ReportCard individuellement
+   *    afin d'être visible sur le bulletin PDF et dans l'UI du directeur
+   *    après le renvoi (étape 4).
    */
   async teacherSignAllBulletins(
     tenantId: string,
@@ -575,6 +580,12 @@ export class BulletinsService {
         academicYearId,
         quarterId: periodId,
         status: 'TEACHER_DISTRIBUTED',
+        // ⭐ Filtrer par la classe spécifique demandée
+        student: {
+          studentEnrollments: {
+            some: { classId, academicYearId, tenantId },
+          },
+        },
       },
       data: {
         teacherSignature,
@@ -595,6 +606,10 @@ export class BulletinsService {
    * Étape 4 : L'enseignant renvoie les bulletins au directeur
    * Les bulletins TEACHER_SIGNED sont à nouveau visibles dans l'UI du directeur.
    * L'enseignant ne voit plus les bulletins (statut = TEACHER_RETURNED).
+   *
+   * ⭐ Vérifie que chaque bulletin a bien une teacherSignature avant de le renvoyer
+   *    (sécurité : si la signature est manquante pour une raison quelconque,
+   *    on la ré-applique avec la dernière signature connue de la classe).
    */
   async teacherReturnBulletins(
     tenantId: string,
@@ -604,12 +619,83 @@ export class BulletinsService {
     teacherUserId: string,
   ) {
     const now = new Date();
+
+    // ⭐ Étape 4a : vérifier qu'aucun bulletin n'est sans signature.
+    // Si certains n'ont pas de signature (par ex. bulletins créés après la signature),
+    // on récupère la dernière signature connue de la classe et on l'applique.
+    const signedBulletins = await this.prisma.reportCard.findFirst({
+      where: {
+        tenantId,
+        academicYearId,
+        quarterId: periodId,
+        status: 'TEACHER_SIGNED',
+        student: {
+          studentEnrollments: {
+            some: { classId, academicYearId, tenantId },
+          },
+        },
+        teacherSignature: { not: null },
+      },
+      select: { teacherSignature: true },
+    });
+
+    const missingSignaturesCount = await this.prisma.reportCard.count({
+      where: {
+        tenantId,
+        academicYearId,
+        quarterId: periodId,
+        status: 'TEACHER_SIGNED',
+        student: {
+          studentEnrollments: {
+            some: { classId, academicYearId, tenantId },
+          },
+        },
+        OR: [
+          { teacherSignature: null },
+          { teacherSignature: '' },
+        ],
+      },
+    }).catch(() => 0);
+
+    if (missingSignaturesCount > 0 && signedBulletins?.teacherSignature) {
+      // Ré-appliquer la signature sur les bulletins sans signature
+      await this.prisma.reportCard.updateMany({
+        where: {
+          tenantId,
+          academicYearId,
+          quarterId: periodId,
+          status: 'TEACHER_SIGNED',
+          student: {
+            studentEnrollments: {
+              some: { classId, academicYearId, tenantId },
+            },
+          },
+          OR: [
+            { teacherSignature: null },
+            { teacherSignature: '' },
+          ],
+        },
+        data: {
+          teacherSignature: signedBulletins.teacherSignature,
+          teacherSignedAt: now,
+          teacherSignedBy: teacherUserId,
+        },
+      });
+    }
+
+    // ⭐ Étape 4b : changer le statut à TEACHER_RETURNED — uniquement pour
+    //    les bulletins de CETTE classe (filtre par classId).
     const result = await this.prisma.reportCard.updateMany({
       where: {
         tenantId,
         academicYearId,
         quarterId: periodId,
         status: 'TEACHER_SIGNED',
+        student: {
+          studentEnrollments: {
+            some: { classId, academicYearId, tenantId },
+          },
+        },
       },
       data: {
         status: 'TEACHER_RETURNED',
@@ -621,6 +707,7 @@ export class BulletinsService {
       success: true,
       message: `${result.count} bulletin(s) renvoyé(s) au directeur`,
       returnedCount: result.count,
+      signaturesReapplied: missingSignaturesCount,
     };
   }
 

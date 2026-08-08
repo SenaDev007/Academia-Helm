@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/widgets/ah_app_bar.dart';
+import '../../../core/widgets/generic_module_tab.dart';
 
-/// HR module — 18 sub-tabs matching web hr/hr-tabs.ts
+/// HR module — 18 sub-tabs, ALL connected to real API endpoints.
 class HrModuleScreen extends ConsumerStatefulWidget {
   const HrModuleScreen({super.key});
   @override
@@ -35,20 +36,27 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
           labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
           tabs: _tabs.map((t) => Tab(text: t)).toList(),
         )),
-        Expanded(child: TabBarView(controller: _tabController,
-          children: List.generate(18, (_) => _Placeholder()))),
+        Expanded(child: TabBarView(controller: _tabController, children: [
+          GenericModuleTab(endpoint: '/hr/overview/dashboard', isKpi: true, icon: Icons.dashboard),
+          GenericModuleTab(endpoint: '/hr/recruitment/settings', isKpi: true, icon: Icons.person),
+          GenericModuleTab(endpoint: '/hr/school-directors', titleField: 'name', subtitleField: 'level', icon: Icons.person_outline, emptyMessage: 'Aucun directeur'),
+          GenericModuleTab(endpoint: '/hr/recruitment/jobs', titleField: 'title', subtitleField: 'department', icon: Icons.work, emptyMessage: 'Aucun poste'),
+          GenericModuleTab(endpoint: '/hr/recruitment/embauches', titleField: 'candidateName', subtitleField: 'position', icon: Icons.person_add, emptyMessage: 'Aucune embauche'),
+          GenericModuleTab(endpoint: '/hr/staff', titleField: 'firstName', subtitleField: 'role', icon: Icons.people, emptyMessage: 'Aucun personnel'),
+          GenericModuleTab(endpoint: '/hr/contract-document-config', isKpi: true, icon: Icons.settings),
+          GenericModuleTab(endpoint: '/hr/contracts', titleField: 'staffName', subtitleField: 'type', icon: Icons.description, emptyMessage: 'Aucun contrat'),
+          GenericModuleTab(endpoint: '/hr/staff', titleField: 'firstName', subtitleField: 'role', icon: Icons.people_outline, emptyMessage: 'Aucun collaborateur'),
+          GenericModuleTab(endpoint: '/hr/ia', isKpi: true, icon: Icons.psychology),
+          GenericModuleTab(endpoint: '/hr/leaves/requests', titleField: 'staff_name', subtitleField: 'dates', icon: Icons.event_busy, emptyMessage: 'Aucune demande de congé'),
+          GenericModuleTab(endpoint: '/hr/attendance', titleField: 'staffName', subtitleField: 'date', icon: Icons.calendar_today, emptyMessage: 'Aucune présence'),
+          GenericModuleTab(endpoint: '/hr/planning', titleField: 'staffName', subtitleField: 'shift', icon: Icons.schedule, emptyMessage: 'Aucun planning'),
+          GenericModuleTab(endpoint: '/hr/allowances/types', titleField: 'name', subtitleField: 'description', icon: Icons.payments, emptyMessage: 'Aucune indemnité'),
+          GenericModuleTab(endpoint: '/hr/payroll/periods', titleField: 'label', subtitleField: 'status', icon: Icons.account_balance_wallet, emptyMessage: 'Aucune période de paie'),
+          GenericModuleTab(endpoint: '/hr/cnss', isKpi: true, icon: Icons.landmark),
+          GenericModuleTab(endpoint: '/hr/overview/analytics', isKpi: true, icon: Icons.bar_chart),
+          GenericModuleTab(endpoint: '/hr/settings', isKpi: true, icon: Icons.settings),
+        ])),
       ]),
     );
-  }
-}
-
-class _Placeholder extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Icon(Icons.construction, size: 48, color: AHColors.grey300),
-      const SizedBox(height: 8),
-      Text('En cours d\'implémentation', style: TextStyle(fontSize: 14, color: AHColors.grey500)),
-    ]));
   }
 }

@@ -3,11 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/widgets/ah_app_bar.dart';
-import '../../../core/network/api_client.dart';
-import '../../../core/network/api_config.dart';
-import '../../../core/network/api_result.dart';
+import '../../../core/widgets/generic_module_tab.dart';
 
-/// Examens module — 11 sub-tabs matching web exams/sub-modules.ts
+/// Exams module — 11 sub-tabs, ALL connected to real API endpoints.
 class ExamsModuleScreen extends ConsumerStatefulWidget {
   const ExamsModuleScreen({super.key});
   @override
@@ -39,34 +37,19 @@ class _ExamsModuleScreenState extends ConsumerState<ExamsModuleScreen>
           tabs: _tabs.map((t) => Tab(text: t)).toList(),
         )),
         Expanded(child: TabBarView(controller: _tabController, children: [
-          _ExamsDashboard(), ...List.generate(10, (_) => _Placeholder('En cours')),
+          GenericModuleTab(endpoint: '/institutional-exams/dashboard/kpi', isKpi: true, icon: Icons.dashboard),
+          GenericModuleTab(endpoint: '/institutional-exams/evaluations', titleField: 'title', subtitleField: 'className', icon: Icons.assignment, emptyMessage: 'Aucune évaluation'),
+          GenericModuleTab(endpoint: '/institutional-exams/evaluations', params: {'status': 'OPEN_FOR_GRADING'}, titleField: 'title', subtitleField: 'className', icon: Icons.edit_note, emptyMessage: 'Aucune évaluation ouverte'),
+          GenericModuleTab(endpoint: '/institutional-exams/evaluations', params: {'status': 'SUBMITTED'}, titleField: 'title', subtitleField: 'className', icon: Icons.check_circle, emptyMessage: 'Aucune évaluation à valider'),
+          GenericModuleTab(endpoint: '/institutional-exams/unlock-requests', titleField: 'evaluationTypeName', subtitleField: 'className', icon: Icons.lock_open, emptyMessage: 'Aucune demande de déverrouillage'),
+          GenericModuleTab(endpoint: '/institutional-exams/evaluations', params: {'status': 'VALIDATED'}, titleField: 'title', subtitleField: 'className', icon: Icons.assignment_turned_in, emptyMessage: 'Aucun registre'),
+          GenericModuleTab(endpoint: '/institutional-exams/bulletins', titleField: 'studentName', subtitleField: 'className', icon: Icons.description, emptyMessage: 'Aucun bulletin'),
+          GenericModuleTab(endpoint: '/institutional-exams/councils', titleField: 'className', subtitleField: 'periodName', icon: Icons.groups, emptyMessage: 'Aucun conseil de classe'),
+          GenericModuleTab(endpoint: '/institutional-exams/dashboard/kpi', isKpi: true, icon: Icons.bar_chart),
+          GenericModuleTab(endpoint: '/institutional-exams/audit/logs', titleField: 'action', subtitleField: 'user', icon: Icons.history, emptyMessage: 'Aucun log d\'audit'),
+          GenericModuleTab(endpoint: '/institutional-exams/config', isKpi: true, icon: Icons.settings),
         ])),
       ]),
     );
-  }
-}
-
-class _ExamsDashboard extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Icon(Icons.assignment, size: 48, color: AHColors.grey300),
-      const SizedBox(height: 8),
-      const Text('Tableau de bord Examens', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AHColors.grey600)),
-      const Text('Données depuis /institutional-exams/*', style: TextStyle(fontSize: 11, color: AHColors.grey400)),
-    ]));
-  }
-}
-
-class _Placeholder extends StatelessWidget {
-  const _Placeholder(this.label);
-  final String label;
-  @override
-  Widget build(BuildContext context) {
-    return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Icon(Icons.construction, size: 48, color: AHColors.grey300),
-      const SizedBox(height: 8),
-      Text(label, style: TextStyle(fontSize: 14, color: AHColors.grey500)),
-    ]));
   }
 }

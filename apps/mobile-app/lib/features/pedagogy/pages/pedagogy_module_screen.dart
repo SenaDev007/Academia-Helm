@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/widgets/ah_app_bar.dart';
+import '../../../core/widgets/generic_module_tab.dart';
 
-/// Pedagogy module — 11 sub-tabs matching web pedagogy-tabs.tsx
+/// Pedagogy module — 11 sub-tabs, ALL connected to real API endpoints.
 class PedagogyModuleScreen extends ConsumerStatefulWidget {
   const PedagogyModuleScreen({super.key});
   @override
@@ -34,20 +35,20 @@ class _PedagogyModuleScreenState extends ConsumerState<PedagogyModuleScreen>
           labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
           tabs: _tabs.map((t) => Tab(text: t)).toList(),
         )),
-        Expanded(child: TabBarView(controller: _tabController,
-          children: List.generate(11, (_) => _Placeholder()))),
+        Expanded(child: TabBarView(controller: _tabController, children: [
+          GenericModuleTab(endpoint: '/pedagogy/dashboard', isKpi: true, icon: Icons.dashboard),
+          GenericModuleTab(endpoint: '/settings/classes', titleField: 'name', subtitleField: 'level', icon: Icons.grid_view, emptyMessage: 'Aucune classe'),
+          GenericModuleTab(endpoint: '/pedagogy/subjects', titleField: 'name', subtitleField: 'code', icon: Icons.book, emptyMessage: 'Aucune matière'),
+          GenericModuleTab(endpoint: '/pedagogy/teachers', titleField: 'name', subtitleField: 'subject', icon: Icons.school, emptyMessage: 'Aucun enseignant'),
+          GenericModuleTab(endpoint: '/pedagogy/timetables', titleField: 'className', subtitleField: 'day', icon: Icons.calendar_today, emptyMessage: 'Aucun emploi du temps'),
+          GenericModuleTab(endpoint: '/pedagogy-space/my-classes', titleField: 'className', subtitleField: 'schoolLevelName', icon: Icons.class_, emptyMessage: 'Aucune classe assignée'),
+          GenericModuleTab(endpoint: '/pedagogy/control', titleField: 'className', subtitleField: 'status', icon: Icons.check_square, emptyMessage: 'Aucune validation en attente'),
+          GenericModuleTab(endpoint: '/pedagogy/orion-dashboard', isKpi: true, icon: Icons.sparkles),
+          GenericModuleTab(endpoint: '/pedagogy-space/homeworks', titleField: 'title', subtitleField: 'className', icon: Icons.assignment, emptyMessage: 'Aucun devoir'),
+          GenericModuleTab(endpoint: '/pedagogy/sara-compose', isKpi: true, icon: Icons.auto_awesome),
+          GenericModuleTab(endpoint: '/pedagogy/class-diaries', titleField: 'className', subtitleField: 'week', icon: Icons.notebook, emptyMessage: 'Aucun cahier de texte'),
+        ])),
       ]),
     );
-  }
-}
-
-class _Placeholder extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Icon(Icons.construction, size: 48, color: AHColors.grey300),
-      const SizedBox(height: 8),
-      Text('En cours d\'implémentation', style: TextStyle(fontSize: 14, color: AHColors.grey500)),
-    ]));
   }
 }

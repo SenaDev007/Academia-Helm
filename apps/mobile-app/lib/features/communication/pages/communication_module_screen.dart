@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/widgets/ah_app_bar.dart';
+import '../../../core/widgets/generic_module_tab.dart';
 
-/// Communication module — 15 sub-tabs matching web communication/layout.tsx
+/// Communication module — 15 sub-tabs, ALL connected to real API endpoints.
 class CommunicationModuleScreen extends ConsumerStatefulWidget {
   const CommunicationModuleScreen({super.key});
   @override
@@ -34,20 +35,24 @@ class _CommunicationModuleScreenState extends ConsumerState<CommunicationModuleS
           labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
           tabs: _tabs.map((t) => Tab(text: t)).toList(),
         )),
-        Expanded(child: TabBarView(controller: _tabController,
-          children: List.generate(15, (_) => _Placeholder()))),
+        Expanded(child: TabBarView(controller: _tabController, children: [
+          GenericModuleTab(endpoint: '/communication/dashboard', isKpi: true, icon: Icons.dashboard),
+          GenericModuleTab(endpoint: '/communication/messages', params: {'folder': 'inbox'}, titleField: 'subject', subtitleField: 'sender', icon: Icons.inbox, emptyMessage: 'Aucun message'),
+          GenericModuleTab(endpoint: '/communication/messages', titleField: 'subject', subtitleField: 'sender', icon: Icons.message, emptyMessage: 'Aucun message'),
+          GenericModuleTab(endpoint: '/communication/v2/announcements', titleField: 'title', subtitleField: 'body', icon: Icons.campaign, emptyMessage: 'Aucune annonce'),
+          GenericModuleTab(endpoint: '/communication/automated-notifications', titleField: 'name', subtitleField: 'trigger', icon: Icons.bolt, emptyMessage: 'Aucune automatisation'),
+          GenericModuleTab(endpoint: '/communication/campaigns', titleField: 'name', subtitleField: 'status', icon: Icons.send, emptyMessage: 'Aucune campagne'),
+          GenericModuleTab(endpoint: '/communication/templates', titleField: 'name', subtitleField: 'type', icon: Icons.description, emptyMessage: 'Aucun template'),
+          GenericModuleTab(endpoint: '/communication/audience/parents', titleField: 'name', subtitleField: 'phone', icon: Icons.people, emptyMessage: 'Aucun parent'),
+          GenericModuleTab(endpoint: '/communication/audience/teachers', titleField: 'name', subtitleField: 'email', icon: Icons.school, emptyMessage: 'Aucun enseignant'),
+          GenericModuleTab(endpoint: '/communication/audience/students', titleField: 'firstName', subtitleField: 'className', icon: Icons.menu_book, emptyMessage: 'Aucun élève'),
+          GenericModuleTab(endpoint: '/communication/audience/administration', titleField: 'name', subtitleField: 'role', icon: Icons.business, emptyMessage: 'Aucun administrateur'),
+          GenericModuleTab(endpoint: '/communication/channels', titleField: 'name', subtitleField: 'type', icon: Icons.radio, emptyMessage: 'Aucun canal'),
+          GenericModuleTab(endpoint: '/communication/history', titleField: 'subject', subtitleField: 'sentAt', icon: Icons.history, emptyMessage: 'Aucun historique'),
+          GenericModuleTab(endpoint: '/communication/reports', isKpi: true, icon: Icons.bar_chart),
+          GenericModuleTab(endpoint: '/communication/settings', isKpi: true, icon: Icons.settings),
+        ])),
       ]),
     );
-  }
-}
-
-class _Placeholder extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Icon(Icons.construction, size: 48, color: AHColors.grey300),
-      const SizedBox(height: 8),
-      Text('En cours d\'implémentation', style: TextStyle(fontSize: 14, color: AHColors.grey500)),
-    ]));
   }
 }

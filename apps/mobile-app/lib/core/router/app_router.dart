@@ -23,6 +23,7 @@ import '../../features/parent/pages/parent_dashboard_screen.dart';
 import '../../features/dashboard/pages/pilotage_dashboard_screen.dart';
 import '../../features/profile/pages/profile_screen.dart';
 import '../../features/students/pages/students_module_screen.dart';
+import '../../features/students/pages/students_screen.dart';
 import '../../features/finance/pages/finance_module_screen.dart';
 import '../../features/hr/pages/hr_module_screen.dart';
 import '../../features/pedagogy/pages/pedagogy_module_screen.dart';
@@ -348,8 +349,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: '/students/:id',
             name: 'studentDetail',
             builder: (context, state) {
-              final studentId = state.pathParameters['id'] ?? '';
-              return StudentsScreen(); // TODO: student detail view
+              // TODO: implement dedicated student detail view
+              return const StudentsScreen();
             },
           ),
 

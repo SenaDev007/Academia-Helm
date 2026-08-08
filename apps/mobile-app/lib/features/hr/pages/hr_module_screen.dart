@@ -52,7 +52,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
           GenericModuleTab(endpoint: '/hr/planning', titleField: 'staffName', subtitleField: 'shift', icon: Icons.schedule, emptyMessage: 'Aucun planning'),
           GenericModuleTab(endpoint: '/hr/allowances/types', titleField: 'name', subtitleField: 'description', icon: Icons.payments, emptyMessage: 'Aucune indemnité'),
           GenericModuleTab(endpoint: '/hr/payroll/periods', titleField: 'label', subtitleField: 'status', icon: Icons.account_balance_wallet, emptyMessage: 'Aucune période de paie'),
-          GenericModuleTab(endpoint: '/hr/cnss', isKpi: true, icon: Icons.landmark),
+          GenericModuleTab(endpoint: '/hr/cnss', isKpi: true, icon: Icons.account_balance),
           GenericModuleTab(endpoint: '/hr/overview/analytics', isKpi: true, icon: Icons.bar_chart),
           GenericModuleTab(endpoint: '/hr/settings', isKpi: true, icon: Icons.settings),
         ])),

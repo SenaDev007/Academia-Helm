@@ -220,8 +220,9 @@ class _AdmissionCard extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(admission.displayName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-          if (admission.requestedClassName.isNotEmpty)
-            Text(admission.requestedClassName, style: const TextStyle(fontSize: 9, color: AHColors.grey500)),
+          if (admission.requestedClassName != null &&
+              admission.requestedClassName!.isNotEmpty)
+            Text(admission.requestedClassName!, style: const TextStyle(fontSize: 9, color: AHColors.grey500)),
           if (admission.admissionNumber.isNotEmpty)
             Text('N° ${admission.admissionNumber}', style: const TextStyle(fontSize: 8, color: AHColors.grey400)),
         ])),

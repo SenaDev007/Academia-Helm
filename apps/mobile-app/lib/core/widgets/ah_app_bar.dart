@@ -34,7 +34,7 @@ class AHAppBar extends ConsumerWidget implements PreferredSizeWidget {
         : null;
 
     // Try to get tenant name from session storage (stored during login)
-    final sessionTenant = TenantStorage.getSessionTenantSync();
+    final sessionTenant = TokenStorage.getSessionTenantSync();
     final tenantName = tenant?.name ??
         sessionTenant?['name'] as String? ??
         'Academia Helm';

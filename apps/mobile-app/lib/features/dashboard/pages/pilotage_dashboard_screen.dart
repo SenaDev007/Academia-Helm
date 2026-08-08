@@ -487,7 +487,7 @@ class _QuickAccessSection extends StatelessWidget {
     _QuickModule(label: 'Organisation Pédagogique', desc: 'Classes, matières, emplois du temps', icon: Icons.school, route: '/pedagogy', color: Color(0xFF9333EA), bg: Color(0xFFFAF5FF)),
     _QuickModule(label: 'Élèves & Scolarité', desc: 'Inscriptions, effectifs, transferts', icon: Icons.people, route: '/students', color: Color(0xFF2563EB), bg: Color(0xFFEFF6FF)),
     _QuickModule(label: 'Finances & Économat', desc: 'Recettes, dépenses, trésorerie', icon: Icons.account_balance_wallet, route: '/finance', color: Color(0xFF10B981), bg: Color(0xFFF0FDF4)),
-    _QuickModule(label: 'Examens & Notes', desc: 'Évaluations, bulletins, moyennes', icon: Icons.graduation_cap, route: '/exams', color: Color(0xFFD97706), bg: Color(0xFFFFFBEB)),
+    _QuickModule(label: 'Examens & Notes', desc: 'Évaluations, bulletins, moyennes', icon: Icons.school, route: '/exams', color: Color(0xFFD97706), bg: Color(0xFFFFFBEB)),
     _QuickModule(label: 'Personnel, RH & Paie', desc: 'Effectifs, salaires, congés', icon: Icons.badge, route: '/hr', color: Color(0xFFF43F5E), bg: Color(0xFFFFF1F2)),
     _QuickModule(label: 'Communication', desc: 'SMS, emails, notifications', icon: Icons.chat_bubble_outline, route: '/communication', color: Color(0xFF06B6D4), bg: Color(0xFFECFEFF)),
   ];

@@ -24,10 +24,10 @@ import '../../features/dashboard/pages/pilotage_dashboard_screen.dart';
 import '../../features/profile/pages/profile_screen.dart';
 import '../../features/students/pages/students_module_screen.dart';
 import '../../features/finance/pages/finance_module_screen.dart';
-import '../../features/hr/pages/hr_screen.dart';
-import '../../features/pedagogy/pages/pedagogy_screen.dart';
-import '../../features/exams/pages/exams_screen.dart';
-import '../../features/communication/pages/communication_screen.dart';
+import '../../features/hr/pages/hr_module_screen.dart';
+import '../../features/pedagogy/pages/pedagogy_module_screen.dart';
+import '../../features/exams/pages/exams_module_screen.dart';
+import '../../features/communication/pages/communication_module_screen.dart';
 import '../../features/settings/pages/settings_screen.dart';
 import '../../features/meetings/pages/meetings_screen.dart';
 import '../../features/orion/pages/orion_screen.dart';
@@ -476,22 +476,22 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/hr',
             name: 'hr',
-            builder: (context, state) => const HrScreen(),
+            builder: (context, state) => const HrModuleScreen(),
           ),
           GoRoute(
             path: '/pedagogy',
             name: 'pedagogy',
-            builder: (context, state) => const PedagogyScreen(),
+            builder: (context, state) => const PedagogyModuleScreen(),
           ),
           GoRoute(
             path: '/exams',
             name: 'exams',
-            builder: (context, state) => const ExamsScreen(),
+            builder: (context, state) => const ExamsModuleScreen(),
           ),
           GoRoute(
             path: '/communication',
             name: 'communication',
-            builder: (context, state) => const CommunicationScreen(),
+            builder: (context, state) => const CommunicationModuleScreen(),
           ),
           GoRoute(
             path: '/settings',

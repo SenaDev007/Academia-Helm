@@ -288,6 +288,98 @@ export class BulletinsController {
     );
   }
 
+  /**
+   * GET /institutional-exams/bulletins/teacher-bulletins?periodId=Y
+   * ⭐ Récupère les bulletins distribués à l'enseignant connecté
+   * (pour ses classes uniquement)
+   */
+  @Get('teacher-bulletins')
+  @Permissions('exams.read')
+  async getTeacherBulletins(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+    @AcademicYearId() academicYearId: string,
+    @Query('periodId') periodId: string,
+  ) {
+    const resolvedTenantId = tenantId || user?.tenantId || headers?.['x-tenant-id'];
+    const userId = user?.id;
+
+    // Find classes where this teacher is assigned (TeacherClassAssignment or Staff)
+    // First try via Staff → Teacher → ClassSubject/TeacherClassAssignment
+    const teacher = await this.prisma.teacher.findFirst({
+      where: { userId },
+      select: { id: true },
+    }).catch(() => null);
+
+    let classIds: string[] = [];
+
+    if (teacher) {
+      // Get classes assigned to this teacher
+      const assignments = await this.prisma.teacherClassAssignment.findMany({
+        where: { teacherId: teacher.id, tenantId: resolvedTenantId },
+        select: { classId: true },
+      }).catch(() => []);
+      classIds = assignments.map(a => a.classId);
+    }
+
+    // Also check if user is a Staff with TEACHER role — they might be the
+    // "titulaire de classe" via classes table
+    const staffClasses = await this.prisma.class.findMany({
+      where: {
+        tenantId: resolvedTenantId,
+        academicYearId,
+        // Check if any teacher assignment links to this user
+        teacherClassAssignments: {
+          some: teacher ? { teacherId: teacher.id } : { teacher: { userId } },
+        },
+      },
+      select: { id: true, name: true },
+    }).catch(() => []);
+    classIds = [...new Set([...classIds, ...staffClasses.map(c => c.id)])];
+
+    if (classIds.length === 0) {
+      return { bulletins: [], total: 0, message: 'Aucune classe assignée à cet enseignant.' };
+    }
+
+    // Get report cards with TEACHER_DISTRIBUTED or TEACHER_SIGNED status
+    const bulletins = await this.prisma.reportCard.findMany({
+      where: {
+        tenantId: resolvedTenantId,
+        academicYearId,
+        quarterId: periodId,
+        status: { in: ['TEACHER_DISTRIBUTED', 'TEACHER_SIGNED'] },
+        student: {
+          studentEnrollments: {
+            some: { classId: { in: classIds }, academicYearId, tenantId: resolvedTenantId },
+          },
+        },
+      },
+      include: {
+        student: {
+          select: { id: true, firstName: true, lastName: true, matricule: true, gender: true },
+        },
+      },
+      orderBy: { student: { lastName: 'asc' } },
+    });
+
+    return {
+      bulletins: bulletins.map(b => ({
+        id: b.id,
+        studentId: b.studentId,
+        studentName: `${b.student.lastName} ${b.student.firstName}`,
+        matricule: b.student.matricule,
+        status: b.status,
+        directorSignedAt: b.directorSignedAt,
+        distributedAt: b.distributedToTeacherAt,
+        teacherSignedAt: b.teacherSignedAt,
+        directorSignature: b.directorSignature,
+        teacherSignature: b.teacherSignature,
+      })),
+      total: bulletins.length,
+    };
+  }
+
   @Get('download/:studentId')
   @Permissions('exams.read')
   async downloadBulletin(

@@ -529,12 +529,18 @@ export class BulletinsService {
     activatedBy: string,
   ) {
     const now = new Date();
+    // ⭐ Filter by classId — only distribute bulletins for students in THIS class
     const result = await this.prisma.reportCard.updateMany({
       where: {
         tenantId,
         academicYearId,
         quarterId: periodId,
         status: 'DIRECTOR_SIGNED',
+        student: {
+          studentEnrollments: {
+            some: { classId, academicYearId, tenantId },
+          },
+        },
       },
       data: {
         status: 'TEACHER_DISTRIBUTED',

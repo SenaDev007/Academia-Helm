@@ -23,7 +23,7 @@ import '../../features/parent/pages/parent_dashboard_screen.dart';
 import '../../features/dashboard/pages/pilotage_dashboard_screen.dart';
 import '../../features/profile/pages/profile_screen.dart';
 import '../../features/students/pages/students_module_screen.dart';
-import '../../features/finance/pages/finance_screen.dart';
+import '../../features/finance/pages/finance_module_screen.dart';
 import '../../features/hr/pages/hr_screen.dart';
 import '../../features/pedagogy/pages/pedagogy_screen.dart';
 import '../../features/exams/pages/exams_screen.dart';
@@ -471,7 +471,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/finance',
             name: 'finance',
-            builder: (context, state) => const FinanceScreen(),
+            builder: (context, state) => const FinanceModuleScreen(),
           ),
           GoRoute(
             path: '/hr',

@@ -19,7 +19,9 @@ import 'api_result.dart';
 final dioProvider = Provider<Dio>((Ref ref) {
   final Dio dio = Dio(
     BaseOptions(
-      baseUrl: ApiConfig.versionedBaseUrl,
+      // Use baseUrl WITHOUT /v1 — the NestJS backend has setGlobalPrefix('api')
+      // but does NOT use /v1 for auth endpoints. Most endpoints are flat /api/...
+      baseUrl: ApiConfig.baseUrl,
       connectTimeout: ApiConfig.connectTimeout,
       receiveTimeout: ApiConfig.receiveTimeout,
       sendTimeout: ApiConfig.sendTimeout,
@@ -65,7 +67,7 @@ class ApiClient {
   /// Factory constructor with default Dio instance.
   factory ApiClient.defaultInstance() {
     return ApiClient(Dio(BaseOptions(
-      baseUrl: ApiConfig.baseUrl,
+      baseUrl: ApiConfig.baseUrl, // No /v1 — backend uses flat /api/ routes
       connectTimeout: ApiConfig.connectTimeout,
       receiveTimeout: ApiConfig.receiveTimeout,
       sendTimeout: ApiConfig.sendTimeout,
@@ -86,7 +88,7 @@ class ApiClient {
   static Dio _createDio() {
     final Dio dio = Dio(
       BaseOptions(
-        baseUrl: ApiConfig.versionedBaseUrl,
+        baseUrl: ApiConfig.baseUrl, // No /v1 — backend uses flat /api/ routes
         connectTimeout: ApiConfig.connectTimeout,
         receiveTimeout: ApiConfig.receiveTimeout,
         sendTimeout: ApiConfig.sendTimeout,

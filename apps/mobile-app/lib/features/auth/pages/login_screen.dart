@@ -1,6 +1,7 @@
 import '../../../core/theme/ah_spacing.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/widgets/ah_logo_circle.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -93,16 +94,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         });
       }
     } on AuthException catch (e) {
+      debugPrint('[LOGIN_SCREEN] AuthException: ${e.message}');
       if (mounted) {
         setState(() {
           _error = e.message;
           _isLoading = false;
         });
       }
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('[LOGIN_SCREEN] Unexpected error: $e');
+      debugPrint('[LOGIN_SCREEN] Stack: $st');
       if (mounted) {
         setState(() {
-          _error = 'Erreur de connexion. Veuillez réessayer.';
+          _error = 'Une erreur s'est produite : $e';
           _isLoading = false;
         });
       }

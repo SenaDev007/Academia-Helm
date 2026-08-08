@@ -5,17 +5,25 @@
  * PORTAIL ENSEIGNANT — Examens & Notes
  * ============================================================================
  *
- * Vue "Mes évaluations" pour l'enseignant :
- *   - Liste les évaluations assignées à l'enseignant (via teacherId résolu côté backend)
- *   - Notifications : évaluations programmées + soumises
- *   - Fiche de saisie identique à celle du module Examen (registre avec P/A)
+ * Deux vues :
+ *   1. "Mes évaluations" — Liste les évaluations assignées à l'enseignant
+ *   2. "Bulletins à signer" — Bulletins distribués par le directeur à
+ *      l'enseignant (statut TEACHER_DISTRIBUTED). Permet de signer
+ *      (SignatureCanvas → POST /teacher-sign) et de renvoyer
+ *      (POST /teacher-return) au directeur.
  *
  * Sources de données :
  *   - GET /institutional-exams/evaluations (apiClient axios)
  *   - GET /institutional-exams/grades/evaluation/:id
  *   - POST /institutional-exams/grades/evaluation/:id/bulk
+ *   - GET /institutional-exams/bulletins/teacher-bulletins?periodId=X
+ *     (renvoie les classes où l'enseignant a des bulletins à signer)
+ *   - GET /institutional-exams/bulletins/class/:classId/workflow-status?periodId=X
+ *   - POST /institutional-exams/bulletins/class/:classId/teacher-sign
+ *   - POST /institutional-exams/bulletins/class/:classId/teacher-return
  *
- * L'enseignant voit les évaluations où teacherId est assigné.
+ * ⭐ Anti-screenshot : activé sur l'onglet "Bulletins à signer"
+ *    (clic droit, Ctrl+P, PrintScreen désactivés).
  * ============================================================================
  */
 
@@ -23,6 +31,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Loader2, FileEdit, Calendar, BookOpen, Users, Save,
   ChevronRight, AlertCircle, CheckCircle2, Bell, XCircle, CheckCircle,
+  FileText, PenTool, Undo, Send, Shield, ShieldAlert, Sparkles,
 } from 'lucide-react';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -35,6 +44,7 @@ import apiClient from '@/lib/api/client';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import { GradingSheet } from '@/components/exams/GradingSheet';
 import { HierarchicalEvaluationList } from '@/components/exams/HierarchicalEvaluationList';
+import { SignatureCanvas } from '@/components/ui/SignatureCanvas';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -106,6 +116,9 @@ export default function TeacherExamsPage() {
   const { user } = useAppSession();
   const { academicYear, schoolLevel } = useModuleContext();
   const { isEnabled: isBilingual, currentTrack } = useBilingual();
+
+  // ⭐ Onglet actif : "evaluations" (par défaut) ou "bulletins"
+  const [tab, setTab] = useState<'evaluations' | 'bulletins'>('evaluations');
 
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -245,9 +258,35 @@ export default function TeacherExamsPage() {
     );
   }
 
+  // ⭐ Si l'onglet "Bulletins à signer" est actif, afficher cette vue
+  //    (avec anti-screenshot activé)
+  if (tab === 'bulletins') {
+    return (
+      <div className="space-y-4">
+        {/* Tabs */}
+        <TeacherTabsHeader
+          tab={tab}
+          setTab={setTab}
+          bulletinsCount={0}
+        />
+        <TeacherBulletinsToSign
+          academicYearId={academicYear?.id}
+          onBackToEvaluations={() => setTab('evaluations')}
+        />
+      </div>
+    );
+  }
+
   // ─── Vue liste ───────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
+      {/* Tabs */}
+      <TeacherTabsHeader
+        tab={tab}
+        setTab={setTab}
+        bulletinsCount={0}
+      />
+
       {/* En-tête */}
       <div className="flex items-center justify-between">
         <div>
@@ -1057,4 +1096,499 @@ function TeacherGradingSheet({
       )}
     </div>
   );
+}
+
+// ============================================================================
+// ⭐ TABS HEADER — Switch entre "Mes évaluations" et "Bulletins à signer"
+// ============================================================================
+
+function TeacherTabsHeader({
+  tab, setTab, bulletinsCount,
+}: {
+  tab: 'evaluations' | 'bulletins';
+  setTab: (t: 'evaluations' | 'bulletins') => void;
+  bulletinsCount: number;
+}) {
+  return (
+    <div className="flex items-center gap-1 border-b border-gray-200 mb-2">
+      <button
+        onClick={() => setTab('evaluations')}
+        className={cn(
+          'flex items-center gap-2 px-4 py-2 text-sm font-semibold border-b-2 transition-colors -mb-px',
+          tab === 'evaluations'
+            ? 'border-blue-600 text-blue-700'
+            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+        )}
+      >
+        <FileEdit className="w-4 h-4" />
+        Mes évaluations
+      </button>
+      <button
+        onClick={() => setTab('bulletins')}
+        className={cn(
+          'flex items-center gap-2 px-4 py-2 text-sm font-semibold border-b-2 transition-colors -mb-px relative',
+          tab === 'bulletins'
+            ? 'border-amber-600 text-amber-700'
+            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+        )}
+      >
+        <FileText className="w-4 h-4" />
+        Bulletins à signer
+        {bulletinsCount > 0 && (
+          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
+            {bulletinsCount > 9 ? '9+' : bulletinsCount}
+          </span>
+        )}
+      </button>
+    </div>
+  );
+}
+
+// ============================================================================
+// ⭐ BULLETINS À SIGNER — Vue dédiée pour les enseignants
+// Liste les classes où le directeur a distribué des bulletins (TEACHER_DISTRIBUTED)
+// Permet de signer (SignatureCanvas) et de renvoyer au directeur.
+// ⭐ Anti-screenshot activé sur tout le contenu de cette vue.
+// ============================================================================
+
+function useAntiScreenshot(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled) return;
+
+    const handleContextMenu = (e: MouseEvent) => { e.preventDefault(); };
+    const handleSelectStart = (e: Event) => { e.preventDefault(); };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'p') { e.preventDefault(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') { e.preventDefault(); }
+      if (e.key === 'PrintScreen') {
+        e.preventDefault();
+        if (navigator.clipboard) navigator.clipboard.writeText('').catch(() => {});
+      }
+    };
+    const handleCopy = (e: ClipboardEvent) => {
+      if (e.clipboardData && e.clipboardData.types.includes('Files')) {
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener('contextmenu', handleContextMenu);
+    document.addEventListener('selectstart', handleSelectStart);
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('copy', handleCopy);
+    document.body.style.userSelect = 'none';
+    document.body.style.webkitUserSelect = 'none';
+
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('selectstart', handleSelectStart);
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('copy', handleCopy);
+      document.body.style.userSelect = '';
+      document.body.style.webkitUserSelect = '';
+    };
+  }, [enabled]);
+}
+
+interface ClassBulletinSummary {
+  classId: string;
+  className: string;
+  periodId: string;
+  periodName: string;
+  total: number;
+  counts: {
+    DRAFT: number;
+    DIRECTOR_SIGNED: number;
+    TEACHER_DISTRIBUTED: number;
+    TEACHER_SIGNED: number;
+    TEACHER_RETURNED: number;
+    PARENT_SENT: number;
+    BLOCKED: number;
+  };
+  currentStatus: string;
+}
+
+function TeacherBulletinsToSign({
+  academicYearId,
+  onBackToEvaluations,
+}: {
+  academicYearId?: string;
+  onBackToEvaluations: () => void;
+}) {
+  const { user } = useAppSession();
+  // ⭐ Anti-screenshot activé en permanence sur cette vue
+  useAntiScreenshot(true);
+
+  const [loading, setLoading] = useState(true);
+  const [classesSummaries, setClassesSummaries] = useState<ClassBulletinSummary[]>([]);
+  const [periods, setPeriods] = useState<{ id: string; name: string }[]>([]);
+  const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null);
+  const [signingClass, setSigningClass] = useState<ClassBulletinSummary | null>(null);
+  const [signature, setSignature] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // ── Charger la liste des périodes ──────────────────────────────────────────
+  useEffect(() => {
+    if (!academicYearId) return;
+    fetch(`/api/settings/academic-years/${academicYearId}/periods`, { credentials: 'include' })
+      .then((res) => res.json())
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data?.items || data?.data || []);
+        setPeriods(list.map((p: any) => ({ id: p.id, name: p.name || p.label || 'Période' })));
+        if (list.length > 0 && !selectedPeriodId) {
+          setSelectedPeriodId(list[0].id);
+        }
+      })
+      .catch(() => setPeriods([]));
+  }, [academicYearId]);
+
+  // ── Charger les bulletins de l'enseignant (par période) ────────────────────
+  const loadTeacherBulletins = useCallback(async () => {
+    if (!academicYearId || !selectedPeriodId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      // ⭐ Utiliser l'API teacher-bulletins qui renvoie :
+      //   - bulletins : liste complète des bulletins de l'enseignant
+      //   - classes   : résumé par classe (classId, className, total, counts, currentStatus)
+      // Plus besoin d'appeler workflow-status pour chaque classe — le backend
+      // fait déjà le travail.
+      const res = await apiClient.get('/institutional-exams/bulletins/teacher-bulletins', {
+        params: { periodId: selectedPeriodId },
+      });
+      const data = res.data || {};
+      const classesArray = Array.isArray(data.classes) ? data.classes : [];
+
+      const summaries: ClassBulletinSummary[] = classesArray.map((cls: any) => ({
+        classId: cls.classId,
+        className: cls.className || `Classe ${cls.classId.slice(-4)}`,
+        periodId: selectedPeriodId,
+        periodName: periods.find(p => p.id === selectedPeriodId)?.name || '',
+        total: cls.total || 0,
+        counts: {
+          DRAFT: cls.counts?.DRAFT || 0,
+          DIRECTOR_SIGNED: cls.counts?.DIRECTOR_SIGNED || 0,
+          TEACHER_DISTRIBUTED: cls.counts?.TEACHER_DISTRIBUTED || 0,
+          TEACHER_SIGNED: cls.counts?.TEACHER_SIGNED || 0,
+          TEACHER_RETURNED: cls.counts?.TEACHER_RETURNED || 0,
+          PARENT_SENT: cls.counts?.PARENT_SENT || 0,
+          BLOCKED: cls.counts?.BLOCKED || 0,
+        },
+        currentStatus: cls.currentStatus || 'DRAFT',
+      }));
+      setClassesSummaries(summaries);
+    } catch (err) {
+      console.error('Error loading teacher bulletins', err);
+      setClassesSummaries([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [academicYearId, selectedPeriodId, periods]);
+
+  useEffect(() => {
+    loadTeacherBulletins();
+  }, [loadTeacherBulletins]);
+
+  // ── Signer ──────────────────────────────────────────────────────────────────
+  const handleSign = async () => {
+    if (!signingClass || !signature || !selectedPeriodId) return;
+    setActionLoading(true);
+    try {
+      await apiClient.post(
+        `/institutional-exams/bulletins/class/${signingClass.classId}/teacher-sign`,
+        { periodId: selectedPeriodId, signature }
+      );
+      toastSuccess('Signature appliquée', {
+        description: `Tous les bulletins de ${signingClass.className} ont été signés.`,
+      });
+      setSigningClass(null);
+      setSignature(null);
+      loadTeacherBulletins();
+    } catch (err: any) {
+      toastError('Erreur', { description: err.response?.data?.message || err.message });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // ── Renvoyer au directeur ────────────────────────────────────────────────────
+  const handleReturn = async (cls: ClassBulletinSummary) => {
+    if (!confirm(`Confirmer le renvoi des bulletins de ${cls.className} au directeur ?`)) return;
+    setActionLoading(true);
+    try {
+      await apiClient.post(
+        `/institutional-exams/bulletins/class/${cls.classId}/teacher-return`,
+        { periodId: selectedPeriodId }
+      );
+      toastSuccess('Bulletins renvoyés', {
+        description: 'Les bulletins sont de retour dans l\'interface du directeur.',
+      });
+      loadTeacherBulletins();
+    } catch (err: any) {
+      toastError('Erreur', { description: err.response?.data?.message || err.message });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // ── UI ─────────────────────────────────────────────────────────────────────
+  return (
+    <div className="space-y-4">
+      {/* En-tête */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <FileText className="w-6 h-6 text-amber-600" />
+          Bulletins à signer
+        </h1>
+        <p className="text-sm text-gray-500 mt-1">
+          Bulletins distribués par le directeur — à signer puis à renvoyer.
+        </p>
+      </div>
+
+      {/* Sélecteur de période */}
+      {periods.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-gray-600 font-semibold">Période :</span>
+          {periods.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setSelectedPeriodId(p.id)}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors',
+                selectedPeriodId === p.id
+                  ? 'bg-amber-600 text-white'
+                  : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+              )}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Alerte anti-screenshot */}
+      <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-start gap-2">
+        <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+        <div>
+          <strong>Protection active :</strong> Les captures d'écran, le clic droit et
+          l'impression (Ctrl+P) sont désactivés sur cet onglet. Toute tentative est
+          journalisée. Les bulletins ne peuvent être ni téléchargés ni imprimés par
+          l'enseignant — seule la signature et le renvoi au directeur sont autorisés.
+        </div>
+      </div>
+
+      {/* Loading */}
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-6 h-6 animate-spin text-amber-600" />
+          <span className="ml-2 text-gray-600">Chargement des bulletins...</span>
+        </div>
+      ) : classesSummaries.length === 0 ? (
+        <Card className="border-gray-200 shadow-sm">
+          <CardContent className="py-12 text-center">
+            <FileText className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+            <p className="font-medium text-gray-600">Aucun bulletin à signer</p>
+            <p className="text-xs mt-1 text-gray-400">
+              Le directeur n'a pas encore distribué de bulletins pour cette période,
+              ou vous n'êtes assigné(e) à aucune classe avec bulletins distribués.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onBackToEvaluations}
+              className="mt-4"
+            >
+              ← Retour à Mes évaluations
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {classesSummaries.map((cls) => (
+            <ClassBulletinCard
+              key={cls.classId}
+              cls={cls}
+              onSign={() => { setSigningClass(cls); setSignature(null); }}
+              onReturn={() => handleReturn(cls)}
+              actionLoading={actionLoading}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Signature Modal */}
+      {signingClass && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-sm font-bold text-slate-900 mb-2 flex items-center gap-2">
+              <PenTool className="w-4 h-4 text-blue-600" />
+              Signature enseignant — {signingClass.className}
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Cette signature sera appliquée à <strong>tous les bulletins</strong> de
+              cette classe sans exception.
+            </p>
+            <div className="border border-slate-300 rounded-lg p-2 bg-slate-50/50 mb-4">
+              <SignatureCanvas
+                width={340}
+                height={120}
+                onSignatureChange={setSignature}
+                placeholder="Signez ici"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => { setSigningClass(null); setSignature(null); }}
+                className="text-sm"
+              >
+                Annuler
+              </Button>
+              <Button
+                onClick={handleSign}
+                disabled={!signature || actionLoading}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-sm"
+              >
+                {actionLoading
+                  ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  : <CheckCircle className="w-4 h-4 mr-2" />}
+                Valider la signature
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClassBulletinCard({
+  cls, onSign, onReturn, actionLoading,
+}: {
+  cls: ClassBulletinSummary;
+  onSign: () => void;
+  onReturn: () => void;
+  actionLoading: boolean;
+}) {
+  const c = cls.counts;
+  const isDistributed = cls.currentStatus === 'TEACHER_DISTRIBUTED';
+  const isSigned = cls.currentStatus === 'TEACHER_SIGNED';
+  const isReturned = cls.currentStatus === 'TEACHER_RETURNED';
+  const isParentSent = cls.currentStatus === 'PARENT_SENT';
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+        <div className="flex items-center gap-3">
+          <div className={cn(
+            'w-10 h-10 rounded-lg flex items-center justify-center text-white',
+            isDistributed ? 'bg-amber-500' :
+            isSigned ? 'bg-blue-600' :
+            isReturned ? 'bg-purple-600' :
+            isParentSent ? 'bg-emerald-600' :
+            'bg-gray-400'
+          )}>
+            <FileText className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="font-bold text-gray-900">{cls.className}</p>
+            <p className="text-xs text-gray-500">
+              {cls.total} bulletin(s) · {cls.periodName}
+            </p>
+          </div>
+        </div>
+        <span className={cn(
+          'text-xs font-semibold px-3 py-1 rounded-full',
+          isDistributed ? 'bg-amber-100 text-amber-700' :
+          isSigned ? 'bg-blue-100 text-blue-700' :
+          isReturned ? 'bg-purple-100 text-purple-700' :
+          isParentSent ? 'bg-emerald-100 text-emerald-700' :
+          'bg-gray-100 text-gray-600'
+        )}>
+          {isDistributed ? 'À signer' :
+           isSigned ? 'Signé par vous' :
+           isReturned ? 'Renvoyé au directeur' :
+           isParentSent ? 'Envoyé aux parents' :
+           'En attente'}
+        </span>
+      </div>
+
+      {/* Workflow status */}
+      <div className="flex items-center gap-1 flex-wrap text-[10px] mb-3">
+        <WorkflowChip label="Brouillon" done={c.DRAFT > 0} active={cls.currentStatus === 'DRAFT'} muted />
+        <Arrow />
+        <WorkflowChip label="Signé Directeur" done={c.DIRECTOR_SIGNED > 0 || c.TEACHER_DISTRIBUTED > 0 || c.TEACHER_SIGNED > 0} />
+        <Arrow />
+        <WorkflowChip label="Distribué" done={c.TEACHER_DISTRIBUTED > 0 || c.TEACHER_SIGNED > 0} active={isDistributed} />
+        <Arrow />
+        <WorkflowChip label="Signé Enseignant" done={c.TEACHER_SIGNED > 0 || c.TEACHER_RETURNED > 0} active={isSigned} />
+        <Arrow />
+        <WorkflowChip label="Renvoyé" done={c.TEACHER_RETURNED > 0} active={isReturned} />
+        <Arrow />
+        <WorkflowChip label="Envoyé Parents" done={c.PARENT_SENT > 0} active={isParentSent} />
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex flex-wrap gap-2">
+        {isDistributed && (
+          <Button
+            onClick={onSign}
+            disabled={actionLoading}
+            className="bg-blue-600 hover:bg-blue-700 text-white text-sm"
+          >
+            <PenTool className="w-4 h-4 mr-2" />
+            Signer les bulletins
+          </Button>
+        )}
+        {isSigned && (
+          <Button
+            onClick={onReturn}
+            disabled={actionLoading}
+            className="bg-amber-600 hover:bg-amber-700 text-white text-sm"
+          >
+            {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Undo className="w-4 h-4 mr-2" />}
+            Renvoyer au directeur
+          </Button>
+        )}
+        {isReturned && (
+          <div className="text-xs text-purple-700 font-semibold flex items-center gap-1">
+            <CheckCircle className="w-4 h-4" /> Bulletins renvoyés au directeur
+          </div>
+        )}
+        {isParentSent && (
+          <div className="text-xs text-emerald-700 font-semibold flex items-center gap-1">
+            <CheckCircle className="w-4 h-4" /> Bulletins envoyés aux parents
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WorkflowChip({
+  label, done, active, muted,
+}: {
+  label: string;
+  done?: boolean;
+  active?: boolean;
+  muted?: boolean;
+}) {
+  return (
+    <span className={cn(
+      'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border',
+      active ? 'bg-blue-600 text-white border-blue-600' :
+      done ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+      muted ? 'bg-gray-50 text-gray-400 border-gray-200' :
+      'bg-slate-50 text-slate-500 border-slate-200'
+    )}>
+      {done && <CheckCircle className="w-2.5 h-2.5 mr-0.5" />}
+      {label}
+    </span>
+  );
+}
+
+function Arrow() {
+  return <span className="text-gray-300 text-[10px]">→</span>;
 }

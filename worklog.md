@@ -1112,3 +1112,58 @@ Stage Summary:
 - Filename : bulletin_[élève]_[typeEval]_[trimestre].pdf
 - Migration DB : 2 nouvelles colonnes sur report_cards
 - 2 nouveaux endpoints backend pour persister le visa directeur
+
+---
+Task ID: 2026-08-08-maternelle-autogen-teacher-bulletins
+Agent: main
+Task: Two corrections — (1) Implement auto-generation of pedagogical analysis + director visa + date for kindergarten (maternelle) bulletins, mirroring what was done for primary. (2) Fix teacher UI: after director distributes bulletins (workflow step 2), nothing appears in teacher's "Examens et Notes" module — only evaluations are visible. Add a "Bulletins à signer" tab to teacher UI.
+
+Work Log:
+- Issue 1 (maternelle auto-gen):
+  - In `apps/web-app/src/app/app/exams/bulletins/page.tsx` — `BulletinPage2` component:
+    - Identified that the "Auto-générer les recommandations" button was hidden for maternelle (`{!isMaternelle && ...}`)
+    - Refactored the "Analyse pédagogique" section header to include a flex layout with the auto-generate button visible for both maternelle and primaire (button label changes: "Auto-générer (analyse + visa + date)" for maternelle, "Auto-générer les recommandations" for primaire)
+    - Added an "Auto-remplir" button to the "Visa du Directeur" card (visible for both maternelle and primaire) — lets the teacher/director regenerate the visa + current date quickly
+  - In `apps/api-server/src/modules/exams/services/bulletins.service.ts` — `autoGenerateAnnotations`:
+    - Added `qualitativeCode` to the Prisma select (was missing)
+    - Added detection of qualitative mode (grades with TS/S/PS codes)
+    - Added a `qualitativeMap` (TS=16, S=12, PS=8) for numeric conversion
+    - Added maternelle-specific logic in a `if (isQualitativeMode)` branch:
+      - Count TS/S/PS occurrences and compute percentages
+      - Generate maternelle-specific `defautsMajeurs`, `qualitesRemarquables`, `analyseRecommandations` based on TS/S/PS distribution
+    - Kept the existing logic for primaire/secondaire in the `else` branch
+    - Added `tsCount`, `sCount`, `psCount`, `totalQualitative`, `qualitativeMode` to the returned stats
+    - Director visa `Vu ce JJ/MM/AAAA` is unchanged — works for both modes
+
+- Issue 2 (teacher UI missing bulletins tab):
+  - Backend (`apps/api-server/src/modules/exams/bulletins.controller.ts` — `getTeacherBulletins`):
+    - Refactored the endpoint to return not only a flat `bulletins` list (now with `classId` + `className` per bulletin) but also a `classes` summary array (classId, className, total, counts per status, currentStatus) — this lets the frontend render the list directly without N+1 calls to workflow-status
+    - Added `studentEnrollments` include on the student select (filtered by teacherClassIds + academicYearId) so we can resolve the classId per bulletin
+    - Kept teacher resolution via `Teacher` (by userId) → `TeacherClassAssignment` (classId) and the `Class.teacherClassAssignments.some(...)` fallback
+    - Filtered final classes to those that have at least one TEACHER_DISTRIBUTED or TEACHER_SIGNED bulletin
+  - Frontend (`apps/web-app/src/app/app/teacher/exams/page.tsx`):
+    - Added imports for new icons (FileText, PenTool, Undo, Send, Shield, ShieldAlert, Sparkles) and `SignatureCanvas`
+    - Added `tab` state ('evaluations' | 'bulletins') to `TeacherExamsPage`
+    - Added `TeacherTabsHeader` component — pill-style tabs to switch between "Mes évaluations" and "Bulletins à signer" (with optional badge count)
+    - Added `TeacherBulletinsToSign` component:
+      - Period selector (loaded from `/api/settings/academic-years/{id}/periods`)
+      - Calls `GET /institutional-exams/bulletins/teacher-bulletins?periodId=X` — uses the new `classes` summary directly
+      - Anti-screenshot protection enabled (`useAntiScreenshot(true)` — same pattern as director bulletins page): disables right-click, Ctrl+P, Ctrl+S, PrintScreen, text selection
+      - Anti-screenshot warning banner (amber, with ShieldAlert icon)
+      - Lists `ClassBulletinCard` components — each shows the class name, workflow status chips, and action buttons ("Signer les bulletins" → opens signature modal, "Renvoyer au directeur" → confirm + POST /teacher-return)
+      - Signature modal with `SignatureCanvas` (340×120) → POST /institutional-exams/bulletins/class/{classId}/teacher-sign
+      - Empty state with "Retour à Mes évaluations" button
+    - Added `ClassBulletinCard` and `WorkflowChip` helper components
+
+Stage Summary:
+- Backend `autoGenerateAnnotations` now handles maternelle (qualitative TS/S/PS) AND primaire/secondaire (numeric /20) with appropriate vocabulary ("enfant" vs "élève", "activités" vs "matières")
+- The director visa "Vu ce JJ/MM/AAAA" is auto-generated the same way for both levels
+- The teacher UI now has a complete "Bulletins à signer" tab that:
+  - Lists only classes where the teacher is the titulaire AND has at least one TEACHER_DISTRIBUTED or TEACHER_SIGNED bulletin
+  - Shows the full workflow state per class
+  - Allows signing all bulletins of a class in one click (modal SignatureCanvas)
+  - Allows returning bulletins to the director
+  - Has anti-screenshot protection (clic droit, Ctrl+P, PrintScreen désactivés) matching the director's workflow
+- The teacher-bulletins endpoint is now optimized (single call returns everything needed — no N+1 frontend calls to workflow-status)
+- TypeScript check: 0 new errors introduced (60 pre-existing Prisma-related errors in bulletins.controller.ts unchanged)
+- Files modified: 4 (apps/web-app/src/app/app/exams/bulletins/page.tsx, apps/web-app/src/app/app/teacher/exams/page.tsx, apps/api-server/src/modules/exams/bulletins.controller.ts, apps/api-server/src/modules/exams/services/bulletins.service.ts)

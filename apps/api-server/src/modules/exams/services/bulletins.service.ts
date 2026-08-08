@@ -984,10 +984,10 @@ export class BulletinsService {
       select: { status: true, date: true },
     }).catch(() => []);
 
-    // 3. Récupérer les notes de l'élève
+    // 3. Récupérer les notes de l'élève (inclut qualitativeCode pour la maternelle)
     const grades = await this.prisma.grade.findMany({
       where: { tenantId, studentId },
-      select: { score: true, isAbsent: true },
+      select: { score: true, isAbsent: true, qualitativeCode: true },
     }).catch(() => []);
 
     // 4. Récupérer les records disciplinaires
@@ -1003,10 +1003,33 @@ export class BulletinsService {
     const absentRecords = attendanceRecords.filter(r => r.status === 'ABSENT').length;
     const lateRecords = attendanceRecords.filter(r => r.status === 'LATE').length;
 
-    const validGrades = grades.filter(g => !g.isAbsent && g.score !== null).map(g => Number(g.score));
+    // ⭐ Détection du mode maternelle : grades avec qualitativeCode (TS/S/PS)
+    const qualitativeMap: Record<string, number> = { TS: 16, S: 12, PS: 8 };
+    const isQualitativeMode = grades.some(g => g.qualitativeCode);
+
+    // Pour la maternelle : on convertit TS/S/PS en équivalent numérique pour l'analyse
+    const validGrades = grades
+      .filter(g => !g.isAbsent)
+      .map(g => {
+        if (g.qualitativeCode && qualitativeMap[g.qualitativeCode] !== undefined) {
+          return qualitativeMap[g.qualitativeCode];
+        }
+        if (g.score !== null && g.score !== undefined) {
+          return Number(g.score);
+        }
+        return null;
+      })
+      .filter((v): v is number => v !== null);
+
     const avgScore = validGrades.length > 0
       ? validGrades.reduce((sum, v) => sum + v, 0) / validGrades.length
       : null;
+
+    // ⭐ Pour la maternelle : compter les codes TS/S/PS pour une analyse qualitative
+    const tsCount = grades.filter(g => g.qualitativeCode === 'TS').length;
+    const sCount = grades.filter(g => g.qualitativeCode === 'S').length;
+    const psCount = grades.filter(g => g.qualitativeCode === 'PS').length;
+    const totalQualitative = tsCount + sCount + psCount;
 
     const disciplineIssues = disciplines.filter(d => d.severity === 'HIGH' || d.severity === 'CRITICAL').length;
 
@@ -1017,7 +1040,7 @@ export class BulletinsService {
     let qualitesRemarquables = '';
     let analyseRecommandations = '';
 
-    // Assiduité
+    // Assiduité — commune à maternelle et primaire
     if (totalAbsences === 0 && lateRecords === 0) {
       assiduite = 'Excellente assiduité. Aucune absence ni retard enregistré.';
     } else if (totalAbsences <= 2 && lateRecords <= 3) {
@@ -1028,7 +1051,7 @@ export class BulletinsService {
       assiduite = `Assiduité insuffisante. ${totalAbsences} absence(s) non justifiée(s), ${lateRecords} retard(s). Une amélioration est nécessaire.`;
     }
 
-    // Discipline
+    // Discipline — commune à maternelle et primaire
     if (disciplineIssues === 0) {
       discipline = 'Bonne discipline. Aucun incident majeur enregistré.';
     } else if (disciplineIssues <= 2) {
@@ -1037,37 +1060,80 @@ export class BulletinsService {
       discipline = `${disciplineIssues} incidents disciplinaires enregistrés. Une attention particulière est requise.`;
     }
 
-    // Défauts majeurs
-    if (avgScore !== null && avgScore < 8) {
-      defautsMajeurs = 'Difficultés d\'apprentissage dans plusieurs matières. Manque de concentration observé.';
-    } else if (totalAbsences > 5) {
-      defautsMajeurs = 'Absentéisme fréquent qui impacte les résultats scolaires.';
-    } else if (disciplineIssues > 2) {
-      defautsMajeurs = 'Comportement perturbateur en classe signalé à plusieurs reprises.';
-    } else {
-      defautsMajeurs = '';
-    }
+    if (isQualitativeMode) {
+      // ─── MODE MATERNELLE (TS/S/PS) ────────────────────────────────────────
+      // Analyse basée sur la répartition des codes qualitatifs
+      const tsPct = totalQualitative > 0 ? (tsCount / totalQualitative) * 100 : 0;
+      const psPct = totalQualitative > 0 ? (psCount / totalQualitative) * 100 : 0;
 
-    // Qualités remarquables
-    if (avgScore !== null && avgScore >= 14) {
-      qualitesRemarquables = 'Élève brillant, sérieux et travailleur. Excellentes performances scolaires.';
-    } else if (avgScore !== null && avgScore >= 10) {
-      qualitesRemarquables = 'Élève appliqué, progresse régulièrement. Bonne attitude face au travail.';
-    } else if (totalAbsences === 0 && lateRecords === 0) {
-      qualitesRemarquables = 'Élève régulier et ponctuel. Efforts constants malgré les difficultés.';
-    } else {
-      qualitesRemarquables = '';
-    }
+      // Défauts majeurs (maternelle)
+      if (psPct >= 50) {
+        defautsMajeurs = `Difficultés d'apprentissage observées sur plusieurs activités (${psCount} activité(s) notée(s) PS). Un accompagnement ciblé est recommandé.`;
+      } else if (totalAbsences > 5) {
+        defautsMajeurs = 'Absentéisme fréquent qui peut impacter les apprentissages de l\'enfant.';
+      } else if (disciplineIssues > 2) {
+        defautsMajeurs = 'Comportement à surveiller signalé à plusieurs reprises.';
+      } else {
+        defautsMajeurs = '';
+      }
 
-    // Analyse et recommandations
-    if (avgScore !== null && avgScore >= 14) {
-      analyseRecommandations = 'Excellents résultats. Encourager l\'élève à maintenir ce niveau et à viser l\'excellence.';
-    } else if (avgScore !== null && avgScore >= 10) {
-      analyseRecommandations = 'Résultats satisfaisants. L\'élève peut progresser avec un accompagnement ciblé dans les matières faibles.';
-    } else if (avgScore !== null && avgScore < 10) {
-      analyseRecommandations = 'Résultats insuffisants. Un soutien pédagogique renforcé est recommandé. Organiser des séances de rattrapage.';
+      // Qualités remarquables (maternelle)
+      if (tsPct >= 60) {
+        qualitesRemarquables = `Excellent développement. ${tsCount} activité(s) évaluée(s) « Très Satisfaisant ». L'enfant montre de belles dispositions.`;
+      } else if (tsPct >= 30 || sCount >= tsCount) {
+        qualitesRemarquables = `Bonnes progressions. L'enfant est investi dans les activités proposées et montre une attitude positive.`;
+      } else if (totalAbsences === 0 && lateRecords === 0) {
+        qualitesRemarquables = 'Enfant régulier et ponctuel. Efforts constants observés en classe.';
+      } else {
+        qualitesRemarquables = '';
+      }
+
+      // Analyse et recommandations (maternelle)
+      if (tsPct >= 60) {
+        analyseRecommandations = `Excellents résultats. L'enfant maîtrise la majorité des compétences attendues (${tsCount} TS sur ${totalQualitative}). Encourager et maintenir ce niveau d'engagement.`;
+      } else if (psPct >= 50) {
+        analyseRecommandations = `Résultats à améliorer. ${psCount} activité(s) évaluée(s) « Peu Satisfaisant ». Un renforcement à la maison et à l'école est recommandé pour soutenir l'enfant.`;
+      } else if (tsCount + sCount > 0 && psPct < 30) {
+        analyseRecommandations = `Résultats satisfaisants. L'enfant progresse bien (${tsCount} TS, ${sCount} S). Poursuivre le suivi et l'encouragement à la maison.`;
+      } else if (totalQualitative === 0) {
+        analyseRecommandations = 'Évaluation en cours. Suivre l\'évolution de l\'enfant durant la prochaine période d\'observation.';
+      } else {
+        analyseRecommandations = `Résultats mixtes. L'enfant montre des compétences dans certaines activités mais nécessite un accompagnement sur d'autres. Encourager la régularité.`;
+      }
     } else {
-      analyseRecommandations = 'Évaluation en cours. Suivre l\'évolution de l\'élève durant la prochaine période.';
+      // ─── MODE PRIMAIRE/SECONDAIRE (notes /20) ──────────────────────────────
+      // Défauts majeurs
+      if (avgScore !== null && avgScore < 8) {
+        defautsMajeurs = 'Difficultés d\'apprentissage dans plusieurs matières. Manque de concentration observé.';
+      } else if (totalAbsences > 5) {
+        defautsMajeurs = 'Absentéisme fréquent qui impacte les résultats scolaires.';
+      } else if (disciplineIssues > 2) {
+        defautsMajeurs = 'Comportement perturbateur en classe signalé à plusieurs reprises.';
+      } else {
+        defautsMajeurs = '';
+      }
+
+      // Qualités remarquables
+      if (avgScore !== null && avgScore >= 14) {
+        qualitesRemarquables = 'Élève brillant, sérieux et travailleur. Excellentes performances scolaires.';
+      } else if (avgScore !== null && avgScore >= 10) {
+        qualitesRemarquables = 'Élève appliqué, progresse régulièrement. Bonne attitude face au travail.';
+      } else if (totalAbsences === 0 && lateRecords === 0) {
+        qualitesRemarquables = 'Élève régulier et ponctuel. Efforts constants malgré les difficultés.';
+      } else {
+        qualitesRemarquables = '';
+      }
+
+      // Analyse et recommandations
+      if (avgScore !== null && avgScore >= 14) {
+        analyseRecommandations = 'Excellents résultats. Encourager l\'élève à maintenir ce niveau et à viser l\'excellence.';
+      } else if (avgScore !== null && avgScore >= 10) {
+        analyseRecommandations = 'Résultats satisfaisants. L\'élève peut progresser avec un accompagnement ciblé dans les matières faibles.';
+      } else if (avgScore !== null && avgScore < 10) {
+        analyseRecommandations = 'Résultats insuffisants. Un soutien pédagogique renforcé est recommandé. Organiser des séances de rattrapage.';
+      } else {
+        analyseRecommandations = 'Évaluation en cours. Suivre l\'évolution de l\'élève durant la prochaine période.';
+      }
     }
 
     // ⭐ Visa du directeur auto-généré — format: "Vu ce JJ/MM/AAAA"
@@ -1093,6 +1159,12 @@ export class BulletinsService {
         avgScore: avgScore !== null ? Number(avgScore.toFixed(2)) : null,
         disciplineIssues,
         totalGrades: validGrades.length,
+        // ⭐ Stats qualitatives (maternelle)
+        qualitativeMode: isQualitativeMode,
+        tsCount,
+        sCount,
+        psCount,
+        totalQualitative,
       },
     };
   }

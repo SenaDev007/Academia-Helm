@@ -161,16 +161,136 @@ class _RoomsContent extends ConsumerWidget {
 }
 class _RolesContent extends ConsumerWidget {
   const _RolesContent();
-  @override Widget build(BuildContext c, WidgetRef r) => const SubTabContentWrapper(children: [SectionHeader(title: 'Rôles')]);
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final rolesAsync = ref.watch(rolesProvider);
+    return rolesAsync.when(
+      data: (roles) {
+        if (roles.isEmpty) return _buildEmpty('Aucun rôle configuré');
+        return ListView.builder(
+          padding: const EdgeInsets.all(AHSpacing.md),
+          itemCount: roles.length,
+          itemBuilder: (context, index) {
+            final role = roles[index];
+            return Container(
+              margin: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
+              child: Row(children: [
+                Container(width: 32, height: 32, decoration: BoxDecoration(color: AHColors.navy.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
+                  child: const Icon(Icons.admin_panel_settings, size: 18, color: AHColors.navy)),
+                const SizedBox(width: 12),
+                Expanded(child: Text((role['name'] as String?) ?? (role['label'] as String?) ?? 'Rôle',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)))),
+                if (role['userCount'] != null)
+                  Text('${role['userCount']} utilisateurs', style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+              ]),
+            );
+          },
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator(color: AHColors.navy)),
+      error: (_, __) => _buildEmpty('Erreur de chargement'),
+    );
+  }
 }
+
 class _PermissionsContent extends ConsumerWidget {
   const _PermissionsContent();
-  @override Widget build(BuildContext c, WidgetRef r) => const SubTabContentWrapper(children: [SectionHeader(title: 'Permissions')]);
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final permAsync = ref.watch(permissionsProvider);
+    return permAsync.when(
+      data: (perms) {
+        if (perms.isEmpty) return _buildEmpty('Aucune permission configurée');
+        return ListView.builder(
+          padding: const EdgeInsets.all(AHSpacing.md),
+          itemCount: perms.length,
+          itemBuilder: (context, index) {
+            final perm = perms[index];
+            return Container(
+              margin: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
+              child: Row(children: [
+                Icon(Icons.lock_outline, size: 16, color: AHColors.grey400),
+                const SizedBox(width: 8),
+                Expanded(child: Text((perm['resource'] as String?) ?? (perm['name'] as String?) ?? 'Permission',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)))),
+                if (perm['actions'] != null)
+                  Text('${perm['actions']}', style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+              ]),
+            );
+          },
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator(color: AHColors.navy)),
+      error: (_, __) => _buildEmpty('Erreur de chargement'),
+    );
+  }
 }
+
 class _FeaturesContent extends ConsumerWidget {
   const _FeaturesContent();
-  @override Widget build(BuildContext c, WidgetRef r) => const SubTabContentWrapper(children: [SectionHeader(title: 'Fonctionnalités')]);
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final featuresAsync = ref.watch(featuresProvider);
+    return featuresAsync.when(
+      data: (features) {
+        if (features.isEmpty) return _buildEmpty('Aucun module configurable');
+        return ListView.builder(
+          padding: const EdgeInsets.all(AHSpacing.md),
+          itemCount: features.length,
+          itemBuilder: (context, index) {
+            final feature = features[index];
+            final isEnabled = feature['enabled'] == true || feature['isActive'] == true;
+            final featureId = (feature['id'] as String?) ?? (feature['code'] as String?) ?? '';
+            return _FeatureToggleCard(
+              name: (feature['name'] as String?) ?? (feature['label'] as String?) ?? 'Module',
+              description: (feature['description'] as String?) ?? '',
+              isEnabled: isEnabled,
+              onToggle: isEnabled
+                ? () => ref.read(settingsMutationProvider.notifier).disableFeature(featureId)
+                : () => ref.read(settingsMutationProvider.notifier).enableFeature(featureId),
+            );
+          },
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator(color: AHColors.navy)),
+      error: (_, __) => _buildEmpty('Erreur de chargement'),
+    );
+  }
 }
+
+class _FeatureToggleCard extends StatelessWidget {
+  const _FeatureToggleCard({required this.name, required this.description, required this.isEnabled, required this.onToggle});
+  final String name;
+  final String description;
+  final bool isEnabled;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
+      child: Row(children: [
+        Container(width: 32, height: 32, decoration: BoxDecoration(
+          color: isEnabled ? const Color(0xFF16A34A).withOpacity(0.1) : AHColors.grey100,
+          borderRadius: BorderRadius.circular(6)),
+          child: Icon(isEnabled ? Icons.check_circle : Icons.circle_outlined, size: 18, color: isEnabled ? const Color(0xFF16A34A) : AHColors.grey400)),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+          if (description.isNotEmpty) Text(description, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)), maxLines: 1, overflow: TextOverflow.ellipsis),
+        ])),
+        Switch(value: isEnabled, onChanged: (_) => onToggle(), activeColor: AHColors.navy),
+      ]),
+    );
+  }
+}
+
 class _ImportContent extends ConsumerWidget {
   const _ImportContent();
   @override Widget build(BuildContext c, WidgetRef r) => const SubTabContentWrapper(children: [SectionHeader(title: 'Import')]);
@@ -185,7 +305,57 @@ class _BackupContent extends ConsumerWidget {
 }
 class _AdvancedContent extends ConsumerWidget {
   const _AdvancedContent();
-  @override Widget build(BuildContext c, WidgetRef r) => const SubTabContentWrapper(children: [SectionHeader(title: 'Paramètres avancés')]);
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final securityAsync = ref.watch(securitySettingsProvider);
+    return securityAsync.when(
+      data: (settings) {
+        if (settings.isEmpty) return _buildEmpty('Aucune configuration de sécurité');
+        return ListView(
+          padding: const EdgeInsets.all(AHSpacing.md),
+          children: [
+            const Text('Sécurité', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AHColors.navy)),
+            const SizedBox(height: AHSpacing.sm),
+            ...settings.entries.map((e) => _SecurityTile(label: e.key, value: e.value.toString())),
+          ],
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator(color: AHColors.navy)),
+      error: (_, __) => _buildEmpty('Erreur de chargement'),
+    );
+  }
+}
+
+Widget _buildEmpty(String message) {
+  return Center(child: Column(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      Icon(Icons.settings, size: 48, color: AHColors.grey300),
+      const SizedBox(height: 8),
+      Text(message, style: const TextStyle(fontSize: 13, color: AHColors.grey500)),
+    ],
+  ));
+}
+
+class _SecurityTile extends StatelessWidget {
+  const _SecurityTile({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
+      child: Row(children: [
+        Icon(Icons.security, size: 16, color: AHColors.grey400),
+        const SizedBox(width: 8),
+        Expanded(child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)))),
+        Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: value.toLowerCase() == 'true' ? const Color(0xFF16A34A) : AHColors.grey500)),
+      ]),
+    );
+  }
 }
 
 StatusBadgeType _st(dynamic s) {

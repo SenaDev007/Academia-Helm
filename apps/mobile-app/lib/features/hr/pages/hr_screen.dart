@@ -161,25 +161,234 @@ class _LeaveContent extends ConsumerWidget {
   const _LeaveContent();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ModuleDataList(
-      itemsAsync: ref.watch(leavesProvider),
-      moduleName: 'Congés',
-      emptyTitle: 'Aucune demande de congé',
-      emptySubtitle: 'Appuyez sur + pour faire une demande',
-      onRetry: () => ref.invalidate(leavesProvider),
-      onAdd: () async {
-        final data = await showAddItemDialog(context, title: 'Demande de congé', fields: const [
-          AddFieldConfig(key: 'staff_name', label: 'Employé'),
-          AddFieldConfig(key: 'dates', label: 'Dates'),
-          AddFieldConfig(key: 'type', label: 'Type (CP, RTT...)'),
-        ]);
-        if (data != null) ref.read(hrMutationProvider.notifier).createLeave(data);
+    final leavesAsync = ref.watch(leavesProvider);
+    return leavesAsync.when(
+      data: (items) {
+        if (items.isEmpty) {
+          return _buildEmpty(ref, context);
+        }
+        return RefreshIndicator(
+          color: AHColors.navy,
+          onRefresh: () async => ref.invalidate(leavesProvider),
+          child: ListView.separated(
+            padding: const EdgeInsets.all(AHSpacing.md),
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 4),
+            itemBuilder: (context, index) {
+              final item = items[index];
+              return _LeaveCard(
+                item: item,
+                onApprove: () async {
+                  final id = (item['id'] ?? '').toString();
+                  if (id.isNotEmpty) {
+                    await ref.read(hrMutationProvider.notifier).approveLeave(id);
+                    ref.invalidate(leavesProvider);
+                  }
+                },
+                onReject: () async {
+                  final id = (item['id'] ?? '').toString();
+                  if (id.isEmpty) return;
+                  final comment = await _showRejectDialog(context);
+                  if (comment != null && comment.isNotEmpty) {
+                    await ref.read(hrMutationProvider.notifier).rejectLeave(id, comment);
+                    ref.invalidate(leavesProvider);
+                  }
+                },
+              );
+            },
+          ),
+        );
       },
-      itemBuilder: (item) => ListItemCard(
-        title: (item['staff_name'] as String?) ?? 'Demande de congé',
-        subtitle: (item['dates'] as String?) ?? '',
-        leadingIcon: Icons.event_busy,
-        badge: StatusBadge(label: (item['status'] as String?) ?? 'En attente', type: _st(item['status'])),
+      loading: () => const Center(child: CircularProgressIndicator(color: AHColors.navy)),
+      error: (_, __) => _buildError(ref, context),
+    );
+  }
+
+  Widget _buildEmpty(WidgetRef ref, BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.event_busy, size: 48, color: AHColors.grey300),
+          const SizedBox(height: 8),
+          const Text('Aucune demande de congé', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AHColors.grey600)),
+          const SizedBox(height: 8),
+          ElevatedButton.icon(
+            onPressed: () => _showAddDialog(context, ref),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Nouvelle demande'),
+            style: ElevatedButton.styleFrom(backgroundColor: AHColors.navy, foregroundColor: Colors.white),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildError(WidgetRef ref, BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.wifi_off, size: 48, color: AHColors.error),
+          const SizedBox(height: 8),
+          const Text('Erreur de chargement', style: TextStyle(fontSize: 14, color: AHColors.grey600)),
+          const SizedBox(height: 8),
+          ElevatedButton(
+            onPressed: () => ref.invalidate(leavesProvider),
+            style: ElevatedButton.styleFrom(backgroundColor: AHColors.navy, foregroundColor: Colors.white),
+            child: const Text('Réessayer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAddDialog(BuildContext context, WidgetRef ref) async {
+    final data = await showAddItemDialog(context, title: 'Demande de congé', fields: const [
+      AddFieldConfig(key: 'staff_name', label: 'Employé'),
+      AddFieldConfig(key: 'dates', label: 'Dates'),
+      AddFieldConfig(key: 'type', label: 'Type (CP, RTT...)'),
+    ]);
+    if (data != null) {
+      await ref.read(hrMutationProvider.notifier).createLeave(data);
+      ref.invalidate(leavesProvider);
+    }
+  }
+
+  Future<String?> _showRejectDialog(BuildContext context) async {
+    String comment = '';
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rejeter la demande', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AHColors.navy)),
+        content: TextField(
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Motif du rejet',
+            hintText: 'Expliquez la raison...',
+            isDense: true,
+            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          ),
+          maxLines: 3,
+          onChanged: (v) => comment = v,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, comment),
+            style: ElevatedButton.styleFrom(backgroundColor: AHColors.error, foregroundColor: Colors.white),
+            child: const Text('Rejeter'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LeaveCard extends StatelessWidget {
+  const _LeaveCard({required this.item, required this.onApprove, required this.onReject});
+  final Map<String, dynamic> item;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = (item['status'] as String?) ?? 'pending';
+    final isPending = status.toLowerCase().contains('pending') || status.toLowerCase().contains('attente');
+    final staffName = (item['staff_name'] as String?) ?? (item['employeeName'] as String?) ?? 'Employé';
+    final dates = (item['dates'] as String?) ?? (item['dateRange'] as String?) ?? '';
+    final type = (item['type'] as String?) ?? '';
+
+    final statusColor = isPending ? const Color(0xFFF59E0B) :
+        status.toLowerCase().contains('approved') || status.toLowerCase().contains('approuvé') ?
+        const Color(0xFF16A34A) : const Color(0xFFDC2626);
+    final statusLabel = isPending ? 'En attente' :
+        status.toLowerCase().contains('approved') || status.toLowerCase().contains('approuvé') ?
+        'Approuvé' : 'Rejeté';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.event_busy, size: 18, color: statusColor),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(staffName,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                child: Text(statusLabel, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: statusColor)),
+              ),
+            ],
+          ),
+          if (dates.isNotEmpty || type.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                if (dates.isNotEmpty) ...[
+                  Icon(Icons.calendar_today, size: 12, color: AHColors.grey400),
+                  const SizedBox(width: 2),
+                  Text(dates, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+                  const SizedBox(width: 8),
+                ],
+                if (type.isNotEmpty) ...[
+                  Icon(Icons.label, size: 12, color: AHColors.grey400),
+                  const SizedBox(width: 2),
+                  Text(type, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+                ],
+              ],
+            ),
+          ],
+          // Approve / Reject buttons (only for pending)
+          if (isPending) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 32,
+                    child: ElevatedButton.icon(
+                      onPressed: onApprove,
+                      icon: const Icon(Icons.check, size: 14),
+                      label: const Text('Approuver', style: TextStyle(fontSize: 11)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF16A34A), foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SizedBox(
+                    height: 32,
+                    child: OutlinedButton.icon(
+                      onPressed: onReject,
+                      icon: const Icon(Icons.close, size: 14),
+                      label: const Text('Rejeter', style: TextStyle(fontSize: 11)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFDC2626),
+                        side: const BorderSide(color: Color(0xFFDC2626)),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }

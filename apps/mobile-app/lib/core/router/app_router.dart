@@ -22,7 +22,7 @@ import '../../features/teacher/pages/teacher_dashboard_screen.dart';
 import '../../features/parent/pages/parent_dashboard_screen.dart';
 import '../../features/dashboard/pages/pilotage_dashboard_screen.dart';
 import '../../features/profile/pages/profile_screen.dart';
-import '../../features/students/pages/students_screen.dart';
+import '../../features/students/pages/students_module_screen.dart';
 import '../../features/finance/pages/finance_screen.dart';
 import '../../features/hr/pages/hr_screen.dart';
 import '../../features/pedagogy/pages/pedagogy_screen.dart';
@@ -342,7 +342,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/students',
             name: 'students',
-            builder: (context, state) => const StudentsScreen(),
+            builder: (context, state) => const StudentsModuleScreen(),
           ),
           GoRoute(
             path: '/students/:id',

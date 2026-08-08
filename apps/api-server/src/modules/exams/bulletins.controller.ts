@@ -74,10 +74,21 @@ export class BulletinsController {
     @TenantId() tenantId: string,
     @AcademicYearId() academicYearId: string,
     @UserId() userId: string,
-    @Body() body: { periodId: string; signature: string },
+    @Body() body: {
+      periodId: string;
+      signature: string;
+      evaluationTypeId?: string;
+      evaluationTypeName?: string;
+      evaluationTypeCode?: string;
+    },
   ) {
     return this.bulletinsService.directorSignAllBulletins(
       tenantId, academicYearId, body.periodId, classId, body.signature, userId,
+      {
+        evaluationTypeId: body.evaluationTypeId,
+        evaluationTypeName: body.evaluationTypeName,
+        evaluationTypeCode: body.evaluationTypeCode,
+      },
     );
   }
 
@@ -103,7 +114,10 @@ export class BulletinsController {
   /**
    * Étape 3 : L'enseignant signe TOUS les bulletins de sa classe
    * POST /institutional-exams/bulletins/class/:classId/teacher-sign
-   * Body: { periodId, signature (base64) }
+   * Body: { periodId, signature (base64), evaluationTypeId? }
+   *
+   * ⭐ Si evaluationTypeId est fourni, seuls les bulletins de ce type d'éval sont signés.
+   *    Sinon, tous les bulletins TEACHER_DISTRIBUTED de la classe sont signés (rétro-compat).
    */
   @Post('class/:classId/teacher-sign')
   @Permissions('exams.manage')
@@ -112,17 +126,20 @@ export class BulletinsController {
     @TenantId() tenantId: string,
     @AcademicYearId() academicYearId: string,
     @UserId() userId: string,
-    @Body() body: { periodId: string; signature: string },
+    @Body() body: { periodId: string; signature: string; evaluationTypeId?: string },
   ) {
     return this.bulletinsService.teacherSignAllBulletins(
       tenantId, academicYearId, body.periodId, classId, body.signature, userId,
+      body.evaluationTypeId,
     );
   }
 
   /**
    * Étape 4 : L'enseignant renvoie les bulletins au directeur
    * POST /institutional-exams/bulletins/class/:classId/teacher-return
-   * Body: { periodId }
+   * Body: { periodId, evaluationTypeId? }
+   *
+   * ⭐ Si evaluationTypeId est fourni, seuls les bulletins de ce type d'éval sont renvoyés.
    */
   @Post('class/:classId/teacher-return')
   @Permissions('exams.manage')
@@ -131,10 +148,11 @@ export class BulletinsController {
     @TenantId() tenantId: string,
     @AcademicYearId() academicYearId: string,
     @UserId() userId: string,
-    @Body() body: { periodId: string },
+    @Body() body: { periodId: string; evaluationTypeId?: string },
   ) {
     return this.bulletinsService.teacherReturnBulletins(
       tenantId, academicYearId, body.periodId, classId, userId,
+      body.evaluationTypeId,
     );
   }
 
@@ -405,6 +423,10 @@ export class BulletinsController {
         status: b.status,
         classId,
         className: classNameMap.get(classId) || '',
+        // ⭐ Infos du type d'évaluation (peuvent être null pour les anciens bulletins)
+        evaluationTypeId: (b as any).evaluationTypeId || null,
+        evaluationTypeName: (b as any).evaluationTypeName || null,
+        evaluationTypeCode: (b as any).evaluationTypeCode || null,
         directorSignedAt: b.directorSignedAt,
         distributedAt: b.distributedToTeacherAt,
         teacherSignedAt: b.teacherSignedAt,
@@ -413,19 +435,29 @@ export class BulletinsController {
       };
     }).filter(b => b.classId); // ne garder que ceux dont on a pu résoudre la classe
 
-    // ⭐ Build per-class summary
-    const classesMap = new Map<string, {
+    // ⭐ Build per-(class, evaluationType) summary — group by classId + evaluationTypeId
+    //    Chaque entrée = un type d'évaluation distinct pour une classe (ex: "EM1 - CI A", "EC - CI A")
+    const groupsMap = new Map<string, {
       classId: string;
       className: string;
+      evaluationTypeId: string | null;
+      evaluationTypeName: string;
+      evaluationTypeCode: string;
       total: number;
       counts: Record<string, number>;
     }>();
 
     for (const b of bulletinsWithClass) {
-      if (!classesMap.has(b.classId)) {
-        classesMap.set(b.classId, {
+      // Clé de groupe : classId + evaluationTypeId (ou 'NONE' si null)
+      const evalTypeIdKey = b.evaluationTypeId || 'NONE';
+      const groupKey = `${b.classId}|${evalTypeIdKey}`;
+      if (!groupsMap.has(groupKey)) {
+        groupsMap.set(groupKey, {
           classId: b.classId,
           className: b.className,
+          evaluationTypeId: b.evaluationTypeId,
+          evaluationTypeName: b.evaluationTypeName || 'Bulletin',
+          evaluationTypeCode: b.evaluationTypeCode || '',
           total: 0,
           counts: {
             DRAFT: 0, DIRECTOR_SIGNED: 0, TEACHER_DISTRIBUTED: 0,
@@ -433,14 +465,14 @@ export class BulletinsController {
           },
         });
       }
-      const c = classesMap.get(b.classId)!;
+      const c = groupsMap.get(groupKey)!;
       c.total += 1;
       if (c.counts[b.status] !== undefined) c.counts[b.status] += 1;
     }
 
-    // Build final classes list with currentStatus — ne garder que les classes
+    // Build final groups list with currentStatus — ne garder que les groupes
     // qui ont au moins un bulletin TEACHER_DISTRIBUTED ou TEACHER_SIGNED
-    const classes = Array.from(classesMap.values())
+    const classes = Array.from(groupsMap.values())
       .filter(c => c.counts.TEACHER_DISTRIBUTED > 0 || c.counts.TEACHER_SIGNED > 0)
       .map(c => {
         const currentStatus =
@@ -453,7 +485,12 @@ export class BulletinsController {
           'DRAFT';
         return { ...c, currentStatus };
       })
-      .sort((a, b) => a.className.localeCompare(b.className, 'fr'));
+      // ⭐ Tri : par classe puis par nom du type d'évaluation
+      .sort((a, b) => {
+        const cmp = a.className.localeCompare(b.className, 'fr');
+        if (cmp !== 0) return cmp;
+        return a.evaluationTypeName.localeCompare(b.evaluationTypeName, 'fr');
+      });
 
     return {
       bulletins: bulletinsWithClass,

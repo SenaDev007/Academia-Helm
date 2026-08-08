@@ -7968,6 +7968,12 @@ model ReportCard {
   defautsMajeurs           String?
   qualitesRemarquables     String?
   analyseRecommandations   String?
+  // ⭐ Type d'évaluation lié au bulletin (EM1, EM2, EC, EP, etc.)
+  //    Permet à un élève d'avoir plusieurs bulletins par période (un par type d'éval).
+  evaluationTypeId         String?
+  evaluationTypeName      String?
+  evaluationTypeCode      String?
+  evaluationType          EvaluationType? @relation("ReportCardEvaluationType", fields: [evaluationTypeId], references: [id], onDelete: SetNull)
   createdAt                DateTime         @default(now())
   updatedAt                DateTime         @updatedAt
   language                 String?
@@ -7983,6 +7989,7 @@ model ReportCard {
   @@index([studentId])
   @@index([status])
   @@index([quarterId])
+  @@index([evaluationTypeId])
   @@map("report_cards")
 }
 
@@ -15075,6 +15082,7 @@ model EvaluationType {
   updatedAt          DateTime     @updatedAt
   tenant             Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   evaluations        Evaluation[]
+  reportCards        ReportCard[] @relation("ReportCardEvaluationType")
 
   // Unique par (tenantId, code, schoolLevelId) — permet d'avoir "Devoir" pour
   // PRIMAIRE et SECONDAIRE sans conflit (mêmes codes, niveaux différents).

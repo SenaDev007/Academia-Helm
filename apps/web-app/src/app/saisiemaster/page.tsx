@@ -70,43 +70,47 @@ export default function SaisieMasterPage() {
       });
 
       // ⭐ Tenter la restauration backend en arrière-plan
-      //    Si le backend a des données, on les utilise (authoritative source)
-      //    Cela permet à l'utilisateur de retrouver ses données depuis n'importe
-      //    quel appareil dès qu'il se connecte.
+      //    Le backend Neon est TOUJOURS la source de vérité quand l'utilisateur
+      //    est authentifié. On ne compare PAS les timestamps — le backend a
+      //    peut-être des données d'un AUTRE appareil (ex: frère sur son PC)
+      //    qui sont plus anciennes mais que le localStorage local n'a pas.
+      //    Donc: si le backend a des données, on les utilise. Point.
       (async () => {
         try {
+          console.log("[saisiemaster] 🔍 Restoring from backend (Neon)...");
           const backendData = await restoreFromBackend();
           if (backendData && backendData.classes.length > 0) {
-            // Comparer les timestamps : on prend backend si plus récent que localStorage
-            const backendSavedAt = new Date(backendData.savedAt).getTime();
-            const localSavedAt = restoredLocal?.savedAt
-              ? new Date(restoredLocal.savedAt).getTime()
-              : 0;
-            if (backendSavedAt >= localSavedAt) {
-              // ⭐ Le backend a des données plus récentes (ou égales) → on remplace
-              useSaisieMasterStore.setState({
-                classes: backendData.classes,
-                activeClassIndex: Math.min(
-                  backendData.activeClassIndex,
-                  backendData.classes.length - 1,
-                ),
-                editorView: "notes",
-              });
-              // Mettre à jour aussi le localStorage pour les futures visites
-              try {
-                window.localStorage.setItem(
-                  "saisiemaster:autosave",
-                  JSON.stringify({
-                    classes: backendData.classes,
-                    activeClassIndex: backendData.activeClassIndex,
-                    savedAt: backendData.savedAt,
-                  }),
-                );
-              } catch {}
-            }
+            console.log(
+              `[saisiemaster] ✅ Backend returned ${backendData.classes.length} class(es):`,
+              backendData.classes.map(c => `${c.className} (${c.students?.length || 0} students)`),
+              `savedAt: ${backendData.savedAt}`,
+            );
+            // ⭐ TOUJOURS remplacer avec les données backend (source de vérité)
+            useSaisieMasterStore.setState({
+              classes: backendData.classes,
+              activeClassIndex: Math.min(
+                backendData.activeClassIndex,
+                backendData.classes.length - 1,
+              ),
+              editorView: "notes",
+            });
+            // Mettre à jour aussi le localStorage pour les futures visites
+            try {
+              window.localStorage.setItem(
+                "saisiemaster:autosave",
+                JSON.stringify({
+                  classes: backendData.classes,
+                  activeClassIndex: backendData.activeClassIndex,
+                  savedAt: backendData.savedAt,
+                }),
+              );
+            } catch {}
+            console.log("[saisiemaster] ✅ State replaced with backend data");
+          } else {
+            console.log("[saisiemaster] ℹ️ Backend returned no sessions — keeping local data");
           }
         } catch (e) {
-          console.warn("[saisiemaster] Backend restore failed at mount:", e);
+          console.warn("[saisiemaster] ❌ Backend restore failed at mount:", e);
         } finally {
           setBackendRestoreDone(true);
         }
@@ -151,12 +155,18 @@ export default function SaisieMasterPage() {
       });
     }
 
-    // ⭐ Tenter la restauration backend en arrière-plan — IMPORTANT
-    //    C'est ce qui permet de retrouver les données saisies sur un autre appareil
+    // ⭐ Tenter la restauration backend — TOUJOURS préférer le backend
+    //    (source de vérité Neon). Le localStorage local peut être vide ou
+    //    obsolète si l'utilisateur se connecte depuis un nouvel appareil.
     try {
+      console.log("[saisiemaster] 🔍 Restoring from backend after login...");
       const backendData = await restoreFromBackend();
       if (backendData && backendData.classes.length > 0) {
-        // Le backend a des données → on les utilise (authoritative source)
+        console.log(
+          `[saisiemaster] ✅ Backend returned ${backendData.classes.length} class(es) after login:`,
+          backendData.classes.map(c => `${c.className} (${c.students?.length || 0} students)`),
+          `savedAt: ${backendData.savedAt}`,
+        );
         useSaisieMasterStore.setState({
           classes: backendData.classes,
           activeClassIndex: Math.min(
@@ -166,7 +176,6 @@ export default function SaisieMasterPage() {
           view: "editor",
           editorView: "notes",
         });
-        // Sync localStorage pour les futures visites
         try {
           window.localStorage.setItem(
             "saisiemaster:autosave",
@@ -177,9 +186,12 @@ export default function SaisieMasterPage() {
             }),
           );
         } catch {}
+        console.log("[saisiemaster] ✅ State replaced with backend data after login");
+      } else {
+        console.log("[saisiemaster] ℹ️ Backend returned no sessions after login — starting fresh");
       }
     } catch (e) {
-      console.warn("[saisiemaster] Backend restore after login failed:", e);
+      console.warn("[saisiemaster] ❌ Backend restore after login failed:", e);
     }
   };
 

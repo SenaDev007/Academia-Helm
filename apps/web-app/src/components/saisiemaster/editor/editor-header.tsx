@@ -16,8 +16,11 @@ import {
   LogOut,
   CircleDot,
   ChevronRight,
+  RefreshCw,
 } from "lucide-react";
-import { useSaisieMasterStore } from "@/lib/saisiemaster/store";
+import { useState } from "react";
+import { useSaisieMasterStore, restoreFromBackend } from "@/lib/saisiemaster/store";
+import { toast } from "sonner";
 import type { ClassData } from "@/lib/saisiemaster/types";
 
 interface EditorHeaderProps {
@@ -39,12 +42,53 @@ export function EditorHeader({ onHome }: EditorHeaderProps) {
   const logout = useSaisieMasterStore((s) => s.logout);
   const setView = useSaisieMasterStore((s) => s.setView);
   const prospect = useSaisieMasterStore((s) => s.prospect);
+  const [syncing, setSyncing] = useState(false);
 
   const activeClass: ClassData | undefined = classes[activeClassIndex];
 
   const handleLogout = () => {
     logout();
     setView("landing");
+  };
+
+  // ⭐ Forcer la synchronisation depuis le backend Neon
+  //    Récupère TOUTES les sessions du prospect et remplace l'état local
+  const handleSyncFromBackend = async () => {
+    setSyncing(true);
+    try {
+      console.log("[saisiemaster] 🔄 Manual sync from backend triggered");
+      const backendData = await restoreFromBackend();
+      if (backendData && backendData.classes.length > 0) {
+        useSaisieMasterStore.setState({
+          classes: backendData.classes,
+          activeClassIndex: Math.min(
+            backendData.activeClassIndex,
+            backendData.classes.length - 1,
+          ),
+          editorView: "notes",
+        });
+        // Mettre à jour localStorage
+        try {
+          window.localStorage.setItem(
+            "saisiemaster:autosave",
+            JSON.stringify({
+              classes: backendData.classes,
+              activeClassIndex: backendData.activeClassIndex,
+              savedAt: backendData.savedAt,
+            }),
+          );
+        } catch {}
+        toast.success(
+          `Synchronisé : ${backendData.classes.length} classe(s) récupérée(s) depuis le backend`,
+        );
+      } else {
+        toast.info("Aucune donnée trouvée sur le backend");
+      }
+    } catch (e: any) {
+      toast.error("Erreur de synchronisation", { description: e.message });
+    } finally {
+      setSyncing(false);
+    }
   };
 
   // Nom du directeur = prénom + nom du prospect (s'il est connecté).
@@ -138,6 +182,22 @@ export function EditorHeader({ onHome }: EditorHeaderProps) {
                 <span>Directeur</span>
               </div>
             </div>
+
+            {/* ⭐ Bouton "Sync" — force la récupération depuis le backend Neon */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSyncFromBackend}
+              disabled={syncing}
+              aria-label="Synchroniser depuis le backend"
+              title="Récupérer les données depuis le backend Neon (utile si vous avez travaillé sur un autre appareil)"
+              className="h-9 px-3 text-muted-foreground hover:text-[#0D6EFD] shrink-0"
+            >
+              <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+              <span className="hidden lg:inline ml-1.5 text-xs font-semibold">
+                {syncing ? "Sync..." : "Sync"}
+              </span>
+            </Button>
 
             <Badge
               variant="outline"

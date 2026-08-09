@@ -638,7 +638,18 @@ export async function restoreFromBackend(): Promise<{
   try {
     // Dynamic import to avoid circular dependency
     const { getSessions } = await import("./api");
+    console.log("[saisiemaster] 📡 Calling getSessions()...");
     const sessions = await getSessions();
+    console.log(
+      `[saisiemaster] 📦 getSessions() returned ${sessions?.length || 0} session(s):`,
+      sessions?.map(s => ({
+        id: s.id?.substring(0, 8),
+        className: s.className,
+        academicYear: s.academicYear,
+        updatedAt: s.updatedAt,
+        studentCount: s.studentCount,
+      })),
+    );
     if (!sessions || sessions.length === 0) return null;
 
     // Convert each session back to ClassData
@@ -661,6 +672,32 @@ export async function restoreFromBackend(): Promise<{
 
     // Apply migration
     const migratedClasses = classes.map(migrateClassDataEvaluations);
+
+    // ⭐ Log détaillé des évaluations par classe (pour debug)
+    for (const cls of migratedClasses) {
+      const evalCounts: Record<string, number> = {};
+      if (cls.evaluations) {
+        for (const evalType of ["EF1", "ES1", "ES2", "ES3"] as const) {
+          const evalNotes = cls.evaluations[evalType] || {};
+          const studentCount = Object.keys(evalNotes).length;
+          if (studentCount > 0) {
+            // Compter le nombre total de notes dans ce type d'évaluation
+            let totalNotes = 0;
+            for (const studentId of Object.keys(evalNotes)) {
+              const studentNotes = evalNotes[studentId];
+              if (studentNotes && typeof studentNotes === "object") {
+                totalNotes += Object.keys(studentNotes).length;
+              }
+            }
+            evalCounts[evalType] = totalNotes;
+          }
+        }
+      }
+      console.log(
+        `[saisiemaster] 📊 Class "${cls.className}": ${cls.students?.length || 0} students, ${cls.subjects?.length || 0} subjects, evaluations:`,
+        evalCounts,
+      );
+    }
 
     return {
       classes: migratedClasses,

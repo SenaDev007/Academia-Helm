@@ -287,11 +287,20 @@ export async function getSessions(): Promise<ProspectSession[]> {
 export async function saveSession(
   payload: SaveSessionPayload,
 ): Promise<ProspectSession> {
-  return apiFetch<ProspectSession>("/api/saisiemaster/sessions", {
+  console.log(
+    "[saisiemaster] 💾 Saving session to backend:",
+    { className: payload.className, academicYear: payload.academicYear, studentCount: payload.studentCount, subjectCount: payload.subjectCount },
+  );
+  const result = await apiFetch<ProspectSession>("/api/saisiemaster/sessions", {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify(payload),
   });
+  console.log(
+    "[saisiemaster] ✅ Session saved — backend response:",
+    { id: result?.id?.substring(0, 8), className: result?.className, updatedAt: result?.updatedAt },
+  );
+  return result;
 }
 
 export async function deleteSession(sessionId: string): Promise<{ success: boolean; id: string }> {

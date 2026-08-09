@@ -507,6 +507,8 @@ const platformModule = ModuleConfig(
 // ─── All Modules List ───────────────────────────────────────────────────
 
 /// All module configurations in order (aligned with web PilotageSidebar).
+/// NOTE: Library, Transport, Infirmary, QHSE are NOT included here because
+/// they are commented out (hidden) in the web app's PilotageSidebar.tsx.
 final List<ModuleConfig> allModules = [
   dashboardModule,
   studentsModule,
@@ -519,10 +521,6 @@ final List<ModuleConfig> allModules = [
   canteenModule,
   educastModule,
   shopModule,
-  libraryModule,
-  transportModule,
-  infirmaryModule,
-  qhseModule,
   orionModule,
   settingsModule,
   profileModule,

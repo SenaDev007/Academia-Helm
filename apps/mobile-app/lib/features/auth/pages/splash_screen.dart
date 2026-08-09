@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -55,9 +57,31 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     );
     _logoController.forward();
 
-    // Auto-navigate after 2 seconds.
-    Future.delayed(const Duration(seconds: 2), _navigate);
+    // Wait for auth state to load, then navigate.
+    // Listen to the auth provider and navigate as soon as it's ready
+    // (or after a 3-second fallback timeout).
+    _waitForAuth();
   }
+
+  void _waitForAuth() {
+    int attempts = 0;
+    _authCheckTimer = Timer.periodic(const Duration(milliseconds: 300), (timer) {
+      attempts++;
+      final authValue = ref.read(authNotifierProvider);
+
+      // If auth state is loaded (has data or error), navigate.
+      if (authValue.hasValue || authValue.hasError) {
+        timer.cancel();
+        _navigate();
+      } else if (attempts > 10) {
+        // Fallback: after 3 seconds, navigate anyway.
+        timer.cancel();
+        _navigate();
+      }
+    });
+  }
+
+  Timer? _authCheckTimer;
 
   void _navigate() {
     if (!mounted) return;
@@ -76,6 +100,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
   @override
   void dispose() {
+    _authCheckTimer?.cancel();
     _haloController.dispose();
     _logoController.dispose();
     super.dispose();

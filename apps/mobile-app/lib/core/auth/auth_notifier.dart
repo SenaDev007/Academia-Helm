@@ -44,6 +44,12 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 
   /// Attempts to restore a previously authenticated session by checking
   /// for stored tokens and fetching the current user profile.
+  ///
+  /// This method is **resilient to network failures** — if the /auth/me
+  /// call fails due to a network error (not a 401), the session is
+  /// restored from cached user data instead of being cleared. This ensures
+  /// users don't have to re-login every time they open the app, even when
+  /// the network is unreliable (common in Bénin with Cloudflare blocking).
   Future<AuthState> _restoreSession() async {
     final bool hasTokens = await TokenStorage.hasTokens();
     if (!hasTokens) {
@@ -56,6 +62,13 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       // Try refreshing the token.
       final bool refreshed = await _refreshToken();
       if (!refreshed) {
+        // If refresh failed due to network error (not 401), restore from
+        // cached data instead of clearing the session.
+        final cachedState = await _restoreFromCache();
+        if (cachedState != null) {
+          debugPrint('[Auth] Token refresh failed — using cached session');
+          return cachedState;
+        }
         await TokenStorage.clearTokens();
         return const AuthState.unauthenticated();
       }
@@ -70,6 +83,9 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       success: (Map<String, dynamic> data) {
         final AuthUser user = AuthUser.fromJson(data);
         final String? accessToken = _cachedAccessToken;
+
+        // Persist user data for future cache restoration.
+        TokenStorage.persistSession(user: data);
 
         // Restore tenant selection from secure storage.
         final Map<String, dynamic>? sessionUser =
@@ -102,12 +118,75 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           selectedTenantId: selectedTenantId,
         );
       },
-      failure: (_) {
+      failure: (error) {
+        // If the error is a 401 Unauthorized, the token is truly invalid.
+        // Clear tokens and require re-login.
+        if (error.statusCode == 401) {
+          debugPrint('[Auth] /auth/me returned 401 — clearing session');
+          TokenStorage.clearTokens();
+          return const AuthState.unauthenticated();
+        }
+        // For all other errors (network timeout, Cloudflare block, 500,
+        // etc.), restore from cached data instead of forcing re-login.
+        debugPrint('[Auth] /auth/me failed (${error.type}) — using cached session');
+        final cachedState = await _restoreFromCache();
+        if (cachedState != null) {
+          return cachedState;
+        }
+        // No cached data available — must re-login.
         TokenStorage.clearTokens();
         return const AuthState.unauthenticated();
       },
       loading: () => const AuthState.loading(),
     );
+  }
+
+  /// Restores the auth state from cached user/tenant data in secure storage.
+  /// Returns null if no cached data is available.
+  Future<AuthState?> _restoreFromCache() async {
+    final Map<String, dynamic>? sessionUser =
+        TokenStorage.getSessionUserSync();
+    final Map<String, dynamic>? sessionTenant =
+        TokenStorage.getSessionTenantSync();
+
+    // Read the access token from storage (not _cachedAccessToken which may
+    // be null at app start before login).
+    final String? accessToken = await TokenStorage.getAccessToken();
+
+    if (sessionUser == null || accessToken == null || accessToken.isEmpty) {
+      return null;
+    }
+
+    try {
+      final AuthUser user = AuthUser.fromJson(sessionUser);
+      String? selectedTenantId;
+      List<TenantBasic> availableTenants = [];
+
+      if (sessionTenant != null) {
+        selectedTenantId = sessionTenant['id'] as String?;
+      }
+
+      final dynamic tenantsData = sessionUser['availableTenants'];
+      if (tenantsData is List) {
+        availableTenants = tenantsData
+            .cast<Map<String, dynamic>>()
+            .map(TenantBasic.fromJson)
+            .toList();
+      }
+
+      // Cache the access token for subsequent use.
+      _cachedAccessToken = accessToken;
+
+      return AuthState.authenticated(
+        user,
+        accessToken,
+        availableTenants: availableTenants,
+        selectedTenantId: selectedTenantId,
+      );
+    } catch (e) {
+      debugPrint('[Auth] Failed to restore from cache: $e');
+      return null;
+    }
   }
 
   // ── Login ─────────────────────────────────────────────────────────────

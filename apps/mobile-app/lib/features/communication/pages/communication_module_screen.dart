@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/widgets/ah_app_bar.dart';
+import '../../../core/widgets/dynamic_form_dialog.dart';
 import '../../../core/widgets/module_data_tab.dart';
 
 /// Communication module — 15 sub-tabs, ALL connected to real API endpoints.
@@ -87,6 +88,12 @@ class _CommunicationModuleScreenState
                   tableColumns: const ['recipient', 'channel', 'createdAt', 'status'],
                   icon: Icons.mail,
                   createLabel: 'Nouveau message',
+                  createFields: const [
+                    FormFieldDef(key: 'subject', label: 'Sujet', required: true),
+                    FormFieldDef(key: 'body', label: 'Message', type: FieldType.textarea, maxLines: 5, required: true),
+                    FormFieldDef(key: 'recipient', label: 'Destinataire', required: true, hint: 'Ex: parent@school.com'),
+                    FormFieldDef(key: 'channel', label: 'Canal', type: FieldType.dropdown, options: ['EMAIL', 'SMS', 'WHATSAPP', 'IN_APP'], required: true),
+                  ],
                   statusFilters: const [
                     StatusFilter(id: 'ALL', label: 'Tous'),
                     StatusFilter(id: 'SENT', label: 'Envoyés'),
@@ -106,6 +113,12 @@ class _CommunicationModuleScreenState
                   tableColumns: const ['audience', 'publishedAt', 'status'],
                   icon: Icons.campaign,
                   createLabel: 'Nouvelle annonce',
+                  createFields: const [
+                    FormFieldDef(key: 'title', label: 'Titre', required: true),
+                    FormFieldDef(key: 'body', label: 'Contenu', type: FieldType.textarea, maxLines: 5, required: true),
+                    FormFieldDef(key: 'audience', label: 'Audience', type: FieldType.dropdown, options: ['TOUS', 'ELEVES', 'PARENTS', 'ENSEIGNANTS', 'STAFF'], required: true),
+                    FormFieldDef(key: 'priority', label: 'Priorité', type: FieldType.dropdown, options: ['normal', 'haute', 'urgente']),
+                  ],
                   statusFilters: const [
                     StatusFilter(id: 'ALL', label: 'Toutes'),
                     StatusFilter(id: 'DRAFT', label: 'Brouillons'),

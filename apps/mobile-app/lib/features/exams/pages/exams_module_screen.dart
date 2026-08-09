@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/widgets/ah_app_bar.dart';
+import '../../../core/widgets/dynamic_form_dialog.dart';
 import '../../../core/widgets/module_data_tab.dart';
 
 /// Exams module — 11 sub-tabs, ALL connected to real API endpoints with
@@ -81,6 +82,15 @@ class _ExamsModuleScreenState extends ConsumerState<ExamsModuleScreen>
                   tableColumns: const ['className', 'evaluationType', 'term', 'status'],
                   icon: Icons.assignment,
                   createLabel: 'Nouvelle évaluation',
+                  createFields: const [
+                    FormFieldDef(key: 'title', label: 'Titre', required: true, hint: 'Ex: Composition Mathématiques T1'),
+                    FormFieldDef(key: 'evaluationType', label: 'Type', type: FieldType.dropdown, options: ['COMPOSITION', 'DEVOIR', 'INTERROGATION', 'PROJET'], required: true),
+                    FormFieldDef(key: 'term', label: 'Trimestre', type: FieldType.dropdown, options: ['T1', 'T2', 'T3'], required: true),
+                    FormFieldDef(key: 'className', label: 'Classe', hint: 'Ex: 6ème A'),
+                    FormFieldDef(key: 'maxScore', label: 'Note maximale', type: FieldType.number, initialValue: 20),
+                    FormFieldDef(key: 'coefficient', label: 'Coefficient', type: FieldType.number, initialValue: 1),
+                    FormFieldDef(key: 'evaluationDate', label: 'Date', type: FieldType.date),
+                  ],
                   statusFilters: const [
                     StatusFilter(id: 'ALL', label: 'Toutes'),
                     StatusFilter(id: 'DRAFT', label: 'Brouillons'),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/widgets/ah_app_bar.dart';
+import '../../../core/widgets/dynamic_form_dialog.dart';
 import '../../../core/widgets/module_data_tab.dart';
 
 /// HR module — 18 sub-tabs, ALL connected to real API endpoints with
@@ -146,6 +147,15 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                   tableColumns: const ['lastName', 'role', 'email', 'phone', 'status'],
                   icon: Icons.people,
                   createLabel: 'Nouveau personnel',
+                  createFields: const [
+                    FormFieldDef(key: 'firstName', label: 'Prénom', required: true),
+                    FormFieldDef(key: 'lastName', label: 'Nom', required: true),
+                    FormFieldDef(key: 'email', label: 'Email', type: FieldType.email, required: true),
+                    FormFieldDef(key: 'phone', label: 'Téléphone', type: FieldType.phone),
+                    FormFieldDef(key: 'role', label: 'Rôle', type: FieldType.dropdown, options: ['ENSEIGNANT', 'CENSEUR', 'SURVEILLANT', 'SECRETAIRE', 'COMPTABLE', 'DIRECTEUR', 'AUTRE']),
+                    FormFieldDef(key: 'matricule', label: 'Matricule'),
+                    FormFieldDef(key: 'hireDate', label: 'Date d\'embauche', type: FieldType.date),
+                  ],
                   statusFilters: const [
                     StatusFilter(id: 'ALL', label: 'Tous'),
                     StatusFilter(id: 'ACTIVE', label: 'Actifs'),

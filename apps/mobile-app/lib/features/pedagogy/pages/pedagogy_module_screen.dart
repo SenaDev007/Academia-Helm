@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/widgets/ah_app_bar.dart';
+import '../../../core/widgets/dynamic_form_dialog.dart';
 import '../../../core/widgets/module_data_tab.dart';
 
 /// Pedagogy module — 11 sub-tabs, ALL connected to real API endpoints.
@@ -94,6 +95,14 @@ class _PedagogyModuleScreenState extends ConsumerState<PedagogyModuleScreen>
                   tableColumns: const ['code', 'coefficient', 'category'],
                   icon: Icons.book,
                   createLabel: 'Nouvelle matière',
+                  createFields: const [
+                    FormFieldDef(key: 'name', label: 'Nom', required: true, hint: 'Ex: Mathématiques'),
+                    FormFieldDef(key: 'code', label: 'Code', required: true, hint: 'Ex: MATH'),
+                    FormFieldDef(key: 'coefficient', label: 'Coefficient', type: FieldType.number, initialValue: 1),
+                    FormFieldDef(key: 'category', label: 'Catégorie', type: FieldType.dropdown, options: ['SCIENTIFIQUE', 'LITTERAIRE', 'TECHNIQUE', 'ARTISTIQUE', 'SPORTIVE', 'AUTRE']),
+                    FormFieldDef(key: 'weeklyHours', label: 'Heures/semaine', type: FieldType.number, initialValue: 2),
+                    FormFieldDef(key: 'language', label: 'Langue', type: FieldType.dropdown, options: ['FR', 'EN', 'BILINGUE']),
+                  ],
                   rowActions: const [
                     RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
                     RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),

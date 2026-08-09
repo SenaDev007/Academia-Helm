@@ -593,7 +593,10 @@ export class PedagogicalSpaceService {
     classId: string,
     date: string, // YYYY-MM-DD
   ) {
-    const dateObj = new Date(date);
+    // ⭐ FIX : utiliser midi (12:00) pour éviter les soucis de timezone
+    //    new Date("2026-08-10") = minuit UTC → peut décaler d'un jour en local
+    //    new Date("2026-08-10T12:00:00") = midi local → stable
+    const dateObj = new Date(date + 'T12:00:00');
 
     // ⭐ TOUJOURS charger tous les élèves inscrits, puis merger avec les records existants.
     // Avant : si des records existaient, on ne renvoyait QUE les élèves enregistrés
@@ -675,7 +678,8 @@ export class PedagogicalSpaceService {
     }[],
     recordedBy: string,
   ) {
-    const dateObj = new Date(date);
+    // ⭐ FIX : utiliser midi (12:00) pour éviter les soucis de timezone
+    const dateObj = new Date(date + 'T12:00:00');
     const results = [];
 
     // ⭐ Si schoolLevelId est vide, on le résout depuis la classe.

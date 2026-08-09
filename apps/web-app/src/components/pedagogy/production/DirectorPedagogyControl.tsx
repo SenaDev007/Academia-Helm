@@ -53,8 +53,7 @@ interface DirectorPedagogyControlProps {
 
 const TABS = [
   { id: "dashboard", label: "Tableau de bord", icon: AlertTriangle },
-  { id: "cahier-journal", label: "Cahiers Journal", icon: FileSpreadsheet },
-  { id: "fiches", label: "Fiches Pédagogiques", icon: FileText },
+  { id: "cahier-journal", label: "Cahiers Journal & Fiches", icon: FileSpreadsheet },
   { id: "registres", label: "Registres d'Appel", icon: ClipboardList },
   { id: "evaluations", label: "Évaluations Mensuelles", icon: BookOpen },
   { id: "cahier-textes", label: "Cahiers de Test", icon: Award },
@@ -129,9 +128,6 @@ export function DirectorPedagogyControl({ tenantId, academicYearId, userId }: Di
         )}
         {tab === "cahier-journal" && (
           <PendingCahierJournalsTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
-        )}
-        {tab === "fiches" && (
-          <PendingFichesTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
         )}
         {tab === "registres" && (
           <PendingRegistersTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />

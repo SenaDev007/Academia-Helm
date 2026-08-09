@@ -287,10 +287,18 @@ function BarChartCard({ title, data, icon: Icon, accentColor }: {
                     background: d.color || 'linear-gradient(to right, #1A2BA6, #3B4FD4)',
                   }}
                 />
-                {/* ⭐ Texte en blanc pour être lisible sur fond navy */}
-                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-white drop-shadow-sm">
-                  {formatNumber(d.value)}
-                </span>
+                {/* ⭐ Texte adaptatif : blanc si sur la barre colorée, sombre si sur le gris */}
+                {(() => {
+                  const barWidthPercent = (d.value / maxValue) * 100;
+                  const isOnBar = barWidthPercent > 25; // la barre occupe +25% → le texte est sur la barre
+                  return (
+                    <span
+                      className={`absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold ${isOnBar ? 'text-white drop-shadow-sm' : 'text-slate-700'}`}
+                    >
+                      {formatNumber(d.value)}
+                    </span>
+                  );
+                })()}
               </div>
             </div>
           ))}
@@ -598,16 +606,24 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
   // ─── Préparation des données pour les graphiques ───
 
   // Effectifs par classe (barres)
+  // ⭐ Afficher jusqu'à 10 classes (au lieu de 6) + bouton "Voir tout"
+  const [showAllClasses, setShowAllClasses] = useState(false);
   const enrollmentByClass: BarChartDataPoint[] = useMemo(() => {
     const byClass = studentsStats?.byClass || consolidated?.enrollment?.byLevel || [];
     if (!Array.isArray(byClass)) return [];
-    return byClass.slice(0, 6).map((item: any) => ({
+    const limit = showAllClasses ? 50 : 6;
+    return byClass.slice(0, limit).map((item: any) => ({
       label: item.className || item.name || item.level || item.label || '—',
       value: item.count || item.total || item.value || 0,
     }));
-  }, [studentsStats, consolidated]);
+  }, [studentsStats, consolidated, showAllClasses]);
 
-  // Répartition par sexe (donut)
+  // Répartition par sexe par niveau scolaire (tableau structuré)
+  const genderByLevel: Array<{ level: string; boys: number; girls: number; total: number }> = useMemo(() => {
+    return studentsStats?.byGenderByLevel || [];
+  }, [studentsStats]);
+
+  // Répartition par sexe globale (donut — fallback)
   const genderDistribution: DonutDataPoint[] = useMemo(() => {
     const byGender = studentsStats?.byGender || consolidated?.enrollment?.byGender;
     if (byGender && Array.isArray(byGender) && byGender.length > 0) {
@@ -617,7 +633,6 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
         color: (item.label || item.gender || '').toLowerCase().includes('f') ? '#EC4899' : '#3B82F6',
       }));
     }
-    // Fallback : si on a total et répartition approximative
     const total = consolidated?.enrollment?.total || 0;
     if (total > 0) {
       return [
@@ -766,7 +781,7 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
 
       {/* ── Section Graphiques ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Effectifs par classe (barres) */}
+        {/* Effectifs par classe (barres) + bouton "Voir tout" */}
         <div className="lg:col-span-2">
           <BarChartCard
             title="Effectifs par classe"
@@ -774,14 +789,72 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
             icon={Users}
             accentColor="text-blue-600"
           />
+          {/* ⭐ Bouton "Voir tout" pour afficher toutes les classes */}
+          {(studentsStats?.byClass?.length || 0) > 6 && (
+            <button
+              onClick={() => setShowAllClasses(prev => !prev)}
+              className="mt-2 w-full flex items-center justify-center gap-1 py-2 text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100"
+            >
+              {showAllClasses ? 'Voir moins' : `Voir tout (${studentsStats?.byClass?.length || 0} classes)`}
+            </button>
+          )}
         </div>
-        {/* Répartition par sexe (donut) */}
-        <DonutChartCard
-          title="Répartition par sexe"
-          data={genderDistribution}
-          icon={Users}
-          accentColor="text-pink-600"
-        />
+        {/* ⭐ Répartition par sexe PAR NIVEAU SCOLAIRE (tableau structuré) */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Users className="h-4 w-4 text-pink-600" />
+            <h3 className="text-sm font-bold text-slate-800">Répartition par sexe</h3>
+          </div>
+          {genderByLevel.length > 0 ? (
+            <div className="space-y-2">
+              {genderByLevel.map((lvl) => (
+                <div key={lvl.level} className="border border-slate-100 rounded-lg p-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-bold text-slate-700">{lvl.level}</span>
+                    <span className="text-[10px] text-slate-400">{lvl.total} élèves</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {/* Barre Garçons */}
+                    <div
+                      className="h-5 rounded-l flex items-center justify-center text-[9px] font-bold text-white"
+                      style={{ width: `${lvl.total > 0 ? (lvl.boys / lvl.total * 100) : 0}%`, backgroundColor: '#3B82F6', minWidth: lvl.boys > 0 ? '24px' : '0' }}
+                    >
+                      {lvl.boys > 0 ? `${lvl.boys}G` : ''}
+                    </div>
+                    {/* Barre Filles */}
+                    <div
+                      className="h-5 rounded-r flex items-center justify-center text-[9px] font-bold text-white"
+                      style={{ width: `${lvl.total > 0 ? (lvl.girls / lvl.total * 100) : 0}%`, backgroundColor: '#EC4899', minWidth: lvl.girls > 0 ? '24px' : '0' }}
+                    >
+                      {lvl.girls > 0 ? `${lvl.girls}F` : ''}
+                    </div>
+                  </div>
+                  <div className="flex justify-between mt-0.5 text-[9px] text-slate-400">
+                    <span>G: {lvl.boys}</span>
+                    <span>F: {lvl.girls}</span>
+                  </div>
+                </div>
+              ))}
+              {/* Légende */}
+              <div className="flex items-center gap-3 pt-1 border-t border-slate-100">
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 rounded bg-blue-500" />
+                  <span className="text-[9px] text-slate-500">Garçons</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-3 h-3 rounded bg-pink-500" />
+                  <span className="text-[9px] text-slate-500">Filles</span>
+                </div>
+              </div>
+            </div>
+          ) : genderDistribution.length > 0 ? (
+            <div className="text-center py-4 text-xs text-slate-400">
+              Données globales : {genderDistribution.map(g => `${g.label}: ${g.value}`).join(' · ')}
+            </div>
+          ) : (
+            <div className="text-center py-4 text-xs text-slate-400">Aucune donnée disponible</div>
+          )}
+        </div>
       </div>
 
       {/* ── Évolution des moyennes + Alertes ORION ── */}

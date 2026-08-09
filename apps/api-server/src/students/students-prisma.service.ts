@@ -486,6 +486,41 @@ export class StudentsPrismaService {
       return { label, value: g._count, count: g._count, gender: g.gender };
     });
 
+    // ⭐ byGenderByLevel : répartition par sexe PAR NIVEAU SCOLAIRE
+    //    [{ level: 'Maternelle', boys: N, girls: N, total: N }, ...]
+    let byGenderByLevel: Array<{ level: string; boys: number; girls: number; total: number }> = [];
+    try {
+      const enrollmentsWithLevel = await this.prisma.studentEnrollment.findMany({
+        where: {
+          tenantId,
+          academicYearId,
+          status: { in: ['ACTIVE', 'VALIDATED', 'ADMITTED', 'ENROLLED', 'PRE_REGISTERED', 'RE_ENROLLED'] },
+        },
+        select: {
+          student: { select: { gender: true } },
+          schoolLevel: { select: { name: true, code: true } },
+        },
+      });
+
+      // Grouper par niveau scolaire
+      const levelMap = new Map<string, { boys: number; girls: number; total: number }>();
+      for (const e of enrollmentsWithLevel) {
+        const levelName = e.schoolLevel?.name || 'Non spécifié';
+        const levelData = levelMap.get(levelName) || { boys: 0, girls: 0, total: 0 };
+        const gender = (e.student?.gender || '').toUpperCase();
+        if (gender === 'M' || gender === 'MALE' || gender === 'MASCULIN') levelData.boys++;
+        else if (gender === 'F' || gender === 'FEMALE' || gender === 'FEMININ' || gender === 'FÉMININ') levelData.girls++;
+        levelData.total++;
+        levelMap.set(levelName, levelData);
+      }
+
+      byGenderByLevel = Array.from(levelMap.entries())
+        .map(([level, data]) => ({ level, ...data }))
+        .sort((a, b) => b.total - a.total);
+    } catch (e) {
+      // Non-blocking
+    }
+
     // ⭐ byClass : répartition des élèves par classe (via student_enrollments)
     //    Le frontend Dashboard en a besoin pour le graphique "Effectifs par classe"
     let byClass: Array<{ className: string; count: number }> = [];
@@ -545,8 +580,9 @@ export class StudentsPrismaService {
       admissionsPending,   // demandes d'admission en attente
       admissionsAccepted,  // demandes d'admission acceptées (non converties)
       admissionsRejected,  // demandes d'admission refusées
-      byGender,   // ⭐ format UI: [{ label, value, count, gender }]
-      byClass,    // ⭐ nouveau: [{ className, count }]
+      byGender,        // ⭐ format UI: [{ label, value, count, gender }]
+      byGenderByLevel, // ⭐ format UI: [{ level, boys, girls, total }]
+      byClass,         // ⭐ nouveau: [{ className, count }]
       byStatus,
     };
   }

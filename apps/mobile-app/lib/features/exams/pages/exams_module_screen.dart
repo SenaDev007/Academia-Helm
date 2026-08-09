@@ -297,12 +297,4 @@ class _ExamsModuleScreenState extends ConsumerState<ExamsModuleScreen>
     );
   }
 
-  void _actionStub(BuildContext context, String actionId) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Action "$actionId" — en cours d\'implémentation'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
 }

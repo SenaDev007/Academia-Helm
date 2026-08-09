@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
 import '../providers/parent_provider.dart';
+import '../services/parent_service.dart';
 
 /// Messages screen — mirrors the web's /app/parent/messages.
 ///

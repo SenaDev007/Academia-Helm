@@ -82,10 +82,10 @@ class ChildAccount {
   factory ChildAccount.fromJson(Map<String, dynamic> json) {
     return ChildAccount(
       id: _str(json, ['id', 'accountId']),
-      balance: _dbl(json, ['balance', 'balanceDue']),
-      totalDue: _dbl(json, ['totalDue', 'total_due']),
-      totalPaid: _dbl(json, ['totalPaid', 'total_paid']),
-      arrearsAmount: _dbl(json, ['arrearsAmount', 'arrears']),
+      balance: _dbl(json, ['balance', 'balanceDue']) ?? 0,
+      totalDue: _dbl(json, ['totalDue', 'total_due']) ?? 0,
+      totalPaid: _dbl(json, ['totalPaid', 'total_paid']) ?? 0,
+      arrearsAmount: _dbl(json, ['arrearsAmount', 'arrears']) ?? 0,
     );
   }
 }
@@ -221,7 +221,7 @@ class AttendanceRecord {
   final DateTime date;
   final String status; // PRESENT, ABSENT, ABSENT_HALF, LATE
   final String morningStatus;
-  final String afternoonsStatus;
+  final String afternoonStatus;
   final String detail;
 
   factory AttendanceRecord.fromJson(Map<String, dynamic> json) {

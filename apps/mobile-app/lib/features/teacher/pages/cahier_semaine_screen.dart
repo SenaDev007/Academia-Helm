@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
 import '../providers/phase3_provider.dart';
+import '../services/pedagogy_space_service.dart';
 
 /// Cahier de Semaine — mirrors the web's CahierSemaineTab (1213 lines).
 ///

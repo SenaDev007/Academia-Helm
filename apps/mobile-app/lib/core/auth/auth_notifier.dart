@@ -79,66 +79,71 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     final ApiResult<Map<String, dynamic>> result =
         await apiClient.getRaw(ApiConfig.meEndpoint);
 
-    return result.when(
-      success: (Map<String, dynamic> data) {
-        final AuthUser user = AuthUser.fromJson(data);
-        final String? accessToken = _cachedAccessToken;
+    // Use explicit type checks instead of result.when() because the
+    // failure callback needs to be async (await _restoreFromCache()).
+    if (result is ApiSuccess<Map<String, dynamic>>) {
+      final Map<String, dynamic> data = result.data;
+      final AuthUser user = AuthUser.fromJson(data);
+      final String? accessToken = _cachedAccessToken;
 
-        // Persist user data for future cache restoration.
-        TokenStorage.persistSession(user: data);
+      // Persist user data for future cache restoration.
+      TokenStorage.persistSession(user: data);
 
-        // Restore tenant selection from secure storage.
-        final Map<String, dynamic>? sessionUser =
-            TokenStorage.getSessionUserSync();
-        final Map<String, dynamic>? sessionTenant =
-            TokenStorage.getSessionTenantSync();
+      // Restore tenant selection from secure storage.
+      final Map<String, dynamic>? sessionUser =
+          TokenStorage.getSessionUserSync();
+      final Map<String, dynamic>? sessionTenant =
+          TokenStorage.getSessionTenantSync();
 
-        String? selectedTenantId;
-        List<TenantBasic> availableTenants = [];
+      String? selectedTenantId;
+      List<TenantBasic> availableTenants = [];
 
-        if (sessionTenant != null) {
-          selectedTenantId = sessionTenant['id'] as String?;
+      if (sessionTenant != null) {
+        selectedTenantId = sessionTenant['id'] as String?;
+      }
+
+      // Restore available tenants from session user data if present.
+      if (sessionUser != null) {
+        final dynamic tenantsData = sessionUser['availableTenants'];
+        if (tenantsData is List) {
+          availableTenants = tenantsData
+              .cast<Map<String, dynamic>>()
+              .map(TenantBasic.fromJson)
+              .toList();
         }
+      }
 
-        // Restore available tenants from session user data if present.
-        if (sessionUser != null) {
-          final dynamic tenantsData = sessionUser['availableTenants'];
-          if (tenantsData is List) {
-            availableTenants = tenantsData
-                .cast<Map<String, dynamic>>()
-                .map(TenantBasic.fromJson)
-                .toList();
-          }
-        }
+      return AuthState.authenticated(
+        user,
+        accessToken ?? '',
+        availableTenants: availableTenants,
+        selectedTenantId: selectedTenantId,
+      );
+    }
 
-        return AuthState.authenticated(
-          user,
-          accessToken ?? '',
-          availableTenants: availableTenants,
-          selectedTenantId: selectedTenantId,
-        );
-      },
-      failure: (error) {
-        // If the error is a 401 Unauthorized, the token is truly invalid.
-        // Clear tokens and require re-login.
-        if (error.statusCode == 401) {
-          debugPrint('[Auth] /auth/me returned 401 — clearing session');
-          TokenStorage.clearTokens();
-          return const AuthState.unauthenticated();
-        }
-        // For all other errors (network timeout, Cloudflare block, 500,
-        // etc.), restore from cached data instead of forcing re-login.
-        debugPrint('[Auth] /auth/me failed (${error.type}) — using cached session');
-        final cachedState = await _restoreFromCache();
-        if (cachedState != null) {
-          return cachedState;
-        }
-        // No cached data available — must re-login.
+    if (result is ApiFailure<Map<String, dynamic>>) {
+      final error = result.error;
+      // If the error is a 401 Unauthorized, the token is truly invalid.
+      // Clear tokens and require re-login.
+      if (error.statusCode == 401) {
+        debugPrint('[Auth] /auth/me returned 401 — clearing session');
         TokenStorage.clearTokens();
         return const AuthState.unauthenticated();
-      },
-      loading: () => const AuthState.loading(),
-    );
+      }
+      // For all other errors (network timeout, Cloudflare block, 500,
+      // etc.), restore from cached data instead of forcing re-login.
+      debugPrint('[Auth] /auth/me failed (${error.type}) — using cached session');
+      final cachedState = await _restoreFromCache();
+      if (cachedState != null) {
+        return cachedState;
+      }
+      // No cached data available — must re-login.
+      TokenStorage.clearTokens();
+      return const AuthState.unauthenticated();
+    }
+
+    // Loading state — shouldn't happen after await, but handle gracefully.
+    return const AuthState.loading();
   }
 
   /// Restores the auth state from cached user/tenant data in secure storage.

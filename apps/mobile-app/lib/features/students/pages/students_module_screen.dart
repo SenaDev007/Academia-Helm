@@ -417,7 +417,6 @@ class _AdmissionsTab extends ConsumerWidget {
         StatusFilter(id: 'REJECTED', label: 'Refusés', count: counts['REJECTED']),
       ],
       icon: Icons.person_add,
-      createLabel: 'Nouveau Dossier',
       rowActions: [
         const RowAction(
             id: 'view',

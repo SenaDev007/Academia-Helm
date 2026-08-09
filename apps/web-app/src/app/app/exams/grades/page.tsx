@@ -291,6 +291,7 @@ export default function GradesPage() {
         isSecondaire={isSecondaire}
         scopedSubModules={scopedSubModules}
         onBack={() => setSelectedGroup(null)}
+        language={scopeLang}
       />
     );
   }

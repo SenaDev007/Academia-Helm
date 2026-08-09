@@ -32,6 +32,9 @@ import { UnlockRequestModal } from '@/components/exams/UnlockRequestModal';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import {
+  getLabels, getMaxScoreForType, translatePeriodName,
+} from '@/lib/exam-anglophone-config';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -181,6 +184,7 @@ export function GradingSheet({
   isSecondaire,
   scopedSubModules,
   onBack,
+  language,
 }: {
   group: GroupedEvaluation;
   isMaternelle: boolean;
@@ -188,7 +192,13 @@ export function GradingSheet({
   isSecondaire: boolean;
   scopedSubModules: any;
   onBack: () => void;
+  language?: 'FR' | 'EN';
 }) {
+  const isEN = language === 'EN';
+  const labels = getLabels(language);
+  // ⭐ Déterminer le barème maximal selon le type d'évaluation (anglophone)
+  const evalTypeCode = group.evaluationTypeCode || '';
+  const maxScore = isEN ? getMaxScoreForType(evalTypeCode, language) : 20;
   const [rows, setRows] = useState<GradeRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -483,10 +493,10 @@ export function GradingSheet({
             {/* ⭐ Titre de la fiche à l'intérieur de l'onglet */}
             <div className="bg-white border-2 border-slate-800 rounded-xl p-4 text-center">
               <h2 className="text-lg font-bold text-slate-900">
-                FICHE DE SAISIE DES NOTES — {group.evaluationTypeName}
+                {isEN ? 'GRADING SHEET' : 'FICHE DE SAISIE DES NOTES'} — {group.evaluationTypeName}
               </h2>
               <div className="text-sm text-slate-600 mt-1">
-                Classe : <strong>{group.className}</strong> • {group.periodName} • {dateRange}
+                {isEN ? 'Class' : 'Classe'} : <strong>{group.className}</strong> • {isEN ? translatePeriodName(group.periodName, language) : group.periodName} • {dateRange}
               </div>
             </div>
             {/* ⭐ Bannière de verrouillage si notes soumises/validées */}
@@ -565,7 +575,7 @@ export function GradingSheet({
                   {group.subjects.length} matières
                 </Badge>
                 <Badge variant="outline" className="border-amber-200 text-amber-600 text-xs">
-                  {isMaternelle ? 'TS/S/PS' : `/20`}
+                  {isMaternelle ? 'TS/S/PS' : isEN ? `/${maxScore}` : `/20`}
                 </Badge>
                 <Button
                   variant="outline"
@@ -688,10 +698,10 @@ export function GradingSheet({
                               {subject.name}
                               <div className="text-[9px] text-slate-400 font-normal">TS / S / PS</div>
                             </th>
-                          ) : isSecondaire ? (
+                          ) : isSecondaire || isEN ? (
                             <th key={idx} rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[80px]">
                               {subject.name}
-                              <div className="text-[9px] text-slate-400 font-normal">Note /20</div>
+                              <div className="text-[9px] text-slate-400 font-normal">{isEN ? `/${maxScore}` : '/20'}</div>
                             </th>
                           ) : (
                             <th key={idx} colSpan={3} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[180px]">
@@ -739,7 +749,9 @@ export function GradingSheet({
                           return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
                         }, 0);
                         const seuilAtteint = isMaternelle ? null : (
-                          totalGeneral !== null && totalGeneral >= (10 * sortedSubjects.length * 0.5)
+                          isEN
+                            ? (totalGeneral !== null && totalGeneral >= (maxScore * 0.5 * sortedSubjects.length))
+                            : (totalGeneral !== null && totalGeneral >= (10 * sortedSubjects.length * 0.5))
                         );
                         // ⭐ Calcul du rang avec formatRang
                         const rang = (() => {
@@ -876,14 +888,15 @@ export function GradingSheet({
                                   </td>
                                 );
                               }
-                              if (isSecondaire) {
+                              // ⭐ En piste anglophone (EN), pas de CM/CP — saisie directe comme le secondaire
+                              if (isSecondaire || isEN) {
                                 return (
                                   <td key={subject.id} className={cn("border border-slate-300 p-0", canAdd && hasNote && "bg-gray-100")}>
                                     <input
                                       type="number"
                                       step="0.25"
                                       min="0"
-                                      max="20"
+                                      max={isEN ? String(maxScore) : "20"}
                                       value={score.isAbsent ? '' : (score.score ?? '')}
                                       onChange={(e) => handleScoreChange(row.studentId, subject.id, e.target.value)}
                                       disabled={score.isAbsent || (canAdd && hasNote)}
@@ -959,9 +972,9 @@ export function GradingSheet({
                             <td className="border border-slate-300 px-2 py-1 text-center font-bold text-slate-700">
                               {formatRang(rang, row.gender)}
                             </td>
-                            {/* Seuil fixé — Maternelle: 'S' (qualitatif), Primaire/Secondaire: 10 */}
+                            {/* Seuil fixé — Maternelle: 'S', FR: 10, EN: 50% du barème */}
                             <td className="border border-slate-300 px-2 py-1 text-center text-slate-600 font-semibold">
-                              {isMaternelle ? 'S' : '10'}
+                              {isMaternelle ? 'S' : isEN ? String(Math.round(maxScore * 0.5)) : '10'}
                             </td>
                             {/* Seuil atteint Oui/Non (automatique) */}
                             <td className="border border-slate-300 px-1 py-1 text-center">

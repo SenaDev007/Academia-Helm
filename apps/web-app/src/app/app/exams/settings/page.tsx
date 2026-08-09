@@ -140,6 +140,17 @@ const DEFAULT_FORMULAS: Record<string, Record<string, { subject: string; general
   },
 };
 
+// ⭐ Mentions anglophones par défaut (/100)
+const DEFAULT_EN_MENTIONS: MentionRule[] = [
+  { id: '1', minScore: 90, maxScore: 100, label: 'Outstanding', color: 'emerald', appreciation: 'Excellent academic performance. Commendable effort and discipline.' },
+  { id: '2', minScore: 80, maxScore: 89.99, label: 'Very Good', color: 'blue', appreciation: 'Very good results. Consistent effort is encouraged.' },
+  { id: '3', minScore: 70, maxScore: 79.99, label: 'Good', color: 'cyan', appreciation: 'Good performance. Greater concentration will lead to better outcomes.' },
+  { id: '4', minScore: 60, maxScore: 69.99, label: 'Fair', color: 'amber', appreciation: 'Fair results. Student is advised to work harder.' },
+  { id: '5', minScore: 50, maxScore: 59.99, label: 'Pass', color: 'orange', appreciation: 'Results are just satisfactory. Stronger effort is necessary.' },
+  { id: '6', minScore: 40, maxScore: 49.99, label: 'Weak', color: 'rose', appreciation: 'Performance below expectation. Immediate improvement is required.' },
+  { id: '7', minScore: 0, maxScore: 39.99, label: 'Very Weak', color: 'red', appreciation: 'Very poor performance. Urgent remedial measures are required.' },
+];
+
 const DEFAULT_MENTIONS: MentionRule[] = [
   { id: '1', minScore: 16, maxScore: 20, label: 'Très Bien', color: 'emerald', appreciation: 'Félicitations du jury' },
   { id: '2', minScore: 14, maxScore: 15.99, label: 'Bien', color: 'blue', appreciation: 'Encouragements' },
@@ -279,6 +290,13 @@ function SettingsContent() {
         setSubjectFormula(formulas.subject);
         setGeneralFormula(formulas.general);
         setFormulaDescription(formulas.description);
+        // ⭐ Si piste anglophone, utiliser les mentions EN (/100) et le barème /100
+        if (language === 'EN') {
+          setMentions(DEFAULT_EN_MENTIONS);
+          setScoreMax(100);
+          setScoreMin(0);
+          setPassScore(50);
+        }
       }
     } catch {
       // Config inexistante → valeurs par défaut
@@ -288,6 +306,13 @@ function SettingsContent() {
       setSubjectFormula(formulas.subject);
       setGeneralFormula(formulas.general);
       setFormulaDescription(formulas.description);
+      // ⭐ Si piste anglophone, utiliser les mentions EN (/100) et le barème /100
+      if (language === 'EN') {
+        setMentions(DEFAULT_EN_MENTIONS);
+        setScoreMax(100);
+        setScoreMin(0);
+        setPassScore(50);
+      }
     } finally {
       setLoading(false);
     }

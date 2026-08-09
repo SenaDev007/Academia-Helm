@@ -331,13 +331,26 @@ function BulletinsContent() {
             const code = grade.qualitativeCode;
             student.subjectScores[subjectId] = {
               score: null, qualitativeCode: code, isAbsent: false,
-              appreciation: code === 'TS' ? 'Très Satisfaisant' : code === 'S' ? 'Satisfaisant' : code === 'PS' ? 'Peu Satisfaisant' : '—',
+              appreciation: code === 'TS' ? (scopeLang === 'EN' ? 'Very Satisfactory' : 'Très Satisfaisant')
+                : code === 'S' ? (scopeLang === 'EN' ? 'Satisfactory' : 'Satisfaisant')
+                : code === 'PS' ? (scopeLang === 'EN' ? 'Less Satisfactory' : 'Peu Satisfaisant') : '—',
             };
           } else {
             const score = grade.score !== null ? Number(grade.score) : null;
+            // ⭐ En anglophone, les mentions sont basées sur /100 (converties depuis le barème)
+            const score100 = score !== null && grade.maxScore ? (score / Number(grade.maxScore || 20)) * 100 : null;
             student.subjectScores[subjectId] = {
               score, qualitativeCode: null, isAbsent: false,
-              appreciation: score === null ? '—' : score >= 16 ? 'Très Bien' : score >= 14 ? 'Bien' : score >= 12 ? 'Assez Bien' : score >= 10 ? 'Passable' : 'Insuffisant',
+              appreciation: scopeLang === 'EN'
+                ? (score100 === null ? '—'
+                  : score100 >= 90 ? 'Outstanding'
+                  : score100 >= 80 ? 'Very Good'
+                  : score100 >= 70 ? 'Good'
+                  : score100 >= 60 ? 'Fair'
+                  : score100 >= 50 ? 'Pass'
+                  : score100 >= 40 ? 'Weak'
+                  : 'Very Weak')
+                : (score === null ? '—' : score >= 16 ? 'Très Bien' : score >= 14 ? 'Bien' : score >= 12 ? 'Assez Bien' : score >= 10 ? 'Passable' : 'Insuffisant'),
             };
           }
         }
@@ -372,8 +385,11 @@ function BulletinsContent() {
         if (isMaternelle) {
           if (validCount > 0) {
             student.generalAverage = (tsCount * 3 + sCount * 2 + psCount * 1) / validCount;
-            student.appreciationGlobale = student.generalAverage >= 2.5 ? 'Très Satisfaisant' :
-              student.generalAverage >= 1.5 ? 'Satisfaisant' : 'Peu Satisfaisant';
+            student.appreciationGlobale = student.generalAverage >= 2.5
+              ? (scopeLang === 'EN' ? 'Very Satisfactory' : 'Très Satisfaisant')
+              : student.generalAverage >= 1.5
+                ? (scopeLang === 'EN' ? 'Satisfactory' : 'Satisfaisant')
+                : (scopeLang === 'EN' ? 'Less Satisfactory' : 'Peu Satisfaisant');
           }
         } else {
           if (validCount > 0) student.generalAverage = totalScore / validCount;

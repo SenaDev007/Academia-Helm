@@ -254,6 +254,7 @@ export default function TeacherExamsPage() {
           setSelectedGroup(null);
           loadEvaluations();
         }}
+        language={currentTrack as 'FR' | 'EN' | undefined}
       />
     );
   }

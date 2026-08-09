@@ -1338,3 +1338,112 @@ Stage Summary:
 - Files modified: 6 (apps/api-server/prisma/schema.prisma, apps/api-server/src/modules/exams/services/bulletin-pdf.service.ts, apps/api-server/src/modules/exams/services/bulletins.service.ts, apps/api-server/src/modules/exams/bulletins.controller.ts, apps/web-app/src/app/app/exams/bulletins/page.tsx, apps/web-app/src/components/saisiemaster/editor/editor-page.tsx, apps/web-app/src/components/saisiemaster/landing/resume-banner.tsx, apps/web-app/src/lib/saisiemaster/store.ts, apps/web-app/src/app/api/saisiemaster/sessions/route.ts)
 
 ⚠️ Migration required: `prisma db push` to add the 4 new fields to the report_cards table.
+
+---
+Task ID: 2026-08-09-cahier-journal-fiches-integration
+Agent: main
+Task: Module Pédagogie → Espace Pédagogique → onglet "Cahier Journal" renommé "Cahier Journal & Fiches Pédagogiques". Fusionner les fiches pédagogiques avec le cahier journal : après enregistrement du cahier journal hebdo, bascule automatique vers sous-onglet Fiches qui liste les matières planifiées par jour et permet de préparer la fiche pédagogique de chaque matière. Hiérarchie : CahierJournal(week) → Jour → Matière → Fiche.
+
+Work Log:
+
+=== Backend : Relation structurelle CahierJournal ↔ PrimaryPedagogicalFiche ===
+
+- Prisma schema (apps/api-server/prisma/schema.prisma) :
+  - Sur `CahierJournal` : ajout de la relation inverse `fiches PrimaryPedagogicalFiche[]`
+  - Sur `PrimaryPedagogicalFiche` : ajout de `cahierJournalId String?` + relation `cahierJournal CahierJournal? @relation(...)` + index `@@index([cahierJournalId])`
+  - Migration: `npx prisma db push` à exécuter par l'utilisateur pour ajouter la colonne
+
+- Service (apps/api-server/src/pedagogy/pedagogical-space.service.ts) :
+  - Ajout de 3 nouvelles méthodes :
+    * `getFichesForCahierJournal(tenantId, journalId)` : retourne { fiches, parJour, matieresPlanifiees, stats }
+      - Charge le cahier journal + ses fiches (par `cahierJournalId` structurel)
+      - Fallback par plage de dates pour les fiches non rattachées (rétro-compatibilité)
+      - Extrait les matières planifiées depuis `entries` JSON (parcourt entries.lundi.francais, entries.lundi.maths, etc.)
+      - Pour chaque matière planifiée, vérifie si une fiche existe → badge "préparée" / "à préparer"
+      - Stats : totalFiches, totalMatieresPlanifiees, totalFichesPreparees, totalFichesManquantes, toutesFichesPreparees
+    * `linkFicheToCahierJournal(tenantId, journalId, ficheId)` : rattache manuellement une fiche existante à un cahier journal
+    * `mapMatiereKeyToSheetType(matiereKey)` : devine le sheetType depuis le nom de la matière (francais→FRANCAIS, math→MATH, science/eps→EST, histoire/morale→ES, chant/dessin→EA)
+  - Ajout de `cahierJournalId` dans les fieldMap des méthodes `createPedagogicalFiche` et `updatePedagogicalFiche`
+  - Modification de `submitCahierJournalWithFiches` : au moment de soumettre chaque fiche (DRAFT → SUBMITTED), on écrit aussi `cahierJournalId = journalId` sur la fiche — verrou structurel
+
+- Controller (apps/api-server/src/pedagogy/pedagogical-space.controller.ts) :
+  - Ajout de `GET /pedagogy-space/cahier-journal/:id/fiches` → appelle `getFichesForCahierJournal`
+  - Ajout de `POST /pedagogy-space/cahier-journal/:id/link-fiche` (body: `{ ficheId }`) → appelle `linkFicheToCahierJournal`
+
+=== Frontend : Container unifié CahierJournalFichesContainer ===
+
+- Nouveau composant (apps/web-app/src/components/pedagogy/production/CahierJournalFichesContainer.tsx, ~360 lignes) :
+  - Gère 2 sous-onglets : "Cahier Journal" ↔ "Fiches Pédagogiques"
+  - État partagé : currentJournalId (résultat du save/submit du cahier journal)
+  - `onJournalSaved(journalId, meta)` callback → bascule auto vers sous-onglet Fiches + toast
+  - `onJournalSubmitted(journalId, meta)` callback → même chose après soumission
+  - En-tête avec : badge "X fiches manquantes" (orange) ou "X fiches" (vert), semaine courante, classe, statut
+  - Composant `FichesBadge` : fetch sur `GET /cahier-journal/:id/fiches` pour afficher le compteur
+  - Composant `StatusBadge` : DRAFT / SUBMITTED / VALIDATED / REJECTED
+  - Composant `FichesAPreparer` :
+    - Bandeau récapitulatif (vert si toutes préparées, orange sinon)
+    - Liste par jour (Lundi → Vendredi) avec matières planifiées + badges ✅/⚠
+    - Pour chaque matière non préparée : bouton "+ Préparer" qui appelle `onPrepareFiche(day, matiere, sheetType?)`
+    - Pour chaque matière déjà préparée : bouton "Voir"
+  - `handlePrepareFicheFor(day, matiere, sheetType?)` : bascule vers sous-onglet Fiches avec un payload initial
+
+- Modification de PedagogicalSpaceWorkspace.tsx :
+  - Renommage de l'onglet `cahier-journal` : "Cahier Journal" → "Cahier Journal & Fiches Pédagogiques"
+  - Suppression de l'onglet séparé `fiches` (fusionné dans cahier-journal)
+  - Le rendu de `cahier-journal` utilise désormais `CahierJournalFichesContainer` au lieu de `CahierJournalTab` directement
+
+- Modification de CahierJournalTab.tsx :
+  - Ajout de 2 props optionnelles : `onJournalSaved?` et `onJournalSubmitted?`
+  - Dans `handleSave()` : après le PUT réussi, appel de `onJournalSaved?.(journal.id, meta)` avec weekStartDate, weekEndDate, className, status
+  - Dans `confirmSubmitWithFiches()` : après le POST réussi, appel de `onJournalSubmitted?.(journal.id, meta)` avec status: 'SUBMITTED'
+  - Backward-compatible : si les callbacks ne sont pas fournis, le composant fonctionne comme avant
+
+- Modification de PedagogicalSheetsTab.tsx :
+  - Ajout de 4 nouvelles props optionnelles : `cahierJournalId?`, `initialLessonDay?`, `initialSheetType?`, `initialMatiere?`
+  - Dans `handleCreateOrUpdate()` : ajout de `cahierJournalId: cahierJournalId || undefined` dans le body POST
+  - Ajout d'un `useEffect` qui s'exécute au mount (ou quand les props initiales changent) :
+    - Si `initialLessonDay` est fourni : calcule la date du jour correspondant dans la semaine courante (lundi=1, ..., vendredi=5)
+    - Si `initialSheetType` est fourni : pré-remplit le sheetType du formulaire
+    - Si `initialMatiere` est fourni : pré-remplit `cours` et `titre` avec le nom de la matière
+    - Ouvre automatiquement le formulaire (`setShowForm(true)`)
+  - Le formulaire de fiche pédagogique s'ouvre pré-rempli quand l'utilisateur clique sur "Préparer la fiche" dans le panneau FichesAPreparer
+
+=== Flux utilisateur final ===
+
+1. Enseignant ouvre Espace Pédagogique → "Cahier Journal & Fiches Pédagogiques"
+2. Sous-onglet "Cahier Journal" → grille hebdo (5 jours × matières dynamiques)
+3. Enseignant remplit les cellules : lundi=français, lundi=maths, mardi=...
+4. Clic "Enregistrer" → PUT réussi → bascule auto vers sous-onglet "Fiches Pédagogiques"
+5. Sous-onglet Fiches affiche :
+   - Bandeau "X fiches à préparer"
+   - Cartes par jour : Lundi → Français (⚠ à préparer) + Maths (⚠ à préparer) + ...
+   - Pour chaque matière : bouton "+ Préparer"
+6. Enseignant clique sur "+ Préparer" pour Français Lundi :
+   - Formulaire fiche pédagogique s'ouvre automatiquement
+   - Pré-rempli : sheetType=FRANCAIS, lessonDate=lundi de la semaine courante, cours=Français
+   - cahierJournalId stocké dans le state → sera envoyé au backend à la création
+7. Enseignant remplit la fiche (objectifs, déroulement, etc.) + clic "Créer la fiche"
+8. La fiche est créée en DB avec `cahierJournalId` renseigné
+9. La liste des matières planifiées se met à jour → le badge Français passe de ⚠ à ✅
+10. Quand toutes les matières planifiées ont leur fiche → bandeau vert "Toutes les fiches sont préparées"
+11. Clic "Soumettre" sur le cahier journal → POST submit-with-fiches → soumet cahier + fiches en une transaction
+
+=== Hiérarchie de persistance ===
+
+- CahierJournal (1) → Fiches pédagogiques (N)
+- Chaque fiche a désormais un `cahierJournalId` (relation structurelle en DB)
+- Quand on consulte le cahier journal d'une autre semaine, le endpoint `GET /cahier-journal/:id/fiches` ramène SES fiches (et uniquement les siennes)
+- Fallback par plage de dates pour les fiches créées avant l'ajout du champ (rétro-compatibilité)
+
+Stage Summary:
+
+- L'onglet "Cahier Journal" a été renommé "Cahier Journal & Fiches Pédagogiques" et contient 2 sous-onglets
+- L'onglet "Fiches Pédagogiques" séparé a été supprimé (fusionné dans le cahier journal)
+- Après enregistrement du cahier journal, bascule automatique vers le sous-onglet Fiches qui affiche la liste des matières planifiées groupées par jour
+- Pour chaque matière planifiée sans fiche : bouton "+ Préparer" qui ouvre le formulaire pré-rempli (sheetType deviné depuis le nom de la matière, lessonDate calculée depuis le jour, cahierJournalId stocké)
+- Relation structurelle `cahierJournalId` en DB entre PrimaryPedagogicalFiche et CahierJournal (avec fallback par date pour rétro-compatibilité)
+- 3 nouveaux endpoints backend : GET /cahier-journal/:id/fiches, POST /cahier-journal/:id/link-fiche, + modification de createPedagogicalFiche/updatePedagogicalFiche/submitCahierJournalWithFiches pour gérer cahierJournalId
+- Frontend type-check : 0 erreurs (passes clean)
+- Backend : aucune nouvelle erreur (les duplicates préexistants dans pedagogical-space.service.ts sont inchangés)
+- Fichiers modifiés : 6 + 1 nouveau fichier (CahierJournalFichesContainer.tsx)
+- Migration requise : `npx prisma db push` pour ajouter la colonne `cahierJournalId` à `primary_pedagogical_fiches`

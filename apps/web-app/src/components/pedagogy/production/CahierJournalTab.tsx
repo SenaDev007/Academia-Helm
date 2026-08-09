@@ -30,6 +30,20 @@ interface CahierJournalTabProps {
   tenantId: string;
   academicYearId: string;
   teacherId: string;
+  /** ⭐ Callback appelé après un "Enregistrer" réussi — déclenche la bascule vers le sous-onglet Fiches */
+  onJournalSaved?: (journalId: string, meta?: {
+    weekStartDate?: string;
+    weekEndDate?: string;
+    className?: string;
+    status?: string;
+  }) => void;
+  /** ⭐ Callback appelé après un "Soumettre" réussi (avec ou sans fiches) */
+  onJournalSubmitted?: (journalId: string, meta?: {
+    weekStartDate?: string;
+    weekEndDate?: string;
+    className?: string;
+    status?: string;
+  }) => void;
 }
 
 // === CONSTANTES DU TEMPLATE OFFICIEL ===
@@ -94,7 +108,7 @@ function formatDateFR(dateStr: string): string {
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
-export function CahierJournalTab({ tenantId, academicYearId, teacherId }: CahierJournalTabProps) {
+export function CahierJournalTab({ tenantId, academicYearId, teacherId, onJournalSaved, onJournalSubmitted }: CahierJournalTabProps) {
   const { academicYear } = useModuleContext();
   const { user } = useAppSession();
   const [classes, setClasses] = useState<any[]>([]);
@@ -341,6 +355,13 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
       });
       if (!res.ok) throw new Error("Erreur de sauvegarde");
       toast.success("✅ Cahier journal enregistré");
+      // ⭐ Déclencher la bascule vers le sous-onglet Fiches (si le parent écoute)
+      onJournalSaved?.(journal.id, {
+        weekStartDate: journal.weekStartDate,
+        weekEndDate: journal.weekEndDate,
+        className: journal.classNameResolved || journal.className,
+        status: journal.status,
+      });
       loadJournal();
     } catch (e: any) {
       toast.error("Erreur", { description: e.message });
@@ -394,6 +415,13 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId }: Cahier
       const data = await res.json();
       toast.success("✅ Cahier journal soumis au directeur", {
         description: `${data.totalFiches || 0} fiche(s) pédagogique(s) soumise(s) — le directeur a été notifié.`,
+      });
+      // ⭐ Déclencher la bascule vers le sous-onglet Fiches (pour voir le résultat)
+      onJournalSubmitted?.(journal.id, {
+        weekStartDate: journal.weekStartDate,
+        weekEndDate: journal.weekEndDate,
+        className: journal.classNameResolved || journal.className,
+        status: 'SUBMITTED',
       });
       loadJournal();
     } catch (e: any) {

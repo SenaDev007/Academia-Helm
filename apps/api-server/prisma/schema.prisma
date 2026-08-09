@@ -16182,6 +16182,11 @@ model CahierJournal {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  // ⭐ Relation structurelle vers les fiches pédagogiques de la semaine
+  //    Permet de rattacher chaque fiche à un cahier journal précis (au lieu de
+  //    calculer le lien par date à la volée).
+  fiches          PrimaryPedagogicalFiche[]
+
   @@unique([tenantId, academicYearId, classId, weekStartDate])
   @@index([tenantId, academicYearId, teacherId])
   @@index([status])
@@ -16258,6 +16263,14 @@ model PrimaryPedagogicalFiche {
   validatedBy        String?
   rejectionReason    String?
 
+  // ⭐ Lien structurel vers le cahier journal de la semaine
+  //    Renseigné automatiquement lors de la soumission du cahier journal via
+  //    /cahier-journal/:id/submit-with-fiches, ou manuellement lors de la
+  //    création d'une fiche depuis l'UI du cahier journal.
+  //    Null pour les fiches créées hors cahier journal (legacy / standalone).
+  cahierJournalId    String?
+  cahierJournal      CahierJournal? @relation(fields: [cahierJournalId], references: [id], onDelete: SetNull)
+
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -16265,6 +16278,7 @@ model PrimaryPedagogicalFiche {
   @@index([sheetType])
   @@index([status])
   @@index([classId])
+  @@index([cahierJournalId])
   @@map("primary_pedagogical_fiches")
 }
 

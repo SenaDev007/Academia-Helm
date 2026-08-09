@@ -39,6 +39,7 @@ import {
 import { MyClassesTab } from "./MyClassesTab";
 import { AttendanceTab } from "./AttendanceTab";
 import { CahierJournalTab } from "./CahierJournalTab";
+import { CahierJournalFichesContainer } from "./CahierJournalFichesContainer";
 import { CahierSemaineTab } from "./CahierSemaineTab";
 import { PedagogicalSheetsTab } from "./PedagogicalSheetsTab";
 import { AttendanceRegisterTab } from "./AttendanceRegisterTab";
@@ -49,24 +50,22 @@ import { GlobalLibraryHub } from "@/components/pedagogy/library/GlobalLibraryHub
 import MaterialsWorkspace from "@/components/pedagogy/materials/MaterialsWorkspace";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
-// ⭐ Ordre des onglets demandé par l'utilisateur :
+// ⭐ Ordre des onglets — Fiches Pédagogiques fusionnées avec Cahier Journal :
 //   1. Mes Classes
 //   2. Appel (présences journalières)
 //   3. Registre d'Appel (registre mensuel + évaluations)
-//   4. Cahier Journal (grille hebdo 5j × 8 matières)
-//   5. Fiches Pédagogiques
-//   6. Cahier de Semaine (monitoring institutionnel)
-//   7. Devoirs
-//   8. Cahier de Texte (secondaire uniquement — masqué pour primaire/maternelle)
-//   9. Cahier de Test (secondaire uniquement)
-//  10. Bibliothèque virtuelle
-//  11. Matériel pédagogique
+//   4. Cahier Journal & Fiches Pédagogiques (grille hebdo 5j × 8 matières + fiches liées)
+//   5. Cahier de Semaine (monitoring institutionnel)
+//   6. Devoirs
+//   7. Cahier de Texte (secondaire uniquement — masqué pour primaire/maternelle)
+//   8. Cahier de Test (secondaire uniquement)
+//   9. Bibliothèque virtuelle
+//  10. Matériel pédagogique
 const ALL_TABS = [
   { id: 'classes', label: 'Mes Classes', icon: Users, description: 'Effectifs & élèves', secondaryOnly: false },
   { id: 'attendance', label: 'Appel', icon: CalendarCheck, description: 'Présences journalières', secondaryOnly: false },
   { id: 'registre', label: 'Registre d\'Appel', icon: ClipboardList, description: 'Registre mensuel + évaluations', secondaryOnly: false },
-  { id: 'cahier-journal', label: 'Cahier Journal', icon: FileSpreadsheet, description: 'Grille hebdomadaire 5j × 8 matières', secondaryOnly: false },
-  { id: 'fiches', label: 'Fiches Pédagogiques', icon: FileText, description: '5 types (MATH/FR/EST/ES/EA)', secondaryOnly: false },
+  { id: 'cahier-journal', label: 'Cahier Journal & Fiches Pédagogiques', icon: FileSpreadsheet, description: 'Grille hebdo + fiches par jour', secondaryOnly: false },
   { id: 'weekly', label: 'Cahier de Semaine', icon: CalendarDays, description: 'Monitoring institutionnel', secondaryOnly: false },
   { id: 'homework', label: 'Devoirs', icon: BookOpen, description: 'Exercices & suivi', secondaryOnly: false },
   { id: 'cahier-texte', label: 'Cahier de Texte', icon: ClipboardCheck, description: 'Évaluations (secondaire)', secondaryOnly: true },
@@ -179,7 +178,7 @@ export function PedagogicalSpaceWorkspace({
             />
           )}
           {tab === 'cahier-journal' && (
-            <CahierJournalTab
+            <CahierJournalFichesContainer
               tenantId={resolvedTenantId}
               academicYearId={resolvedAcademicYearId}
               teacherId={teacherId}
@@ -187,13 +186,6 @@ export function PedagogicalSpaceWorkspace({
           )}
           {tab === 'weekly' && (
             <CahierSemaineTab
-              tenantId={resolvedTenantId}
-              academicYearId={resolvedAcademicYearId}
-              teacherId={teacherId}
-            />
-          )}
-          {tab === 'fiches' && (
-            <PedagogicalSheetsTab
               tenantId={resolvedTenantId}
               academicYearId={resolvedAcademicYearId}
               teacherId={teacherId}

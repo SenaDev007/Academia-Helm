@@ -43,6 +43,14 @@ interface PedagogicalSheetsTabProps {
   tenantId: string;
   academicYearId: string;
   teacherId: string;
+  /** ⭐ ID du cahier journal auquel rattacher les nouvelles fiches créées depuis l'UI du cahier journal */
+  cahierJournalId?: string;
+  /** ⭐ Jour initial (lundi/mardi/...) pour pré-remplir la date de la leçon */
+  initialLessonDay?: string;
+  /** ⭐ Type de fiche initial (MATH/FRANCAIS/EST/ES/EA) deviné depuis la matière */
+  initialSheetType?: string;
+  /** ⭐ Matière initiale (clé matière du cahier journal, ex: "francais") */
+  initialMatiere?: string;
 }
 
 const SHEET_TYPES = [
@@ -134,7 +142,7 @@ const SHEET_TYPE_CONFIG: Record<string, {
   },
 };
 
-export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: PedagogicalSheetsTabProps) {
+export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahierJournalId, initialLessonDay, initialSheetType, initialMatiere }: PedagogicalSheetsTabProps) {
   const { user } = useAppSession();
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>("");
@@ -203,6 +211,44 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
   useEffect(() => { loadClasses(); }, [loadClasses]);
   useEffect(() => { loadFiches(); }, [loadFiches]);
 
+  // ⭐ Pré-remplissage automatique quand l'utilisateur clique sur "Préparer la fiche"
+  //    pour [jour] [matière] depuis le cahier journal.
+  useEffect(() => {
+    if (!initialSheetType && !initialLessonDay && !initialMatiere) return;
+    // Calculer la date de la leçon à partir du jour de la semaine (lundi=1, ..., vendredi=5)
+    // en utilisant la semaine courante.
+    if (initialLessonDay) {
+      const dayNums: Record<string, number> = { lundi: 1, mardi: 2, mercredi: 3, jeudi: 4, vendredi: 5 };
+      const targetDayNum = dayNums[initialLessonDay.toLowerCase()];
+      if (targetDayNum !== undefined) {
+        const today = new Date();
+        const monday = new Date(today);
+        const currentDay = today.getDay() === 0 ? 7 : today.getDay(); // 0=dim → 7
+        monday.setDate(today.getDate() - (currentDay - 1)); // revenir à lundi
+        const lessonDate = new Date(monday);
+        lessonDate.setDate(monday.getDate() + (targetDayNum - 1));
+        const y = lessonDate.getFullYear();
+        const m = String(lessonDate.getMonth() + 1).padStart(2, "0");
+        const d = String(lessonDate.getDate()).padStart(2, "0");
+        setForm((p: any) => ({ ...p, lessonDate: `${y}-${m}-${d}` }));
+      }
+    }
+    if (initialSheetType) {
+      setForm((p: any) => ({ ...p, sheetType: initialSheetType }));
+    }
+    if (initialMatiere) {
+      // Mettre le nom de la matière dans le champ "titre" ou "cours"
+      setForm((p: any) => ({
+        ...p,
+        cours: p.cours || initialMatiere.charAt(0).toUpperCase() + initialMatiere.slice(1),
+        titre: p.titre || `Fiche ${initialMatiere}`,
+      }));
+    }
+    // Ouvrir automatiquement le formulaire
+    setShowForm(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSheetType, initialLessonDay, initialMatiere]);
+
   // === CRUD ===
   const handleCreateOrUpdate = async () => {
     if (!form.classId || !form.sheetType) { toast.error("Veuillez sélectionner une classe et un type de fiche"); return; }
@@ -210,7 +256,9 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId }: Pe
     try {
       const url = editingFiche ? `/api/pedagogy-space/fiches/${editingFiche.id}` : "/api/pedagogy-space/fiches";
       const method = editingFiche ? "PUT" : "POST";
-      const body = editingFiche ? { ...form } : { ...form, academicYearId, teacherId };
+      const body = editingFiche
+        ? { ...form }
+        : { ...form, academicYearId, teacherId, cahierJournalId: cahierJournalId || undefined };
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(body) });
       if (!res.ok) throw new Error("Erreur de sauvegarde");
       toast.success(editingFiche ? "✅ Fiche mise à jour" : "✅ Fiche créée");

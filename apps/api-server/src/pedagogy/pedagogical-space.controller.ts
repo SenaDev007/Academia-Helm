@@ -431,6 +431,30 @@ export class PedagogicalSpaceController {
     return this.service.submitCahierJournalWithFiches(tenantId, id, body?.dayRange);
   }
 
+  // ⭐ Récupère toutes les fiches pédagogiques rattachées à un cahier journal
+  //    Retourne : { parJour: { lundi: [...], mardi: [...], ... }, matieresPlanifiees, stats }
+  //    Utilisé par l'UI pour afficher les fiches manquantes par jour après
+  //    l'enregistrement du cahier journal.
+  @Get('cahier-journal/:id/fiches')
+  async getFichesForCahierJournal(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+  ) {
+    return this.service.getFichesForCahierJournal(tenantId, id);
+  }
+
+  // ⭐ Rattache manuellement une fiche pédagogique à un cahier journal
+  //    Body : { ficheId }
+  @Post('cahier-journal/:id/link-fiche')
+  @HttpCode(HttpStatus.OK)
+  async linkFicheToCahierJournal(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: { ficheId: string },
+  ) {
+    return this.service.linkFicheToCahierJournal(tenantId, id, body.ficheId);
+  }
+
   // ⭐ Mise à jour directeur : observations + signature + validation cahier journal
   //    Body : { directorObservations?, directorGeneralObservation?, directorSignature?, action, rejectionReason? }
   @Put('cahier-journal/:id/director-update')

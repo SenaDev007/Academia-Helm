@@ -2277,6 +2277,184 @@ export class PedagogicalSpaceService {
 
 
   /**
+   * ⭐ Récupère toutes les fiches pédagogiques rattachées à un cahier journal.
+   *    Utilise le nouveau champ structurel `cahierJournalId` (préféré) +
+   *    fallback par plage de dates (legacy / fiches non rattachées).
+   *
+   *    Retourne : { parJour: { lundi: [...], mardi: [...], ... }, fiches: [...], stats }
+   */
+  async getFichesForCahierJournal(tenantId: string, journalId: string) {
+    // ─── 1. Charger le cahier journal ───
+    const journalRows: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1 AND "tenantId" = $2`,
+      journalId, tenantId,
+    );
+    if (!journalRows || journalRows.length === 0) {
+      throw new NotFoundException('Cahier journal non trouvé');
+    }
+    const journal = journalRows[0];
+
+    // ─── 2. Charger les fiches rattachées structurellement (cahierJournalId) ───
+    const fichesLiees: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "primary_pedagogical_fiches"
+       WHERE "cahierJournalId" = $1
+       ORDER BY "lessonDate" ASC NULLS LAST, "adminDate" ASC NULLS LAST, "createdAt" ASC`,
+      journalId,
+    );
+
+    // ─── 3. Fallback : fiches non rattachées mais dont la date est dans la semaine ───
+    //    (pour rétro-compatibilité avec les fiches créées avant l'ajout du champ)
+    const fichesNonLieees: any = await this.prisma.$queryRawUnsafe(
+      `SELECT * FROM "primary_pedagogical_fiches"
+       WHERE "tenantId" = $1
+         AND "academicYearId" = $2
+         AND "teacherId" = $3
+         AND "classId" = $4
+         AND ("cahierJournalId" IS NULL)
+         AND (("adminDate" IS NOT NULL AND "adminDate" BETWEEN $5 AND $6)
+           OR ("lessonDate" IS NOT NULL AND "lessonDate" BETWEEN $5 AND $6))
+       ORDER BY "lessonDate" ASC NULLS LAST, "adminDate" ASC NULLS LAST`,
+      tenantId, journal.academicYearId, journal.teacherId, journal.classId,
+      journal.weekStartDate, journal.weekEndDate,
+    );
+
+    // ─── 4. Grouper par jour ───
+    const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+    const parJour: Record<string, any[]> = {
+      lundi: [], mardi: [], mercredi: [], jeudi: [], vendredi: [],
+    };
+    const allFiches = [...(fichesLiees || []), ...(fichesNonLieees || [])];
+    for (const fiche of allFiches) {
+      const dateStr = fiche.lessonDate || fiche.adminDate;
+      if (!dateStr) continue;
+      const d = new Date(dateStr);
+      const dayName = dayNames[d.getDay()];
+      if (parJour[dayName]) {
+        parJour[dayName].push(fiche);
+      }
+    }
+
+    // ─── 5. Calculer la liste des matières planifiées dans le cahier journal ───
+    //    `entries` est un JSON : { lundi: { francais: "...", maths: "..." }, mardi: {...}, ... }
+    //    On extrait les matières non-vides par jour pour identifier les fiches manquantes.
+    const matieresPlanifiees: Record<string, Array<{ matiere: string; fichePreparede: boolean; ficheId?: string }>> = {
+      lundi: [], mardi: [], mercredi: [], jeudi: [], vendredi: [],
+    };
+    let entries: any = {};
+    try {
+      entries = typeof journal.entries === 'string' ? JSON.parse(journal.entries) : (journal.entries || {});
+    } catch { entries = {}; }
+
+    for (const jour of Object.keys(parJour)) {
+      const dayEntries = entries[jour] || {};
+      for (const [matiereKey, matiereContent] of Object.entries(dayEntries)) {
+        // Une matière est "planifiée" si son contenu n'est pas vide
+        const content = typeof matiereContent === 'string' ? matiereContent.trim() : '';
+        if (!content) continue;
+        // Cherche si une fiche existe pour cette matière ce jour
+        const fichesForDay = parJour[jour] || [];
+        const matchingFiche = fichesForDay.find((f: any) => {
+          // Match par subjectId si dispo, sinon par sheetType (le key matière est mappé
+          // vers un sheetType dans le frontend via SUBJECT_GROUPS)
+          return (f.subjectId && f.subjectId === matiereKey)
+            || (f.sheetType && this.mapMatiereKeyToSheetType(matiereKey) === f.sheetType);
+        });
+        matieresPlanifiees[jour].push({
+          matiere: matiereKey,
+          fichePreparede: !!matchingFiche,
+          ficheId: matchingFiche?.id,
+        });
+      }
+    }
+
+    // ─── 6. Stats ───
+    const totalMatieresPlanifiees = Object.values(matieresPlanifiees).reduce((s, arr) => s + arr.length, 0);
+    const totalFichesPreparees = Object.values(matieresPlanifiees).reduce(
+      (s, arr) => s + arr.filter(m => m.fichePreparede).length, 0,
+    );
+    const totalFichesManquantes = totalMatieresPlanifiees - totalFichesPreparees;
+
+    return {
+      journalId,
+      weekStartDate: journal.weekStartDate,
+      weekEndDate: journal.weekEndDate,
+      className: journal.className,
+      status: journal.status,
+      fiches: allFiches,
+      parJour,
+      matieresPlanifiees,
+      stats: {
+        totalFiches: allFiches.length,
+        totalMatieresPlanifiees,
+        totalFichesPreparees,
+        totalFichesManquantes,
+        toutesFichesPreparees: totalFichesManquantes === 0,
+      },
+    };
+  }
+
+  /**
+   * Helper : mappe une clé matière du cahier journal vers un sheetType de fiche.
+   * Le cahier journal utilise des clés comme "francais", "anglais", "mathematiques", etc.
+   * On devine le sheetType correspondant.
+   */
+  private mapMatiereKeyToSheetType(matiereKey: string): string | null {
+    const k = (matiereKey || '').toLowerCase().trim();
+    if (k.includes('francais') || k.includes('français') || k.includes('lecture')
+      || k.includes('dictee') || k.includes('grammaire') || k.includes('conjugaison') || k.includes('vocabulaire')
+      || k.includes('orthographe') || k.includes('expression')) {
+      return 'FRANCAIS';
+    }
+    if (k.includes('math') || k.includes('calcul') || k.includes('numeration')
+      || k.includes('mesure') || k.includes('geometrie')) {
+      return 'MATH';
+    }
+    if (k.includes('est') || k.includes('science') || k.includes('technologie')
+      || k.includes('eps') || k.includes('sport') || k.includes('informatique')) {
+      return 'EST';
+    }
+    if (k.includes('histoire') || k.includes('geographie') || k.includes('geographie')
+      || k.includes('morale') || k.includes('civisme') || k.includes('educ_sociale')
+      || k.includes('social')) {
+      return 'ES';
+    }
+    if (k.includes('chant') || k.includes('poesie') || k.includes('dessin')
+      || k.includes('musique') || k.includes('art') || k.includes('educ_artistique')) {
+      return 'EA';
+    }
+    return null;
+  }
+
+  /**
+   * ⭐ Rattache manuellement une fiche pédagogique à un cahier journal.
+   *    Utilisé quand l'enseignant crée une fiche depuis l'UI du cahier journal
+   *    (bouton "Préparer la fiche pour [jour] [matière]").
+   */
+  async linkFicheToCahierJournal(tenantId: string, journalId: string, ficheId: string) {
+    // Vérifier que le cahier journal existe
+    const journalRows: any = await this.prisma.$queryRawUnsafe(
+      `SELECT id, tenantId FROM "cahier_journal_entries" WHERE "id" = $1 AND "tenantId" = $2`,
+      journalId, tenantId,
+    );
+    if (!journalRows || journalRows.length === 0) {
+      throw new NotFoundException('Cahier journal non trouvé');
+    }
+    // Vérifier que la fiche existe et appartient au même tenant
+    const ficheRows: any = await this.prisma.$queryRawUnsafe(
+      `SELECT id, tenantId FROM "primary_pedagogical_fiches" WHERE "id" = $1 AND "tenantId" = $2`,
+      ficheId, tenantId,
+    );
+    if (!ficheRows || ficheRows.length === 0) {
+      throw new NotFoundException('Fiche pédagogique non trouvée');
+    }
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "primary_pedagogical_fiches" SET "cahierJournalId" = $1, "updatedAt" = NOW() WHERE "id" = $2`,
+      journalId, ficheId,
+    );
+    return { success: true, journalId, ficheId };
+  }
+
+  /**
    * ⭐ Soumet le cahier journal + les fiches pédagogiques associées.
    *
    * Schéma utilisateur :
@@ -2358,14 +2536,18 @@ export class PedagogicalSpaceService {
         return dayNums.includes(dayNum);
       });
 
-      // ─── 5. Soumettre chaque fiche (DRAFT → SUBMITTED) ───
+      // ─── 5. Soumettre chaque fiche (DRAFT → SUBMITTED) + rattacher au cahier journal ───
       for (const fiche of fichesToSubmit) {
         try {
           await this.prisma.$executeRawUnsafe(
             `UPDATE "primary_pedagogical_fiches"
-             SET "status" = 'SUBMITTED', "submittedAt" = NOW(), "updatedAt" = NOW()
+             SET "status" = 'SUBMITTED',
+                 "submittedAt" = NOW(),
+                 "updatedAt" = NOW(),
+                 "cahierJournalId" = $2
              WHERE "id" = $1`,
             fiche.id,
+            journalId,
           );
           submittedFiches.push({ id: fiche.id, sheetType: fiche.sheetType, date: fiche.adminDate || fiche.lessonDate });
         } catch (err: any) {
@@ -2983,6 +3165,8 @@ export class PedagogicalSpaceService {
       // ⭐ Phases spécifiques au français
       phase_introductive: 'phase_introductive', phase_systematisation: 'phase_systematisation', phase_application: 'phase_application',
       app_col1: 'app_col1', app_col2: 'app_col2', app_col3: 'app_col3',
+      // ⭐ Lien structurel vers le cahier journal (null si fiche créée hors cahier journal)
+      cahierJournalId: 'cahierJournalId',
     };
 
     for (const [key, col] of Object.entries(fieldMap)) {
@@ -3048,6 +3232,8 @@ export class PedagogicalSpaceService {
       app_col1: 'string', app_col2: 'string', app_col3: 'string',
       status: 'string', submittedAt: 'date', validatedAt: 'date',
       validatedBy: 'string', rejectionReason: 'string',
+      // ⭐ Lien structurel vers le cahier journal
+      cahierJournalId: 'string',
     };
 
     for (const [key, type] of Object.entries(allowedFields)) {

@@ -19,7 +19,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useState } from "react";
-import { useSaisieMasterStore, restoreFromBackend } from "@/lib/saisiemaster/store";
+import { useSaisieMasterStore, restoreFromBackend, mergeClasses } from "@/lib/saisiemaster/store";
 import { toast } from "sonner";
 import type { ClassData } from "@/lib/saisiemaster/types";
 
@@ -52,18 +52,21 @@ export function EditorHeader({ onHome }: EditorHeaderProps) {
   };
 
   // ⭐ Forcer la synchronisation depuis le backend Neon
-  //    Récupère TOUTES les sessions du prospect et remplace l'état local
+  //    FUSIONNE les données locales avec les données backend
   const handleSyncFromBackend = async () => {
     setSyncing(true);
     try {
       console.log("[saisiemaster] 🔄 Manual sync from backend triggered");
       const backendData = await restoreFromBackend();
       if (backendData && backendData.classes.length > 0) {
+        // ⭐ Fusionner local + backend (garde le plus de notes pour chaque classe)
+        const localClasses = useSaisieMasterStore.getState().classes;
+        const merged = mergeClasses(localClasses, backendData.classes);
         useSaisieMasterStore.setState({
-          classes: backendData.classes,
+          classes: merged,
           activeClassIndex: Math.min(
-            backendData.activeClassIndex,
-            backendData.classes.length - 1,
+            useSaisieMasterStore.getState().activeClassIndex,
+            Math.max(merged.length - 1, 0),
           ),
           editorView: "notes",
         });
@@ -72,14 +75,14 @@ export function EditorHeader({ onHome }: EditorHeaderProps) {
           window.localStorage.setItem(
             "saisiemaster:autosave",
             JSON.stringify({
-              classes: backendData.classes,
-              activeClassIndex: backendData.activeClassIndex,
+              classes: merged,
+              activeClassIndex: useSaisieMasterStore.getState().activeClassIndex,
               savedAt: backendData.savedAt,
             }),
           );
         } catch {}
         toast.success(
-          `Synchronisé : ${backendData.classes.length} classe(s) récupérée(s) depuis le backend`,
+          `Synchronisé : ${merged.length} classe(s) (${backendData.classes.length} backend + ${localClasses.length} local)`,
         );
       } else {
         toast.info("Aucune donnée trouvée sur le backend");

@@ -9,6 +9,7 @@ import {
   useSaisieMasterStore,
   restoreFromStorage,
   restoreFromBackend,
+  mergeClasses,
   selectIsAuthenticated,
 } from "@/lib/saisiemaster/store";
 import type { Prospect } from "@/lib/saisiemaster/api";
@@ -70,42 +71,41 @@ export default function SaisieMasterPage() {
       });
 
       // ⭐ Tenter la restauration backend en arrière-plan
-      //    Le backend Neon est TOUJOURS la source de vérité quand l'utilisateur
-      //    est authentifié. On ne compare PAS les timestamps — le backend a
-      //    peut-être des données d'un AUTRE appareil (ex: frère sur son PC)
-      //    qui sont plus anciennes mais que le localStorage local n'a pas.
-      //    Donc: si le backend a des données, on les utilise. Point.
+      //    On FUSIONNE les données locales avec les données backend :
+      //    pour chaque classe, on garde celle qui a le plus de notes.
+      //    Cela évite d'écraser les données locales fraîches avec des données
+      //    backend potentiellement obsolètes (ou inversement).
       (async () => {
         try {
           console.log("[saisiemaster] 🔍 Restoring from backend (Neon)...");
           const backendData = await restoreFromBackend();
           if (backendData && backendData.classes.length > 0) {
+            // ⭐ Fusionner local + backend
+            const localClasses = restoredLocal?.classes || [];
+            const merged = mergeClasses(localClasses, backendData.classes);
             console.log(
-              `[saisiemaster] ✅ Backend returned ${backendData.classes.length} class(es):`,
-              backendData.classes.map(c => `${c.className} (${c.students?.length || 0} students)`),
-              `savedAt: ${backendData.savedAt}`,
+              `[saisiemaster] ✅ Merged: local=${localClasses.length}, backend=${backendData.classes.length}, merged=${merged.length}`,
             );
-            // ⭐ TOUJOURS remplacer avec les données backend (source de vérité)
             useSaisieMasterStore.setState({
-              classes: backendData.classes,
+              classes: merged,
               activeClassIndex: Math.min(
-                backendData.activeClassIndex,
-                backendData.classes.length - 1,
+                restoredLocal?.activeClassIndex || 0,
+                Math.max(merged.length - 1, 0),
               ),
               editorView: "notes",
             });
-            // Mettre à jour aussi le localStorage pour les futures visites
+            // Mettre à jour aussi le localStorage
             try {
               window.localStorage.setItem(
                 "saisiemaster:autosave",
                 JSON.stringify({
-                  classes: backendData.classes,
-                  activeClassIndex: backendData.activeClassIndex,
+                  classes: merged,
+                  activeClassIndex: restoredLocal?.activeClassIndex || 0,
                   savedAt: backendData.savedAt,
                 }),
               );
             } catch {}
-            console.log("[saisiemaster] ✅ State replaced with backend data");
+            console.log("[saisiemaster] ✅ State replaced with merged data");
           } else {
             console.log("[saisiemaster] ℹ️ Backend returned no sessions — keeping local data");
           }
@@ -155,23 +155,21 @@ export default function SaisieMasterPage() {
       });
     }
 
-    // ⭐ Tenter la restauration backend — TOUJOURS préférer le backend
-    //    (source de vérité Neon). Le localStorage local peut être vide ou
-    //    obsolète si l'utilisateur se connecte depuis un nouvel appareil.
+    // ⭐ Tenter la restauration backend — FUSIONNER avec local
     try {
       console.log("[saisiemaster] 🔍 Restoring from backend after login...");
       const backendData = await restoreFromBackend();
       if (backendData && backendData.classes.length > 0) {
+        const localClasses = restoredLocal?.classes || [];
+        const merged = mergeClasses(localClasses, backendData.classes);
         console.log(
-          `[saisiemaster] ✅ Backend returned ${backendData.classes.length} class(es) after login:`,
-          backendData.classes.map(c => `${c.className} (${c.students?.length || 0} students)`),
-          `savedAt: ${backendData.savedAt}`,
+          `[saisiemaster] ✅ Merged after login: local=${localClasses.length}, backend=${backendData.classes.length}, merged=${merged.length}`,
         );
         useSaisieMasterStore.setState({
-          classes: backendData.classes,
+          classes: merged,
           activeClassIndex: Math.min(
-            backendData.activeClassIndex,
-            backendData.classes.length - 1,
+            restoredLocal?.activeClassIndex || 0,
+            Math.max(merged.length - 1, 0),
           ),
           view: "editor",
           editorView: "notes",
@@ -180,13 +178,13 @@ export default function SaisieMasterPage() {
           window.localStorage.setItem(
             "saisiemaster:autosave",
             JSON.stringify({
-              classes: backendData.classes,
-              activeClassIndex: backendData.activeClassIndex,
+              classes: merged,
+              activeClassIndex: restoredLocal?.activeClassIndex || 0,
               savedAt: backendData.savedAt,
             }),
           );
         } catch {}
-        console.log("[saisiemaster] ✅ State replaced with backend data after login");
+        console.log("[saisiemaster] ✅ State replaced with merged data after login");
       } else {
         console.log("[saisiemaster] ℹ️ Backend returned no sessions after login — starting fresh");
       }

@@ -386,23 +386,28 @@ export class SaisieMasterService {
       throw new NotFoundException('Prospect not found');
     }
 
-    // Try to find an existing session for the same className + academicYear.
+    // ⭐ FIX: cherche par className SEUL (pas academicYear).
+    //    Avant, on cherchait par (className + academicYear), ce qui créait des
+    //    DOUBLONS quand academicYear variait entre les saves (parfois "2025-2026",
+    //    parfois null). On prend la plus récente session pour cette classe.
     const academicYear = data.academicYear ?? null;
     const existing = await this.prisma.saisieMasterSession.findFirst({
       where: {
         prospectId,
         className: data.className,
-        academicYear,
       },
+      orderBy: { updatedAt: 'desc' },
     });
 
     let session;
     let isNew = false;
     if (existing) {
+      // ⭐ Mettre à jour la session existante (la plus récente)
       session = await this.prisma.saisieMasterSession.update({
         where: { id: existing.id },
         data: {
-          schoolYear: data.schoolYear ?? null,
+          schoolYear: data.schoolYear ?? existing.schoolYear ?? null,
+          academicYear: academicYear ?? existing.academicYear,
           studentCount: data.studentCount ?? 0,
           subjectCount: data.subjectCount ?? 0,
           gradesData: data.gradesData as object,
@@ -429,21 +434,54 @@ export class SaisieMasterService {
       });
     }
 
+    // ⭐ Log détaillé pour le debug
+    const gd = data.gradesData as any || {};
+    const evalCounts: Record<string, number> = {};
+    if (gd.evaluations) {
+      for (const evalType of ['EF1', 'ES1', 'ES2', 'ES3']) {
+        const evalNotes = gd.evaluations[evalType] || {};
+        let totalNotes = 0;
+        for (const studentId of Object.keys(evalNotes)) {
+          const studentNotes = evalNotes[studentId];
+          if (studentNotes && typeof studentNotes === 'object') {
+            totalNotes += Object.keys(studentNotes).length;
+          }
+        }
+        if (totalNotes > 0) evalCounts[evalType] = totalNotes;
+      }
+    }
     this.logger.log(
-      `Session ${isNew ? 'created' : 'updated'} — prospect ${prospectId}, class ${data.className} (${session.id})`,
+      `Session ${isNew ? 'created' : 'updated'} — prospect ${prospectId}, class ${data.className} (${session.id}), evaluations: ${JSON.stringify(evalCounts)}`,
     );
     return session;
   }
 
   /**
    * List all sessions for a prospect (most recently updated first).
+   * ⭐ Déduplique par className : si plusieurs sessions existent pour la même
+   *    classe (à cause d'un ancien bug), on ne retourne que la plus récente.
    */
   async getSessions(prospectId: string) {
     const sessions = await this.prisma.saisieMasterSession.findMany({
       where: { prospectId },
       orderBy: { updatedAt: 'desc' },
     });
-    return sessions;
+
+    // ⭐ Dédupliquer par className — garder la plus récente
+    const seenClassNames = new Set<string>();
+    const deduped = sessions.filter((s) => {
+      if (seenClassNames.has(s.className)) return false;
+      seenClassNames.add(s.className);
+      return true;
+    });
+
+    // Log pour le debug
+    this.logger.log(
+      `getSessions — prospect ${prospectId}: ${sessions.length} total, ${deduped.length} after dedup. ` +
+      `Classes: ${deduped.map(s => `${s.className} (updated ${s.updatedAt.toISOString()})`).join(', ')}`,
+    );
+
+    return deduped;
   }
 
   /**

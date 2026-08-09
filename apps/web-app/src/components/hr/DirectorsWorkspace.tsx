@@ -25,7 +25,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Loader2, Save, UserCog, CheckCircle2, AlertCircle, Trash2,
-  Upload, Pen, School, Globe, Link2, Link2Off,
+  Upload, Pen, School, Globe, Link2, Link2Off, Eraser,
 } from 'lucide-react';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { useBilingual } from '@/contexts/BilingualContext';
@@ -587,16 +587,48 @@ export default function DirectorsWorkspace() {
                       {/* Canvas mode */}
                       {currentSigMode === 'canvas' && (
                         <div className="space-y-2">
-                          <div className="border border-slate-300 rounded-lg p-1 bg-slate-50/50">
-                            <SignatureCanvas
-                              width={400}
-                              height={120}
-                              onSignatureChange={(data) => handleSignatureChange(key, data)}
-                            />
-                          </div>
-                          {formData.signatureDataUrl && (
-                            <div className="text-xs text-emerald-600 flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3" /> Signature capturée
+                          {/* ⭐ Si une signature existe déjà (canvas), l'afficher comme image
+                              + bouton "Modifier" pour effacer et re-signer.
+                              Le canvas React a un bug connu : il se vide au moindre re-render
+                              car React met à jour les attributs width/height. On affiche donc
+                              l'image stockée au lieu du canvas quand une signature est capturée. */}
+                          {formData.signatureDataUrl ? (
+                            <div className="space-y-2">
+                              <div className="border border-emerald-300 rounded-lg p-2 bg-emerald-50/30">
+                                <img
+                                  src={formData.signatureDataUrl}
+                                  alt="Signature capturée"
+                                  className="max-h-24 mx-auto"
+                                />
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <div className="text-xs text-emerald-600 flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3" /> Signature capturée
+                                </div>
+                                {!isLinked && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setForms(prev => ({
+                                        ...prev,
+                                        [key]: { ...prev[key], signatureDataUrl: null },
+                                      }));
+                                    }}
+                                    className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
+                                  >
+                                    <Eraser className="w-3 h-3" /> Modifier
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            /* Canvas vide — prêt pour signer */
+                            <div className="border border-slate-300 rounded-lg p-1 bg-slate-50/50">
+                              <SignatureCanvas
+                                width={400}
+                                height={120}
+                                onSignatureChange={(data) => handleSignatureChange(key, data)}
+                              />
                             </div>
                           )}
                         </div>

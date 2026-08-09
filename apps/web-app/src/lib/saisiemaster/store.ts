@@ -629,6 +629,10 @@ export function restoreFromStorage(): {
  * ⭐ Restore from backend (Neon DB) — fetches all sessions for the
  * authenticated prospect and converts them to ClassData[].
  * Falls back to localStorage if backend fails or returns no sessions.
+ *
+ * ⭐ Fusion intelligente : pour chaque classe, si les données locales
+ *    (localStorage) ont PLUS de notes que le backend, on garde local.
+ *    Sinon, on prend le backend.
  */
 export async function restoreFromBackend(): Promise<{
   classes: ClassData[];
@@ -681,7 +685,6 @@ export async function restoreFromBackend(): Promise<{
           const evalNotes = cls.evaluations[evalType] || {};
           const studentCount = Object.keys(evalNotes).length;
           if (studentCount > 0) {
-            // Compter le nombre total de notes dans ce type d'évaluation
             let totalNotes = 0;
             for (const studentId of Object.keys(evalNotes)) {
               const studentNotes = evalNotes[studentId];
@@ -708,4 +711,65 @@ export async function restoreFromBackend(): Promise<{
     console.warn("[saisiemaster] restoreFromBackend failed:", e);
     return null;
   }
+}
+
+/**
+ * ⭐ Compte le nombre total de notes dans une classe (tous types d'éval confondus).
+ *    Utilisé pour comparer local vs backend et décider lequel garder.
+ */
+function countTotalNotes(cls: ClassData): number {
+  let count = 0;
+  if (cls.evaluations) {
+    for (const evalType of ["EF1", "ES1", "ES2", "ES3"] as const) {
+      const evalNotes = cls.evaluations[evalType] || {};
+      for (const studentId of Object.keys(evalNotes)) {
+        const studentNotes = evalNotes[studentId];
+        if (studentNotes && typeof studentNotes === "object") {
+          count += Object.keys(studentNotes).length;
+        }
+      }
+    }
+  }
+  return count;
+}
+
+/**
+ * ⭐ Fusionne les classes locales avec les classes backend.
+ *    Pour chaque className :
+ *      - Si seulement dans local → garder local
+ *      - Si seulement dans backend → prendre backend
+ *      - Si dans les deux → prendre celui qui a le PLUS de notes
+ *        (ou le backend si égalité, car le backend est la source partagée)
+ */
+export function mergeClasses(localClasses: ClassData[], backendClasses: ClassData[]): ClassData[] {
+  const merged: ClassData[] = [];
+  const seenClassNames = new Set<string>();
+
+  // D'abord, ajouter toutes les classes backend
+  for (const beClass of backendClasses) {
+    const localMatch = localClasses.find(lc => lc.className === beClass.className);
+    if (localMatch) {
+      // Comparer le nombre de notes
+      const localNotes = countTotalNotes(localMatch);
+      const backendNotes = countTotalNotes(beClass);
+      console.log(
+        `[saisiemaster] 🔄 Merge "${beClass.className}": local=${localNotes} notes, backend=${backendNotes} notes → ` +
+        `${localNotes > backendNotes ? 'KEEPING LOCAL' : 'USING BACKEND'}`,
+      );
+      merged.push(localNotes > backendNotes ? localMatch : beClass);
+    } else {
+      merged.push(beClass);
+    }
+    seenClassNames.add(beClass.className);
+  }
+
+  // Ensuite, ajouter les classes locales qui ne sont pas dans le backend
+  for (const lc of localClasses) {
+    if (!seenClassNames.has(lc.className)) {
+      console.log(`[saisiemaster] ➕ Local-only class: ${lc.className} (${countTotalNotes(lc)} notes)`);
+      merged.push(lc);
+    }
+  }
+
+  return merged;
 }

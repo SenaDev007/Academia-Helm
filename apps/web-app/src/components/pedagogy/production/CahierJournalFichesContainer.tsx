@@ -63,13 +63,20 @@ export function CahierJournalFichesContainer({
     matiere?: string;
     sheetType?: string;
   } | null>(null);
+  // ⭐ ClassId récupéré depuis le cahier journal — passé à PedagogicalSheetsTab
+  //    pour pré-sélectionner automatiquement la classe
+  const [currentClassId, setCurrentClassId] = useState<string | null>(null);
 
   // Quand CahierJournalTab appelle onJournalSaved/onJournalSubmitted avec
   // l'ID du cahier journal, on bascule vers le sous-onglet fiches.
   const handleJournalSaved = useCallback(
     (journalId: string, meta?: any) => {
       setCurrentJournalId(journalId);
-      if (meta) setCurrentJournalMeta(meta);
+      if (meta) {
+        setCurrentJournalMeta(meta);
+        // ⭐ Récupérer le classId pour le passer à PedagogicalSheetsTab
+        if (meta.classId) setCurrentClassId(meta.classId);
+      }
       // ⭐ Bascule automatique vers sous-onglet Fiches
       setSubTab("fiches");
       toast.success("Cahier journal enregistré", {
@@ -82,7 +89,10 @@ export function CahierJournalFichesContainer({
   const handleJournalSubmitted = useCallback(
     (journalId: string, meta?: any) => {
       setCurrentJournalId(journalId);
-      if (meta) setCurrentJournalMeta(meta);
+      if (meta) {
+        setCurrentJournalMeta(meta);
+        if (meta.classId) setCurrentClassId(meta.classId);
+      }
       setSubTab("fiches");
     },
     [],
@@ -212,6 +222,7 @@ export function CahierJournalFichesContainer({
                     academicYearId={academicYearId}
                     teacherId={teacherId}
                     cahierJournalId={currentJournalId}
+                    initialClassId={currentClassId || undefined}
                     initialLessonDay={pendingInitialPayload?.day}
                     initialSheetType={pendingInitialPayload?.sheetType}
                     initialMatiere={pendingInitialPayload?.matiere}

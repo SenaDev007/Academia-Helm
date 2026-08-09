@@ -36,6 +36,7 @@ interface CahierJournalTabProps {
     weekEndDate?: string;
     className?: string;
     status?: string;
+    classId?: string;
   }) => void;
   /** ⭐ Callback appelé après un "Soumettre" réussi (avec ou sans fiches) */
   onJournalSubmitted?: (journalId: string, meta?: {
@@ -43,6 +44,7 @@ interface CahierJournalTabProps {
     weekEndDate?: string;
     className?: string;
     status?: string;
+    classId?: string;
   }) => void;
 }
 
@@ -423,6 +425,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, onJourna
         weekEndDate: journal.weekEndDate,
         className: journal.classNameResolved || journal.className,
         status: journal.status,
+        classId: selectedClassId,
       });
       loadJournal();
     } catch (e: any) {

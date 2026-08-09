@@ -45,6 +45,8 @@ interface PedagogicalSheetsTabProps {
   teacherId: string;
   /** ⭐ ID du cahier journal auquel rattacher les nouvelles fiches créées depuis l'UI du cahier journal */
   cahierJournalId?: string;
+  /** ⭐ ID de la classe à pré-sélectionner (récupéré depuis le cahier journal) */
+  initialClassId?: string;
   /** ⭐ Jour initial (lundi/mardi/...) pour pré-remplir la date de la leçon */
   initialLessonDay?: string;
   /** ⭐ Type de fiche initial (MATH/FRANCAIS/EST/ES/EA) deviné depuis la matière */
@@ -142,7 +144,7 @@ const SHEET_TYPE_CONFIG: Record<string, {
   },
 };
 
-export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahierJournalId, initialLessonDay, initialSheetType, initialMatiere }: PedagogicalSheetsTabProps) {
+export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahierJournalId, initialClassId, initialLessonDay, initialSheetType, initialMatiere }: PedagogicalSheetsTabProps) {
   const { user } = useAppSession();
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>("");
@@ -200,10 +202,17 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
       setClasses(list);
-      // ⭐ Auto-sélectionner la 1ère classe si aucune sélectionnée (pour pré-remplir les signatures)
-      if (list.length > 0 && !selectedClassId) setSelectedClassId(list[0].classId);
+      // ⭐ Pré-sélectionner la classe : priorité à initialClassId (depuis le cahier journal)
+      //    sinon la 1ère classe de la liste
+      if (list.length > 0 && !selectedClassId) {
+        if (initialClassId && list.some(c => c.classId === initialClassId)) {
+          setSelectedClassId(initialClassId);
+        } else {
+          setSelectedClassId(list[0].classId);
+        }
+      }
     } catch { setClasses([]); }
-  }, [teacherId, academicYearId, selectedClassId]);
+  }, [teacherId, academicYearId, selectedClassId, initialClassId]);
 
   const loadFiches = useCallback(async () => {
     if (!selectedClassId) { setFiches([]); return; }
@@ -285,6 +294,28 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     })();
     return () => { cancelled = true; };
   }, [selectedClassId, classes, user]);
+
+  // ⭐ Synchroniser form.classId quand selectedClassId change (programmation ou manuel)
+  //    Sans ça, le bouton "Créer fiche" échoue car form.classId est vide
+  useEffect(() => {
+    if (selectedClassId) {
+      const cls = classes.find(c => c.classId === selectedClassId);
+      setForm(prev => ({
+        ...prev,
+        classId: selectedClassId,
+        className: cls?.className || prev.className || '',
+        boysCount: cls?.boys || prev.boysCount || 0,
+        girlsCount: cls?.girls || prev.girlsCount || 0,
+        totalStudents: cls?.totalStudents || prev.totalStudents || 0,
+        boysPresent: cls?.boys || prev.boysPresent || 0,
+        girlsPresent: cls?.girls || prev.girlsPresent || 0,
+        totalPresent: cls?.totalStudents || prev.totalPresent || 0,
+        boysAbsent: 0,
+        girlsAbsent: 0,
+        totalAbsent: 0,
+      }));
+    }
+  }, [selectedClassId, classes]);
 
   // ⭐ Construire le label "Directeur" ou "Directrice" selon le genre
   const directorLabel = directorInfo?.gender === 'F' ? 'La Directrice' : 'Le Directeur';

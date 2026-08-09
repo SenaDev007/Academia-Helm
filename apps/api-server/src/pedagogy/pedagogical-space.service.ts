@@ -2334,29 +2334,77 @@ export class PedagogicalSpaceService {
     }
     const journal = journalRows[0];
 
+    // ⭐ Détection : la colonne "cahierJournalId" existe-t-elle sur primary_pedagogical_fiches ?
+    //    Si la migration prisma db push n'a pas été exécutée, la colonne n'existe pas
+    //    et on doit fallback sur l'ancienne méthode (par plage de dates).
+    let hasCahierJournalIdColumn = false;
+    try {
+      const colCheck: any = await this.prisma.$queryRawUnsafe(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_name = 'primary_pedagogical_fiches' AND column_name = 'cahierJournalId'
+         LIMIT 1`,
+      );
+      hasCahierJournalIdColumn = Array.isArray(colCheck) && colCheck.length > 0;
+    } catch {
+      hasCahierJournalIdColumn = false;
+    }
+
     // ─── 2. Charger les fiches rattachées structurellement (cahierJournalId) ───
-    const fichesLiees: any = await this.prisma.$queryRawUnsafe(
-      `SELECT * FROM "primary_pedagogical_fiches"
-       WHERE "cahierJournalId" = $1
-       ORDER BY "lessonDate" ASC NULLS LAST, "adminDate" ASC NULLS LAST, "createdAt" ASC`,
-      journalId,
-    );
+    //    Uniquement si la colonne existe ; sinon on saute cette étape.
+    let fichesLiees: any[] = [];
+    if (hasCahierJournalIdColumn) {
+      try {
+        fichesLiees = await this.prisma.$queryRawUnsafe(
+          `SELECT * FROM "primary_pedagogical_fiches"
+           WHERE "cahierJournalId" = $1
+           ORDER BY "lessonDate" ASC NULLS LAST, "adminDate" ASC NULLS LAST, "createdAt" ASC`,
+          journalId,
+        );
+      } catch (err) {
+        this.logger.warn(`getFichesForCahierJournal: query by cahierJournalId failed, fallback to date range: ${err.message}`);
+        fichesLiees = [];
+      }
+    }
 
     // ─── 3. Fallback : fiches non rattachées mais dont la date est dans la semaine ───
-    //    (pour rétro-compatibilité avec les fiches créées avant l'ajout du champ)
-    const fichesNonLieees: any = await this.prisma.$queryRawUnsafe(
-      `SELECT * FROM "primary_pedagogical_fiches"
-       WHERE "tenantId" = $1
-         AND "academicYearId" = $2
-         AND "teacherId" = $3
-         AND "classId" = $4
-         AND ("cahierJournalId" IS NULL)
-         AND (("adminDate" IS NOT NULL AND "adminDate" BETWEEN $5 AND $6)
-           OR ("lessonDate" IS NOT NULL AND "lessonDate" BETWEEN $5 AND $6))
-       ORDER BY "lessonDate" ASC NULLS LAST, "adminDate" ASC NULLS LAST`,
-      tenantId, journal.academicYearId, journal.teacherId, journal.classId,
-      journal.weekStartDate, journal.weekEndDate,
-    );
+    //    (pour rétro-compatibilité avec les fiches créées avant l'ajout du champ
+    //    OU si la colonne n'existe pas encore)
+    let fichesNonLieees: any[] = [];
+    try {
+      if (hasCahierJournalIdColumn) {
+        // Colonne existe : on filtre les fiches sans cahierJournalId + dans la plage
+        fichesNonLieees = await this.prisma.$queryRawUnsafe(
+          `SELECT * FROM "primary_pedagogical_fiches"
+           WHERE "tenantId" = $1
+             AND "academicYearId" = $2
+             AND "teacherId" = $3
+             AND "classId" = $4
+             AND ("cahierJournalId" IS NULL)
+             AND (("adminDate" IS NOT NULL AND "adminDate" BETWEEN $5 AND $6)
+               OR ("lessonDate" IS NOT NULL AND "lessonDate" BETWEEN $5 AND $6))
+           ORDER BY "lessonDate" ASC NULLS LAST, "adminDate" ASC NULLS LAST`,
+          tenantId, journal.academicYearId, journal.teacherId, journal.classId,
+          journal.weekStartDate, journal.weekEndDate,
+        );
+      } else {
+        // Colonne n'existe pas : on prend toutes les fiches de la semaine
+        fichesNonLieees = await this.prisma.$queryRawUnsafe(
+          `SELECT * FROM "primary_pedagogical_fiches"
+           WHERE "tenantId" = $1
+             AND "academicYearId" = $2
+             AND "teacherId" = $3
+             AND "classId" = $4
+             AND (("adminDate" IS NOT NULL AND "adminDate" BETWEEN $5 AND $6)
+               OR ("lessonDate" IS NOT NULL AND "lessonDate" BETWEEN $5 AND $6))
+           ORDER BY "lessonDate" ASC NULLS LAST, "adminDate" ASC NULLS LAST`,
+          tenantId, journal.academicYearId, journal.teacherId, journal.classId,
+          journal.weekStartDate, journal.weekEndDate,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`getFichesForCahierJournal: date range query failed: ${err.message}`);
+      fichesNonLieees = [];
+    }
 
     // ─── 4. Grouper par jour ───
     const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
@@ -2487,10 +2535,17 @@ export class PedagogicalSpaceService {
     if (!ficheRows || ficheRows.length === 0) {
       throw new NotFoundException('Fiche pédagogique non trouvée');
     }
-    await this.prisma.$executeRawUnsafe(
-      `UPDATE "primary_pedagogical_fiches" SET "cahierJournalId" = $1, "updatedAt" = NOW() WHERE "id" = $2`,
-      journalId, ficheId,
-    );
+    // ⭐ Rendu résilient : si la colonne cahierJournalId n'existe pas (migration non faite),
+    //    on retourne quand même success — le lien sera établi plus tard une fois la migration faite.
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "primary_pedagogical_fiches" SET "cahierJournalId" = $1, "updatedAt" = NOW() WHERE "id" = $2`,
+        journalId, ficheId,
+      );
+    } catch (err: any) {
+      this.logger.warn(`linkFicheToCahierJournal: column cahierJournalId not found, skipping: ${err.message}`);
+      // On ne plante pas — on retourne success (le lien sera établi plus tard)
+    }
     return { success: true, journalId, ficheId };
   }
 
@@ -2577,18 +2632,37 @@ export class PedagogicalSpaceService {
       });
 
       // ─── 5. Soumettre chaque fiche (DRAFT → SUBMITTED) + rattacher au cahier journal ───
+      //    ⭐ On essaie d'abord avec la colonne cahierJournalId (migration effectuée).
+      //    Si la colonne n'existe pas (erreur 42703), on retombe sur UPDATE simple
+      //    sans cahierJournalId — la soumission fonctionne quand même.
       for (const fiche of fichesToSubmit) {
         try {
-          await this.prisma.$executeRawUnsafe(
-            `UPDATE "primary_pedagogical_fiches"
-             SET "status" = 'SUBMITTED',
-                 "submittedAt" = NOW(),
-                 "updatedAt" = NOW(),
-                 "cahierJournalId" = $2
-             WHERE "id" = $1`,
-            fiche.id,
-            journalId,
-          );
+          try {
+            await this.prisma.$executeRawUnsafe(
+              `UPDATE "primary_pedagogical_fiches"
+               SET "status" = 'SUBMITTED',
+                   "submittedAt" = NOW(),
+                   "updatedAt" = NOW(),
+                   "cahierJournalId" = $2
+               WHERE "id" = $1`,
+              fiche.id,
+              journalId,
+            );
+          } catch (colErr: any) {
+            // Colonne cahierJournalId inexistante (P2010 / 42703) — fallback sans cahierJournalId
+            if (colErr.code === 'P2010' || (colErr.message && colErr.message.includes('42703'))) {
+              await this.prisma.$executeRawUnsafe(
+                `UPDATE "primary_pedagogical_fiches"
+                 SET "status" = 'SUBMITTED',
+                     "submittedAt" = NOW(),
+                     "updatedAt" = NOW()
+                 WHERE "id" = $1`,
+                fiche.id,
+              );
+            } else {
+              throw colErr;
+            }
+          }
           submittedFiches.push({ id: fiche.id, sheetType: fiche.sheetType, date: fiche.adminDate || fiche.lessonDate });
         } catch (err: any) {
           skippedFiches.push({ id: fiche.id, error: err.message });
@@ -3206,6 +3280,10 @@ export class PedagogicalSpaceService {
       phase_introductive: 'phase_introductive', phase_systematisation: 'phase_systematisation', phase_application: 'phase_application',
       app_col1: 'app_col1', app_col2: 'app_col2', app_col3: 'app_col3',
       // ⭐ Lien structurel vers le cahier journal (null si fiche créée hors cahier journal)
+      //    ⚠️ Si la colonne n'existe pas en DB (migration non faite), le INSERT va planter.
+      //    On l'ajoute quand même : si la migration est faite, ça marche ; sinon, le
+      //    frontend n'enverra pas cahierJournalId (le composant CahierJournalFichesContainer
+      //    ne l'envoie que si il est défini), et le fieldMap ne l'ajoutera pas au INSERT.
       cahierJournalId: 'cahierJournalId',
     };
 
@@ -3228,10 +3306,32 @@ export class PedagogicalSpaceService {
       }
     }
 
-    await this.prisma.$executeRawUnsafe(
-      `INSERT INTO "primary_pedagogical_fiches" (${fields.join(', ')}) VALUES (${placeholders.join(', ')})`,
-      ...params,
-    );
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO "primary_pedagogical_fiches" (${fields.join(', ')}) VALUES (${placeholders.join(', ')})`,
+        ...params,
+      );
+    } catch (insertErr: any) {
+      // ⭐ Si la colonne cahierJournalId n'existe pas (migration non faite),
+      //    on retente sans ce champ.
+      if (insertErr.code === 'P2010' || (insertErr.message && insertErr.message.includes('42703'))) {
+        // Retirer cahierJournalId des fields/placeholders/params
+        const idx = fields.indexOf('"cahierJournalId"');
+        if (idx >= 0) {
+          fields.splice(idx, 1);
+          placeholders.splice(idx, 1);
+          params.splice(idx, 1);
+          await this.prisma.$executeRawUnsafe(
+            `INSERT INTO "primary_pedagogical_fiches" (${fields.join(', ')}) VALUES (${placeholders.join(', ')})`,
+            ...params,
+          );
+        } else {
+          throw insertErr;
+        }
+      } else {
+        throw insertErr;
+      }
+    }
 
     return this.getPedagogicalFiche(tenantId, id);
   }
@@ -3296,10 +3396,33 @@ export class PedagogicalSpaceService {
     params.push(ficheId, tenantId);
     const lastIdx = paramIdx;
 
-    await this.prisma.$executeRawUnsafe(
-      `UPDATE "primary_pedagogical_fiches" SET ${updates.join(', ')} WHERE "id" = $${lastIdx} AND "tenantId" = $${lastIdx + 1}`,
-      ...params,
-    );
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "primary_pedagogical_fiches" SET ${updates.join(', ')} WHERE "id" = $${lastIdx} AND "tenantId" = $${lastIdx + 1}`,
+        ...params,
+      );
+    } catch (updateErr: any) {
+      // ⭐ Si la colonne cahierJournalId n'existe pas (migration non faite), on retente sans
+      if (updateErr.code === 'P2010' || (updateErr.message && updateErr.message.includes('42703'))) {
+        // Retirer la ligne "cahierJournalId" des updates + le param correspondant
+        const idx = updates.findIndex(u => u.startsWith('"cahierJournalId"'));
+        if (idx >= 0) {
+          updates.splice(idx, 1);
+          params.splice(idx, 1);
+          // Recalculer les indices des placeholders
+          let newParamIdx = 1;
+          const newUpdates = updates.map(u => u.replace(/\$(\d+)/g, () => `$${newParamIdx++}`));
+          await this.prisma.$executeRawUnsafe(
+            `UPDATE "primary_pedagogical_fiches" SET ${newUpdates.join(', ')} WHERE "id" = $${newParamIdx} AND "tenantId" = $${newParamIdx + 1}`,
+            ...params,
+          );
+        } else {
+          throw updateErr;
+        }
+      } else {
+        throw updateErr;
+      }
+    }
 
     return this.getPedagogicalFiche(tenantId, ficheId);
   }

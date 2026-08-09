@@ -44,7 +44,7 @@ class _FinanceModuleScreenState extends ConsumerState<FinanceModuleScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: const AHAppBar(),
+      appBar: const AHAppBar(showBackButton: true, title: 'Finances'),
       body: Column(
         children: [
           Container(

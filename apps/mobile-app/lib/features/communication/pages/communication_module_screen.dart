@@ -27,7 +27,7 @@ class _CommunicationModuleScreenState extends ConsumerState<CommunicationModuleS
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: const AHAppBar(),
+      appBar: const AHAppBar(showBackButton: true, title: 'Communication'),
       body: Column(children: [
         Container(color: Colors.white, child: TabBar(
           controller: _tabController, labelColor: AHColors.navy, unselectedLabelColor: AHColors.grey400,

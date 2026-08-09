@@ -29,6 +29,7 @@ import '../../features/hr/pages/hr_module_screen.dart';
 import '../../features/pedagogy/pages/pedagogy_module_screen.dart';
 import '../../features/exams/pages/exams_module_screen.dart';
 import '../../features/communication/pages/communication_module_screen.dart';
+import '../../features/cms/pages/cms_module_screen.dart';
 import '../../features/settings/pages/settings_screen.dart';
 import '../../features/meetings/pages/meetings_screen.dart';
 import '../../features/orion/pages/orion_screen.dart';
@@ -144,6 +145,12 @@ const List<AdaptiveDestination> _adminDestinations = [
     path: '/finance',
   ),
   AdaptiveDestination(
+    icon: Icons.grading_outlined,
+    selectedIcon: Icons.grading,
+    label: 'Examens',
+    path: '/exams',
+  ),
+  AdaptiveDestination(
     icon: Icons.people_outline,
     selectedIcon: Icons.people,
     label: 'RH',
@@ -154,6 +161,42 @@ const List<AdaptiveDestination> _adminDestinations = [
     selectedIcon: Icons.menu_book,
     label: 'Pédagogie',
     path: '/pedagogy',
+  ),
+  AdaptiveDestination(
+    icon: Icons.chat_bubble_outline,
+    selectedIcon: Icons.chat_bubble,
+    label: 'Communication',
+    path: '/communication',
+  ),
+  AdaptiveDestination(
+    icon: Icons.public_outlined,
+    selectedIcon: Icons.public,
+    label: 'Site Web',
+    path: '/cms',
+  ),
+  AdaptiveDestination(
+    icon: Icons.restaurant_outlined,
+    selectedIcon: Icons.restaurant,
+    label: 'Cantine',
+    path: '/canteen',
+  ),
+  AdaptiveDestination(
+    icon: Icons.radio_outlined,
+    selectedIcon: Icons.radio,
+    label: 'EduCast',
+    path: '/educast',
+  ),
+  AdaptiveDestination(
+    icon: Icons.shopping_bag_outlined,
+    selectedIcon: Icons.shopping_bag,
+    label: 'Boutique',
+    path: '/shop',
+  ),
+  AdaptiveDestination(
+    icon: Icons.settings_outlined,
+    selectedIcon: Icons.settings,
+    label: 'Paramètres',
+    path: '/settings',
   ),
   AdaptiveDestination(
     icon: Icons.person_outline,
@@ -313,13 +356,24 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
         builder: (context, state, child) {
-          // ⭐ Utiliser le provider dynamique au lieu de la constante hardcodée
-          final destinations = ref.read(adaptiveDestinationsProvider);
-          return AHAdaptiveScaffold(
-            destinations: destinations,
-            currentPath: state.matchedLocation,
-            onDestinationSelected: (path) => context.go(path),
-            child: child,
+          // ⭐ PopScope intercepts the Android hardware back button so that
+          // when the user is on a module screen, back goes to the dashboard
+          // instead of exiting the app. The user can still exit by pressing
+          // back from the dashboard.
+          final isDashboard = state.matchedLocation == '/dashboard';
+          return PopScope(
+            canPop: isDashboard,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop && !isDashboard) {
+                GoRouter.of(context).go('/dashboard');
+              }
+            },
+            child: AHAdaptiveScaffold(
+              destinations: ref.read(adaptiveDestinationsProvider),
+              currentPath: state.matchedLocation,
+              onDestinationSelected: (path) => context.go(path),
+              child: child,
+            ),
           );
         },
         routes: [
@@ -493,6 +547,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: '/communication',
             name: 'communication',
             builder: (context, state) => const CommunicationModuleScreen(),
+          ),
+          GoRoute(
+            path: '/cms',
+            name: 'cms',
+            builder: (context, state) => const CmsModuleScreen(),
           ),
           GoRoute(
             path: '/settings',

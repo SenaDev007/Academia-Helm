@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../theme/ah_theme.dart';
 import '../theme/ah_colors.dart';
 import '../theme/ah_spacing.dart';
-import '../theme/ah_spacing.dart' show AHSpacing, AHRadius;
 import '../auth/logout_state.dart';
+import '../providers/school_identity_provider.dart';
 
 /// A destination for the adaptive navigation.
 class AdaptiveDestination {
@@ -24,14 +23,9 @@ class AdaptiveDestination {
 }
 
 /// Adaptive scaffold that switches between:
-/// - Phone: BottomNavigationBar
+/// - Phone: BottomNavigationBar with 5 primary destinations + "Plus" button
 /// - Tablet: NavigationRail
 /// - Desktop: NavigationDrawer (side panel)
-///
-/// Breakpoints:
-/// - < 600: Phone (BottomNavigationBar)
-/// - 600–839: Tablet (NavigationRail)
-/// - ≥ 840: Desktop (NavigationDrawer / extended rail)
 class AHAdaptiveScaffold extends ConsumerWidget {
   const AHAdaptiveScaffold({
     super.key,
@@ -68,25 +62,146 @@ class AHAdaptiveScaffold extends ConsumerWidget {
     );
   }
 
-  // ── Phone: Bottom Navigation ──────────────────────────────────────
+  // ── Phone: Bottom Navigation with "Plus" button ───────────────────
   Widget _buildPhoneLayout(BuildContext context, WidgetRef ref) {
+    // Primary destinations shown in the bottom bar (max 4 to leave room for "Plus")
+    final primary = destinations.take(4).toList();
+    final hasMore = destinations.length > 4;
+
     return Scaffold(
       body: child,
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (index) =>
-            onDestinationSelected(destinations[index].path),
-        destinations: destinations
-            .map((d) => NavigationDestination(
-                  icon: Icon(d.icon),
-                  selectedIcon: Icon(d.selectedIcon),
-                  label: d.label,
-                ))
-            .toList(),
+        selectedIndex: _currentIndex < 4 ? _currentIndex : 4,
+        onDestinationSelected: (index) {
+          if (index == 4 && hasMore) {
+            _showMoreModulesSheet(context);
+            return;
+          }
+          if (index < primary.length) {
+            onDestinationSelected(primary[index].path);
+          }
+        },
+        destinations: [
+          ...primary.map((d) => NavigationDestination(
+                icon: Icon(d.icon),
+                selectedIcon: Icon(d.selectedIcon),
+                label: d.label,
+              )),
+          if (hasMore)
+            const NavigationDestination(
+              icon: Icon(Icons.apps_outlined),
+              selectedIcon: Icon(Icons.apps),
+              label: 'Plus',
+            ),
+        ],
         backgroundColor: Colors.white,
         indicatorColor: AHColors.navy.withOpacity(0.1),
         height: 64,
       ),
+    );
+  }
+
+  /// Shows a modal bottom sheet with the remaining modules.
+  void _showMoreModulesSheet(BuildContext context) {
+    final remaining = destinations.skip(4).toList();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(AHSpacing.lg),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AHColors.grey300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                    margin: const EdgeInsets.only(bottom: AHSpacing.md),
+                  ),
+                ),
+                Text(
+                  'Tous les modules',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AHColors.navy,
+                  ),
+                ),
+                const SizedBox(height: AHSpacing.md),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: AHSpacing.md,
+                    crossAxisSpacing: AHSpacing.md,
+                    childAspectRatio: 0.9,
+                  ),
+                  itemCount: remaining.length,
+                  itemBuilder: (context, index) {
+                    final d = remaining[index];
+                    final isActive = currentPath.startsWith(d.path);
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.pop(context);
+                        onDestinationSelected(d.path);
+                      },
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              color: isActive
+                                  ? AHColors.navy
+                                  : AHColors.navy.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Icon(
+                              isActive ? d.selectedIcon : d.icon,
+                              color: isActive
+                                  ? AHColors.gold
+                                  : AHColors.navy,
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            d.label,
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: isActive
+                                  ? AHColors.navy
+                                  : AHColors.grey600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: AHSpacing.md),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -108,7 +223,7 @@ class AHAdaptiveScaffold extends ConsumerWidget {
                 .toList(),
             backgroundColor: Colors.white,
             indicatorColor: AHColors.navy.withOpacity(0.1),
-            leading: _buildRailLeading(context),
+            leading: _buildRailLeading(context, ref),
             trailing: _buildRailTrailing(context, ref),
             labelType: NavigationRailLabelType.all,
           ),
@@ -119,7 +234,7 @@ class AHAdaptiveScaffold extends ConsumerWidget {
     );
   }
 
-  // ── Desktop: Extended Navigation Rail ─────────────────────────────
+  // ── Desktop: Extended Navigation Drawer ───────────────────────────
   Widget _buildDesktopLayout(BuildContext context, WidgetRef ref) {
     return Scaffold(
       body: Row(
@@ -129,7 +244,7 @@ class AHAdaptiveScaffold extends ConsumerWidget {
             onDestinationSelected: (index) =>
                 onDestinationSelected(destinations[index].path),
             children: [
-              _buildDrawerHeader(context),
+              _buildDrawerHeader(context, ref),
               ...destinations.map((d) => NavigationDrawerDestination(
                     icon: Icon(d.icon),
                     selectedIcon: Icon(d.selectedIcon),
@@ -154,29 +269,16 @@ class AHAdaptiveScaffold extends ConsumerWidget {
 
   // ── Rail Leading/Trailing ─────────────────────────────────────────
 
-  Widget _buildRailLeading(BuildContext context) {
+  Widget _buildRailLeading(BuildContext context, WidgetRef ref) {
+    final identity = ref.watch(schoolIdentityProvider).valueOrNull;
+    final logoUrl = identity?.absoluteLogoUrl;
+
     return Padding(
       padding: const EdgeInsets.symmetric(
         vertical: AHSpacing.lg,
         horizontal: AHSpacing.sm,
       ),
-      child: Column(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: AHColors.navy,
-              borderRadius: BorderRadius.circular(AHRadius.md),
-            ),
-            child: const Icon(
-              Icons.shield,
-              color: AHColors.gold,
-              size: 20,
-            ),
-          ),
-        ],
-      ),
+      child: _LogoCircle(logoUrl: logoUrl, size: 36),
     );
   }
 
@@ -198,7 +300,12 @@ class AHAdaptiveScaffold extends ConsumerWidget {
 
   // ── Drawer Header ─────────────────────────────────────────────────
 
-  Widget _buildDrawerHeader(BuildContext context) {
+  Widget _buildDrawerHeader(BuildContext context, WidgetRef ref) {
+    final identity = ref.watch(schoolIdentityProvider).valueOrNull;
+    final logoUrl = identity?.absoluteLogoUrl;
+    final name = identity?.schoolName ?? 'Academia Helm';
+    final acronym = identity?.displayAcronym ?? 'AH';
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AHSpacing.lg,
@@ -208,38 +315,30 @@ class AHAdaptiveScaffold extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AHColors.navy,
-              borderRadius: BorderRadius.circular(AHRadius.md),
-            ),
-            child: const Icon(
-              Icons.shield,
-              color: AHColors.gold,
-              size: 24,
-            ),
-          ),
+          _LogoCircle(logoUrl: logoUrl, size: 40),
           const SizedBox(width: AHSpacing.md),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Academia Helm',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: AHColors.navy,
-                    ),
-              ),
-              Text(
-                'Gestion Scolaire',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AHColors.grey500,
-                    ),
-              ),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: AHColors.navy,
+                      ),
+                ),
+                Text(
+                  acronym,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AHColors.grey500,
+                      ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -269,7 +368,6 @@ class AHAdaptiveScaffold extends ConsumerWidget {
           borderRadius: BorderRadius.circular(AHSpacing.r8),
         ),
         onTap: () {
-          // Close drawer first, then show confirmation.
           Navigator.of(context).pop();
           _showLogoutConfirmation(context);
         },
@@ -307,9 +405,61 @@ class AHAdaptiveScaffold extends ConsumerWidget {
       },
     ).then((confirmed) {
       if (confirmed == true && context.mounted) {
-        // Navigate to the logout screen which handles the 5-step process.
         context.go('/logout');
       }
     });
+  }
+}
+
+/// Circular school logo — uses real image if URL is available, falls back
+/// to a gold-shielded "AH" badge.
+class _LogoCircle extends StatelessWidget {
+  const _LogoCircle({required this.logoUrl, required this.size});
+
+  final String? logoUrl;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    if (logoUrl == null || logoUrl!.isEmpty) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: AHColors.navy,
+          borderRadius: BorderRadius.circular(size * 0.25),
+        ),
+        child: Icon(
+          Icons.shield,
+          color: AHColors.gold,
+          size: size * 0.55,
+        ),
+      );
+    }
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(size * 0.25),
+        border: Border.all(color: AHColors.gold, width: 1.5),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(size * 0.25),
+        child: CachedNetworkImage(
+          imageUrl: logoUrl!,
+          fit: BoxFit.cover,
+          errorWidget: (context, url, error) => Container(
+            color: AHColors.navy,
+            child: Icon(
+              Icons.shield,
+              color: AHColors.gold,
+              size: size * 0.55,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

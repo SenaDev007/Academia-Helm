@@ -28,7 +28,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: const AHAppBar(),
+      appBar: const AHAppBar(showBackButton: true, title: 'Ressources Humaines'),
       body: Column(children: [
         Container(color: Colors.white, child: TabBar(
           controller: _tabController, labelColor: AHColors.navy, unselectedLabelColor: AHColors.grey400,

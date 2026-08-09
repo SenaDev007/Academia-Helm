@@ -1,24 +1,25 @@
-import '../theme/ah_colors.dart';
-import '../theme/ah_spacing.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../auth/auth_notifier.dart';
 import '../auth/auth_providers.dart';
-import '../auth/auth_state.dart';
-import '../theme/ah_theme.dart';
-import '../auth/token_storage.dart';
+import '../providers/school_identity_provider.dart';
+import '../theme/ah_colors.dart';
+import '../theme/ah_spacing.dart';
 
 /// Custom AH App Bar with:
-/// - School name + acronym
-/// - School logo / shield icon
+/// - Real school logo (from /api/settings/identity)
+/// - Full school name + acronym
 /// - Notification bell with badge
 /// - User avatar
+/// - Back button that NEVER exits the app — falls back to /dashboard
 class AHAppBar extends ConsumerWidget implements PreferredSizeWidget {
-  const AHAppBar({super.key, this.showBackButton = false});
+  const AHAppBar({super.key, this.showBackButton = false, this.title});
 
   final bool showBackButton;
+  final String? title;
 
   @override
   Size get preferredSize => const Size.fromHeight(60);
@@ -27,20 +28,22 @@ class AHAppBar extends ConsumerWidget implements PreferredSizeWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authNotifierProvider).valueOrNull;
     final user = authState?.userOrNull;
+    final identityAsync = ref.watch(schoolIdentityProvider);
+
+    // Use the identity from API if available, else fall back to whatever
+    // is in the auth state's tenant list, else default.
+    final identity = identityAsync.valueOrNull;
     final tenantId = authState?.selectedTenantIdOrNull;
     final tenants = authState?.availableTenantsOrNull ?? [];
     final tenant = tenantId != null
         ? tenants.where((t) => t.id == tenantId).firstOrNull
         : null;
 
-    // Try to get tenant name from session storage (stored during login)
-    final sessionTenant = TokenStorage.getSessionTenantSync();
-    final tenantName = tenant?.name ??
-        sessionTenant?['name'] as String? ??
+    final tenantName = identity?.schoolName ??
+        tenant?.name ??
         'Academia Helm';
-    final acronym = tenant?.acronym ??
-        sessionTenant?['acronym'] as String? ??
-        _getAcronym(tenantName);
+    final acronym = identity?.displayAcronym ?? tenant?.acronym ?? 'AH';
+    final logoUrl = identity?.absoluteLogoUrl;
     final fullName = user?.displayName ?? 'Utilisateur';
     final initials = _getInitials(fullName);
 
@@ -68,24 +71,12 @@ class AHAppBar extends ConsumerWidget implements PreferredSizeWidget {
               if (showBackButton)
                 IconButton(
                   icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: () => context.pop(),
+                  onPressed: () => _safeBack(context),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 )
               else
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(AHRadius.md),
-                  ),
-                  child: const Icon(
-                    Icons.shield,
-                    color: AHColors.gold,
-                    size: 20,
-                  ),
-                ),
+                _SchoolLogo(logoUrl: logoUrl),
 
               const SizedBox(width: AHSpacing.md),
 
@@ -96,25 +87,28 @@ class AHAppBar extends ConsumerWidget implements PreferredSizeWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      tenantName,
+                      title ?? tenantName,
                       style: const TextStyle(
                         fontFamily: 'Inter',
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
                         color: Colors.white,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    Text(
-                      acronym,
-                      style: TextStyle(
-                        fontFamily: 'Inter',
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white.withOpacity(0.7),
+                    if (title == null)
+                      Text(
+                        acronym,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white.withOpacity(0.7),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -131,7 +125,7 @@ class AHAppBar extends ConsumerWidget implements PreferredSizeWidget {
                     size: 24,
                   ),
                 ),
-                onPressed: () => context.go('/notifications'),
+                onPressed: () => context.go('/communication'),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               ),
@@ -162,6 +156,18 @@ class AHAppBar extends ConsumerWidget implements PreferredSizeWidget {
     );
   }
 
+  /// Pop the current route if there's something to pop, otherwise navigate
+  /// to the dashboard. NEVER exits the app from a module screen.
+  void _safeBack(BuildContext context) {
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+    } else {
+      // Fall back to the dashboard — the user is at the root of the shell.
+      GoRouter.of(context).go('/dashboard');
+    }
+  }
+
   String _getInitials(String name) {
     final parts = name.trim().split(' ');
     if (parts.length >= 2) {
@@ -169,20 +175,63 @@ class AHAppBar extends ConsumerWidget implements PreferredSizeWidget {
     }
     return name.substring(0, name.length > 2 ? 2 : name.length).toUpperCase();
   }
+}
 
-  /// Generate an acronym from a long school name.
-  /// e.g. "Complexe Scolaire Privé..." → "CSP"
-  String _getAcronym(String name) {
-    if (name.isEmpty || name == 'Academia Helm') return 'AH';
-    final words = name.trim().split(RegExp(r'\s+'));
-    if (words.length <= 2) return name.substring(0, name.length > 2 ? 2 : name.length).toUpperCase();
-    final acronym = StringBuffer();
-    for (final w in words.take(4)) {
-      if (w.isNotEmpty && !['de', 'et', 'le', 'la', 'les', 'du', 'des', 'à', 'en'].contains(w.toLowerCase())) {
-        acronym.write(w[0].toUpperCase());
-      }
+/// School logo widget — shows the real logo from URL, or a fallback shield
+/// icon with the school's first letter.
+class _SchoolLogo extends StatelessWidget {
+  const _SchoolLogo({required this.logoUrl});
+
+  final String? logoUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    if (logoUrl == null || logoUrl!.isEmpty) {
+      return Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(AHRadius.md),
+        ),
+        child: const Icon(
+          Icons.shield,
+          color: AHColors.gold,
+          size: 20,
+        ),
+      );
     }
-    final result = acronym.toString();
-    return result.isEmpty ? 'AH' : result;
+
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(AHRadius.md),
+        border: Border.all(color: AHColors.gold, width: 1.5),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AHRadius.md),
+        child: CachedNetworkImage(
+          imageUrl: logoUrl!,
+          fit: BoxFit.cover,
+          placeholder: (context, url) => const Center(
+            child: SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.5,
+                color: AHColors.navy,
+              ),
+            ),
+          ),
+          errorWidget: (context, url, error) => const Icon(
+            Icons.shield,
+            color: AHColors.gold,
+            size: 20,
+          ),
+        ),
+      ),
+    );
   }
 }

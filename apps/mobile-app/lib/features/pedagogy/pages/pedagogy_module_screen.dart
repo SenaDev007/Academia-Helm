@@ -27,7 +27,7 @@ class _PedagogyModuleScreenState extends ConsumerState<PedagogyModuleScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: const AHAppBar(),
+      appBar: const AHAppBar(showBackButton: true, title: 'Pédagogie'),
       body: Column(children: [
         Container(color: Colors.white, child: TabBar(
           controller: _tabController, labelColor: AHColors.navy, unselectedLabelColor: AHColors.grey400,

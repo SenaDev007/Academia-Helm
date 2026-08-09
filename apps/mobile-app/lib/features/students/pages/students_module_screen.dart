@@ -56,7 +56,7 @@ class _StudentsModuleScreenState extends ConsumerState<StudentsModuleScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: const AHAppBar(),
+      appBar: const AHAppBar(showBackButton: true, title: 'Élèves & Scolarité'),
       body: Column(
         children: [
           // Tab bar

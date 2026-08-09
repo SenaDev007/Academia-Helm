@@ -43,6 +43,7 @@ import { SignatureCanvas } from '@/components/ui/SignatureCanvas';
 import { useAppSessionOptional } from '@/contexts/AppSessionContext';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { enUS as enUSLocale } from 'date-fns/locale';
 
 // ─── Pedagogical class ordering ──────────────────────────────────────────────
 const PEDAGOGICAL_ORDER = ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2', '6E', '5E', '4E', '3E', '2NDE', '1ERE', 'TERM'];
@@ -69,6 +70,11 @@ interface SubjectScore {
   isAbsent: boolean;
   appreciation: string;
   directorVisa?: string | null;
+  // ⭐ Champs anglophones : 3 composantes par matière (CA + Exam)
+  firstCA?: number | null;   // /40
+  secondCA?: number | null;  // /40
+  exam?: number | null;      // /60
+  total?: number | null;     // /100 (conversion de (FCA+SCA+Exam)/140*100)
 }
 
 /**
@@ -254,7 +260,10 @@ function BulletinsContent() {
 
   // ── Load bulletins (auto-calculate — same pattern as registre) ─────────────
   const loadBulletins = useCallback(async () => {
-    if (!selectedClassId || !selectedPeriodId || !selectedEvalTypeId || !academicYear?.id) return;
+    // ⭐ For EN: selectedEvalTypeId is not required (we load all 3 eval types)
+    //    For FR: selectedEvalTypeId is required
+    if (!selectedClassId || !selectedPeriodId || !academicYear?.id) return;
+    if (scopeLang !== 'EN' && !selectedEvalTypeId) return;
     setLoadingBulletins(true);
     try {
       // ⭐ Step 1: Fetch VALIDATED evaluations (same as registre)
@@ -265,13 +274,22 @@ function BulletinsContent() {
       });
       const allEvals = Array.isArray(evaluations) ? evaluations : [];
 
-      // Filter by period + evaluationType
-      const filtered = allEvals.filter((ev: any) =>
-        ev.period?.id === selectedPeriodId &&
-        ev.evaluationType?.id === selectedEvalTypeId
-      );
+      // ⭐ Filter by period + evaluationType
+      //    For EN: load ALL 3 eval types (FCA + SCA + EXAM) for the selected period
+      //            — the bulletin is consolidated (shows all 3 components per subject)
+      //    For FR: filter by selected eval type ID (single eval per bulletin)
+      const enEvalTypeCodes = ['FCA', 'SCA', 'EXAM'];
+      const filtered = scopeLang === 'EN'
+        ? allEvals.filter((ev: any) =>
+            ev.period?.id === selectedPeriodId &&
+            enEvalTypeCodes.includes(ev.evaluationType?.code)
+          )
+        : allEvals.filter((ev: any) =>
+            ev.period?.id === selectedPeriodId &&
+            ev.evaluationType?.id === selectedEvalTypeId
+          );
 
-      // Filter by language (FR/EN)
+      // Filter by language (FR/EN) — for EN, also include subjects with no language set
       const langFiltered = scopeLang
         ? filtered.filter((ev: any) => {
             const lang = ev.subject?.language;
@@ -309,6 +327,7 @@ function BulletinsContent() {
         const grades = evalGradesMap.get(ev.id) || [];
         const subjectId = ev.subject?.id;
         if (!subjectId) continue;
+        const evalCode = ev.evaluationType?.code;
 
         for (const grade of grades) {
           if (!studentMap.has(grade.studentId)) {
@@ -324,6 +343,43 @@ function BulletinsContent() {
             });
           }
           const student = studentMap.get(grade.studentId)!;
+
+          // ⭐ EN: 3-component accumulation (FCA + SCA + EXAM) per subject
+          //    Each grade is stored in its corresponding slot.
+          //    The Total (/100) is recomputed after each insertion.
+          if (scopeLang === 'EN' && !isMaternelle) {
+            const existing: SubjectScore = student.subjectScores[subjectId] || {
+              score: null, qualitativeCode: null, isAbsent: false, appreciation: '—',
+              firstCA: null, secondCA: null, exam: null, total: null,
+            };
+            const scoreVal = grade.isAbsent
+              ? null
+              : (grade.score !== null ? Number(grade.score) : null);
+            if (evalCode === 'FCA') existing.firstCA = scoreVal;
+            else if (evalCode === 'SCA') existing.secondCA = scoreVal;
+            else if (evalCode === 'EXAM') existing.exam = scoreVal;
+            existing.isAbsent = existing.isAbsent || grade.isAbsent;
+            // Recompute total /100: (FCA+SCA+Exam) / 140 * 100
+            const fca = existing.firstCA ?? 0;
+            const sca = existing.secondCA ?? 0;
+            const ex = existing.exam ?? 0;
+            const hasAnyScore = existing.firstCA !== null || existing.secondCA !== null || existing.exam !== null;
+            existing.total = hasAnyScore ? (fca + sca + ex) / 140 * 100 : null;
+            existing.score = existing.total; // for rank computation
+            // Appreciation based on /100
+            const t100 = existing.total;
+            existing.appreciation = t100 === null
+              ? '—'
+              : t100 >= 90 ? 'Outstanding'
+                : t100 >= 80 ? 'Very Good'
+                : t100 >= 70 ? 'Good'
+                : t100 >= 60 ? 'Fair'
+                : t100 >= 50 ? 'Pass'
+                : t100 >= 40 ? 'Weak'
+                : 'Very Weak';
+            student.subjectScores[subjectId] = existing;
+            continue;
+          }
 
           if (grade.isAbsent) {
             student.subjectScores[subjectId] = { score: null, qualitativeCode: null, isAbsent: true, appreciation: 'Absent' };
@@ -391,6 +447,19 @@ function BulletinsContent() {
                 ? (scopeLang === 'EN' ? 'Satisfactory' : 'Satisfaisant')
                 : (scopeLang === 'EN' ? 'Less Satisfactory' : 'Peu Satisfaisant');
           }
+        } else if (scopeLang === 'EN') {
+          // ⭐ EN: generalAverage is the mean of subject totals (on /100)
+          if (validCount > 0) {
+            student.generalAverage = totalScore / validCount;
+            const avg100 = student.generalAverage;
+            student.appreciationGlobale = avg100 >= 90 ? 'Outstanding'
+              : avg100 >= 80 ? 'Very Good'
+              : avg100 >= 70 ? 'Good'
+              : avg100 >= 60 ? 'Fair'
+              : avg100 >= 50 ? 'Pass'
+              : avg100 >= 40 ? 'Weak'
+              : 'Very Weak';
+          }
         } else {
           if (validCount > 0) student.generalAverage = totalScore / validCount;
         }
@@ -405,8 +474,11 @@ function BulletinsContent() {
       const classAverage = validResults.length > 0
         ? validResults.reduce((sum, r) => sum + (r.generalAverage || 0), 0) / validResults.length : null;
       const passingCount = isMaternelle
-        ? validResults.filter(r => r.appreciationGlobale === 'Très Satisfaisant' || r.appreciationGlobale === 'Satisfaisant').length
-        : validResults.filter(r => (r.generalAverage || 0) >= 10).length;
+        ? validResults.filter(r => r.appreciationGlobale === 'Très Satisfaisant' || r.appreciationGlobale === 'Satisfaisant'
+            || r.appreciationGlobale === 'Very Satisfactory' || r.appreciationGlobale === 'Satisfactory').length
+        : scopeLang === 'EN'
+          ? validResults.filter(r => (r.generalAverage || 0) >= 50).length
+          : validResults.filter(r => (r.generalAverage || 0) >= 10).length;
 
       setBulletinData({
         subjects,
@@ -446,7 +518,16 @@ function BulletinsContent() {
     try {
       // ⭐ Call backend PDF generation endpoint (same pattern as Module Élèves)
       // Backend uses Puppeteer + official header (République, drapeau, ministère, école)
-      const payload = {
+      const isEn = scopeLang === 'EN';
+      const selectedPeriod = periods.find((p: any) => p.id === selectedPeriodId);
+      const periodEndDate = selectedPeriod?.endDate ? format(new Date(selectedPeriod.endDate), 'EEEE, MMMM d, yyyy', { locale: enUSLocale }) : null;
+      // Next period start date (look for the next period in the same academic year)
+      const sortedPeriods = [...periods].sort((a: any, b: any) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+      const currentIdx = sortedPeriods.findIndex((p: any) => p.id === selectedPeriodId);
+      const nextPeriod = currentIdx >= 0 && currentIdx < sortedPeriods.length - 1 ? sortedPeriods[currentIdx + 1] : null;
+      const nextTermStart = nextPeriod?.startDate ? format(new Date(nextPeriod.startDate), 'EEEE, MMMM d, yyyy', { locale: enUSLocale }) : null;
+
+      const payload: any = {
         schoolName: school?.schoolName,
         schoolLogo: school?.logoUrl,
         schoolAddress: school?.address,
@@ -462,12 +543,23 @@ function BulletinsContent() {
         studentMatricule: student.matricule,
         studentGender: student.gender,
         isMaternelle,
+        // ⭐ EN-specific fields
+        scopeLang: scopeLang || null,
+        sessionYear: academicYear?.label || null,
+        termEndingDate: periodEndDate,
+        nextTermStartDate: nextTermStart,
+        numberOfSubjects: bulletinData!.subjects.length,
         subjects: bulletinData!.subjects.map(s => ({
           name: s.name,
           score: student.subjectScores[s.id]?.score ?? null,
           qualitativeCode: student.subjectScores[s.id]?.qualitativeCode ?? null,
           isAbsent: student.subjectScores[s.id]?.isAbsent ?? false,
           appreciation: student.subjectScores[s.id]?.appreciation ?? '—',
+          // ⭐ EN: 3-component scores per subject
+          firstCA: isEn ? (student.subjectScores[s.id]?.firstCA ?? null) : undefined,
+          secondCA: isEn ? (student.subjectScores[s.id]?.secondCA ?? null) : undefined,
+          exam: isEn ? (student.subjectScores[s.id]?.exam ?? null) : undefined,
+          total: isEn ? (student.subjectScores[s.id]?.total ?? null) : undefined,
         })),
         generalAverage: student.generalAverage,
         classRank: student.classRank,
@@ -639,14 +731,24 @@ function BulletinsContent() {
               {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
-          <div className="flex-1">
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">Évaluation</label>
-            <select value={selectedEvalTypeId} onChange={(e) => setSelectedEvalTypeId(e.target.value)}
-              className="w-full text-sm font-semibold border border-gray-200 bg-gray-50 rounded-lg py-2 px-3 focus:ring-2 focus:ring-blue-500">
-              <option value="">— Sélectionner —</option>
-              {evaluationTypes.map(t => <option key={t.id} value={t.id}>[{t.code}] {t.name}</option>)}
-            </select>
-          </div>
+          {/* ⭐ EN: le bulletin est consolidé (FCA+SCA+EXAM) — pas besoin de filtre type d'éval */}
+          {scopeLang !== 'EN' && (
+            <div className="flex-1">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">Évaluation</label>
+              <select value={selectedEvalTypeId} onChange={(e) => setSelectedEvalTypeId(e.target.value)}
+                className="w-full text-sm font-semibold border border-gray-200 bg-gray-50 rounded-lg py-2 px-3 focus:ring-2 focus:ring-blue-500">
+                <option value="">— Sélectionner —</option>
+                {evaluationTypes.map(t => <option key={t.id} value={t.id}>[{t.code}] {t.name}</option>)}
+              </select>
+            </div>
+          )}
+          {scopeLang === 'EN' && (
+            <div className="flex-1 self-end">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg py-2.5 px-3 text-xs font-bold text-blue-700">
+                Report Card (First CA + Second CA + Examination)
+              </div>
+            </div>
+          )}
           {bulletinData && bulletinData.results.length > 0 && !isTeacher && (
             <div className="flex items-end">
               <Button onClick={handleGenerateAllPdf} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-lg shadow-sm w-full md:w-auto">
@@ -890,6 +992,8 @@ function BulletinTwoPage({
           {page === 1 ? (
             isMaternelle ? (
               <BulletinMaternellePage1 student={student} bulletinData={bulletinData} />
+            ) : scopeLang === 'EN' ? (
+              <BulletinAnglophonePage1 student={student} bulletinData={bulletinData} />
             ) : (
               <BulletinPrimairePage1 student={student} bulletinData={bulletinData} />
             )
@@ -1178,6 +1282,115 @@ function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResu
       <p className="text-[9px] text-slate-400 mt-1 italic">
         Le visa du directeur est auto-rempli depuis l'appréciation de l'enseignant mais reste éditable. Modifications enregistrées automatiquement à la sortie de la ligne.
       </p>
+    </div>
+  );
+}
+
+// ─── Page 1: Bulletin Anglophone (3-component grades table) ──────────────────
+
+function BulletinAnglophonePage1({ student, bulletinData }: { student: StudentResult; bulletinData: BulletinData }) {
+  // Compute pupil's average on /100 (already stored in generalAverage for EN)
+  const pupilAvg = student.generalAverage ?? 0;
+  const nbSubjects = bulletinData.subjects.length;
+  const markObtainable = 100 * nbSubjects;
+  const markObtained = bulletinData.subjects.reduce((sum, subj) => {
+    const s = student.subjectScores[subj.id];
+    return sum + (s?.total ?? 0);
+  }, 0);
+
+  // Appreciation label based on /100
+  const appreciationLabel = pupilAvg >= 90 ? 'Outstanding'
+    : pupilAvg >= 80 ? 'Very Good'
+    : pupilAvg >= 70 ? 'Good'
+    : pupilAvg >= 60 ? 'Fair'
+    : pupilAvg >= 50 ? 'Pass'
+    : pupilAvg >= 40 ? 'Weak'
+    : 'Very Weak';
+
+  return (
+    <div className="overflow-x-auto">
+      {/* Pupil info card */}
+      <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-3 text-[10px]">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+          <div><span className="text-slate-500 uppercase font-bold">Name of Pupil:</span> <strong className="text-slate-900">{student.studentName}</strong></div>
+          <div><span className="text-slate-500 uppercase font-bold">Position:</span> <strong className="text-slate-900">{student.classRank === 1 ? '1st' : student.classRank === 2 ? '2nd' : student.classRank === 3 ? '3rd' : `${student.classRank}th`}</strong></div>
+          <div><span className="text-slate-500 uppercase font-bold">Admission No:</span> <strong className="text-slate-900">{student.matricule || '—'}</strong></div>
+          <div><span className="text-slate-500 uppercase font-bold">No in Class:</span> <strong className="text-slate-900">{bulletinData.results.length}</strong></div>
+          <div className="col-span-2"><span className="text-slate-500 uppercase font-bold">Pupil&apos;s Average:</span> <strong className="text-blue-700 text-base">{pupilAvg.toFixed(2)} / 100</strong></div>
+        </div>
+      </div>
+
+      {/* Grades table — 5 columns */}
+      <div className="text-center mb-2">
+        <h4 className="text-xs font-bold text-slate-900 uppercase">Grades Table</h4>
+      </div>
+      <table className="w-full border-collapse text-[10px]" style={{ border: '2px solid #0A2A5E' }}>
+        <thead>
+          <tr className="text-white" style={{ backgroundColor: '#0A2A5E' }}>
+            <th className="border px-2 py-1 font-bold uppercase text-left" style={{ borderColor: '#0D3B85', minWidth: '120px' }}>Subject</th>
+            <th className="border px-2 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>First CA<br/><span className="font-normal text-[8px]">/40</span></th>
+            <th className="border px-2 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Second CA<br/><span className="font-normal text-[8px]">/40</span></th>
+            <th className="border px-2 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Exam<br/><span className="font-normal text-[8px]">/60</span></th>
+            <th className="border px-2 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', backgroundColor: '#0D3B85' }}>Total<br/><span className="font-normal text-[8px]">/100</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {bulletinData.subjects.map((subject, idx) => {
+            const score = student.subjectScores[subject.id];
+            return (
+              <tr key={subject.id} className={cn(idx % 2 === 1 && 'bg-slate-50/50')}>
+                <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center">
+                  {score?.isAbsent ? <span className="text-red-500 text-[8px] font-bold">ABS</span> :
+                    score?.firstCA !== null && score?.firstCA !== undefined ? score.firstCA : <span className="text-slate-400">—</span>}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center">
+                  {score?.isAbsent ? <span className="text-red-500 text-[8px] font-bold">ABS</span> :
+                    score?.secondCA !== null && score?.secondCA !== undefined ? score.secondCA : <span className="text-slate-400">—</span>}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center">
+                  {score?.isAbsent ? <span className="text-red-500 text-[8px] font-bold">ABS</span> :
+                    score?.exam !== null && score?.exam !== undefined ? score.exam : <span className="text-slate-400">—</span>}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center font-bold bg-slate-50">
+                  {score?.isAbsent ? <span className="text-red-500 text-[8px] font-bold">ABS</span> :
+                    score?.total !== null && score?.total !== undefined ?
+                      <span className="text-blue-700">{score.total.toFixed(1)}</span> :
+                      <span className="text-slate-400">—</span>}
+                </td>
+              </tr>
+            );
+          })}
+          {/* Total row */}
+          <tr className="bg-slate-200 font-bold">
+            <td className="border border-slate-300 px-2 py-1 uppercase text-slate-900 text-right" colSpan={4}>Pupil&apos;s Average</td>
+            <td className="border border-slate-300 px-1 py-0.5 text-center text-blue-700 text-sm">{pupilAvg.toFixed(2)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* Summary */}
+      <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
+        <div className="bg-slate-50 rounded p-2 border border-slate-200">
+          <p className="text-slate-500 uppercase font-bold">Mark Obtainable</p>
+          <p className="text-blue-700 font-bold text-base">{markObtainable}</p>
+        </div>
+        <div className="bg-slate-50 rounded p-2 border border-slate-200">
+          <p className="text-slate-500 uppercase font-bold">Mark Obtained</p>
+          <p className="text-blue-700 font-bold text-base">{markObtained.toFixed(2)}</p>
+        </div>
+      </div>
+
+      {/* Appreciation badge */}
+      <div className="mt-2 text-center">
+        <p className="text-[10px] font-bold text-slate-700 uppercase">Overall Appreciation</p>
+        <span className={cn('inline-block mt-1 px-3 py-1 rounded text-xs font-bold',
+          pupilAvg >= 80 && 'bg-emerald-100 text-emerald-700',
+          pupilAvg >= 70 && pupilAvg < 80 && 'bg-blue-100 text-blue-700',
+          pupilAvg >= 50 && pupilAvg < 70 && 'bg-amber-100 text-amber-700',
+          pupilAvg < 50 && 'bg-red-100 text-red-700',
+        )}>{appreciationLabel}</span>
+      </div>
     </div>
   );
 }

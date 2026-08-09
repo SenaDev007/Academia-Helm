@@ -1167,3 +1167,60 @@ Stage Summary:
 - The teacher-bulletins endpoint is now optimized (single call returns everything needed — no N+1 frontend calls to workflow-status)
 - TypeScript check: 0 new errors introduced (60 pre-existing Prisma-related errors in bulletins.controller.ts unchanged)
 - Files modified: 4 (apps/web-app/src/app/app/exams/bulletins/page.tsx, apps/web-app/src/app/app/teacher/exams/page.tsx, apps/api-server/src/modules/exams/bulletins.controller.ts, apps/api-server/src/modules/exams/services/bulletins.service.ts)
+
+---
+Task ID: 2026-08-09-anglophone-bulletin-pdf
+Agent: main
+Task: Implement the anglophone bulletin PDF format (2 pages, A5 portrait) — page 1 with pupil info + grades table (Subject | First CA /40 | Second CA /40 | Exam /60 | Total /100), page 2 with mark obtainable/obtained + class teacher comments + affective assessment (A/B/C checkboxes) + psychomotor skills (A/B/C checkboxes) + director's comments + signatures. The bulletin must consolidate all 3 evaluation components (FCA + SCA + EXAM) per subject.
+
+Work Log:
+- Backend (apps/api-server/src/modules/exams/services/bulletin-pdf.service.ts):
+  - Extended `BulletinPdfData` interface with new optional fields for the anglophone layout:
+    - `scopeLang?: 'FR' | 'EN' | null` — triggers the EN layout branch
+    - `studentAge`, `studentBirthDate`, `admissionNumber`, `sessionYear`
+    - `termEndingDate`, `nextTermStartDate`, `numberOfSubjects`
+    - Per-subject: `firstCA?`, `secondCA?`, `exam?`, `total?` (the 3 CA+Exam components)
+  - Added branch in `generateBulletin()` — if `scopeLang === 'EN'`, calls the new `buildHtmlAnglophone()` method instead of the francophone `buildHtml()`
+  - Implemented `buildHtmlAnglophone()` — generates the 2-page A5 portrait PDF:
+    - Page 1: Official header (Republic of Benin + flag + ministry in English + school) + Report Card title + Term ending date + Pupil info table (Name, Age, Class, Position, Admission No, Session, Pupil's Average) + Grades table (Subject | First CA /40 | Second CA /40 | Exam /60 | Total /100) + Pupil's Average row
+    - Page 2: Mark Obtainable / Mark Obtained / No in Class table + Class Teacher's Comments (auto-generated based on /100 average + next term start date) + Affective Assessment (10 skills × A/B/C checkboxes) + Psychomotor Skills (6 skills × A/B/C checkboxes) + Director's Comments (auto-generated based on /100 average) + Signatures (Class Teacher + Headmaster/Headmistress) + QR code
+  - Added 2 helper methods:
+    - `getEnTeacherComment(pupilAverage, nextTermStart)` — 7-level appreciation with next term start date included
+    - `getEnDirectorComment(pupilAverage)` — 7-level principal's comment
+  - Per-subject Total computation: `(firstCA + secondCA + exam) / 140 * 100` — converts the raw sum (max 140) to /100
+  - Mark Obtainable = 100 × nb subjects; Mark Obtained = sum of subject /100 totals; Pupil's Average = mean of subject totals
+
+- Backend Controller (apps/api-server/src/modules/exams/bulletins.controller.ts):
+  - Extended `generateBulletinPdf` to also resolve `studentAge` (from `birthDate`) and `admissionNumber` from the Student record
+  - Merged the resolved values into `pdfData` with `??` fallback (frontend value takes priority, then backend-resolved, then null)
+
+- Frontend (apps/web-app/src/app/app/exams/bulletins/page.tsx):
+  - Imported `enUS` locale from `date-fns/locale` for English date formatting
+  - Extended `SubjectScore` interface with `firstCA?`, `secondCA?`, `exam?`, `total?` fields
+  - Relaxed `loadBulletins` early-return guard for EN — `selectedEvalTypeId` is no longer required for EN (we load all 3 eval types)
+  - Modified the evaluation filter: for EN, loads ALL evals with code FCA/SCA/EXAM for the selected period (consolidated view). For FR, keeps the existing single-eval-type behavior.
+  - Modified the grade accumulation loop: for EN (and non-maternelle), each grade is stored in its corresponding slot (`firstCA`, `secondCA`, or `exam`) based on `evaluationType.code`. The `total` is recomputed after each insertion using the /100 conversion.
+  - Modified the average computation: for EN, `generalAverage` = mean of subject totals (on /100). The `appreciationGlobale` uses the 7-level EN scale.
+  - Modified `passingCount` for EN: threshold is `/50` (not `/10` like FR).
+  - Updated `handleGeneratePdf` to send the new EN fields when `scopeLang === 'EN'`:
+    - `scopeLang`, `sessionYear`, `termEndingDate`, `nextTermStartDate`, `numberOfSubjects`
+    - Per-subject: `firstCA`, `secondCA`, `exam`, `total`
+    - Term ending date derived from the selected period's `endDate` (formatted in English: "Friday, April 11, 2025")
+    - Next term start date derived from the next period's `startDate` (sorted chronologically)
+  - Hid the "Évaluation" filter dropdown for EN — replaced with a static info badge "Report Card (First CA + Second CA + Examination)" since the EN bulletin is always consolidated
+  - Added new `BulletinAnglophonePage1` component for the on-screen preview:
+    - Pupil info card (Name, Position, Admission No, No in Class, Pupil's Average)
+    - 5-column grades table (Subject | First CA /40 | Second CA /40 | Exam /60 | Total /100)
+    - Mark Obtainable / Mark Obtained summary cards
+    - Overall Appreciation badge (7-level EN scale)
+  - Wired the new component in the bulletin preview dispatcher: if `scopeLang === 'EN'`, renders `BulletinAnglophonePage1` instead of `BulletinPrimairePage1`
+
+Stage Summary:
+- The anglophone bulletin is now a 2-page A5 portrait PDF that consolidates the 3 evaluation components (FCA + SCA + EXAM) per subject
+- The PDF is auto-generated by Puppeteer on the backend with English labels throughout (Republic of Benin, ministry, Report Card, Subject, First CA, etc.)
+- Page 2 includes auto-generated teacher comments (with next term start date) and director comments, both based on the pupil's /100 average using the 7-level EN scale (Outstanding/Very Good/Good/Fair/Pass/Weak/Very Weak)
+- Affective assessment (10 skills: Punctuality, Politeness, Honesty, etc.) and Psychomotor skills (6: Handwriting, Drawing, etc.) sections include A/B/C checkboxes (Unicode ☐) for paper-based filling
+- On-screen preview now shows the 3-component grades table so users see the new layout before generating the PDF
+- The eval type filter is hidden for EN since the bulletin is always consolidated
+- TypeScript check: 0 new errors introduced (23 pre-existing Prisma-related errors in bulletins.controller.ts unchanged; frontend type-check passes clean)
+- Files modified: 3 (apps/api-server/src/modules/exams/services/bulletin-pdf.service.ts, apps/api-server/src/modules/exams/bulletins.controller.ts, apps/web-app/src/app/app/exams/bulletins/page.tsx)

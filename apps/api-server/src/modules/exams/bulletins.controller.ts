@@ -566,13 +566,28 @@ export class BulletinsController {
     //    de l'élève (via StudentEnrollment → TeacherClassAssignment → Teacher)
     let teacherName: string | null = null;
     let teacherGender: string | null = null;
+    let studentAge: number | null = null;
+    let admissionNumber: string | null = null;
     if (body.studentMatricule && resolvedTenantId && academicYearId) {
       try {
         // 1. Trouver l'élève par matricule
         const student = await this.prisma.student.findFirst({
           where: { matricule: body.studentMatricule, tenantId: resolvedTenantId },
-          select: { id: true },
+          select: { id: true, birthDate: true, admissionNumber: true },
         }).catch(() => null);
+
+        // ⭐ Résolution de l'âge à partir de la date de naissance
+        if (student?.birthDate) {
+          const birth = new Date(student.birthDate);
+          const now = new Date();
+          let age = now.getFullYear() - birth.getFullYear();
+          const mDiff = now.getMonth() - birth.getMonth();
+          if (mDiff < 0 || (mDiff === 0 && now.getDate() < birth.getDate())) age--;
+          if (age >= 0 && age < 150) studentAge = age;
+        }
+        if (student?.admissionNumber) {
+          admissionNumber = student.admissionNumber;
+        }
 
         if (student) {
           // 2. Trouver l'enrollment (pour récupérer la classe)
@@ -622,6 +637,9 @@ export class BulletinsController {
       //    fallback sur ce que le frontend a envoyé (pour rétro-compat)
       teacherName: teacherName || body.teacherName || null,
       teacherGender: teacherGender || body.teacherGender || null,
+      // ⭐ Champs anglophones : résolus backend (âge + admission number)
+      studentAge: body.studentAge ?? studentAge,
+      admissionNumber: body.admissionNumber || admissionNumber || body.studentMatricule || null,
     };
 
     const buffer = await this.pdfService.generateBulletin(pdfData);

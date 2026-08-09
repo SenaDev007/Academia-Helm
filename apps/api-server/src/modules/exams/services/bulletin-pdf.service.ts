@@ -44,6 +44,16 @@ export interface BulletinPdfData {
   studentGender?: string;
   // Niveau scolaire
   isMaternelle: boolean;
+  // ⭐ Piste linguistique (FR | EN) — déclenche le layout anglophone si 'EN'
+  scopeLang?: 'FR' | 'EN' | null;
+  // ⭐ Champs anglophones spécifiques (page 1 + page 2 du bulletin anglophone)
+  studentAge?: number | null;
+  studentBirthDate?: string | null;
+  admissionNumber?: string | null;
+  sessionYear?: string | null;       // ex: "2024-2025"
+  termEndingDate?: string | null;    // ex: "Friday, April 11, 2025"
+  nextTermStartDate?: string | null; // ex: "Monday, May 5, 2025"
+  numberOfSubjects?: number | null;  // pour mark obtainable
   // Matières + notes
   subjects: Array<{
     name: string;
@@ -53,6 +63,11 @@ export interface BulletinPdfData {
     appreciation: string;
     // ⭐ Visa du directeur par matière (auto-rempli depuis appreciation, éditable)
     directorVisa?: string | null;
+    // ⭐ Notes anglophones par matière (3 composantes CA + Exam)
+    firstCA?: number | null;   // /40
+    secondCA?: number | null;  // /40
+    exam?: number | null;      // /60
+    total?: number | null;     // /100 (conversion de (FCA+SCA+Exam)/140*100)
   }>;
   // Stats
   generalAverage: number | null;
@@ -114,8 +129,10 @@ export class BulletinPdfService {
         { width: 100, margin: 1 }
       );
 
-      // 2. Build HTML
-      const html = this.buildHtml(data, qrDataUrl, bulletinId);
+      // 2. Build HTML — ⭐ branch anglophone si scopeLang === 'EN'
+      const html = data.scopeLang === 'EN'
+        ? this.buildHtmlAnglophone(data, qrDataUrl, bulletinId)
+        : this.buildHtml(data, qrDataUrl, bulletinId);
 
       // 3. Generate PDF via Puppeteer
       const { page } = await this.puppeteerPool.acquirePage();
@@ -667,5 +684,379 @@ ${page2Content}
     if (avg >= 12) return '😊 Assez Bien';
     if (avg >= 10) return '😐 Passable';
     return '😞 Insuffisant';
+  }
+
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  BULLETIN ANGLOPHONE — Layout A5 portrait (2 pages)                       ║
+  // ║                                                                          ║
+  // ║  Page 1:                                                                 ║
+  // ║    - Header officiel (Republic of Benin + flag + ministry + school)      ║
+  // ║    - Term ending + pupil info (name, age, class, position, adm. num,     ║
+  // ║      session, pupil's average)                                           ║
+  // ║    - Grades table: Subject | First CA (/40) | Second CA (/40) |          ║
+  // ║      Exam (/60) | Total (/100)                                           ║
+  // ║                                                                          ║
+  // ║  Page 2:                                                                 ║
+  // ║    - Mark obtainable (100 × nb subjects) / Mark obtained                ║
+  // ║    - No in class (rank)                                                  ║
+  // ║    - Class teacher's comments (based on average + next term date)       ║
+  // ║    - Affective assessment (A/B/C checkboxes per skill)                  ║
+  // ║    - Psychomotor skills (A/B/C checkboxes per skill)                    ║
+  // ║    - Director's comments + signature                                    ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
+  private buildHtmlAnglophone(data: BulletinPdfData, qrCode: string, _bulletinId: string): string {
+    const ministry = data.isSecondary
+      ? 'Ministry of Secondary, Technical and Vocational Education and Youth Insertion'
+      : 'Ministry of Pre-Primary and Primary Education';
+
+    // Benin flag (SVG data URL)
+    const beninFlagSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 75 50"><rect width="30" height="50" fill="#008751"/><rect x="30" width="45" height="25" fill="#FCD116"/><rect x="30" y="25" width="45" height="25" fill="#E8112D"/></svg>`;
+    const beninFlag = `data:image/svg+xml;base64,${Buffer.from(beninFlagSvg).toString('base64')}`;
+
+    // ─── Compute derived values ───────────────────────────────────────────────
+    // For each subject, ensure firstCA/secondCA/exam/total are present.
+    // If absent (null), display "—".
+    const subjects = data.subjects;
+    const nbSubjects = subjects.length;
+    const subjectTotals100 = subjects.map(s => {
+      const fca = Number(s.firstCA ?? 0);
+      const sca = Number(s.secondCA ?? 0);
+      const ex = Number(s.exam ?? 0);
+      // /100 conversion: (FCA+SCA+Exam) / 140 * 100
+      return (fca + sca + ex) / 140 * 100;
+    });
+    const markObtained = subjectTotals100.reduce((a, b) => a + b, 0);
+    const markObtainable = 100 * nbSubjects;
+    const pupilAverage = nbSubjects > 0 ? markObtained / nbSubjects : 0;
+
+    // Pupil info
+    const admissionNo = data.admissionNumber || data.studentMatricule || '—';
+    const session = data.sessionYear || data.academicYearName || '—';
+    const termEnding = data.termEndingDate || '—';
+    const nextTermStart = data.nextTermStartDate || '—';
+    const ageStr = data.studentAge !== null && data.studentAge !== undefined
+      ? String(data.studentAge) : '—';
+    const positionStr = data.classRank
+      ? (data.classRank === 1 ? '1st' : data.classRank === 2 ? '2nd' : data.classRank === 3 ? '3rd' : `${data.classRank}th`)
+      : '—';
+
+    // ─── Class teacher's comments based on average ───────────────────────────
+    const teacherComment = this.getEnTeacherComment(pupilAverage, nextTermStart);
+
+    // ─── Director's comments based on average ────────────────────────────────
+    const directorComment = this.getEnDirectorComment(pupilAverage);
+
+    // ─── Build subject rows ──────────────────────────────────────────────────
+    const subjectRows = subjects.map((s, i) => {
+      const fcaStr = s.firstCA === null || s.firstCA === undefined
+        ? '<span style="color:#94a3b8;">—</span>'
+        : (s.isAbsent ? '<span style="color:red;font-size:7px;font-weight:bold;">ABS</span>' : String(s.firstCA));
+      const scaStr = s.secondCA === null || s.secondCA === undefined
+        ? '<span style="color:#94a3b8;">—</span>'
+        : (s.isAbsent ? '<span style="color:red;font-size:7px;font-weight:bold;">ABS</span>' : String(s.secondCA));
+      const examStr = s.exam === null || s.exam === undefined
+        ? '<span style="color:#94a3b8;">—</span>'
+        : (s.isAbsent ? '<span style="color:red;font-size:7px;font-weight:bold;">ABS</span>' : String(s.exam));
+      const total100 = subjectTotals100[i];
+      const totalStr = s.isAbsent
+        ? '<span style="color:red;font-size:7px;font-weight:bold;">ABS</span>'
+        : `<strong style="color:#0A2A5E;">${total100.toFixed(1)}</strong>`;
+      return `<tr>
+        <td style="border:1px solid #cbd5e1;padding:4px 5px;font-size:9px;text-align:left;">${s.name}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;">${fcaStr}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;">${scaStr}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;">${examStr}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:10px;font-weight:600;background:#f8fafc;">${totalStr}</td>
+      </tr>`;
+    }).join('');
+
+    // ─── Affective Assessment (A/B/C checkboxes) ──────────────────────────────
+    const affectiveSkills = [
+      'Punctuality', 'Politeness', 'Honesty', 'Self-control',
+      'Cooperation', 'Respect for others', 'Initiative', 'Perseverance',
+      'Care for property', 'Leadership',
+    ];
+    const affectiveRows = affectiveSkills.map(skill => {
+      // Default: all unchecked
+      return `<tr>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;font-size:8px;">${skill}</td>
+        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">&#9744;</td>
+        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">&#9744;</td>
+        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">&#9744;</td>
+      </tr>`;
+    }).join('');
+
+    // ─── Psychomotor Skills (A/B/C checkboxes) ───────────────────────────────
+    const psychomotorSkills = [
+      'Handwriting', 'Drawing and Painting', 'Handwork/Crafts',
+      'Physical Education', 'Music', 'Games and Sports',
+    ];
+    const psychomotorRows = psychomotorSkills.map(skill => {
+      return `<tr>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;font-size:8px;">${skill}</td>
+        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">&#9744;</td>
+        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">&#9744;</td>
+        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">&#9744;</td>
+      </tr>`;
+    }).join('');
+
+    // ─── PAGE 1 ──────────────────────────────────────────────────────────────
+    const page1Content = `
+      <!-- OFFICIAL HEADER -->
+      <div class="header">
+        <table class="header-table">
+          <tr>
+            <td class="header-left"><img src="${beninFlag}" alt="Flag of Benin" style="width:30px;height:20px;" /></td>
+            <td class="header-center">
+              <div class="republique">Republic of Benin</div>
+              <div class="divider"><div class="divider-line"></div></div>
+              <div class="ministere">${ministry}</div>
+              <div class="divider"><div class="divider-line"></div></div>
+              <div class="school-name">${data.schoolName}</div>
+              <div class="school-info">${data.schoolSlogan ? `&laquo; ${data.schoolSlogan} &raquo; · ` : ''}${data.schoolAddress || ''} · Tel: ${data.schoolPhone || ''} · ${data.schoolEmail || ''}</div>
+            </td>
+            <td class="header-right">${data.schoolLogo ? `<img src="${data.schoolLogo}" style="max-width:35px;max-height:35px;object-fit:contain;" />` : ''}</td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- REPORT CARD TITLE -->
+      <div class="bulletin-title">Report Card &mdash; ${data.periodName} &mdash; ${data.academicYearName}</div>
+
+      <!-- TERM ENDING -->
+      <div style="text-align:center;font-size:9px;margin-bottom:5px;padding:3px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:2px;">
+        <strong style="color:#0A2A5E;">Term ends on:</strong> ${termEnding}
+      </div>
+
+      <!-- PUPIL INFO TABLE -->
+      <table class="pupil-info">
+        <tr>
+          <td style="width:50%;"><span class="label">Name of Pupil:</span> <strong>${data.studentName}</strong></td>
+          <td style="width:50%;"><span class="label">Age:</span> <strong>${ageStr}</strong></td>
+        </tr>
+        <tr>
+          <td><span class="label">Class:</span> <strong>${data.className || '—'}</strong></td>
+          <td><span class="label">Position:</span> <strong>${positionStr}</strong></td>
+        </tr>
+        <tr>
+          <td><span class="label">Admission Number:</span> <strong>${admissionNo}</strong></td>
+          <td><span class="label">Session:</span> <strong>${session}</strong></td>
+        </tr>
+        <tr>
+          <td colspan="2"><span class="label">Pupil's Average:</span> <strong style="color:#0A2A5E;font-size:11px;">${pupilAverage.toFixed(2)} / 100</strong></td>
+        </tr>
+      </table>
+
+      <!-- GRADES TABLE -->
+      <table class="grades-table">
+        <thead>
+          <tr style="background:#0A2A5E;color:white;">
+            <th style="border:1px solid #0D3B85;padding:5px;font-size:9px;text-align:left;text-transform:uppercase;">Subject</th>
+            <th style="border:1px solid #0D3B85;padding:5px;font-size:9px;text-transform:uppercase;">First CA<br/><span style="font-size:7px;font-weight:normal;">/40</span></th>
+            <th style="border:1px solid #0D3B85;padding:5px;font-size:9px;text-transform:uppercase;">Second CA<br/><span style="font-size:7px;font-weight:normal;">/40</span></th>
+            <th style="border:1px solid #0D3B85;padding:5px;font-size:9px;text-transform:uppercase;">Exam<br/><span style="font-size:7px;font-weight:normal;">/60</span></th>
+            <th style="border:1px solid #0D3B85;padding:5px;font-size:9px;text-transform:uppercase;background:#0D3B85;">Total<br/><span style="font-size:7px;font-weight:normal;">/100</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${subjectRows}
+          <tr style="background:#e2e8f0;font-weight:bold;">
+            <td colspan="4" style="border:1px solid #cbd5e1;padding:5px;font-size:9px;text-align:right;text-transform:uppercase;">Pupil's Average</td>
+            <td style="border:1px solid #cbd5e1;padding:5px;text-align:center;font-size:11px;color:#0A2A5E;">${pupilAverage.toFixed(2)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- FOOTER PAGE 1 -->
+      <div class="footer">Generated by Academia Helm &mdash; ${new Date().toLocaleString('en-US')}</div>
+      <div style="page-break-after:always;"></div>`;
+
+    // ─── PAGE 2 ──────────────────────────────────────────────────────────────
+    const page2Content = `
+      <!-- SHORT HEADER PAGE 2 -->
+      <div style="text-align:center;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #0A2A5E;">
+        <div style="font-size:9px;font-weight:bold;color:#0A2A5E;">${data.schoolName} &mdash; ${data.studentName} &mdash; ${data.periodName}</div>
+      </div>
+
+      <!-- MARK OBTAINABLE / OBTAINED / NO IN CLASS -->
+      <table style="width:100%;border-collapse:collapse;border:1px solid #0A2A5E;border-radius:2px;margin-bottom:6px;">
+        <tr style="background:#0A2A5E;color:white;">
+          <th style="padding:5px;font-size:9px;text-transform:uppercase;border:1px solid #0D3B85;">Mark Obtainable</th>
+          <th style="padding:5px;font-size:9px;text-transform:uppercase;border:1px solid #0D3B85;">Mark Obtained</th>
+          <th style="padding:5px;font-size:9px;text-transform:uppercase;border:1px solid #0D3B85;">No in Class</th>
+        </tr>
+        <tr>
+          <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;color:#0A2A5E;border:1px solid #cbd5e1;">${markObtainable.toFixed(0)}</td>
+          <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;color:#0A2A5E;border:1px solid #cbd5e1;">${markObtained.toFixed(2)}</td>
+          <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;color:#0A2A5E;border:1px solid #cbd5e1;">${data.totalStudents || '—'}</td>
+        </tr>
+      </table>
+
+      <!-- CLASS TEACHER'S COMMENTS -->
+      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;">
+        <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Class Teacher's Comments</div>
+        <div style="font-size:9px;color:#1a1a1a;line-height:1.5;text-align:justify;min-height:50px;">${teacherComment}</div>
+      </div>
+
+      <!-- AFFECTIVE ASSESSMENT -->
+      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;">
+        <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Affective Assessment</div>
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#f1f5f9;">
+              <th style="border:1px solid #cbd5e1;padding:3px 5px;font-size:8px;text-align:left;text-transform:uppercase;">Skill</th>
+              <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;width:11%;">A</th>
+              <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;width:11%;">B</th>
+              <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;width:11%;">C</th>
+            </tr>
+          </thead>
+          <tbody>${affectiveRows}</tbody>
+        </table>
+      </div>
+
+      <!-- PSYCHOMOTOR SKILLS -->
+      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;">
+        <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Psychomotor Skills</div>
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#f1f5f9;">
+              <th style="border:1px solid #cbd5e1;padding:3px 5px;font-size:8px;text-align:left;text-transform:uppercase;">Skill</th>
+              <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;width:11%;">A</th>
+              <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;width:11%;">B</th>
+              <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;width:11%;">C</th>
+            </tr>
+          </thead>
+          <tbody>${psychomotorRows}</tbody>
+        </table>
+      </div>
+
+      <!-- DIRECTOR'S COMMENTS -->
+      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;">
+        <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Director's / Principal's Comments</div>
+        <div style="font-size:9px;color:#1a1a1a;line-height:1.5;text-align:justify;min-height:40px;">${directorComment}</div>
+      </div>
+
+      <!-- SIGNATURES: Teacher + Director -->
+      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;">
+        <table style="width:100%;border-collapse:collapse;">
+          <tr>
+            <td style="width:50%;text-align:center;vertical-align:bottom;padding:6px 4px;">
+              <div style="height:35px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:35px;max-width:90px;object-fit:contain;" />` : ''}</div>
+              <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Class Teacher</div>
+              ${data.teacherName ? `<div style="font-size:8px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.teacherName}</div>` : '<div style="font-size:7px;color:#64748b;margin-top:1px;">Signature</div>'}
+            </td>
+            <td style="width:50%;text-align:center;vertical-align:bottom;padding:6px 4px;">
+              <div style="height:35px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:35px;max-width:90px;object-fit:contain;" />` : ''}</div>
+              <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Headmistress / Headmaster</div>
+              <div style="font-size:7px;color:#64748b;">Signature</div>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- QR CODE -->
+      <div style="text-align:center;margin-top:6px;">
+        <img src="${qrCode}" style="width:40px;height:40px;" alt="QR" />
+        <div style="font-size:7px;color:#94a3b8;">Verification code</div>
+      </div>`;
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Report Card - ${data.studentName}</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; position:relative; }
+.watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) rotate(-15deg); opacity:0.08; z-index:0; pointer-events:none; }
+.content { position:relative; z-index:1; }
+.header { margin-bottom:6px; padding-bottom:4px; border-bottom:2px solid #0A2A5E; }
+.header-table { width:100%; border-collapse:collapse; }
+.header-table td { vertical-align:middle; padding:2px 4px; }
+.header-left { text-align:center; width:12%; }
+.header-center { text-align:center; width:68%; }
+.header-right { text-align:center; width:20%; }
+.republique { font-size:11px; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px; }
+.divider { margin:2px auto; width:50%; }
+.divider-line { height:1px; background:#0A2A5E; }
+.ministere { font-size:8px; font-weight:bold; text-transform:uppercase; letter-spacing:0.3px; line-height:1.3; }
+.school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:3px; color:#0A2A5E; }
+.school-info { font-size:7px; color:#555; margin-top:2px; font-style:italic; }
+.bulletin-title { text-align:center; background:#0A2A5E; color:white; padding:5px 8px; border-radius:2px; margin-bottom:6px; font-size:11px; font-weight:bold; text-transform:uppercase; }
+.pupil-info { width:100%; border-collapse:collapse; background:#f8fafc; border:1px solid #e2e8f0; border-radius:2px; margin-bottom:6px; }
+.pupil-info td { padding:4px 6px; font-size:9px; border-bottom:1px solid #e2e8f0; }
+.pupil-info tr:last-child td { border-bottom:none; }
+.pupil-info .label { font-size:8px; color:#64748b; text-transform:uppercase; letter-spacing:0.3px; }
+.grades-table { width:100%; border-collapse:collapse; }
+.grades-table th { color:white; }
+.grades-table tbody tr:nth-child(even) { background:#f8fafc; }
+.footer { margin-top:4px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; padding-top:3px; }
+</style>
+</head>
+<body>
+
+${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="width:400px;height:400px;object-fit:contain;" alt="" />` : ''}
+
+<div class="content">
+
+${page1Content}
+
+${page2Content}
+
+</div>
+
+</body>
+</html>`;
+  }
+
+  /**
+   * ⭐ Commentaire de l'enseignant anglophone basé sur la moyenne /100.
+   * Inclut la date de début du prochain trimestre.
+   */
+  private getEnTeacherComment(pupilAverage: number, nextTermStart: string): string {
+    if (pupilAverage >= 90) {
+      return `Outstanding performance! This pupil has demonstrated exceptional mastery across all subjects. Keep up the excellent work. Next term begins on <strong>${nextTermStart}</strong>.`;
+    }
+    if (pupilAverage >= 80) {
+      return `Very good results. The pupil shows strong academic achievement and consistent effort. Aim for the highest standards next term, which starts on <strong>${nextTermStart}</strong>.`;
+    }
+    if (pupilAverage >= 70) {
+      return `Good performance. The pupil understands most concepts taught. With greater concentration, results will improve further. Next term starts on <strong>${nextTermStart}</strong>.`;
+    }
+    if (pupilAverage >= 60) {
+      return `Fair results. The pupil is advised to work harder and remain focused. Greater commitment is required to improve. Next term begins on <strong>${nextTermStart}</strong>.`;
+    }
+    if (pupilAverage >= 50) {
+      return `Results are just satisfactory. Stronger effort and parental follow-up are necessary. Next term starts on <strong>${nextTermStart}</strong>.`;
+    }
+    if (pupilAverage >= 40) {
+      return `Performance below expectation. Immediate improvement is required with parental involvement. Next term begins on <strong>${nextTermStart}</strong>.`;
+    }
+    return `Very poor academic performance. Urgent remedial measures and close supervision are required. Next term starts on <strong>${nextTermStart}</strong>.`;
+  }
+
+  /**
+   * ⭐ Commentaire du directeur/principal anglophone basé sur la moyenne /100.
+   */
+  private getEnDirectorComment(pupilAverage: number): string {
+    if (pupilAverage >= 90) {
+      return 'Excellent academic performance. Commendable effort and discipline. Keep striving for excellence.';
+    }
+    if (pupilAverage >= 80) {
+      return 'Very good results. Consistent effort is encouraged to reach the highest standards.';
+    }
+    if (pupilAverage >= 70) {
+      return 'Good performance. Greater concentration and consistency will lead to better outcomes.';
+    }
+    if (pupilAverage >= 60) {
+      return 'Fair results. The pupil is advised to work harder and remain focused.';
+    }
+    if (pupilAverage >= 50) {
+      return 'Results are just satisfactory. Stronger effort and parental follow-up are necessary.';
+    }
+    if (pupilAverage >= 40) {
+      return 'Performance below expectation. Immediate improvement is required with parental involvement.';
+    }
+    return 'Very poor academic performance. Urgent remedial measures and close supervision are required.';
   }
 }

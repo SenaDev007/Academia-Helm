@@ -33,7 +33,7 @@ class TeacherDashboardScreen extends ConsumerWidget {
     // selectedTenantIdOrNull (which is a tenant ID, not an academic year ID).
     final academicYear = ref.watch(currentAcademicYearProvider);
     final academicYearId = academicYear?.id;
-    final academicYearLabel = academicYear?.label ?? 'Année en cours';
+    final academicYearLabel = academicYear?.name ?? 'Année en cours';
 
     // School identity from schoolIdentityProvider (cached + fresh)
     final identity = ref.watch(schoolIdentityProvider).valueOrNull;

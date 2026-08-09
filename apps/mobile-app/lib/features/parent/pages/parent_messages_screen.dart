@@ -113,7 +113,7 @@ class _NotificationsTab extends ConsumerWidget {
                 itemBuilder: (context, index) => _NotificationTile(notification: notifications[index], onTap: () async {
                   if (!notifications[index].isRead) {
                     final service = ref.read(parentServiceProvider);
-                    await service.markNotificationRead(notificationId: notifications[index].id);
+                    await service.markNotificationRead(notifications[index].id);
                     ref.invalidate(parentNotificationsProvider(50));
                   }
                 }),

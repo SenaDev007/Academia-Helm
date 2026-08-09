@@ -8,6 +8,7 @@ import SaisieMasterLoader from "@/components/saisiemaster/SaisieMasterLoader";
 import {
   useSaisieMasterStore,
   restoreFromStorage,
+  restoreFromBackend,
   selectIsAuthenticated,
 } from "@/lib/saisiemaster/store";
 import type { Prospect } from "@/lib/saisiemaster/api";
@@ -20,11 +21,10 @@ export default function SaisieMasterPage() {
   const hydrateAuth = useSaisieMasterStore((s) => s.hydrateAuth);
   const setAuth = useSaisieMasterStore((s) => s.setAuth);
   const hasRestoredRef = useRef(false);
+  const [backendRestoreDone, setBackendRestoreDone] = useState(false);
 
   // ⭐ Délai minimum pour garantir que le loading page reste visible
   // au moins 2.5 secondes (au lieu de 5s qui était trop long).
-  // Sans cela, le loading disparaît trop vite car la page est 100%
-  // client-side (pas de requête serveur à attendre).
   const [minLoadElapsed, setMinLoadElapsed] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setMinLoadElapsed(true), 2500);
@@ -42,28 +42,77 @@ export default function SaisieMasterPage() {
       useSaisieMasterStore.getState().prospect !== null &&
       useSaisieMasterStore.getState().token !== null;
 
-    // Restore any saved classes from localStorage.
-    const restored = restoreFromStorage();
-    const hasRestoredClasses = !!(restored && restored.classes.length > 0);
+    // ⭐ FIX: Pour les utilisateurs authentifiés, on tente d'abord la
+    //    restauration depuis le backend Neon (authoritative source — permet
+    //    de retrouver les données saisies sur un AUTRE appareil).
+    //    Fallback localStorage uniquement si le backend échoue ou est vide.
+    //
+    //    IMPORTANT : on charge d'abord les données localStorage pour afficher
+    //    immédiatement l'éditeur (UX réactive), puis on tente le backend en
+    //    arrière-plan et on remplace si le backend a des données plus récentes.
+    const restoredLocal = restoreFromStorage();
+    const hasRestoredClasses = !!(restoredLocal && restoredLocal.classes.length > 0);
     if (hasRestoredClasses) {
       useSaisieMasterStore.setState({
-        classes: restored!.classes,
+        classes: restoredLocal!.classes,
         activeClassIndex: Math.min(
-          restored!.activeClassIndex,
-          restored!.classes.length - 1,
+          restoredLocal!.activeClassIndex,
+          restoredLocal!.classes.length - 1,
         ),
       });
     }
 
-    // ⭐ Utilisateur authentifié → TOUJOURS aller à l'éditeur (l'application
-    // proprement dite), jamais sur la landing page marketing.
-    //   - Si des classes sont restaurées → vue "notes" (saisie directe)
-    //   - Sinon → vue "classes" (UI d'import pour charger un template)
+    // ⭐ Utilisateur authentifié → TOUJOURS aller à l'éditeur
     if (isAuth) {
       useSaisieMasterStore.setState({
         view: "editor",
         editorView: hasRestoredClasses ? "notes" : "classes",
       });
+
+      // ⭐ Tenter la restauration backend en arrière-plan
+      //    Si le backend a des données, on les utilise (authoritative source)
+      //    Cela permet à l'utilisateur de retrouver ses données depuis n'importe
+      //    quel appareil dès qu'il se connecte.
+      (async () => {
+        try {
+          const backendData = await restoreFromBackend();
+          if (backendData && backendData.classes.length > 0) {
+            // Comparer les timestamps : on prend backend si plus récent que localStorage
+            const backendSavedAt = new Date(backendData.savedAt).getTime();
+            const localSavedAt = restoredLocal?.savedAt
+              ? new Date(restoredLocal.savedAt).getTime()
+              : 0;
+            if (backendSavedAt >= localSavedAt) {
+              // ⭐ Le backend a des données plus récentes (ou égales) → on remplace
+              useSaisieMasterStore.setState({
+                classes: backendData.classes,
+                activeClassIndex: Math.min(
+                  backendData.activeClassIndex,
+                  backendData.classes.length - 1,
+                ),
+                editorView: "notes",
+              });
+              // Mettre à jour aussi le localStorage pour les futures visites
+              try {
+                window.localStorage.setItem(
+                  "saisiemaster:autosave",
+                  JSON.stringify({
+                    classes: backendData.classes,
+                    activeClassIndex: backendData.activeClassIndex,
+                    savedAt: backendData.savedAt,
+                  }),
+                );
+              } catch {}
+            }
+          }
+        } catch (e) {
+          console.warn("[saisiemaster] Backend restore failed at mount:", e);
+        } finally {
+          setBackendRestoreDone(true);
+        }
+      })();
+    } else {
+      setBackendRestoreDone(true);
     }
   }, [hydrateAuth]);
 
@@ -74,29 +123,67 @@ export default function SaisieMasterPage() {
     }
   }, [view]);
 
-  // ⭐ L'utilisateur authentifié peut ALLER sur la landing page S'IL LE
-  // SOUHAITE explicitement (bouton Home). L'auto-redirect a été supprimé
-  // car il empêchait le bouton Home de fonctionner — l'utilisateur
-  // cliquait sur Home, view passait à "landing", puis l'effet le
-  // renvoyait immédiatement à "editor".
-  // L'initial routing au montage est déjà géré par l'effet de restauration
-  // ci-dessus (qui envoie les users authentifiés vers l'éditeur au load).
-
   // --- Auth flow ---
   // ⭐ Après une connexion réussie, on envoie TOUJOURS l'utilisateur dans
   // l'application (éditeur). S'il n'a pas encore de classes, on bascule
   // directement sur la vue "classes" qui contient l'UI d'import.
-  const handleAuthSuccess = (prospect: Prospect, token: string) => {
+  // ⭐ FIX: On tente AUSSI la restauration backend après login — c'est crucial
+  //    pour que l'utilisateur retrouve ses données depuis n'importe quel appareil.
+  const handleAuthSuccess = async (prospect: Prospect, token: string) => {
     setAuth(prospect, token);
-    const hasClasses = useSaisieMasterStore.getState().classes.length > 0;
-    useSaisieMasterStore.setState({
-      view: "editor",
-      editorView: hasClasses ? "notes" : "classes",
-    });
+    // Vérifier localStorage d'abord (rapide)
+    const restoredLocal = restoreFromStorage();
+    const hasClassesLocal = !!(restoredLocal && restoredLocal.classes.length > 0);
+    if (hasClassesLocal) {
+      useSaisieMasterStore.setState({
+        classes: restoredLocal!.classes,
+        activeClassIndex: Math.min(
+          restoredLocal!.activeClassIndex,
+          restoredLocal!.classes.length - 1,
+        ),
+        view: "editor",
+        editorView: "notes",
+      });
+    } else {
+      useSaisieMasterStore.setState({
+        view: "editor",
+        editorView: "classes",
+      });
+    }
+
+    // ⭐ Tenter la restauration backend en arrière-plan — IMPORTANT
+    //    C'est ce qui permet de retrouver les données saisies sur un autre appareil
+    try {
+      const backendData = await restoreFromBackend();
+      if (backendData && backendData.classes.length > 0) {
+        // Le backend a des données → on les utilise (authoritative source)
+        useSaisieMasterStore.setState({
+          classes: backendData.classes,
+          activeClassIndex: Math.min(
+            backendData.activeClassIndex,
+            backendData.classes.length - 1,
+          ),
+          view: "editor",
+          editorView: "notes",
+        });
+        // Sync localStorage pour les futures visites
+        try {
+          window.localStorage.setItem(
+            "saisiemaster:autosave",
+            JSON.stringify({
+              classes: backendData.classes,
+              activeClassIndex: backendData.activeClassIndex,
+              savedAt: backendData.savedAt,
+            }),
+          );
+        } catch {}
+      }
+    } catch (e) {
+      console.warn("[saisiemaster] Backend restore after login failed:", e);
+    }
   };
 
   // ⭐ Tant que le délai minimum n'est pas écoulé, on affiche le loader
-  // DIRECTEMENT (et non `null`) car loading.tsx est déjà démonté.
   if (!minLoadElapsed) {
     return <SaisieMasterLoader />;
   }
@@ -105,18 +192,13 @@ export default function SaisieMasterPage() {
     return <AuthScreen onSuccess={handleAuthSuccess} />;
   }
 
-  // ⭐ Utilisateur authentifié → éditeur (l'application), peu importe qu'il
-  // ait ou non des classes. L'éditeur gère les deux cas :
-  //   - avec classes  → vue "notes" (saisie)
-  //   - sans classes  → vue "classes" (import)
+  // ⭐ Utilisateur authentifié → éditeur (l'application)
   if (view === "editor" && isAuthenticated) {
     return <EditorPage onHome={() => setView("landing")} />;
   }
 
   // ⭐ Si l'utilisateur est authentifié mais sur la landing page, on l'envoie
-  // quand même vers l'éditeur (sauf s'il a explicitement cliqué sur "Home").
-  // Cela couvre le cas où l'utilisateur clique sur "Se connecter" alors qu'il
-  // est déjà authentifié (session expirée côté store mais pas côté localStorage).
+  // quand même vers l'éditeur
   if (isAuthenticated && view !== "landing") {
     return <EditorPage onHome={() => setView("landing")} />;
   }

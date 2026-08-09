@@ -174,7 +174,7 @@ export default function DirectorsPage() {
     return (
       <ModuleContainer
         header={{ title: 'Directeurs', description: 'Définissez les directeurs par niveau scolaire.', icon: 'userCog' }}
-        subModules={{ modules: subModulesList, activeModuleId: 'recruiter-settings' }}
+        subModules={{ modules: subModulesList, activeModuleId: 'directors' }}
         content={{ layout: 'full', children: <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin" style={{ color: PRIMARY }} /></div> }}
       />
     );
@@ -183,7 +183,7 @@ export default function DirectorsPage() {
   return (
     <ModuleContainer
       header={{ title: 'Directeurs', description: "Définissez les directeurs de l'école par niveau scolaire et piste linguistique.", icon: 'userCog' }}
-      subModules={{ modules: subModulesList, activeModuleId: 'recruiter-settings' }}
+      subModules={{ modules: subModulesList, activeModuleId: 'directors' }}
       content={{
         layout: 'full',
         children: (

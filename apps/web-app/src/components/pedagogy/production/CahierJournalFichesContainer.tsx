@@ -193,9 +193,20 @@ export function CahierJournalFichesContainer({
                   tenantId={tenantId}
                   journalId={currentJournalId}
                   onPrepareFiche={handlePrepareFicheFor}
+                  onCreateFreeFiche={() => {
+                    // ⭐ Bouton "Créer une fiche libre" — ouvre le formulaire
+                    //    sans pré-remplissage (l'utilisateur choisit tout)
+                    setPendingInitialPayload(null);
+                    // On ne fait rien ici — le formulaire PedagogicalSheetsTab
+                    // a son propre bouton "+ Nouvelle fiche" qui s'affichera en bas
+                    // Scroller vers le formulaire
+                    setTimeout(() => {
+                      document.getElementById('fiches-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 100);
+                  }}
                 />
                 {/* Formulaire des fiches pédagogiques (pré-rempli si pendingInitialPayload) */}
-                <div className="mt-6">
+                <div id="fiches-section" className="mt-6">
                   <PedagogicalSheetsTab
                     tenantId={tenantId}
                     academicYearId={academicYearId}
@@ -299,10 +310,13 @@ function FichesAPreparer({
   tenantId,
   journalId,
   onPrepareFiche,
+  onCreateFreeFiche,
 }: {
   tenantId: string;
   journalId: string;
   onPrepareFiche: (day: string, matiere: string, sheetType?: string) => void;
+  /** ⭐ Callback pour le bouton "Créer une fiche libre" (sans pré-remplissage) */
+  onCreateFreeFiche?: () => void;
 }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -376,6 +390,17 @@ function FichesAPreparer({
             {stats.totalFichesPreparees || 0} / {stats.totalMatieresPlanifiees || 0} matières ont leur fiche · {stats.totalFiches || 0} fiche(s) au total
           </p>
         </div>
+        {/* ⭐ Bouton "Créer une fiche libre" — ouvre le formulaire sans pré-remplissage */}
+        {onCreateFreeFiche && (
+          <button
+            onClick={onCreateFreeFiche}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shrink-0"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Créer une fiche libre</span>
+            <span className="sm:hidden">Fiche libre</span>
+          </button>
+        )}
       </div>
 
       {/* Liste par jour */}

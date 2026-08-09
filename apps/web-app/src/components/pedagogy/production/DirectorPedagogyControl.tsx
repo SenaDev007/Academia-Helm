@@ -27,7 +27,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Loader2, RefreshCw, CheckCircle2, XCircle, Send, Clock,
-  FileText, BookOpen, ClipboardList, FileSpreadsheet, AlertTriangle,
+  FileText, BookOpen, ClipboardList, FileSpreadsheet, AlertTriangle, AlertCircle,
   ChevronRight, X, Eye, Sigma, FlaskConical, Users, Palette, Award, Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -40,6 +40,7 @@ import {
   useEvaluationDetail, useCahierTexteDetail,
 } from "@/lib/query/pedagogy-hooks";
 import { pedagogySpaceService } from "@/services/pedagogy-space.service";
+import apiClient from "@/lib/api/client";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
 
@@ -342,6 +343,74 @@ function ValidationModal({ open, onClose, onValidate, title }: {
 }
 
 // ============================================================================
+// ⭐ Indicateur de statut des fiches pédagogiques pour un cahier journal
+//    Affiché sous chaque cahier journal en attente — montre si toutes les
+//    matières planifiées ont leur fiche pédagogique préparée.
+// ============================================================================
+
+function FichesStatusIndicator({ journalId }: { journalId: string }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.get(`/api/pedagogy-space/cahier-journal/${journalId}/fiches`);
+        if (cancelled) return;
+        setData(res.data?.stats);
+      } catch {
+        if (cancelled) return;
+        setData(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [journalId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-400">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <span>Vérification des fiches…</span>
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  if (data.totalMatieresPlanifiees === 0) {
+    return (
+      <div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-500">
+        <FileText className="h-3 w-3" />
+        <span>Aucune matière planifiée dans ce cahier journal</span>
+      </div>
+    );
+  }
+
+  if (data.toutesFichesPreparees) {
+    return (
+      <div className="inline-flex items-center gap-1.5 mt-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[10px] font-bold text-emerald-700">
+        <CheckCircle2 className="h-3 w-3" />
+        <span>
+          {data.totalFichesPreparees} / {data.totalMatieresPlanifiees} fiches préparées
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="inline-flex items-center gap-1.5 mt-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10px] font-bold text-amber-700">
+      <AlertCircle className="h-3 w-3" />
+      <span>
+        ⚠ {data.totalFichesManquantes} fiche(s) manquante(s) · {data.totalFichesPreparees} / {data.totalMatieresPlanifiees} préparées
+      </span>
+    </div>
+  );
+}
+
+// ============================================================================
 // Pending Cahier Journals
 // ============================================================================
 
@@ -468,7 +537,7 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
               <div className="space-y-2 pl-4">
                 {groupedByTrimester[className][trimester].map(item => (
                   <div key={item.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white">
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <p className="font-medium text-slate-900">
                         Semaine du {formatDateFR(item.weekStartDate)} au {formatDateFR(item.weekEndDate)}
                       </p>
@@ -478,8 +547,10 @@ function PendingCahierJournalsTab({ tenantId, academicYearId, userId, refreshKey
                       <p className="text-xs text-slate-400 mt-1">
                         Soumis le {formatDateTimeFR(item.submittedAt)}
                       </p>
+                      {/* ⭐ Indicateur fiches pédagogiques manquantes */}
+                      <FichesStatusIndicator journalId={item.id} />
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                       <button onClick={() => handleView(item)}
                         className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100">
                         <Eye className="h-3 w-3" /> Voir

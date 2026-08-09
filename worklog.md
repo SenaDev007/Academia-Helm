@@ -1447,3 +1447,76 @@ Stage Summary:
 - Backend : aucune nouvelle erreur (les duplicates préexistants dans pedagogical-space.service.ts sont inchangés)
 - Fichiers modifiés : 6 + 1 nouveau fichier (CahierJournalFichesContainer.tsx)
 - Migration requise : `npx prisma db push` pour ajouter la colonne `cahierJournalId` à `primary_pedagogical_fiches`
+
+---
+Task ID: 2026-08-09-saisiemaster-restore + hr-recruiter-director + pedagogy-fiches-extras
+Agent: main
+Task: Three workstreams in one push.
+  (1) Saisie Master sync bug — data saved on one device (brother's PC) not visible on another device (user's phone), even though backend Neon has the data.
+  (2) RH Module anomaly — "Recruteur" tab shows "Directeur" config; "Directeur" tab appears non-functional when clicked.
+  (3) Pedagogy extras — add "Créer une fiche libre" button + director indicator for missing fiches.
+
+Work Log:
+
+=== (1) Saisie Master Sync — Root Cause Fix ===
+
+Investigation:
+- The previous fix (commit 5ac72659) addressed auto-save conditions but missed the REAL root cause.
+- Root cause: at app mount (apps/web-app/src/app/saisiemaster/page.tsx), only `restoreFromStorage()` was called — NEVER `restoreFromBackend()`.
+- The `restoreFromBackend()` function existed but was only called by the `ResumeBanner` component, which had been REMOVED from the landing page (commented out in landing-page.tsx lines 59-62).
+- Result: data saved on device A went to backend Neon successfully (the auto-save fix worked), but device B at next login only loaded from its own localStorage (empty) — never queried the backend.
+- That's why user's brother data (saved on his PC) was not visible on user's phone, and vice-versa.
+
+Fix (apps/web-app/src/app/saisiemaster/page.tsx):
+- Added `restoreFromBackend` to imports.
+- In the mount useEffect (after `hydrateAuth()`), when user is authenticated:
+  - First, load localStorage data immediately (for fast UX)
+  - THEN, in background, call `restoreFromBackend()` to fetch from Neon
+  - Compare timestamps: if backend has newer data (or local was empty), replace state with backend data
+  - Also update localStorage to keep it in sync for future visits
+- Modified `handleAuthSuccess` (login flow):
+  - Same pattern — load localStorage first, then in background fetch backend data and replace if found
+  - This ensures that right after login on a new device, the user sees their data from any previous device
+- Added `backendRestoreDone` state (currently informational only, could be used for loading indicator)
+- All backend restore errors are caught and logged (non-blocking) — UI continues to work with localStorage data if backend fails
+
+=== (2) RH Module — Recruteur/Directeur Tab Anomaly ===
+
+Investigation:
+- The "Directeurs" page (apps/web-app/src/app/app/hr/directors/page.tsx) had `activeModuleId: 'recruiter-settings'` in its ModuleContainer props (lines 177 and 186 — both the loading state and main render).
+- This caused the "Recruteur" tab to be highlighted as active when the user was actually on the "Directeurs" page.
+- The user perceived this as: "Recruteur tab shows Directeur config" (because the highlight was on Recruteur but content was Directeurs).
+- When clicking on "Directeurs" tab, the URL changed to /app/hr/directors but the highlight stayed on Recruteur — giving the impression that nothing happened.
+
+Fix:
+- Changed `activeModuleId: 'recruiter-settings'` → `activeModuleId: 'directors'` in both occurrences (loading state + main render) of the Directeurs page.
+- Verified: the Recruteur page (apps/web-app/src/app/app/hr/recruitment/settings/page.tsx) already has the correct `activeModuleId: 'recruiter-settings'` — no change needed.
+- Verified: the SubModuleNavigation component uses `activeModuleId` only for CSS highlight (line 93: `const isActive = currentActiveId === module.id`), not for content visibility — so the fix is purely visual but resolves the user confusion.
+
+=== (3) Pedagogy Extras ===
+
+(3a) "Créer une fiche libre" button — apps/web-app/src/components/pedagogy/production/CahierJournalFichesContainer.tsx:
+- Added `onCreateFreeFiche?: () => void` prop to `FichesAPreparer` component.
+- Added a button "Créer une fiche libre" (or "Fiche libre" on mobile) in the recap banner (next to the stats).
+- When clicked: clears `pendingInitialPayload` (no pre-fill) and scrolls down to the PedagogicalSheetsTab section where the user can use the existing "+ Nouvelle fiche" button.
+- The button is shown in blue, with a Plus icon.
+- The container passes `onCreateFreeFiche` to FichesAPreparer and the section has `id="fiches-section"` for scroll targeting.
+
+(3b) Director indicator for missing fiches — apps/web-app/src/components/pedagogy/production/DirectorPedagogyControl.tsx:
+- Added new component `FichesStatusIndicator({ journalId })` that:
+  - Fetches `GET /api/pedagogy-space/cahier-journal/:id/fiches` to get stats
+  - Shows "Vérification des fiches…" while loading
+  - Shows green badge "X / Y fiches préparées" if all planned subjects have their fiche
+  - Shows amber badge "⚠ N fiche(s) manquante(s) · X / Y préparées" if some are missing
+  - Shows neutral message "Aucune matière planifiée" if the cahier journal has no planned subjects
+- Added the indicator under each cahier journal card in the PendingCahierJournalsTab.
+- Imported `AlertCircle` from lucide-react and `apiClient` for the fetch.
+- The director can now see at a glance which cahier journals have all their fiches prepared (green) vs which have missing fiches (amber) — before deciding to validate.
+
+Stage Summary:
+
+- Saisie Master sync: the real root cause was that `restoreFromBackend()` was never called at app mount or after login — only `restoreFromStorage()` (localStorage) was used. Now both flows call the backend in background and replace state if backend has newer data. Users will see their data from any device after login.
+- RH Module: the "Directeurs" page had `activeModuleId: 'recruiter-settings'` (copy-paste error) — fixed to `activeModuleId: 'directors'`. The tab highlight is now correct.
+- Pedagogy extras: "Créer une fiche libre" button added to the FichesAPreparer banner; director view shows a green/amber badge per cahier journal indicating fiches prepared vs missing.
+- Frontend type-check: 0 errors (passes clean).
+- Files modified: 4 (apps/web-app/src/app/saisiemaster/page.tsx, apps/web-app/src/app/app/hr/directors/page.tsx, apps/web-app/src/components/pedagogy/production/CahierJournalFichesContainer.tsx, apps/web-app/src/components/pedagogy/production/DirectorPedagogyControl.tsx)

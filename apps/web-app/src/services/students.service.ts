@@ -378,12 +378,16 @@ class StudentsService {
   /**
    * Change la classe d'un élève (POST /students/change-class)
    * Backend : StudentsLifecycleController.changeClass
-   * Body: { studentId, academicYearId, classId }
+   * Body: { studentId, academicYearId, newClassId }
+   *
+   * ⭐ Le backend attend `newClassId` (et non `classId`) pour éviter toute
+   *    confusion avec le `classId` déjà stocké sur StudentEnrollment.
+   *    Cf students-lifecycle.service.ts:707-712.
    */
   async changeClass(studentId: string, academicYearId: string, classId: string): Promise<any> {
     return apiFetch(`${BASE_URL}/change-class`, {
       method: "POST",
-      body: { studentId, academicYearId, classId },
+      body: { studentId, academicYearId, newClassId: classId },
     });
   }
 

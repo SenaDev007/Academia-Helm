@@ -4,14 +4,28 @@ import { CreateAdmissionDto } from '../dto/create-admission.dto';
 import { UpdateAdmissionDto } from '../dto/update-admission.dto';
 import { DecideAdmissionDto } from '../dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { TenantGuard } from '../../common/guards/tenant.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { IMAGE_OR_PDF_DATA_URL_PIPE } from '../../common/pipes/data-url-validation.pipe';
 import { PrismaService } from '../../database/prisma.service';
 import type { Response } from 'express';
 
+/**
+ * ⭐ P2.2 — RBAC renforcé sur AdmissionController.
+ *    Avant : `JwtAuthGuard` uniquement → tout user authentifié pouvait créer/approuver/convertir.
+ *    Maintenant : `TenantGuard` + `RolesGuard` avec @Roles par endpoint.
+ */
+const MANAGEMENT_ROLES = [
+  'ADMIN', 'DIRECTOR', 'SCHOOL_ADMIN', 'DIRECTEUR',
+  'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SUPER_DIRECTOR',
+  'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'SECRETARY',
+];
+
 @Controller('students/admissions')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
 export class AdmissionController {
   constructor(
     private readonly admissionService: AdmissionService,
@@ -21,6 +35,7 @@ export class AdmissionController {
   // ═══ CRUD Admission ═══
 
   @Post()
+  @Roles(...MANAGEMENT_ROLES)
   async create(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() createAdmissionDto: CreateAdmissionDto) {
     return this.admissionService.create(tenantId, createAdmissionDto, user?.id);
   }
@@ -36,6 +51,7 @@ export class AdmissionController {
   }
 
   @Patch(':id')
+  @Roles(...MANAGEMENT_ROLES)
   async update(
     @TenantId() tenantId: string,
     @Param('id') id: string,
@@ -46,6 +62,7 @@ export class AdmissionController {
   }
 
   @Delete(':id')
+  @Roles(...MANAGEMENT_ROLES)
   async delete(@TenantId() tenantId: string, @Param('id') id: string) {
     return this.admissionService.delete(id, tenantId);
   }
@@ -57,6 +74,7 @@ export class AdmissionController {
   // `:id = "batch"` + `/submit` → 404 ou erreur.
 
   @Post('batch/submit')
+  @Roles(...MANAGEMENT_ROLES)
   async batchSubmit(
     @TenantId() tenantId: string,
     @Body() body: { admissionIds: string[] },
@@ -74,6 +92,7 @@ export class AdmissionController {
   }
 
   @Post('batch/accept')
+  @Roles(...MANAGEMENT_ROLES)
   async batchAccept(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
@@ -92,6 +111,7 @@ export class AdmissionController {
   }
 
   @Post('batch/convert')
+  @Roles(...MANAGEMENT_ROLES)
   async batchConvert(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
@@ -119,6 +139,7 @@ export class AdmissionController {
    * Réponse: { total, succeeded, failed, results: [{ id, success, studentId?, matricule?, error? }] }
    */
   @Post('batch/accept-and-enroll')
+  @Roles(...MANAGEMENT_ROLES)
   async batchAcceptAndEnroll(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
@@ -147,11 +168,13 @@ export class AdmissionController {
   // ═══ Workflow ═══
 
   @Post(':id/submit')
+  @Roles(...MANAGEMENT_ROLES)
   async submit(@TenantId() tenantId: string, @Param('id') id: string) {
     return this.admissionService.submit(id, tenantId);
   }
 
   @Post(':id/decide')
+  @Roles(...MANAGEMENT_ROLES)
   async decide(
     @TenantId() tenantId: string,
     @Param('id') id: string,
@@ -162,6 +185,7 @@ export class AdmissionController {
   }
 
   @Post(':id/accept')
+  @Roles(...MANAGEMENT_ROLES)
   async accept(
     @TenantId() tenantId: string,
     @Param('id') id: string,

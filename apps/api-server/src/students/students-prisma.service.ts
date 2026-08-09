@@ -207,8 +207,11 @@ export class StudentsPrismaService {
             class: true,
           },
         },
+        // ⭐ Retirer le filtre `isPrimary: true` — il masquait les guardians secondaires
+        //    dans l'UI Familles et faussait les KPIs (totalGuardians et studentsWithoutGuardian).
+        //    On renvoie TOUS les guardians liés à l'élève ; c'est l'UI qui met en avant
+        //    le guardian principal (badge "Principal").
         studentGuardians: {
-          where: { isPrimary: true },
           include: {
             guardian: true,
           },
@@ -328,16 +331,42 @@ export class StudentsPrismaService {
 
   /**
    * Archive un élève (pas de suppression physique)
+   *
+   * ⭐ P1.4 — Persiste maintenant le reason + écrit un audit log.
+   *    Avant, le reason collecté par l'UI était ignoré et l'archive n'avait
+   *    aucune trace dans studentAuditLog.
    */
-  async archiveStudent(id: string, tenantId: string, reason?: string) {
+  async archiveStudent(id: string, tenantId: string, reason?: string, userId?: string) {
     const student = await this.findStudentById(id, tenantId);
+    const previousStatus = student.status;
+    const now = new Date();
 
-    return this.prisma.student.update({
+    const updated = await this.prisma.student.update({
       where: { id },
       data: {
         status: 'ARCHIVED',
+        isActive: false,
       },
     });
+
+    // ⭐ Écrire un audit log — l'archive était auparavant une opération opaque
+    try {
+      await this.prisma.studentAuditLog.create({
+        data: {
+          tenantId,
+          studentId: id,
+          action: 'ARCHIVE',
+          performedBy: userId || null,
+          beforeData: { status: previousStatus } as any,
+          afterData: { status: 'ARCHIVED', reason: reason || null, archivedAt: now } as any,
+          createdAt: now,
+        },
+      });
+    } catch (e: any) {
+      console.warn(`[archiveStudent] Could not write audit log: ${e?.message}`);
+    }
+
+    return updated;
   }
 
   /**

@@ -769,18 +769,9 @@ export default function AdmissionsContent() {
     );
   };
 
-  const handleStatusChange = async (id: string, newStatus: string) => {
-    setIsActionPending(true);
-    try {
-      await studentsService.updateAdmission(id, { status: newStatus });
-      toast({ title: 'Succès', description: `Statut mis à jour : ${getStatusConfig(newStatus).label}`, variant: 'success' });
-      loadAdmissions();
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message || 'Erreur lors du changement de statut', variant: 'error' });
-    } finally {
-      setIsActionPending(false);
-    }
-  };
+  // ⭐ P4 — handleStatusChange supprimé (dead code, jamais appelé depuis l'UI).
+  //    Les transitions de statut passent par les boutons dédiés (submit, accept,
+  //    reject, convert, etc.) qui appellent directement les endpoints dédiés.
 
   const getStatusConfig = (status: string) => {
     switch (status) {
@@ -1457,6 +1448,9 @@ export default function AdmissionsContent() {
               // (le formulaire utilise requestedLevelId, mais l'admission stocke schoolLevelId)
               requestedLevelId: selectedAdmission.schoolLevelId,
               birthDate: selectedAdmission.dateOfBirth,
+              // ⭐ Précharger la classe souhaitée : priorité à requestedAcademicClassId
+              //    (nouveau champ officiel) avec fallback sur requestedClassId (ancien champ)
+              requestedClassId: selectedAdmission.requestedAcademicClassId || selectedAdmission.requestedClassId,
             }}
             onSubmit={handleEdit}
           />

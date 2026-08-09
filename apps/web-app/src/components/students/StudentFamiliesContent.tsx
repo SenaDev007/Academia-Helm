@@ -245,7 +245,15 @@ export default function StudentFamiliesContent() {
               relationship: guardianForm.relationship,
               isPrimary: guardianForm.isPrimary,
             }),
-          }).catch(() => {}); // Non-fatal — relationship update may fail if endpoint differs
+          }).catch((e: any) => {
+            // ⭐ Ne plus avaler silencieusement — avertir l'utilisateur
+            console.warn('updateRelation:', e?.message);
+            toast({
+              title: '⚠️ Lien non mis à jour',
+              description: e?.message || 'La mise à jour de la relation a échoué.',
+              variant: 'error',
+            });
+          });
         }
 
         toast({ title: '✅ Responsable modifié', variant: 'success' });

@@ -753,6 +753,13 @@ export class StudentsLifecycleService {
       academicYearId: updatedEnrollment.academicYearId,
     });
 
+    // ⭐ P1.3 — Recalculer le StudentAccount après changement de classe
+    try {
+      await this.studentAccountService.recalculate(data.studentId, tenantId, data.academicYearId);
+    } catch (e: any) {
+      this.logger.warn(`Compte non recalculé après changeClass: ${(e as Error).message}`);
+    }
+
     return this.prisma.student.findUnique({
       where: { id: data.studentId },
       include: {
@@ -822,6 +829,15 @@ export class StudentsLifecycleService {
       classId: updatedEnrollment.classId,
       physicalClassName: physicalClass.name,
     });
+
+    // ⭐ P1.3 — Recalculer le StudentAccount car la structure de frais peut
+    //    dépendre de la classe physique. Sans ça, l'élève garde l'ancienne
+    //    structure de frais après changement de classe → incohérence financière.
+    try {
+      await this.studentAccountService.recalculate(data.studentId, tenantId, data.academicYearId);
+    } catch (e: any) {
+      this.logger.warn(`Compte non recalculé après assignPhysicalClass: ${(e as Error).message}`);
+    }
 
     return this.prisma.student.findUnique({
       where: { id: data.studentId },
@@ -918,6 +934,13 @@ export class StudentsLifecycleService {
       newAcademicClassId: targetAcademicClass.id,
       newSeriesId: data.newSeriesId,
     });
+
+    // ⭐ P1.3 — Recalculer le StudentAccount après changement de série
+    try {
+      await this.studentAccountService.recalculate(data.studentId, tenantId, data.academicYearId);
+    } catch (e: any) {
+      this.logger.warn(`Compte non recalculé après changeSeries: ${(e as Error).message}`);
+    }
 
     return this.prisma.student.findUnique({
       where: { id: data.studentId },
@@ -1291,6 +1314,29 @@ export class StudentsLifecycleService {
       'Réintégration après abandon',
       userId,
     );
+
+    // ⭐ P1.4 — Écrire un audit log (était manquant avant — la réintégration
+    //    n'avait aucune trace dans studentAuditLog, contrairement à withdraw/exclude/exit)
+    try {
+      await this.prisma.studentAuditLog.create({
+        data: {
+          tenantId,
+          studentId: data.studentId,
+          action: 'REINTEGRATE',
+          performedBy: userId || null,
+          beforeData: { status: 'WITHDRAWN' } as any,
+          afterData: {
+            status: 'ACTIVE',
+            academicYearId: data.academicYearId,
+            classId: data.classId || null,
+            reintegratedAt: new Date(),
+          } as any,
+          createdAt: new Date(),
+        },
+      });
+    } catch (e: any) {
+      this.logger.warn(`[reintegrate] Could not write audit log: ${e?.message}`);
+    }
 
     return this.prisma.student.findUnique({
       where: { id: data.studentId },

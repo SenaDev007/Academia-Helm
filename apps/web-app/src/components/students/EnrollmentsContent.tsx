@@ -37,6 +37,7 @@ import DocumentPreviewModal from './DocumentPreviewModal';
 import StudentEnrollmentForm from '@/components/students/StudentEnrollmentForm';
 import ImportElevesModal from '@/components/students/ImportElevesModal';
 import { studentsService } from '@/services/students.service';
+import { apiFetch } from '@/lib/api/client';
 import { financeService } from '@/services/finance.service';
 import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
@@ -1573,14 +1574,20 @@ export default function EnrollmentsContent() {
               placeOfBirth: editEnrollment.student.placeOfBirth || '',
               photoUrl: editEnrollment.student.photoUrl || '',
               npi: editEnrollment.student.npi || '',
-              classId: editEnrollment.class?.id,
+              // ⭐ Priorité à academicClass.id (UUID AcademicClass — type attendu par le <select>)
+              //    Fallback sur class.id (UUID classe physique — ancien format)
+              classId: editEnrollment.academicClass?.id || editEnrollment.class?.id || '',
+              // ⭐ Précharger enrollmentType (NEW/REPEAT) pour ne pas fausser l'UI
+              enrollmentType: editEnrollment.enrollmentType || 'NEW',
               // Pré-remplir les guardians depuis les données existantes
               guardians: (editEnrollment.student.studentGuardians || []).map((sg: any) => ({
+                id: sg.guardian?.id, // ⭐ Conserver l'ID pour détecter update vs create
+                studentGuardianId: sg.id, // ⭐ ID de la junction pour PUT/DELETE
                 firstName: sg.guardian?.firstName || '',
                 lastName: sg.guardian?.lastName || '',
                 phone: sg.guardian?.phone || '',
                 email: sg.guardian?.email || '',
-                relationship: sg.guardian?.relationship || 'Père',
+                relationship: sg.relationship || sg.guardian?.relationship || 'PÈRE',
                 isPrimary: sg.isPrimary ?? false,
               })),
             }}
@@ -1609,17 +1616,56 @@ export default function EnrollmentsContent() {
                   await studentsService.changeClass(editEnrollment.student.id, academicYear.id, data.classId)
                     .catch((e: any) => console.warn('changeClass:', e?.message));
                 }
-                // Guardians
+                // Guardians — distinguer nouveaux (POST) vs existants (PUT)
+                // ⭐ Avant : on appelait addGuardians (POST) pour chaque guardian,
+                //    y compris les existants — ce qui violait @@unique([studentId, guardianId])
+                //    et échouait silencieusement. Maintenant on met à jour les existants.
                 if (data.guardians?.length) {
+                  // Récupérer la liste actuelle des studentGuardianIds pour détecter les suppressions
+                  const existingStudentGuardianIds = (editEnrollment.student.studentGuardians || [])
+                    .map((sg: any) => sg.id);
+                  const keptStudentGuardianIds: string[] = [];
+
                   for (const g of data.guardians) {
                     if (!g.firstName?.trim() && !g.lastName?.trim()) continue;
-                    await studentsService.addGuardians(editEnrollment.student.id, {
-                      guardians: [{
-                        firstName: g.firstName, lastName: g.lastName,
-                        relationship: g.relationship || 'GUARDIAN',
-                        phone: g.phone, email: g.email, isPrimary: g.isPrimary ?? false,
-                      }],
-                    }).catch((e: any) => console.warn('Guardian:', e?.message));
+                    if (g.id && g.studentGuardianId) {
+                      // Guardian existant → PUT update
+                      keptStudentGuardianIds.push(g.studentGuardianId);
+                      await apiFetch(`/students/${editEnrollment.student.id}/guardians/${g.id}`, {
+                        method: 'PUT',
+                        body: {
+                          firstName: g.firstName,
+                          lastName: g.lastName,
+                          phone: g.phone || null,
+                          email: g.email || null,
+                        },
+                      }).catch((e: any) => console.warn('updateGuardian:', e?.message));
+                      // Update aussi la relation (relationship + isPrimary)
+                      await apiFetch(`/students/${editEnrollment.student.id}/guardians/relation/${g.studentGuardianId}`, {
+                        method: 'PUT',
+                        body: {
+                          relationship: g.relationship || 'PÈRE',
+                          isPrimary: g.isPrimary ?? false,
+                        },
+                      }).catch((e: any) => console.warn('updateGuardianRelation:', e?.message));
+                    } else {
+                      // Nouveau guardian → POST
+                      await studentsService.addGuardians(editEnrollment.student.id, {
+                        guardians: [{
+                          firstName: g.firstName, lastName: g.lastName,
+                          relationship: g.relationship || 'GUARDIAN',
+                          phone: g.phone, email: g.email, isPrimary: g.isPrimary ?? false,
+                        }],
+                      }).catch((e: any) => console.warn('addGuardian:', e?.message));
+                    }
+                  }
+
+                  // Supprimer les guardians qui ne sont plus dans la liste
+                  const toDelete = existingStudentGuardianIds.filter((id: string) => !keptStudentGuardianIds.includes(id));
+                  for (const studentGuardianId of toDelete) {
+                    await apiFetch(`/students/${editEnrollment.student.id}/guardians/${studentGuardianId}`, {
+                      method: 'DELETE',
+                    }).catch((e: any) => console.warn('deleteGuardian:', e?.message));
                   }
                 }
                 toast({ title: '✅ Inscription mise à jour', variant: 'success' });

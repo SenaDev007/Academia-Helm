@@ -136,6 +136,8 @@ export class StudentIdCardController {
    * intercepté comme un studentId.
    */
   @Get('grouped-by-class')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'DIRECTOR', 'SECRETARY', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
   async listCardsGroupedByClass(
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId: string,
@@ -154,6 +156,8 @@ export class StudentIdCardController {
    * comme un studentId.
    */
   @Get('class/:classId/bundle-pdf')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'DIRECTOR', 'SECRETARY', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
   async downloadClassBundlePdf(
     @GetTenant() tenant: any,
     @Param('classId') classId: string,
@@ -269,6 +273,8 @@ export class StudentIdCardController {
    * GET /students/id-cards/:cardId/preview-html
    */
   @Get(':cardId/preview-html')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'DIRECTOR', 'SECRETARY', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
   async previewCardHtml(
     @GetTenant() tenant: any,
     @Param('cardId') cardId: string,
@@ -285,6 +291,8 @@ export class StudentIdCardController {
    * GET /students/id-cards/:cardId/download
    */
   @Get(':cardId/download')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'DIRECTOR', 'SECRETARY', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
   async downloadIdCardPdf(
     @GetTenant() tenant: any,
     @Param('cardId') cardId: string,
@@ -322,6 +330,8 @@ export class StudentIdCardController {
    * Récupère la carte d'un élève pour une année scolaire
    */
   @Get(':studentId')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'DIRECTOR', 'SECRETARY', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
   async getStudentIdCard(
     @GetTenant() tenant: any,
     @Param('studentId') studentId: string,
@@ -334,6 +344,8 @@ export class StudentIdCardController {
    * Récupère l'historique des cartes d'un élève
    */
   @Get(':studentId/history')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'DIRECTOR', 'SECRETARY', 'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR', 'SCHOOL_ADMIN')
   async getStudentIdCardsHistory(@GetTenant() tenant: any, @Param('studentId') studentId: string) {
     return this.idCardService.getStudentIdCardsHistory(studentId, tenant.id);
   }

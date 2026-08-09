@@ -52,10 +52,19 @@ export default function StudentAuditContent() {
     if (!academicYear?.id) return;
     setIsLoadingStudents(true);
     try {
-      const data = await studentsService.getAll({ academicYearId: academicYear.id });
-      setStudents(Array.isArray(data) ? data : (data?.students ?? []));
+      // ⭐ Passer limit=200 (max serveur) pour récupérer plus d'élèves que le défaut 50
+      //    Sinon les élèves au-delà du top 50 ne sont jamais auditables.
+      const data = await studentsService.getAll({ academicYearId: academicYear.id, limit: '200' as any });
+      // ⭐ Backend renvoie { data, total, page, limit, totalPages } — pas de `students`
+      setStudents(Array.isArray(data) ? data : (data?.data ?? []));
     } catch (e: any) {
       console.error('Failed to load students:', e);
+      // ⭐ Ne plus avaler silencieusement
+      toast({
+        title: 'Erreur de chargement',
+        description: e?.message || 'Impossible de charger la liste des élèves.',
+        variant: 'error',
+      });
     } finally {
       setIsLoadingStudents(false);
     }
@@ -70,12 +79,22 @@ export default function StudentAuditContent() {
       const data = await fetch(`/api/students/${selectedStudentId}/audit`, { credentials: 'include', cache: 'no-store' });
       if (data.ok) {
         const logs = await data.json();
-        setAuditLogs(Array.isArray(logs) ? logs : []);
+        setAuditLogs(Array.isArray(logs) ? logs : (logs?.data ?? []));
       } else {
         setAuditLogs([]);
+        toast({
+          title: 'Audit non disponible',
+          description: `Erreur ${data.status} lors du chargement de l'historique d'audit.`,
+          variant: 'error',
+        });
       }
-    } catch {
+    } catch (e: any) {
       setAuditLogs([]);
+      toast({
+        title: 'Erreur de chargement',
+        description: e?.message || 'Impossible de charger l\'historique d\'audit.',
+        variant: 'error',
+      });
     } finally {
       setIsLoadingAudit(false);
     }

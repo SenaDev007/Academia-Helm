@@ -142,7 +142,9 @@ export function IdCardVisual({
   const guardianAddress = g?.address || '—';
 
   const primaryColor = identity?.cardPrimaryColor || '#0D1F6E';
-  const secondaryColor = '#1E40AF';
+  // ⭐ P3.3 — Utiliser cardSecondaryColor du profil (au lieu de '#1E40AF' hardcodé)
+  //    Fallback sur la valeur par défaut si non définie
+  const secondaryColor = identity?.cardSecondaryColor || '#1E40AF';
 
   // Détection du niveau + ministère adapté
   const levelUpper = (card.levelCode || '').toUpperCase();

@@ -5,6 +5,9 @@
 import { BadRequestException, Controller, Get, Post, Body, Param, Query, UseGuards, Res, NotFoundException } from '@nestjs/common';
 import { StreamableFile } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { TenantGuard } from '../../common/guards/tenant.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { StudentsLifecycleService } from '../services/students-lifecycle.service';
@@ -14,8 +17,23 @@ import { ClassListPdfService, ClassListPdfMode } from '../services/class-list-pd
 import { PrismaService } from '../../database/prisma.service';
 import type { Response } from 'express';
 
+/**
+ * ⭐ P2.1 — RBAC renforcé sur le contrôleur lifecycle.
+ *    Avant : `JwtAuthGuard` uniquement → tout user authentifié pouvait withdraw/exclude/exit.
+ *    Maintenant : `TenantGuard` + `RolesGuard` avec @Roles par endpoint.
+ *
+ *    Rôles autorisés par défaut : 'ADMIN', 'DIRECTOR', 'SCHOOL_ADMIN', 'DIRECTEUR',
+ *    'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SUPER_DIRECTOR', 'PROMOTER',
+ *    'SCHOOL_OWNER' (rôles direction/propriétaire).
+ */
+const MANAGEMENT_ROLES = [
+  'ADMIN', 'DIRECTOR', 'SCHOOL_ADMIN', 'DIRECTEUR',
+  'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SUPER_DIRECTOR',
+  'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT',
+];
+
 @Controller('students')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
 export class StudentsLifecycleController {
   constructor(
     private readonly lifecycle: StudentsLifecycleService,
@@ -35,21 +53,25 @@ export class StudentsLifecycleController {
   }
 
   @Post('pre-register')
+  @Roles(...MANAGEMENT_ROLES)
   async preRegister(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
     return this.lifecycle.preRegister(tenantId, body, user?.id);
   }
 
   @Post('admit')
+  @Roles(...MANAGEMENT_ROLES)
   async admit(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
     return this.lifecycle.admit(tenantId, body, user?.id);
   }
 
   @Post('re-enroll')
+  @Roles(...MANAGEMENT_ROLES)
   async reEnroll(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
     return this.lifecycle.reEnroll(tenantId, body, user?.id);
   }
 
   @Post('transfer')
+  @Roles(...MANAGEMENT_ROLES)
   async transfer(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
     return this.lifecycle.transfer(tenantId, body, user?.id);
   }
@@ -60,6 +82,7 @@ export class StudentsLifecycleController {
    * Body: { studentId, academicYearId, exitReason?, exitDate? }
    */
   @Post('withdraw')
+  @Roles(...MANAGEMENT_ROLES)
   async withdraw(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
     return this.lifecycle.withdraw(tenantId, body, user?.id);
   }
@@ -70,11 +93,13 @@ export class StudentsLifecycleController {
    * Body: { studentId, academicYearId, schoolLevelId, classId? }
    */
   @Post('reintegrate')
+  @Roles(...MANAGEMENT_ROLES)
   async reintegrate(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
     return this.lifecycle.reintegrate(tenantId, body, user?.id);
   }
 
   @Post('change-class')
+  @Roles(...MANAGEMENT_ROLES)
   async changeClass(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
     return this.lifecycle.changeClass(tenantId, body, user?.id);
   }
@@ -85,6 +110,7 @@ export class StudentsLifecycleController {
    * Body: { studentId, academicYearId, reason, exitDate? }
    */
   @Post('exclude')
+  @Roles(...MANAGEMENT_ROLES)
   async exclude(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
     if (!body.reason?.trim()) {
       throw new BadRequestException('Un motif d\'exclusion est obligatoire');
@@ -98,6 +124,7 @@ export class StudentsLifecycleController {
    * Body: { studentId, academicYearId, exitReason?, exitDate? }
    */
   @Post('exit')
+  @Roles(...MANAGEMENT_ROLES)
   async exit(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
     return this.lifecycle.exit(tenantId, body, user?.id);
   }
@@ -128,6 +155,7 @@ export class StudentsLifecycleController {
    * Body: { studentId, academicYearId, physicalClassId, reason? }
    */
   @Post('assign-physical-class')
+  @Roles(...MANAGEMENT_ROLES)
   async assignPhysicalClass(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
     return this.lifecycle.assignPhysicalClass(tenantId, body, user?.id);
   }
@@ -138,6 +166,7 @@ export class StudentsLifecycleController {
    * Body: { studentId, academicYearId, newSeriesId, reason? }
    */
   @Post('change-series')
+  @Roles(...MANAGEMENT_ROLES)
   async changeSeries(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {
     return this.lifecycle.changeSeries(tenantId, body, user?.id);
   }
@@ -180,6 +209,7 @@ export class StudentsLifecycleController {
    * Body: { academicYearId }
    */
   @Post('reset-physical-assignments')
+  @Roles(...MANAGEMENT_ROLES)
   async resetPhysicalAssignments(
     @TenantId() tenantId: string,
     @Body() body: { academicYearId: string },
@@ -194,6 +224,7 @@ export class StudentsLifecycleController {
    * Promotion annuelle manuelle d'un élève (hors clôture globale).
    */
   @Post('promote')
+  @Roles(...MANAGEMENT_ROLES)
   async promote(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
@@ -213,6 +244,7 @@ export class StudentsLifecycleController {
    * Redoublement manuel d'un élève.
    */
   @Post('repeat')
+  @Roles(...MANAGEMENT_ROLES)
   async repeat(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
@@ -232,6 +264,7 @@ export class StudentsLifecycleController {
    * Batch promotion (sélection multiple).
    */
   @Post('batch-promote')
+  @Roles(...MANAGEMENT_ROLES)
   async batchPromote(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,
@@ -250,6 +283,7 @@ export class StudentsLifecycleController {
    * Batch mise à jour de statut (WITHDRAWN, EXPELLED, DECEASED, GRADUATED, etc.).
    */
   @Post('batch-update-status')
+  @Roles(...MANAGEMENT_ROLES)
   async batchUpdateStatus(
     @TenantId() tenantId: string,
     @CurrentUser() user: any,

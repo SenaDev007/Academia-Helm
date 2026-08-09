@@ -11,11 +11,15 @@ import { IsIn, IsOptional, IsString, IsDateString, IsNumber, IsBoolean } from 'c
  */
 export class UpdateAdmissionDto extends PartialType(CreateAdmissionDto) {
   // ─── Statut & décision ────────────────────────────────────────────────────
+  // ⭐ 'CONVERTED' est volontairement exclu — seule la méthode convertToStudent()
+  //    peut atteindre ce statut (elle crée l'élève + le matricule + le compte
+  //    financier en une transaction). Permettre un PATCH direct laisserait des
+  //    admissions "Inscrit" orphelines sans élève rattaché.
   @IsOptional()
   @IsIn([
     'PENDING', 'SUBMITTED', 'UNDER_REVIEW', 'MISSING_DOCUMENTS',
     'INTERVIEW_REQUIRED', 'TEST_REQUIRED', 'ACCEPTED', 'REJECTED',
-    'WAITLISTED', 'CONVERTED', 'CANCELLED',
+    'WAITLISTED', 'CANCELLED',
   ])
   status?: string;
 

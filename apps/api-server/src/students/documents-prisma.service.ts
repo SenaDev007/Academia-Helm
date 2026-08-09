@@ -91,8 +91,22 @@ export class DocumentsPrismaService {
       throw new NotFoundException(`Document with ID ${id} not found`);
     }
 
-    // TODO: Supprimer le fichier physique du système de fichiers
-    // await fs.unlink(document.filePath);
+    // ⭐ Supprimer le fichier physique du système de fichiers
+    //    Sauf si filePath est une data URL (base64) — auquel cas il n'y a pas de fichier à supprimer
+    if (document.filePath && !document.filePath.startsWith('data:')) {
+      try {
+        // filePath peut être un chemin relatif (./uploads/...) ou absolu
+        const fs = require('fs').promises;
+        const path = require('path');
+        const fullPath = path.isAbsolute(document.filePath)
+          ? document.filePath
+          : path.resolve(process.cwd(), document.filePath.replace(/^\.\//, ''));
+        await fs.unlink(fullPath);
+      } catch (e: any) {
+        // Le fichier n'existe peut-être plus — ne pas bloquer la suppression DB
+        console.warn(`[deleteDocument] Could not delete file: ${e?.message}`);
+      }
+    }
 
     await this.prisma.studentDocument.delete({
       where: { id },

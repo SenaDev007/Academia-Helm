@@ -22,7 +22,7 @@
  * ============================================================================
  */
 
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { EmailService } from '../communication/services/email.service';
 import { SmsService } from '../communication/services/sms.service';
@@ -172,12 +172,17 @@ export class StudentTransferService {
    * ⭐ Approuve une demande de transfert (côté école destination).
    * L'école source est notifiée.
    */
-  async approveTransfer(transferId: string, userId: string) {
+  async approveTransfer(transferId: string, userId: string, tenantId?: string) {
     const transfer = await this.prisma.studentTransferRequest.findUnique({
       where: { id: transferId },
       include: { student: true, sourceSchool: true, targetSchool: true },
     });
     if (!transfer) throw new NotFoundException('Transfert non trouvé');
+
+    // ⭐ P1.7 — Tenant scoping : seul le tenant destination peut approuver
+    if (tenantId && transfer.targetSchoolId !== tenantId) {
+      throw new ForbiddenException('Vous n\'êtes pas autorisé à approuver ce transfert (réservé à l\'établissement d\'accueil)');
+    }
 
     if (transfer.status !== 'SENT_TO_DESTINATION' && transfer.status !== 'REQUESTED') {
       throw new BadRequestException(`Le transfert ne peut pas être approuvé (statut actuel: ${transfer.status})`);
@@ -216,12 +221,17 @@ export class StudentTransferService {
    * ⭐ Rejette une demande de transfert (côté école destination).
    * L'école source est notifiée.
    */
-  async rejectTransfer(transferId: string, userId: string, reason: string) {
+  async rejectTransfer(transferId: string, userId: string, reason: string, tenantId?: string) {
     const transfer = await this.prisma.studentTransferRequest.findUnique({
       where: { id: transferId },
       include: { student: true, sourceSchool: true, targetSchool: true },
     });
     if (!transfer) throw new NotFoundException('Transfert non trouvé');
+
+    // ⭐ P1.7 — Tenant scoping : seul le tenant destination peut rejeter
+    if (tenantId && transfer.targetSchoolId !== tenantId) {
+      throw new ForbiddenException('Vous n\'êtes pas autorisé à rejeter ce transfert (réservé à l\'établissement d\'accueil)');
+    }
 
     const res = await this.prisma.studentTransferRequest.update({
       where: { id: transferId },
@@ -254,12 +264,17 @@ export class StudentTransferService {
   /**
    * ⭐ Demande des informations complémentaires (côté école destination).
    */
-  async requestComplement(transferId: string, userId: string, message: string) {
+  async requestComplement(transferId: string, userId: string, message: string, tenantId?: string) {
     const transfer = await this.prisma.studentTransferRequest.findUnique({
       where: { id: transferId },
       include: { student: true, sourceSchool: true },
     });
     if (!transfer) throw new NotFoundException('Transfert non trouvé');
+
+    // ⭐ P1.7 — Tenant scoping : seul le tenant destination peut demander un complément
+    if (tenantId && transfer.targetSchoolId !== tenantId) {
+      throw new ForbiddenException('Vous n\'êtes pas autorisé à demander un complément pour ce transfert');
+    }
 
     const res = await this.prisma.studentTransferRequest.update({
       where: { id: transferId },
@@ -283,12 +298,17 @@ export class StudentTransferService {
    * ⭐ Confirme la sortie de l'élève (côté école source).
    * L'école destination est notifiée qu'elle peut finaliser l'inscription.
    */
-  async confirmSourceExit(transferId: string, userId?: string) {
+  async confirmSourceExit(transferId: string, userId?: string, tenantId?: string) {
     const transfer = await this.prisma.studentTransferRequest.findUnique({
       where: { id: transferId },
       include: { student: true, sourceSchool: true, targetSchool: true },
     });
     if (!transfer) throw new NotFoundException('Transfert non trouvé');
+
+    // ⭐ P1.7 — Tenant scoping : seul le tenant source peut confirmer la sortie
+    if (tenantId && transfer.sourceSchoolId !== tenantId) {
+      throw new ForbiddenException('Vous n\'êtes pas autorisé à confirmer la sortie (réservé à l\'établissement source)');
+    }
 
     if (transfer.status !== 'ACCEPTED_BY_DESTINATION') {
       throw new BadRequestException(`Le transfert doit être accepté par l'école destination avant de confirmer la sortie (statut actuel: ${transfer.status})`);
@@ -313,6 +333,56 @@ export class StudentTransferService {
       data: { status: 'TRANSFERRED', isActive: false },
     });
 
+    // ⭐ P1.6 — Fermer le StudentEnrollment source (passer à TRANSFERRED + exitDate + exitReason).
+    //    Avant, seul le Student parent était marqué TRANSFERRED — l'enrollment restait ACTIVE,
+    //    ce qui était incohérent avec students-lifecycle.service.ts:transfer() qui fait les deux.
+    try {
+      const sourceEnrollment = await this.prisma.studentEnrollment.findFirst({
+        where: {
+          studentId: transfer.studentId,
+          tenantId: transfer.sourceSchoolId,
+          academicYearId: transfer.academicYearId,
+        },
+        orderBy: { enrollmentDate: 'desc' },
+      });
+      if (sourceEnrollment) {
+        await this.prisma.studentEnrollment.update({
+          where: { id: sourceEnrollment.id },
+          data: {
+            status: 'TRANSFERRED',
+            exitDate: new Date(),
+            exitReason: 'Transfert inter-écoles',
+          },
+        });
+      }
+    } catch (e: any) {
+      // Non-blocking — l'élève est déjà marqué TRANSFERRED au niveau Student
+      console.warn(`[confirmSourceExit] Could not close source enrollment: ${e?.message}`);
+    }
+
+    // ⭐ P1.6 — Écrire un audit log (était manquant avant — la sortie inter-écoles
+    //    n'avait aucune trace dans StudentAuditLog contrairement aux autres sorties)
+    try {
+      await this.prisma.studentAuditLog.create({
+        data: {
+          tenantId: transfer.sourceSchoolId,
+          studentId: transfer.studentId,
+          action: 'TRANSFER_EXIT',
+          performedBy: userId || null,
+          beforeData: { status: 'ACTIVE' } as any,
+          afterData: {
+            status: 'TRANSFERRED',
+            transferId,
+            targetSchoolId: transfer.targetSchoolId,
+            exitDate: new Date(),
+          } as any,
+          createdAt: new Date(),
+        },
+      });
+    } catch (e: any) {
+      console.warn(`[confirmSourceExit] Could not write audit log: ${e?.message}`);
+    }
+
     // ⭐ Notifier l'école destination
     await this.notifySchool(
       transfer.targetSchoolId,
@@ -332,27 +402,27 @@ export class StudentTransferService {
    * ⭐ Exécute le transfert final (côté école destination).
    * Copie le dossier complet de l'élève vers l'école destination.
    */
-  async executeTransfer(transferId: string, userId?: string) {
+  async executeTransfer(transferId: string, userId?: string, tenantId?: string) {
     const request = await this.prisma.studentTransferRequest.findUnique({
       where: { id: transferId },
       include: {
         student: {
           include: {
-            identifier: true,
             studentGuardians: { include: { guardian: true } },
             studentDocuments: true,
-            studentEnrollments: {
-              include: { class: true, academicClass: true, academicYear: true },
-              orderBy: { enrollmentDate: 'desc' },
-            },
+            studentAcademicRecords: true,
           },
         },
         sourceSchool: true,
         targetSchool: true,
       },
     });
-
     if (!request) throw new NotFoundException('Transfert non trouvé');
+
+    // ⭐ P1.7 — Tenant scoping : seul le tenant destination peut exécuter le transfert
+    if (tenantId && request.targetSchoolId !== tenantId) {
+      throw new ForbiddenException('Vous n\'êtes pas autorisé à exécuter ce transfert (réservé à l\'établissement d\'accueil)');
+    }
 
     if (request.status !== 'APPROVED_BY_SOURCE') {
       throw new BadRequestException(`Le transfert doit être approuvé par l'école source avant exécution (statut actuel: ${request.status})`);

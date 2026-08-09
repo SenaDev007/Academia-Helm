@@ -289,6 +289,10 @@ export class SettingsController {
    * ⭐ PUT /settings/identity/card-settings
    * Met à jour les paramètres de carte scolaire (heures maternelle, design, etc.)
    * Effectue un UPDATE direct sur la version active (pas de nouvelle version).
+   *
+   * ⭐ P0.8 — Persistance des 19 champs Phase-5 manquants (cardSecondaryColor,
+   *    cardFontFamily, cardPhotoPosition, etc.). Avant, seulement 11 champs étaient
+   *    persistés — le frontend envoyait 30 champs mais 19 étaient silencieusement droppés.
    */
   @Put('identity/card-settings')
   async updateCardSettings(
@@ -296,6 +300,7 @@ export class SettingsController {
     @CurrentUser() user: any,
     @Request() req: any,
     @Body() data: {
+      // Champs Phase 1 (déjà persistés avant)
       maternellePickupMorning?: string;
       maternellePickupAfternoon?: string;
       maternelleSingleExit?: boolean;
@@ -307,6 +312,27 @@ export class SettingsController {
       cardShowEmergencyCall?: boolean;
       cardShowSchoolAddress?: boolean;
       cardConditionsText?: string;
+      // ⭐ Champs Phase-5 (19 champs qui étaient droppés avant P0.8)
+      cardSecondaryColor?: string;
+      cardShowBarcode?: boolean;
+      cardFooterText?: string;
+      cardFontFamily?: string;
+      cardFontSizeScale?: string;
+      cardStudentNameStyle?: string;
+      cardPhotoPosition?: string;
+      cardPhotoSize?: string;
+      cardPhotoShape?: string;
+      cardHeaderStyle?: string;
+      cardLogoPosition?: string;
+      cardLogoSize?: string;
+      cardShowMatricule?: boolean;
+      cardShowBirthInfo?: boolean;
+      cardShowGender?: boolean;
+      cardShowLevel?: boolean;
+      cardQrPosition?: string;
+      cardQrSize?: string;
+      cardQrWithLogo?: boolean;
+      templateKey?: string;
     },
   ) {
     const tid = this.resolveTid(tenantId, user, req);
@@ -314,6 +340,7 @@ export class SettingsController {
     const updated = await this.prisma.tenantIdentityProfile.updateMany({
       where: { tenantId: tid, isActive: true },
       data: {
+        // Champs Phase 1
         ...(data.maternellePickupMorning !== undefined && { maternellePickupMorning: data.maternellePickupMorning }),
         ...(data.maternellePickupAfternoon !== undefined && { maternellePickupAfternoon: data.maternellePickupAfternoon }),
         ...(data.maternelleSingleExit !== undefined && { maternelleSingleExit: data.maternelleSingleExit }),
@@ -325,6 +352,26 @@ export class SettingsController {
         ...(data.cardShowEmergencyCall !== undefined && { cardShowEmergencyCall: data.cardShowEmergencyCall }),
         ...(data.cardShowSchoolAddress !== undefined && { cardShowSchoolAddress: data.cardShowSchoolAddress }),
         ...(data.cardConditionsText !== undefined && { cardConditionsText: data.cardConditionsText }),
+        // ⭐ Champs Phase-5 (19 champs ajoutés en P0.8)
+        ...(data.cardSecondaryColor !== undefined && { cardSecondaryColor: data.cardSecondaryColor }),
+        ...(data.cardShowBarcode !== undefined && { cardShowBarcode: data.cardShowBarcode }),
+        ...(data.cardFooterText !== undefined && { cardFooterText: data.cardFooterText }),
+        ...(data.cardFontFamily !== undefined && { cardFontFamily: data.cardFontFamily }),
+        ...(data.cardFontSizeScale !== undefined && { cardFontSizeScale: data.cardFontSizeScale }),
+        ...(data.cardStudentNameStyle !== undefined && { cardStudentNameStyle: data.cardStudentNameStyle }),
+        ...(data.cardPhotoPosition !== undefined && { cardPhotoPosition: data.cardPhotoPosition }),
+        ...(data.cardPhotoSize !== undefined && { cardPhotoSize: data.cardPhotoSize }),
+        ...(data.cardPhotoShape !== undefined && { cardPhotoShape: data.cardPhotoShape }),
+        ...(data.cardHeaderStyle !== undefined && { cardHeaderStyle: data.cardHeaderStyle }),
+        ...(data.cardLogoPosition !== undefined && { cardLogoPosition: data.cardLogoPosition }),
+        ...(data.cardLogoSize !== undefined && { cardLogoSize: data.cardLogoSize }),
+        ...(data.cardShowMatricule !== undefined && { cardShowMatricule: data.cardShowMatricule }),
+        ...(data.cardShowBirthInfo !== undefined && { cardShowBirthInfo: data.cardShowBirthInfo }),
+        ...(data.cardShowGender !== undefined && { cardShowGender: data.cardShowGender }),
+        ...(data.cardShowLevel !== undefined && { cardShowLevel: data.cardShowLevel }),
+        ...(data.cardQrPosition !== undefined && { cardQrPosition: data.cardQrPosition }),
+        ...(data.cardQrSize !== undefined && { cardQrSize: data.cardQrSize }),
+        ...(data.cardQrWithLogo !== undefined && { cardQrWithLogo: data.cardQrWithLogo }),
       },
     });
     return { success: true, updated: updated.count };

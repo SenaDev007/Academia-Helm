@@ -410,14 +410,27 @@ export default function StudentClassListsContent() {
                 });
                 const data = await res.json();
                 if (res.ok) {
-                  alert(`✅ Génération terminée :\n• ${data.matriculeGenerated} matricules générés\n• ${data.accountsCreated} comptes financiers créés\n• ${data.enrollmentsUpdated} admissions traitées${data.matriculeFailed > 0 ? `\n• ${data.matriculeFailed} échecs matricule` : ''}${data.accountsFailed > 0 ? `\n• ${data.accountsFailed} échecs compte` : ''}`);
-                  // Recharger les données
-                  window.location.reload();
+                  // ⭐ P3.2 — Remplacer alert() par toast() pour cohérence UI
+                  toast({
+                    title: '✅ Génération terminée',
+                    description: `${data.matriculeGenerated} matricule(s) · ${data.accountsCreated} compte(s) financier(s) · ${data.enrollmentsUpdated} admission(s) traitée(s)${data.matriculeFailed > 0 ? ` · ${data.matriculeFailed} échec(s) matricule` : ''}${data.accountsFailed > 0 ? ` · ${data.accountsFailed} échec(s) compte` : ''}`,
+                    variant: 'success',
+                  });
+                  // ⭐ P3.2 — Recharger sans window.location.reload() pour préserver l'état UI
+                  loadData();
                 } else {
-                  alert(`❌ Erreur: ${data.message || data.error}`);
+                  toast({
+                    title: '❌ Erreur',
+                    description: data.message || data.error || 'Erreur inconnue',
+                    variant: 'error',
+                  });
                 }
               } catch (e: any) {
-                alert(`❌ Erreur: ${e.message}`);
+                toast({
+                  title: '❌ Erreur réseau',
+                  description: e?.message || 'Erreur inconnue',
+                  variant: 'error',
+                });
               } finally {
                 setBulkSetupLoading(false);
               }

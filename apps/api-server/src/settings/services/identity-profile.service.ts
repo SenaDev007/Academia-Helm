@@ -493,6 +493,11 @@ export class IdentityProfileService {
 
   /**
    * Formate un profil pour l'API
+   *
+   * ⭐ P1.2 — Inclut tous les champs card* et maternelle* pour que les modals
+   *    (CardDesignTab, StudentIdCardsSection) puissent précharger les valeurs
+   *    existantes. Avant, ces champs étaient stripés → l'UI affichait toujours
+   *    les valeurs par défaut même après sauvegarde.
    */
   private formatProfile(profile: any) {
     return {
@@ -521,6 +526,40 @@ export class IdentityProfileService {
       logoUrl: profile.logoUrl,
       stampUrl: null,
       directorSignatureUrl: null,
+      // ⭐ Champs Maternelle (heures de sortie)
+      maternellePickupMorning: profile.maternellePickupMorning ?? null,
+      maternellePickupAfternoon: profile.maternellePickupAfternoon ?? null,
+      maternelleSingleExit: profile.maternelleSingleExit ?? false,
+      maternelleSingleExitTime: profile.maternelleSingleExitTime ?? null,
+      // ⭐ Champs Carte scolaire — Phase 1 (11 champs)
+      cardPrimaryColor: profile.cardPrimaryColor ?? '#0A2A5E',
+      cardShowQRCode: profile.cardShowQRCode ?? true,
+      cardShowPhoto: profile.cardShowPhoto ?? true,
+      cardShowGuardian: profile.cardShowGuardian ?? true,
+      cardShowEmergencyCall: profile.cardShowEmergencyCall ?? false,
+      cardShowSchoolAddress: profile.cardShowSchoolAddress ?? true,
+      cardConditionsText: profile.cardConditionsText ?? null,
+      // ⭐ Champs Carte scolaire — Phase 5 (19 champs qui étaient stripés avant)
+      cardSecondaryColor: profile.cardSecondaryColor ?? '#1E40AF',
+      cardShowBarcode: profile.cardShowBarcode ?? false,
+      cardFooterText: profile.cardFooterText ?? null,
+      cardFontFamily: profile.cardFontFamily ?? 'Inter',
+      cardFontSizeScale: profile.cardFontSizeScale ?? 'M',
+      cardStudentNameStyle: profile.cardStudentNameStyle ?? 'NORMAL',
+      cardPhotoPosition: profile.cardPhotoPosition ?? 'LEFT',
+      cardPhotoSize: profile.cardPhotoSize ?? 'M',
+      cardPhotoShape: profile.cardPhotoShape ?? 'CIRCLE',
+      cardHeaderStyle: profile.cardHeaderStyle ?? 'CLASSIC',
+      cardLogoPosition: profile.cardLogoPosition ?? 'LEFT',
+      cardLogoSize: profile.cardLogoSize ?? 'M',
+      cardShowMatricule: profile.cardShowMatricule ?? true,
+      cardShowBirthInfo: profile.cardShowBirthInfo ?? false,
+      cardShowGender: profile.cardShowGender ?? false,
+      cardShowLevel: profile.cardShowLevel ?? true,
+      cardQrPosition: profile.cardQrPosition ?? 'BOTTOM_RIGHT',
+      cardQrSize: profile.cardQrSize ?? 'M',
+      cardQrWithLogo: profile.cardQrWithLogo ?? false,
+      // Audit
       createdBy: profile.createdBy,
       createdAt: profile.createdAt,
       activatedAt: profile.activatedAt,

@@ -115,6 +115,7 @@ export class AdmissionService {
 
         // Vœux académiques
         requestedClassId: data.requestedClassId || null,
+        requestedAcademicClassId: data.requestedAcademicClassId || null,
         requestedSeriesId: data.requestedSeriesId || null,
         wantsBilingual: data.wantsBilingual ?? false,
         previousSchool: data.previousSchool ?? null,
@@ -136,6 +137,8 @@ export class AdmissionService {
         // Traçabilité
         admissionNumber,
         createdByUserId: userId ?? null,
+        // ⭐ Audit columns (migration 20260701130000_admission_full_spec)
+        createdById: userId ?? null,
 
         // Workflow
         status: 'PENDING',
@@ -244,6 +247,7 @@ export class AdmissionService {
     if (data.schoolLevelId !== undefined) updateData.schoolLevelId = data.schoolLevelId;
     if (data.academicYearId !== undefined) updateData.academicYearId = data.academicYearId;
     if (data.requestedClassId !== undefined) updateData.requestedClassId = data.requestedClassId || null;
+    if (data.requestedAcademicClassId !== undefined) updateData.requestedAcademicClassId = data.requestedAcademicClassId || null;
     if (data.requestedSeriesId !== undefined) updateData.requestedSeriesId = data.requestedSeriesId || null;
     if (data.wantsBilingual !== undefined) updateData.wantsBilingual = data.wantsBilingual;
     if (data.previousSchool !== undefined) updateData.previousSchool = data.previousSchool;
@@ -278,6 +282,8 @@ export class AdmissionService {
 
     // Traçabilité
     if (data.convertedStudentId !== undefined) updateData.convertedStudentId = data.convertedStudentId;
+    // ⭐ Audit column — qui a modifié cette admission
+    if (userId !== undefined) updateData.updatedById = userId;
 
     return this.prisma.admission.update({
       where: { id },
@@ -685,6 +691,8 @@ export class AdmissionService {
           decisionBy: userId,
           decisionDate: new Date(),
           convertedStudentId: student.id,
+          // ⭐ Audit column — quand la conversion a-t-elle eu lieu
+          convertedAt: new Date(),
         },
       });
 

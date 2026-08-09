@@ -235,7 +235,29 @@ apiClient.interceptors.response.use(
         isRefreshing = false;
       }
     }
-    
+
+    // ⭐ P3.1 — Pour les erreurs 4xx/5xx (non 401), extraire le message backend
+    //    au lieu de renvoyer le générique "Request failed with status code 400".
+    //    Le backend NestJS renvoie { message: string | string[], error, statusCode }
+    //    dans error.response.data — on l'extrait dans error.message pour que les
+    //    toasts affichent le vrai message (ex: "property X should not exist").
+    const backendData = error.response?.data;
+    if (backendData) {
+      const backendMsg = (backendData as any).message || (backendData as any).error;
+      if (backendMsg) {
+        // Si message est un tableau (class-validator), le joindre avec ", "
+        const msgStr = Array.isArray(backendMsg)
+          ? backendMsg.join(', ')
+          : String(backendMsg);
+        // Créer une nouvelle erreur avec le message backend
+        const enrichedError: any = new Error(msgStr);
+        enrichedError.originalError = error;
+        enrichedError.status = error.response?.status;
+        enrichedError.response = error.response;
+        return Promise.reject(enrichedError);
+      }
+    }
+
     return Promise.reject(error);
   }
 );

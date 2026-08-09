@@ -45,6 +45,12 @@ export class CreateAdmissionDto {
   @IsOptional() @IsString()
   requestedClassId?: string;
 
+  // ⭐ Classe OFFICIELLE souhaitée (AcademicClass UUID) — distinct de requestedClassId
+  //    qui représente une classe physique. Permet à l'élève d'exprimer son vœu
+  //    sur la classe officielle (ex: "6ème A" plutôt que "CI A section 1").
+  @IsOptional() @IsString()
+  requestedAcademicClassId?: string;
+
   @IsOptional() @IsString()
   requestedSeriesId?: string;
 

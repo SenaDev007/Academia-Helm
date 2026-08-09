@@ -150,7 +150,12 @@ export class CreateStudentDocumentDto {
   @IsString() fileName: string;
   @IsString() filePath: string;
   @IsOptional() @IsString() mimeType?: string;
+  // ⭐ Requis par documents-prisma.service.ts:createStudentDocument — sans ça,
+  //    le service lève une erreur car academicYearId/schoolLevelId sont undefined.
+  @IsOptional() @IsString() academicYearId?: string;
+  @IsOptional() @IsString() schoolLevelId?: string;
   @IsOptional() @IsString() tenantId?: string;
+  @IsOptional() @IsString() uploadedBy?: string;
 }
 
 export class CreateTransferRequestDto {

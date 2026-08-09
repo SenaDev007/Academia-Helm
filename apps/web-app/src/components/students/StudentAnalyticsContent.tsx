@@ -131,9 +131,12 @@ export default function StudentAnalyticsContent() {
             Répartition des alertes par sévérité
           </h3>
           {(() => {
+            // ⭐ Le backend émet severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
+            //    (cf students-orion.service.ts:84). Les anciennes valeurs 'WARNING'/'INFO'
+            //    ne sont jamais émises — il faut mapper HIGH → "Avertissement" et MEDIUM/LOW → "Info".
             const critical = alerts.filter(a => a.severity === 'CRITICAL').length;
-            const warning = alerts.filter(a => a.severity === 'WARNING').length;
-            const info = alerts.filter(a => a.severity === 'INFO' || (!a.severity)).length;
+            const warning = alerts.filter(a => a.severity === 'HIGH').length;
+            const info = alerts.filter(a => a.severity === 'MEDIUM' || a.severity === 'LOW' || a.severity === 'INFO' || !a.severity).length;
             const total = alerts.length || 1;
             const bars = [
               { label: 'Critique', count: critical, pct: (critical / total) * 100, color: 'bg-rose-500' },
@@ -231,30 +234,51 @@ export default function StudentAnalyticsContent() {
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="divide-y divide-slate-100">
-              {alerts.map((alert, i) => (
+              {alerts.map((alert, i) => {
+                // ⭐ Map la sévérité backend → classes Tailwind
+                //    Backend: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
+                const sevLower = (alert.severity || '').toLowerCase();
+                const isCritical = sevLower === 'critical';
+                const isHigh = sevLower === 'high';
+                const isMedium = sevLower === 'medium';
+                // isLow or other → info (blue)
+                const sevBg = isCritical ? 'bg-rose-50 text-rose-600' :
+                              isHigh ? 'bg-amber-50 text-amber-600' :
+                              isMedium ? 'bg-yellow-50 text-yellow-600' :
+                              'bg-blue-50 text-blue-600';
+                // ⭐ Le 1er élève concerné (s'il y en a)
+                const firstAffectedId = alert.sampleStudents?.[0]?.id || alert.studentId;
+                return (
                 <div key={i} className="p-4 flex items-start gap-4 hover:bg-slate-50/50 transition-colors">
-                  <div className={`p-2 rounded-lg shrink-0 ${
-                    alert.severity === 'CRITICAL' ? 'bg-rose-50 text-rose-600' : 
-                    alert.severity === 'WARNING' ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'
-                  }`}>
-                    {alert.severity === 'CRITICAL' ? <AlertCircle className="w-4 h-4" /> : <Info className="w-4 h-4" />}
+                  <div className={`p-2 rounded-lg shrink-0 ${sevBg}`}>
+                    {isCritical ? <AlertCircle className="w-4 h-4" /> : <Info className="w-4 h-4" />}
                   </div>
                   <div className="flex-1 space-y-1">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm font-bold text-slate-900">{alert.title || alert.type}</p>
-                      <span className="text-[10px] font-medium text-slate-400">Il y a 2h</span>
+                      {/* ⭐ Timestamp réel si dispo, sinon on masque */}
+                      {alert.createdAt && (
+                        <span className="text-[10px] font-medium text-slate-400">
+                          {new Date(alert.createdAt).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
                     </div>
-                    <p className="text-xs text-slate-600 leading-relaxed">{alert.message}</p>
-                    {alert.studentId && (
+                    {/* ⭐ Backend renvoie `description` et non `message` */}
+                    <p className="text-xs text-slate-600 leading-relaxed">{alert.description || alert.message || ''}</p>
+                    {firstAffectedId && (
                       <div className="pt-2">
-                        <button className="text-[10px] font-bold text-blue-600 hover:text-blue-700 underline underline-offset-4">
+                        <a
+                          href={`/app/students?tab=dossiers&studentId=${firstAffectedId}`}
+                          className="text-[10px] font-bold text-blue-600 hover:text-blue-700 underline underline-offset-4"
+                        >
                           Voir le dossier concerné
-                        </button>
+                        </a>
                       </div>
                     )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
               {alerts.length === 0 && (
                 <div className="p-12 text-center text-slate-400">
                    <CheckCircle2 className="w-12 h-12 mx-auto mb-3 opacity-20" />

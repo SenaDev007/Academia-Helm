@@ -32,6 +32,8 @@ import '../../features/parent/pages/parent_messages_screen.dart';
 import '../../features/parent/providers/parent_provider.dart' show ParentChild;
 import '../../features/dashboard/pages/pilotage_dashboard_screen.dart';
 import '../../features/profile/pages/profile_screen.dart';
+import '../../features/profile/pages/personal_info_screen.dart';
+import '../../features/profile/pages/change_password_screen.dart';
 import '../../features/students/pages/students_module_screen.dart';
 import '../../features/students/pages/student_detail_screen.dart';
 import '../../features/finance/pages/finance_module_screen.dart';
@@ -733,6 +735,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: '/profile',
             name: 'profile',
             builder: (context, state) => const ProfileScreen(),
+          ),
+          GoRoute(
+            path: '/personal-info',
+            name: 'personalInfo',
+            builder: (context, state) => const PersonalInfoScreen(),
+          ),
+          GoRoute(
+            path: '/change-password',
+            name: 'changePassword',
+            builder: (context, state) => const ChangePasswordScreen(),
           ),
         ],
       ),

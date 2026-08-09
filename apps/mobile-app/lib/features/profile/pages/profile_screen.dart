@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/theme/ah_spacing.dart';
 import '../../../core/theme/ah_colors.dart';
 import 'package:flutter/material.dart';
@@ -7,14 +8,15 @@ import 'package:go_router/go_router.dart';
 import '../../../core/auth/auth_notifier.dart';
 import '../../../core/auth/auth_providers.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/providers/school_identity_provider.dart';
 import '../../../core/theme/ah_theme.dart';
 import '../../../core/widgets/ah_app_bar.dart';
 
 /// Profile screen with:
 /// - User avatar
 /// - Name, email, role
-/// - School info
-/// - Settings links
+/// - School info (from schoolIdentityProvider — cached + fresh)
+/// - Settings links (personal info, change password, notifications)
 /// - Logout button
 /// - Version info
 class ProfileScreen extends ConsumerWidget {
@@ -27,14 +29,13 @@ class ProfileScreen extends ConsumerWidget {
     final fullName = user?.displayName ?? 'Utilisateur';
     final email = user?.email ?? 'email@exemple.com';
     final role = user?.role ?? '';
-    final tenantId = authState?.selectedTenantIdOrNull;
-    final tenants = authState?.availableTenantsOrNull ?? [];
-    final tenant = tenantId != null
-        ? tenants.where((t) => t.id == tenantId).firstOrNull
-        : null;
-    final tenantName = tenant?.name ?? 'Aucun établissement';
-    final tenantAcronym = tenant?.acronym ?? '';
     final initials = _getInitials(fullName);
+
+    // Use schoolIdentityProvider for the school name + acronym + logo
+    final identity = ref.watch(schoolIdentityProvider).valueOrNull;
+    final tenantName = identity?.schoolName ?? 'Academia Helm';
+    final tenantAcronym = identity?.displayAcronym ?? '';
+    final logoUrl = identity?.absoluteLogoUrl;
 
     return Scaffold(
       appBar: const AHAppBar(showBackButton: true),
@@ -122,7 +123,9 @@ class ProfileScreen extends ConsumerWidget {
               title: 'Établissement',
               children: [
                 _ProfileTile(
-                  icon: Icons.school,
+                  icon: logoUrl != null && logoUrl.isNotEmpty
+                      ? _SchoolLogo(logoUrl: logoUrl)
+                      : const Icon(Icons.school, color: AHColors.navy, size: 20),
                   iconColor: AHColors.navy,
                   title: tenantName,
                   subtitle: tenantAcronym.isNotEmpty
@@ -137,25 +140,28 @@ class ProfileScreen extends ConsumerWidget {
               title: 'Compte',
               children: [
                 _ProfileTile(
-                  icon: Icons.person_outline,
+                  icon: const Icon(Icons.person_outline,
+                      color: AHColors.navy, size: 20),
                   iconColor: AHColors.navy,
                   title: 'Informations personnelles',
                   subtitle: 'Nom, email, téléphone',
-                  onTap: () {},
+                  onTap: () => context.go('/personal-info'),
                 ),
                 _ProfileTile(
-                  icon: Icons.lock_outline,
+                  icon: const Icon(Icons.lock_outline,
+                      color: AHColors.navy, size: 20),
                   iconColor: AHColors.navy,
                   title: 'Changer le mot de passe',
                   subtitle: 'Modifier votre mot de passe',
-                  onTap: () {},
+                  onTap: () => context.go('/change-password'),
                 ),
                 _ProfileTile(
-                  icon: Icons.notifications_outlined,
+                  icon: const Icon(Icons.notifications_outlined,
+                      color: AHColors.navy, size: 20),
                   iconColor: AHColors.navy,
                   title: 'Notifications',
                   subtitle: 'Gérer vos préférences',
-                  onTap: () => context.go('/notifications'),
+                  onTap: () => context.go('/communication'),
                 ),
               ],
             ),
@@ -165,14 +171,16 @@ class ProfileScreen extends ConsumerWidget {
               title: 'Préférences',
               children: [
                 _ProfileTile(
-                  icon: Icons.language,
+                  icon: const Icon(Icons.language,
+                      color: AHColors.info, size: 20),
                   iconColor: AHColors.info,
                   title: 'Langue',
                   subtitle: 'Français',
                   onTap: () {},
                 ),
                 _ProfileTile(
-                  icon: Icons.dark_mode_outlined,
+                  icon: const Icon(Icons.dark_mode_outlined,
+                      color: AHColors.gray600, size: 20),
                   iconColor: AHColors.gray600,
                   title: 'Thème',
                   subtitle: 'Automatique',
@@ -186,14 +194,16 @@ class ProfileScreen extends ConsumerWidget {
               title: 'Support',
               children: [
                 _ProfileTile(
-                  icon: Icons.help_outline,
+                  icon: const Icon(Icons.help_outline,
+                      color: AHColors.navy, size: 20),
                   iconColor: AHColors.navy,
                   title: 'Centre d\'aide',
                   subtitle: 'FAQ et documentation',
                   onTap: () {},
                 ),
                 _ProfileTile(
-                  icon: Icons.bug_report_outlined,
+                  icon: const Icon(Icons.bug_report_outlined,
+                      color: AHColors.warning, size: 20),
                   iconColor: AHColors.warning,
                   title: 'Signaler un problème',
                   subtitle: 'Aidez-nous à améliorer l\'application',
@@ -274,16 +284,37 @@ class ProfileScreen extends ConsumerWidget {
   }
 
   String _getRoleLabel(String role) {
-    switch (role) {
+    switch (role.toUpperCase()) {
       case 'ADMIN':
       case 'SUPER_ADMIN':
         return 'Administrateur';
       case 'TEACHER':
+      case 'ENSEIGNANT':
         return 'Enseignant';
       case 'PARENT':
+      case 'PARENT_PRIMARY':
+      case 'LEGAL_GUARDIAN':
         return 'Parent';
       case 'STUDENT':
         return 'Élève';
+      case 'DIRECTEUR':
+      case 'DIRECTEUR_GENERAL':
+      case 'DIRECTEUR_ETABLISSEMENT':
+        return 'Directeur';
+      case 'SCOLARITE':
+        return 'Scolarité';
+      case 'COMPTABLE':
+        return 'Comptable';
+      case 'CENSEUR':
+        return 'Censeur';
+      case 'SURVEILLANT':
+      case 'SURVEILLANT_GENERAL':
+        return 'Surveillant';
+      case 'SECRETAIRE':
+      case 'SECRETAIRE_GENERAL':
+        return 'Secrétaire';
+      case 'CAISSIER':
+        return 'Caissier';
       default:
         return role;
     }
@@ -314,6 +345,28 @@ class ProfileScreen extends ConsumerWidget {
             child: const Text('Se déconnecter'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── School logo widget ──────────────────────────────────────────────────
+
+class _SchoolLogo extends StatelessWidget {
+  const _SchoolLogo({required this.logoUrl});
+  final String logoUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: CachedNetworkImage(
+        imageUrl: logoUrl,
+        width: 20,
+        height: 20,
+        fit: BoxFit.cover,
+        errorWidget: (context, url, error) =>
+            const Icon(Icons.school, color: AHColors.navy, size: 20),
       ),
     );
   }
@@ -379,7 +432,7 @@ class _ProfileTile extends StatelessWidget {
     this.onTap,
   });
 
-  final IconData icon;
+  final Widget icon;
   final Color iconColor;
   final String title;
   final String? subtitle;
@@ -395,7 +448,7 @@ class _ProfileTile extends StatelessWidget {
           color: iconColor.withOpacity(0.1),
           borderRadius: BorderRadius.circular(AHRadius.md),
         ),
-        child: Icon(icon, color: iconColor, size: 20),
+        child: Center(child: icon),
       ),
       title: Text(
         title,

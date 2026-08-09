@@ -43,50 +43,54 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   // ── Restore Session ───────────────────────────────────────────────────
 
   /// Attempts to restore a previously authenticated session by checking
-  /// for stored tokens and fetching the current user profile.
+  /// for stored tokens and cached user data.
   ///
-  /// This method is **resilient to network failures** — if the /auth/me
-  /// call fails due to a network error (not a 401), the session is
-  /// restored from cached user data instead of being cleared. This ensures
-  /// users don't have to re-login every time they open the app, even when
-  /// the network is unreliable (common in Bénin with Cloudflare blocking).
+  /// **Fast path**: If cached user data + token exist in secure storage,
+  /// restore immediately WITHOUT calling /auth/me. This makes the app
+  /// feel instant — the dashboard renders in <1 second.
+  ///
+  /// **Background validation**: The /auth/me call is skipped on startup.
+  /// If the token is actually invalid, the next API call will return 401
+  /// and the AuthInterceptor will handle it (refresh or logout).
+  ///
+  /// This mirrors the web app behavior where the session is restored from
+  /// localStorage/cookies instantly on page load, without a blocking
+  /// /auth/me call.
   Future<AuthState> _restoreSession() async {
     final bool hasTokens = await TokenStorage.hasTokens();
     if (!hasTokens) {
       return const AuthState.unauthenticated();
     }
 
+    // Try to restore from cache FIRST — this is instant.
+    final cachedState = await _restoreFromCache();
+    if (cachedState != null) {
+      debugPrint('[Auth] Session restored from cache (instant)');
+      return cachedState;
+    }
+
+    // No cached data — must call /auth/me to validate.
     // Check if the access token is still valid.
     final bool isExpired = await TokenStorage.isTokenExpired();
     if (isExpired) {
-      // Try refreshing the token.
       final bool refreshed = await _refreshToken();
       if (!refreshed) {
-        // If refresh failed due to network error (not 401), restore from
-        // cached data instead of clearing the session.
-        final cachedState = await _restoreFromCache();
-        if (cachedState != null) {
-          debugPrint('[Auth] Token refresh failed — using cached session');
-          return cachedState;
-        }
         await TokenStorage.clearTokens();
         return const AuthState.unauthenticated();
       }
     }
 
-    // Fetch the current user profile to validate the session.
+    // Fetch the current user profile.
     final ApiClient apiClient = ref.read(apiClientProvider);
     final ApiResult<Map<String, dynamic>> result =
         await apiClient.getRaw(ApiConfig.meEndpoint);
 
-    // Use explicit type checks instead of result.when() because the
-    // failure callback needs to be async (await _restoreFromCache()).
     if (result is ApiSuccess<Map<String, dynamic>>) {
       final Map<String, dynamic> data = result.data;
       final AuthUser user = AuthUser.fromJson(data);
       final String? accessToken = _cachedAccessToken;
 
-      // Persist user data for future cache restoration.
+      // Persist user data for future fast-path restoration.
       TokenStorage.persistSession(user: data);
 
       // Restore tenant selection from secure storage.
@@ -102,7 +106,6 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
         selectedTenantId = sessionTenant['id'] as String?;
       }
 
-      // Restore available tenants from session user data if present.
       if (sessionUser != null) {
         final dynamic tenantsData = sessionUser['availableTenants'];
         if (tenantsData is List) {
@@ -123,26 +126,14 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 
     if (result is ApiFailure<Map<String, dynamic>>) {
       final error = result.error;
-      // If the error is a 401 Unauthorized, the token is truly invalid.
-      // Clear tokens and require re-login.
       if (error.statusCode == 401) {
-        debugPrint('[Auth] /auth/me returned 401 — clearing session');
         TokenStorage.clearTokens();
         return const AuthState.unauthenticated();
       }
-      // For all other errors (network timeout, Cloudflare block, 500,
-      // etc.), restore from cached data instead of forcing re-login.
-      debugPrint('[Auth] /auth/me failed (${error.type}) — using cached session');
-      final cachedState = await _restoreFromCache();
-      if (cachedState != null) {
-        return cachedState;
-      }
-      // No cached data available — must re-login.
-      TokenStorage.clearTokens();
+      // Network error — can't validate, but don't clear tokens.
       return const AuthState.unauthenticated();
     }
 
-    // Loading state — shouldn't happen after await, but handle gracefully.
     return const AuthState.loading();
   }
 

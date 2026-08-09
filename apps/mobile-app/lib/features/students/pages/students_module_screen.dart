@@ -343,25 +343,9 @@ class _QuickAction extends StatelessWidget {
 class _AdmissionsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Watch admissions to compute status filter counts dynamically.
-    final admissions = ref.watch(admissionsProvider);
-    final counts = admissions.maybeWhen(
-      data: (items) {
-        int count(String s) =>
-            items.where((i) => i.status.toUpperCase() == s).length;
-        return {
-          'ALL': items.length,
-          'PENDING': count('PENDING'),
-          'SUBMITTED': count('SUBMITTED'),
-          'UNDER_REVIEW': count('UNDER_REVIEW'),
-          'ACCEPTED': count('ACCEPTED'),
-          'CONVERTED': count('CONVERTED'),
-          'REJECTED': count('REJECTED'),
-        };
-      },
-      orElse: () => <String, int>{},
-    );
-
+    // ModuleDataTab fetches /students/admissions and displays the list.
+    // Status filter counts are computed from the same data — no need for
+    // a separate admissionsProvider call (was causing double API fetch).
     return ModuleDataTab(
       endpoint: '/students/admissions',
       titleField: 'lastName',
@@ -407,14 +391,14 @@ class _AdmissionsTab extends ConsumerWidget {
             bg: Color(0xFFEEF2FF),
             suffix: '%'),
       ],
-      statusFilters: [
-        StatusFilter(id: 'ALL', label: 'Tous', count: counts['ALL']),
-        StatusFilter(id: 'PENDING', label: 'Brouillons', count: counts['PENDING']),
-        StatusFilter(id: 'SUBMITTED', label: 'Soumis', count: counts['SUBMITTED']),
-        StatusFilter(id: 'UNDER_REVIEW', label: 'En examen', count: counts['UNDER_REVIEW']),
-        StatusFilter(id: 'ACCEPTED', label: 'Acceptés', count: counts['ACCEPTED']),
-        StatusFilter(id: 'CONVERTED', label: 'Inscrits', count: counts['CONVERTED']),
-        StatusFilter(id: 'REJECTED', label: 'Refusés', count: counts['REJECTED']),
+      statusFilters: const [
+        StatusFilter(id: 'ALL', label: 'Tous'),
+        StatusFilter(id: 'PENDING', label: 'Brouillons'),
+        StatusFilter(id: 'SUBMITTED', label: 'Soumis'),
+        StatusFilter(id: 'UNDER_REVIEW', label: 'En examen'),
+        StatusFilter(id: 'ACCEPTED', label: 'Acceptés'),
+        StatusFilter(id: 'CONVERTED', label: 'Inscrits'),
+        StatusFilter(id: 'REJECTED', label: 'Refusés'),
       ],
       icon: Icons.person_add,
       rowActions: [

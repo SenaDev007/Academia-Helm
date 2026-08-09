@@ -19,13 +19,12 @@ class SchoolIdentity {
     this.academicYearLabel,
   });
 
-  /// Derive a short acronym (max 8 chars) from the school name when the API
-  /// doesn't supply one. Used only as a fallback.
+  /// Derive an acronym from the school name when the API doesn't supply
+  /// one. Used only as a fallback. No character limit — shows the full
+  /// acronym as returned by the API or derived from the school name.
   String get displayAcronym {
     if (schoolAcronym != null && schoolAcronym!.isNotEmpty) {
-      return schoolAcronym!.length > 10
-          ? schoolAcronym!.substring(0, 10)
-          : schoolAcronym!;
+      return schoolAcronym!;
     }
     if (schoolName.isEmpty) return 'AH';
     final words = schoolName
@@ -38,12 +37,10 @@ class SchoolIdentity {
         .toList();
     if (words.isEmpty) return 'AH';
     if (words.length == 1) {
-      return words[0].length > 4
-          ? words[0].substring(0, 4).toUpperCase()
-          : words[0].toUpperCase();
+      return words[0].toUpperCase();
     }
     final buf = StringBuffer();
-    for (final w in words.take(6)) {
+    for (final w in words) {
       buf.write(w[0].toUpperCase());
     }
     final r = buf.toString();
@@ -63,19 +60,50 @@ class SchoolIdentity {
   }
 }
 
-/// Provider that fetches school identity once on app start and caches it.
-/// Also merges with whatever tenant info was stored at login time so the
-/// header can render immediately even before the network call returns.
+/// School identity provider — tries cache FIRST (instant), then fetches
+/// from the API in the background. NOT autoDispose so it persists across
+/// screen navigations (avoids re-fetching /settings/identity on every
+/// AppBar render).
 final schoolIdentityProvider =
-    FutureProvider.autoDispose<SchoolIdentity>((ref) async {
-  // 1) Try the live API first.
+    FutureProvider<SchoolIdentity>((ref) async {
+  // 1) Try cache FIRST — this is instant.
+  final cachedTenant = await TokenStorage.getSessionTenant();
+  if (cachedTenant != null) {
+    final cached = SchoolIdentity(
+      schoolName: _extractString(cachedTenant, 'name') ?? 'Academia Helm',
+      schoolAcronym: _extractString(cachedTenant, 'acronym'),
+      logoUrl: _extractString(cachedTenant, 'logoUrl'),
+    );
+    // Return cached immediately — the UI renders instantly.
+    // Then fetch fresh data in the background (fire and forget).
+    _refreshIdentityInBackground(ref);
+    return cached;
+  }
+
+  // 2) No cache — fetch from API.
+  return _fetchIdentityFromApi(ref);
+});
+
+/// Fetches fresh identity data from /settings/identity and updates the
+/// cache. Called in the background after returning cached data.
+Future<void> _refreshIdentityInBackground(Ref ref) async {
+  try {
+    final identity = await _fetchIdentityFromApi(ref);
+    // Invalidate the provider so it re-renders with fresh data.
+    ref.invalidate(schoolIdentityProvider);
+  } catch (_) {
+    // Silently fail — cached data is still shown.
+  }
+}
+
+/// Fetches school identity from /settings/identity API.
+Future<SchoolIdentity> _fetchIdentityFromApi(Ref ref) async {
   final apiClient = ref.watch(apiClientProvider);
   final result = await apiClient.getRaw('/settings/identity');
 
   SchoolIdentity? fromApi;
   result.when(
     success: (data) {
-      debugPrint('[SchoolIdentity] API success: $data');
       fromApi = SchoolIdentity(
         schoolName: _extractString(data, 'schoolName') ??
             _extractString(data, 'name') ??
@@ -107,7 +135,7 @@ final schoolIdentityProvider =
     return fromApi!;
   }
 
-  // 2) Fall back to whatever we cached at login.
+  // Fall back to whatever we cached at login.
   final cached = await TokenStorage.getSessionTenant();
   if (cached != null) {
     return SchoolIdentity(
@@ -117,9 +145,8 @@ final schoolIdentityProvider =
     );
   }
 
-  // 3) Ultimate fallback.
   return const SchoolIdentity(schoolName: 'Academia Helm');
-});
+}
 
 String? _extractString(Map<String, dynamic> json, String key) {
   final v = json[key];

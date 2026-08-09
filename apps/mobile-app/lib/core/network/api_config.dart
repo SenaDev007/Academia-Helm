@@ -11,10 +11,14 @@ class ApiConfig {
   static const String _stagingBaseUrl = 'https://academiahelm.com/api';
 
   // ── Timeouts ──────────────────────────────────────────────────────────
+  // Keep timeouts short — if a request takes more than 15 seconds, it's
+  // better to fail fast and show a retry button than to leave the user
+  // staring at a spinner for a minute. The web app uses default fetch
+  // timeouts (~30s) but the BFF typically responds in 2-5 seconds.
 
-  static const Duration connectTimeout = Duration(seconds: 60);
-  static const Duration receiveTimeout = Duration(seconds: 60);
-  static const Duration sendTimeout = Duration(seconds: 60);
+  static const Duration connectTimeout = Duration(seconds: 15);
+  static const Duration receiveTimeout = Duration(seconds: 20);
+  static const Duration sendTimeout = Duration(seconds: 15);
 
   // ── Environment ───────────────────────────────────────────────────────
 

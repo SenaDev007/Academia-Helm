@@ -544,18 +544,6 @@ class _StudentListTab extends ConsumerWidget {
         const RowAction(id: 'archive', icon: Icons.archive, label: 'Archiver', color: Color(0xFF64748B)),
         const RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
       ],
-      onAction: (actionId, item) {
-        if (actionId == 'view' && item['id'] != null) {
-          context.go('/students/${item['id']}');
-          return;
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }

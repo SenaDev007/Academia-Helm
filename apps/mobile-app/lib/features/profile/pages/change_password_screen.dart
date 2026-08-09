@@ -365,8 +365,9 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
             ),
           );
         }
-      } else if (result is ApiFailure) {
-        setState(() => _error = result.error.message);
+      } else {
+        final error = result.errorOrNull;
+        setState(() => _error = error?.message ?? 'Erreur inconnue');
       }
     } catch (e) {
       setState(() {
@@ -411,8 +412,9 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
             ),
           );
         }
-      } else if (result is ApiFailure) {
-        setState(() => _error = result.error.message);
+      } else {
+        final error = result.errorOrNull;
+        setState(() => _error = error?.message ?? 'Erreur inconnue');
       }
     } catch (e) {
       setState(() {
@@ -474,8 +476,9 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
             context.go('/login');
           }
         }
-      } else if (result is ApiFailure) {
-        setState(() => _error = result.error.message);
+      } else {
+        final error = result.errorOrNull;
+        setState(() => _error = error?.message ?? 'Erreur inconnue');
       }
     } catch (e) {
       setState(() {

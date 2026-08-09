@@ -49,6 +49,10 @@ import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules, useExamScope } from '../layout';
+import {
+  getLabels, getEvaluationTypes, getMaxScoreForType,
+  translatePeriodName, EN_EVALUATION_TYPES,
+} from '@/lib/exam-anglophone-config';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -475,6 +479,9 @@ export default function EvaluationsPage() {
   const { academicYear } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
+  // ⭐ Labels UI selon la piste linguistique (FR/EN)
+  const isEN = scopeLang === 'EN';
+  const labels = getLabels(scopeLang);
   // ⭐ Modal de confirmation personnalisé (remplace window.confirm / window.prompt)
   const { confirm, danger, warning, info, dialog: confirmDialog } = useConfirmDialog();
 
@@ -549,7 +556,7 @@ export default function EvaluationsPage() {
 
       // Convertir assessmentTypes → format EvaluationTypeItem
       const assessmentTypes = activeSettings?.config?.assessmentTypes || [];
-      const typesFromSettings = assessmentTypes.map((at: any) => ({
+      let typesFromSettings = assessmentTypes.map((at: any) => ({
         id: at.code, // Utiliser le code comme ID (pas d'UUID dans school_academic_settings)
         name: at.label || at.code,
         code: at.code,
@@ -558,6 +565,20 @@ export default function EvaluationsPage() {
         schoolLevelId: schoolLevelUuid,
         isSystem: false,
       }));
+
+      // ⭐ Si piste anglophone (EN) et qu'aucun type n'est configuré dans les settings,
+      //    utiliser les types anglophones par défaut (First CA, Second CA, Examination)
+      if (isEN && typesFromSettings.length === 0) {
+        typesFromSettings = EN_EVALUATION_TYPES.map(t => ({
+          id: t.code,
+          name: t.name,
+          code: t.code,
+          defaultMaxScore: t.maxScore,
+          defaultCoefficient: 1,
+          schoolLevelId: schoolLevelUuid || '',
+          isSystem: true,
+        }));
+      }
 
       const [evals, allClassesData, periodsData, subjectsData] = await Promise.all([
         institutionalExamsService.getEvaluations(params),
@@ -579,16 +600,25 @@ export default function EvaluationsPage() {
       // Une classe peut avoir 'language' ou 'academicTrack.code' (ou les deux).
       // On accepte si l'un OU l'autre correspond à scopeLang, OU si aucun n'est défini
       // (compatibilité ascendante : les classes sans track sont affichées partout).
-      const langClasses = scopeLang
-        ? levelClasses.filter((c: any) => {
-            const classLang = c.language;
-            const trackCode = c.academicTrack?.code || c.academicTrackCode;
-            if (!classLang && !trackCode) return true; // pas d'info → on garde
-            if (classLang === scopeLang) return true;
-            if (trackCode === scopeLang) return true;
-            return false;
-          })
-        : levelClasses;
+      //
+      // ⭐ CORRECTION : si aucune classe ne match le filtre linguistique,
+      //    on affiche TOUTES les classes du niveau (mieux vaut trop que rien).
+      let langClasses = levelClasses;
+      if (scopeLang) {
+        const filtered = levelClasses.filter((c: any) => {
+          const classLang = c.language;
+          const trackCode = c.academicTrack?.code || c.academicTrackCode;
+          if (!classLang && !trackCode) return true; // pas d'info → on garde
+          if (classLang === scopeLang) return true;
+          if (trackCode === scopeLang) return true;
+          return false;
+        });
+        // Si le filtre renvoie 0 classes, utiliser toutes les classes du niveau
+        // (évite le bug "Aucune classe pour ce niveau scolaire")
+        if (filtered.length > 0) {
+          langClasses = filtered;
+        }
+      }
       // Trier par ordre pédagogique (Maternelle → Primaire → Secondaire)
       const sortedClasses = [...langClasses].sort((a, b) => {
         const idxA = getClassOrderIndex(a.name || a.code || '');
@@ -1142,7 +1172,7 @@ export default function EvaluationsPage() {
 
     {/* ─── Modal Création / Édition ────────────────────────────────────────── */}
     <FormModal
-      title={editingId ? 'Modifier l\'évaluation' : 'Créer une évaluation'}
+      title={editingId ? (isEN ? 'Edit Assessment' : 'Modifier l\'évaluation') : (isEN ? 'Create Assessment' : 'Créer une évaluation')}
       isOpen={isModalOpen}
       onClose={handleCloseModal}
       size="lg"
@@ -1159,7 +1189,7 @@ export default function EvaluationsPage() {
             disabled={saving || form.classIds.length === 0 || form.subjectIds.length === 0 || !form.periodId || !form.evaluationTypeId || !form.startDate || !form.endDate}
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
           >
-            {saving ? 'Enregistrement...' : editingId ? 'Modifier' : 'Créer'}
+            {saving ? (isEN ? 'Saving...' : 'Enregistrement...') : editingId ? (isEN ? 'Update' : 'Modifier') : (isEN ? 'Create' : 'Créer')}
           </button>
         </>
       }
@@ -1167,14 +1197,16 @@ export default function EvaluationsPage() {
       <div className="space-y-4 py-2">
         {/* ⭐ Type d'évaluation EN PREMIER (avant titre) */}
         <div>
-          <Label htmlFor="evaluationTypeId">Type d'évaluation <span className="text-red-500">*</span></Label>
+          <Label htmlFor="evaluationTypeId">{labels.evaluationType} <span className="text-red-500">*</span></Label>
           <Select value={form.evaluationTypeId} onValueChange={(v) => {
             const selectedType = evaluationTypes.find(t => t.id === v);
             // ⭐ Auto-génération intelligente du titre
-            // Ex: "Évaluation mensuelle 1 - Trimestre 1"
             const periodName = periods.find(p => p.id === form.periodId)?.name || '';
+            const translatedPeriod = translatePeriodName(periodName, scopeLang);
             const autoTitle = selectedType
-              ? `${selectedType.name} - ${periodName}`
+              ? isEN
+                ? `${selectedType.name} - ${translatedPeriod}`
+                : `${selectedType.name} - ${periodName}`
               : '';
             setForm({
               ...form,
@@ -1185,7 +1217,7 @@ export default function EvaluationsPage() {
             });
           }}>
             <SelectTrigger id="evaluationTypeId">
-              <SelectValue placeholder="Sélectionner un type...">
+              <SelectValue placeholder={labels.selectPlaceholder}>
                 {(() => {
                   // ⭐ Afficher le libellé du type sélectionné manuellement
                   // car SelectValue ne peut pas le résoudre tant que SelectContent
@@ -1202,7 +1234,7 @@ export default function EvaluationsPage() {
             </SelectTrigger>
             <SelectContent>
               {evaluationTypes.length === 0 ? (
-                <SelectItem value="_none" disabled>Aucun type — configurez-les dans l'onglet Paramètres</SelectItem>
+                <SelectItem value="_none" disabled>{labels.noTypes}</SelectItem>
               ) : (
                 evaluationTypes.map(t => (
                   <SelectItem key={t.id} value={t.id}>
@@ -1216,12 +1248,12 @@ export default function EvaluationsPage() {
 
         {/* Titre (auto-généré, modifiable) */}
         <div>
-          <Label htmlFor="title">Titre <span className="text-gray-400 font-normal">(auto-généré, modifiable)</span></Label>
+          <Label htmlFor="title">{labels.title} <span className="text-gray-400 font-normal">({isEN ? 'auto-generated, editable' : 'auto-généré, modifiable'})</span></Label>
           <Input
             id="title"
             value={form.title}
             onChange={(e) => setForm({ ...form, title: e.target.value })}
-            placeholder="Ex: Évaluation mensuelle - Trimestre 1"
+            placeholder={isEN ? "Ex: First CA - First Term" : "Ex: Évaluation mensuelle - Trimestre 1"}
           />
         </div>
 
@@ -1230,15 +1262,15 @@ export default function EvaluationsPage() {
           {/* Classes — checkboxes multiples */}
           <div>
             <Label>
-              Classes <span className="text-red-500">*</span>
+              {labels.classes} <span className="text-red-500">*</span>
               <span className="ml-2 text-xs text-gray-500 font-normal">
-                ({form.classIds.length} sélectionnée{form.classIds.length > 1 ? 's' : ''})
+                ({form.classIds.length} {isEN ? (form.classIds.length > 1 ? 'selected' : 'selected') : (form.classIds.length > 1 ? 'sélectionnées' : 'sélectionnée')})
               </span>
             </Label>
             <div className="mt-1 max-h-[160px] overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50 space-y-1">
               {classes.length === 0 ? (
                 <p className="text-sm text-gray-500 italic text-center py-4">
-                  Aucune classe pour ce niveau scolaire.
+                  {labels.noClasses}
                 </p>
               ) : (
                 classes.map(c => (
@@ -1270,7 +1302,7 @@ export default function EvaluationsPage() {
                   onClick={() => setForm({ ...form, classIds: classes.map(c => c.id) })}
                   className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
                 >
-                  Tout sélectionner
+                  {labels.selectAll}
                 </button>
               )}
               {form.classIds.length > 0 && (
@@ -1279,7 +1311,7 @@ export default function EvaluationsPage() {
                   onClick={() => setForm({ ...form, classIds: [] })}
                   className="text-xs text-gray-500 hover:text-red-600"
                 >
-                  Tout désélectionner
+                  {labels.deselectAll}
                 </button>
               )}
             </div>
@@ -1288,15 +1320,15 @@ export default function EvaluationsPage() {
           {/* Matières — checkboxes multiples */}
           <div>
             <Label>
-              Matières <span className="text-red-500">*</span>
+              {labels.subjects} <span className="text-red-500">*</span>
               <span className="ml-2 text-xs text-gray-500 font-normal">
-                ({form.subjectIds.length} sélectionnée{form.subjectIds.length > 1 ? 's' : ''})
+                ({form.subjectIds.length} {isEN ? (form.subjectIds.length > 1 ? 'selected' : 'selected') : (form.subjectIds.length > 1 ? 'sélectionnées' : 'sélectionnée')})
               </span>
             </Label>
             <div className="mt-1 max-h-[160px] overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50 space-y-1">
               {subjects.length === 0 ? (
                 <p className="text-sm text-gray-500 italic text-center py-4">
-                  Aucune matière pour ce niveau scolaire.
+                  {labels.noSubjects}
                 </p>
               ) : (
                 subjects.map(s => (
@@ -1328,7 +1360,7 @@ export default function EvaluationsPage() {
                   onClick={() => setForm({ ...form, subjectIds: subjects.map(s => s.id) })}
                   className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
                 >
-                  Tout sélectionner
+                  {labels.selectAll}
                 </button>
               )}
               {form.subjectIds.length > 0 && (
@@ -1337,7 +1369,7 @@ export default function EvaluationsPage() {
                   onClick={() => setForm({ ...form, subjectIds: [] })}
                   className="text-xs text-gray-500 hover:text-red-600"
                 >
-                  Tout désélectionner
+                  {labels.deselectAll}
                 </button>
               )}
             </div>
@@ -1348,28 +1380,29 @@ export default function EvaluationsPage() {
         {!editingId && form.classIds.length > 0 && form.subjectIds.length > 0 && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
             <p className="text-xs text-blue-800">
-              📋 <strong>{form.classIds.length * form.subjectIds.length} évaluation(s)</strong> seront créées
-              ({form.classIds.length} classe{form.classIds.length > 1 ? 's' : ''} × {form.subjectIds.length} matière{form.subjectIds.length > 1 ? 's' : ''}).
-              Chaque enseignant assigné recevra automatiquement l'évaluation dans son interface.
+              📋 <strong>{form.classIds.length * form.subjectIds.length} {labels.evaluationsCreated}</strong>
+              ({form.classIds.length} {isEN ? (form.classIds.length > 1 ? 'classes' : 'class') : (form.classIds.length > 1 ? 'classes' : 'classe')} × {form.subjectIds.length} {isEN ? (form.subjectIds.length > 1 ? 'subjects' : 'subject') : (form.subjectIds.length > 1 ? 'matières' : 'matière')}).
+              {labels.classSubjectInfo}
             </p>
           </div>
         )}
 
         {/* Période (trimestre) — auto-sélectionné si période active */}
         <div>
-          <Label htmlFor="periodId">Période (Trimestre) <span className="text-red-500">*</span></Label>
+          <Label htmlFor="periodId">{labels.period} <span className="text-red-500">*</span></Label>
           <Select value={form.periodId} onValueChange={(v) => setForm({ ...form, periodId: v })}>
             <SelectTrigger id="periodId">
-              <SelectValue placeholder="Sélectionner...">
+              <SelectValue placeholder={labels.selectPlaceholder}>
                 {(() => {
                   // ⭐ Afficher le libellé de la période sélectionnée manuellement
                   const selectedPeriod = periods.find((p) => p.id === form.periodId);
                   if (selectedPeriod) {
+                    const displayName = translatePeriodName(selectedPeriod.name, scopeLang);
                     return selectedPeriod.isClosed
-                      ? `${selectedPeriod.name} (clôturée)`
+                      ? `${displayName} (${labels.closed})`
                       : selectedPeriod.isActive
-                        ? `${selectedPeriod.name} (active)`
-                        : selectedPeriod.name;
+                        ? `${displayName} (${labels.active})`
+                        : displayName;
                   }
                   return null;
                 })()}
@@ -1377,13 +1410,16 @@ export default function EvaluationsPage() {
             </SelectTrigger>
             <SelectContent>
               {periods.length === 0 ? (
-                <SelectItem value="_none" disabled>Aucune période — configurez dans Paramètres</SelectItem>
+                <SelectItem value="_none" disabled>{labels.noPeriods}</SelectItem>
               ) : (
-                periods.map(p => (
-                  <SelectItem key={p.id} value={p.id} disabled={p.isClosed}>
-                    {p.name} {p.isClosed && '(clôturée)'} {p.isActive && !p.isClosed && '(active)'}
-                  </SelectItem>
-                ))
+                periods.map(p => {
+                  const displayName = translatePeriodName(p.name, scopeLang);
+                  return (
+                    <SelectItem key={p.id} value={p.id} disabled={p.isClosed}>
+                      {displayName} {p.isClosed && `(${labels.closed})`} {p.isActive && !p.isClosed && `(${labels.active})`}
+                    </SelectItem>
+                  );
+                })
               )}
             </SelectContent>
           </Select>
@@ -1392,7 +1428,7 @@ export default function EvaluationsPage() {
         {/* ⭐ Intervalle de dates obligatoire — date de début + date de fin */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <Label htmlFor="startDate">Date de début <span className="text-red-500">*</span></Label>
+            <Label htmlFor="startDate">{labels.startDate} <span className="text-red-500">*</span></Label>
             <Input
               id="startDate"
               type="date"
@@ -1402,7 +1438,7 @@ export default function EvaluationsPage() {
             />
           </div>
           <div>
-            <Label htmlFor="endDate">Date de fin <span className="text-red-500">*</span></Label>
+            <Label htmlFor="endDate">{labels.endDate} <span className="text-red-500">*</span></Label>
             <Input
               id="endDate"
               type="date"
@@ -1414,22 +1450,44 @@ export default function EvaluationsPage() {
         </div>
 
         {/* Barème + Coefficient — masqués pour la maternelle (qualitatif TS/S/PS) */}
+        {/* ⭐ En piste anglophone (EN), le coefficient est masqué (système sans coefficient) */}
         {isMaternelle ? (
           <div className="bg-pink-50 border border-pink-200 rounded-lg p-3">
             <p className="text-sm font-semibold text-pink-900 mb-1">
-              🎨 Évaluation qualitative (Maternelle)
+              🎨 {isEN ? 'Qualitative Assessment (Nursery)' : 'Évaluation qualitative (Maternelle)'}
             </p>
             <p className="text-xs text-pink-800">
-              Les évaluations de maternelle utilisent un système qualitatif
-              <strong> TS (Très Satisfaisant) / S (Satisfaisant) / PS (Peu Satisfaisant)</strong>.
-              Pas de note maximale ni de coefficient — la saisie se fait au niveau
-              de l'onglet "Saisie des notes" via des boutons TS/S/PS.
+              {isEN
+                ? 'Nursery assessments use a qualitative system: TS (Very Satisfactory) / S (Satisfactory) / PS (Less Satisfactory). No maximum score or coefficient — grading is done via TS/S/PS buttons in the Grading tab.'
+                : 'Les évaluations de maternelle utilisent un système qualitatif TS (Très Satisfaisant) / S (Satisfaisant) / PS (Peu Satisfaisant). Pas de note maximale ni de coefficient — la saisie se fait au niveau de l\'onglet "Saisie des notes" via des boutons TS/S/PS.'}
             </p>
           </div>
+        ) : isEN ? (
+          // ⭐ Piste anglophone : barème seulement (pas de coefficient)
+          <div className="grid grid-cols-1 gap-4">
+            <div>
+              <Label htmlFor="maxScore">{labels.maxScore}</Label>
+              <Input
+                id="maxScore"
+                type="number"
+                step="0.5"
+                value={form.maxScore}
+                onChange={(e) => setForm({ ...form, maxScore: e.target.value })}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                {form.evaluationTypeId === 'FCA' || form.evaluationTypeId === 'SCA'
+                  ? 'First CA / Second CA: out of 40'
+                  : form.evaluationTypeId === 'EXAM'
+                    ? 'Examination: out of 60'
+                    : 'Default: 40 (CA) or 60 (Exam)'}
+              </p>
+            </div>
+          </div>
         ) : (
+          // ⭐ Piste francophone : barème + coefficient (comme avant)
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="maxScore">Barème (note maximale)</Label>
+              <Label htmlFor="maxScore">{labels.maxScore}</Label>
               <Input
                 id="maxScore"
                 type="number"
@@ -1439,7 +1497,7 @@ export default function EvaluationsPage() {
               />
             </div>
             <div>
-              <Label htmlFor="coefficient">Coefficient</Label>
+              <Label htmlFor="coefficient">{labels.coefficient}</Label>
               <Input
                 id="coefficient"
                 type="number"
@@ -1453,7 +1511,7 @@ export default function EvaluationsPage() {
 
         {/* Description */}
         <div>
-          <Label htmlFor="description">Description <span className="text-gray-400 font-normal">(optionnel)</span></Label>
+          <Label htmlFor="description">{labels.description}</Label>
           <Textarea
             id="description"
             value={form.description}

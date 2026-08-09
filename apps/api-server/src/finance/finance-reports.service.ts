@@ -79,6 +79,54 @@ export class FinanceReportsService {
     };
   }
 
+  /**
+   * ⭐ Statistiques du jour : encaissements et dépenses pour aujourd'hui.
+   * Utilisé par le tableau de bord ("Recette du jour").
+   */
+  async getTodayStats(tenantId: string) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const [incomeAgg, incomeCount, expenseAgg] = await Promise.all([
+      this.prisma.financeTransaction.aggregate({
+        where: {
+          tenantId,
+          type: 'PAYMENT',
+          createdAt: { gte: today, lt: tomorrow },
+        },
+        _sum: { amount: true },
+      }).catch(() => ({ _sum: { amount: 0 } })),
+      this.prisma.financeTransaction.count({
+        where: {
+          tenantId,
+          type: 'PAYMENT',
+          createdAt: { gte: today, lt: tomorrow },
+        },
+      }).catch(() => 0),
+      this.prisma.financeExpense.aggregate({
+        where: {
+          tenantId,
+          status: 'APPROVED',
+          createdAt: { gte: today, lt: tomorrow },
+        },
+        _sum: { amount: true },
+      }).catch(() => ({ _sum: { amount: 0 } })),
+    ]);
+
+    const totalIncome = Number(incomeAgg._sum?.amount ?? 0);
+    const totalExpenses = Number(expenseAgg._sum?.amount ?? 0);
+
+    return {
+      total: totalIncome,
+      count: incomeCount,
+      expenses: totalExpenses,
+      net: totalIncome - totalExpenses,
+      date: today.toISOString(),
+    };
+  }
+
   /** Encaissements groupés par mois pour l'année scolaire. */
   async getMonthlyEncaissements(tenantId: string, academicYearId: string) {
     const data = await this.prisma.$queryRawUnsafe(`

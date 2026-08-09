@@ -38,6 +38,16 @@ export class FinanceReportsController {
     return this.service.getKpi(tenantId, academicYearId);
   }
 
+  /**
+   * ⭐ GET /finance/reports/today
+   * Renvoie le total des encaissements du jour (depuis finance_transactions)
+   * + compte de paiements + total des dépenses du jour.
+   */
+  @Get('today')
+  async getTodayStats(@TenantId() tenantId: string) {
+    return this.service.getTodayStats(tenantId);
+  }
+
   @Get('monthly-encaissements')
   async getMonthlyEncaissements(
     @TenantId() tenantId: string,

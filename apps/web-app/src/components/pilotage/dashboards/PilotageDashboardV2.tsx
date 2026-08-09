@@ -157,6 +157,8 @@ function useTodayRevenue() {
   return useQuery({
     queryKey: ['dashboard', 'today-revenue'],
     queryFn: async () => {
+      // ⭐ Appeler /api/finance/reports/today (backend NestJS)
+      //    qui renvoie { total, count, expenses, net, date }
       const data = await fetchJson('/api/finance/payments/today');
       return data?.total ?? data?.amount ?? 0;
     },
@@ -656,8 +658,23 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
   }
 
   // ─── KPIs financiers formatés ───
-  const totalRevenue = consolidated?.revenue?.total || financeKpis?.totalRevenue || financeKpis?.totalCollected || 0;
-  const unpaidAmount = financeKpis?.unpaidAmount || financeKpis?.totalUnpaid || consolidated?.revenue?.unpaid || 0;
+  // ⭐ Le backend finance-reports.service.ts renvoie :
+  //    totalDue, totalPaid, totalEncaissement, totalDepenses, soldeNet, tauxRecouvrement
+  //    (pas totalRevenue / totalCollected / unpaidAmount — c'était le bug)
+  const totalDue = financeKpis?.totalDue ?? 0;
+  const totalPaid = financeKpis?.totalPaid ?? 0;
+  const totalRevenue = consolidated?.revenue?.total
+    || financeKpis?.totalEncaissement
+    || financeKpis?.totalRevenue
+    || financeKpis?.totalCollected
+    || totalPaid
+    || 0;
+  // ⭐ Impayés = total dû - total payé (= ce qui reste à recouvrer)
+  const unpaidAmount = financeKpis?.unpaidAmount
+    || financeKpis?.totalUnpaid
+    || consolidated?.revenue?.unpaid
+    || (totalDue - totalPaid)
+    || 0;
   const totalStudents = consolidated?.enrollment?.total || studentsStats?.total || 0;
   const attendanceRate = consolidated?.attendance?.rate || 0;
   const averageGrade = consolidated?.weightedAverage?.value || weightedAvg?.weightedAverage || 0;

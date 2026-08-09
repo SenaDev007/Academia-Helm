@@ -453,7 +453,7 @@ export class StudentsPrismaService {
     }
 
     // Comptes séparés par statut
-    const [active, preRegistered, admitted, pending, archived, withdrawn, byGender, byStatus] = await Promise.all([
+    const [active, preRegistered, admitted, pending, archived, withdrawn, byGenderRaw, byStatus] = await Promise.all([
       this.prisma.student.count({ where: { ...where, status: 'ACTIVE', isActive: true } }),
       this.prisma.student.count({ where: { ...where, status: 'PRE_REGISTERED' } }),
       this.prisma.student.count({ where: { ...where, status: 'ADMITTED' } }),
@@ -474,6 +474,52 @@ export class StudentsPrismaService {
 
     // Total = élèves actifs uniquement (officiellement inscrits)
     const total = active;
+
+    // ⭐ Mapper byGender au format attendu par le frontend :
+    //    [{ label: 'Garçons', count: N }, { label: 'Filles', count: N }]
+    //    Au lieu du format Prisma raw [{ gender: 'M', _count: N }]
+    const byGender = byGenderRaw.map((g: any) => {
+      const rawGender = (g.gender || '').toUpperCase();
+      let label = 'Non spécifié';
+      if (rawGender === 'M' || rawGender === 'MALE' || rawGender === 'MASCULIN') label = 'Garçons';
+      else if (rawGender === 'F' || rawGender === 'FEMALE' || rawGender === 'FEMININ' || rawGender === 'FÉMININ') label = 'Filles';
+      return { label, value: g._count, count: g._count, gender: g.gender };
+    });
+
+    // ⭐ byClass : répartition des élèves par classe (via student_enrollments)
+    //    Le frontend Dashboard en a besoin pour le graphique "Effectifs par classe"
+    let byClass: Array<{ className: string; count: number }> = [];
+    try {
+      const enrollmentsByClass = await this.prisma.studentEnrollment.groupBy({
+        by: ['classId'],
+        where: {
+          tenantId,
+          academicYearId,
+          status: { in: ['ACTIVE', 'VALIDATED', 'ADMITTED', 'ENROLLED', 'PRE_REGISTERED', 'RE_ENROLLED'] },
+        },
+        _count: true,
+      });
+
+      // Résoudre les noms de classes
+      const classIds = enrollmentsByClass.map(e => e.classId).filter(Boolean) as string[];
+      if (classIds.length > 0) {
+        const classes = await this.prisma.class.findMany({
+          where: { id: { in: classIds }, tenantId },
+          select: { id: true, name: true },
+        });
+        const classNameMap = new Map(classes.map(c => [c.id, c.name]));
+
+        byClass = enrollmentsByClass
+          .map(e => ({
+            className: classNameMap.get(e.classId || '') || 'Sans classe',
+            count: e._count,
+          }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 10); // Top 10 classes
+      }
+    } catch (e) {
+      // Non-blocking — byClass reste []
+    }
 
     // Compter aussi les admissions (depuis la table admissions)
     const [admissionsPending, admissionsAccepted, admissionsRejected] = await Promise.all([
@@ -499,7 +545,8 @@ export class StudentsPrismaService {
       admissionsPending,   // demandes d'admission en attente
       admissionsAccepted,  // demandes d'admission acceptées (non converties)
       admissionsRejected,  // demandes d'admission refusées
-      byGender,
+      byGender,   // ⭐ format UI: [{ label, value, count, gender }]
+      byClass,    // ⭐ nouveau: [{ className, count }]
       byStatus,
     };
   }

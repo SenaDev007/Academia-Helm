@@ -455,6 +455,39 @@ export class PedagogicalSpaceController {
     return this.service.linkFicheToCahierJournal(tenantId, id, body.ficheId);
   }
 
+  // ⭐ Export PDF d'une fiche pédagogique individuelle
+  //    Génère un PDF structuré au nom de l'enseignant titulaire
+  @Get('fiches/:id/export-pdf')
+  async exportFichePdf(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Res() res: any,
+  ) {
+    const buffer = await this.service.exportFichePdf(tenantId, id);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="fiche_pedagogique_${id.substring(0, 8)}.pdf"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  // ⭐ Export PDF de TOUTES les fiches d'un cahier journal (document combiné)
+  @Get('cahier-journal/:id/fiches/export-pdf')
+  async exportAllFichesPdf(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Res() res: any,
+  ) {
+    const buffer = await this.service.exportAllFichesForCahierJournal(tenantId, id);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="fiches_cahier_journal_${id.substring(0, 8)}.pdf"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
   // ⭐ Mise à jour directeur : observations + signature + validation cahier journal
   //    Body : { directorObservations?, directorGeneralObservation?, directorSignature?, action, rejectionReason? }
   @Put('cahier-journal/:id/director-update')

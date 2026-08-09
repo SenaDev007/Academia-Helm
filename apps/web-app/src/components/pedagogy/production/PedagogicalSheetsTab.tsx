@@ -32,7 +32,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   FileText, Loader2, Plus, Save, RefreshCw, Send, Trash2,
   ChevronLeft, Clock, CheckCircle2, XCircle, BookOpen, Sigma,
-  FlaskConical, Users, Palette,
+  FlaskConical, Users, Palette, Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
@@ -762,6 +762,28 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                 <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
                   <button onClick={() => handleEdit(fiche)} className="flex-1 px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded">Modifier</button>
                   {fiche.status === "DRAFT" && <button onClick={() => handleSubmit(fiche)} className="px-3 py-1.5 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 rounded">Soumettre</button>}
+                  {/* ⭐ Bouton export PDF individuel */}
+                  <button
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(`/api/pedagogy-space/fiches/${fiche.id}/export-pdf`, { credentials: 'include' });
+                        if (!res.ok) throw new Error('Erreur');
+                        const blob = await res.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `fiche_${fiche.sheetType}_${(fiche.titre || 'sans_titre').replace(/\s+/g, '_').substring(0, 30)}.pdf`;
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                      } catch (e: any) {
+                        toast.error('Erreur export PDF', { description: e.message });
+                      }
+                    }}
+                    className="p-1.5 text-blue-500 hover:bg-blue-50 rounded"
+                    title="Exporter en PDF"
+                  >
+                    <Download className="h-3 w-3" />
+                  </button>
                   <button onClick={() => handleDelete(fiche)} className="p-1.5 text-red-500 hover:bg-red-50 rounded"><Trash2 className="h-3 w-3" /></button>
                 </div>
               </div>

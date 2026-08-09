@@ -29,6 +29,7 @@ import {
   Loader2, RefreshCw, CheckCircle2, XCircle, Send, Clock,
   FileText, BookOpen, ClipboardList, FileSpreadsheet, AlertTriangle, AlertCircle,
   ChevronRight, X, Eye, Sigma, FlaskConical, Users, Palette, Award, Calendar,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -1334,6 +1335,72 @@ function CahierJournalDirectorDetail({
   const [directorGeneralObservation, setDirectorGeneralObservation] = useState<string>(journal.observations || "");
   const [directorObservations, setDirectorObservations] = useState<Record<string, string>>({});
   const [dynamicSubjects, setDynamicSubjects] = useState<any[]>([]);
+  // ⭐ Fiches pédagogiques rattachées au cahier journal (vue hiérarchique par jour)
+  const [fichesData, setFichesData] = useState<any>(null);
+  const [fichesLoading, setFichesLoading] = useState(false);
+  const [exportingFiche, setExportingFiche] = useState<string | null>(null);
+
+  // ⭐ Charger les fiches pédagogiques rattachées à ce cahier journal
+  useEffect(() => {
+    if (!journal.id) return;
+    let cancelled = false;
+    (async () => {
+      setFichesLoading(true);
+      try {
+        const res = await apiClient.get(`/pedagogy-space/cahier-journal/${journal.id}/fiches`);
+        if (!cancelled) setFiches(res.data);
+      } catch {
+        if (!cancelled) setFichesData(null);
+      } finally {
+        if (!cancelled) setFichesLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [journal.id]);
+
+  // ⭐ Export PDF d'une fiche individuelle
+  const handleExportFiche = async (ficheId: string) => {
+    setExportingFiche(ficheId);
+    try {
+      const res = await fetch(`/api/pedagogy-space/fiches/${ficheId}/export-pdf`, {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Erreur export');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `fiche_pedagogique_${ficheId.substring(0, 8)}.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error('Erreur export PDF', { description: e.message });
+    } finally {
+      setExportingFiche(null);
+    }
+  };
+
+  // ⭐ Export PDF de TOUTES les fiches du cahier journal
+  const handleExportAllFiches = async () => {
+    setExportingFiche('ALL');
+    try {
+      const res = await fetch(`/api/pedagogy-space/cahier-journal/${journal.id}/fiches/export-pdf`, {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Erreur export');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `fiches_cahier_journal_${(journal.classNameResolved || 'classe').replace(/\s+/g, '_')}.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error('Erreur export PDF', { description: e.message });
+    } finally {
+      setExportingFiche(null);
+    }
+  };
 
   // ⭐ Parser les entries
   let entries: Record<string, Record<string, string>> = {};
@@ -1731,6 +1798,81 @@ function CahierJournalDirectorDetail({
             />
           )}
         </div>
+      </div>
+
+      {/* ⭐ FICHES PÉDAGOGIQUES RATTACHÉES — Vue hiérarchique par jour */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mt-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">Fiches Pédagogiques Jointes</h3>
+            <p className="text-xs text-slate-500">
+              {fichesData?.stats ? `${fichesData.stats.totalFiches || 0} fiche(s) · ${fichesData.stats.totalFichesPreparees || 0}/${fichesData.stats.totalMatieresPlanifiees || 0} préparées` : ''}
+            </p>
+          </div>
+          {fichesData?.fiches && fichesData.fiches.length > 0 && (
+            <button
+              onClick={handleExportAllFiches}
+              disabled={exportingFiche === 'ALL'}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
+            >
+              {exportingFiche === 'ALL' ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+              Tout exporter en PDF
+            </button>
+          )}
+        </div>
+
+        {fichesLoading ? (
+          <div className="flex justify-center py-6">
+            <Loader2 className="h-5 w-5 animate-spin text-slate-300" />
+          </div>
+        ) : !fichesData?.fiches || fichesData.fiches.length === 0 ? (
+          <div className="text-center py-6 text-sm text-slate-400">
+            <FileText className="h-8 w-8 text-slate-200 mx-auto mb-2" />
+            Aucune fiche pédagogique jointe à ce cahier journal.
+          </div>
+        ) : (
+          /* ⭐ Affichage hiérarchique : par jour → par matière */
+          <div className="space-y-3">
+            {['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'].map(day => {
+              const dayFiches = fichesData.parJour?.[day] || [];
+              if (dayFiches.length === 0) return null;
+              const dayLabels: Record<string, string> = {
+                lundi: 'Lundi', mardi: 'Mardi', mercredi: 'Mercredi', jeudi: 'Jeudi', vendredi: 'Vendredi',
+              };
+              return (
+                <div key={day} className="border border-slate-100 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Calendar className="h-3.5 w-3.5 text-blue-600" />
+                    <h4 className="text-xs font-bold uppercase text-slate-700">{dayLabels[day]}</h4>
+                    <span className="text-[10px] text-slate-400">{dayFiches.length} fiche(s)</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {dayFiches.map((fiche: any) => (
+                      <div key={fiche.id} className="flex items-center justify-between border border-slate-100 rounded-lg p-2 bg-slate-50/50">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-700 truncate">
+                            {fiche.sheetType} — {fiche.titre || fiche.cours || 'Sans titre'}
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            {fiche.status === 'SUBMITTED' ? '✓ Soumise' : fiche.status === 'VALIDATED' ? '✓ Validée' : 'Brouillon'}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleExportFiche(fiche.id)}
+                          disabled={exportingFiche === fiche.id}
+                          className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50 shrink-0 ml-2"
+                        >
+                          {exportingFiche === fiche.id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Download className="h-2.5 w-2.5" />}
+                          PDF
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

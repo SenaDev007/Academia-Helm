@@ -815,6 +815,208 @@ export class PedagogicalSpaceService {
    *     semaine ISO (lundi-vendredi).
    *   - 5 semaines max (compatible avec le template officiel).
    */
+  /**
+   * ⭐ Export PDF d'une fiche pédagogique individuelle.
+   *    Génère un PDF structuré avec le nom de l'enseignant titulaire.
+   */
+  async exportFichePdf(tenantId: string, ficheId: string): Promise<Buffer> {
+    const ficheRows: any = await this.prisma.$queryRawUnsafe(
+      `SELECT pf.*, c."name" as "classNameResolved",
+        t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName", t."gender" as "teacherGender"
+       FROM "primary_pedagogical_fiches" pf
+       LEFT JOIN classes c ON c."id" = pf."classId"
+       LEFT JOIN teachers t ON t."id" = pf."teacherId"
+       WHERE pf."id" = $1 AND pf."tenantId" = $2`,
+      ficheId, tenantId,
+    ).catch(() => []);
+    if (!ficheRows || ficheRows.length === 0) {
+      throw new NotFoundException('Fiche non trouvée');
+    }
+    const fiche = ficheRows[0];
+
+    // Résoudre le nom du titulaire
+    const teacherName = fiche.teacherFirstName || fiche.teacherLastName
+      ? `${fiche.teacherGender === 'F' ? 'Mme' : 'M.'} ${(fiche.teacherLastName || '').toUpperCase()} ${fiche.teacherFirstName || ''}`.trim()
+      : '—';
+
+    const html = this.buildFichePdfHtml(fiche, teacherName);
+    const { page } = await this.puppeteerPool.acquirePage();
+    try {
+      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await new Promise(r => setTimeout(r, 300));
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
+      });
+      return Buffer.from(pdfBuffer);
+    } finally {
+      await this.puppeteerPool.releasePage(page);
+    }
+  }
+
+  /**
+   * ⭐ Export PDF de TOUTES les fiches d'un cahier journal (document combiné).
+   */
+  async exportAllFichesForCahierJournal(tenantId: string, journalId: string): Promise<Buffer> {
+    const data = await this.getFichesForCahierJournal(tenantId, journalId);
+    const fiches = data.fiches || [];
+    if (fiches.length === 0) {
+      throw new NotFoundException('Aucune fiche rattachée à ce cahier journal');
+    }
+
+    // Construire le HTML combiné (page break entre chaque fiche)
+    let combinedHtml = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; }
+      .fiche-page { page-break-after: always; padding: 10mm; }
+      .fiche-page:last-child { page-break-after: auto; }
+    </style></head><body>`;
+
+    for (const fiche of fiches) {
+      // Résoudre le nom de l'enseignant
+      const teacherName = fiche.teacherFirstName || fiche.teacherLastName
+        ? `${fiche.teacherGender === 'F' ? 'Mme' : 'M.'} ${(fiche.teacherLastName || '').toUpperCase()} ${fiche.teacherFirstName || ''}`.trim()
+        : '—';
+      combinedHtml += `<div class="fiche-page">${this.buildFichePdfHtml(fiche, teacherName, true)}</div>`;
+    }
+
+    combinedHtml += `</body></html>`;
+
+    const { page } = await this.puppeteerPool.acquirePage();
+    try {
+      await page.setContent(combinedHtml, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await new Promise(r => setTimeout(r, 500));
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' },
+      });
+      return Buffer.from(pdfBuffer);
+    } finally {
+      await this.puppeteerPool.releasePage(page);
+    }
+  }
+
+  /**
+   * ⭐ Construit le HTML d'une fiche pédagogique pour export PDF.
+   *    `embedded` = true si la fiche est dans un document combiné (pas de <html> wrapper).
+   */
+  private buildFichePdfHtml(fiche: any, teacherName: string, embedded: boolean = false): string {
+    const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+    const lessonDate = fiche.lessonDate ? new Date(fiche.lessonDate) : null;
+    const lessonDateStr = lessonDate
+      ? `${dayNames[lessonDate.getDay()]} ${lessonDate.getDate()}/${lessonDate.getMonth() + 1}/${lessonDate.getFullYear()}`
+      : '—';
+
+    const SHEET_TYPE_LABELS: Record<string, string> = {
+      MATH: 'Mathématiques', FRANCAIS: 'Français', EST: 'Éducation Scientifique et Technologique',
+      ES: 'Éducation Sociale', EA: 'Éducation Artistique',
+    };
+    const typeLabel = SHEET_TYPE_LABELS[fiche.sheetType] || fiche.sheetType || '—';
+
+    // Récupérer les champs (strip HTML basique)
+    const strip = (html: string) => (html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').trim() || '—';
+
+    // Déroulement (JSON)
+    let deroulementRows = '';
+    if (fiche.deroulement) {
+      try {
+        const der = typeof fiche.deroulement === 'string' ? JSON.parse(fiche.deroulement) : fiche.deroulement;
+        if (Array.isArray(der)) {
+          deroulementRows = der.map((d: any, i: number) => `
+            <tr>
+              <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;">${i + 1}</td>
+              <td style="border:1px solid #cbd5e1;padding:4px;font-size:9px;">${strip(d.etape)}</td>
+              <td style="border:1px solid #cbd5e1;padding:4px;font-size:9px;">${strip(d.consignes)}</td>
+              <td style="border:1px solid #cbd5e1;padding:4px;font-size:9px;">${strip(d.resultats)}</td>
+            </tr>`).join('');
+        }
+      } catch {}
+    }
+
+    const content = `
+      ${!embedded ? `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; padding: 10mm; }
+      </style></head><body>` : ''}
+
+      <div style="text-align:center;margin-bottom:8px;">
+        <div style="font-size:14px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;">FICHE PÉDAGOGIQUE</div>
+        <div style="font-size:10px;color:#64748b;margin-top:2px;">${typeLabel} — ${fiche.classNameResolved || fiche.className || '—'}</div>
+      </div>
+
+      <table style="width:100%;border-collapse:collapse;margin-bottom:6px;font-size:9px;">
+        <tr>
+          <td style="border:1px solid #cbd5e1;padding:4px;"><strong>SAN°:</strong> ${fiche.san || '—'}</td>
+          <td style="border:1px solid #cbd5e1;padding:4px;"><strong>Date:</strong> ${lessonDateStr}</td>
+          <td style="border:1px solid #cbd5e1;padding:4px;"><strong>Classe:</strong> ${fiche.classNameResolved || fiche.className || '—'}</td>
+        </tr>
+        <tr>
+          <td style="border:1px solid #cbd5e1;padding:4px;"><strong>Titre:</strong> ${strip(fiche.titre)}</td>
+          <td style="border:1px solid #cbd5e1;padding:4px;"><strong>Cours:</strong> ${strip(fiche.cours)}</td>
+          <td style="border:1px solid #cbd5e1;padding:4px;"><strong>Durée:</strong> ${fiche.duree || fiche.adminDuree || '—'} min</td>
+        </tr>
+        <tr>
+          <td style="border:1px solid #cbd5e1;padding:4px;"><strong>Effectif:</strong> ${fiche.totalStudents || '—'} élèves</td>
+          <td colspan="2" style="border:1px solid #cbd5e1;padding:4px;"><strong>Enseignant:</strong> ${teacherName}</td>
+        </tr>
+      </table>
+
+      <div style="margin-bottom:6px;">
+        <div style="font-size:10px;font-weight:bold;color:#0A2A5E;border-bottom:1px solid #0A2A5E;margin-bottom:3px;">I — ÉLÉMENTS DE PLANIFICATION</div>
+        <table style="width:100%;border-collapse:collapse;font-size:9px;">
+          <tr><td style="border:1px solid #cbd5e1;padding:3px;width:30%;font-weight:bold;">Compétences disciplinaires</td><td style="border:1px solid #cbd5e1;padding:3px;">${strip(fiche.competence)}</td></tr>
+          <tr><td style="border:1px solid #cbd5e1;padding:3px;font-weight:bold;">Compétences transversales</td><td style="border:1px solid #cbd5e1;padding:3px;">${strip(fiche.habilete)}</td></tr>
+          <tr><td style="border:1px solid #cbd5e1;padding:3px;font-weight:bold;">Connaissances et techniques</td><td style="border:1px solid #cbd5e1;padding:3px;">${strip(fiche.contenu)}</td></tr>
+          <tr><td style="border:1px solid #cbd5e1;padding:3px;font-weight:bold;">Stratégie d'enseignement</td><td style="border:1px solid #cbd5e1;padding:3px;">${strip(fiche.methodes)}</td></tr>
+          <tr><td style="border:1px solid #cbd5e1;padding:3px;font-weight:bold;">Moyens didactiques</td><td style="border:1px solid #cbd5e1;padding:3px;">${strip(fiche.moyensDidactiques)}</td></tr>
+        </table>
+      </div>
+
+      ${deroulementRows ? `
+      <div style="margin-bottom:6px;">
+        <div style="font-size:10px;font-weight:bold;color:#0A2A5E;border-bottom:1px solid #0A2A5E;margin-bottom:3px;">II — DÉROULEMENT</div>
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#0A2A5E;color:white;">
+              <th style="border:1px solid #0D3B85;padding:3px;font-size:8px;width:5%;">#</th>
+              <th style="border:1px solid #0D3B85;padding:3px;font-size:8px;">Étape</th>
+              <th style="border:1px solid #0D3B85;padding:3px;font-size:8px;">Consignes</th>
+              <th style="border:1px solid #0D3B85;padding:3px;font-size:8px;">Résultats attendus</th>
+            </tr>
+          </thead>
+          <tbody>${deroulementRows}</tbody>
+        </table>
+      </div>` : ''}
+
+      <div style="margin-bottom:6px;">
+        <div style="font-size:10px;font-weight:bold;color:#0A2A5E;border-bottom:1px solid #0A2A5E;margin-bottom:3px;">III — RETOUR ET PROJECTION</div>
+        <table style="width:100%;border-collapse:collapse;font-size:9px;">
+          <tr><td style="border:1px solid #cbd5e1;padding:3px;width:30%;font-weight:bold;">Objectivation</td><td style="border:1px solid #cbd5e1;padding:3px;">${strip(fiche.objectivation)}</td></tr>
+          <tr><td style="border:1px solid #cbd5e1;padding:3px;font-weight:bold;">Évaluation</td><td style="border:1px solid #cbd5e1;padding:3px;">${strip(fiche.evalRetour)}</td></tr>
+          <tr><td style="border:1px solid #cbd5e1;padding:3px;font-weight:bold;">Projection</td><td style="border:1px solid #cbd5e1;padding:3px;">${strip(fiche.projection)}</td></tr>
+        </table>
+      </div>
+
+      <div style="margin-top:10px;display:flex;justify-content:space-between;">
+        <div style="text-align:center;width:45%;">
+          ${fiche.teacherSignature ? `<img src="${fiche.teacherSignature}" style="max-height:50px;max-width:120px;object-fit:contain;" />` : ''}
+          <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:9px;font-weight:bold;">Le Maître / La Maîtresse</div>
+          <div style="font-size:8px;color:#64748b;">${teacherName}</div>
+        </div>
+        <div style="text-align:center;width:45%;">
+          ${fiche.directorSignature ? `<img src="${fiche.directorSignature}" style="max-height:50px;max-width:120px;object-fit:contain;" />` : ''}
+          <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:9px;font-weight:bold;">Le Directeur / La Directrice</div>
+        </div>
+      </div>
+
+      ${!embedded ? `</body></html>` : ''}
+    `;
+
+    return content;
+  }
+
   async syncAttendanceToRegister(
     tenantId: string,
     academicYearId: string,
@@ -2610,14 +2812,34 @@ export class PedagogicalSpaceService {
     const dayNums = days.map(d => dayToNum[d.toLowerCase()]).filter(n => n !== undefined);
 
     // ─── 3. Calculer la plage de dates pour les fiches ───
+    // ⭐ FIX : utiliser minuit pour éviter les soucis de timezone
     const weekStart = new Date(journal.weekStartDate);
+    weekStart.setHours(0, 0, 0, 0);
     const weekEnd = new Date(journal.weekEndDate);
+    weekEnd.setHours(23, 59, 59, 999);
 
     // ─── 4. Récupérer les fiches pédagogiques de la semaine (DRAFT uniquement) ───
+    //    ⭐ On récupère par 2 méthodes : (a) cahierJournalId si la colonne existe,
+    //    (b) par plage de dates (teacherId + classId + date dans la semaine).
+    //    On fusionne les deux listes (en dédoublonnant par id).
     let submittedFiches: any[] = [];
     let skippedFiches: any[] = [];
     try {
-      const fiches: any = await this.prisma.$queryRawUnsafe(
+      // (a) Fiches rattachées structurellement
+      let fichesLiees: any[] = [];
+      try {
+        fichesLiees = await this.prisma.$queryRawUnsafe(
+          `SELECT * FROM "primary_pedagogical_fiches"
+           WHERE "cahierJournalId" = $1
+             AND "status" = 'DRAFT'`,
+          journalId,
+        );
+      } catch {
+        fichesLiees = [];
+      }
+
+      // (b) Fiches par plage de dates
+      const fichesByDate: any = await this.prisma.$queryRawUnsafe(
         `SELECT * FROM "primary_pedagogical_fiches"
          WHERE "tenantId" = $1
          AND "academicYearId" = $2
@@ -2628,11 +2850,20 @@ export class PedagogicalSpaceService {
         tenantId, journal.academicYearId, journal.teacherId, journal.classId,
       );
 
+      // Fusionner + dédoublonner par id
+      const fichesMap = new Map<string, any>();
+      for (const f of (fichesLiees || [])) fichesMap.set(f.id, f);
+      for (const f of (fichesByDate || [])) {
+        if (!fichesMap.has(f.id)) fichesMap.set(f.id, f);
+      }
+      const allFiches = Array.from(fichesMap.values());
+
       // Filtrer par plage de dates + jour de la semaine
-      const fichesToSubmit = (fiches || []).filter((f: any) => {
+      const fichesToSubmit = allFiches.filter((f: any) => {
         const dateStr = f.adminDate || f.lessonDate;
         if (!dateStr) return false;
         const d = new Date(dateStr);
+        d.setHours(12, 0, 0, 0); // midi pour éviter les soucis de timezone
         // Vérifier que la date est dans la semaine
         if (d < weekStart || d > weekEnd) return false;
         // Vérifier que le jour de la semaine correspond à dayRange

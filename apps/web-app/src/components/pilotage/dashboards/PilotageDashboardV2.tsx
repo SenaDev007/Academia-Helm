@@ -29,7 +29,7 @@
 
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import {
@@ -245,6 +245,8 @@ function BarChartCard({ title, data, icon: Icon, accentColor }: {
   accentColor: string;
 }) {
   const maxValue = Math.max(...data.map((d) => d.value), 1);
+  const [showAll, setShowAll] = useState(false);
+  const visibleData = showAll ? data : data.slice(0, 6);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
@@ -253,6 +255,14 @@ function BarChartCard({ title, data, icon: Icon, accentColor }: {
           <Icon className={`w-5 h-5 ${accentColor}`} />
           <h3 className="text-base font-semibold text-gray-900">{title}</h3>
         </div>
+        {data.length > 6 && (
+          <button
+            onClick={() => setShowAll(!showAll)}
+            className="text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
+          >
+            {showAll ? 'Voir moins' : `Voir tout (${data.length})`}
+          </button>
+        )}
       </div>
 
       {data.length === 0 || data.every((d) => d.value === 0) ? (
@@ -263,8 +273,8 @@ function BarChartCard({ title, data, icon: Icon, accentColor }: {
           </div>
         </div>
       ) : (
-        <div className="h-48 space-y-2">
-          {data.slice(0, 6).map((d, i) => (
+        <div className="space-y-2" style={{ maxHeight: showAll ? '400px' : '192px', overflowY: showAll ? 'auto' : 'visible' }}>
+          {visibleData.map((d, i) => (
             <div key={i} className="flex items-center space-x-3">
               <span className="text-xs font-medium text-gray-600 w-20 truncate" title={d.label}>
                 {d.label}
@@ -277,7 +287,8 @@ function BarChartCard({ title, data, icon: Icon, accentColor }: {
                     background: d.color || 'linear-gradient(to right, #1A2BA6, #3B4FD4)',
                   }}
                 />
-                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-700">
+                {/* ⭐ Texte en blanc pour être lisible sur fond navy */}
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-white drop-shadow-sm">
                   {formatNumber(d.value)}
                 </span>
               </div>
@@ -618,6 +629,8 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
   }, [studentsStats, consolidated]);
 
   // Évolution des moyennes (ligne)
+  // ⭐ Pas de données fictives : si aucune évolution réelle n'est disponible,
+  //    on renvoie [] (le LineChartCard affiche "Aucune donnée disponible").
   const averageEvolution: LineChartDataPoint[] = useMemo(() => {
     const evolution = weightedAvg?.evolution || [];
     if (Array.isArray(evolution) && evolution.length > 0) {
@@ -626,15 +639,7 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
         value: p.value || p.average || 0,
       }));
     }
-    // Fallback : si on a une moyenne globale, on la met sur T1
-    const wa = consolidated?.weightedAverage?.value || weightedAvg?.weightedAverage || 0;
-    if (wa > 0) {
-      return [
-        { period: 'T1', value: wa },
-        { period: 'T2', value: 0 },
-        { period: 'T3', value: 0 },
-      ];
-    }
+    // ⭐ Plus de fallback fictif — on affiche simplement "Aucune donnée"
     return [];
   }, [weightedAvg, consolidated]);
 

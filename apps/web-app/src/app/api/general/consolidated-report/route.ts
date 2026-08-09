@@ -116,9 +116,9 @@ function mapConsolidatedReport(data: any) {
       byLevel: data?.enrollment?.byLevel || [],
     },
     attendance: {
-      rate: data?.attendance?.rate || data?.weightedAverage?.weightedAverage
-        ? Math.round(data.weightedAverage.weightedAverage * 6.9)
-        : 0,
+      // ⭐ Plus de taux d'assiduité fictif calculé depuis la moyenne
+      //    Si pas de données réelles d'assiduité, on renvoie 0
+      rate: data?.attendance?.rate || 0,
       byLevel: data?.attendance?.byLevel || [],
     },
     revenue: {

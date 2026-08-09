@@ -1007,7 +1007,16 @@ export class PedagogicalSpaceService {
       const newAbsences: any[] = [];
 
       for (const r of studentRecords) {
-        const dateStr = r.date.toISOString().split('T')[0];
+        // ⭐ FIX : utiliser la date locale (YYYY-MM-DD) au lieu de toISOString()
+        //    qui convertit en UTC. Si l'enregistrement a été fait à minuit heure
+        //    locale (UTC+1), toISOString() renvoie la veille en UTC → le dateStr
+        //    ne correspond pas aux clés de dateToCell (construites en local) →
+        //    l'absence n'est jamais mappée → le tableau reste vide.
+        const d = r.date;
+        const localYear = d.getFullYear();
+        const localMonth = String(d.getMonth() + 1).padStart(2, '0');
+        const localDay = String(d.getDate()).padStart(2, '0');
+        const dateStr = `${localYear}-${localMonth}-${localDay}`;
         const cell = dateToCell.get(dateStr);
         if (!cell) continue;
 
@@ -4834,8 +4843,11 @@ export class PedagogicalSpaceService {
         } catch { teacherLanguages = []; }
       }
     }
-    // Si on n'a pas pu résoudre les langues de l'enseignant, on ne filtre pas
-    // (fail-open : on affiche toutes les matières).
+    // Si on n'a pas pu résoudre les langues de l'enseignant (ex: promoteur
+    // connecté sans profil Teacher), on fallback sur la piste linguistique
+    // de la CLASSE elle-même (table classes.language ou academicTrack.code).
+    // ⭐ FIX : avant on affichait toutes les matières (FR + EN mélangés).
+    //    Maintenant on filtre selon la piste de la classe.
     const langFilterActive = teacherLanguages.length > 0;
 
     // ─── Étape 1 : résoudre l'AcademicClass.id (officiel) depuis le classId
@@ -4846,12 +4858,23 @@ export class PedagogicalSpaceService {
 
     // Vérifier si classId est une classe physique (table classes)
     const physicalClass: any = await this.prisma.$queryRawUnsafe(
-      `SELECT id, "officialClassId" FROM "classes" WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
+      `SELECT id, "officialClassId", "language" FROM "classes" WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
       classId, tenantId,
     );
     if (physicalClass && physicalClass.length > 0) {
       physicalClassId = physicalClass[0].id;
       academicClassId = physicalClass[0].officialClassId || null;
+
+      // ⭐ FIX : si l'enseignant n'a pas de assignedLanguages, utiliser la piste
+      //    linguistique de la CLASSE (classes.language = 'FR' ou 'EN').
+      //    Cela permet au promoteur (sans profil Teacher) de voir uniquement
+      //    les matières de la piste linguistique de la classe sélectionnée.
+      if (!langFilterActive && physicalClass[0].language) {
+        const classLang = String(physicalClass[0].language).trim().toUpperCase();
+        if (classLang === 'FR' || classLang === 'EN') {
+          teacherLanguages = [classLang];
+        }
+      }
     } else {
       // Vérifier si classId est un AcademicClass (table pedagogy_academic_classes)
       const ac: any = await this.prisma.$queryRawUnsafe(
@@ -4863,12 +4886,16 @@ export class PedagogicalSpaceService {
       }
     }
 
+    // ⭐ Recalculer langFilterActive après avoir potentiellement récupéré la
+    //    piste linguistique de la classe
+    const langFilterFinal = teacherLanguages.length > 0;
+
     // ─── Étape 2 : chercher les matières via academicClassId (source principale)
     // C'est le cas normal : les class_subjects sont rattachés à l'AcademicClass.
     if (academicClassId) {
       let subjects: any;
-      if (langFilterActive) {
-        // ⭐ Filtre par piste linguistique de l'enseignant (FR ou EN)
+      if (langFilterFinal) {
+        // ⭐ Filtre par piste linguistique (FR ou EN)
         // Subject.language contient 'FR' ou 'EN' (ou NULL = commun aux deux pistes)
         subjects = await this.prisma.$queryRawUnsafe(
           `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
@@ -4900,7 +4927,7 @@ export class PedagogicalSpaceService {
     if (physicalClassId || classId) {
       const cid = physicalClassId || classId;
       let subjects: any;
-      if (langFilterActive) {
+      if (langFilterFinal) {
         subjects = await this.prisma.$queryRawUnsafe(
           `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
                   cs."coefficient", cs."weeklyHours"
@@ -4932,7 +4959,7 @@ export class PedagogicalSpaceService {
     if (physicalClassId || classId) {
       const cid = physicalClassId || classId;
       let fallbackSubjects: any;
-      if (langFilterActive) {
+      if (langFilterFinal) {
         fallbackSubjects = await this.prisma.$queryRawUnsafe(
           `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
                   tca."classSubjectId"
@@ -4971,7 +4998,7 @@ export class PedagogicalSpaceService {
     // → permet à l'enseignant de choisir parmi toutes les matières déclarées
     // par l'établissement, même si elles ne sont pas encore assignées à cette classe
     let tenantSubjects: any;
-    if (langFilterActive) {
+    if (langFilterFinal) {
       tenantSubjects = await this.prisma.$queryRawUnsafe(
         `SELECT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode"
          FROM "subjects" s

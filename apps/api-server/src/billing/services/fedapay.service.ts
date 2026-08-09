@@ -2233,12 +2233,13 @@ export class FedaPayService implements OnModuleInit {
     //   3. Conversion planCode → nom affichable via map hardcodée
     //   4. Fallback "Academia Helm"
     //
-    // On ajoute aussi la range d'élèves (ex: "Helm Seed · 1 à 150 élèves").
+    // On ajoute aussi la range d'élèves (ex: "Helm Seed · 1 à 50 élèves").
+    // ⭐ Pricing mis à jour — août 2026
     const planDisplayMap: Record<string, { name: string; range: string }> = {
-      SEED: { name: 'Helm Seed', range: '1 à 150 élèves' },
-      GROW: { name: 'Helm Grow', range: '151 à 400 élèves' },
-      LEAD: { name: 'Helm Lead', range: '401 à 800 élèves' },
-      NETWORK: { name: 'Helm Network', range: '801 élèves et plus' },
+      SEED: { name: 'Helm Seed', range: '1 à 50 élèves' },
+      GROW: { name: 'Helm Grow', range: '51 à 150 élèves' },
+      LEAD: { name: 'Helm Lead', range: '151 à 400 élèves' },
+      NETWORK: { name: 'Helm Network', range: '401 élèves et plus' },
     };
 
     let planName = 'Academia Helm';

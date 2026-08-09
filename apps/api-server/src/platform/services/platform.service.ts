@@ -1782,11 +1782,12 @@ export class PlatformService {
     const periodEnd = new Date(now);
     periodEnd.setDate(periodEnd.getDate() + 30);
 
+    // ⭐ Pricing mis à jour — août 2026
     const planAmounts: Record<string, { monthly: number; annual: number; setup: number }> = {
-      SEED: { monthly: 19900, annual: 199000, setup: 75000 },
-      GROW: { monthly: 24900, annual: 249000, setup: 100000 },
-      LEAD: { monthly: 39900, annual: 399000, setup: 150000 },
-      NETWORK: { monthly: 0, annual: 0, setup: 200000 },
+      SEED: { monthly: 9900, annual: 99000, setup: 50000 },
+      GROW: { monthly: 14900, annual: 149000, setup: 75000 },
+      LEAD: { monthly: 24900, annual: 249000, setup: 100000 },
+      NETWORK: { monthly: 0, annual: 0, setup: 150000 },
     };
     const amounts = planAmounts[body.plan] || planAmounts.SEED;
 

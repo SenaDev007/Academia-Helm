@@ -7968,6 +7968,14 @@ model ReportCard {
   defautsMajeurs           String?
   qualitesRemarquables     String?
   analyseRecommandations   String?
+  // ⭐ Annotations anglophones (page 2 du bulletin anglophone)
+  //    Commentaires enseignant + directeur auto-générés depuis la grille /100,
+  //    mais éditables par l'utilisateur. Affective + Psychomotor = JSON
+  //    string contenant {skill: 'A'|'B'|'C'|''} pour chaque compétence.
+  enTeacherComment         String?
+  enDirectorComment        String?
+  enAffectiveAssessment    String?  // JSON: {"Punctuality":"A","Politeness":"B",...}
+  enPsychomotorAssessment  String?  // JSON: {"Handwriting":"A","Music":"B",...}
   // ⭐ Type d'évaluation lié au bulletin (EM1, EM2, EC, EP, etc.)
   //    Permet à un élève d'avoir plusieurs bulletins par période (un par type d'éval).
   evaluationTypeId         String?

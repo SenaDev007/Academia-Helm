@@ -975,6 +975,7 @@ export class BulletinsService {
 
   /**
    * Sauvegarde les annotations d'un élève (assiduité, discipline, défauts, qualités, analyse)
+   * + ⭐ Annotations anglophones (enTeacherComment, enDirectorComment, enAffectiveAssessment JSON, enPsychomotorAssessment JSON)
    */
   async saveAnnotations(
     tenantId: string,
@@ -988,6 +989,11 @@ export class BulletinsService {
       qualitesRemarquables?: string;
       analyseRecommandations?: string;
       directorVisa?: string;
+      // ⭐ Champs anglophones
+      enTeacherComment?: string;
+      enDirectorComment?: string;
+      enAffectiveAssessment?: string;    // JSON string
+      enPsychomotorAssessment?: string;  // JSON string
     },
     userId: string,
   ) {
@@ -1050,6 +1056,11 @@ export class BulletinsService {
         analyseRecommandations: true,
         directorVisa: true,
         status: true,
+        // ⭐ Champs anglophones
+        enTeacherComment: true,
+        enDirectorComment: true,
+        enAffectiveAssessment: true,
+        enPsychomotorAssessment: true,
       },
     });
 
@@ -1062,6 +1073,10 @@ export class BulletinsService {
       analyseRecommandations: null,
       directorVisa: null,
       status: null,
+      enTeacherComment: null,
+      enDirectorComment: null,
+      enAffectiveAssessment: null,
+      enPsychomotorAssessment: null,
     };
   }
 

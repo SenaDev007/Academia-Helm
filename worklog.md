@@ -1224,3 +1224,117 @@ Stage Summary:
 - The eval type filter is hidden for EN since the bulletin is always consolidated
 - TypeScript check: 0 new errors introduced (23 pre-existing Prisma-related errors in bulletins.controller.ts unchanged; frontend type-check passes clean)
 - Files modified: 3 (apps/api-server/src/modules/exams/services/bulletin-pdf.service.ts, apps/api-server/src/modules/exams/bulletins.controller.ts, apps/web-app/src/app/app/exams/bulletins/page.tsx)
+
+---
+Task ID: 2026-08-09-anglophone-page2-editable + saisiemaster-mobile-sync
+Agent: main
+Task: Two workstreams in one push.
+  (1) Anglophone bulletin — Page 2 with auto-generated teacher/director comments + Affective/Psychomotor skills (auto-filled but editable), 3 signatures (Teacher + Parent + Director) matching the FR pattern.
+  (2) Saisie Master mobile sync bug — when saving grades on smartphone, data stays in localStorage only; not synced to Neon DB; not visible on computer.
+
+Work Log:
+
+=== (1) Anglophone Bulletin — Page 2 editable ===
+
+Backend:
+
+- Prisma schema (apps/api-server/prisma/schema.prisma):
+  - Added 4 new fields to ReportCard model: enTeacherComment, enDirectorComment (String?), enAffectiveAssessment, enPsychomotorAssessment (String? — JSON-serialized {skill: 'A'|'B'|'C'} maps)
+  - Migration: prisma db push required to add the columns
+
+- bulletins.service.ts:
+  - Extended `saveAnnotations()` data type with 4 new optional EN fields
+  - Extended `getAnnotations()` select to return the 4 new fields
+  - All fields nullable (no breaking change)
+
+- bulletins.controller.ts:
+  - Extended `saveAnnotations` body type to accept the 4 new EN fields
+
+- bulletin-pdf.service.ts:
+  - Extended BulletinPdfData interface with: enTeacherComment, enDirectorComment, enAffectiveAssessment, enPsychomotorAssessment
+  - Updated buildHtmlAnglophone():
+    * Teacher/Director comments: use the user-edited value if non-empty, fallback to auto-generated getEnTeacherComment()/getEnDirectorComment() based on /100 average
+    * Affective/Psychomotor checkboxes: parse JSON from DB; if empty/invalid, auto-generate via autoFillAffective() / autoFillPsychomotor()
+    * Checkbox rendering: ☑ (filled) for the user-selected level A/B/C; ☐ for the others; color-coded (green/blue/amber)
+    * Page 2 signatures: now 3 columns (Class Teacher + Parent/Guardian + Headmistress/Headmaster) matching the FR maternelle/primaire pattern
+  - Added 2 helper methods:
+    * autoFillAffective(pupilAverage): fills 10 standardized skills with A/B/C based on /100 average. Soft skills (Honesty, Self-control, Respect, Cooperation) get one level higher than academic baseline.
+    * autoFillPsychomotor(pupilAverage): fills 6 standardized skills similarly.
+
+Frontend (apps/web-app/src/app/app/exams/bulletins/page.tsx):
+
+- Added BulletinAnglophonePage2 component (mirror of francophone BulletinPage2 but adapted for EN layout):
+  - Mark obtainable/obtained/No in class cards (auto-calculated, non-editable)
+  - Class Teacher's Comments: textarea auto-filled from getAutoTeacherComment() (7-level EN scale based on /100 average, includes next term start date); editable; auto-save on blur
+  - Affective Assessment: 10 standardized skills × A/B/C radio buttons (auto-filled from autoFillAffectiveMap(); editable per skill; auto-save on change)
+  - Psychomotor Skills: 6 standardized skills × A/B/C radio buttons (same pattern)
+  - Director's Comments: textarea auto-filled from getAutoDirectorComment(); editable; auto-save on blur
+  - 3 signatures: Class Teacher + Parent/Guardian + Headmistress/Headmaster — each with SignatureCanvas (when not yet signed) or rendered signature image (when signed from workflow)
+  - "Auto-fill" button to regenerate all 4 fields (comments + Affective + Psychomotor) based on current /100 average
+  - "✓ Saved" indicator that appears for 2s after each auto-save
+  - Loads existing annotations from backend on mount; falls back to auto-generation if no stored values
+
+- Wired the new component in the page dispatcher: when scopeLang === 'EN' && !isMaternelle && page === 2 → render BulletinAnglophonePage2 (instead of BulletinPage2)
+
+- Updated handleGeneratePdf payload to send the 4 EN annotation fields (loaded from backend annotations endpoint) to the PDF generator
+
+- Added nextTermStartDateForCard (useMemo): computes the next period's start date (formatted in English: "Monday, May 5, 2025") and passes it down to BulletinAnglophonePage2 for the teacher comment
+
+=== (2) Saisie Master Mobile Sync Bug Fix ===
+
+Investigation:
+- The auto-save useEffect in editor-page.tsx was only triggering backend save when BOTH `token && prospect` were set. If the prospect field was null (which can happen in some flows), backend save was silently skipped — but localStorage save always succeeded.
+- Even when backend save failed (network error, etc.), the status was still set to "saved" — lying to the user.
+- The beforeunload handler only saved to localStorage, NOT to the backend.
+- The `scheduleBackendSync()` in store.ts only synced the ACTIVE class — when the user switched class, the previous class's notes were never synced.
+- The ResumeBanner early-returned if `!prospect || !token` — same issue.
+
+Fixes applied:
+
+1. editor-page.tsx — auto-save (every 10s):
+   - Changed condition from `if (token && prospect)` to `if (token)` (prospect is just metadata, not auth)
+   - Replaced raw `fetch()` with `saveSession()` from api.ts (handles cross-domain routing from saisiemaster.academiahelm.com → www.academiahelm.com)
+   - Replaced inline payload building with `classDataToSessionPayload()` (DRY)
+   - Added `saveAllClassesToBackend()` helper that syncs ALL classes (not just the active one)
+   - Honest status: `saved` only if backend accepted; new `local-only` status if backend failed/skipped (shown in red with warning text)
+   - New ActionBar status: "⚠ Local uniquement — non synchronisé (connexion requise)" when backend didn't accept
+
+2. editor-page.tsx — manual Save button:
+   - Same fixes: uses `saveAllClassesToBackend()`, honest status, toast error if backend fails
+   - User now gets clear feedback: success toast "Modifications enregistrées" only if backend accepted; error toast "Sauvegarde locale uniquement" if not
+
+3. editor-page.tsx — beforeunload handler:
+   - Now attempts a backend save via `navigator.sendBeacon()` (fire-and-forget, works even after tab close)
+   - Includes `_beaconToken` in body (sendBeacon can't set custom headers)
+   - Fallback to `fetch(..., { keepalive: true })` if sendBeacon fails (data > 64KB)
+   - localStorage save remains the synchronous first step
+
+4. store.ts — `scheduleBackendSync()`:
+   - Now syncs ALL classes via `Promise.all()` (was only the active class before)
+   - Removed the `activeClass` variable — no longer used
+
+5. resume-banner.tsx — `useRestoredInfo()`:
+   - Changed early-return from `if (!prospect || !token)` to `if (!token)` (prospect is optional metadata)
+   - User now sees the resume banner on computer if they have a token (even if prospect metadata is missing)
+
+6. BFF route (apps/web-app/src/app/api/saisiemaster/sessions/route.ts):
+   - POST endpoint now accepts the auth token from the request body under `_beaconToken` (fallback when sendBeacon can't set Authorization header)
+   - Strips `_beaconToken` and `_beacon` fields before forwarding to backend NestJS
+   - Backward-compatible: if Authorization header is present, it's still used
+
+Stage Summary:
+
+- Anglophone bulletin Page 2 is now fully editable: teacher comments, director comments, Affective assessment (10 skills × A/B/C), Psychomotor skills (6 skills × A/B/C) are all auto-generated from /100 average using the 7-level EN scale, but the user can override any of them. Changes are auto-saved on blur via the existing annotations endpoint.
+- The 3-signature section (Class Teacher + Parent + Headmaster) matches the francophone maternelle/primaire pattern.
+- The auto-fill button regenerates everything based on current average.
+- Saisie Master mobile sync is now honest and reliable:
+  - Backend save is triggered whenever the user has a token (no longer requires prospect metadata)
+  - The status indicator no longer lies — it clearly shows "saved" only on success, "local-only" on failure
+  - Tab close triggers a best-effort sendBeacon + fetch keepalive to the backend (with token in body since sendBeacon can't set headers)
+  - scheduleBackendSync now syncs ALL classes, not just the active one — so switching class doesn't lose unsaved data
+  - On computer, the user sees their mobile work via restoreFromBackend() (no longer blocked by missing prospect metadata)
+  - Cross-domain routing handled by saveSession() (saisiemaster.academiahelm.com → www.academiahelm.com)
+- TypeScript check: 0 new errors (frontend passes clean; backend has 71 pre-existing Prisma-related errors, same count as before my changes)
+- Files modified: 6 (apps/api-server/prisma/schema.prisma, apps/api-server/src/modules/exams/services/bulletin-pdf.service.ts, apps/api-server/src/modules/exams/services/bulletins.service.ts, apps/api-server/src/modules/exams/bulletins.controller.ts, apps/web-app/src/app/app/exams/bulletins/page.tsx, apps/web-app/src/components/saisiemaster/editor/editor-page.tsx, apps/web-app/src/components/saisiemaster/landing/resume-banner.tsx, apps/web-app/src/lib/saisiemaster/store.ts, apps/web-app/src/app/api/saisiemaster/sessions/route.ts)
+
+⚠️ Migration required: `prisma db push` to add the 4 new fields to the report_cards table.

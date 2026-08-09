@@ -148,20 +148,27 @@ function persistClassesToStorage(classes: ClassData[], activeClassIndex: number)
 }
 
 function scheduleBackendSync(classes: ClassData[], activeClassIndex: number) {
-  // Only sync if authenticated
+  // Only sync if authenticated (token alone — prospect is just metadata)
   if (!getToken()) return;
-  const activeClass = classes[activeClassIndex];
-  if (!activeClass) return;
+  if (!classes || classes.length === 0) return;
 
   if (backendSyncTimer) {
     clearTimeout(backendSyncTimer);
   }
   backendSyncTimer = setTimeout(() => {
-    const payload = classDataToSessionPayload(activeClass);
-    saveSession(payload).catch((e) => {
-      // Best-effort — don't block the user.
-      console.warn("[saisiemaster] backend sync failed:", e);
-    });
+    // ⭐ FIX: synchronise TOUTES les classes (pas seulement l'active)
+    //    Sinon, quand l'utilisateur change de classe active, les notes de
+    //    l'ancienne ne sont jamais synchronisées vers le backend — ce qui
+    //    cause le bug "je travaille sur mobile, je retourne sur PC, je ne
+    //    vois pas mes données".
+    void Promise.all(
+      classes.map((cls) =>
+        saveSession(classDataToSessionPayload(cls)).catch((e) => {
+          // Best-effort — don't block the user.
+          console.warn("[saisiemaster] backend sync failed for class:", cls.className, e);
+        }),
+      ),
+    );
     backendSyncTimer = null;
   }, BACKEND_SYNC_DEBOUNCE_MS);
 }

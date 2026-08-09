@@ -588,6 +588,11 @@ function BulletinsContent() {
         payload.qualitesRemarquables = ann.qualitesRemarquables || null;
         payload.analyseRecommandations = ann.analyseRecommandations || null;
         payload.directorVisa = ann.directorVisa || null;
+        // ⭐ Champs anglophones
+        payload.enTeacherComment = ann.enTeacherComment || null;
+        payload.enDirectorComment = ann.enDirectorComment || null;
+        payload.enAffectiveAssessment = ann.enAffectiveAssessment || null;
+        payload.enPsychomotorAssessment = ann.enPsychomotorAssessment || null;
       } catch {}
 
       const response = await apiClient.post('/institutional-exams/bulletins/generate-pdf', payload, {
@@ -626,6 +631,25 @@ function BulletinsContent() {
   const selectedPeriodName = periods.find(p => p.id === selectedPeriodId)?.name || '';
   const selectedEvalTypeName = evaluationTypes.find(t => t.id === selectedEvalTypeId)?.name || '';
   const selectedEvalTypeCode = evaluationTypes.find(t => t.id === selectedEvalTypeId)?.code || '';
+
+  // ⭐ Calcul de la date de début du prochain trimestre (pour EN Page 2 teacher comment)
+  //    On prend la prochaine période triée par date de début.
+  const nextTermStartDateForCard = useMemo(() => {
+    if (!periods || periods.length === 0) return null;
+    const sorted = [...periods].sort((a: any, b: any) =>
+      new Date(a.startDate || a.start_date || 0).getTime() - new Date(b.startDate || b.start_date || 0).getTime()
+    );
+    const currentIdx = sorted.findIndex((p: any) => p.id === selectedPeriodId);
+    if (currentIdx < 0 || currentIdx >= sorted.length - 1) return null;
+    const nextPeriod = sorted[currentIdx + 1];
+    const nextStart = nextPeriod?.startDate || nextPeriod?.start_date;
+    if (!nextStart) return null;
+    try {
+      return format(new Date(nextStart), 'EEEE, MMMM d, yyyy', { locale: enUSLocale });
+    } catch {
+      return null;
+    }
+  }, [periods, selectedPeriodId]);
 
   return (
     <div className="space-y-4">
@@ -850,6 +874,8 @@ function BulletinsContent() {
                       directorSignature={workflowSignatures[student.id]?.directorSig}
                       teacherSignature={workflowSignatures[student.id]?.teacherSig}
                       selectedPeriodId={selectedPeriodId}
+                      scopeLang={scopeLang}
+                      nextTermStartDate={nextTermStartDateForCard}
                     />
                   </div>
                 )}
@@ -898,7 +924,7 @@ function BulletinTwoPage({
   student, bulletinData, isMaternelle, school, academicYear,
   selectedPeriodName, selectedClassName, selectedEvalTypeCode, selectedEvalTypeName,
   onGeneratePdf, generatingPdf, canDownload = true, directorSignature, teacherSignature,
-  selectedPeriodId,
+  selectedPeriodId, scopeLang, nextTermStartDate,
 }: {
   student: StudentResult;
   bulletinData: BulletinData;
@@ -915,6 +941,8 @@ function BulletinTwoPage({
   directorSignature?: string | null;
   teacherSignature?: string | null;
   selectedPeriodId?: string;
+  scopeLang?: string;
+  nextTermStartDate?: string | null;
 }) {
   const [page, setPage] = useState<1 | 2>(1);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
@@ -997,6 +1025,8 @@ function BulletinTwoPage({
             ) : (
               <BulletinPrimairePage1 student={student} bulletinData={bulletinData} />
             )
+          ) : scopeLang === 'EN' && !isMaternelle ? (
+            <BulletinAnglophonePage2 student={student} bulletinData={bulletinData} signatures={{ teacherSig, directorSig, parentSig, setTeacherSig, setDirectorSig, setParentSig }} periodId={selectedPeriodId} nextTermStartDate={nextTermStartDate} />
           ) : (
             <BulletinPage2 student={student} isMaternelle={isMaternelle} signatures={{ teacherSig, directorSig, parentSig, setTeacherSig, setDirectorSig, setParentSig }} periodId={selectedPeriodId} />
           )}
@@ -1391,6 +1421,358 @@ function BulletinAnglophonePage1({ student, bulletinData }: { student: StudentRe
           pupilAvg < 50 && 'bg-red-100 text-red-700',
         )}>{appreciationLabel}</span>
       </div>
+    </div>
+  );
+}
+
+// ─── Page 2: Anglophone Bulletin — Mark obtainable/obtained + Teacher comments + Affective + Psychomotor + Director comments + 3 signatures ─
+
+function BulletinAnglophonePage2({
+  student, bulletinData, signatures, periodId, nextTermStartDate,
+}: {
+  student: StudentResult;
+  bulletinData: BulletinData;
+  signatures: { teacherSig: string | null; directorSig: string | null; parentSig: string | null; setTeacherSig: (v: string | null) => void; setDirectorSig: (v: string | null) => void; setParentSig: (v: string | null) => void };
+  periodId?: string;
+  nextTermStartDate?: string | null;
+}) {
+  // ⭐ EN annotation state — auto-filled from /100 average, editable, auto-saved
+  const [teacherComment, setTeacherComment] = useState('');
+  const [directorComment, setDirectorComment] = useState('');
+  const [affectiveMap, setAffectiveMap] = useState<Record<string, string>>({});
+  const [psychomotorMap, setPsychomotorMap] = useState<Record<string, string>>({});
+  const [autoFillLoading, setAutoFillLoading] = useState(false);
+  const [savedAt, setSavedAt] = useState(false);
+
+  // Standardized skill lists (kept the same — not customizable)
+  const AFFECTIVE_SKILLS = [
+    'Punctuality', 'Politeness', 'Honesty', 'Self-control',
+    'Cooperation', 'Respect for others', 'Initiative', 'Perseverance',
+    'Care for property', 'Leadership',
+  ];
+  const PSYCHOMOTOR_SKILLS = [
+    'Handwriting', 'Drawing and Painting', 'Handwork/Crafts',
+    'Physical Education', 'Music', 'Games and Sports',
+  ];
+
+  const pupilAvg = student.generalAverage ?? 0;
+  const nbSubjects = bulletinData.subjects.length;
+  const markObtainable = 100 * nbSubjects;
+  const markObtained = bulletinData.subjects.reduce((sum, subj) => {
+    const s = student.subjectScores[subj.id];
+    return sum + (s?.total ?? 0);
+  }, 0);
+
+  // ─── Auto-fill helper (frontend mirrors backend logic) ─────────────────────
+  const autoFillAffectiveMap = (avg: number): Record<string, string> => {
+    const softSkills = new Set(['Honesty', 'Self-control', 'Respect for others', 'Cooperation']);
+    const map: Record<string, string> = {};
+    AFFECTIVE_SKILLS.forEach((skill, i) => {
+      const isSoft = softSkills.has(skill);
+      let level: 'A' | 'B' | 'C';
+      if (avg >= 80) level = isSoft ? 'A' : (i % 4 === 0 ? 'B' : 'A');
+      else if (avg >= 70) level = isSoft ? 'A' : (i % 3 === 0 ? 'B' : 'A');
+      else if (avg >= 60) level = isSoft ? 'A' : (i % 2 === 0 ? 'B' : 'A');
+      else if (avg >= 50) level = isSoft ? 'B' : (i % 3 === 0 ? 'C' : 'B');
+      else if (avg >= 40) level = isSoft ? 'B' : (i % 2 === 0 ? 'C' : 'B');
+      else level = isSoft ? 'B' : 'C';
+      map[skill] = level;
+    });
+    return map;
+  };
+  const autoFillPsychomotorMap = (avg: number): Record<string, string> => {
+    const map: Record<string, string> = {};
+    PSYCHOMOTOR_SKILLS.forEach((skill, i) => {
+      let level: 'A' | 'B' | 'C';
+      if (avg >= 80) level = i % 4 === 0 ? 'B' : 'A';
+      else if (avg >= 70) level = i % 3 === 0 ? 'B' : 'A';
+      else if (avg >= 60) level = i % 2 === 0 ? 'B' : 'A';
+      else if (avg >= 50) level = i % 3 === 0 ? 'C' : 'B';
+      else if (avg >= 40) level = i % 2 === 0 ? 'C' : 'B';
+      else level = 'C';
+      map[skill] = level;
+    });
+    return map;
+  };
+
+  // ─── Auto-generated teacher comment based on /100 average ──────────────────
+  const getAutoTeacherComment = (avg: number): string => {
+    const next = nextTermStartDate || '—';
+    if (avg >= 90) return `Outstanding performance! This pupil has demonstrated exceptional mastery across all subjects. Keep up the excellent work. Next term begins on ${next}.`;
+    if (avg >= 80) return `Very good results. The pupil shows strong academic achievement and consistent effort. Aim for the highest standards next term, which starts on ${next}.`;
+    if (avg >= 70) return `Good performance. The pupil understands most concepts taught. With greater concentration, results will improve further. Next term starts on ${next}.`;
+    if (avg >= 60) return `Fair results. The pupil is advised to work harder and remain focused. Greater commitment is required to improve. Next term begins on ${next}.`;
+    if (avg >= 50) return `Results are just satisfactory. Stronger effort and parental follow-up are necessary. Next term starts on ${next}.`;
+    if (avg >= 40) return `Performance below expectation. Immediate improvement is required with parental involvement. Next term begins on ${next}.`;
+    return `Very poor academic performance. Urgent remedial measures and close supervision are required. Next term starts on ${next}.`;
+  };
+  const getAutoDirectorComment = (avg: number): string => {
+    if (avg >= 90) return 'Excellent academic performance. Commendable effort and discipline. Keep striving for excellence.';
+    if (avg >= 80) return 'Very good results. Consistent effort is encouraged to reach the highest standards.';
+    if (avg >= 70) return 'Good performance. Greater concentration and consistency will lead to better outcomes.';
+    if (avg >= 60) return 'Fair results. The pupil is advised to work harder and remain focused.';
+    if (avg >= 50) return 'Results are just satisfactory. Stronger effort and parental follow-up are necessary.';
+    if (avg >= 40) return 'Performance below expectation. Immediate improvement is required with parental involvement.';
+    return 'Very poor academic performance. Urgent remedial measures and close supervision are required.';
+  };
+
+  // ─── Load existing annotations from backend ────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!periodId || !student.id) return;
+      try {
+        const annRes = await apiClient.get(`/institutional-exams/bulletins/annotations?studentId=${student.id}&periodId=${periodId}`);
+        if (cancelled) return;
+        const ann = annRes.data || {};
+        // Use stored values if present, otherwise auto-generate
+        setTeacherComment(ann.enTeacherComment || getAutoTeacherComment(pupilAvg));
+        setDirectorComment(ann.enDirectorComment || getAutoDirectorComment(pupilAvg));
+        try {
+          const aff = ann.enAffectiveAssessment ? JSON.parse(ann.enAffectiveAssessment) : null;
+          setAffectiveMap(aff && Object.keys(aff).length > 0 ? aff : autoFillAffectiveMap(pupilAvg));
+        } catch { setAffectiveMap(autoFillAffectiveMap(pupilAvg)); }
+        try {
+          const psy = ann.enPsychomotorAssessment ? JSON.parse(ann.enPsychomotorAssessment) : null;
+          setPsychomotorMap(psy && Object.keys(psy).length > 0 ? psy : autoFillPsychomotorMap(pupilAvg));
+        } catch { setPsychomotorMap(autoFillPsychomotorMap(pupilAvg)); }
+      } catch {
+        setTeacherComment(getAutoTeacherComment(pupilAvg));
+        setDirectorComment(getAutoDirectorComment(pupilAvg));
+        setAffectiveMap(autoFillAffectiveMap(pupilAvg));
+        setPsychomotorMap(autoFillPsychomotorMap(pupilAvg));
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [student.id, periodId, pupilAvg, nextTermStartDate]);
+
+  // ─── Auto-save on blur (debounced via simple flag) ─────────────────────────
+  const saveAnnotations = async (fields: Record<string, any>) => {
+    if (!periodId || !student.id) return;
+    try {
+      await apiClient.patch('/institutional-exams/bulletins/annotations', {
+        studentId: student.id,
+        periodId,
+        ...fields,
+      });
+      setSavedAt(true);
+      setTimeout(() => setSavedAt(false), 2000);
+    } catch (e) {
+      // Silent fail — auto-save is best-effort
+    }
+  };
+
+  // ─── Auto-fill button (regenerate from /100 average) ──────────────────────
+  const handleAutoFill = async () => {
+    setAutoFillLoading(true);
+    const newAff = autoFillAffectiveMap(pupilAvg);
+    const newPsy = autoFillPsychomotorMap(pupilAvg);
+    const newTeacher = getAutoTeacherComment(pupilAvg);
+    const newDirector = getAutoDirectorComment(pupilAvg);
+    setAffectiveMap(newAff);
+    setPsychomotorMap(newPsy);
+    setTeacherComment(newTeacher);
+    setDirectorComment(newDirector);
+    await saveAnnotations({
+      enTeacherComment: newTeacher,
+      enDirectorComment: newDirector,
+      enAffectiveAssessment: JSON.stringify(newAff),
+      enPsychomotorAssessment: JSON.stringify(newPsy),
+    });
+    setAutoFillLoading(false);
+  };
+
+  const setSkill = (kind: 'affective' | 'psychomotor', skill: string, val: string) => {
+    if (kind === 'affective') {
+      const next = { ...affectiveMap, [skill]: val };
+      setAffectiveMap(next);
+      saveAnnotations({ enAffectiveAssessment: JSON.stringify(next) });
+    } else {
+      const next = { ...psychomotorMap, [skill]: val };
+      setPsychomotorMap(next);
+      saveAnnotations({ enPsychomotorAssessment: JSON.stringify(next) });
+    }
+  };
+
+  const SkillRow = ({ skill, value, onChange }: { skill: string; value: string; onChange: (v: string) => void }) => (
+    <tr>
+      <td className="border border-slate-300 px-2 py-1 text-[10px] font-medium text-slate-900">{skill}</td>
+      <td className="border border-slate-300 px-1 py-0.5 text-center">
+        <input type="radio" name={`${skill}`} value="A" checked={value === 'A'} onChange={() => onChange('A')} className="w-3 h-3 accent-emerald-600" />
+      </td>
+      <td className="border border-slate-300 px-1 py-0.5 text-center">
+        <input type="radio" name={`${skill}`} value="B" checked={value === 'B'} onChange={() => onChange('B')} className="w-3 h-3 accent-blue-600" />
+      </td>
+      <td className="border border-slate-300 px-1 py-0.5 text-center">
+        <input type="radio" name={`${skill}`} value="C" checked={value === 'C'} onChange={() => onChange('C')} className="w-3 h-3 accent-amber-600" />
+      </td>
+    </tr>
+  );
+
+  return (
+    <div className="space-y-3">
+      {/* Header bar + actions */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-bold text-slate-700 uppercase">Page 2 — Comments &amp; Skills</div>
+        <div className="flex items-center gap-2">
+          {savedAt && <span className="text-[10px] text-emerald-600 font-semibold">✓ Saved</span>}
+          <Button size="sm" variant="outline" onClick={handleAutoFill} disabled={autoFillLoading} className="text-[10px] h-7">
+            {autoFillLoading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
+            Auto-fill
+          </Button>
+        </div>
+      </div>
+
+      {/* Mark obtainable / obtained / No in class */}
+      <div className="grid grid-cols-3 gap-2 text-[10px]">
+        <div className="bg-slate-50 rounded p-2 border border-slate-200 text-center">
+          <p className="text-slate-500 uppercase font-bold">Mark Obtainable</p>
+          <p className="text-blue-700 font-bold text-base">{markObtainable}</p>
+        </div>
+        <div className="bg-slate-50 rounded p-2 border border-slate-200 text-center">
+          <p className="text-slate-500 uppercase font-bold">Mark Obtained</p>
+          <p className="text-blue-700 font-bold text-base">{markObtained.toFixed(2)}</p>
+        </div>
+        <div className="bg-slate-50 rounded p-2 border border-slate-200 text-center">
+          <p className="text-slate-500 uppercase font-bold">No in Class</p>
+          <p className="text-blue-700 font-bold text-base">{bulletinData.results.length}</p>
+        </div>
+      </div>
+
+      {/* Class teacher's comments */}
+      <div className="border border-slate-300 rounded-lg p-2">
+        <label className="block text-[10px] font-bold text-blue-900 uppercase mb-1">
+          Class Teacher&apos;s Comments
+          <span className="ml-2 text-slate-400 font-normal">(auto-generated — editable)</span>
+        </label>
+        <textarea
+          value={teacherComment}
+          onChange={(e) => setTeacherComment(e.target.value)}
+          onBlur={() => saveAnnotations({ enTeacherComment: teacherComment })}
+          rows={4}
+          className="w-full text-[10px] border border-slate-200 rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-y"
+          placeholder="Auto-generated based on pupil's average..."
+        />
+      </div>
+
+      {/* Affective assessment */}
+      <div className="border border-slate-300 rounded-lg p-2">
+        <p className="text-[10px] font-bold text-blue-900 uppercase mb-1">Affective Assessment</p>
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="bg-slate-100">
+              <th className="border border-slate-300 px-2 py-1 text-[9px] font-bold uppercase text-left">Skill</th>
+              <th className="border border-slate-300 px-1 py-1 text-[9px] font-bold uppercase w-12">A</th>
+              <th className="border border-slate-300 px-1 py-1 text-[9px] font-bold uppercase w-12">B</th>
+              <th className="border border-slate-300 px-1 py-1 text-[9px] font-bold uppercase w-12">C</th>
+            </tr>
+          </thead>
+          <tbody>
+            {AFFECTIVE_SKILLS.map(skill => (
+              <SkillRow key={skill} skill={skill} value={affectiveMap[skill] || ''} onChange={(v) => setSkill('affective', skill, v)} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Psychomotor skills */}
+      <div className="border border-slate-300 rounded-lg p-2">
+        <p className="text-[10px] font-bold text-blue-900 uppercase mb-1">Psychomotor Skills</p>
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="bg-slate-100">
+              <th className="border border-slate-300 px-2 py-1 text-[9px] font-bold uppercase text-left">Skill</th>
+              <th className="border border-slate-300 px-1 py-1 text-[9px] font-bold uppercase w-12">A</th>
+              <th className="border border-slate-300 px-1 py-1 text-[9px] font-bold uppercase w-12">B</th>
+              <th className="border border-slate-300 px-1 py-1 text-[9px] font-bold uppercase w-12">C</th>
+            </tr>
+          </thead>
+          <tbody>
+            {PSYCHOMOTOR_SKILLS.map(skill => (
+              <SkillRow key={skill} skill={skill} value={psychomotorMap[skill] || ''} onChange={(v) => setSkill('psychomotor', skill, v)} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Director's comments */}
+      <div className="border border-slate-300 rounded-lg p-2">
+        <label className="block text-[10px] font-bold text-blue-900 uppercase mb-1">
+          Director&apos;s / Principal&apos;s Comments
+          <span className="ml-2 text-slate-400 font-normal">(auto-generated — editable)</span>
+        </label>
+        <textarea
+          value={directorComment}
+          onChange={(e) => setDirectorComment(e.target.value)}
+          onBlur={() => saveAnnotations({ enDirectorComment: directorComment })}
+          rows={3}
+          className="w-full text-[10px] border border-slate-200 rounded p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-y"
+          placeholder="Auto-generated based on pupil's average..."
+        />
+      </div>
+
+      {/* 3 signatures — Teacher + Parent + Director (same pattern as FR) */}
+      <div className="border border-slate-300 rounded-lg p-2">
+        <p className="text-[10px] font-bold text-blue-900 uppercase mb-2 text-center">Signatures</p>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="text-center">
+            {signatures.teacherSig ? (
+              <img src={signatures.teacherSig} alt="Teacher signature" className="mx-auto" style={{ maxHeight: 40, maxWidth: 100, objectFit: 'contain' }} />
+            ) : (
+              <div className="h-10 flex items-end justify-center">
+                <SignatureCanvas
+                  height={40}
+                  penColor="#0A2A5E"
+                  onChange={(data) => signatures.setTeacherSig(data || null)}
+                />
+              </div>
+            )}
+            <div className="border-t border-black mt-1 pt-1">
+              <p className="text-[9px] font-bold text-blue-900">Class Teacher</p>
+              <p className="text-[8px] text-slate-500">Signature</p>
+            </div>
+          </div>
+          <div className="text-center">
+            {signatures.parentSig ? (
+              <img src={signatures.parentSig} alt="Parent signature" className="mx-auto" style={{ maxHeight: 40, maxWidth: 100, objectFit: 'contain' }} />
+            ) : (
+              <div className="h-10 flex items-end justify-center">
+                <SignatureCanvas
+                  height={40}
+                  penColor="#0A2A5E"
+                  onChange={(data) => signatures.setParentSig(data || null)}
+                />
+              </div>
+            )}
+            <div className="border-t border-black mt-1 pt-1">
+              <p className="text-[9px] font-bold text-blue-900">Parent / Guardian</p>
+              <p className="text-[8px] text-slate-500">Name &amp; Signature</p>
+            </div>
+          </div>
+          <div className="text-center">
+            {signatures.directorSig ? (
+              <img src={signatures.directorSig} alt="Director signature" className="mx-auto" style={{ maxHeight: 40, maxWidth: 100, objectFit: 'contain' }} />
+            ) : (
+              <div className="h-10 flex items-end justify-center">
+                <SignatureCanvas
+                  height={40}
+                  penColor="#0A2A5E"
+                  onChange={(data) => signatures.setDirectorSig(data || null)}
+                />
+              </div>
+            )}
+            <div className="border-t border-black mt-1 pt-1">
+              <p className="text-[9px] font-bold text-blue-900">Headmistress / Headmaster</p>
+              <p className="text-[8px] text-slate-500">Signature</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p className="text-[9px] text-slate-400 italic">
+        All comments and skills are auto-generated based on the pupil&apos;s average but remain fully editable. Changes are auto-saved on blur.
+      </p>
     </div>
   );
 }

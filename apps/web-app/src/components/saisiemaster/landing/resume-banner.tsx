@@ -16,16 +16,19 @@ interface RestoredInfo {
 }
 
 /** ⭐ Tente d'abord restoreFromBackend (Neon DB), puis fallback localStorage.
- *  Le fallback localStorage n'est utilisé QUE si un prospect est authentifié
+ *  Le fallback localStorage n'est utilisé QUE si un token est présent
  *  (les données localStorage lui appartiennent donc — setAuth efface localStorage
- *  lors d'un changement d'utilisateur). */
+ *  lors d'un changement d'utilisateur).
+ *
+ *  FIX: ne nécessite que `token` (le prospect est juste du metadata optionnel). */
 function useRestoredInfo(): [RestoredInfo | null, (v: RestoredInfo | null) => void] {
   const [restored, setRestored] = useState<RestoredInfo | null>(null);
   const prospect = useSaisieMasterStore((s) => s.prospect);
   const token = useSaisieMasterStore((s) => s.token);
 
   useEffect(() => {
-    if (!prospect || !token) return; // Only restore if authenticated
+    // ⭐ FIX: token seul suffit (le prospect est juste du metadata)
+    if (!token) return;
     let cancelled = false;
     (async () => {
       // 1. Try backend first (authoritative source)
@@ -64,7 +67,8 @@ function useRestoredInfo(): [RestoredInfo | null, (v: RestoredInfo | null) => vo
       }
     })();
     return () => { cancelled = true; };
-  }, [prospect?.id, token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, prospect?.id]);
 
   return [restored, setRestored];
 }

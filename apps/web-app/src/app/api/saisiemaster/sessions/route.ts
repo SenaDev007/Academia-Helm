@@ -77,20 +77,32 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
-      return saisieMasterJsonResponse(
-        { error: 'Non authentifié — token SaisieMaster manquant' },
-        401,
-        request,
-      );
-    }
+    let authHeader = request.headers.get('authorization');
 
+    // ⭐ FIX: sendBeacon() ne peut pas définir de headers custom.
+    //    Pour permettre la sauvegarde en beforeunload (sync mobile/desktop),
+    //    on accepte aussi le token dans le body sous la clé `_beaconToken`.
+    //    Le frontend l'envoie uniquement quand sendBeacon est utilisé.
     const body = await request.json().catch(() => null);
     if (!body) {
       return saisieMasterJsonResponse(
         { error: 'Invalid JSON body' },
         400,
+        request,
+      );
+    }
+
+    if (!authHeader && body._beaconToken) {
+      authHeader = `Bearer ${body._beaconToken}`;
+      delete body._beaconToken; // ne pas forward ce champ au backend
+    }
+    // Aussi supprimer le flag _beacon (marqueur sendBeacon pur)
+    if (body._beacon !== undefined) delete body._beacon;
+
+    if (!authHeader) {
+      return saisieMasterJsonResponse(
+        { error: 'Non authentifié — token SaisieMaster manquant' },
+        401,
         request,
       );
     }

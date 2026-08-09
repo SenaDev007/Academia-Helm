@@ -257,7 +257,9 @@ export class BulletinsController {
    * PATCH /institutional-exams/bulletins/annotations
    * Sauvegarde les annotations d'un élève (assiduité, discipline, etc.)
    * Body: { studentId, periodId, assiduite?, discipline?, defautsMajeurs?,
-   *         qualitesRemarquables?, analyseRecommandations?, directorVisa? }
+   *         qualitesRemarquables?, analyseRecommandations?, directorVisa?,
+   *         enTeacherComment?, enDirectorComment?, enAffectiveAssessment?,
+   *         enPsychomotorAssessment? }
    */
   @Patch('annotations')
   @Permissions('exams.manage')
@@ -276,6 +278,11 @@ export class BulletinsController {
       qualitesRemarquables?: string;
       analyseRecommandations?: string;
       directorVisa?: string;
+      // ⭐ Champs anglophones
+      enTeacherComment?: string;
+      enDirectorComment?: string;
+      enAffectiveAssessment?: string;
+      enPsychomotorAssessment?: string;
     },
   ) {
     const resolvedTenantId = tenantId || user?.tenantId || headers?.['x-tenant-id'];

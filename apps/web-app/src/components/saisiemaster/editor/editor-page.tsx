@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 import { useSaisieMasterStore, selectIsAuthenticated } from "@/lib/saisiemaster/store";
 import { useIsMobile } from "@/hooks/saisiemaster/use-mobile";
-import { getMyTestimonials } from "@/lib/saisiemaster/api";
+import { getMyTestimonials, saveSession, classDataToSessionPayload } from "@/lib/saisiemaster/api";
 import { cn } from "@/lib/saisiemaster/utils";
 import { toast } from "sonner";
 
@@ -119,13 +119,34 @@ export function EditorPage({ onHome }: EditorPageProps) {
   // s'il y a eu des modifs depuis la dernière sauvegarde.
   const lastChangeRef = useRef<number>(0);
   const lastSaveRef = useRef<number>(Date.now());
-  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [autoSaveStatus, setAutoSaveStatus] = useState<"idle" | "saving" | "saved" | "local-only">("idle");
 
   // Marquer une modification à chaque fois que `classes` change
   useEffect(() => {
     if (classes.length === 0) return;
     lastChangeRef.current = Date.now();
   }, [classes, activeClassIndex]);
+
+  // ⭐ Helper: sauvegarde vers le backend Neon (toutes les classes).
+  //    Retourne true si au moins une classe a été synchronisée, false sinon.
+  const saveAllClassesToBackend = async (cls: any[]): Promise<boolean> => {
+    const state = useSaisieMasterStore.getState();
+    const token = state.token;
+    // ⭐ FIX: token seul suffit (le prospect est juste du metadata)
+    if (!token || cls.length === 0) return false;
+    let anySuccess = false;
+    for (const clsItem of cls) {
+      try {
+        const payload = classDataToSessionPayload(clsItem);
+        await saveSession(payload);
+        anySuccess = true;
+      } catch (backendErr) {
+        // ⭐ On continue avec les autres classes même si une échoue
+        console.warn("[saisiemaster] Backend save failed for class:", clsItem.className, backendErr);
+      }
+    }
+    return anySuccess;
+  };
 
   // Intervalle d'auto-sauvegarde toutes les 10s
   useEffect(() => {
@@ -138,9 +159,9 @@ export function EditorPage({ onHome }: EditorPageProps) {
       setAutoSaveStatus("saving");
       try {
         const state = useSaisieMasterStore.getState();
-        const { classes: cls, activeClassIndex: idx, token, prospect } = state;
+        const { classes: cls, activeClassIndex: idx } = state;
         if (typeof window !== "undefined" && cls.length > 0) {
-          // ⭐ 1. Sauvegarder en localStorage (fallback hors-ligne)
+          // ⭐ 1. Sauvegarder en localStorage (toujours — backup hors-ligne)
           window.localStorage.setItem(
             "saisiemaster:autosave",
             JSON.stringify({
@@ -152,57 +173,39 @@ export function EditorPage({ onHome }: EditorPageProps) {
         }
 
         // ⭐ 2. Sauvegarder AUSSI dans la base de données Neon via le backend
-        if (token && prospect) {
-          for (const clsItem of cls) {
-            try {
-              await fetch("/api/saisiemaster/sessions", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({
-                  className: clsItem.className || clsItem.sheetName || "Classe",
-                  academicYear: clsItem.academicYear || "2025-2026",
-                  studentCount: clsItem.students?.length || 0,
-                  subjectCount: clsItem.subjects?.length || 0,
-                  gradesData: {
-                    students: clsItem.students,
-                    subjects: clsItem.subjects,
-                    evaluations: clsItem.evaluations,
-                    notes: clsItem.notes,
-                    customEvaluationTypes: clsItem.customEvaluationTypes,
-                    sourceFileName: clsItem.sourceFileName,
-                    importedAt: clsItem.importedAt,
-                  },
-                }),
-              });
-            } catch (backendErr) {
-              console.warn("[saisiemaster] Backend save failed (non-blocking):", backendErr);
-            }
-          }
-        }
+        //    FIX: ne nécessite que `token` (le prospect est optionnel metadata)
+        const backendOk = await saveAllClassesToBackend(cls);
 
         lastSaveRef.current = Date.now();
-        setAutoSaveStatus("saved");
+        // ⭐ FIX: statut honnête — "saved" seulement si le backend a accepté
+        if (backendOk) {
+          setAutoSaveStatus("saved");
+        } else {
+          // Soit non-authentifié, soit échec réseau — on prévient l'utilisateur
+          setAutoSaveStatus("local-only");
+        }
         // Retour à idle après 2s
         setTimeout(() => setAutoSaveStatus("idle"), 2000);
       } catch (e) {
         console.warn("[saisiemaster] auto-save failed:", e);
-        setAutoSaveStatus("idle");
+        setAutoSaveStatus("local-only");
+        setTimeout(() => setAutoSaveStatus("idle"), 2000);
       }
     }, AUTOSAVE_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, [classes.length]); // se ré-initialise seulement si on passe de 0 à >0 classes
 
-  // Sauvegarde avant fermeture de l'onglet (best-effort)
+  // ⭐ FIX: Sauvegarde backend AVANT fermeture de l'onglet (best-effort)
+  //    Utilise sendBeacon pour fire-and-forget (fonctionne même si la page se ferme).
   useEffect(() => {
     if (classes.length === 0) return;
-    const handler = () => {
+    const handler = async (event: BeforeUnloadEvent) => {
       try {
         const state = useSaisieMasterStore.getState();
-        if (state.classes.length > 0 && typeof window !== "undefined") {
+        if (state.classes.length === 0) return;
+        // 1. Sauvegarder en localStorage (synchrone, immédiat)
+        if (typeof window !== "undefined") {
           window.localStorage.setItem(
             "saisiemaster:autosave",
             JSON.stringify({
@@ -211,6 +214,42 @@ export function EditorPage({ onHome }: EditorPageProps) {
               savedAt: new Date().toISOString(),
             }),
           );
+        }
+        // 2. ⭐ Tenter une sauvegarde backend immédiate
+        //    (en espérant qu'elle ait le temps de se terminer avant la fermeture)
+        const token = state.token;
+        if (token) {
+          // sendBeacon est fire-and-forget mais limité à 64KB.
+          // Pour des données plus larges, on tente un fetch keepalive.
+          for (const clsItem of state.classes) {
+            try {
+              const payload = classDataToSessionPayload(clsItem);
+              // ⭐ On inclut le token dans le body car sendBeacon ne peut pas
+              //    définir de headers custom. Le BFF route accepte aussi
+              //    `Authorization` header (fallback pour fetch keepalive).
+              const beaconBody = JSON.stringify({ ...payload, _beacon: true, _beaconToken: token });
+              // ⭐ Tentative 1: sendBeacon (rapide, fire-and-forget)
+              const beaconOk = navigator.sendBeacon &&
+                navigator.sendBeacon(
+                  "/api/saisiemaster/sessions",
+                  new Blob([beaconBody], { type: "application/json" }),
+                );
+              // ⭐ Tentative 2: fetch keepalive (si sendBeacon refuse ou échoue)
+              if (!beaconOk) {
+                fetch("/api/saisiemaster/sessions", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify(payload),
+                  keepalive: true, // ⭐ permet au navigateur de terminer la requête après fermeture
+                }).catch(() => {});
+              }
+            } catch {
+              // best-effort
+            }
+          }
         }
       } catch {
         // best-effort
@@ -329,9 +368,9 @@ export function EditorPage({ onHome }: EditorPageProps) {
     setSaveStatus("saving");
     try {
       const state = useSaisieMasterStore.getState();
-      const { classes, activeClassIndex, token, prospect } = state;
+      const { classes, activeClassIndex } = state;
       if (typeof window !== "undefined" && classes.length > 0) {
-        // 1. localStorage
+        // 1. localStorage (always — offline backup)
         window.localStorage.setItem(
           "saisiemaster:autosave",
           JSON.stringify({
@@ -341,36 +380,17 @@ export function EditorPage({ onHome }: EditorPageProps) {
           }),
         );
 
-        // 2. Backend Neon DB
-        if (token && prospect) {
-          for (const clsItem of classes) {
-            try {
-              await fetch("/api/saisiemaster/sessions", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({
-                  className: clsItem.className || clsItem.sheetName || "Classe",
-                  academicYear: clsItem.academicYear || "2025-2026",
-                  studentCount: clsItem.students?.length || 0,
-                  subjectCount: clsItem.subjects?.length || 0,
-                  gradesData: {
-                    students: clsItem.students,
-                    subjects: clsItem.subjects,
-                    evaluations: clsItem.evaluations,
-                    notes: clsItem.notes,
-                    customEvaluationTypes: clsItem.customEvaluationTypes,
-                    sourceFileName: clsItem.sourceFileName,
-                    importedAt: clsItem.importedAt,
-                  },
-                }),
-              });
-            } catch (backendErr) {
-              console.warn("[saisiemaster] Manual save backend failed:", backendErr);
-            }
-          }
+        // 2. ⭐ FIX: Backend Neon DB — token seul suffit (prospect est juste metadata)
+        //    Utilise saveSession() qui gère automatiquement le cross-domain
+        //    (saisiemaster.academiahelm.com → www.academiahelm.com)
+        const backendOk = await saveAllClassesToBackend(classes);
+        if (!backendOk) {
+          // Le backend n'a pas accepté — on prévient l'utilisateur
+          toast.error("Sauvegarde locale uniquement", {
+            description: "Impossible de synchroniser avec la base de données. Vérifiez votre connexion ou votre authentification.",
+          });
+          setTimeout(() => setSaveStatus("idle"), 2000);
+          return;
         }
       }
       // Simule un mini-délai pour le feedback visuel.
@@ -569,7 +589,7 @@ function ToggleButton({
 interface ActionBarProps {
   onSave: () => void;
   saveStatus: "idle" | "saving" | "saved";
-  autoSaveStatus: "idle" | "saving" | "saved";
+  autoSaveStatus: "idle" | "saving" | "saved" | "local-only";
   onExport: () => void;
   onReset: () => void;
   isExporting: boolean;
@@ -609,6 +629,13 @@ function ActionBar({
             <span className="inline-flex items-center gap-2 text-xs text-[#198754]/80 font-medium">
               <CheckCircle2 className="h-3.5 w-3.5" />
               <span className="truncate">Sauvegarde automatique effectuée</span>
+            </span>
+          ) : autoSaveStatus === "local-only" ? (
+            <span className="inline-flex items-center gap-2 text-xs text-[#E31B23] font-medium">
+              <Info className="h-3.5 w-3.5" />
+              <span className="truncate" title="Vos saisies ne sont que sur cet appareil. Connectez-vous ou vérifiez votre connexion pour synchroniser avec la base de données.">
+                ⚠ Local uniquement — non synchronisé (connexion requise)
+              </span>
             </span>
           ) : (
             <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">

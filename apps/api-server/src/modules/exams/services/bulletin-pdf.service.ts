@@ -54,6 +54,11 @@ export interface BulletinPdfData {
   termEndingDate?: string | null;    // ex: "Friday, April 11, 2025"
   nextTermStartDate?: string | null; // ex: "Monday, May 5, 2025"
   numberOfSubjects?: number | null;  // pour mark obtainable
+  // ⭐ Annotations anglophones éditables (auto-générées si null, mais modifiables par l'utilisateur)
+  enTeacherComment?: string | null;
+  enDirectorComment?: string | null;
+  enAffectiveAssessment?: string | null;    // JSON: {"Punctuality":"A","Politeness":"B",...}
+  enPsychomotorAssessment?: string | null;  // JSON: {"Handwriting":"A","Music":"B",...}
   // Matières + notes
   subjects: Array<{
     name: string;
@@ -741,10 +746,38 @@ ${page2Content}
       : '—';
 
     // ─── Class teacher's comments based on average ───────────────────────────
-    const teacherComment = this.getEnTeacherComment(pupilAverage, nextTermStart);
+    // ⭐ Si l'utilisateur a édité le commentaire, on l'utilise. Sinon, auto-gén.
+    const teacherComment = data.enTeacherComment && data.enTeacherComment.trim().length > 0
+      ? data.enTeacherComment
+      : this.getEnTeacherComment(pupilAverage, nextTermStart);
 
     // ─── Director's comments based on average ────────────────────────────────
-    const directorComment = this.getEnDirectorComment(pupilAverage);
+    // ⭐ Si l'utilisateur a édité le commentaire, on l'utilise. Sinon, auto-gén.
+    const directorComment = data.enDirectorComment && data.enDirectorComment.trim().length > 0
+      ? data.enDirectorComment
+      : this.getEnDirectorComment(pupilAverage);
+
+    // ─── Parse user-provided Affective + Psychomotor assessments (JSON) ──────
+    //     Format attendu: {"Punctuality":"A","Politeness":"B",...}
+    //     Si null/invalid, on déclenche l'auto-génération basée sur la moyenne.
+    let affectiveMap: Record<string, string> = {};
+    try {
+      if (data.enAffectiveAssessment) {
+        affectiveMap = JSON.parse(data.enAffectiveAssessment);
+      }
+    } catch { affectiveMap = {}; }
+    if (Object.keys(affectiveMap).length === 0) {
+      affectiveMap = this.autoFillAffective(pupilAverage);
+    }
+    let psychomotorMap: Record<string, string> = {};
+    try {
+      if (data.enPsychomotorAssessment) {
+        psychomotorMap = JSON.parse(data.enPsychomotorAssessment);
+      }
+    } catch { psychomotorMap = {}; }
+    if (Object.keys(psychomotorMap).length === 0) {
+      psychomotorMap = this.autoFillPsychomotor(pupilAverage);
+    }
 
     // ─── Build subject rows ──────────────────────────────────────────────────
     const subjectRows = subjects.map((s, i) => {
@@ -771,32 +804,41 @@ ${page2Content}
     }).join('');
 
     // ─── Affective Assessment (A/B/C checkboxes) ──────────────────────────────
+    // ⭐ Auto-rempli depuis l'annotation utilisateur ou auto-généré depuis la moyenne
     const affectiveSkills = [
       'Punctuality', 'Politeness', 'Honesty', 'Self-control',
       'Cooperation', 'Respect for others', 'Initiative', 'Perseverance',
       'Care for property', 'Leadership',
     ];
     const affectiveRows = affectiveSkills.map(skill => {
-      // Default: all unchecked
+      const val = affectiveMap[skill] || '';
+      const aCheck = val === 'A' ? '<strong style="color:#059669;">&#9745;</strong>' : '&#9744;';
+      const bCheck = val === 'B' ? '<strong style="color:#2563eb;">&#9745;</strong>' : '&#9744;';
+      const cCheck = val === 'C' ? '<strong style="color:#d97706;">&#9745;</strong>' : '&#9744;';
       return `<tr>
         <td style="border:1px solid #cbd5e1;padding:3px 5px;font-size:8px;">${skill}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">&#9744;</td>
-        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">&#9744;</td>
-        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">&#9744;</td>
+        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">${aCheck}</td>
+        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">${bCheck}</td>
+        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">${cCheck}</td>
       </tr>`;
     }).join('');
 
     // ─── Psychomotor Skills (A/B/C checkboxes) ───────────────────────────────
+    // ⭐ Auto-rempli depuis l'annotation utilisateur ou auto-généré depuis la moyenne
     const psychomotorSkills = [
       'Handwriting', 'Drawing and Painting', 'Handwork/Crafts',
       'Physical Education', 'Music', 'Games and Sports',
     ];
     const psychomotorRows = psychomotorSkills.map(skill => {
+      const val = psychomotorMap[skill] || '';
+      const aCheck = val === 'A' ? '<strong style="color:#059669;">&#9745;</strong>' : '&#9744;';
+      const bCheck = val === 'B' ? '<strong style="color:#2563eb;">&#9745;</strong>' : '&#9744;';
+      const cCheck = val === 'C' ? '<strong style="color:#d97706;">&#9745;</strong>' : '&#9744;';
       return `<tr>
         <td style="border:1px solid #cbd5e1;padding:3px 5px;font-size:8px;">${skill}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">&#9744;</td>
-        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">&#9744;</td>
-        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">&#9744;</td>
+        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">${aCheck}</td>
+        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">${bCheck}</td>
+        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;">${cCheck}</td>
       </tr>`;
     }).join('');
 
@@ -936,17 +978,22 @@ ${page2Content}
         <div style="font-size:9px;color:#1a1a1a;line-height:1.5;text-align:justify;min-height:40px;">${directorComment}</div>
       </div>
 
-      <!-- SIGNATURES: Teacher + Director -->
+      <!-- SIGNATURES: Teacher + Parent + Director (3 signatures, same pattern as FR) -->
       <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;">
         <table style="width:100%;border-collapse:collapse;">
           <tr>
-            <td style="width:50%;text-align:center;vertical-align:bottom;padding:6px 4px;">
-              <div style="height:35px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:35px;max-width:90px;object-fit:contain;" />` : ''}</div>
+            <td style="width:33%;text-align:center;vertical-align:bottom;padding:6px 3px;">
+              <div style="height:35px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:35px;max-width:80px;object-fit:contain;" />` : ''}</div>
               <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Class Teacher</div>
               ${data.teacherName ? `<div style="font-size:8px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.teacherName}</div>` : '<div style="font-size:7px;color:#64748b;margin-top:1px;">Signature</div>'}
             </td>
-            <td style="width:50%;text-align:center;vertical-align:bottom;padding:6px 4px;">
-              <div style="height:35px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:35px;max-width:90px;object-fit:contain;" />` : ''}</div>
+            <td style="width:34%;text-align:center;vertical-align:bottom;padding:6px 3px;">
+              <div style="height:35px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:35px;max-width:80px;object-fit:contain;" />` : ''}</div>
+              <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Parent / Guardian</div>
+              <div style="font-size:7px;color:#64748b;">Name &amp; Signature</div>
+            </td>
+            <td style="width:33%;text-align:center;vertical-align:bottom;padding:6px 3px;">
+              <div style="height:35px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:35px;max-width:80px;object-fit:contain;" />` : ''}</div>
               <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Headmistress / Headmaster</div>
               <div style="font-size:7px;color:#64748b;">Signature</div>
             </td>
@@ -1007,6 +1054,67 @@ ${page2Content}
 
 </body>
 </html>`;
+  }
+
+  /**
+   * ⭐ Auto-remplissage de l'Affective Assessment basé sur la moyenne /100.
+   * - >= 80 (Very Good+) : A pour la plupart des compétences (quelques B)
+   * - 70-79 (Good)       : A/B mix
+   * - 60-69 (Fair)       : B majoritaire, quelques A
+   * - 50-59 (Pass)       : B/C mix
+   * - 40-49 (Weak)       : C majoritaire
+   * - < 40 (Very Weak)   : C pour toutes
+   *
+   * Compétences "Critiques" (Honesty, Self-control, Respect, Cooperation)
+   * reçoivent toujours une note légèrement supérieure pour refléter le
+   * caractère non-académique.
+   */
+  private autoFillAffective(pupilAverage: number): Record<string, string> {
+    const skills = [
+      'Punctuality', 'Politeness', 'Honesty', 'Self-control',
+      'Cooperation', 'Respect for others', 'Initiative', 'Perseverance',
+      'Care for property', 'Leadership',
+    ];
+    // Soft skills that should be rated slightly higher than academic performance
+    const softSkills = new Set(['Honesty', 'Self-control', 'Respect for others', 'Cooperation']);
+    const map: Record<string, string> = {};
+    for (let i = 0; i < skills.length; i++) {
+      const skill = skills[i];
+      const isSoft = softSkills.has(skill);
+      // Bump level for soft skills (one level higher than academic baseline)
+      let level: 'A' | 'B' | 'C';
+      if (pupilAverage >= 80) level = isSoft ? 'A' : (i % 4 === 0 ? 'B' : 'A');
+      else if (pupilAverage >= 70) level = isSoft ? 'A' : (i % 3 === 0 ? 'B' : 'A');
+      else if (pupilAverage >= 60) level = isSoft ? 'A' : (i % 2 === 0 ? 'B' : 'A');
+      else if (pupilAverage >= 50) level = isSoft ? 'B' : (i % 3 === 0 ? 'C' : 'B');
+      else if (pupilAverage >= 40) level = isSoft ? 'B' : (i % 2 === 0 ? 'C' : 'B');
+      else level = isSoft ? 'B' : 'C';
+      map[skill] = level;
+    }
+    return map;
+  }
+
+  /**
+   * ⭐ Auto-remplissage des Psychomotor Skills basé sur la moyenne /100.
+   * Suit la même logique que l'Affective Assessment.
+   */
+  private autoFillPsychomotor(pupilAverage: number): Record<string, string> {
+    const skills = [
+      'Handwriting', 'Drawing and Painting', 'Handwork/Crafts',
+      'Physical Education', 'Music', 'Games and Sports',
+    ];
+    const map: Record<string, string> = {};
+    for (let i = 0; i < skills.length; i++) {
+      let level: 'A' | 'B' | 'C';
+      if (pupilAverage >= 80) level = i % 4 === 0 ? 'B' : 'A';
+      else if (pupilAverage >= 70) level = i % 3 === 0 ? 'B' : 'A';
+      else if (pupilAverage >= 60) level = i % 2 === 0 ? 'B' : 'A';
+      else if (pupilAverage >= 50) level = i % 3 === 0 ? 'C' : 'B';
+      else if (pupilAverage >= 40) level = i % 2 === 0 ? 'C' : 'B';
+      else level = 'C';
+      map[skills[i]] = level;
+    }
+    return map;
   }
 
   /**

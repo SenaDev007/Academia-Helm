@@ -8,69 +8,69 @@
 // Le pricing dépend uniquement de la taille de l'école (nombre d'élèves).
 //
 // Règles additionnelles :
-//   - Bilingue (FR/EN) : +10 000 FCFA/mois ou +100 000 FCFA/an (option payante)
+//   - Bilingue (FR/EN) : +5 000 FCFA/mois ou +50 000 FCFA/an (option payante)
 //   - SMS / Email : à la charge de l'école (facturés en sus selon consommation)
 //   - WhatsApp : gratuit (inclus dans tous les plans)
 //   - Frais d'activation : facturés une fois à l'inscription
 //
-// ┌──────────────┬────────────┬──────────┬──────────┬──────────┐
-// │ Plan         │ Élèves     │ Mensuel  │ Annuel   │ Setup    │
-// ├──────────────┼────────────┼──────────┼──────────┼──────────┤
-// │ Helm Seed    │ 1-50       │ 9 900    │ 99 000   │ 50 000   │
-// │ Helm Grow    │ 51-150     │ 14 900   │ 149 000  │ 75 000   │
-// │ Helm Lead    │ 151-400    │ 24 900   │ 249 000  │ 100 000  │
-// │ Helm Network │ 401+       │ Sur devis│ Sur devis│ 150 000  │
-// └──────────────┴────────────┴──────────┴──────────┴──────────┘
+// ┌──────────────────┬────────────┬──────────┬──────────┬──────────┐
+// │ Plan              │ Élèves     │ Mensuel  │ Annuel   │ Setup    │
+// ├──────────────────┼────────────┼──────────┼──────────┼──────────┤
+// │ Helm Essentiel    │ 1-50       │ 10 000   │ 100 000  │ 50 000   │
+// │ Helm Croissance   │ 51-150     │ 15 000   │ 150 000  │ 75 000   │
+// │ Helm Performance  │ 151-400    │ 25 000   │ 250 000  │ 100 000  │
+// │ Helm Institution  │ 401+       │ 50 000   │ 500 000  │ 150 000  │
+// └──────────────────┴────────────┴──────────┴──────────┴──────────┘
 
 export const HELM_PLANS = {
   SEED: {
     key: 'SEED',
-    name: 'Helm Seed',
+    name: 'Helm Essentiel',
     tagline: "L'essentiel pour bien démarrer",
     taglineEn: 'Get Started',
     color: '#0D1F6E',
     maxStudents: 50,
-    monthlyPrice: 9900,
-    annualPrice: 99000,
+    monthlyPrice: 10000,
+    annualPrice: 100000,
     setupFee: 50000,
     highlighted: false,
     badge: null as string | null,
   },
   GROW: {
     key: 'GROW',
-    name: 'Helm Grow',
+    name: 'Helm Croissance',
     tagline: 'Pilotez votre croissance',
     taglineEn: 'Grow',
     color: '#F5A623',
     maxStudents: 150,
-    monthlyPrice: 14900,
-    annualPrice: 149000,
+    monthlyPrice: 15000,
+    annualPrice: 150000,
     setupFee: 75000,
     highlighted: true,
     badge: 'Populaire',
   },
   LEAD: {
     key: 'LEAD',
-    name: 'Helm Lead',
+    name: 'Helm Performance',
     tagline: 'Dominez votre marché',
     taglineEn: 'Lead',
     color: '#1A3490',
     maxStudents: 400,
-    monthlyPrice: 24900,
-    annualPrice: 249000,
+    monthlyPrice: 25000,
+    annualPrice: 250000,
     setupFee: 100000,
     highlighted: false,
     badge: null as string | null,
   },
   NETWORK: {
     key: 'NETWORK',
-    name: 'Helm Network',
+    name: 'Helm Institution',
     tagline: 'La catégorie multi-école',
     taglineEn: 'Scale',
     color: '#070F40',
     maxStudents: Infinity,
-    monthlyPrice: null as number | null,
-    annualPrice: null as number | null,
+    monthlyPrice: 50000,
+    annualPrice: 500000,
     setupFee: 150000,
     highlighted: false,
     badge: 'Multi-école',
@@ -81,8 +81,8 @@ export type HelmPlanKey = keyof typeof HELM_PLANS;
 
 // ⭐ Option bilingue (FR/EN) — payante, ajoutée au plan de base
 export const BILINGUAL_ADDON = {
-  monthly: 10000,   // 10 000 FCFA/mois
-  annual: 100000,    // 100 000 FCFA/an
+  monthly: 5000,    // 5 000 FCFA/mois
+  annual: 50000,     // 50 000 FCFA/an
 } as const;
 
 // ⭐ Tous les modules inclus quel que soit le plan
@@ -101,7 +101,7 @@ export const ALL_MODULES = [
 // ⭐ Notes de pricing affichées sur la page tarif
 export const PRICING_NOTES = [
   'Tous les modules sont inclus quel que soit le plan — aucune restriction',
-  'Option bilingue (FR/EN) : +10 000 FCFA/mois ou +100 000 FCFA/an',
+  'Option bilingue (FR/EN) : +5 000 FCFA/mois ou +50 000 FCFA/an',
   'WhatsApp inclus gratuitement dans tous les plans',
   'SMS et email : à la charge de l\'école (facturés selon consommation)',
   'Frais d\'activation facturés une fois à l\'inscription',

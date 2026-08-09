@@ -89,10 +89,10 @@ const BILLING_CYCLES = [
 /** Options pour le modal de création manuelle d'une école. */
 // ⭐ Pricing mis à jour — août 2026
 const CREATE_PLANS = [
-  { code: 'SEED', label: 'Helm Seed', price: '9 900 FCFA / mois' },
-  { code: 'GROW', label: 'Helm Grow', price: '14 900 FCFA / mois' },
-  { code: 'LEAD', label: 'Helm Lead', price: '24 900 FCFA / mois' },
-  { code: 'NETWORK', label: 'Helm Network', price: 'Sur devis' },
+  { code: 'SEED', label: 'Helm Essentiel', price: '10 000 FCFA / mois' },
+  { code: 'GROW', label: 'Helm Croissance', price: '15 000 FCFA / mois' },
+  { code: 'LEAD', label: 'Helm Performance', price: '25 000 FCFA / mois' },
+  { code: 'NETWORK', label: 'Helm Institution', price: '50 000 FCFA / mois' },
 ] as const;
 
 const CREATE_BILLING_CYCLES = [

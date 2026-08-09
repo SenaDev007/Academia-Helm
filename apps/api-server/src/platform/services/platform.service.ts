@@ -1784,10 +1784,10 @@ export class PlatformService {
 
     // ⭐ Pricing mis à jour — août 2026
     const planAmounts: Record<string, { monthly: number; annual: number; setup: number }> = {
-      SEED: { monthly: 9900, annual: 99000, setup: 50000 },
-      GROW: { monthly: 14900, annual: 149000, setup: 75000 },
-      LEAD: { monthly: 24900, annual: 249000, setup: 100000 },
-      NETWORK: { monthly: 0, annual: 0, setup: 150000 },
+      SEED: { monthly: 10000, annual: 100000, setup: 50000 },
+      GROW: { monthly: 15000, annual: 150000, setup: 75000 },
+      LEAD: { monthly: 25000, annual: 250000, setup: 100000 },
+      NETWORK: { monthly: 50000, annual: 500000, setup: 150000 },
     };
     const amounts = planAmounts[body.plan] || planAmounts.SEED;
 

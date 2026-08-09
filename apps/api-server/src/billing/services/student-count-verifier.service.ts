@@ -41,12 +41,12 @@ interface PlanLimit {
 }
 
 // ⭐ Pricing mis à jour — août 2026
-// Tranches : Seed 1-50, Grow 51-150, Lead 151-400, Network 401+
+// Tranches : Essentiel 1-50, Croissance 51-150, Performance 151-400, Institution 401+
 const PLAN_LIMITS: PlanLimit[] = [
-  { code: 'SEED', name: 'Helm Seed', studentMin: 1, studentMax: 50 },
-  { code: 'GROW', name: 'Helm Grow', studentMin: 51, studentMax: 150 },
-  { code: 'LEAD', name: 'Helm Lead', studentMin: 151, studentMax: 400 },
-  { code: 'NETWORK', name: 'Helm Network', studentMin: 401, studentMax: null },
+  { code: 'SEED', name: 'Helm Essentiel', studentMin: 1, studentMax: 50 },
+  { code: 'GROW', name: 'Helm Croissance', studentMin: 51, studentMax: 150 },
+  { code: 'LEAD', name: 'Helm Performance', studentMin: 151, studentMax: 400 },
+  { code: 'NETWORK', name: 'Helm Institution', studentMin: 401, studentMax: null },
 ];
 
 @Injectable()

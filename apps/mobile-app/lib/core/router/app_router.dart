@@ -19,11 +19,20 @@ import '../../features/auth/pages/forgot_password_screen.dart';
 import '../../features/auth/pages/reset_password_screen.dart';
 import '../../features/landing/pages/landing_page_screen.dart';
 import '../../features/teacher/pages/teacher_dashboard_screen.dart';
+import '../../features/teacher/pages/daily_attendance_screen.dart';
+import '../../features/teacher/pages/cahier_semaine_screen.dart';
+import '../../features/teacher/pages/cahier_texte_screen.dart';
+import '../../features/teacher/pages/attendance_register_screen.dart';
+import '../../features/teacher/pages/homework_screen.dart';
+import '../../features/teacher/pages/fiches_pedagogiques_screen.dart';
+import '../../features/teacher/pages/teacher_evaluations_screen.dart';
 import '../../features/parent/pages/parent_dashboard_screen.dart';
+import '../../features/parent/pages/child_detail_screen.dart';
+import '../../features/parent/pages/parent_messages_screen.dart';
 import '../../features/dashboard/pages/pilotage_dashboard_screen.dart';
 import '../../features/profile/pages/profile_screen.dart';
 import '../../features/students/pages/students_module_screen.dart';
-import '../../features/students/pages/students_screen.dart';
+import '../../features/students/pages/student_detail_screen.dart';
 import '../../features/finance/pages/finance_module_screen.dart';
 import '../../features/hr/pages/hr_module_screen.dart';
 import '../../features/pedagogy/pages/pedagogy_module_screen.dart';
@@ -403,8 +412,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: '/students/:id',
             name: 'studentDetail',
             builder: (context, state) {
-              // TODO: implement dedicated student detail view
-              return const StudentsScreen();
+              final studentId = state.pathParameters['id'] ?? '';
+              return StudentDetailScreen(studentId: studentId);
             },
           ),
 
@@ -493,6 +502,78 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               final evaluationId = state.pathParameters['evaluationId'] ?? '';
               return GradeEntryScreen(evaluationId: evaluationId);
             },
+          ),
+
+          // ⭐ Teacher pedagogy routes
+          GoRoute(
+            path: '/teacher-attendance/:classId',
+            name: 'teacherAttendance',
+            builder: (context, state) {
+              final classId = state.pathParameters['classId'] ?? '';
+              return DailyAttendanceScreen(
+                  classId: classId, className: '');
+            },
+          ),
+          GoRoute(
+            path: '/attendance-register/:classId',
+            name: 'attendanceRegister',
+            builder: (context, state) {
+              final classId = state.pathParameters['classId'] ?? '';
+              return AttendanceRegisterScreen(
+                  classId: classId, className: '');
+            },
+          ),
+          GoRoute(
+            path: '/cahier-semaine',
+            name: 'cahierSemaine',
+            builder: (context, state) => const CahierSemaineScreen(),
+          ),
+          GoRoute(
+            path: '/cahier-texte/:teacherId',
+            name: 'cahierTexte',
+            builder: (context, state) {
+              final teacherId = state.pathParameters['teacherId'] ?? '';
+              return CahierTexteScreen(teacherId: teacherId);
+            },
+          ),
+          GoRoute(
+            path: '/teacher-homework/:teacherId',
+            name: 'teacherHomework',
+            builder: (context, state) {
+              final teacherId = state.pathParameters['teacherId'] ?? '';
+              return HomeworkScreen(teacherId: teacherId);
+            },
+          ),
+          GoRoute(
+            path: '/fiches-pedagogiques/:teacherId',
+            name: 'fichesPedagogiques',
+            builder: (context, state) {
+              final teacherId = state.pathParameters['teacherId'] ?? '';
+              return FichesPedagogiquesScreen(teacherId: teacherId);
+            },
+          ),
+          GoRoute(
+            path: '/teacher-evaluations/:teacherId',
+            name: 'teacherEvaluations',
+            builder: (context, state) {
+              final teacherId = state.pathParameters['teacherId'] ?? '';
+              return TeacherEvaluationsScreen(teacherId: teacherId);
+            },
+          ),
+
+          // ⭐ Parent routes
+          GoRoute(
+            path: '/child-detail/:childId',
+            name: 'childDetail',
+            builder: (context, state) {
+              final childId = state.pathParameters['childId'] ?? '';
+              return ChildDetailScreen(childId: childId);
+            },
+          ),
+          GoRoute(
+            path: '/parent-messages',
+            name: 'parentMessages',
+            builder: (context, state) => const ParentMessagesScreen(),
           ),
 
           // ⭐ P1-8: Bulletin (parent)

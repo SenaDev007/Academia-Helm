@@ -1,369 +1,691 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/enums/module_config.dart';
+
+import '../../../core/network/api_client.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
-import '../../../core/widgets/module_page_shell.dart';
-import '../../../core/widgets/module_data_list.dart';
-import '../../../core/widgets/sub_tab_content.dart';
-import '../../../core/widgets/loading/module_loading_wrapper.dart';
-import '../providers/settings_provider.dart';
+import '../../../core/widgets/ah_app_bar.dart';
+import '../../../core/widgets/module_data_tab.dart';
 
-class SettingsScreen extends ConsumerWidget {
+/// Settings module — 12 sub-tabs matching the web's /app/settings structure.
+///
+/// Tabs (matching web SETTINGS_TAB_IDS):
+/// 1. Identité
+/// 2. Année scolaire
+/// 3. Structure
+/// 4. Administration
+/// 5. Bilingue
+/// 6. Modules
+/// 7. Rôles
+/// 8. Facturation
+/// 9. Sécurité
+/// 10. Cachets
+/// 11. Appareils autorisés
+/// 12. Historique
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final module = allModules.firstWhere((m) => m.id == 'settings');
-    return StatefulModulePage(
-      module: module,
-      visibleSubTabs: module.subTabs,
-      initialSubTabId: module.subTabs.first.id,
-      subTabBuilder: (subTab) {
-        switch (subTab.id) {
-          case 'settings-dashboard': return const _DashboardContent();
-          case 'settings-general': return const _GeneralContent();
-          case 'settings-academic-year': return const _AcademicYearContent();
-          case 'settings-classes': return const _ClassesContent();
-          case 'settings-subjects': return const _SubjectsContent();
-          case 'settings-periods': return const _PeriodsContent();
-          case 'settings-grading': return const _GradingContent();
-          case 'settings-rooms': return const _RoomsContent();
-          case 'settings-roles': return const _RolesContent();
-          case 'settings-permissions': return const _PermissionsContent();
-          case 'settings-features': return const _FeaturesContent();
-          case 'settings-import': return const _ImportContent();
-          case 'settings-export': return const _ExportContent();
-          case 'settings-backup': return const _BackupContent();
-          case 'settings-advanced': return const _AdvancedContent();
-          default: return PlaceholderContent(title: subTab.label);
-        }
-      },
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  static const _tabs = [
+    'Identité',
+    'Année scolaire',
+    'Structure',
+    'Administration',
+    'Bilingue',
+    'Modules',
+    'Rôles',
+    'Facturation',
+    'Sécurité',
+    'Cachets',
+    'Appareils',
+    'Historique',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: _tabs.length, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: const AHAppBar(showBackButton: true, title: 'Paramètres'),
+      body: Column(
+        children: [
+          Container(
+            color: Colors.white,
+            child: TabBar(
+              controller: _tabController,
+              labelColor: AHColors.navy,
+              unselectedLabelColor: AHColors.grey400,
+              indicatorColor: AHColors.gold,
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              labelStyle:
+                  const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+              tabs: _tabs.map((t) => Tab(text: t)).toList(),
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _IdentityTab(),
+                _AcademicYearTab(),
+                _StructureTab(),
+                _DepartmentsTab(),
+                _BilingualTab(),
+                _FeaturesTab(),
+                _RolesTab(),
+                _BillingTab(),
+                _SecurityTab(),
+                _SealsTab(),
+                _DevicesTab(),
+                _HistoryTab(),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _DashboardContent extends ConsumerWidget {
-  const _DashboardContent();
+// ── Tab 1: Identité ──────────────────────────────────────────────────────
+
+class _IdentityTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ModuleDashboardView(
-      dashboardAsync: ref.watch(generalSettingsProvider),
-      moduleName: 'Paramètres',
-      onRetry: () => ref.invalidate(generalSettingsProvider),
-      statCards: const [
-        StatCardConfig(title: 'Classes configurées', valueKey: 'classes_count', defaultValue: '—', icon: Icons.class_),
-        StatCardConfig(title: 'Matières actives', valueKey: 'subjects_count', defaultValue: '—', icon: Icons.book, iconColor: AHColors.info),
-        StatCardConfig(title: 'Rôles définis', valueKey: 'roles_count', defaultValue: '—', icon: Icons.shield, iconColor: AHColors.gold),
-        StatCardConfig(title: 'Dernière sauvegarde', valueKey: 'last_backup', defaultValue: '—', icon: Icons.cloud_done, iconColor: AHColors.success),
+    final apiClient = ref.watch(apiClientProvider);
+    return FutureBuilder(
+      future: apiClient.getRaw('/settings/identity'),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+              child: CircularProgressIndicator(color: AHColors.navy));
+        }
+        final result = snapshot.data;
+        return result?.when(
+              success: (data) => _IdentityView(data: data),
+              failure: (_) => _buildError(ref),
+              loading: () => const Center(
+                  child: CircularProgressIndicator(color: AHColors.navy)),
+            ) ??
+            _buildError(ref);
+      },
+    );
+  }
+
+  Widget _buildError(WidgetRef ref) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.wifi_off, size: 48, color: AHColors.error),
+          const SizedBox(height: 8),
+          const Text('Erreur de chargement',
+              style: TextStyle(fontSize: 13, color: AHColors.grey600)),
+          const SizedBox(height: 8),
+          ElevatedButton(
+            onPressed: () => ref.invalidate(apiClientProvider),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AHColors.navy, foregroundColor: Colors.white),
+            child: const Text('Réessayer'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IdentityView extends StatelessWidget {
+  const _IdentityView({required this.data});
+  final Map<String, dynamic> data;
+
+  @override
+  Widget build(BuildContext context) {
+    final fields = <String, String>{};
+    for (final entry in data.entries) {
+      if (entry.value == null) continue;
+      if (entry.value is List || entry.value is Map) continue;
+      fields[entry.key] = entry.value.toString();
+    }
+
+    return RefreshIndicator(
+      color: AHColors.navy,
+      onRefresh: () async {},
+      child: ListView(
+        padding: const EdgeInsets.all(AHSpacing.md),
+        children: [
+          if (data['logoUrl'] != null)
+            Center(
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AHColors.gold, width: 2),
+                ),
+                child: const Icon(Icons.school, size: 40, color: AHColors.navy),
+              ),
+            ),
+          if (data['logoUrl'] != null) const SizedBox(height: AHSpacing.md),
+          Container(
+            padding: const EdgeInsets.all(AHSpacing.md),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              children: fields.entries.map((e) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 130,
+                        child: Text(
+                          _humanize(e.key),
+                          style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AHColors.grey500),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          e.value,
+                          style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF0F172A)),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: AHSpacing.md),
+          ElevatedButton.icon(
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Édition — en cours d\'implémentation'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+            icon: const Icon(Icons.edit, size: 16),
+            label: const Text('Modifier l\'identité'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AHColors.navy,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _humanize(String field) {
+    final out = StringBuffer();
+    for (var i = 0; i < field.length; i++) {
+      final c = field[i];
+      if (i > 0 && c.toUpperCase() == c && c.toLowerCase() != c) {
+        out.write(' ');
+      }
+      out.write(i == 0 ? c.toUpperCase() : c);
+    }
+    return out.toString();
+  }
+}
+
+// ── Tab 2: Année scolaire ────────────────────────────────────────────────
+
+class _AcademicYearTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => ModuleDataTab(
+        endpoint: '/settings/academic-years',
+        titleField: 'label',
+        tableColumns: const ['startDate', 'endDate', 'isActive'],
+        icon: Icons.calendar_today,
+        createLabel: 'Nouvelle année',
+        rowActions: const [
+          RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+          RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
+          RowAction(
+              id: 'activate',
+              icon: Icons.check_circle,
+              label: 'Activer',
+              color: Color(0xFF10B981)),
+          RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
+        ],
+        onAction: (a, i) => _stub(context, a),
+      );
+}
+
+// ── Tab 3: Structure (classes, levels, cycles, sections, series, rooms) ───
+
+class _StructureTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => ModuleDataTab(
+        endpoint: '/settings/classes',
+        titleField: 'name',
+        tableColumns: const ['level', 'capacity', 'studentsCount', 'isActive'],
+        icon: Icons.grid_view,
+        createLabel: 'Nouvelle classe',
+        rowActions: const [
+          RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+          RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
+          RowAction(id: 'subjects', icon: Icons.book, label: 'Matières', color: Color(0xFF6366F1)),
+          RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
+        ],
+        onAction: (a, i) => _stub(context, a),
+      );
+}
+
+// ── Tab 4: Administration (departments + positions) ──────────────────────
+
+class _DepartmentsTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => ModuleDataTab(
+        endpoint: '/settings/departments',
+        titleField: 'name',
+        tableColumns: const ['code', 'head', 'membersCount'],
+        icon: Icons.business,
+        createLabel: 'Nouveau département',
+        rowActions: const [
+          RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+          RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
+          RowAction(id: 'positions', icon: Icons.badge, label: 'Postes', color: Color(0xFF6366F1)),
+          RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
+        ],
+        onAction: (a, i) => _stub(context, a),
+      );
+}
+
+// ── Tab 5: Bilingue ──────────────────────────────────────────────────────
+
+class _BilingualTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final apiClient = ref.watch(apiClientProvider);
+    return FutureBuilder(
+      future: apiClient.getRaw('/settings/bilingual'),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+              child: CircularProgressIndicator(color: AHColors.navy));
+        }
+        final result = snapshot.data;
+        return result?.when(
+              success: (data) => _BilingualView(data: data),
+              failure: (_) => _buildError(ref),
+              loading: () => const Center(
+                  child: CircularProgressIndicator(color: AHColors.navy)),
+            ) ??
+            _buildError(ref);
+      },
+    );
+  }
+
+  Widget _buildError(WidgetRef ref) => Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.wifi_off, size: 48, color: AHColors.error),
+            const SizedBox(height: 8),
+            const Text('Erreur de chargement',
+                style: TextStyle(fontSize: 13, color: AHColors.grey600)),
+            const SizedBox(height: 8),
+            ElevatedButton(
+              onPressed: () => ref.invalidate(apiClientProvider),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AHColors.navy, foregroundColor: Colors.white),
+              child: const Text('Réessayer'),
+            ),
+          ],
+        ),
+      );
+}
+
+class _BilingualView extends StatefulWidget {
+  const _BilingualView({required this.data});
+  final Map<String, dynamic> data;
+
+  @override
+  State<_BilingualView> createState() => _BilingualViewState();
+}
+
+class _BilingualViewState extends State<_BilingualView> {
+  late bool _enabled = widget.data['bilingualEnabled'] == true;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(AHSpacing.md),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(AHSpacing.md),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Mode bilingue (FR/EN)',
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: AHColors.navy)),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                title: const Text('Activer le bilinguisme'),
+                subtitle: const Text(
+                    'Permet aux élèves de suivre les cours en français ou en anglais'),
+                value: _enabled,
+                onChanged: (v) => setState(() => _enabled = v),
+              ),
+              const SizedBox(height: AHSpacing.sm),
+              ElevatedButton.icon(
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Sauvegarde — en cours d\'implémentation'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.save, size: 16),
+                label: const Text('Enregistrer'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AHColors.navy,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
 }
 
-class _GeneralContent extends ConsumerWidget {
-  const _GeneralContent();
+// ── Tab 6: Modules (features) ────────────────────────────────────────────
+
+class _FeaturesTab extends ConsumerWidget {
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return ModuleLoadingWrapper<Map<String, dynamic>>(
-      value: ref.watch(generalSettingsProvider),
-      moduleName: 'Paramètres généraux',
-      onRetry: () => ref.invalidate(generalSettingsProvider),
-      builder: (data) => SubTabContentWrapper(children: [
-        const SectionHeader(title: 'Paramètres généraux'),
-        ListItemCard(title: 'Nom de l\'établissement', subtitle: (data['name'] as String?) ?? '—', leadingIcon: Icons.business, leadingIconColor: AHColors.navy),
-        ListItemCard(title: 'Adresse', subtitle: (data['address'] as String?) ?? '—', leadingIcon: Icons.location_on, leadingIconColor: AHColors.info),
-        ListItemCard(title: 'Téléphone', subtitle: (data['phone'] as String?) ?? '—', leadingIcon: Icons.phone, leadingIconColor: AHColors.success),
-        ListItemCard(title: 'Logo', subtitle: data['logo_url'] != null ? 'Configuré' : 'Non configuré', leadingIcon: Icons.image, leadingIconColor: AHColors.gold),
-      ]),
-    );
-  }
+  Widget build(BuildContext context, WidgetRef ref) => ModuleDataTab(
+        endpoint: '/settings/feature-flags',
+        titleField: 'name',
+        tableColumns: const ['code', 'description', 'isEnabled'],
+        icon: Icons.toggle_on,
+        showCreateButton: false,
+        rowActions: const [
+          RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+          RowAction(id: 'enable', icon: Icons.toggle_on, label: 'Activer', color: Color(0xFF10B981)),
+          RowAction(id: 'disable', icon: Icons.toggle_off, label: 'Désactiver', color: Color(0xFFDC2626)),
+        ],
+        onAction: (a, i) => _stub(context, a),
+      );
 }
 
-class _AcademicYearContent extends ConsumerWidget {
-  const _AcademicYearContent();
+// ── Tab 7: Rôles ────────────────────────────────────────────────────────
+
+class _RolesTab extends ConsumerWidget {
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return ModuleDataList(
-      itemsAsync: ref.watch(academicYearsProvider),
-      moduleName: 'Année scolaire',
-      emptyTitle: 'Aucune année scolaire',
-      emptySubtitle: 'Appuyez sur + pour configurer',
-      onRetry: () => ref.invalidate(academicYearsProvider),
-      itemBuilder: (item) => ListItemCard(
-        title: (item['label'] as String?) ?? 'Année scolaire',
-        subtitle: '${(item['start_date'] as String?) ?? ''} - ${(item['end_date'] as String?) ?? ''}',
-        leadingIcon: Icons.calendar_today,
-        badge: StatusBadge(label: (item['status'] as String?) ?? 'En cours', type: _st(item['status'])),
-      ),
-    );
-  }
+  Widget build(BuildContext context, WidgetRef ref) => ModuleDataTab(
+        endpoint: '/settings/roles',
+        titleField: 'name',
+        tableColumns: const ['description', 'usersCount', 'isSystem'],
+        icon: Icons.shield,
+        createLabel: 'Nouveau rôle',
+        rowActions: const [
+          RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+          RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
+          RowAction(id: 'permissions', icon: Icons.lock, label: 'Permissions', color: Color(0xFF6366F1)),
+          RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
+        ],
+        onAction: (a, i) => _stub(context, a),
+      );
 }
 
-class _ClassesContent extends ConsumerWidget {
-  const _ClassesContent();
+// ── Tab 8: Facturation ────────────────────────────────────────────────────
+
+class _BillingTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ModuleDataList(
-      itemsAsync: ref.watch(classesProvider),
-      moduleName: 'Classes',
-      emptyTitle: 'Aucune classe configurée',
-      emptySubtitle: 'Appuyez sur + pour ajouter une classe',
-      onRetry: () => ref.invalidate(classesProvider),
-      onAdd: () async {
-        final data = await showAddItemDialog(context, title: 'Nouvelle classe', fields: const [
-          AddFieldConfig(key: 'name', label: 'Nom'),
-          AddFieldConfig(key: 'level', label: 'Niveau'),
-          AddFieldConfig(key: 'capacity', label: 'Capacité'),
-        ]);
-        if (data != null) ref.read(settingsMutationProvider.notifier).createClass(data);
+    final apiClient = ref.watch(apiClientProvider);
+    return FutureBuilder(
+      future: apiClient.getRaw('/settings/billing'),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+              child: CircularProgressIndicator(color: AHColors.navy));
+        }
+        final result = snapshot.data;
+        return result?.when(
+              success: (data) => _BillingView(data: data),
+              failure: (_) => _buildError(ref),
+              loading: () => const Center(
+                  child: CircularProgressIndicator(color: AHColors.navy)),
+            ) ??
+            _buildError(ref);
       },
-      itemBuilder: (item) => ListItemCard(
-        title: (item['name'] as String?) ?? 'Classe',
-        subtitle: '${(item['level'] as String?) ?? ''} - ${(item['student_count'] as String?) ?? ''} élèves',
-        leadingIcon: Icons.class_,
-        leadingIconColor: AHColors.info,
-      ),
     );
   }
-}
 
-class _SubjectsContent extends ConsumerWidget {
-  const _SubjectsContent();
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return ModuleDataList(
-      itemsAsync: ref.watch(settingsSubjectsProvider),
-      moduleName: 'Matières',
-      emptyTitle: 'Aucune matière configurée',
-      emptySubtitle: 'Appuyez sur + pour ajouter',
-      onRetry: () => ref.invalidate(settingsSubjectsProvider),
-      itemBuilder: (item) => ListItemCard(
-        title: (item['name'] as String?) ?? 'Matière',
-        subtitle: 'Coefficient: ${(item['coefficient'] as String?) ?? '—'}',
-        leadingIcon: Icons.book,
-        leadingIconColor: AHColors.navy,
-      ),
-    );
-  }
-}
-
-class _PeriodsContent extends ConsumerWidget {
-  const _PeriodsContent();
-  @override Widget build(BuildContext c, WidgetRef r) => const SubTabContentWrapper(children: [SectionHeader(title: 'Périodes')]);
-}
-class _GradingContent extends ConsumerWidget {
-  const _GradingContent();
-  @override Widget build(BuildContext c, WidgetRef r) => const SubTabContentWrapper(children: [SectionHeader(title: 'Notation')]);
-}
-class _RoomsContent extends ConsumerWidget {
-  const _RoomsContent();
-  @override Widget build(BuildContext c, WidgetRef r) => const SubTabContentWrapper(children: [SectionHeader(title: 'Salles')]);
-}
-class _RolesContent extends ConsumerWidget {
-  const _RolesContent();
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final rolesAsync = ref.watch(rolesProvider);
-    return rolesAsync.when(
-      data: (roles) {
-        if (roles.isEmpty) return _buildEmpty('Aucun rôle configuré');
-        return ListView.builder(
-          padding: const EdgeInsets.all(AHSpacing.md),
-          itemCount: roles.length,
-          itemBuilder: (context, index) {
-            final role = roles[index];
-            return Container(
-              margin: const EdgeInsets.only(bottom: 4),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
-              child: Row(children: [
-                Container(width: 32, height: 32, decoration: BoxDecoration(color: AHColors.navy.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
-                  child: const Icon(Icons.admin_panel_settings, size: 18, color: AHColors.navy)),
-                const SizedBox(width: 12),
-                Expanded(child: Text((role['name'] as String?) ?? (role['label'] as String?) ?? 'Rôle',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)))),
-                if (role['userCount'] != null)
-                  Text('${role['userCount']} utilisateurs', style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
-              ]),
-            );
-          },
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator(color: AHColors.navy)),
-      error: (_, __) => _buildEmpty('Erreur de chargement'),
-    );
-  }
-}
-
-class _PermissionsContent extends ConsumerWidget {
-  const _PermissionsContent();
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final permAsync = ref.watch(permissionsProvider);
-    return permAsync.when(
-      data: (perms) {
-        if (perms.isEmpty) return _buildEmpty('Aucune permission configurée');
-        return ListView.builder(
-          padding: const EdgeInsets.all(AHSpacing.md),
-          itemCount: perms.length,
-          itemBuilder: (context, index) {
-            final perm = perms[index];
-            return Container(
-              margin: const EdgeInsets.only(bottom: 4),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
-              child: Row(children: [
-                Icon(Icons.lock_outline, size: 16, color: AHColors.grey400),
-                const SizedBox(width: 8),
-                Expanded(child: Text((perm['resource'] as String?) ?? (perm['name'] as String?) ?? 'Permission',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)))),
-                if (perm['actions'] != null)
-                  Text('${perm['actions']}', style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
-              ]),
-            );
-          },
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator(color: AHColors.navy)),
-      error: (_, __) => _buildEmpty('Erreur de chargement'),
-    );
-  }
-}
-
-class _FeaturesContent extends ConsumerWidget {
-  const _FeaturesContent();
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final featuresAsync = ref.watch(featuresProvider);
-    return featuresAsync.when(
-      data: (features) {
-        if (features.isEmpty) return _buildEmpty('Aucun module configurable');
-        return ListView.builder(
-          padding: const EdgeInsets.all(AHSpacing.md),
-          itemCount: features.length,
-          itemBuilder: (context, index) {
-            final feature = features[index];
-            final isEnabled = feature['enabled'] == true || feature['isActive'] == true;
-            final featureId = (feature['id'] as String?) ?? (feature['code'] as String?) ?? '';
-            return _FeatureToggleCard(
-              name: (feature['name'] as String?) ?? (feature['label'] as String?) ?? 'Module',
-              description: (feature['description'] as String?) ?? '',
-              isEnabled: isEnabled,
-              onToggle: isEnabled
-                ? () => ref.read(settingsMutationProvider.notifier).disableFeature(featureId)
-                : () => ref.read(settingsMutationProvider.notifier).enableFeature(featureId),
-            );
-          },
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator(color: AHColors.navy)),
-      error: (_, __) => _buildEmpty('Erreur de chargement'),
-    );
-  }
-}
-
-class _FeatureToggleCard extends StatelessWidget {
-  const _FeatureToggleCard({required this.name, required this.description, required this.isEnabled, required this.onToggle});
-  final String name;
-  final String description;
-  final bool isEnabled;
-  final VoidCallback onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 4),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
-      child: Row(children: [
-        Container(width: 32, height: 32, decoration: BoxDecoration(
-          color: isEnabled ? const Color(0xFF16A34A).withOpacity(0.1) : AHColors.grey100,
-          borderRadius: BorderRadius.circular(6)),
-          child: Icon(isEnabled ? Icons.check_circle : Icons.circle_outlined, size: 18, color: isEnabled ? const Color(0xFF16A34A) : AHColors.grey400)),
-        const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-          if (description.isNotEmpty) Text(description, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)), maxLines: 1, overflow: TextOverflow.ellipsis),
-        ])),
-        Switch(value: isEnabled, onChanged: (_) => onToggle(), activeColor: AHColors.navy),
-      ]),
-    );
-  }
-}
-
-class _ImportContent extends ConsumerWidget {
-  const _ImportContent();
-  @override Widget build(BuildContext c, WidgetRef r) => const SubTabContentWrapper(children: [SectionHeader(title: 'Import')]);
-}
-class _ExportContent extends ConsumerWidget {
-  const _ExportContent();
-  @override Widget build(BuildContext c, WidgetRef r) => const SubTabContentWrapper(children: [SectionHeader(title: 'Export')]);
-}
-class _BackupContent extends ConsumerWidget {
-  const _BackupContent();
-  @override Widget build(BuildContext c, WidgetRef r) => const SubTabContentWrapper(children: [SectionHeader(title: 'Sauvegarde')]);
-}
-class _AdvancedContent extends ConsumerWidget {
-  const _AdvancedContent();
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final securityAsync = ref.watch(securitySettingsProvider);
-    return securityAsync.when(
-      data: (settings) {
-        if (settings.isEmpty) return _buildEmpty('Aucune configuration de sécurité');
-        return ListView(
-          padding: const EdgeInsets.all(AHSpacing.md),
+  Widget _buildError(WidgetRef ref) => Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text('Sécurité', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AHColors.navy)),
-            const SizedBox(height: AHSpacing.sm),
-            ...settings.entries.map((e) => _SecurityTile(label: e.key, value: e.value.toString())),
+            const Icon(Icons.wifi_off, size: 48, color: AHColors.error),
+            const SizedBox(height: 8),
+            const Text('Erreur de chargement',
+                style: TextStyle(fontSize: 13, color: AHColors.grey600)),
+            const SizedBox(height: 8),
+            ElevatedButton(
+              onPressed: () => ref.invalidate(apiClientProvider),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AHColors.navy, foregroundColor: Colors.white),
+              child: const Text('Réessayer'),
+            ),
           ],
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator(color: AHColors.navy)),
-      error: (_, __) => _buildEmpty('Erreur de chargement'),
-    );
-  }
+        ),
+      );
 }
 
-Widget _buildEmpty(String message) {
-  return Center(child: Column(
-    mainAxisAlignment: MainAxisAlignment.center,
-    children: [
-      Icon(Icons.settings, size: 48, color: AHColors.grey300),
-      const SizedBox(height: 8),
-      Text(message, style: const TextStyle(fontSize: 13, color: AHColors.grey500)),
-    ],
-  ));
-}
-
-class _SecurityTile extends StatelessWidget {
-  const _SecurityTile({required this.label, required this.value});
-  final String label;
-  final String value;
+class _BillingView extends StatelessWidget {
+  const _BillingView({required this.data});
+  final Map<String, dynamic> data;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 4),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
-      child: Row(children: [
-        Icon(Icons.security, size: 16, color: AHColors.grey400),
-        const SizedBox(width: 8),
-        Expanded(child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)))),
-        Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: value.toLowerCase() == 'true' ? const Color(0xFF16A34A) : AHColors.grey500)),
-      ]),
+    final fields = <String, String>{};
+    for (final entry in data.entries) {
+      if (entry.value == null) continue;
+      if (entry.value is List || entry.value is Map) continue;
+      fields[entry.key] = entry.value.toString();
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(AHSpacing.md),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(AHSpacing.md),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Abonnement & Facturation',
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: AHColors.navy)),
+              const SizedBox(height: AHSpacing.sm),
+              ...fields.entries.map((e) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 130,
+                          child: Text(e.key,
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AHColors.grey500)),
+                        ),
+                        Expanded(
+                          child: Text(e.value,
+                              style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF0F172A))),
+                        ),
+                      ],
+                    ),
+                  )),
+              const SizedBox(height: AHSpacing.md),
+              ElevatedButton.icon(
+                onPressed: () => _stub(context, 'renew'),
+                icon: const Icon(Icons.payment, size: 16),
+                label: const Text('Renouveler (FedaPay)'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AHColors.navy,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
 
-StatusBadgeType _st(dynamic s) {
-  if (s == null) return StatusBadgeType.info;
-  final v = s.toString().toLowerCase();
-  if (v.contains('actif') || v.contains('en cours') || v.contains('valid')) return StatusBadgeType.success;
-  if (v.contains('attente') || v.contains('retard')) return StatusBadgeType.warning;
-  if (v.contains('inactif') || v.contains('archivé')) return StatusBadgeType.neutral;
-  return StatusBadgeType.info;
+// ── Tab 9: Sécurité ──────────────────────────────────────────────────────
+
+class _SecurityTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => ModuleDataTab(
+        endpoint: '/settings/security',
+        icon: Icons.lock,
+        showCreateButton: false,
+        rowActions: const [
+          RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+          RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
+        ],
+        onAction: (a, i) => _stub(context, a),
+      );
+}
+
+// ── Tab 10: Cachets ──────────────────────────────────────────────────────
+
+class _SealsTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => ModuleDataTab(
+        endpoint: '/settings/seals',
+        titleField: 'name',
+        tableColumns: const ['type', 'createdAt'],
+        icon: Icons.verified,
+        showCreateButton: true,
+        createLabel: 'Ajouter cachet',
+        rowActions: const [
+          RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+          RowAction(id: 'download', icon: Icons.download, label: 'Télécharger', color: Color(0xFF10B981)),
+          RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
+        ],
+        onAction: (a, i) => _stub(context, a),
+      );
+}
+
+// ── Tab 11: Appareils autorisés ──────────────────────────────────────────
+
+class _DevicesTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => ModuleDataTab(
+        endpoint: '/settings/devices',
+        titleField: 'deviceName',
+        tableColumns: const ['deviceType', 'userAgent', 'lastLogin', 'status'],
+        icon: Icons.devices,
+        showCreateButton: false,
+        statusFilters: const [
+          StatusFilter(id: 'ALL', label: 'Tous'),
+          StatusFilter(id: 'APPROVED', label: 'Approuvés'),
+          StatusFilter(id: 'PENDING', label: 'En attente'),
+          StatusFilter(id: 'REVOKED', label: 'Révoqués'),
+        ],
+        rowActions: const [
+          RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+          RowAction(
+              id: 'approve',
+              icon: Icons.check_circle,
+              label: 'Approuver',
+              color: Color(0xFF10B981)),
+          RowAction(id: 'revoke', icon: Icons.block, label: 'Révoquer', color: Color(0xFFDC2626)),
+        ],
+        onAction: (a, i) => _stub(context, a),
+      );
+}
+
+// ── Tab 12: Historique ────────────────────────────────────────────────────
+
+class _HistoryTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => ModuleDataTab(
+        endpoint: '/settings/history',
+        titleField: 'action',
+        tableColumns: const ['user', 'ip', 'device', 'createdAt'],
+        icon: Icons.history,
+        showCreateButton: false,
+        statusFilters: const [
+          StatusFilter(id: 'ALL', label: 'Tous'),
+          StatusFilter(id: 'LOGIN', label: 'Connexions'),
+          StatusFilter(id: 'LOGOUT', label: 'Déconnexions'),
+          StatusFilter(id: 'LOGIN_FAILED', label: 'Échecs'),
+          StatusFilter(id: 'DEVICE_REVOKED', label: 'Révocations'),
+          StatusFilter(id: 'LOCKOUT', label: 'Verrouillages'),
+        ],
+        rowActions: const [
+          RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+          RowAction(id: 'export', icon: Icons.download, label: 'Exporter', color: Color(0xFF10B981)),
+        ],
+        onAction: (a, i) => _stub(context, a),
+      );
+}
+
+void _stub(BuildContext context, String actionId) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text('Action "$actionId" — en cours d\'implémentation'),
+      duration: const Duration(seconds: 2),
+    ),
+  );
 }

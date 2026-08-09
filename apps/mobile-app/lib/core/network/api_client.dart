@@ -257,6 +257,69 @@ class ApiClient {
     );
   }
 
+  // ── Raw PATCH (returns Map<String, dynamic> directly) ─────────────────
+
+  Future<ApiResult<Map<String, dynamic>>> patchRaw(
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+    CancelToken? cancelToken,
+  }) async {
+    return _safeCall<Map<String, dynamic>>(
+      () => _dio.patch<dynamic>(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+        options: options,
+        cancelToken: cancelToken,
+      ),
+      fromJson: (Map<String, dynamic> json) => json,
+    );
+  }
+
+  // ── Raw PUT (returns Map<String, dynamic> directly) ───────────────────
+
+  Future<ApiResult<Map<String, dynamic>>> putRaw(
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+    CancelToken? cancelToken,
+  }) async {
+    return _safeCall<Map<String, dynamic>>(
+      () => _dio.put<dynamic>(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+        options: options,
+        cancelToken: cancelToken,
+      ),
+      fromJson: (Map<String, dynamic> json) => json,
+    );
+  }
+
+  // ── Raw DELETE (returns Map<String, dynamic> directly) ────────────────
+
+  Future<ApiResult<Map<String, dynamic>>> deleteRaw(
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+    CancelToken? cancelToken,
+  }) async {
+    return _safeCall<Map<String, dynamic>>(
+      () => _dio.delete<dynamic>(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+        options: options,
+        cancelToken: cancelToken,
+      ),
+      fromJson: (Map<String, dynamic> json) => json,
+    );
+  }
+
   // ── Core Safe Call ────────────────────────────────────────────────────
 
   Future<ApiResult<T>> _safeCall<T>(

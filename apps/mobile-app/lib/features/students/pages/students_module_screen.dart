@@ -506,7 +506,7 @@ class _AssignmentsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDataTab(
-      endpoint: '/students/assignments',
+      endpoint: '/students/without-physical-class',
       titleField: 'studentName',
       tableColumns: const ['className', 'previousClassName', 'movementType', 'effectiveDate'],
       icon: Icons.swap_horiz,
@@ -575,7 +575,8 @@ class _MovementsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDataTab(
-      endpoint: '/students/movements',
+      endpoint: '/students',
+      params: const {'status': 'WITHDRAWN'},
       titleField: 'studentName',
       tableColumns: const ['movementType', 'reason', 'effectiveDate', 'status'],
       icon: Icons.exit_to_app,
@@ -660,9 +661,9 @@ class _DossiersTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDataTab(
-      endpoint: '/students/dossiers',
-      titleField: 'studentName',
-      tableColumns: const ['matricule', 'className', 'documentsCount', 'completeness'],
+      endpoint: '/students',
+      titleField: 'lastName',
+      tableColumns: const ['firstName', 'matricule', 'className', 'status'],
       icon: Icons.folder,
       createLabel: 'Nouveau Dossier',
       rowActions: [
@@ -672,6 +673,10 @@ class _DossiersTab extends ConsumerWidget {
         const RowAction(id: 'print', icon: Icons.print, label: 'Imprimer', color: Color(0xFF64748B)),
       ],
       onAction: (actionId, item) {
+        if (actionId == 'view' && item['id'] != null) {
+          context.go('/students/${item['id']}');
+          return;
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Action "$actionId" — en cours d\'implémentation'),
@@ -689,9 +694,10 @@ class _FamiliesTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDataTab(
-      endpoint: '/students/families',
-      titleField: 'familyName',
-      tableColumns: const ['parentName', 'phone', 'email', 'childrenCount'],
+      endpoint: '/students',
+      params: const {'includeGuardians': true},
+      titleField: 'lastName',
+      tableColumns: const ['firstName', 'matricule', 'className', 'guardians'],
       icon: Icons.family_restroom,
       createLabel: 'Nouvelle Famille',
       rowActions: [
@@ -718,7 +724,7 @@ class _TransfersTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDataTab(
-      endpoint: '/students/transfers',
+      endpoint: '/students/transfers/outgoing',
       titleField: 'studentName',
       tableColumns: const ['fromSchool', 'toSchool', 'transferDate', 'status'],
       icon: Icons.swap_horizontal_circle,
@@ -764,9 +770,10 @@ class _HistoryTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDataTab(
-      endpoint: '/students/history',
-      titleField: 'studentName',
-      tableColumns: const ['event', 'date', 'actor', 'details'],
+      endpoint: '/students',
+      params: const {'includeHistory': true},
+      titleField: 'lastName',
+      tableColumns: const ['firstName', 'matricule', 'className', 'lastDecision'],
       icon: Icons.history,
       showCreateButton: false,
       rowActions: [
@@ -791,7 +798,7 @@ class _EducmasterTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDataTab(
-      endpoint: '/students/educmaster',
+      endpoint: '/students/identifiers/stats',
       icon: Icons.school,
       showCreateButton: false,
       rowActions: [
@@ -816,7 +823,7 @@ class _OrionTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ModuleDataTab(
-      endpoint: '/students/orion-alerts',
+      endpoint: '/students/orion-kpis',
       titleField: 'title',
       tableColumns: const ['level', 'category', 'createdAt'],
       icon: Icons.insights,

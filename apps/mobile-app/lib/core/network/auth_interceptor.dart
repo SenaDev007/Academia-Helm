@@ -44,18 +44,34 @@ class AuthInterceptor extends Interceptor {
       options.headers['Authorization'] = 'Bearer $accessToken';
     }
 
-    // Inject X-Tenant-Id header when a tenant is selected.
+    // Inject X-Tenant-Id header.
+    // Try tenantNotifierProvider first, then fall back to cached session
+    // tenant data from secure storage (critical for fast session restore
+    // when the provider hasn't finished async init yet).
+    String? tenantId;
     try {
       final TenantState tenantState = ref.read(tenantNotifierProvider);
       tenantState.when(
         initial: () {},
         loading: () {},
         selected: (Tenant tenant) {
-          options.headers['X-Tenant-Id'] = tenant.id;
+          tenantId = tenant.id;
         },
       );
     } catch (_) {
-      // Provider may not be initialized yet; silently continue.
+      // Provider may not be initialized yet; fall through to cache.
+    }
+
+    // Fallback: read from cached session tenant data.
+    if (tenantId == null || tenantId!.isEmpty) {
+      final cachedTenant = TokenStorage.getSessionTenantSync();
+      if (cachedTenant != null) {
+        tenantId = cachedTenant['id'] as String?;
+      }
+    }
+
+    if (tenantId != null && tenantId!.isNotEmpty) {
+      options.headers['X-Tenant-Id'] = tenantId;
     }
 
     // Inject x-academic-year-id header when an academic year is selected.

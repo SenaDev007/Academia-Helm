@@ -5,8 +5,11 @@ import 'package:go_router/go_router.dart';
 import '../../../core/auth/auth_notifier.dart';
 import '../../../core/auth/auth_providers.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/academic_year/academic_year_provider.dart';
+import '../../../core/providers/school_identity_provider.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
+import '../../../core/widgets/ah_app_bar.dart';
 import '../providers/teacher_provider.dart';
 
 /// Teacher dashboard — mirrors the web app's `/app/teacher/page.tsx`.
@@ -25,45 +28,24 @@ class TeacherDashboardScreen extends ConsumerWidget {
     final authState = ref.watch(authNotifierProvider).valueOrNull;
     final user = authState?.userOrNull;
     final teacherId = user?.id ?? '';
-    final academicYearId = authState?.selectedTenantIdOrNull;
 
-    final tenants = authState?.availableTenantsOrNull ?? [];
-    final tenantId = authState?.selectedTenantIdOrNull;
-    final tenant = tenantId != null
-        ? tenants.where((t) => t.id == tenantId).firstOrNull
-        : null;
-    final schoolName = tenant?.name ?? 'École';
+    // Use the real academic year ID from currentAcademicYearProvider, NOT
+    // selectedTenantIdOrNull (which is a tenant ID, not an academic year ID).
+    final academicYear = ref.watch(currentAcademicYearProvider);
+    final academicYearId = academicYear?.id;
+    final academicYearLabel = academicYear?.label ?? 'Année en cours';
+
+    // School identity from schoolIdentityProvider (cached + fresh)
+    final identity = ref.watch(schoolIdentityProvider).valueOrNull;
+    final schoolName = identity?.schoolName ?? 'École';
 
     final params = TeacherParams(teacherId: teacherId, academicYearId: academicYearId);
     final stats = ref.watch(teacherStatsProvider(params));
     final classesAsync = ref.watch(teacherClassesProvider(params));
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC), // slate-50
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        foregroundColor: AHColors.navy,
-        elevation: 0,
-        title: const Text(
-          'Portail Enseignant',
-          style: TextStyle(
-            fontFamily: 'Inter',
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: AHColors.navy,
-          ),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-            } else {
-              context.go('/dashboard');
-            }
-          },
-        ),
-      ),
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: AHAppBar(showBackButton: true, title: 'Portail Enseignant'),
       body: RefreshIndicator(
         color: AHColors.navy,
         onRefresh: () async {
@@ -79,7 +61,7 @@ class TeacherDashboardScreen extends ConsumerWidget {
               _WelcomeBanner(
                 teacherName: userName,
                 schoolName: schoolName,
-                academicYear: '2025-2026',
+                academicYear: academicYearLabel,
               ),
               const SizedBox(height: AHSpacing.md),
 
@@ -91,7 +73,7 @@ class TeacherDashboardScreen extends ConsumerWidget {
               classesAsync.when(
                 data: (classes) {
                   if (classes.isEmpty) return const SizedBox.shrink();
-                  return _AssignedClassesSection(classes: classes);
+                  return _AssignedClassesSection(classes: classes, teacherId: teacherId);
                 },
                 loading: () => const Padding(
                   padding: EdgeInsets.all(32),
@@ -104,7 +86,7 @@ class TeacherDashboardScreen extends ConsumerWidget {
               const SizedBox(height: AHSpacing.lg),
 
               // 4. Mes modules (8 colored cards)
-              const _ModulesSection(),
+              _ModulesSection(teacherId: teacherId),
               const SizedBox(height: AHSpacing.xxl),
             ],
           ),
@@ -310,9 +292,10 @@ class _StatCard extends StatelessWidget {
 // ── Assigned Classes Section ────────────────────────────────────────────
 
 class _AssignedClassesSection extends StatelessWidget {
-  const _AssignedClassesSection({required this.classes});
+  const _AssignedClassesSection({required this.classes, required this.teacherId});
 
   final List<TeacherClass> classes;
+  final String teacherId;
 
   @override
   Widget build(BuildContext context) {
@@ -340,7 +323,7 @@ class _AssignedClassesSection extends StatelessWidget {
           ),
           itemCount: classes.length,
           itemBuilder: (context, index) {
-            return _ClassCard(cls: classes[index]);
+            return _ClassCard(cls: classes[index], teacherId: teacherId);
           },
         ),
       ],
@@ -349,9 +332,10 @@ class _AssignedClassesSection extends StatelessWidget {
 }
 
 class _ClassCard extends StatelessWidget {
-  const _ClassCard({required this.cls});
+  const _ClassCard({required this.cls, required this.teacherId});
 
   final TeacherClass cls;
+  final String teacherId;
 
   @override
   Widget build(BuildContext context) {
@@ -359,7 +343,7 @@ class _ClassCard extends StatelessWidget {
       color: Colors.white,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
-        onTap: () => context.push('/pedagogy'),
+        onTap: () => context.push('/teacher-attendance/${cls.classId}'),
         borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.all(AHSpacing.md),
@@ -435,80 +419,73 @@ class _ClassCard extends StatelessWidget {
 // ── Modules Section (8 colored cards) ───────────────────────────────────
 
 class _ModulesSection extends StatelessWidget {
-  const _ModulesSection();
+  const _ModulesSection({required this.teacherId});
 
-  static const _modules = <_ModuleDef>[
+  final String teacherId;
+
+  List<_ModuleDef> get _modules => [
     _ModuleDef(
       label: 'Emploi du Temps',
       description: 'Consulter votre emploi du temps',
       icon: Icons.calendar_month_outlined,
       route: '/schedule',
-      bgColor: Color(0xFFFAF5FF), // purple-50
-      textColor: Color(0xFF6B21A8), // purple-700
-      borderColor: Color(0xFFE9D5FF), // purple-200
+      bgColor: const Color(0xFFFAF5FF),
+      textColor: const Color(0xFF6B21A8),
+      borderColor: const Color(0xFFE9D5FF),
     ),
     _ModuleDef(
       label: 'Espace Pédagogique',
       description: 'Cahier journal, fiches, registre d\'appel',
       icon: Icons.menu_book_outlined,
-      route: '/pedagogy',
-      bgColor: Color(0xFFEFF6FF), // blue-50
-      textColor: Color(0xFF1D4ED8), // blue-700
-      borderColor: Color(0xFFBFDBFE), // blue-200
+      route: '/cahier-semaine',
+      bgColor: const Color(0xFFEFF6FF),
+      textColor: const Color(0xFF1D4ED8),
+      borderColor: const Color(0xFFBFDBFE),
     ),
     _ModuleDef(
       label: 'Travaux & Suivi',
       description: 'Tâches assignées, suivi pédagogique',
       icon: Icons.assignment_outlined,
-      route: '/pedagogy',
-      bgColor: Color(0xFFFFFBEB), // amber-50
-      textColor: Color(0xFFB45309), // amber-700
-      borderColor: Color(0xFFFDE68A), // amber-200
+      route: '/teacher-homework/$teacherId',
+      bgColor: const Color(0xFFFFFBEB),
+      textColor: const Color(0xFFB45309),
+      borderColor: const Color(0xFFFDE68A),
     ),
     _ModuleDef(
       label: 'Examens & Notes',
       description: 'Mes évaluations, saisie des notes',
       icon: Icons.edit_note_outlined,
-      route: '/grades',
-      bgColor: Color(0xFFFFF1F2), // rose-50
-      textColor: Color(0xFFBE123C), // rose-700
-      borderColor: Color(0xFFFECDD3), // rose-200
+      route: '/teacher-evaluations/$teacherId',
+      bgColor: const Color(0xFFFFF1F2),
+      textColor: const Color(0xFFBE123C),
+      borderColor: const Color(0xFFFECDD3),
     ),
     _ModuleDef(
       label: 'EduCast',
       description: 'Vidéos pédagogiques, podcasts',
       icon: Icons.video_library_outlined,
       route: '/educast',
-      bgColor: Color(0xFFFDF2F8), // pink-50
-      textColor: Color(0xFFBE185D), // pink-700
-      borderColor: Color(0xFFFBCFE8), // pink-200
-    ),
-    _ModuleDef(
-      label: 'Bibliothèque',
-      description: 'Ressources pédagogiques',
-      icon: Icons.local_library_outlined,
-      route: '/library',
-      bgColor: Color(0xFFF8FAFC), // slate-50
-      textColor: Color(0xFF334155), // slate-700
-      borderColor: Color(0xFFE2E8F0), // slate-200
+      bgColor: const Color(0xFFFDF2F8),
+      textColor: const Color(0xFFBE185D),
+      borderColor: const Color(0xFFFBCFE8),
     ),
     _ModuleDef(
       label: 'ORION',
       description: 'Alertes pédagogiques',
       icon: Icons.bar_chart_outlined,
       route: '/orion',
-      bgColor: Color(0xFFEEF2FF), // indigo-50
-      textColor: Color(0xFF4338CA), // indigo-700
-      borderColor: Color(0xFFC7D2FE), // indigo-200
+      bgColor: const Color(0xFFEEF2FF),
+      textColor: const Color(0xFF4338CA),
+      borderColor: const Color(0xFFC7D2FE),
     ),
     _ModuleDef(
       label: 'Communication',
       description: 'Messages, chats, annonces',
       icon: Icons.chat_bubble_outline,
       route: '/communication',
-      bgColor: Color(0xFFF0FDFA), // teal-50
-      textColor: Color(0xFF0F766E), // teal-700
-      borderColor: Color(0xFF99F6E4), // teal-200
+      bgColor: const Color(0xFFF0FDFA),
+      textColor: const Color(0xFF0F766E),
+      borderColor: const Color(0xFF99F6E4),
     ),
   ];
 

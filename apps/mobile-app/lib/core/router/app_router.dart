@@ -29,6 +29,7 @@ import '../../features/teacher/pages/teacher_evaluations_screen.dart';
 import '../../features/parent/pages/parent_dashboard_screen.dart';
 import '../../features/parent/pages/child_detail_screen.dart';
 import '../../features/parent/pages/parent_messages_screen.dart';
+import '../../features/parent/providers/parent_provider.dart' show ParentChild;
 import '../../features/dashboard/pages/pilotage_dashboard_screen.dart';
 import '../../features/profile/pages/profile_screen.dart';
 import '../../features/students/pages/students_module_screen.dart';
@@ -567,7 +568,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             name: 'childDetail',
             builder: (context, state) {
               final childId = state.pathParameters['childId'] ?? '';
-              return ChildDetailScreen(childId: childId);
+              // Create a stub ParentChild — the screen will refetch full data
+              return ChildDetailScreen(
+                child: ParentChild(
+                  id: childId,
+                  firstName: '',
+                  lastName: '',
+                  className: '',
+                ),
+              );
             },
           ),
           GoRoute(

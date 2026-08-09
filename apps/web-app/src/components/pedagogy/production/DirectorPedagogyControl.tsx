@@ -356,7 +356,7 @@ function FichesStatusIndicator({ journalId }: { journalId: string }) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await apiClient.get(`/api/pedagogy-space/cahier-journal/${journalId}/fiches`);
+        const res = await apiClient.get(`/pedagogy-space/cahier-journal/${journalId}/fiches`);
         if (cancelled) return;
         setData(res.data?.stats);
       } catch {

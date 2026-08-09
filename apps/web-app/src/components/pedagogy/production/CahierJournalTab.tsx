@@ -294,18 +294,80 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, onJourna
     if (selectedClassId) loadJournal();
   }, [loadJournal, selectedClassId]);
 
-  // ⭐ Charger le nom du directeur depuis les settings
+  // ⭐ Charger le nom + signature du directeur depuis school_directors (RH → Directeurs)
+  //    Résolu par niveau scolaire de la classe + piste linguistique (FR par défaut).
+  //    Le label devient "Directeur" ou "Directrice" selon le genre.
+  const [directorInfo, setDirectorInfo] = useState<{
+    fullName: string;
+    functionLabel: string | null;
+    signatureDataUrl: string | null;
+    signatureUploadedUrl: string | null;
+    gender: string | null;
+  } | null>(null);
+
   useEffect(() => {
+    if (!journal?.schoolLevelId) return;
+    let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/settings/identity', { credentials: "include" });
-        if (res.ok) {
-          const data = await res.json();
-          setDirectorNameState(data.directorName || data.director_name || '');
+        // Déterminer la langue du directeur (FR par défaut, EN si bilingue et piste EN)
+        const directorLang = 'FR'; // Pour l'instant, FR ; on pourrait détecter la piste de la classe
+        const res = await fetch(
+          `/api/hr/school-directors/by-level?schoolLevelId=${encodeURIComponent(journal.schoolLevelId)}&language=${directorLang}`,
+          { credentials: 'include' },
+        );
+        if (!res.ok) {
+          // Fallback : essayer l'autre langue
+          const fallbackLang = directorLang === 'FR' ? 'EN' : 'FR';
+          const res2 = await fetch(
+            `/api/hr/school-directors/by-level?schoolLevelId=${encodeURIComponent(journal.schoolLevelId)}&language=${fallbackLang}`,
+            { credentials: 'include' },
+          );
+          if (!res2.ok) return;
+          const data2 = await res2.json();
+          if (!cancelled && data2) {
+            setDirectorInfo({
+              fullName: data2.fullName || '',
+              functionLabel: data2.functionLabel || null,
+              signatureDataUrl: data2.signatureDataUrl || null,
+              signatureUploadedUrl: data2.signatureUploadedUrl || null,
+              gender: data2.gender || null,
+            });
+          }
+          return;
         }
-      } catch { /* silent */ }
+        const data = await res.json();
+        if (!cancelled && data) {
+          setDirectorInfo({
+            fullName: data.fullName || '',
+            functionLabel: data.functionLabel || null,
+            signatureDataUrl: data.signatureDataUrl || null,
+            signatureUploadedUrl: data.signatureUploadedUrl || null,
+            gender: data.gender || null,
+          });
+        }
+      } catch {
+        // Silent fail — le directeur n'est pas configuré, on garde le fallback settings/identity
+        if (!cancelled) {
+          try {
+            const res = await fetch('/api/settings/identity', { credentials: 'include' });
+            if (res.ok) {
+              const data = await res.json();
+              if (!cancelled) {
+                setDirectorNameState(data.directorName || data.director_name || '');
+              }
+            }
+          } catch { /* silent */ }
+        }
+      }
     })();
-  }, []);
+    return () => { cancelled = true; };
+  }, [journal?.schoolLevelId]);
+
+  // ⭐ Construire le label "Directeur" ou "Directrice" selon le genre
+  const directorLabel = directorInfo?.gender === 'F' ? 'Directrice' : 'Directeur';
+  const directorDisplayName = directorInfo?.fullName || directorNameState || 'Nom du directeur';
+  const directorSig = directorInfo?.signatureDataUrl || directorInfo?.signatureUploadedUrl || null;
 
   // ⭐ Export Excel / PDF
   const handleExport = async (format: "excel" | "pdf") => {
@@ -746,18 +808,18 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, onJourna
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm font-bold text-slate-800">Visa du Directeur / de la Directrice</div>
-                  <div className="text-xs text-slate-500">{directorNameState || 'Nom du directeur'} — Signature et cachet</div>
+                  <div className="text-sm font-bold text-slate-800">Visa du {directorLabel}</div>
+                  <div className="text-xs text-slate-500">{directorDisplayName} — Signature et cachet</div>
                 </div>
-                {directorSignature && (
+                {(directorSignature || directorSig) && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">
                     <CheckCircle2 className="h-3 w-3" /> Signé
                   </span>
                 )}
               </div>
-              {directorSignature ? (
+              {(directorSignature || directorSig) ? (
                 <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2">
-                  <img src={directorSignature} alt="Signature Directeur" className="max-h-24 mx-auto" />
+                  <img src={directorSignature || directorSig || ''} alt={`Signature ${directorLabel}`} className="max-h-24 mx-auto" />
                 </div>
               ) : (
                 <SignatureCanvas
@@ -780,7 +842,14 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, onJourna
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-bold text-slate-800">Visa du Titulaire</div>
-                  <div className="text-xs text-slate-500">{user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'Nom du titulaire'} — Signature</div>
+                  <div className="text-xs text-slate-500">
+                    {/* ⭐ Afficher le VRAI titulaire de la classe (résolu backend)
+                        au lieu du user connecté (qui peut être le promoteur) */}
+                    {journal?.teacherFirstName || journal?.teacherLastName
+                      ? `${journal.teacherGender === 'F' ? 'Mme' : (journal.teacherGender === 'M' ? 'M.' : '')} ${(journal.teacherLastName || '').toUpperCase()} ${journal.teacherFirstName || ''}`.trim()
+                      : (user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : 'Nom du titulaire')
+                    } — Signature
+                  </div>
                 </div>
                 {teacherSignature && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">

@@ -1871,7 +1871,32 @@ export class PedagogicalSpaceService {
       return existing[0];
     }
 
-    // Créer une nouvelle entrée
+    // ⭐ FIX : Si l'utilisateur n'est pas un Teacher (ex: promoteur),
+    //    résoudre le VRAI titulaire de la classe via TeacherClassAssignment.
+    //    Le teacherId stocké doit être celui du titulaire réel, pas celui
+    //    du promoteur connecté. Sinon le "Visa du Titulaire" affiche
+    //    le nom du promoteur au lieu du titulaire de la classe.
+    let resolvedTeacherId = teacherId;
+    const directTeacher = await this.prisma.teacher.findFirst({
+      where: { id: teacherId, tenantId },
+      select: { id: true },
+    }).catch(() => null);
+    if (!directTeacher) {
+      // L'utilisateur n'est pas un Teacher — chercher le titulaire de la classe
+      const tca: any = await this.prisma.$queryRawUnsafe(
+        `SELECT tca."teacherId", t."firstName", t."lastName", t."gender"
+         FROM teacher_class_assignments tca
+         LEFT JOIN teachers t ON t."id" = tca."teacherId"
+         WHERE tca."classId" = $1 AND tca."tenantId" = $2
+         LIMIT 1`,
+        classId, tenantId,
+      ).catch(() => []);
+      if (Array.isArray(tca) && tca.length > 0 && tca[0].teacherId) {
+        resolvedTeacherId = tca[0].teacherId;
+      }
+    }
+
+    // Créer une nouvelle entrée avec le vrai titulaire
     const id = crypto.randomUUID();
     await this.prisma.$executeRawUnsafe(
       `INSERT INTO "cahier_journal_entries"
@@ -1879,12 +1904,19 @@ export class PedagogicalSpaceService {
         "weekStartDate", "weekEndDate", "className", "entries", "observations",
         "status", "createdAt", "updatedAt")
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, 'DRAFT', NOW(), NOW())`,
-      id, tenantId, academicYearId, teacherId, classId,
+      id, tenantId, academicYearId, resolvedTeacherId, classId,
       startDate, endDate, className || null, JSON.stringify({}),
     );
 
     const created: any = await this.prisma.$queryRawUnsafe(
-      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1`,
+      `SELECT cj.*, c."name" as "classNameResolved", c."schoolLevelId" as "schoolLevelId",
+        sl."code" as "schoolLevelCode", sl."name" as "schoolLevelName",
+        t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName", t."gender" as "teacherGender"
+       FROM "cahier_journal_entries" cj
+       LEFT JOIN classes c ON c."id" = cj."classId"
+       LEFT JOIN school_levels sl ON sl."id" = c."schoolLevelId"
+       LEFT JOIN teachers t ON t."id" = cj."teacherId"
+       WHERE cj."id" = $1`,
       id,
     );
     return created[0];
@@ -1901,36 +1933,44 @@ export class PedagogicalSpaceService {
     const filter = await this.resolveTeacherFilter(tenantId, teacherId);
     if (filter.mode === 'none') return [];
 
+    // ⭐ Enrichir avec le nom + genre du titulaire (via JOIN teachers)
+    //    Pour que le frontend affiche le vrai titulaire même si le promoteur est connecté.
+    const selectWithTeacher = `SELECT cj.*, c."name" as "classNameResolved",
+      t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName", t."gender" as "teacherGender"
+      FROM "cahier_journal_entries" cj
+      LEFT JOIN classes c ON c."id" = cj."classId"
+      LEFT JOIN teachers t ON t."id" = cj."teacherId"`;
+
     if (classId) {
       if (filter.mode === 'teacher') {
         return this.prisma.$queryRawUnsafe(
-          `SELECT * FROM "cahier_journal_entries"
-           WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3 AND "classId" = $4
-           ORDER BY "weekStartDate" DESC`,
+          `${selectWithTeacher}
+           WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2 AND cj."teacherId" = $3 AND cj."classId" = $4
+           ORDER BY cj."weekStartDate" DESC`,
           tenantId, academicYearId, filter.teacherId, classId,
         );
       }
       // Mode direction : pas de filtre teacherId
       return this.prisma.$queryRawUnsafe(
-        `SELECT * FROM "cahier_journal_entries"
-         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "classId" = $3
-         ORDER BY "weekStartDate" DESC`,
+        `${selectWithTeacher}
+         WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2 AND cj."classId" = $3
+         ORDER BY cj."weekStartDate" DESC`,
         tenantId, academicYearId, classId,
       );
     }
     if (filter.mode === 'teacher') {
       return this.prisma.$queryRawUnsafe(
-        `SELECT * FROM "cahier_journal_entries"
-         WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "teacherId" = $3
-         ORDER BY "weekStartDate" DESC`,
+        `${selectWithTeacher}
+         WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2 AND cj."teacherId" = $3
+         ORDER BY cj."weekStartDate" DESC`,
         tenantId, academicYearId, filter.teacherId,
       );
     }
     // Mode direction : toutes les entrées du tenant/année
     return this.prisma.$queryRawUnsafe(
-      `SELECT * FROM "cahier_journal_entries"
-       WHERE "tenantId" = $1 AND "academicYearId" = $2
-       ORDER BY "weekStartDate" DESC`,
+      `${selectWithTeacher}
+       WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2
+       ORDER BY cj."weekStartDate" DESC`,
       tenantId, academicYearId,
     );
   }

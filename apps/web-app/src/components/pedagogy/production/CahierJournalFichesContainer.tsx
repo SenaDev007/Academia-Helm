@@ -245,7 +245,7 @@ function FichesBadge({
     (async () => {
       try {
         const res = await apiClient.get(
-          `/api/pedagogy-space/cahier-journal/${journalId}/fiches`,
+          `/pedagogy-space/cahier-journal/${journalId}/fiches`,
         );
         if (cancelled) return;
         const data = res.data?.stats;
@@ -325,7 +325,7 @@ function FichesAPreparer({
     setLoading(true);
     try {
       const res = await apiClient.get(
-        `/api/pedagogy-space/cahier-journal/${journalId}/fiches`,
+        `/pedagogy-space/cahier-journal/${journalId}/fiches`,
       );
       setData(res.data);
     } catch (e: any) {

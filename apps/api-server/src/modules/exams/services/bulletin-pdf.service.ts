@@ -96,7 +96,7 @@ export interface BulletinPdfData {
   // ⭐ Noms auto-résolus (depuis TeacherClassAssignment / Staff)
   teacherName?: string | null;   // ex: "Mme YAROU Elodie" (titulaire de la classe)
   teacherGender?: string | null; // 'M' | 'F' | null — pour "M." vs "Mme"
-  directorName?: string | null;  // réservé pour plus tard
+  directorName?: string | null;  // ⭐ Nom du directeur (résolu depuis school_directors)
   // Signatures (base64)
   teacherSignature?: string | null;
   directorSignature?: string | null;
@@ -341,7 +341,7 @@ export class BulletinPdfService {
               <td style="width:34%;text-align:center;vertical-align:bottom;padding:5px 2px;">
                 <div style="height:30px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:30px;max-width:80px;object-fit:contain;" />` : ''}</div>
                 <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:8px;font-weight:bold;color:#0A2A5E;">Le (la) Directeur(trice)</div>
-                <div style="font-size:7px;color:#64748b;">Visa</div>
+                ${data.directorName ? `<div style="font-size:7px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.directorName}</div>` : '<div style="font-size:7px;color:#64748b;margin-top:1px;">Visa</div>'}
               </td>
               <td style="width:33%;text-align:center;vertical-align:bottom;padding:5px 2px;">
                 <div style="height:30px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:30px;max-width:80px;object-fit:contain;" />` : ''}</div>
@@ -415,7 +415,7 @@ export class BulletinPdfService {
               <td style="width:33%;text-align:center;vertical-align:bottom;padding:6px 2px;">
                 <div style="height:35px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:35px;max-width:85px;object-fit:contain;" />` : ''}</div>
                 <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:8px;font-weight:bold;color:#0A2A5E;">VISA du Directeur</div>
-                <div style="font-size:7px;color:#64748b;">Visa</div>
+                ${data.directorName ? `<div style="font-size:7px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.directorName}</div>` : '<div style="font-size:7px;color:#64748b;margin-top:1px;">Visa</div>'}
               </td>
             </tr>
           </table>
@@ -535,7 +535,7 @@ export class BulletinPdfService {
               <div style="height:50px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:50px;max-width:100px;object-fit:contain;" />` : ''}</div>
               ${data.directorVisa ? `<div style="font-size:9px;color:#dc2626;font-style:italic;margin-top:2px;">${data.directorVisa}</div>` : ''}
               <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:10px;font-weight:bold;color:#0A2A5E;">Le (la) Directeur(trice)</div>
-              <div style="font-size:8px;color:#64748b;">Visa</div>
+              ${data.directorName ? `<div style="font-size:9px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.directorName}</div>` : '<div style="font-size:8px;color:#64748b;margin-top:1px;">Visa</div>'}
             </td>
             <td style="width:33%;text-align:center;vertical-align:bottom;padding:10px 3px;">
               <div style="height:50px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:50px;max-width:100px;object-fit:contain;" />` : ''}</div>
@@ -611,7 +611,7 @@ export class BulletinPdfService {
               <div style="height:35px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:35px;max-width:90px;object-fit:contain;" />` : ''}</div>
               ${data.directorVisa ? `<div style="font-size:8px;color:#dc2626;font-style:italic;margin-top:2px;">${data.directorVisa}</div>` : ''}
               <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:10px;font-weight:bold;color:#0A2A5E;">VISA du Directeur</div>
-              <div style="font-size:8px;color:#64748b;">Visa</div>
+              ${data.directorName ? `<div style="font-size:9px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.directorName}</div>` : '<div style="font-size:8px;color:#64748b;margin-top:1px;">Visa</div>'}
             </td>
           </tr>
         </table>
@@ -995,7 +995,7 @@ ${page2Content}
             <td style="width:33%;text-align:center;vertical-align:bottom;padding:6px 3px;">
               <div style="height:35px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:35px;max-width:80px;object-fit:contain;" />` : ''}</div>
               <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Headmistress / Headmaster</div>
-              <div style="font-size:7px;color:#64748b;">Signature</div>
+              ${data.directorName ? `<div style="font-size:8px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.directorName}</div>` : '<div style="font-size:7px;color:#64748b;">Signature</div>'}
             </td>
           </tr>
         </table>

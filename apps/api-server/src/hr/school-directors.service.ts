@@ -47,6 +47,9 @@ export class SchoolDirectorsService {
     const id = crypto.randomUUID();
     const language = data.language || 'FR';
 
+    // ⭐ FIX: utiliser COALESCE pour ne PAS écraser une signature existante
+    //    avec null quand le frontend n'envoie pas de signature.
+    //    Si data.signatureDataUrl est null, on garde l'ancienne valeur (sd."signatureDataUrl").
     await this.prisma.$executeRawUnsafe(`
       INSERT INTO school_directors (id, "tenantId", "schoolLevelId", "language",
         "fullName", "functionLabel", "email", "phone",
@@ -54,15 +57,26 @@ export class SchoolDirectorsService {
         "createdAt", "updatedAt")
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11, NOW(), NOW())
       ON CONFLICT ("tenantId", "schoolLevelId", "language") DO UPDATE SET
-        "fullName" = $5, "functionLabel" = $6, "email" = $7, "phone" = $8,
-        "signatureDataUrl" = $9, "signatureUploadedUrl" = $10,
+        "fullName" = $5,
+        "functionLabel" = $6,
+        "email" = $7,
+        "phone" = $8,
+        "signatureDataUrl" = COALESCE($9, school_directors."signatureDataUrl"),
+        "signatureUploadedUrl" = COALESCE($10, school_directors."signatureUploadedUrl"),
         "updatedAt" = NOW()
     `, id, tenantId, data.schoolLevelId, language,
       data.fullName, data.functionLabel || null, data.email || null, data.phone || null,
       data.signatureDataUrl || null, data.signatureUploadedUrl || null,
       data.createdById || null);
 
-    return { success: true, schoolLevelId: data.schoolLevelId, language, fullName: data.fullName };
+    // ⭐ Retourner l'enregistrement complet (pour que le frontend voie la signature)
+    const result: any = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT * FROM school_directors
+      WHERE "tenantId" = $1 AND "schoolLevelId" = $2 AND "language" = $3 AND "isActive" = true
+      LIMIT 1
+    `, tenantId, data.schoolLevelId, language).catch(() => []);
+
+    return result[0] || { success: true, schoolLevelId: data.schoolLevelId, language, fullName: data.fullName };
   }
 
   async deleteDirector(tenantId: string, directorId: string) {

@@ -1520,3 +1520,79 @@ Stage Summary:
 - Pedagogy extras: "Créer une fiche libre" button added to the FichesAPreparer banner; director view shows a green/amber badge per cahier journal indicating fiches prepared vs missing.
 - Frontend type-check: 0 errors (passes clean).
 - Files modified: 4 (apps/web-app/src/app/saisiemaster/page.tsx, apps/web-app/src/app/app/hr/directors/page.tsx, apps/web-app/src/components/pedagogy/production/CahierJournalFichesContainer.tsx, apps/web-app/src/components/pedagogy/production/DirectorPedagogyControl.tsx)
+
+---
+Task ID: 2026-08-09-directors-workspace + bulletin-director-auto
+Agent: main
+Task: (1) Refondre la page Directeurs selon le pattern Recruteur (centré, même design). (2) Ajouter un toggle "Même directeur pour Maternelle + Primaire" qui réplique automatiquement. (3) Corriger le bug de la signature qui ne s'enregistrait pas. (4) Résoudre automatiquement le nom + la signature du directeur par niveau scolaire + piste linguistique dans les bulletins (FR + EN).
+
+Work Log:
+
+=== (1) + (2) + (3) Directors Workspace — Refonte complète ===
+
+- Nouveau composant DirectorsWorkspace (apps/web-app/src/components/hr/DirectorsWorkspace.tsx, ~400 lignes) :
+  - Pattern identique à RecruiterSettingsWorkspace : max-w-3xl mx-auto, header avec icône carrée, messages d'erreur/succès en cartes, sections blanches avec border-slate-200
+  - Cartes par niveau scolaire (Maternelle / Primaire / Secondaire) avec en-tête coloré
+  - Pour chaque niveau : section par piste linguistique (FR + EN si bilingue)
+  - Champs : Nom complet, Fonction, Email, Téléphone
+  - Signature : 2 modes (Upload PNG / Signature électronique canvas)
+  - Bouton "Enregistrer" par section
+
+- ⭐ Toggle "Même directeur pour Maternelle et Primaire" :
+  - Carte dédiée en haut avec icône Link2/Link2Off
+  - Switch bleu (activé) / gris (désactivé)
+  - Quand activé : tous les champs Maternelle (y compris signature) sont répliqués vers Primaire en temps réel
+  - Le Primaire devient "lié" : champs désactivés (bg-slate-50), badge "Lié à la Maternelle", message "Sauvegardé automatiquement avec la Maternelle"
+  - Au chargement : détection automatique si Maternelle et Primaire ont déjà les mêmes données → toggle auto-activé
+  - Réplique aussi la signature (canvas ET upload)
+
+- Page Directors (apps/web-app/src/app/app/hr/directors/page.tsx) :
+  - Simplifiée pour utiliser DirectorsWorkspace (même pattern que recruitment/settings/page.tsx)
+  - `layout: 'custom'` pour que le workspace gère son propre layout centré
+  - `activeModuleId: 'directors'` (déjà corrigé dans le commit précédent)
+
+=== (3) Bug signature non enregistrée — Root cause ===
+
+- Backend (apps/api-server/src/hr/school-directors.service.ts) — upsertDirector :
+  - Bug : `ON CONFLICT DO UPDATE SET "signatureDataUrl" = $9` écrasait la signature existante avec null quand le frontend ne renvoyait pas de signature (par exemple quand on modifiait juste le nom)
+  - Fix : `COALESCE($9, school_directors."signatureDataUrl")` — si le frontend envoie null, on garde l'ancienne valeur
+  - Même fix pour `signatureUploadedUrl`
+  - La méthode retourne maintenant l'enregistrement complet (SELECT après l'upsert) pour que le frontend voie la signature après save
+
+- Frontend (DirectorsWorkspace) :
+  - `handleSignatureChange` est maintenant un `useCallback` stable (plus de stale closures)
+  - Le payload envoyé au backend n'inclut les signatures que si elles ont une valeur (évite d'envoyer null inutilement)
+  - Après save, `loadData()` recharge les données depuis le backend → la signature s'affiche correctement
+
+=== (4) Résolution automatique du directeur dans les bulletins ===
+
+- Backend (apps/api-server/src/modules/exams/bulletins.controller.ts) — generateBulletinPdf :
+  - Après avoir résolu l'élève, on récupère son `schoolLevelId` depuis l'enrollment
+  - On détermine la langue du directeur : `body.scopeLang === 'EN' ? 'EN' : 'FR'`
+  - On interroge la table `school_directors` : `SELECT * FROM school_directors WHERE "tenantId" = $1 AND "schoolLevelId" = $2 AND "language" = $3 AND "isActive" = true`
+  - Si pas de directeur pour la langue demandée → fallback sur l'autre langue
+  - On extrait `directorName` et `directorSignature` (priorité : signatureDataUrl canvas > signatureUploadedUrl upload PNG)
+  - On injecte dans `pdfData` : `directorName` et `directorSignature` (priorité backend > frontend)
+
+- Bulletin PDF (apps/api-server/src/modules/exams/services/bulletin-pdf.service.ts) :
+  - Le champ `directorName` (qui était "réservé pour plus tard") est maintenant utilisé
+  - Ajout de `directorName` sous CHAQUE signature de directeur dans les 5 emplacements :
+    1. Maternelle colonne droite (compact) — "Le (la) Directeur(trice)" + nom
+    2. Primaire colonne droite (compact) — "VISA du Directeur" + nom
+    3. Maternelle page 2 (signatures) — "Le (la) Directeur(trice)" + nom
+    4. Primaire page 2 (signatures) — "VISA du Directeur" + nom
+    5. Anglophone page 2 (signatures) — "Headmistress / Headmaster" + nom
+  - Si `directorName` est fourni : affiche le nom en gras sous le label
+  - Si `directorName` est null : affiche "Visa" / "Signature" en gris (comportement par défaut)
+
+- Résultat : dès que le promoteur configure un directeur dans Module Personnel RH → Directeurs, ce directeur apparaît automatiquement sur TOUS les bulletins (FR et EN) du niveau scolaire correspondant. Plus besoin de signature manuelle par bulletin.
+
+Stage Summary:
+
+- La page Directeurs suit maintenant le même design que la page Recruteur (centré, max-w-3xl, cartes blanches)
+- Le toggle "Même directeur pour Maternelle + Primaire" réplique automatiquement tous les champs + la signature
+- Le bug de la signature non enregistrée est corrigé : COALESCE dans le SQL + payload conditionnel côté frontend + callback stable
+- Les bulletins (FR maternelle/primaire + EN anglophone) affichent maintenant automatiquement le nom et la signature du directeur configuré par niveau scolaire + piste linguistique
+- Frontend type-check : 0 erreurs
+- Backend : aucune nouvelle erreur (3 erreurs de décalage de ligne préexistantes)
+- Files modified: 5 + 1 new file (DirectorsWorkspace.tsx)

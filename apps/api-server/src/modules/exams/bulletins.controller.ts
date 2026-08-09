@@ -575,6 +575,9 @@ export class BulletinsController {
     let teacherGender: string | null = null;
     let studentAge: number | null = null;
     let admissionNumber: string | null = null;
+    let directorName: string | null = null;
+    let directorSignature: string | null = null;
+    let studentSchoolLevelId: string | null = null;
     if (body.studentMatricule && resolvedTenantId && academicYearId) {
       try {
         // 1. Trouver l'élève par matricule
@@ -597,11 +600,13 @@ export class BulletinsController {
         }
 
         if (student) {
-          // 2. Trouver l'enrollment (pour récupérer la classe)
+          // 2. Trouver l'enrollment (pour récupérer la classe + le niveau scolaire)
           const enrollment = await this.prisma.studentEnrollment.findFirst({
             where: { studentId: student.id, academicYearId, tenantId: resolvedTenantId },
-            select: { classId: true },
+            select: { classId: true, schoolLevelId: true },
           }).catch(() => null);
+
+          studentSchoolLevelId = enrollment?.schoolLevelId || null;
 
           if (enrollment?.classId) {
             // 3. Trouver le teacher assignment pour cette classe
@@ -625,9 +630,47 @@ export class BulletinsController {
               }
             }
           }
+
+          // ⭐ 4. Résolution automatique du directeur par niveau scolaire + piste linguistique
+          //    On interroge la table school_directors pour récupérer le nom + la signature
+          //    du directeur configuré pour ce niveau et cette piste (FR/EN).
+          if (studentSchoolLevelId) {
+            // Déterminer la langue : utiliser scopeLang du body, sinon 'FR' par défaut
+            const directorLang = (body.scopeLang === 'EN') ? 'EN' : 'FR';
+            try {
+              const directorRows: any = await this.prisma.$queryRawUnsafe(
+                `SELECT * FROM school_directors
+                 WHERE "tenantId" = $1 AND "schoolLevelId" = $2 AND "language" = $3 AND "isActive" = true
+                 LIMIT 1`,
+                resolvedTenantId, studentSchoolLevelId, directorLang,
+              );
+              if (Array.isArray(directorRows) && directorRows.length > 0) {
+                const director = directorRows[0];
+                directorName = director.fullName || null;
+                // ⭐ Priorité : signatureDataUrl (canvas) > signatureUploadedUrl (upload PNG)
+                directorSignature = director.signatureDataUrl || director.signatureUploadedUrl || null;
+              } else {
+                // ⭐ Fallback : si pas de directeur pour cette langue, essayer l'autre langue
+                const fallbackLang = directorLang === 'FR' ? 'EN' : 'FR';
+                const fallbackRows: any = await this.prisma.$queryRawUnsafe(
+                  `SELECT * FROM school_directors
+                   WHERE "tenantId" = $1 AND "schoolLevelId" = $2 AND "language" = $3 AND "isActive" = true
+                   LIMIT 1`,
+                  resolvedTenantId, studentSchoolLevelId, fallbackLang,
+                );
+                if (Array.isArray(fallbackRows) && fallbackRows.length > 0) {
+                  const director = fallbackRows[0];
+                  directorName = director.fullName || null;
+                  directorSignature = director.signatureDataUrl || director.signatureUploadedUrl || null;
+                }
+              }
+            } catch (dirErr) {
+              // Silent fail — la table school_directors peut ne pas exister encore
+            }
+          }
         }
       } catch (e) {
-        // Silent fail — on n'a pas réussi à résoudre le teacher, le PDF est quand même généré
+        // Silent fail — on n'a pas réussi à résoudre le teacher/directeur, le PDF est quand même généré
       }
     }
 
@@ -647,6 +690,10 @@ export class BulletinsController {
       // ⭐ Champs anglophones : résolus backend (âge + admission number)
       studentAge: body.studentAge ?? studentAge,
       admissionNumber: body.admissionNumber || admissionNumber || body.studentMatricule || null,
+      // ⭐ Directeur : résolu backend depuis school_directors (par niveau + langue)
+      //    Priorité au backend si trouvé, sinon fallback sur ce que le frontend a envoyé
+      directorName: directorName || body.directorName || null,
+      directorSignature: directorSignature || body.directorSignature || null,
     };
 
     const buffer = await this.pdfService.generateBulletin(pdfData);

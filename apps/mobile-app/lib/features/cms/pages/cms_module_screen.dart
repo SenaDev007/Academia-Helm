@@ -102,7 +102,7 @@ class _CmsModuleScreenState extends ConsumerState<CmsModuleScreen>
                   rowActions: const [
                     RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
                     RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
-                    RowAction(id: 'publish', icon: Icons.publish, label: 'Publier', color: Color(0xFF10B981)),
+                    RowAction(id: 'publish', icon: Icons.send, label: 'Publier', color: Color(0xFF10B981)),
                     RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
                   ],
                   onAction: (a, i) => _stub(context, a),
@@ -121,7 +121,7 @@ class _CmsModuleScreenState extends ConsumerState<CmsModuleScreen>
                   rowActions: const [
                     RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
                     RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
-                    RowAction(id: 'publish', icon: Icons.publish, label: 'Publier', color: Color(0xFF10B981)),
+                    RowAction(id: 'publish', icon: Icons.send, label: 'Publier', color: Color(0xFF10B981)),
                     RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
                   ],
                   onAction: (a, i) => _stub(context, a),

@@ -218,7 +218,7 @@ class _ExamsModuleScreenState extends ConsumerState<ExamsModuleScreen>
                     const RowAction(id: 'download', icon: Icons.download, label: 'Télécharger', color: Color(0xFF10B981)),
                     RowAction(
                         id: 'publish',
-                        icon: Icons.publish,
+                        icon: Icons.send,
                         label: 'Publier',
                         color: const Color(0xFF6366F1),
                         isVisible: (item) =>

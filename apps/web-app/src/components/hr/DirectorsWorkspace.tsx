@@ -73,9 +73,11 @@ export default function DirectorsWorkspace() {
   const [forms, setForms] = useState<Record<string, any>>({});
   const [signatureMode, setSignatureMode] = useState<Record<string, 'upload' | 'canvas' | 'none'>>({});
 
-  // ⭐ Toggle "Même directeur pour Maternelle + Primaire"
-  //    Quand activé, remplir automatiquement le Primaire quand on remplit la Maternelle
-  const [sameMaternellePrimaire, setSameMaternellePrimaire] = useState(false);
+  // ⭐ Toggle "Même directeur pour Maternelle + Primaire" — PAR PISTE LINGUISTIQUE
+  //    On peut avoir le même directeur FR pour Maternelle+Primaire
+  //    mais des directeurs EN différents pour chaque niveau.
+  //    Clé: 'FR' ou 'EN' → boolean
+  const [sameMaternellePrimaireByLang, setSameMaternellePrimaireByLang] = useState<Record<string, boolean>>({});
 
   const loadData = useCallback(async () => {
     if (!tenantId) return;
@@ -123,27 +125,29 @@ export default function DirectorsWorkspace() {
       setSignatureMode(sigMode);
 
       // ⭐ Détecter si Maternelle et Primaire ont déjà le même directeur
-      //    (pour auto-activer le toggle au chargement)
+      //    PAR PISTE LINGUISTIQUE (indépendamment pour FR et EN)
       if (activeLevels.length >= 2) {
         const maternelle = activeLevels.find(l => (l.code || '').toUpperCase().includes('MATERNELLE'));
         const primaire = activeLevels.find(l => (l.code || '').toUpperCase().includes('PRIMAIRE'));
         if (maternelle && primaire) {
-          const languages = isBilingual ? ['FR', 'EN'] : ['FR'];
-          let allSame = true;
-          for (const lang of languages) {
+          const langs = isBilingual ? ['FR', 'EN'] : ['FR'];
+          const newToggles: Record<string, boolean> = {};
+          for (const lang of langs) {
             const mKey = `${maternelle.id}_${lang}`;
             const pKey = `${primaire.id}_${lang}`;
             const mForm = formState[mKey];
             const pForm = formState[pKey];
-            if (!mForm || !pForm) { allSame = false; break; }
-            if (mForm.fullName !== pForm.fullName ||
-                mForm.functionLabel !== pForm.functionLabel ||
-                mForm.email !== pForm.email ||
-                mForm.phone !== pForm.phone) {
-              allSame = false; break;
+            if (mForm && pForm && mForm.fullName &&
+                mForm.fullName === pForm.fullName &&
+                mForm.functionLabel === pForm.functionLabel &&
+                mForm.email === pForm.email &&
+                mForm.phone === pForm.phone) {
+              newToggles[lang] = true;
+            } else {
+              newToggles[lang] = false;
             }
           }
-          setSameMaternellePrimaire(allSame && formState[`${maternelle.id}_FR`]?.fullName);
+          setSameMaternellePrimaireByLang(newToggles);
         }
       }
     } catch (err: any) {
@@ -155,21 +159,22 @@ export default function DirectorsWorkspace() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // ⭐ Réplication Maternelle → Primaire quand le toggle est activé
+  // ⭐ Réplication Maternelle → Primaire quand le toggle est activé POUR CETTE LANGUE
   const replicateToPrimaire = useCallback((sourceKey: string, field: string, value: string) => {
-    if (!sameMaternellePrimaire) return;
     const maternelle = schoolLevels.find(l => (l.code || '').toUpperCase().includes('MATERNELLE'));
     const primaire = schoolLevels.find(l => (l.code || '').toUpperCase().includes('PRIMAIRE'));
     if (!maternelle || !primaire) return;
     // Source key = `${maternelleId}_${lang}`, target key = `${primaireId}_${lang}`
     if (!sourceKey.startsWith(`${maternelle.id}_`)) return;
     const lang = sourceKey.split('_')[1];
+    // ⭐ Vérifier le toggle POUR CETTE LANGUE uniquement
+    if (!sameMaternellePrimaireByLang[lang]) return;
     const targetKey = `${primaire.id}_${lang}`;
     setForms(prev => ({
       ...prev,
       [targetKey]: { ...prev[targetKey], [field]: value },
     }));
-  }, [sameMaternellePrimaire, schoolLevels]);
+  }, [sameMaternellePrimaireByLang, schoolLevels]);
 
   const handleSave = async (key: string) => {
     const formData = forms[key];
@@ -203,9 +208,10 @@ export default function DirectorsWorkspace() {
       await apiClient.post('/hr/school-directors', payload);
       setSuccess(`Directeur enregistré : ${formData.fullName}`);
 
-      // ⭐ Si le toggle "même directeur Maternelle + Primaire" est activé,
-      //    ET qu'on sauvegarde la Maternelle, sauvegarder aussi le Primaire
-      if (sameMaternellePrimaire) {
+      // ⭐ Si le toggle "même directeur Maternelle + Primaire" est activé POUR CETTE LANGUE,
+      //    ET qu'on sauvegarde la Maternelle, sauvegarder aussi le Primaire (même langue)
+      const langOfKey = key.split('_')[1];
+      if (sameMaternellePrimaireByLang[langOfKey]) {
         const maternelle = schoolLevels.find(l => (l.code || '').toUpperCase().includes('MATERNELLE'));
         const primaire = schoolLevels.find(l => (l.code || '').toUpperCase().includes('PRIMAIRE'));
         if (maternelle && primaire && key.startsWith(`${maternelle.id}_`)) {
@@ -255,20 +261,22 @@ export default function DirectorsWorkspace() {
       ...prev,
       [key]: { ...prev[key], signatureDataUrl: dataUrl },
     }));
-    // ⭐ Répliquer vers le Primaire si le toggle est activé
-    if (sameMaternellePrimaire && dataUrl) {
+    // ⭐ Répliquer vers le Primaire si le toggle est activé POUR CETTE LANGUE
+    if (dataUrl) {
       const maternelle = schoolLevels.find(l => (l.code || '').toUpperCase().includes('MATERNELLE'));
       const primaire = schoolLevels.find(l => (l.code || '').toUpperCase().includes('PRIMAIRE'));
       if (maternelle && primaire && key.startsWith(`${maternelle.id}_`)) {
         const lang = key.split('_')[1];
-        const targetKey = `${primaire.id}_${lang}`;
-        setForms(prev => ({
-          ...prev,
-          [targetKey]: { ...prev[targetKey], signatureDataUrl: dataUrl },
-        }));
+        if (sameMaternellePrimaireByLang[lang]) {
+          const targetKey = `${primaire.id}_${lang}`;
+          setForms(prev => ({
+            ...prev,
+            [targetKey]: { ...prev[targetKey], signatureDataUrl: dataUrl },
+          }));
+        }
       }
     }
-  }, [sameMaternellePrimaire, schoolLevels]);
+  }, [sameMaternellePrimaireByLang, schoolLevels]);
 
   const handleFileUpload = async (key: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -280,12 +288,12 @@ export default function DirectorsWorkspace() {
         ...prev,
         [key]: { ...prev[key], signatureUploadedUrl: dataUrl },
       }));
-      // ⭐ Répliquer vers le Primaire si toggle activé
-      if (sameMaternellePrimaire) {
-        const maternelle = schoolLevels.find(l => (l.code || '').toUpperCase().includes('MATERNELLE'));
-        const primaire = schoolLevels.find(l => (l.code || '').toUpperCase().includes('PRIMAIRE'));
-        if (maternelle && primaire && key.startsWith(`${maternelle.id}_`)) {
-          const lang = key.split('_')[1];
+      // ⭐ Répliquer vers le Primaire si toggle activé POUR CETTE LANGUE
+      const maternelle = schoolLevels.find(l => (l.code || '').toUpperCase().includes('MATERNELLE'));
+      const primaire = schoolLevels.find(l => (l.code || '').toUpperCase().includes('PRIMAIRE'));
+      if (maternelle && primaire && key.startsWith(`${maternelle.id}_`)) {
+        const lang = key.split('_')[1];
+        if (sameMaternellePrimaireByLang[lang]) {
           const targetKey = `${primaire.id}_${lang}`;
           setForms(prev => ({
             ...prev,
@@ -354,37 +362,42 @@ export default function DirectorsWorkspace() {
         </div>
       )}
 
-      {/* ⭐ Toggle "Même directeur pour Maternelle + Primaire" */}
-      {hasMaternelleAndPrimaire && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex items-center gap-3">
-          <div
-            className="w-10 h-10 rounded-lg flex items-center justify-center"
-            style={{ background: sameMaternellePrimaire ? `${PRIMARY}15` : `${PRIMARY}08` }}
-          >
-            {sameMaternellePrimaire
-              ? <Link2 className="w-5 h-5" style={{ color: PRIMARY }} />
-              : <Link2Off className="w-5 h-5 text-slate-400" />
-            }
-          </div>
-          <div className="flex-1">
-            <p className="text-sm font-bold text-gray-900">
-              Même directeur pour Maternelle et Primaire
-            </p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Les informations saisies pour la Maternelle seront automatiquement répliquées vers le Primaire.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              const newVal = !sameMaternellePrimaire;
-              setSameMaternellePrimaire(newVal);
-              if (newVal) {
-                // ⭐ Activer : répliquer immédiatement Maternelle → Primaire
-                const maternelle = schoolLevels.find(l => (l.code || '').toUpperCase().includes('MATERNELLE'));
-                const primaire = schoolLevels.find(l => (l.code || '').toUpperCase().includes('PRIMAIRE'));
-                if (maternelle && primaire) {
-                  for (const lang of languages) {
+      {/* ⭐ Toggles "Même directeur pour Maternelle + Primaire" — UN PAR PISTE LINGUISTIQUE */}
+      {hasMaternelleAndPrimaire && languages.map((lang) => {
+        const isToggleOn = !!sameMaternellePrimaireByLang[lang];
+        return (
+          <div key={`toggle-${lang}`} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: isToggleOn ? `${PRIMARY}15` : `${PRIMARY}08` }}
+            >
+              {isToggleOn
+                ? <Link2 className="w-5 h-5" style={{ color: PRIMARY }} />
+                : <Link2Off className="w-5 h-5 text-slate-400" />
+              }
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-gray-900">
+                Même directeur pour Maternelle et Primaire
+                <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-[10px] font-bold text-slate-600">
+                  <Globe className="w-3 h-3" /> {langLabels[lang]}
+                </span>
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Les informations saisies pour la Maternelle <strong>{langLabels[lang]}</strong> seront automatiquement répliquées vers le Primaire <strong>{langLabels[lang]}</strong>.
+                {!isBilingual && ' (Mode non bilingue — piste unique FR.)'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const newVal = !isToggleOn;
+                setSameMaternellePrimaireByLang(prev => ({ ...prev, [lang]: newVal }));
+                if (newVal) {
+                  // ⭐ Activer : répliquer immédiatement Maternelle → Primaire POUR CETTE LANGUE
+                  const maternelle = schoolLevels.find(l => (l.code || '').toUpperCase().includes('MATERNELLE'));
+                  const primaire = schoolLevels.find(l => (l.code || '').toUpperCase().includes('PRIMAIRE'));
+                  if (maternelle && primaire) {
                     const mKey = `${maternelle.id}_${lang}`;
                     const pKey = `${primaire.id}_${lang}`;
                     const mForm = forms[mKey];
@@ -396,29 +409,28 @@ export default function DirectorsWorkspace() {
                     }
                   }
                 }
-              }
-            }}
-            className={cn(
-              "relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0",
-              sameMaternellePrimaire ? "" : "bg-slate-300"
-            )}
-            style={sameMaternellePrimaire ? { background: PRIMARY } : {}}
-          >
-            <span
+              }}
               className={cn(
-                "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
-                sameMaternellePrimaire ? "translate-x-6" : "translate-x-1"
+                "relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0",
+                isToggleOn ? "" : "bg-slate-300"
               )}
-            />
-          </button>
-        </div>
-      )}
+              style={isToggleOn ? { background: PRIMARY } : {}}
+            >
+              <span
+                className={cn(
+                  "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                  isToggleOn ? "translate-x-6" : "translate-x-1"
+                )}
+              />
+            </button>
+          </div>
+        );
+      })}
 
       {/* Director cards per level */}
       {schoolLevels.map((level) => {
         const isMaternelle = (level.code || '').toUpperCase().includes('MATERNELLE');
         const isPrimaire = (level.code || '').toUpperCase().includes('PRIMAIRE');
-        const isLinked = sameMaternellePrimaire && isPrimaire;
 
         return (
           <div key={level.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -431,11 +443,7 @@ export default function DirectorsWorkspace() {
                 <h3 className="text-sm font-bold text-gray-900">{level.name}</h3>
                 <p className="text-xs text-gray-500">{level.code}</p>
               </div>
-              {isLinked && (
-                <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-blue-50 text-[10px] font-bold text-blue-700 border border-blue-200">
-                  <Link2 className="w-3 h-3" /> Lié à la Maternelle
-                </span>
-              )}
+              {/* ⭐ Badge "Lié" affiché par langue dans la section langue (voir plus bas) */}
             </div>
 
             {/* Language sections */}
@@ -445,6 +453,8 @@ export default function DirectorsWorkspace() {
                 const formData = forms[key] || {};
                 const existingDirector = directors.find(d => d.schoolLevelId === level.id && d.language === lang);
                 const currentSigMode = signatureMode[key] || 'none';
+                // ⭐ isLinked POUR CETTE LANGUE — dépend du toggle de cette langue
+                const isLinked = isPrimaire && !!sameMaternellePrimaireByLang[lang];
 
                 return (
                   <div key={key} className={cn(
@@ -461,6 +471,12 @@ export default function DirectorsWorkspace() {
                         {existingDirector && (
                           <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700">
                             Configuré
+                          </span>
+                        )}
+                        {/* ⭐ Badge "Lié" affiché PAR LANGUE sur le Primaire */}
+                        {isLinked && (
+                          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-[10px] font-bold text-blue-700 border border-blue-200">
+                            <Link2 className="w-3 h-3" /> Lié à la Maternelle ({langLabels[lang]})
                           </span>
                         )}
                       </div>
@@ -615,7 +631,7 @@ export default function DirectorsWorkspace() {
                     {isLinked && (
                       <div className="text-xs text-blue-600 bg-blue-50 rounded-lg p-2 flex items-center gap-2">
                         <Link2 className="w-3 h-3" />
-                        Sauvegardé automatiquement avec la Maternelle
+                        Sauvegardé automatiquement avec la Maternelle — Piste {langLabels[lang]}
                       </div>
                     )}
                   </div>

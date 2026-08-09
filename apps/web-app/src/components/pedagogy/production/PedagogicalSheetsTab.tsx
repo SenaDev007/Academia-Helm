@@ -153,6 +153,15 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   const [filterType, setFilterType] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
+  // ⭐ États pour les noms résolus (titulaire + directeur)
+  const [teacherName, setTeacherName] = useState<string>("");
+  const [directorInfo, setDirectorInfo] = useState<{
+    fullName: string;
+    gender: string | null;
+    signatureDataUrl: string | null;
+    signatureUploadedUrl: string | null;
+  } | null>(null);
+
   const emptyForm: any = {
     classId: "", sheetType: "MATH",
     schoolName: "", className: "", academicYearLabel: "",
@@ -191,10 +200,10 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
       setClasses(list);
-      // ⭐ Auto-sélectionner si une seule classe
-      if (list.length === 1) setSelectedClassId(list[0].classId);
+      // ⭐ Auto-sélectionner la 1ère classe si aucune sélectionnée (pour pré-remplir les signatures)
+      if (list.length > 0 && !selectedClassId) setSelectedClassId(list[0].classId);
     } catch { setClasses([]); }
-  }, [teacherId, academicYearId]);
+  }, [teacherId, academicYearId, selectedClassId]);
 
   const loadFiches = useCallback(async () => {
     if (!selectedClassId) { setFiches([]); return; }
@@ -210,6 +219,76 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
 
   useEffect(() => { loadClasses(); }, [loadClasses]);
   useEffect(() => { loadFiches(); }, [loadFiches]);
+
+  // ⭐ Résoudre le VRAI titulaire de la classe + le directeur dès que la classe change
+  //    (même si c'est le promoteur qui est connecté, on doit afficher le titulaire réel)
+  useEffect(() => {
+    if (!selectedClassId) {
+      setTeacherName("");
+      setDirectorInfo(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      // 1. Récupérer le titulaire de la classe via TeacherClassAssignment
+      try {
+        const res = await fetch(`/api/pedagogy/teacher-class-assignments?classId=${encodeURIComponent(selectedClassId)}`, { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          const assignments = Array.isArray(data) ? data : (data?.items || []);
+          const firstAssignment = assignments[0];
+          if (firstAssignment && !cancelled) {
+            const firstName = firstAssignment.teacherFirstName || firstAssignment.teacher?.firstName || '';
+            const lastName = firstAssignment.teacherLastName || firstAssignment.teacher?.lastName || '';
+            const gender = firstAssignment.teacherGender || firstAssignment.teacher?.gender || null;
+            const civility = gender === 'F' ? 'Mme' : (gender === 'M' ? 'M.' : '');
+            const name = (lastName || firstName) ? `${civility} ${(lastName || '').toUpperCase()} ${firstName}`.trim() : '';
+            setTeacherName(name);
+          } else if (!cancelled) {
+            // Fallback sur le user connecté
+            setTeacherName(user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : '');
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setTeacherName(user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : '');
+        }
+      }
+
+      // 2. Récupérer le directeur depuis school_directors (par niveau scolaire de la classe)
+      try {
+        // D'abord récupérer le schoolLevelId de la classe sélectionnée
+        const cls = classes.find(c => c.classId === selectedClassId);
+        const schoolLevelId = cls?.schoolLevelId || cls?.school_level_id;
+        if (schoolLevelId) {
+          const dirRes = await fetch(`/api/hr/school-directors/by-level?schoolLevelId=${encodeURIComponent(schoolLevelId)}&language=FR`, { credentials: 'include' });
+          let dirData = null;
+          if (dirRes.ok) {
+            dirData = await dirRes.json();
+          } else {
+            // Fallback EN
+            const dirRes2 = await fetch(`/api/hr/school-directors/by-level?schoolLevelId=${encodeURIComponent(schoolLevelId)}&language=EN`, { credentials: 'include' });
+            if (dirRes2.ok) dirData = await dirRes2.json();
+          }
+          if (!cancelled && dirData) {
+            setDirectorInfo({
+              fullName: dirData.fullName || '',
+              gender: dirData.gender || null,
+              signatureDataUrl: dirData.signatureDataUrl || null,
+              signatureUploadedUrl: dirData.signatureUploadedUrl || null,
+            });
+          }
+        }
+      } catch {
+        // Silent fail — directorInfo reste null
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedClassId, classes, user]);
+
+  // ⭐ Construire le label "Directeur" ou "Directrice" selon le genre
+  const directorLabel = directorInfo?.gender === 'F' ? 'La Directrice' : 'Le Directeur';
+  const directorDisplayName = directorInfo?.fullName || 'Nom du directeur';
 
   // ⭐ Pré-remplissage automatique quand l'utilisateur clique sur "Préparer la fiche"
   //    pour [jour] [matière] depuis le cahier journal.
@@ -528,7 +607,10 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-sm font-bold text-slate-800">Le Maître / La Maîtresse</div>
-                    <div className="text-xs text-slate-500">{user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : ''}</div>
+                    <div className="text-xs text-slate-500">
+                      {/* ⭐ Afficher le VRAI titulaire de la classe (résolu via TeacherClassAssignment) */}
+                      {teacherName || (user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : '')}
+                    </div>
                   </div>
                   {form.teacherSignature && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full"><CheckCircle2 className="h-3 w-3" /> Signé</span>}
                 </div>
@@ -542,13 +624,17 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-sm font-bold text-slate-800">Le Directeur / La Directrice</div>
-                    <div className="text-xs text-slate-500">Signature et cachet</div>
+                    {/* ⭐ Label dynamique : "Le Directeur" ou "La Directrice" selon le genre */}
+                    <div className="text-sm font-bold text-slate-800">{directorLabel} / La Directrice</div>
+                    <div className="text-xs text-slate-500">{directorDisplayName} — Signature et cachet</div>
                   </div>
-                  {form.directorSignature && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full"><CheckCircle2 className="h-3 w-3" /> Signé</span>}
+                  {(form.directorSignature || directorInfo?.signatureDataUrl || directorInfo?.signatureUploadedUrl) && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full"><CheckCircle2 className="h-3 w-3" /> Signé</span>}
                 </div>
+                {/* ⭐ Afficher la signature du directeur depuis RH si dispo, sinon le canvas */}
                 {form.directorSignature ? (
                   <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2"><img src={form.directorSignature} alt="" className="max-h-24 mx-auto" /></div>
+                ) : (directorInfo?.signatureDataUrl || directorInfo?.signatureUploadedUrl) ? (
+                  <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2"><img src={directorInfo.signatureDataUrl || directorInfo.signatureUploadedUrl || ''} alt="" className="max-h-24 mx-auto" /></div>
                 ) : (
                   <SignatureCanvas width={400} height={120} disabled={isReadOnly} placeholder="Signature" onSignatureChange={d => setForm({ ...form, directorSignature: d })} />
                 )}

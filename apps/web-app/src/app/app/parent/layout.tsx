@@ -62,7 +62,14 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
     } catch {
       // silent — on redirige de toute façon
     }
-    window.location.href = "/login";
+    // ⭐ FIX : rediriger vers le portail parent (pas le login admin)
+    //    On garde le tenant slug pour pré-remplir le formulaire de login.
+    //    Le portal=PARENT permet à LoginPage d'afficher directement le bon onglet.
+    const tenantSlug = tenant?.slug || (typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tenant') : null);
+    const loginUrl = new URL('/login', window.location.origin);
+    if (tenantSlug) loginUrl.searchParams.set('tenant', tenantSlug);
+    loginUrl.searchParams.set('portal', 'parent');
+    window.location.href = loginUrl.toString();
   };
 
   if (!academicYear?.id) {

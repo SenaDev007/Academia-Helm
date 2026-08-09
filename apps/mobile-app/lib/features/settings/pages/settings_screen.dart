@@ -280,8 +280,7 @@ class _AcademicYearTab extends ConsumerWidget {
               color: Color(0xFF10B981)),
           RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
         ],
-        onAction: (a, i) => _stub(context, a),
-      );
+        );
 }
 
 // ── Tab 3: Structure (classes, levels, cycles, sections, series, rooms) ───
@@ -300,8 +299,7 @@ class _StructureTab extends ConsumerWidget {
           RowAction(id: 'subjects', icon: Icons.book, label: 'Matières', color: Color(0xFF6366F1)),
           RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
         ],
-        onAction: (a, i) => _stub(context, a),
-      );
+        );
 }
 
 // ── Tab 4: Administration (departments + positions) ──────────────────────
@@ -320,8 +318,7 @@ class _DepartmentsTab extends ConsumerWidget {
           RowAction(id: 'positions', icon: Icons.badge, label: 'Postes', color: Color(0xFF6366F1)),
           RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
         ],
-        onAction: (a, i) => _stub(context, a),
-      );
+        );
 }
 
 // ── Tab 5: Bilingue ──────────────────────────────────────────────────────
@@ -448,8 +445,7 @@ class _FeaturesTab extends ConsumerWidget {
           RowAction(id: 'enable', icon: Icons.toggle_on, label: 'Activer', color: Color(0xFF10B981)),
           RowAction(id: 'disable', icon: Icons.toggle_off, label: 'Désactiver', color: Color(0xFFDC2626)),
         ],
-        onAction: (a, i) => _stub(context, a),
-      );
+        );
 }
 
 // ── Tab 7: Rôles ────────────────────────────────────────────────────────
@@ -468,8 +464,7 @@ class _RolesTab extends ConsumerWidget {
           RowAction(id: 'permissions', icon: Icons.lock, label: 'Permissions', color: Color(0xFF6366F1)),
           RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
         ],
-        onAction: (a, i) => _stub(context, a),
-      );
+        );
 }
 
 // ── Tab 8: Facturation ────────────────────────────────────────────────────
@@ -574,7 +569,14 @@ class _BillingView extends StatelessWidget {
                   )),
               const SizedBox(height: AHSpacing.md),
               ElevatedButton.icon(
-                onPressed: () => _stub(context, 'renew'),
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Renouvellement FedaPay — à implémenter'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
                 icon: const Icon(Icons.payment, size: 16),
                 label: const Text('Renouveler (FedaPay)'),
                 style: ElevatedButton.styleFrom(
@@ -602,8 +604,7 @@ class _SecurityTab extends ConsumerWidget {
           RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
           RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
         ],
-        onAction: (a, i) => _stub(context, a),
-      );
+        );
 }
 
 // ── Tab 10: Cachets ──────────────────────────────────────────────────────
@@ -622,8 +623,7 @@ class _SealsTab extends ConsumerWidget {
           RowAction(id: 'download', icon: Icons.download, label: 'Télécharger', color: Color(0xFF10B981)),
           RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
         ],
-        onAction: (a, i) => _stub(context, a),
-      );
+        );
 }
 
 // ── Tab 11: Appareils autorisés ──────────────────────────────────────────
@@ -651,8 +651,7 @@ class _DevicesTab extends ConsumerWidget {
               color: Color(0xFF10B981)),
           RowAction(id: 'revoke', icon: Icons.block, label: 'Révoquer', color: Color(0xFFDC2626)),
         ],
-        onAction: (a, i) => _stub(context, a),
-      );
+        );
 }
 
 // ── Tab 12: Historique ────────────────────────────────────────────────────
@@ -677,8 +676,7 @@ class _HistoryTab extends ConsumerWidget {
           RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
           RowAction(id: 'export', icon: Icons.download, label: 'Exporter', color: Color(0xFF10B981)),
         ],
-        onAction: (a, i) => _stub(context, a),
-      );
+        );
 }
 
 void _stub(BuildContext context, String actionId) {

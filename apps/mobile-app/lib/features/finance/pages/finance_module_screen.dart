@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
 import '../../../core/widgets/ah_app_bar.dart';
+import '../../../core/widgets/dynamic_form_dialog.dart';
 import '../../../core/widgets/generic_module_tab.dart' show KpiCardConfig;
 import '../../../core/widgets/module_data_tab.dart';
 import '../../../features/dashboard/providers/dashboard_v2_provider.dart';
@@ -264,20 +265,19 @@ class _FeesTab extends ConsumerWidget {
       tableColumns: const ['feeType', 'totalAmount', 'level', 'isMandatory'],
       icon: Icons.account_balance,
       createLabel: 'Nouveau frais',
+      createFields: const [
+        FormFieldDef(key: 'name', label: 'Nom du frais', required: true, hint: 'Ex: Frais d\'inscription'),
+        FormFieldDef(key: 'feeType', label: 'Type', type: FieldType.dropdown, options: ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'OTHER'], required: true),
+        FormFieldDef(key: 'totalAmount', label: 'Montant (F CFA)', type: FieldType.number, required: true),
+        FormFieldDef(key: 'isInstallment', label: 'Paiement par tranches', type: FieldType.toggle),
+        FormFieldDef(key: 'isMandatory', label: 'Obligatoire', type: FieldType.toggle, initialValue: true),
+      ],
       rowActions: [
         const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
         const RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
         const RowAction(id: 'copy', icon: Icons.copy, label: 'Copier vers une année', color: Color(0xFF6366F1)),
         const RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -299,14 +299,6 @@ class _OverridesTab extends ConsumerWidget {
         const RowAction(id: 'import', icon: Icons.upload, label: 'Importer', color: Color(0xFF10B981)),
         const RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -353,14 +345,6 @@ class _AccountsTab extends ConsumerWidget {
         const RowAction(id: 'unblock', icon: Icons.lock_open, label: 'Débloquer', color: Color(0xFF10B981)),
         const RowAction(id: 'export', icon: Icons.download, label: 'Exporter', color: Color(0xFF64748B)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -398,14 +382,6 @@ class _CashRegistersTab extends ConsumerWidget {
             isVisible: (item) => item['isOpen'] == false),
         const RowAction(id: 'transfer', icon: Icons.swap_horiz, label: 'Transfert', color: Color(0xFF6366F1)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -428,14 +404,6 @@ class _PaymentsTab extends ConsumerWidget {
         const RowAction(id: 'whatsapp', icon: Icons.message, label: 'Renvoyer WhatsApp', color: Color(0xFF10B981)),
         const RowAction(id: 'sms', icon: Icons.sms, label: 'Renvoyer SMS', color: Color(0xFFD97706)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -457,14 +425,6 @@ class _CollectionSummaryTab extends ConsumerWidget {
         const RowAction(id: 'export_pdf', icon: Icons.picture_as_pdf, label: 'PDF', color: Color(0xFFDC2626)),
         const RowAction(id: 'import', icon: Icons.upload, label: 'Importer', color: Color(0xFF6366F1)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -520,14 +480,6 @@ class _RecoveryTab extends ConsumerWidget {
         const RowAction(id: 'promise', icon: Icons.handshake, label: 'Promesse', color: Color(0xFF6366F1)),
         const RowAction(id: 'escalate', icon: Icons.arrow_upward, label: 'Escalader', color: Color(0xFFD97706)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -543,6 +495,14 @@ class _ExpensesTab extends ConsumerWidget {
       tableColumns: const ['category', 'amount', 'expenseDate', 'requester', 'status'],
       icon: Icons.shopping_cart,
       createLabel: 'Nouvelle dépense',
+      createFields: const [
+        FormFieldDef(key: 'description', label: 'Description', required: true, type: FieldType.textarea, maxLines: 3),
+        FormFieldDef(key: 'amount', label: 'Montant (F CFA)', type: FieldType.number, required: true),
+        FormFieldDef(key: 'category', label: 'Catégorie', type: FieldType.dropdown, options: ['FOURNITURES', 'MAINTENANCE', 'ENERGIE', 'PERSONNEL', 'TRANSPORT', 'AUTRE'], required: true),
+        FormFieldDef(key: 'expenseDate', label: 'Date', type: FieldType.date),
+        FormFieldDef(key: 'vendor', label: 'Fournisseur'),
+        FormFieldDef(key: 'invoiceRef', label: 'Référence facture'),
+      ],
       statusFilters: const [
         StatusFilter(id: 'ALL', label: 'Toutes'),
         StatusFilter(id: 'PENDING', label: 'En attente'),
@@ -569,14 +529,6 @@ class _ExpensesTab extends ConsumerWidget {
                 item['status']?.toString().toUpperCase() == 'PENDING'),
         const RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -610,14 +562,6 @@ class _TreasuryTab extends ConsumerWidget {
         const RowAction(id: 'export_excel', icon: Icons.grid_on, label: 'Excel', color: Color(0xFF10B981)),
         const RowAction(id: 'export_pdf', icon: Icons.picture_as_pdf, label: 'PDF', color: Color(0xFFDC2626)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -637,14 +581,6 @@ class _ReportsTab extends ConsumerWidget {
         const RowAction(id: 'export_pdf', icon: Icons.picture_as_pdf, label: 'PDF', color: Color(0xFFDC2626)),
         const RowAction(id: 'accounting', icon: Icons.calculate, label: 'Export comptable', color: Color(0xFF6366F1)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -665,14 +601,6 @@ class _AuditTab extends ConsumerWidget {
         const RowAction(id: 'export_excel', icon: Icons.grid_on, label: 'Excel', color: Color(0xFF10B981)),
         const RowAction(id: 'export_pdf', icon: Icons.picture_as_pdf, label: 'PDF', color: Color(0xFFDC2626)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -690,14 +618,6 @@ class _SettingsTab extends ConsumerWidget {
         const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
         const RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }

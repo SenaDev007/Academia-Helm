@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
 import '../../../core/widgets/ah_app_bar.dart';
+import '../../../core/widgets/dynamic_form_dialog.dart';
 import '../../../core/widgets/generic_module_tab.dart' show KpiCardConfig;
 import '../../../core/widgets/module_data_tab.dart';
 import '../services/students_service_v2.dart';
@@ -365,6 +366,20 @@ class _AdmissionsTab extends ConsumerWidget {
       endpoint: '/students/admissions',
       titleField: 'lastName',
       tableColumns: const ['firstName', 'admissionNumber', 'gender', 'createdAt'],
+      createLabel: 'Nouveau Dossier',
+      createFields: const [
+        FormFieldDef(key: 'firstName', label: 'Prénom', required: true, hint: 'Ex: Jean-Marie'),
+        FormFieldDef(key: 'lastName', label: 'Nom', required: true, hint: 'Ex: KOFFI'),
+        FormFieldDef(key: 'gender', label: 'Sexe', type: FieldType.dropdown, options: ['M', 'F']),
+        FormFieldDef(key: 'birthDate', label: 'Date de naissance', type: FieldType.date),
+        FormFieldDef(key: 'birthPlace', label: 'Lieu de naissance'),
+        FormFieldDef(key: 'nationality', label: 'Nationalité', initialValue: 'Béninoise'),
+        FormFieldDef(key: 'previousSchool', label: 'Établissement précédent'),
+        FormFieldDef(key: 'mainGuardianName', label: 'Nom du responsable'),
+        FormFieldDef(key: 'mainGuardianPhone', label: 'Téléphone du responsable', type: FieldType.phone),
+        FormFieldDef(key: 'mainGuardianEmail', label: 'Email du responsable', type: FieldType.email),
+        FormFieldDef(key: 'isNewStudent', label: 'Nouvel élève', type: FieldType.toggle, initialValue: true),
+      ],
       kpiConfigs: const [
         KpiCardConfig(
             label: 'Total Demandes',
@@ -453,14 +468,6 @@ class _AdmissionsTab extends ConsumerWidget {
             color: const Color(0xFFDC2626),
             isVisible: (item) => item['convertedStudentId'] == null),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -488,14 +495,6 @@ class _EnrollmentsTab extends ConsumerWidget {
         const RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
         const RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -516,14 +515,6 @@ class _AssignmentsTab extends ConsumerWidget {
         const RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
         const RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -603,14 +594,6 @@ class _MovementsTab extends ConsumerWidget {
             isVisible: (item) => item['status']?.toString().toUpperCase() == 'PENDING'),
         const RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -643,14 +626,6 @@ class _IdCardsTab extends ConsumerWidget {
             isVisible: (item) => item['status']?.toString().toUpperCase() == 'ACTIVE'),
         const RowAction(id: 'reissue', icon: Icons.refresh, label: 'Réémettre', color: Color(0xFFD97706)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -706,14 +681,6 @@ class _FamiliesTab extends ConsumerWidget {
         const RowAction(id: 'message', icon: Icons.message, label: 'Message', color: Color(0xFF06B6D4)),
         const RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -752,14 +719,6 @@ class _TransfersTab extends ConsumerWidget {
             isVisible: (item) => item['status']?.toString().toUpperCase() == 'PENDING'),
         const RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -780,14 +739,6 @@ class _HistoryTab extends ConsumerWidget {
         const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
         const RowAction(id: 'export', icon: Icons.download, label: 'Exporter', color: Color(0xFF10B981)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -805,14 +756,6 @@ class _EducmasterTab extends ConsumerWidget {
         const RowAction(id: 'sync', icon: Icons.sync, label: 'Synchroniser', color: AHColors.navy),
         const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }
@@ -840,14 +783,6 @@ class _OrionTab extends ConsumerWidget {
         const RowAction(id: 'ack', icon: Icons.check, label: 'Acquitter', color: Color(0xFF10B981)),
         const RowAction(id: 'resolve', icon: Icons.task_alt, label: 'Résoudre', color: Color(0xFF6366F1)),
       ],
-      onAction: (actionId, item) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action "$actionId" — en cours d\'implémentation'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
     );
   }
 }

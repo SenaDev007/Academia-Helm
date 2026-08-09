@@ -87,8 +87,7 @@ class _PedagogyModuleScreenState extends ConsumerState<PedagogyModuleScreen>
                     RowAction(id: 'subjects', icon: Icons.book, label: 'Matières', color: Color(0xFF6366F1)),
                     RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/pedagogy/subjects',
                   titleField: 'name',
@@ -100,8 +99,7 @@ class _PedagogyModuleScreenState extends ConsumerState<PedagogyModuleScreen>
                     RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
                     RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/pedagogy/teachers',
                   titleField: 'name',
@@ -114,8 +112,7 @@ class _PedagogyModuleScreenState extends ConsumerState<PedagogyModuleScreen>
                     RowAction(id: 'classes', icon: Icons.class_, label: 'Classes', color: Color(0xFF6366F1)),
                     RowAction(id: 'profile', icon: Icons.assignment_ind, label: 'Profil', color: Color(0xFFD97706)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/pedagogy/timetables',
                   titleField: 'className',
@@ -128,8 +125,7 @@ class _PedagogyModuleScreenState extends ConsumerState<PedagogyModuleScreen>
                     RowAction(id: 'copy', icon: Icons.copy, label: 'Copier', color: Color(0xFF6366F1)),
                     RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/pedagogy-space/my-classes',
                   titleField: 'className',
@@ -142,8 +138,7 @@ class _PedagogyModuleScreenState extends ConsumerState<PedagogyModuleScreen>
                     RowAction(id: 'homework', icon: Icons.assignment, label: 'Devoirs', color: Color(0xFFD97706)),
                     RowAction(id: 'grades', icon: Icons.grade, label: 'Notes', color: Color(0xFF6366F1)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/pedagogy/control',
                   titleField: 'className',
@@ -173,8 +168,7 @@ class _PedagogyModuleScreenState extends ConsumerState<PedagogyModuleScreen>
                         isVisible: (item) =>
                             item['status']?.toString().toUpperCase() == 'PENDING'),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/pedagogy/orion-dashboard',
                   icon: Icons.auto_awesome,
@@ -183,8 +177,7 @@ class _PedagogyModuleScreenState extends ConsumerState<PedagogyModuleScreen>
                     RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
                     RowAction(id: 'insights', icon: Icons.insights, label: 'Insights', color: Color(0xFF6366F1)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/pedagogy-space/homeworks',
                   titleField: 'title',
@@ -204,8 +197,7 @@ class _PedagogyModuleScreenState extends ConsumerState<PedagogyModuleScreen>
                     RowAction(id: 'grade', icon: Icons.grade, label: 'Corriger', color: Color(0xFF10B981)),
                     RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/pedagogy/sara-compose',
                   icon: Icons.auto_awesome,
@@ -214,8 +206,7 @@ class _PedagogyModuleScreenState extends ConsumerState<PedagogyModuleScreen>
                     RowAction(id: 'compose', icon: Icons.edit, label: 'Composer', color: AHColors.navy),
                     RowAction(id: 'history', icon: Icons.history, label: 'Historique', color: Color(0xFF64748B)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/pedagogy/class-diaries',
                   titleField: 'className',
@@ -232,8 +223,7 @@ class _PedagogyModuleScreenState extends ConsumerState<PedagogyModuleScreen>
                     RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
                     RowAction(id: 'export', icon: Icons.download, label: 'Exporter', color: Color(0xFF10B981)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
               ],
             ),
           ),

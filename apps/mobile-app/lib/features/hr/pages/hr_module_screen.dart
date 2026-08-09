@@ -90,8 +90,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                     RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
                     RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/hr/school-directors',
                   titleField: 'name',
@@ -103,8 +102,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                     RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
                     RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/hr/recruitment/jobs',
                   titleField: 'title',
@@ -123,8 +121,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                     RowAction(id: 'candidates', icon: Icons.people, label: 'Candidats', color: Color(0xFF6366F1)),
                     RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/hr/recruitment/embauches',
                   titleField: 'candidateName',
@@ -142,8 +139,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                     RowAction(id: 'onboarding', icon: Icons.assignment_ind, label: 'Onboarding', color: Color(0xFF6366F1)),
                     RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/hr/staff',
                   titleField: 'firstName',
@@ -163,8 +159,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                     RowAction(id: 'card', icon: Icons.badge, label: 'Carte staff', color: Color(0xFFD97706)),
                     RowAction(id: 'terminate', icon: Icons.person_remove, label: 'Terminer', color: Color(0xFFDC2626)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/hr/contract-document-config',
                   icon: Icons.settings,
@@ -173,8 +168,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                     RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
                     RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/hr/contracts',
                   titleField: 'staffName',
@@ -195,8 +189,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                     RowAction(id: 'terminate', icon: Icons.cancel, label: 'Résilier', color: Color(0xFFDC2626)),
                     RowAction(id: 'download', icon: Icons.download, label: 'Télécharger', color: Color(0xFF6366F1)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/hr/staff',
                   params: const {'collaborator': 'true'},
@@ -209,8 +202,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                     RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
                     RowAction(id: 'message', icon: Icons.message, label: 'Message', color: Color(0xFF06B6D4)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/hr/ia',
                   icon: Icons.psychology,
@@ -218,8 +210,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                   rowActions: const [
                     RowAction(id: 'chat', icon: Icons.chat, label: 'Discuter', color: AHColors.navy),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/hr/leaves/requests',
                   titleField: 'staff_name',
@@ -250,8 +241,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                             item['status']?.toString().toUpperCase() == 'PENDING'),
                     const RowAction(id: 'cancel', icon: Icons.delete, label: 'Annuler', color: Color(0xFF64748B)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/hr/attendance',
                   titleField: 'staffName',
@@ -268,8 +258,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                     RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
                     RowAction(id: 'edit', icon: Icons.edit, label: 'Corriger', color: AHColors.navy),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/hr/planning',
                   titleField: 'staffName',
@@ -281,8 +270,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                     RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
                     RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/hr/allowances/types',
                   titleField: 'name',
@@ -294,8 +282,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                     RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
                     RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/hr/payroll/periods',
                   titleField: 'label',
@@ -314,8 +301,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                     RowAction(id: 'export', icon: Icons.download, label: 'Exporter', color: Color(0xFF6366F1)),
                     RowAction(id: 'payslips', icon: Icons.receipt, label: 'Bulletin de paie', color: Color(0xFFD97706)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/hr/cnss',
                   icon: Icons.account_balance,
@@ -325,8 +311,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                     RowAction(id: 'declare', icon: Icons.send, label: 'Déclarer', color: Color(0xFF10B981)),
                     RowAction(id: 'export', icon: Icons.download, label: 'Exporter', color: Color(0xFF6366F1)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/hr/overview/analytics',
                   icon: Icons.bar_chart,
@@ -336,8 +321,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                     RowAction(id: 'export_excel', icon: Icons.grid_on, label: 'Excel', color: Color(0xFF10B981)),
                     RowAction(id: 'export_pdf', icon: Icons.picture_as_pdf, label: 'PDF', color: Color(0xFFDC2626)),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/hr/settings',
                   icon: Icons.settings,
@@ -346,8 +330,7 @@ class _HrModuleScreenState extends ConsumerState<HrModuleScreen>
                     RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
                     RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
                   ],
-                  onAction: (a, i) => _stub(context, a),
-                ),
+                            ),
               ],
             ),
           ),

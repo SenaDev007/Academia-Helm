@@ -20,8 +20,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_client.dart';
+import '../../../core/services/module_action_service.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
+import 'dynamic_form_dialog.dart';
 import 'generic_module_tab.dart' show KpiCardConfig;
 
 /// Status filter chip configuration.
@@ -82,6 +84,7 @@ class ModuleDataTab extends ConsumerStatefulWidget {
     this.onAction,
     this.showCreateButton = true,
     this.createLabel = 'Nouveau',
+    this.createFields = const [],
     this.emptyMessage = 'Aucune donnée',
     this.icon = Icons.list,
   });
@@ -97,6 +100,9 @@ class ModuleDataTab extends ConsumerStatefulWidget {
   final void Function(String actionId, Map<String, dynamic> item)? onAction;
   final bool showCreateButton;
   final String createLabel;
+  /// Fields to show in the create form. If empty, the create button calls
+  /// the API with an empty payload.
+  final List<FormFieldDef> createFields;
   final String emptyMessage;
   final IconData icon;
 
@@ -108,11 +114,226 @@ class _ModuleDataTabState extends ConsumerState<ModuleDataTab> {
   String _search = '';
   String _activeStatus = 'ALL';
   final _searchCtrl = TextEditingController();
+  bool _isExecuting = false;
 
   @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  /// Default action handler — uses ModuleActionService to call the API.
+  /// If the caller provided an `onAction` callback, that takes priority.
+  void _handleAction(String actionId, Map<String, dynamic> item) {
+    if (widget.onAction != null) {
+      widget.onAction!(actionId, item);
+      return;
+    }
+
+    // For 'create' action, show a form dialog if createFields are provided
+    if (actionId == 'create' && widget.createFields.isNotEmpty) {
+      _showCreateForm();
+      return;
+    }
+
+    // Default behavior: call the ModuleActionService
+    _executeViaService(actionId, item);
+  }
+
+  /// Shows the create form dialog, then calls the API with the collected data.
+  Future<void> _showCreateForm() async {
+    final formData = await showDynamicFormDialog(
+      context: context,
+      title: widget.createLabel,
+      fields: widget.createFields,
+    );
+    if (formData == null) return; // user cancelled
+
+    // Now execute the create action with the form data
+    final actionService = ref.read(moduleActionServiceProvider);
+    final result = await actionService.executeAction(
+      endpoint: widget.endpoint,
+      actionId: 'create',
+      item: const {},
+      extraData: formData,
+    );
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.message),
+        backgroundColor: result.success ? AHColors.success : AHColors.error,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+
+    // Refresh the data
+    if (result.success) {
+      final dataParams = (
+        endpoint: widget.endpoint,
+        params: {
+          ...?widget.params,
+          if (_activeStatus != 'ALL') 'status': _activeStatus,
+        },
+      );
+      ref.invalidate(_moduleDataProvider(dataParams));
+    }
+  }
+
+  Future<void> _executeViaService(
+      String actionId, Map<String, dynamic> item) async {
+    if (_isExecuting) return;
+    setState(() => _isExecuting = true);
+
+    // For destructive/irreversible actions, confirm first
+    if (actionId == 'delete' || actionId == 'terminate' ||
+        actionId == 'revoke' || actionId == 'reject' ||
+        actionId == 'cancel') {
+      final confirmed = await _confirmAction(actionId, item);
+      if (!confirmed) {
+        if (mounted) setState(() => _isExecuting = false);
+        return;
+      }
+    }
+
+    final actionService = ref.read(moduleActionServiceProvider);
+    final result = await actionService.executeAction(
+      endpoint: widget.endpoint,
+      actionId: actionId,
+      item: item,
+    );
+
+    if (!mounted) return;
+    setState(() => _isExecuting = false);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result.message),
+        backgroundColor: result.success ? AHColors.success : AHColors.error,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+
+    // Refresh the data after a successful action
+    if (result.success) {
+      final dataParams = (
+        endpoint: widget.endpoint,
+        params: {
+          ...?widget.params,
+          if (_activeStatus != 'ALL') 'status': _activeStatus,
+        },
+      );
+      ref.invalidate(_moduleDataProvider(dataParams));
+    }
+  }
+
+  /// Shows a confirmation dialog for destructive actions.
+  Future<bool> _confirmAction(
+      String actionId, Map<String, dynamic> item) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(_confirmTitle(actionId)),
+        content: Text(_confirmMessage(actionId, item)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _actionColor(actionId),
+              foregroundColor: Colors.white,
+            ),
+            child: Text(_confirmLabel(actionId)),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  String _confirmTitle(String actionId) {
+    switch (actionId) {
+      case 'delete':
+        return 'Confirmer la suppression';
+      case 'terminate':
+        return 'Confirmer la résiliation';
+      case 'revoke':
+        return 'Confirmer la révocation';
+      case 'reject':
+        return 'Confirmer le refus';
+      case 'cancel':
+        return 'Confirmer l\'annulation';
+      default:
+        return 'Confirmer';
+    }
+  }
+
+  String _confirmMessage(String actionId, Map<String, dynamic> item) {
+    final name = item['name']?.toString() ??
+        item['title']?.toString() ??
+        item['firstName']?.toString() ??
+        item['lastName']?.toString() ??
+        item['studentName']?.toString() ??
+        'cet élément';
+    switch (actionId) {
+      case 'delete':
+        return 'Voulez-vous vraiment supprimer "$name" ? Cette action est irréversible.';
+      case 'terminate':
+        return 'Voulez-vous vraiment résilier "$name" ?';
+      case 'revoke':
+        return 'Voulez-vous vraiment révoquer "$name" ?';
+      case 'reject':
+        return 'Voulez-vous vraiment refuser "$name" ?';
+      case 'cancel':
+        return 'Voulez-vous vraiment annuler "$name" ?';
+      default:
+        return 'Voulez-vous vraiment effectuer cette action sur "$name" ?';
+    }
+  }
+
+  String _confirmLabel(String actionId) {
+    switch (actionId) {
+      case 'delete':
+        return 'Supprimer';
+      case 'terminate':
+        return 'Résilier';
+      case 'revoke':
+        return 'Révoquer';
+      case 'reject':
+        return 'Refuser';
+      case 'cancel':
+        return 'Annuler';
+      default:
+        return 'Confirmer';
+    }
+  }
+
+  Color _actionColor(String actionId) {
+    switch (actionId) {
+      case 'delete':
+      case 'terminate':
+      case 'revoke':
+      case 'reject':
+      case 'cancel':
+        return AHColors.error;
+      case 'accept':
+      case 'approve':
+      case 'validate':
+      case 'publish':
+      case 'complete':
+        return AHColors.success;
+      case 'submit':
+      case 'start':
+      case 'process':
+      case 'open':
+        return const Color(0xFFD97706);
+      default:
+        return AHColors.navy;
+    }
   }
 
   @override
@@ -160,7 +381,7 @@ class _ModuleDataTabState extends ConsumerState<ModuleDataTab> {
               ref.invalidate(_kpiProvider((endpoint: widget.endpoint, params: widget.params)));
             }
           },
-          onCreate: () => widget.onAction?.call('create', <String, dynamic>{}),
+          onCreate: () => _handleAction('create', <String, dynamic>{}),
         ),
 
         // ── Data table ──────────────────────────────────────────────
@@ -212,7 +433,7 @@ class _ModuleDataTabState extends ConsumerState<ModuleDataTab> {
           rowActions: widget.rowActions,
           onTap: () => _showDetailSheet(context, item),
           onAction: (actionId) =>
-              widget.onAction?.call(actionId, item),
+              _handleAction(actionId, item),
         );
       },
     );
@@ -236,7 +457,7 @@ class _ModuleDataTabState extends ConsumerState<ModuleDataTab> {
                   const SizedBox(height: 12),
                   ElevatedButton.icon(
                     onPressed: () =>
-                        widget.onAction?.call('create', <String, dynamic>{}),
+                        _handleAction('create', <String, dynamic>{}),
                     icon: const Icon(Icons.add, size: 16),
                     label: Text(widget.createLabel),
                     style: ElevatedButton.styleFrom(
@@ -399,7 +620,7 @@ class _ModuleDataTabState extends ConsumerState<ModuleDataTab> {
                           side: BorderSide(color: a.color.withOpacity(0.2)),
                           onPressed: () {
                             Navigator.pop(context);
-                            widget.onAction?.call(a.id, item);
+                            _handleAction(a.id, item);
                           },
                         );
                       }).toList(),

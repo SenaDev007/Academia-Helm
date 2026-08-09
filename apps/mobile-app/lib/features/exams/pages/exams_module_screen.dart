@@ -112,8 +112,7 @@ class _ExamsModuleScreenState extends ConsumerState<ExamsModuleScreen>
                         isVisible: (item) => item['status'] == 'SUBMITTED'),
                     const RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
                   ],
-                  onAction: (a, i) => _actionStub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/institutional-exams/evaluations',
                   params: const {'status': 'OPEN_FOR_GRADING'},
@@ -131,8 +130,7 @@ class _ExamsModuleScreenState extends ConsumerState<ExamsModuleScreen>
                         color: const Color(0xFFD97706),
                         isVisible: (item) => item['status'] == 'OPEN_FOR_GRADING'),
                   ],
-                  onAction: (a, i) => _actionStub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/institutional-exams/evaluations',
                   params: const {'status': 'SUBMITTED'},
@@ -155,8 +153,7 @@ class _ExamsModuleScreenState extends ConsumerState<ExamsModuleScreen>
                         color: const Color(0xFFDC2626),
                         isVisible: (item) => item['status'] == 'SUBMITTED'),
                   ],
-                  onAction: (a, i) => _actionStub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/institutional-exams/unlock-requests',
                   titleField: 'evaluationTypeName',
@@ -186,8 +183,7 @@ class _ExamsModuleScreenState extends ConsumerState<ExamsModuleScreen>
                         isVisible: (item) =>
                             item['status']?.toString().toUpperCase() == 'PENDING'),
                   ],
-                  onAction: (a, i) => _actionStub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/institutional-exams/evaluations',
                   params: const {'status': 'VALIDATED'},
@@ -199,8 +195,7 @@ class _ExamsModuleScreenState extends ConsumerState<ExamsModuleScreen>
                     const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
                     const RowAction(id: 'export', icon: Icons.download, label: 'Exporter', color: Color(0xFF10B981)),
                   ],
-                  onAction: (a, i) => _actionStub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/institutional-exams/bulletins',
                   titleField: 'studentName',
@@ -224,8 +219,7 @@ class _ExamsModuleScreenState extends ConsumerState<ExamsModuleScreen>
                         isVisible: (item) =>
                             item['status']?.toString().toUpperCase() == 'GENERATED'),
                   ],
-                  onAction: (a, i) => _actionStub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/institutional-exams/councils',
                   titleField: 'className',
@@ -257,8 +251,7 @@ class _ExamsModuleScreenState extends ConsumerState<ExamsModuleScreen>
                             item['status']?.toString().toUpperCase() == 'IN_PROGRESS'),
                     const RowAction(id: 'minutes', icon: Icons.description, label: 'Procès-verbal', color: Color(0xFFD97706)),
                   ],
-                  onAction: (a, i) => _actionStub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/institutional-exams/dashboard/kpi',
                   icon: Icons.bar_chart,
@@ -276,8 +269,7 @@ class _ExamsModuleScreenState extends ConsumerState<ExamsModuleScreen>
                     const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
                     const RowAction(id: 'export', icon: Icons.download, label: 'Exporter', color: Color(0xFF10B981)),
                   ],
-                  onAction: (a, i) => _actionStub(context, a),
-                ),
+                            ),
                 ModuleDataTab(
                   endpoint: '/institutional-exams/config',
                   icon: Icons.settings,
@@ -286,8 +278,7 @@ class _ExamsModuleScreenState extends ConsumerState<ExamsModuleScreen>
                     const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
                     const RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
                   ],
-                  onAction: (a, i) => _actionStub(context, a),
-                ),
+                            ),
               ],
             ),
           ),

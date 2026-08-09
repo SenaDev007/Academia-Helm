@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/ah_colors.dart';
 import '../../../core/theme/ah_spacing.dart';
 import '../../../core/widgets/ah_app_bar.dart';
+import '../../../core/widgets/generic_module_tab.dart' show KpiCardConfig;
+import '../../../core/widgets/module_data_tab.dart';
 import '../services/students_service_v2.dart';
 
 /// Students module screen — mirrors the web's StudentsModulePage.tsx
@@ -35,9 +37,19 @@ class _StudentsModuleScreenState extends ConsumerState<StudentsModuleScreen>
   late TabController _tabController;
 
   static const _tabs = [
-    'Tableau de Bord', 'Admissions', 'Inscriptions', 'Affectations',
-    'Liste des Élèves', 'Sorties', 'Cartes', 'Dossiers',
-    'Familles', 'Transferts', 'Historique', 'Educmaster', 'ORION',
+    'Tableau de Bord',
+    'Admissions',
+    'Inscriptions',
+    'Affectations',
+    'Liste des Élèves',
+    'Sorties & Abandons',
+    'Cartes Scolaires',
+    'Dossiers Élèves',
+    'Familles',
+    'Transferts',
+    'Historique',
+    'Educmaster',
+    'ORION & Stats',
   ];
 
   @override
@@ -59,7 +71,6 @@ class _StudentsModuleScreenState extends ConsumerState<StudentsModuleScreen>
       appBar: const AHAppBar(showBackButton: true, title: 'Élèves & Scolarité'),
       body: Column(
         children: [
-          // Tab bar
           Container(
             color: Colors.white,
             child: TabBar(
@@ -69,12 +80,12 @@ class _StudentsModuleScreenState extends ConsumerState<StudentsModuleScreen>
               indicatorColor: AHColors.gold,
               isScrollable: true,
               tabAlignment: TabAlignment.start,
-              labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+              labelStyle:
+                  const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
               unselectedLabelStyle: const TextStyle(fontSize: 11),
               tabs: _tabs.map((t) => Tab(text: t)).toList(),
             ),
           ),
-          // Tab content
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -82,16 +93,16 @@ class _StudentsModuleScreenState extends ConsumerState<StudentsModuleScreen>
                 _DashboardTab(),
                 _AdmissionsTab(),
                 _EnrollmentsTab(),
-                _PlaceholderTab('Affectations & Mouvements'),
-                _PlaceholderTab('Liste des Élèves'),
-                _PlaceholderTab('Sorties & Abandons'),
-                _PlaceholderTab('Cartes Scolaires'),
-                _PlaceholderTab('Dossiers Élèves'),
-                _PlaceholderTab('Familles'),
-                _PlaceholderTab('Transferts & Mobilité'),
-                _PlaceholderTab('Historique Scolaire'),
-                _PlaceholderTab('Educmaster'),
-                _PlaceholderTab('ORION, Stats & Audit'),
+                _AssignmentsTab(),
+                _StudentListTab(),
+                _MovementsTab(),
+                _IdCardsTab(),
+                _DossiersTab(),
+                _FamiliesTab(),
+                _TransfersTab(),
+                _HistoryTab(),
+                _EducmasterTab(),
+                _OrionTab(),
               ],
             ),
           ),
@@ -116,7 +127,12 @@ class _DashboardTab extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 5 KPI cards
+            const Text('Vue d\'ensemble',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: AHColors.navy)),
+            const SizedBox(height: AHSpacing.sm),
             GridView.count(
               crossAxisCount: 2,
               shrinkWrap: true,
@@ -125,18 +141,83 @@ class _DashboardTab extends ConsumerWidget {
               crossAxisSpacing: AHSpacing.sm,
               childAspectRatio: 1.4,
               children: [
-                _KpiCard(label: 'Élèves inscrits', value: '${stats.valueOrNull?.active ?? 0}',
-                  icon: Icons.check_circle, color: const Color(0xFF10B981), bg: const Color(0xFFF0FDF4)),
-                _KpiCard(label: 'Pré-inscrits', value: '${stats.valueOrNull?.preRegistered ?? 0}',
-                  icon: Icons.people, color: const Color(0xFF2563EB), bg: const Color(0xFFEFF6FF)),
-                _KpiCard(label: 'Adm. acceptées', value: '${stats.valueOrNull?.admissionsAccepted ?? 0}',
-                  icon: Icons.assignment_turned_in, color: const Color(0xFFD97706), bg: const Color(0xFFFFFBEB)),
-                _KpiCard(label: 'Adm. en attente', value: '${stats.valueOrNull?.admissionsPending ?? 0}',
-                  icon: Icons.access_time, color: const Color(0xFFEA580C), bg: const Color(0xFFFFF7ED)),
-                _KpiCard(label: 'Archivés', value: '${stats.valueOrNull?.archived ?? 0}',
-                  icon: Icons.archive, color: const Color(0xFF64748B), bg: const Color(0xFFF8FAFC)),
-                _KpiCard(label: 'Total', value: '${stats.valueOrNull?.total ?? 0}',
-                  icon: Icons.school, color: AHColors.navy, bg: const Color(0xFFEFF6FF)),
+                _KpiCard(
+                    label: 'Élèves inscrits',
+                    value: '${stats.valueOrNull?.active ?? 0}',
+                    icon: Icons.check_circle,
+                    color: const Color(0xFF10B981),
+                    bg: const Color(0xFFF0FDF4)),
+                _KpiCard(
+                    label: 'Pré-inscrits',
+                    value: '${stats.valueOrNull?.preRegistered ?? 0}',
+                    icon: Icons.people,
+                    color: const Color(0xFF2563EB),
+                    bg: const Color(0xFFEFF6FF)),
+                _KpiCard(
+                    label: 'Adm. acceptées',
+                    value: '${stats.valueOrNull?.admissionsAccepted ?? 0}',
+                    icon: Icons.assignment_turned_in,
+                    color: const Color(0xFFD97706),
+                    bg: const Color(0xFFFFFBEB)),
+                _KpiCard(
+                    label: 'Adm. en attente',
+                    value: '${stats.valueOrNull?.admissionsPending ?? 0}',
+                    icon: Icons.access_time,
+                    color: const Color(0xFFEA580C),
+                    bg: const Color(0xFFFFF7ED)),
+                _KpiCard(
+                    label: 'Archivés',
+                    value: '${stats.valueOrNull?.archived ?? 0}',
+                    icon: Icons.archive,
+                    color: const Color(0xFF64748B),
+                    bg: const Color(0xFFF8FAFC)),
+                _KpiCard(
+                    label: 'Total',
+                    value: '${stats.valueOrNull?.total ?? 0}',
+                    icon: Icons.school,
+                    color: AHColors.navy,
+                    bg: const Color(0xFFEFF6FF)),
+              ],
+            ),
+            const SizedBox(height: AHSpacing.lg),
+            const Text('Accès rapide',
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AHColors.navy)),
+            const SizedBox(height: AHSpacing.sm),
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: AHSpacing.sm,
+              crossAxisSpacing: AHSpacing.sm,
+              childAspectRatio: 2.5,
+              children: [
+                _QuickAction(
+                    label: 'Nouvelle admission',
+                    icon: Icons.person_add,
+                    color: const Color(0xFF2563EB),
+                    bg: const Color(0xFFEFF6FF),
+                    onTap: () {}),
+                _QuickAction(
+                    label: 'Rechercher un élève',
+                    icon: Icons.search,
+                    color: const Color(0xFF6366F1),
+                    bg: const Color(0xFFEEF2FF),
+                    onTap: () {}),
+                _QuickAction(
+                    label: 'Générer matricules',
+                    icon: Icons.badge,
+                    color: const Color(0xFF10B981),
+                    bg: const Color(0xFFF0FDF4),
+                    onTap: () {}),
+                _QuickAction(
+                    label: 'Cartes scolaires',
+                    icon: Icons.credit_card,
+                    color: const Color(0xFFD97706),
+                    bg: const Color(0xFFFFFBEB),
+                    onTap: () {}),
               ],
             ),
           ],
@@ -146,90 +227,240 @@ class _DashboardTab extends ConsumerWidget {
   }
 }
 
-// ── Tab 2: Admissions ───────────────────────────────────────────────────
+class _KpiCard extends StatelessWidget {
+  const _KpiCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+    required this.bg,
+  });
 
-class _AdmissionsTab extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final admissions = ref.watch(admissionsProvider);
-
-    return RefreshIndicator(
-      color: AHColors.navy,
-      onRefresh: () async => ref.invalidate(admissionsProvider),
-      child: admissions.when(
-        data: (items) {
-          if (items.isEmpty) return _buildEmpty('Aucune admission');
-          return ListView.builder(
-            padding: const EdgeInsets.all(AHSpacing.sm),
-            itemCount: items.length,
-            itemBuilder: (context, index) => _AdmissionCard(admission: items[index]),
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator(color: AHColors.navy)),
-        error: (_, __) => _buildEmpty('Erreur de chargement'),
-      ),
-    );
-  }
-
-  Widget _buildEmpty(String msg) {
-    return ListView(
-      children: [SizedBox(height: 200, child: Center(child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.assignment_outlined, size: 48, color: AHColors.grey300),
-          const SizedBox(height: 8),
-          Text(msg, style: TextStyle(fontSize: 13, color: AHColors.grey500)),
-        ],
-      )))],
-    );
-  }
-}
-
-class _AdmissionCard extends StatelessWidget {
-  const _AdmissionCard({required this.admission});
-  final AdmissionItem admission;
-
-  Color get _statusColor => switch (admission.status) {
-    'ACCEPTED' => const Color(0xFF10B981),
-    'REJECTED' => const Color(0xFFDC2626),
-    'CONVERTED' => const Color(0xFF2563EB),
-    'SUBMITTED' => const Color(0xFF7C3AED),
-    'UNDER_REVIEW' => const Color(0xFFF59E0B),
-    _ => const Color(0xFF64748B),
-  };
-
-  String get _statusLabel => switch (admission.status) {
-    'ACCEPTED' => 'Accepté',
-    'REJECTED' => 'Refusé',
-    'CONVERTED' => 'Inscrit',
-    'SUBMITTED' => 'Soumis',
-    'UNDER_REVIEW' => 'En examen',
-    'PENDING' => 'Brouillon',
-    _ => admission.status,
-  };
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+  final Color bg;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 4),
       padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
-      child: Row(children: [
-        Container(width: 32, height: 32, decoration: BoxDecoration(color: _statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
-          child: Center(child: Text(admission.initials, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _statusColor)))),
-        const SizedBox(width: 8),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(admission.displayName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-          if (admission.requestedClassName != null &&
-              admission.requestedClassName!.isNotEmpty)
-            Text(admission.requestedClassName!, style: const TextStyle(fontSize: 9, color: AHColors.grey500)),
-          if (admission.admissionNumber.isNotEmpty)
-            Text('N° ${admission.admissionNumber}', style: const TextStyle(fontSize: 8, color: AHColors.grey400)),
-        ])),
-        Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(color: _statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-          child: Text(_statusLabel, style: TextStyle(fontSize: 8, fontWeight: FontWeight.w700, color: _statusColor))),
-      ]),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                    color: bg, borderRadius: BorderRadius.circular(6)),
+                child: Icon(icon, size: 16, color: color),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(value,
+                    style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF0F172A))),
+              ),
+            ],
+          ),
+          Text(label,
+              style: const TextStyle(fontSize: 10, color: AHColors.grey500)),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickAction extends StatelessWidget {
+  const _QuickAction({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.bg,
+    required this.onTap,
+  });
+  final String label;
+  final IconData icon;
+  final Color color;
+  final Color bg;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                    color: bg, borderRadius: BorderRadius.circular(8)),
+                child: Icon(icon, size: 18, color: color),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(label,
+                    style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF0F172A)),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Tab 2: Admissions — uses the new ModuleDataTab framework ────────────
+
+class _AdmissionsTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watch admissions to compute status filter counts dynamically.
+    final admissions = ref.watch(admissionsProvider);
+    final counts = admissions.maybeWhen(
+      data: (items) {
+        int count(String s) =>
+            items.where((i) => i.status.toUpperCase() == s).length;
+        return {
+          'ALL': items.length,
+          'PENDING': count('PENDING'),
+          'SUBMITTED': count('SUBMITTED'),
+          'UNDER_REVIEW': count('UNDER_REVIEW'),
+          'ACCEPTED': count('ACCEPTED'),
+          'CONVERTED': count('CONVERTED'),
+          'REJECTED': count('REJECTED'),
+        };
+      },
+      orElse: () => <String, int>{},
+    );
+
+    return ModuleDataTab(
+      endpoint: '/students/admissions',
+      titleField: 'lastName',
+      tableColumns: const ['firstName', 'admissionNumber', 'gender', 'createdAt'],
+      kpiConfigs: const [
+        KpiCardConfig(
+            label: 'Total Demandes',
+            apiField: 'total',
+            icon: Icons.description,
+            color: Color(0xFF2563EB),
+            bg: Color(0xFFEFF6FF)),
+        KpiCardConfig(
+            label: 'En Attente',
+            apiField: 'pending',
+            icon: Icons.access_time,
+            color: Color(0xFFD97706),
+            bg: Color(0xFFFFFBEB)),
+        KpiCardConfig(
+            label: 'Acceptés',
+            apiField: 'accepted',
+            icon: Icons.check_circle,
+            color: Color(0xFF10B981),
+            bg: Color(0xFFF0FDF4)),
+        KpiCardConfig(
+            label: 'Taux Conversion',
+            apiField: 'conversionRate',
+            icon: Icons.trending_up,
+            color: Color(0xFF6366F1),
+            bg: Color(0xFFEEF2FF),
+            suffix: '%'),
+      ],
+      statusFilters: [
+        StatusFilter(id: 'ALL', label: 'Tous', count: counts['ALL']),
+        StatusFilter(id: 'PENDING', label: 'Brouillons', count: counts['PENDING']),
+        StatusFilter(id: 'SUBMITTED', label: 'Soumis', count: counts['SUBMITTED']),
+        StatusFilter(id: 'UNDER_REVIEW', label: 'En examen', count: counts['UNDER_REVIEW']),
+        StatusFilter(id: 'ACCEPTED', label: 'Acceptés', count: counts['ACCEPTED']),
+        StatusFilter(id: 'CONVERTED', label: 'Inscrits', count: counts['CONVERTED']),
+        StatusFilter(id: 'REJECTED', label: 'Refusés', count: counts['REJECTED']),
+      ],
+      icon: Icons.person_add,
+      createLabel: 'Nouveau Dossier',
+      rowActions: [
+        const RowAction(
+            id: 'view',
+            icon: Icons.visibility,
+            label: 'Voir le détail',
+            color: AHColors.navy),
+        const RowAction(
+            id: 'edit',
+            icon: Icons.edit,
+            label: 'Modifier',
+            color: AHColors.navy),
+        RowAction(
+            id: 'submit',
+            icon: Icons.send,
+            label: 'Soumettre',
+            color: const Color(0xFFD97706),
+            isVisible: (item) =>
+                item['status']?.toString().toUpperCase() == 'PENDING'),
+        RowAction(
+            id: 'accept',
+            icon: Icons.check_circle,
+            label: 'Accepter',
+            color: const Color(0xFF10B981),
+            isVisible: (item) {
+              final s = item['status']?.toString().toUpperCase() ?? '';
+              return s == 'SUBMITTED' || s == 'UNDER_REVIEW';
+            }),
+        RowAction(
+            id: 'reject',
+            icon: Icons.cancel,
+            label: 'Refuser',
+            color: const Color(0xFFDC2626),
+            isVisible: (item) {
+              final s = item['status']?.toString().toUpperCase() ?? '';
+              return s == 'SUBMITTED' || s == 'UNDER_REVIEW';
+            }),
+        RowAction(
+            id: 'convert',
+            icon: Icons.person_add_alt_1,
+            label: 'Convertir en élève',
+            color: const Color(0xFF6366F1),
+            isVisible: (item) =>
+                item['status']?.toString().toUpperCase() == 'ACCEPTED'),
+        RowAction(
+            id: 'delete',
+            icon: Icons.delete,
+            label: 'Supprimer',
+            color: const Color(0xFFDC2626),
+            isVisible: (item) => item['convertedStudentId'] == null),
+      ],
+      onAction: (actionId, item) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Action "$actionId" — en cours d\'implémentation'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
     );
   }
 }
@@ -239,138 +470,377 @@ class _AdmissionCard extends StatelessWidget {
 class _EnrollmentsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final enrollments = ref.watch(enrollmentsProvider);
-
-    return RefreshIndicator(
-      color: AHColors.navy,
-      onRefresh: () async => ref.invalidate(enrollmentsProvider),
-      child: enrollments.when(
-        data: (items) {
-          if (items.isEmpty) return _buildEmpty('Aucune inscription');
-          return ListView.builder(
-            padding: const EdgeInsets.all(AHSpacing.sm),
-            itemCount: items.length,
-            itemBuilder: (context, index) => _EnrollmentCard(enrollment: items[index]),
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator(color: AHColors.navy)),
-        error: (_, __) => _buildEmpty('Erreur de chargement'),
-      ),
-    );
-  }
-
-  Widget _buildEmpty(String msg) {
-    return ListView(children: [SizedBox(height: 200, child: Center(child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(Icons.school_outlined, size: 48, color: AHColors.grey300),
-        const SizedBox(height: 8),
-        Text(msg, style: TextStyle(fontSize: 13, color: AHColors.grey500)),
+    return ModuleDataTab(
+      endpoint: '/students/enrollments',
+      titleField: 'studentName',
+      tableColumns: const ['className', 'status', 'enrollmentDate'],
+      icon: Icons.how_to_reg,
+      createLabel: 'Nouvelle Inscription',
+      statusFilters: const [
+        StatusFilter(id: 'ALL', label: 'Tous'),
+        StatusFilter(id: 'ACTIVE', label: 'Actifs'),
+        StatusFilter(id: 'PENDING', label: 'En attente'),
+        StatusFilter(id: 'TRANSFERRED', label: 'Transférés'),
+        StatusFilter(id: 'WITHDRAWN', label: 'Retirés'),
       ],
-    )))],
-    );
-  }
-}
-
-class _EnrollmentCard extends StatelessWidget {
-  const _EnrollmentCard({required this.enrollment});
-  final EnrollmentItem enrollment;
-
-  Color get _statusColor => switch (enrollment.status) {
-    'ACTIVE' => const Color(0xFF10B981),
-    'VALIDATED' => const Color(0xFF2563EB),
-    'ADMITTED' => const Color(0xFFF59E0B),
-    'PRE_REGISTERED' => const Color(0xFF64748B),
-    'PENDING' => const Color(0xFFEA580C),
-    _ => const Color(0xFF64748B),
-  };
-
-  String get _statusLabel => switch (enrollment.status) {
-    'ACTIVE' => 'Inscrit',
-    'VALIDATED' => 'Validé',
-    'ADMITTED' => 'Admis',
-    'PRE_REGISTERED' => 'Pré-inscrit',
-    'PENDING' => 'En attente',
-    _ => enrollment.status,
-  };
-
-  String get _typeLabel => switch (enrollment.enrollmentType) {
-    'NEW' => 'Nouveau',
-    'REPEAT' => 'Réinscription',
-    'PROMOTION' => 'Promu',
-    'TRANSFER' => 'Transfert',
-    _ => enrollment.enrollmentType,
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 4),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
-      child: Row(children: [
-        Container(width: 32, height: 32, decoration: BoxDecoration(color: _statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
-          child: Center(child: Text(enrollment.initials, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _statusColor)))),
-        const SizedBox(width: 8),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(enrollment.displayName, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
-          if (enrollment.matricule != null && enrollment.matricule!.isNotEmpty)
-            Text('Mat: ${enrollment.matricule}', style: const TextStyle(fontSize: 9, color: AHColors.grey500)),
-          if (enrollment.academicClassName.isNotEmpty)
-            Text(enrollment.academicClassName, style: const TextStyle(fontSize: 9, color: AHColors.grey500)),
-        ])),
-        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(color: _statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-            child: Text(_statusLabel, style: TextStyle(fontSize: 8, fontWeight: FontWeight.w700, color: _statusColor))),
-          const SizedBox(height: 2),
-          Text(_typeLabel, style: const TextStyle(fontSize: 8, color: AHColors.grey400)),
-        ]),
-      ]),
-    );
-  }
-}
-
-// ── Placeholder ──────────────────────────────────────────────────────────
-
-class _PlaceholderTab extends StatelessWidget {
-  const _PlaceholderTab(this.title);
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(Icons.construction, size: 48, color: AHColors.grey300),
-        const SizedBox(height: 8),
-        Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AHColors.grey600)),
-        const SizedBox(height: 4),
-        Text('Module en cours d\'implémentation', style: TextStyle(fontSize: 11, color: AHColors.grey400)),
+      rowActions: [
+        const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+        const RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
+        const RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
       ],
-    ));
+      onAction: (actionId, item) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Action "$actionId" — en cours d\'implémentation'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+    );
   }
 }
 
-// ── KPI Card widget ────────────────────────────────────────────────────
+// ── Tab 4: Affectations & Mouvements ─────────────────────────────────────
 
-class _KpiCard extends StatelessWidget {
-  const _KpiCard({required this.label, required this.value, required this.icon, required this.color, required this.bg});
-  final String label, value;
-  final IconData icon;
-  final Color color, bg;
-
+class _AssignmentsTab extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFFE2E8F0))),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Container(width: 28, height: 28, decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
-          child: Icon(icon, size: 16, color: color)),
-        Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: value == '0' ? AHColors.grey300 : const Color(0xFF0F172A))),
-        Text(label, style: const TextStyle(fontSize: 9, color: AHColors.grey500)),
-      ]),
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataTab(
+      endpoint: '/students/assignments',
+      titleField: 'studentName',
+      tableColumns: const ['className', 'previousClassName', 'movementType', 'effectiveDate'],
+      icon: Icons.swap_horiz,
+      createLabel: 'Nouvelle Affectation',
+      rowActions: [
+        const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+        const RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
+        const RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
+      ],
+      onAction: (actionId, item) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Action "$actionId" — en cours d\'implémentation'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Tab 5: Liste des Élèves ──────────────────────────────────────────────
+
+class _StudentListTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataTab(
+      endpoint: '/students',
+      titleField: 'lastName',
+      tableColumns: const ['firstName', 'matricule', 'className', 'gender', 'status'],
+      icon: Icons.people,
+      createLabel: 'Nouvel Élève',
+      statusFilters: const [
+        StatusFilter(id: 'ALL', label: 'Tous'),
+        StatusFilter(id: 'ACTIVE', label: 'Actifs'),
+        StatusFilter(id: 'PENDING', label: 'En attente'),
+        StatusFilter(id: 'ARCHIVED', label: 'Archivés'),
+        StatusFilter(id: 'WITHDRAWN', label: 'Retirés'),
+      ],
+      rowActions: [
+        const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+        const RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
+        const RowAction(id: 'card', icon: Icons.credit_card, label: 'Générer carte', color: Color(0xFFD97706)),
+        const RowAction(id: 'archive', icon: Icons.archive, label: 'Archiver', color: Color(0xFF64748B)),
+        const RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
+      ],
+      onAction: (actionId, item) {
+        if (actionId == 'view' && item['id'] != null) {
+          context.go('/students/${item['id']}');
+          return;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Action "$actionId" — en cours d\'implémentation'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Tab 6: Sorties & Abandons ────────────────────────────────────────────
+
+class _MovementsTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataTab(
+      endpoint: '/students/movements',
+      titleField: 'studentName',
+      tableColumns: const ['movementType', 'reason', 'effectiveDate', 'status'],
+      icon: Icons.exit_to_app,
+      createLabel: 'Nouvelle Sortie',
+      statusFilters: const [
+        StatusFilter(id: 'ALL', label: 'Tous'),
+        StatusFilter(id: 'PENDING', label: 'En attente'),
+        StatusFilter(id: 'APPROVED', label: 'Approuvées'),
+        StatusFilter(id: 'REJECTED', label: 'Refusées'),
+      ],
+      rowActions: [
+        const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+        RowAction(
+            id: 'approve',
+            icon: Icons.check_circle,
+            label: 'Approuver',
+            color: const Color(0xFF10B981),
+            isVisible: (item) => item['status']?.toString().toUpperCase() == 'PENDING'),
+        RowAction(
+            id: 'reject',
+            icon: Icons.cancel,
+            label: 'Rejeter',
+            color: const Color(0xFFDC2626),
+            isVisible: (item) => item['status']?.toString().toUpperCase() == 'PENDING'),
+        const RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
+      ],
+      onAction: (actionId, item) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Action "$actionId" — en cours d\'implémentation'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Tab 7: Cartes Scolaires ──────────────────────────────────────────────
+
+class _IdCardsTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataTab(
+      endpoint: '/students/id-cards',
+      titleField: 'studentName',
+      tableColumns: const ['matricule', 'className', 'issueDate', 'expiryDate', 'status'],
+      icon: Icons.credit_card,
+      createLabel: 'Générer Cartes',
+      statusFilters: const [
+        StatusFilter(id: 'ALL', label: 'Tous'),
+        StatusFilter(id: 'ACTIVE', label: 'Actives'),
+        StatusFilter(id: 'EXPIRED', label: 'Expirées'),
+        StatusFilter(id: 'REVOKED', label: 'Révoquées'),
+      ],
+      rowActions: [
+        const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+        const RowAction(id: 'download', icon: Icons.download, label: 'Télécharger', color: Color(0xFF10B981)),
+        RowAction(
+            id: 'revoke',
+            icon: Icons.block,
+            label: 'Révoquer',
+            color: const Color(0xFFDC2626),
+            isVisible: (item) => item['status']?.toString().toUpperCase() == 'ACTIVE'),
+        const RowAction(id: 'reissue', icon: Icons.refresh, label: 'Réémettre', color: Color(0xFFD97706)),
+      ],
+      onAction: (actionId, item) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Action "$actionId" — en cours d\'implémentation'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Tab 8: Dossiers Élèves ──────────────────────────────────────────────
+
+class _DossiersTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataTab(
+      endpoint: '/students/dossiers',
+      titleField: 'studentName',
+      tableColumns: const ['matricule', 'className', 'documentsCount', 'completeness'],
+      icon: Icons.folder,
+      createLabel: 'Nouveau Dossier',
+      rowActions: [
+        const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+        const RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
+        const RowAction(id: 'documents', icon: Icons.attach_file, label: 'Documents', color: Color(0xFF2563EB)),
+        const RowAction(id: 'print', icon: Icons.print, label: 'Imprimer', color: Color(0xFF64748B)),
+      ],
+      onAction: (actionId, item) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Action "$actionId" — en cours d\'implémentation'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Tab 9: Familles ──────────────────────────────────────────────────────
+
+class _FamiliesTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataTab(
+      endpoint: '/students/families',
+      titleField: 'familyName',
+      tableColumns: const ['parentName', 'phone', 'email', 'childrenCount'],
+      icon: Icons.family_restroom,
+      createLabel: 'Nouvelle Famille',
+      rowActions: [
+        const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+        const RowAction(id: 'edit', icon: Icons.edit, label: 'Modifier', color: AHColors.navy),
+        const RowAction(id: 'message', icon: Icons.message, label: 'Message', color: Color(0xFF06B6D4)),
+        const RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
+      ],
+      onAction: (actionId, item) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Action "$actionId" — en cours d\'implémentation'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Tab 10: Transferts ───────────────────────────────────────────────────
+
+class _TransfersTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataTab(
+      endpoint: '/students/transfers',
+      titleField: 'studentName',
+      tableColumns: const ['fromSchool', 'toSchool', 'transferDate', 'status'],
+      icon: Icons.swap_horizontal_circle,
+      createLabel: 'Nouveau Transfert',
+      statusFilters: const [
+        StatusFilter(id: 'ALL', label: 'Tous'),
+        StatusFilter(id: 'PENDING', label: 'En attente'),
+        StatusFilter(id: 'APPROVED', label: 'Approuvés'),
+        StatusFilter(id: 'COMPLETED', label: 'Complétés'),
+        StatusFilter(id: 'REJECTED', label: 'Refusés'),
+      ],
+      rowActions: [
+        const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+        RowAction(
+            id: 'approve',
+            icon: Icons.check_circle,
+            label: 'Approuver',
+            color: const Color(0xFF10B981),
+            isVisible: (item) => item['status']?.toString().toUpperCase() == 'PENDING'),
+        RowAction(
+            id: 'reject',
+            icon: Icons.cancel,
+            label: 'Rejeter',
+            color: const Color(0xFFDC2626),
+            isVisible: (item) => item['status']?.toString().toUpperCase() == 'PENDING'),
+        const RowAction(id: 'delete', icon: Icons.delete, label: 'Supprimer', color: Color(0xFFDC2626)),
+      ],
+      onAction: (actionId, item) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Action "$actionId" — en cours d\'implémentation'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Tab 11: Historique ──────────────────────────────────────────────────
+
+class _HistoryTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataTab(
+      endpoint: '/students/history',
+      titleField: 'studentName',
+      tableColumns: const ['event', 'date', 'actor', 'details'],
+      icon: Icons.history,
+      showCreateButton: false,
+      rowActions: [
+        const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+        const RowAction(id: 'export', icon: Icons.download, label: 'Exporter', color: Color(0xFF10B981)),
+      ],
+      onAction: (actionId, item) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Action "$actionId" — en cours d\'implémentation'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Tab 12: Educmaster ──────────────────────────────────────────────────
+
+class _EducmasterTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataTab(
+      endpoint: '/students/educmaster',
+      icon: Icons.school,
+      showCreateButton: false,
+      rowActions: [
+        const RowAction(id: 'sync', icon: Icons.sync, label: 'Synchroniser', color: AHColors.navy),
+        const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+      ],
+      onAction: (actionId, item) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Action "$actionId" — en cours d\'implémentation'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Tab 13: ORION & Stats ────────────────────────────────────────────────
+
+class _OrionTab extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ModuleDataTab(
+      endpoint: '/students/orion-alerts',
+      titleField: 'title',
+      tableColumns: const ['level', 'category', 'createdAt'],
+      icon: Icons.insights,
+      showCreateButton: false,
+      statusFilters: const [
+        StatusFilter(id: 'ALL', label: 'Tous'),
+        StatusFilter(id: 'CRITICAL', label: 'Critiques'),
+        StatusFilter(id: 'HIGH', label: 'Élevés'),
+        StatusFilter(id: 'MEDIUM', label: 'Moyens'),
+        StatusFilter(id: 'LOW', label: 'Faibles'),
+      ],
+      rowActions: [
+        const RowAction(id: 'view', icon: Icons.visibility, label: 'Voir', color: AHColors.navy),
+        const RowAction(id: 'ack', icon: Icons.check, label: 'Acquitter', color: Color(0xFF10B981)),
+        const RowAction(id: 'resolve', icon: Icons.task_alt, label: 'Résoudre', color: Color(0xFF6366F1)),
+      ],
+      onAction: (actionId, item) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Action "$actionId" — en cours d\'implémentation'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
     );
   }
 }

@@ -1981,3 +1981,63 @@ Stage Summary:
 - Aucune mention d'infrastructure interne dans l'UI.
 - Frontend type-check : 0 erreurs.
 - Files modified: 1 (SyncModal.tsx)
+
+---
+Task ID: 2026-08-10-sync-bigint-fix
+Agent: main
+Task: Diagnostic via browser automation : sync pull/push ne fonctionnent pas. Modal affiche "0/629 démarrage, 0 reçu, 0 envoyé" puis disparaît.
+
+Work Log:
+
+=== Diagnostic via agent-browser (connexion réelle sur academiahelm.com) ===
+
+1. Connexion en tant que promoteur (salumerhel2036@gmail.com) — OK
+2. Clic sur le bouton "Synchronisé" du header
+3. Capture réseau (agent-browser network requests --filter sync) :
+   - GET /api/sync/schema-hash → 200 ✅
+   - GET /api/sync/tables → 200 ✅ (retourne 629 tables)
+   - GET /api/sync/bootstrap → 404 ❌ (endpoint inexistant)
+   - POST /api/sync/pull → 500 ❌ (x10 retries, tous en 500)
+4. Capture de la réponse serveur (agent-browser eval fetch):
+   {
+     "statusCode": 500,
+     "message": "Erreur interne (TypeError): Do not know how to serialize a BigInt",
+     "error": "TypeError",
+     "detail": "Do not know how to serialize a BigInt"
+   }
+5. Inspection IndexedDB (agent-browser eval):
+   - Base "academia-helm-local" version 12 → 604 stores créés ✅
+   - Store "student" → 0 enregistrements ❌ (la sync n'a jamais marché)
+   - Store "teacher" → 0 ❌
+   - Données locales vides = symptôme expliqué
+
+=== CAUSE RACINE ===
+
+Prisma retourne des BigInt pour certaines colonnes Postgres (BIGINT, SERIAL).
+JSON.stringify() ne sait pas sérialiser un BigInt nativement → TypeError.
+NestJS essaie de sérialiser la réponse du pull() → crash HTTP 500.
+Conséquence : la sync échouait silencieusement, aucune donnée téléchargée.
+
+=== Correctifs ===
+
+1. apps/api-server/src/main.ts :
+   - Polyfill global (BigInt.prototype.toJSON) qui retourne this.toString().
+   - Appliqué à TOUT le backend, pas seulement sync.service.ts.
+   - Retourne string pour préserver la précision (BigInt > Number.MAX_SAFE_INTEGER).
+
+2. apps/api-server/src/sync/sync.service.ts :
+   - Fonction serializeForJson() qui parcourt récursivement l'objet et convertit :
+     * BigInt → string
+     * Decimal Prisma ({ d, e, s } ou { $numberDecimal }) → string
+     * Date → ISO string
+   - Appliqué au résultat du pull() avant return.
+   - Le polyfill BigInt global gère déjà les BigInt, mais serializeForJson
+     gère aussi les Decimal Prisma qui ne sont pas couverts par le polyfill.
+
+Stage Summary:
+
+- CAUSE RACINE identifiée via browser automation : BigInt serialization error côté backend NestJS.
+- FIX appliqué : polyfill BigInt global + serializeForJson récursif dans sync.service.ts.
+- IndexedDB local a bien 604 stores créés, mais 0 enregistrements (car la sync n'a jamais marché).
+- Après redéploiement du backend, la sync devrait télécharger les vraies données.
+- Files modified: 2 (main.ts, sync.service.ts)

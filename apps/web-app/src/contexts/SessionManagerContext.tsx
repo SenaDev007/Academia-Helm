@@ -322,6 +322,9 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
   /** Vérifier si le délai d'inactivité est atteint */
   const checkInactivity = useCallback(() => {
     if (sessionState !== 'active' || isTransitioningRef.current) return;
+    // ⭐ Ne pas verrouiller la session si l'utilisateur est hors ligne
+    //    L'utilisateur doit pouvoir continuer à travailler offline
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     try {
       const lastActivityStr = localStorage.getItem(LAST_ACTIVITY_KEY);
       const lastActivity = lastActivityStr ? parseInt(lastActivityStr, 10) : Date.now();
@@ -336,6 +339,8 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
   /** Vérifier si le délai de verrouillage est atteint (15 min → déconnexion) */
   const checkLockExpiry = useCallback(() => {
     if (sessionState !== 'locked' || !lockedAtRef.current) return;
+    // ⭐ Ne pas déconnecter si offline — l'utilisateur doit pouvoir travailler
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     const elapsed = Date.now() - lockedAtRef.current;
     if (elapsed >= LOCK_EXPIRY_MS) {
       // Déconnexion complète

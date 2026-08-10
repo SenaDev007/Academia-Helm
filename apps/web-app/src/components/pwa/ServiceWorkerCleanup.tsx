@@ -49,14 +49,16 @@ export function ServiceWorkerCleanup() {
           }
         }
 
-        // Also clean up any leftover caches
+        // Also clean up any leftover caches (mais PAS nos caches offline-first)
         if ('caches' in window) {
           const cacheNames = await caches.keys();
           const staleCaches = cacheNames.filter(
             (name) =>
-              name.startsWith('local-') ||
-              name.startsWith('workbox-precache') ||
-              name.includes('workbox')
+              !name.startsWith('ah-offline-') && // ⭐ Ne pas supprimer nos caches offline
+              !name.startsWith('academia-helm') && // ⭐ Ni les caches PWA
+              (name.startsWith('local-') ||
+               name.startsWith('workbox-precache') ||
+               name.includes('workbox'))
           );
           if (staleCaches.length > 0) {
             console.log('[SW-Cleanup] Clearing stale caches:', staleCaches);

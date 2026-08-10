@@ -49,6 +49,7 @@ import {
   FileText,
   Eye,
   EyeOff,
+  WifiOff,
   XCircle,
   CheckCircle2,
 } from 'lucide-react';
@@ -554,6 +555,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const [preEnrollmentStep, setPreEnrollmentStep] = useState<1 | 2 | 3>(1);
 
   const [error, setError] = useState<string | null>(null);
+  const [offlineContinueAvailable, setOfflineContinueAvailable] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
@@ -710,7 +712,40 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       const rawMessage = err instanceof Error ? err.message : 'Erreur lors de la connexion';
       // Amélioration des messages d'erreur (même logique que le flux DEV)
       let userMessage = rawMessage;
-      if (rawMessage.includes('timeout') || rawMessage.includes('ne répond pas') || rawMessage.includes('30 secondes')) {
+
+      // ⭐ Détecter si l'erreur est due à une perte de connexion (offline)
+      const isOfflineError = rawMessage.includes('Failed to fetch') ||
+        rawMessage.includes('NetworkError') ||
+        rawMessage.includes('Connexion indisponible') ||
+        rawMessage.includes('ERR_NETWORK') ||
+        rawMessage.includes('timeout') ||
+        (typeof navigator !== 'undefined' && !navigator.onLine);
+
+      if (isOfflineError) {
+        // ⭐ Vérifier si l'utilisateur a déjà une session valide en cache
+        let hasValidSession = false;
+        try {
+          const session = localStorage.getItem('session');
+          if (session) {
+            const parsed = JSON.parse(session);
+            if (parsed.accessToken || parsed.accessTokenExpiry) {
+              const expiry = parsed.accessTokenExpiry || 0;
+              if (expiry > Date.now()) {
+                hasValidSession = true;
+              }
+            }
+          }
+        } catch {}
+
+        if (hasValidSession) {
+          // ⭐ L'utilisateur a une session valide — permettre "Continuer hors ligne"
+          setError('');
+          setOfflineContinueAvailable(true);
+          return;
+        }
+
+        userMessage = 'Vous êtes hors ligne. Vérifiez votre connexion Internet et réessayez.';
+      } else if (rawMessage.includes('timeout') || rawMessage.includes('ne répond pas') || rawMessage.includes('30 secondes')) {
         userMessage = 'Le serveur est en cours de démarrage. Veuillez réessayer dans quelques secondes.';
       } else if (rawMessage.toLowerCase().includes('aborted') || rawMessage.toLowerCase().includes('signal is aborted')) {
         // AbortController déclenché (timeout ou navigation) — surtout pour l'upload de documents
@@ -2960,6 +2995,33 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 ) : (
                   'Se connecter'
                 )}
+              </motion.button>
+            )}
+
+            {/* ⭐ Bouton "Continuer hors ligne" — affiché si offline + session valide en cache */}
+            {offlineContinueAvailable && (
+              <motion.button
+                type="button"
+                onClick={() => {
+                  // Rediriger vers l'app en utilisant la session en cache
+                  const redirectUrl = portalType === 'teacher'
+                    ? '/app/teacher'
+                    : portalType === 'parent'
+                      ? '/app/parent'
+                      : '/app';
+                  // Construire l'URL avec le tenant si disponible
+                  const url = tenantSlug
+                    ? `${redirectUrl}?tenant=${tenantSlug}`
+                    : redirectUrl;
+                  window.location.href = url;
+                }}
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3.5 font-semibold text-white shadow-lg min-h-[44px] mt-3"
+                style={{
+                  background: `linear-gradient(135deg, #059669, #10b981)`,
+                }}
+              >
+                <WifiOff className="h-5 w-5" />
+                Continuer hors ligne
               </motion.button>
             )}
 

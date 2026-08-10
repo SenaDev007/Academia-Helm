@@ -1,62 +1,73 @@
 /**
  * ============================================================================
- * ACADEMIA HELM — Service Worker Offline-First (Vercel)
+ * ACADEMIA HELM — Service Worker Offline-First (UNIVERSEL)
  * ============================================================================
  *
- * Stratégies de cache :
- *   - API /api/* → NetworkFirst (timeout 5s, fallback cache)
- *   - Assets /_next/static/* → StaleWhileRevalidate
- *   - Pages HTML → NetworkFirst (timeout 3s)
- *   - Images → CacheFirst (30 jours)
- *   - Auth/Export → NetworkOnly (jamais caché)
+ * Couvre TOUS les flux :
+ *   - Site public (academiahelm.com, sous-domaines écoles)
+ *   - Pages de login (/login, /admin-login, portal logins)
+ *   - Application authentifiée (/app/*)
+ *   - Portails (teacher, parent, school)
  *
- * Ce SW est enregistré par OfflineSWRegister.tsx dans layout-client.tsx.
+ * Stratégies de cache :
+ *   - Pages HTML → NetworkFirst (3s timeout, fallback cache) — permet de charger
+ *     la page même offline si elle a déjà été visitée
+ *   - API /api/* (sauf auth/sync/export) → NetworkFirst (5s timeout, fallback cache)
+ *   - Assets /_next/static/* → StaleWhileRevalidate
+ *   - Images/Fonts → CacheFirst (30 jours)
+ *   - Auth/Export/Sync → NetworkOnly (jamais caché)
+ *
+ * ⭐ Le login API ne peut pas fonctionner offline (besoin du serveur).
+ *    Mais si l'utilisateur a déjà une session valide (token en localStorage),
+ *    il peut accéder à l'app directement depuis le cache.
  * ============================================================================
  */
 
-const CACHE_VERSION = 'academia-helm-v1';
+const CACHE_VERSION = 'ah-offline-v2';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
+const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 
-const API_TIMEOUT = 5000; // 5s
-const HTML_TIMEOUT = 3000; // 3s
+const API_TIMEOUT = 5000;
+const HTML_TIMEOUT = 3000;
 
 // Routes à NE JAMAIS cacher
 const NEVER_CACHE = [
   /\/api\/auth\//,
   /\/api\/sync\//,
+  /\/api\/admin-auth\//,
+  /\/api\/portal\/auth\//,
   /\/api\/.*\/export/,
   /\/api\/.*\/pdf/,
+  /\/api\/.*\/download/,
   /\.pdf$/,
   /\.xlsx$/,
   /\.csv$/,
   /\/sw\.js$/,
+  /\/sw-offline\.js$/,
+  /\/sw-site\.js$/,
 ];
 
-// Routes API à cacher (NetworkFirst)
 const API_ROUTES = /\/api\//;
-
-// Assets statiques
 const STATIC_ROUTES = /\/_next\/static\//;
+const IMAGE_ROUTES = /\.(png|jpg|jpeg|gif|webp|svg|ico|woff2?|ttf|eot)$/;
 
-// Images
-const IMAGE_ROUTES = /\.(png|jpg|jpeg|gif|webp|svg|ico)$/;
-
-// ─── INSTALL : pré-cache des assets critiques ───
+// ─── INSTALL ───
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE).then((cache) => {
       return cache.addAll([
         '/',
         '/manifest.json',
-      ]).catch(() => {}); // Ignorer les échecs
+        '/offline',
+      ]).catch(() => {});
     })
   );
   self.skipWaiting();
 });
 
-// ─── ACTIVATE : nettoyer les anciens caches ───
+// ─── ACTIVATE ───
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -70,11 +81,10 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// ─── FETCH : intercepter les requêtes ───
+// ─── FETCH ───
 self.addEventListener('fetch', (event) => {
   const { request } = event;
 
-  // Ignorer les requêtes non-GET
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
@@ -82,8 +92,8 @@ self.addEventListener('fetch', (event) => {
   // Ignorer les routes à ne jamais cacher
   if (NEVER_CACHE.some((pattern) => pattern.test(url.pathname))) return;
 
-  // Ignorer les requêtes cross-origin (sauf assets statiques)
-  if (url.origin !== self.location.origin && !STATIC_ROUTES.test(url.pathname)) return;
+  // Ignorer les requêtes cross-origin
+  if (url.origin !== self.location.origin) return;
 
   // ─── Strategy 1: API → NetworkFirst ───
   if (API_ROUTES.test(url.pathname)) {
@@ -97,27 +107,26 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // ─── Strategy 3: Images → CacheFirst ───
+  // ─── Strategy 3: Images/Fonts → CacheFirst ───
   if (IMAGE_ROUTES.test(url.pathname)) {
     event.respondWith(cacheFirst(request, IMAGE_CACHE));
     return;
   }
 
-  // ─── Strategy 4: HTML → NetworkFirst (timeout court) ───
-  if (request.mode === 'navigate' || request.headers.get('accept')?.includes('text/html')) {
-    event.respondWith(networkFirst(request, STATIC_CACHE, HTML_TIMEOUT));
+  // ─── Strategy 4: HTML pages → NetworkFirst (court timeout) ───
+  if (request.mode === 'navigate' || (request.headers.get('accept') || '').includes('text/html')) {
+    event.respondWith(handlePageRequest(request));
     return;
   }
 });
 
-// ─── Helpers ───
-
-async function networkFirst(request, cacheName, timeoutMs) {
-  const cache = await caches.open(cacheName);
+// ─── Handler spécial pour les pages HTML ───
+async function handlePageRequest(request) {
+  const cache = await caches.open(PAGE_CACHE);
 
   try {
-    // Tenter le réseau avec timeout
-    const networkResponse = await fetchWithTimeout(request, timeoutMs);
+    // Tenter le réseau avec timeout court
+    const networkResponse = await fetchWithTimeout(request, HTML_TIMEOUT);
     if (networkResponse && networkResponse.ok) {
       cache.put(request, networkResponse.clone());
       return networkResponse;
@@ -129,11 +138,35 @@ async function networkFirst(request, cacheName, timeoutMs) {
     if (cachedResponse) {
       return cachedResponse;
     }
+
+    // Fallback: essayer la page racine
+    const cachedRoot = await cache.match('/');
+    if (cachedRoot) return cachedRoot;
+
     // Dernier recours: page offline
-    if (request.mode === 'navigate') {
-      const offlinePage = await cache.match('/offline');
-      if (offlinePage) return offlinePage;
+    const offlinePage = await cache.match('/offline');
+    if (offlinePage) return offlinePage;
+
+    // Si rien en cache, retourner une réponse vide
+    return new Response('Offline', { status: 503, statusText: 'Offline' });
+  }
+}
+
+// ─── Helpers ───
+
+async function networkFirst(request, cacheName, timeoutMs) {
+  const cache = await caches.open(cacheName);
+
+  try {
+    const networkResponse = await fetchWithTimeout(request, timeoutMs);
+    if (networkResponse && networkResponse.ok) {
+      cache.put(request, networkResponse.clone());
+      return networkResponse;
     }
+    throw new Error('Network response not ok');
+  } catch (err) {
+    const cachedResponse = await cache.match(request);
+    if (cachedResponse) return cachedResponse;
     throw err;
   }
 }
@@ -155,9 +188,7 @@ async function staleWhileRevalidate(request, cacheName) {
 async function cacheFirst(request, cacheName) {
   const cache = await caches.open(cacheName);
   const cachedResponse = await cache.match(request);
-  if (cachedResponse) {
-    return cachedResponse;
-  }
+  if (cachedResponse) return cachedResponse;
 
   try {
     const networkResponse = await fetch(request);
@@ -166,7 +197,6 @@ async function cacheFirst(request, cacheName) {
     }
     return networkResponse;
   } catch (err) {
-    // Pas de cache, pas de réseau → erreur
     throw err;
   }
 }
@@ -191,7 +221,7 @@ function fetchWithTimeout(request, timeoutMs) {
   });
 }
 
-// ─── MESSAGE : permettre au client de forcer une sync ───
+// ─── MESSAGE ───
 self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING') {
     self.skipWaiting();

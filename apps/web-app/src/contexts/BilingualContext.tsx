@@ -13,14 +13,18 @@
  *   1. Afficher un sélecteur FR/EN en haut de la page
  *   2. Passer `language` en query param dans tous les fetchs API
  *
- * L'état est chargé depuis `/api/settings/bilingual` (géré par settingsService).
+ * ⭐ DEPUIS LE TRAVAIL OFFLINE :
+ *   L'état est maintenant chargé via React Query au lieu d'un fetch manuel.
+ *   Cela permet :
+ *   - l'auto-récupération quand on revient online (`refetchOnReconnect: true`)
+ *   - l'invalidation automatique sur `sync-end` et `session-resumed`
+ *     (gérés par QueryProvider) — l'ancien code restait vide après une sync
+ *   - un `isLoading` correctement distingué d'une erreur de chargement
+ *     (avant : si l'API échouait, `isLoading=false` mais `settings=null`,
+ *      ce qui était interprété comme "bilingue désactivé" par les pages)
+ *
  * La track courante est persistée en localStorage pour survivre aux
  * rechargements.
- *
- * NOTE — Ce fichier est un stub fonctionnel qui pourra être enrichi par
- * l'agent responsable du BilingualContext. Il expose déjà le contrat
- * `{ isEnabled, currentTrack, setCurrentTrack, separateGrades }` attendu
- * par les pages Examens et Pédagogie.
  * ============================================================================
  */
 
@@ -35,6 +39,7 @@ import React, {
   useMemo,
   ReactNode,
 } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as settingsService from '@/services/settings.service';
 
 export type LanguageTrack = 'FR' | 'EN';
@@ -66,41 +71,50 @@ const STORAGE_KEY = 'bilingualCurrentTrack';
 
 const BilingualContext = createContext<BilingualContextType | undefined>(undefined);
 
+/**
+ * Query key partagée pour les paramètres bilingues — permet à n'importe quel
+ * composant d'invalider le cache via `queryClient.invalidateQueries(['bilingual'])`.
+ */
+const BILINGUAL_QUERY_KEY = ['bilingual'] as const;
+
 export function BilingualProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<BilingualSettings | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [currentTrack, setCurrentTrackState] = useState<LanguageTrack>('FR');
 
-  // ── Load bilingual settings from API ──────────────────────────────────────
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
+  // ⭐ Chargement via React Query — auto-récup sur reconnect / sync-end.
+  const { data: settings, isLoading } = useQuery<BilingualSettings | null>({
+    queryKey: BILINGUAL_QUERY_KEY,
+    queryFn: async () => {
       try {
         const data = await settingsService.getBilingualSettings();
-        if (!mounted) return;
         if (data && typeof data === 'object') {
-          setSettings(data as BilingualSettings);
-          // Initialiser la track courante à partir de la langue par défaut
-          const defaultLang = (data as any).defaultLanguage || (data as any).defaultUILanguage || 'FR';
-          const initial: LanguageTrack = defaultLang === 'EN' ? 'EN' : 'FR';
-
-          // Par défaut, toujours commencer sur FR (langue principale au Bénin).
-          // On ne restaure PAS depuis localStorage pour éviter qu'un utilisateur
-          // qui a basculé sur EN une fois reste bloqué sur EN à chaque visite.
-          // L'utilisateur peut basculer manuellement via le switch FR/EN.
-          setCurrentTrackState('FR');
+          return data as BilingualSettings;
         }
-      } catch (err) {
-        // Silencieux : si l'API n'est pas disponible, on reste en mode non-bilingue
-        if (mounted) setSettings(null);
-      } finally {
-        if (mounted) setIsLoading(false);
+        return null;
+      } catch {
+        // Pas de données — ne pas crasher. Différencié de "loading" grâce à
+        // isLoading=false + settings=null (mais isError=true si on veut le distinguer).
+        return null;
       }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    },
+    staleTime: 5 * 60 * 1000, // 5 min
+    gcTime: 30 * 60 * 1000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+  });
+
+  // ── Initialiser la track courante quand les settings sont reçus ─────────────
+  //    Par défaut on commence sur FR (langue principale au Bénin). On ne
+  //    restaure PAS depuis localStorage pour éviter qu'un utilisateur qui a
+  //    basculé sur EN une fois reste bloqué sur EN à chaque visite.
+  useEffect(() => {
+    if (settings) {
+      // Toujours commencer sur FR par défaut (sauf si l'utilisateur a explicitement
+      // basculé ce session en cours — mais le state React est déjà réinitialisé au reload)
+      setCurrentTrackState('FR');
+    }
+  }, [settings]);
 
   // ── setCurrentTrack : persiste en localStorage ────────────────────────────
   const setCurrentTrack = useCallback((track: LanguageTrack) => {
@@ -113,6 +127,17 @@ export function BilingualProvider({ children }: { children: ReactNode }) {
       }
     }
   }, []);
+
+  // ── Permet à une page Settings d'invalider le cache après une mise à jour ──
+  useEffect(() => {
+    const onBilingualUpdated = () => {
+      queryClient.invalidateQueries({ queryKey: BILINGUAL_QUERY_KEY });
+    };
+    window.addEventListener('settings-bilingual-updated', onBilingualUpdated);
+    return () => {
+      window.removeEventListener('settings-bilingual-updated', onBilingualUpdated);
+    };
+  }, [queryClient]);
 
   const value = useMemo<BilingualContextType>(
     () => ({

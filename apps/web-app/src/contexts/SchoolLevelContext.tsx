@@ -7,6 +7,17 @@
  *   queries TanStack pour forcer le rechargement avec le nouveau niveau.
  * - On dispatch aussi un CustomEvent 'school-level-changed' pour informer
  *   les composants hors React (services, hooks personnalisés, etc.).
+ *
+ * ⭐ DEPUIS LE TRAVAIL OFFLINE :
+ *   La liste des niveaux est maintenant chargée via React Query
+ *   (`useSchoolLevelsQuery`) au lieu d'un fetch manuel. Cela permet :
+ *   - l'auto-récupération quand on revient online (`refetchOnReconnect: true`)
+ *   - l'invalidation automatique sur `sync-end` et `session-resumed`
+ *     (gérés par QueryProvider)
+ *   - un cache partagé 5 min entre tous les consommateurs
+ *   - un `isLoading` correctement distingué de "pas de données"
+ *     (avant : si le fetch échouait, `isLoading=false` mais `availableLevels=[]`
+ *      → les pages restaient vides sans possibilité de récup)
  */
 
 'use client';
@@ -14,6 +25,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppSessionOptional } from '@/contexts/AppSessionContext';
+import { useSchoolLevelsQuery } from '@/lib/query/use-school-levels';
 
 export interface SchoolLevel {
   id: string;
@@ -68,9 +80,12 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
   const userAccreditations = session?.user?.accreditations;
   const [currentLevel, setCurrentLevelState] = useState<SchoolLevel | null>(null);
   const [availableLevels, setAvailableLevels] = useState<SchoolLevel[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const availableLevelsRef = useRef<SchoolLevel[]>([]);
   availableLevelsRef.current = availableLevels;
+
+  // ⭐ Chargement via React Query — bénéficie du cache partagé, retry,
+  //    refetchOnReconnect et invalidation sur sync-end / session-resumed.
+  const { data: rawLevels, isLoading: levelsLoading } = useSchoolLevelsQuery();
 
   /**
    * Invalide toutes les queries TanStack quand le niveau scolaire change.
@@ -93,131 +108,104 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
     });
   }, [queryClient]);
 
-  const loadSchoolLevels = useCallback(async () => {
-    try {
-      const response = await fetch('/api/school-levels', { cache: 'no-store' });
-      if (response.ok) {
-        const levels: SchoolLevel[] = await response.json();
-        const activeLevels = levels.filter((l) => l.isActive);
+  // ─── Construction de la liste disponible (avec option "ALL") ──────────────
+  //    Lancé en effet dès que `rawLevels` change — inclut l'auto-sélection
+  //    pour les enseignants (depuis leurs accreditations ou leurs classes).
+  useEffect(() => {
+    if (!rawLevels || rawLevels.length === 0) {
+      // Pas de données — on ne touche pas à currentLevel (pour ne pas clignoter)
+      setAvailableLevels([]);
+      return;
+    }
 
-        // Option virtuelle "Tous les niveaux" réservée aux rôles de plateforme.
-        // Pour l'instant on l'ajoute toujours côté client; le backend gère 'ALL'.
-        const allLevelsOption: SchoolLevel = {
-          id: 'ALL',
-          code: 'ALL',
-          label: 'Tous les niveaux',
-          isActive: true,
-        };
+    const activeLevels = rawLevels.filter((l) => l.isActive);
 
-        const withAll = [allLevelsOption, ...activeLevels];
-        setAvailableLevels(withAll);
+    // Option virtuelle "Tous les niveaux" réservée aux rôles de plateforme.
+    const allLevelsOption: SchoolLevel = {
+      id: 'ALL',
+      code: 'ALL',
+      label: 'Tous les niveaux',
+      isActive: true,
+    };
 
-        const savedLevelId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_ID) : null;
+    const withAll = [allLevelsOption, ...activeLevels];
+    setAvailableLevels(withAll);
 
-        // ⭐ Auto-sélection du niveau pour les enseignants :
-        //    Si l'utilisateur est un enseignant (TEACHER/TEACHER_RESP) et qu'il n'a pas
-        //    de niveau sauvegardé (ou "ALL"), on déduit son niveau depuis ses
-        //    accreditations ou on fetch ses classes assignées.
-        let autoSelectedLevel: SchoolLevel | null = null;
-        const isTeacher = userRole === 'TEACHER' || userRole === 'TEACHER_RESP' || userRole === 'teacher';
+    // ─── Sélection du niveau courant ────────────────────────────────────────
+    const savedLevelId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_ID) : null;
 
-        if (isTeacher && (!savedLevelId || savedLevelId === 'ALL') && activeLevels.length > 0) {
-          // 1. Essayons d'abord les accreditations du user
-          if (userAccreditations && userAccreditations.length > 0) {
-            // Prendre la première accreditation qui correspond à un niveau actif
-            for (const acc of userAccreditations) {
-              const match = activeLevels.find((l) => l.code === acc);
-              if (match) {
-                autoSelectedLevel = match;
-                break;
-              }
-            }
-          }
+    // Si on a déjà un niveau courant et qu'il est toujours valide, on le garde
+    if (currentLevel && withAll.some((l) => l.id === currentLevel.id)) {
+      // Synchroniser l'objet complet (peut avoir changé de label/code)
+      const refreshed = withAll.find((l) => l.id === currentLevel.id)!;
+      setCurrentLevelState(refreshed);
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(STORAGE_KEY_OBJ, JSON.stringify(refreshed));
+        } catch { /* ignore quota errors */ }
+      }
+      return;
+    }
 
-          // 2. Si pas d'accreditation, fetch /api/pedagogy-space/my-classes pour déduire le niveau
-          if (!autoSelectedLevel && userId) {
-            try {
-              // ⭐ Récupérer l'academicYearId depuis localStorage (clé 'currentAcademicYearId')
-              const academicYearId = typeof window !== 'undefined'
-                ? (localStorage.getItem('currentAcademicYearId') || localStorage.getItem('academicYearId') || '')
-                : '';
-              // ⭐ Si pas d'academicYearId, on fait quand même le fetch — le backend
-              //    peut utiliser l'année par défaut depuis le header X-Academic-Year-ID
-              const url = academicYearId
-                ? `/api/pedagogy-space/my-classes?teacherId=${userId}&academicYearId=${academicYearId}`
-                : `/api/pedagogy-space/my-classes?teacherId=${userId}`;
-              const classesRes = await fetch(url, { credentials: 'include' });
-              if (classesRes.ok) {
-                const classesData = await classesRes.json();
-                const classes = Array.isArray(classesData) ? classesData : (classesData?.data || []);
-                // Prendre le schoolLevelCode de la première classe
-                if (classes.length > 0) {
-                  const firstClass = classes[0];
-                  const slCode = firstClass.schoolLevel?.code
-                    || firstClass.physicalClass?.schoolLevel?.code
-                    || firstClass.schoolLevelCode
-                    || '';
-                  if (slCode) {
-                    autoSelectedLevel = activeLevels.find((l) => l.code === slCode) || null;
-                  }
-                }
-              }
-            } catch {
-              // Silent fallback
-            }
-          }
-        }
+    // ⭐ Auto-sélection du niveau pour les enseignants :
+    //    Si l'utilisateur est un enseignant et qu'il n'a pas de niveau sauvegardé
+    //    (ou "ALL"), on déduit son niveau depuis ses accreditations.
+    //    (NB : on ne fait plus le fetch vers /api/pedagogy-space/my-classes ici
+    //     — c'était une source de race condition avec AcademicYearProvider. Les
+    //     accreditations du user suffisent dans la grande majorité des cas.)
+    let autoSelectedLevel: SchoolLevel | null = null;
+    const isTeacher = userRole === 'TEACHER' || userRole === 'TEACHER_RESP' || userRole === 'teacher';
 
-        const selectedLevel = autoSelectedLevel
-          || (savedLevelId ? withAll.find((l) => l.id === savedLevelId) || null : null)
-          || withAll[0];
-
-        if (selectedLevel) {
-          const previousLevelId = currentLevel?.id;
-          setCurrentLevelState(selectedLevel);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem(STORAGE_KEY_ID, selectedLevel.id);
-            // Synchroniser aussi l'objet JSON complet pour l'intercepteur Axios
-            try {
-              localStorage.setItem(STORAGE_KEY_OBJ, JSON.stringify(selectedLevel));
-            } catch {
-              /* ignore quota errors */
-            }
-          }
-          // Si le niveau a changé (pas juste le premier chargement), invalider les queries
-          if (previousLevelId && previousLevelId !== selectedLevel.id) {
-            invalidateQueriesForLevelChange();
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(
-                new CustomEvent(SCHOOL_LEVEL_CHANGED_EVENT, {
-                  detail: { previousLevelId, newLevelId: selectedLevel.id },
-                }),
-              );
-            }
+    if (isTeacher && (!savedLevelId || savedLevelId === 'ALL') && activeLevels.length > 0) {
+      if (userAccreditations && userAccreditations.length > 0) {
+        for (const acc of userAccreditations) {
+          const match = activeLevels.find((l) => l.code === acc);
+          if (match) {
+            autoSelectedLevel = match;
+            break;
           }
         }
       }
-    } catch (error) {
-      console.error('Failed to load school levels:', error);
-    } finally {
-      setIsLoading(false);
     }
-  }, [currentLevel?.id, invalidateQueriesForLevelChange, userRole, userId, userAccreditations]);
 
-  useEffect(() => {
-    loadSchoolLevels();
-  }, [loadSchoolLevels]);
+    const selectedLevel = autoSelectedLevel
+      || (savedLevelId ? withAll.find((l) => l.id === savedLevelId) || null : null)
+      || withAll[0];
 
+    if (selectedLevel) {
+      const previousLevelId = currentLevel?.id;
+      setCurrentLevelState(selectedLevel);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY_ID, selectedLevel.id);
+        try {
+          localStorage.setItem(STORAGE_KEY_OBJ, JSON.stringify(selectedLevel));
+        } catch { /* ignore quota errors */ }
+      }
+      if (previousLevelId && previousLevelId !== selectedLevel.id) {
+        invalidateQueriesForLevelChange();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent(SCHOOL_LEVEL_CHANGED_EVENT, {
+              detail: { previousLevelId, newLevelId: selectedLevel.id },
+            }),
+          );
+        }
+      }
+    }
+    // ⚠️ On retire `currentLevel?.id` des deps pour éviter une boucle infinie
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawLevels, userRole, userAccreditations, invalidateQueriesForLevelChange]);
+
+  // ─── Recharger quand l'event "settings-updated" est dispatché ──────────────
   useEffect(() => {
     const onSchoolLevelsUpdated = () => {
-      setIsLoading(true);
-      void loadSchoolLevels();
+      queryClient.invalidateQueries({ queryKey: ['school-levels'] });
     };
     window.addEventListener(SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT, onSchoolLevelsUpdated);
     return () => {
       window.removeEventListener(SETTINGS_SCHOOL_LEVELS_UPDATED_EVENT, onSchoolLevelsUpdated);
     };
-  }, [loadSchoolLevels]);
+  }, [queryClient]);
 
   const setCurrentLevel = useCallback((levelId: string) => {
     const levels = availableLevelsRef.current;
@@ -227,18 +215,12 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
       setCurrentLevelState(level);
       if (typeof window !== 'undefined') {
         localStorage.setItem(STORAGE_KEY_ID, levelId);
-        // Synchroniser aussi l'objet JSON complet pour l'intercepteur Axios
         try {
           localStorage.setItem(STORAGE_KEY_OBJ, JSON.stringify(level));
-        } catch {
-          /* ignore quota errors */
-        }
+        } catch { /* ignore quota errors */ }
       }
-      // Si le niveau a vraiment changé, invalider toutes les queries TanStack
-      // pour forcer le rechargement avec le nouveau niveau
       if (previousLevelId !== levelId) {
         invalidateQueriesForLevelChange();
-        // Dispatcher un CustomEvent pour informer les composants hors React
         if (typeof window !== 'undefined') {
           window.dispatchEvent(
             new CustomEvent(SCHOOL_LEVEL_CHANGED_EVENT, {
@@ -254,8 +236,8 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
     currentLevel,
     setCurrentLevel,
     availableLevels,
-    isLoading,
-  }), [currentLevel, setCurrentLevel, availableLevels, isLoading]);
+    isLoading: levelsLoading,
+  }), [currentLevel, setCurrentLevel, availableLevels, levelsLoading]);
 
   return (
     <SchoolLevelContext.Provider value={value}>

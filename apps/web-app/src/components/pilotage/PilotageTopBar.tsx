@@ -156,8 +156,24 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
       void loadSchoolIdentity();
     };
     window.addEventListener(SCHOOL_IDENTITY_UPDATED_EVENT, onIdentityUpdated);
+
+    // ⭐ Re-fetch quand on revient online (sinon le logo reste manquant après une
+    //    période offline pendant laquelle le fetch a échoué silencieusement).
+    let lastOnline = isOnline;
+    const onOnline = () => {
+      if (!lastOnline) {
+        lastOnline = true;
+        void loadSchoolIdentity();
+      }
+    };
+    const onOffline = () => { lastOnline = false; };
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+
     return () => {
       window.removeEventListener(SCHOOL_IDENTITY_UPDATED_EVENT, onIdentityUpdated);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
     };
   }, [loadSchoolIdentity, isPlatformAdmin]);
 
@@ -313,34 +329,34 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
 
           {/* Droite : Actions & Profil */}
           <div className="flex items-center space-x-2 sm:space-x-3">
-            {/* Indicateur Offline/Online */}
-            <div className="flex items-center space-x-2">
-              {isOnline ? (
-                <div className="flex items-center space-x-1.5 text-xs">
-                  {isSyncing ? (
-                    <div className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-blue-50 rounded-lg border border-blue-100">
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                      <span className="hidden sm:inline text-blue-700 font-medium">Sync...</span>
-                    </div>
-                  ) : pendingCount > 0 ? (
-                    <div className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-amber-50 rounded-lg border border-amber-100">
-                      <Wifi className="w-3.5 h-3.5 text-amber-600" />
-                      <span className="hidden sm:inline text-amber-700 font-medium">{pendingCount} en attente</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-emerald-50 rounded-lg border border-emerald-100">
-                      <Wifi className="w-3.5 h-3.5 text-emerald-600" />
-                      <span className="hidden sm:inline text-emerald-700 font-medium">En ligne</span>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-orange-50 rounded-lg border border-orange-100">
-                  <WifiOff className="w-3.5 h-3.5 text-orange-600" />
-                  <span className="hidden sm:inline text-orange-700 font-medium">Hors ligne</span>
-                </div>
-              )}
-            </div>
+            {/* Indicateur Offline/Online — minimaliste (point coloré) */}
+            <div
+              className={`inline-flex items-center justify-center w-2.5 h-2.5 rounded-full shrink-0 ${
+                isOnline ? 'bg-emerald-500' : 'bg-orange-400'
+              }`}
+              title={isOnline ? 'En ligne' : 'Hors ligne — sync en attente'}
+              aria-label={isOnline ? 'En ligne' : 'Hors ligne'}
+            />
+
+            {/* Badge "X en attente" — affiché uniquement quand il y a des écritures en attente */}
+            {isOnline && isSyncing && (
+              <div className="flex items-center space-x-1.5 px-2 py-1 bg-blue-50 rounded-lg border border-blue-100 shrink-0">
+                <RefreshCw className="w-3 h-3 animate-spin text-blue-600" />
+                <span className="text-[11px] text-blue-700 font-medium">Sync…</span>
+              </div>
+            )}
+            {isOnline && !isSyncing && pendingCount > 0 && (
+              <div className="flex items-center space-x-1.5 px-2 py-1 bg-amber-50 rounded-lg border border-amber-100 shrink-0">
+                <Wifi className="w-3 h-3 text-amber-600" />
+                <span className="text-[11px] text-amber-700 font-medium">{pendingCount}</span>
+              </div>
+            )}
+            {!isOnline && (
+              <div className="flex items-center space-x-1.5 px-2 py-1 bg-orange-50 rounded-lg border border-orange-100 shrink-0">
+                <WifiOff className="w-3 h-3 text-orange-600" />
+                <span className="text-[11px] text-orange-700 font-medium">Hors ligne</span>
+              </div>
+            )}
 
             {/* Notifications in-app (cloche avec dropdown) — admissions, candidatures, etc. */}
             <NotificationDropdown />

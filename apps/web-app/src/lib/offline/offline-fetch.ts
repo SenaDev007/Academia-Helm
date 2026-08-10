@@ -48,8 +48,14 @@ const DEFAULT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
  *
  * Comportement :
  * - EN LIGNE : fetch réseau → succès → cache dans IndexedDB → retourne données
- * - EN LIGNE : fetch réseau → échec → fallback IndexedDB → retourne données locales
- * - HORS LIGNE : lit directement depuis IndexedDB → retourne données (ou [])
+ * - EN LIGNE : fetch réseau → échec → fallback IndexedDB :
+ *               • si IndexedDB a des données (cache réel) → retourne données locales
+ *               • si IndexedDB est VIDE (jamais sync) → REJETTE l'erreur réseau
+ *                 (sinon les pages restent vides silencieusement et l'utilisateur
+ *                  croit qu'il n'y a pas de données — source de bugs "page blanche")
+ * - HORS LIGNE : lit depuis IndexedDB. Si vide, retourne [] (comportement normal
+ *    hors ligne — on ne peut rien faire de plus, mais au moins c'est explicit
+ *    grâce à isOnline=false que le user peut voir dans l'UI).
  *
  * @param url URL de l'API (ex: '/api/students')
  * @param storeName Nom du store IndexedDB pour le fallback (ex: 'students')
@@ -75,7 +81,7 @@ export async function offlineFetch<T = any>(
     return await networkFetch<T>(url, fetchOptions);
   }
 
-  // HORS LIGNE : lecture depuis IndexedDB
+  // HORS LIGNE : lecture depuis IndexedDB (retourne [] si vide — c'est légitime)
   if (!isOnline) {
     return await localFallback<T>(storeName, tenantId);
   }
@@ -95,9 +101,32 @@ export async function offlineFetch<T = any>(
   } catch (networkError) {
     console.warn(`[OfflineFetch] Network failed for ${url}, falling back to local:`, (networkError as Error).message);
 
-    // Fallback vers les données locales
-    return await localFallback<T>(storeName, tenantId);
+    // ⭐ Fallback vers IndexedDB — MAIS on ne retourne [] silencieusement que si
+    //    on a réellement des données en cache. Sinon on rejette l'erreur réseau
+    //    pour que React Query puisse retry et que l'utilisateur voie qu'il y a
+    //    un problème. C'est la cause principale des "pages blanches qui nécessitent
+    //    plusieurs refresh" — le réseau échouait, le cache était vide, mais on
+    //    retournait quand même [] comme si tout allait bien.
+    const localData = await localFallback<T>(storeName, tenantId);
+    if (hasRealData(localData)) {
+      return localData;
+    }
+
+    // Cache vide — propager l'erreur réseau d'origine
+    throw networkError;
   }
+}
+
+/**
+ * Vérifie si une donnée retournée par `localFallback` contient réellement
+ * des enregistrements (tableau non vide, ou objet non-null).
+ * Si non → l'appelant doit propager l'erreur réseau plutôt que de retourner [].
+ */
+function hasRealData(data: any): boolean {
+  if (data === null || data === undefined) return false;
+  if (Array.isArray(data)) return data.length > 0;
+  if (typeof data === 'object') return Object.keys(data).length > 0;
+  return true;
 }
 
 /**

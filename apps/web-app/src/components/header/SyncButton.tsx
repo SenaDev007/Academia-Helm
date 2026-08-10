@@ -212,7 +212,7 @@ export function SyncButton() {
       onClick={handleSync}
       disabled={isSyncing}
       className={cn(
-        "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all border shrink-0",
+        "inline-flex items-center justify-center w-8 h-8 rounded-lg transition-all border shrink-0",
         !isOnline
           ? "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100"
           : isSyncing
@@ -228,7 +228,7 @@ export function SyncButton() {
             ? "Synchronisation en cours..."
             : error
               ? `Erreur: ${error}`
-              : `Dernière sync: ${formatLastSync(lastSync)} — cliquez pour synchroniser (git pull + push)`
+              : `Synchronisé — dernière sync: ${formatLastSync(lastSync)}${pendingCount > 0 ? ` · ${pendingCount} en attente` : ''} — cliquez pour relancer`
       }
     >
       {isSyncing ? (
@@ -238,33 +238,14 @@ export function SyncButton() {
       ) : error ? (
         <AlertCircle className="w-3.5 h-3.5" />
       ) : pendingCount > 0 ? (
-        <Cloud className="w-3.5 h-3.5" />
+        <span className="relative">
+          <Cloud className="w-3.5 h-3.5" />
+          <span className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center min-w-[14px] h-[14px] px-1 text-[9px] font-bold rounded-full bg-amber-400 text-white">
+            {pendingCount > 9 ? '9+' : pendingCount}
+          </span>
+        </span>
       ) : (
         <Check className="w-3.5 h-3.5" />
-      )}
-
-      <span className="hidden sm:inline">
-        {isSyncing
-          ? "Sync..."
-          : !isOnline
-            ? "Hors ligne"
-            : error
-              ? "Erreur"
-              : "Synchronisé"}
-      </span>
-
-      {/* Badge pending (écritures en attente) */}
-      {pendingCount > 0 && !isSyncing && (
-        <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[9px] font-bold rounded-full bg-amber-400 text-white">
-          {pendingCount}
-        </span>
-      )}
-
-      {/* Badge avec le temps écoulé */}
-      {!isSyncing && !error && isOnline && lastSync && (
-        <span className="hidden lg:inline text-[10px] opacity-60">
-          {formatLastSync(lastSync)}
-        </span>
       )}
     </button>
   );

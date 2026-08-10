@@ -9,7 +9,7 @@
 
 import { networkDetectionService } from './network-detection.service';
 import { runSync } from './sync-engine.service';
-import { setSyncModalState } from '@/components/offline/SyncModal';
+import { setSyncModalState } from '@/lib/offline/sync-modal-state';
 
 class OfflineSyncService {
   private isSyncing: boolean = false;
@@ -57,26 +57,33 @@ class OfflineSyncService {
       const deviceId = this.getDeviceId();
       const result = await runSync(tenantId, deviceId);
 
-      // Marquer comme bootstrap terminé
+      // Marquer comme bootstrap terminé (même si partiel)
       this.hasBootstrapped = true;
       try { localStorage.setItem('academia_helm_bootstrapped', 'true'); } catch {}
 
       const totalPulled = Object.values(result.pulled || {}).reduce((a: number, b: any) => a + (b as number), 0) as number;
 
-      setSyncModalState({
-        isVisible: true,
-        phase: 'done',
-        message: `${totalPulled} enregistrement(s) récupéré(s)`,
-        pushed: result.pushed,
-        pulled: totalPulled,
-      });
-
-      // Fermer le modal après 3s
-      setTimeout(() => setSyncModalState({ isVisible: false }), 3000);
+      if (totalPulled > 0 || result.pushed > 0) {
+        setSyncModalState({
+          isVisible: true,
+          phase: 'done',
+          message: `${totalPulled} enregistrement(s) récupéré(s)`,
+          pushed: result.pushed,
+          pulled: totalPulled,
+        });
+        setTimeout(() => setSyncModalState({ isVisible: false }), 3000);
+      } else {
+        // Pas de données à synchroniser — fermer silencieusement
+        setSyncModalState({ isVisible: false });
+      }
 
       console.log(`[Sync] Bootstrap complete: ${totalPulled} entities pulled`);
     } catch (error: any) {
+      // ⭐ Ne pas bloquer l'app si le bootstrap échoue — marquer quand même comme fait
+      this.hasBootstrapped = true;
+      try { localStorage.setItem('academia_helm_bootstrapped', 'true'); } catch {}
       console.error('[Sync] Bootstrap failed:', error);
+      setSyncModalState({ isVisible: false }); // Fermer silencieusement
       setSyncModalState({
         isVisible: true,
         phase: 'error',

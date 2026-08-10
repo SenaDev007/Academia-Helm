@@ -436,11 +436,16 @@ async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Re
 
 /**
  * Récupère le hash du schéma serveur (pour validation push)
+ * ⭐ Non-bloquant : si l'endpoint n'existe pas ou échoue, on continue sans hash.
  */
 async function getSchemaHash(): Promise<{ hash: string }> {
-  const res = await fetchWithAuth(`${SYNC_API}/schema-hash`);
-  if (!res.ok) throw new Error('Schema hash unavailable');
-  return res.json();
+  try {
+    const res = await fetchWithAuth(`${SYNC_API}/schema-hash`);
+    if (!res.ok) return { hash: 'unknown' };
+    return res.json();
+  } catch {
+    return { hash: 'unknown' };
+  }
 }
 
 /**

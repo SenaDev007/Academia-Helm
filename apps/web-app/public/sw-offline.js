@@ -23,7 +23,7 @@
  * ============================================================================
  */
 
-const CACHE_VERSION = 'ah-offline-v2';
+const CACHE_VERSION = 'ah-offline-v3';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -47,6 +47,9 @@ const NEVER_CACHE = [
   /\/sw\.js$/,
   /\/sw-offline\.js$/,
   /\/sw-site\.js$/,
+  // ⭐ Ne JAMAIS cacher les chunks Next.js — ils changent à chaque déploiement
+  //    Si on les cache, le nouveau HTML référence des chunks inexistants → erreur
+  /\/_next\/static\/chunks\//,
 ];
 
 const API_ROUTES = /\/api\//;

@@ -19,67 +19,23 @@
 import { useState, useEffect, useRef } from 'react';
 import { RefreshCw, Check, AlertCircle, CloudDownload, CloudUpload, ArrowUp, ArrowDown, FileText, Trash2, Edit, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  subscribeToSyncModalState,
+  setSyncModalState as setModalState,
+  addSyncOperation as addOp,
+  getSyncModalState,
+  type SyncModalState,
+} from '@/lib/offline/sync-modal-state';
 
-export interface SyncOperation {
-  id: string;
-  type: 'push' | 'pull';
-  action: 'INSERT' | 'UPDATE' | 'DELETE';
-  table: string;
-  recordId?: string;
-  status: 'pending' | 'success' | 'error' | 'conflict';
-  message?: string;
-}
-
-interface SyncModalState {
-  isVisible: boolean;
-  phase: 'push' | 'pull' | 'done' | 'error' | null;
-  message: string;
-  pushed: number;
-  pulled: number;
-  total: number;
-  current: number;
-  operations: SyncOperation[];
-}
-
-let modalListeners: ((state: SyncModalState) => void)[] = [];
-let currentState: SyncModalState = {
-  isVisible: false,
-  phase: null,
-  message: '',
-  pushed: 0,
-  pulled: 0,
-  total: 0,
-  current: 0,
-  operations: [],
-};
-
-export function setSyncModalState(state: Partial<SyncModalState>) {
-  currentState = { ...currentState, ...state };
-  for (const cb of modalListeners) {
-    try { cb(currentState); } catch {}
-  }
-}
-
-export function addSyncOperation(op: SyncOperation) {
-  currentState = {
-    ...currentState,
-    operations: [...currentState.operations, op].slice(-50), // Garder les 50 dernières
-    current: currentState.current + 1,
-  };
-  for (const cb of modalListeners) {
-    try { cb(currentState); } catch {}
-  }
-}
+// Re-export pour rétro-compat (SyncButton importe depuis ici)
+export const setSyncModalState = setModalState;
+export const addSyncOperation = addOp;
 
 export function useSyncModal() {
-  const [state, setState] = useState<SyncModalState>(currentState);
+  const [state, setState] = useState<SyncModalState>(getSyncModalState());
 
   useEffect(() => {
-    const cb = (newState: SyncModalState) => setState(newState);
-    modalListeners.push(cb);
-    return () => {
-      modalListeners = modalListeners.filter(l => l !== cb);
-    };
+    return subscribeToSyncModalState(setState);
   }, []);
 
   return state;

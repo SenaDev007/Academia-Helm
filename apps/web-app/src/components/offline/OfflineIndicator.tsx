@@ -1,9 +1,8 @@
 /**
- * Offline Indicator — RÉACTIVÉ
+ * Offline Indicator — compact & discret
  *
- * Bannière orange fixe en haut de l'écran quand l'utilisateur est hors ligne.
- * Non-bloquante : l'utilisateur peut continuer à utiliser l'app (lecture depuis
- * le cache IndexedDB, écritures dans l'outbox).
+ * Petit badge flottant en bas à droite (comme Discord/Slack).
+ * Non-bloquant, esthétique, n'occupe pas toute la largeur.
  */
 
 'use client';
@@ -23,7 +22,6 @@ export default function OfflineIndicator() {
     return unsubscribe;
   }, []);
 
-  // ⭐ Ne rien afficher si on est online
   if (isOnline) return null;
 
   const handleRetry = async () => {
@@ -34,20 +32,15 @@ export default function OfflineIndicator() {
   };
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-[9999] bg-amber-500 text-white px-4 py-2 flex items-center justify-between gap-3 shadow-lg">
-      <div className="flex items-center gap-2">
-        <WifiOff className="h-4 w-4 shrink-0" />
-        <span className="text-sm font-bold">
-          Vous êtes hors ligne — Les données seront synchronisées à la reconnexion
-        </span>
-      </div>
+    <div className="fixed bottom-4 left-4 z-[9999] bg-amber-500 text-white rounded-full shadow-lg flex items-center gap-2 pl-3 pr-2 py-1.5">
+      <WifiOff className="h-3.5 w-3.5 shrink-0" />
+      <span className="text-xs font-bold whitespace-nowrap">Hors ligne</span>
       <button
         onClick={handleRetry}
         disabled={checking}
-        className="flex items-center gap-1.5 px-3 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
+        className="flex items-center justify-center w-5 h-5 rounded-full bg-white/20 hover:bg-white/30 transition-colors disabled:opacity-50"
       >
         {checking ? <RefreshCw className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-        Réessayer
       </button>
     </div>
   );

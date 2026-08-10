@@ -18,6 +18,58 @@ import { SyncPullDto, SyncPushDto } from './dto/sync-pull-push.dto';
  * ============================================================================
  */
 
+/**
+ * ⭐ Convertit récursivement toutes les valeurs non-sérialisables JSON
+ *    (BigInt, Decimal Prisma, Date) en valeurs sérialisables.
+ *
+ *    Problème : Prisma retourne des BigInt pour certaines colonnes
+ *    (souvent les SERIAL/BIGINT de Postgres) et des Decimal pour les
+ *    Decimal(p,s). JSON.stringify() ne sait pas sérialiser un BigInt
+ *    nativement → erreur "Do not know how to serialize a BigInt".
+ *
+ *    Solution : on parcourt récursivement l'objet et on convertit :
+ *    - BigInt → string (pour ne pas perdre de précision)
+ *    - Decimal Prisma (objet avec $numberDecimal) → number ou string
+ *    - Date → ISO string (déjà géré par JSON.stringify mais on le fait
+ *      explicitement pour les Decimal qui contiennent parfois des dates)
+ *    - On garde les null/undefined/string/number/boolean tels quels.
+ */
+function serializeForJson(value: any): any {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'bigint') return value.toString();
+  if (value instanceof Date) return value.toISOString();
+  // Decimal Prisma : objet avec propriétés $numberDecimal ou _hex
+  if (typeof value === 'object') {
+    // Decimal Prisma (v4) — a une propriété d.p (decimals) et d.s (sign)
+    // Decimal Prisma (v5) — utilise toString() et valueOf()
+    if (typeof value.toString === 'function') {
+      const str = value.toString();
+      // Détecter les Decimal Prisma (ils ont souvent une méthode .toFixed())
+      // ou les objets qui ressemblent à { $numberDecimal: '123.45' }
+      if (value.$numberDecimal !== undefined) {
+        return value.$numberDecimal;
+      }
+      // Decimal Prisma : instanceof Prisma.Decimal mais on évite l'import
+      // On détecte via les propriétés typiques
+      if (value.d !== undefined && value.e !== undefined && value.s !== undefined) {
+        // Format Decimal.js : { d: [digits], e: exponent, s: sign }
+        return str;
+      }
+    }
+    if (Array.isArray(value)) {
+      return value.map(serializeForJson);
+    }
+    // Objet plain — parcourir les clés
+    const result: any = {};
+    for (const key of Object.keys(value)) {
+      result[key] = serializeForJson(value[key]);
+    }
+    return result;
+  }
+  // string, number, boolean — tels quels
+  return value;
+}
+
 @Injectable()
 export class SyncService {
   private readonly logger = new Logger(SyncService.name);
@@ -88,6 +140,14 @@ export class SyncService {
 
     this.logger.log(`Pull complete: ${totalRecords} records from ${Object.keys(results).length} tables`);
 
+    // ⭐ Sérialisation : convertir les BigInt et Decimal Prisma en string/number
+    //    avant que NestJS ne tente de JSON.stringify la réponse.
+    //    Sans ça : "Do not know how to serialize a BigInt" → HTTP 500.
+    const serializedResults: Record<string, any[]> = {};
+    for (const [tableName, records] of Object.entries(results)) {
+      serializedResults[tableName] = records.map((r) => serializeForJson(r));
+    }
+
     // ⭐ Format de retour compatible avec le frontend sync-engine
     //    Le frontend attend { entities: { tableName: [...] } }
     return {
@@ -96,12 +156,12 @@ export class SyncService {
       lastSyncAt: lastSyncAt,
       syncToken: `sync-${Date.now()}`,
       totalRecords,
-      tableCount: Object.keys(results).length,
-      entities: results, // ⭐ format attendu par sync-engine.service.ts
-      tables: results,   // rétro-compat
+      tableCount: Object.keys(serializedResults).length,
+      entities: serializedResults, // ⭐ format attendu par sync-engine.service.ts
+      tables: serializedResults,   // rétro-compat
       stats: {
         totalEntities: totalRecords,
-        tableCount: Object.keys(results).length,
+        tableCount: Object.keys(serializedResults).length,
       },
     };
   }

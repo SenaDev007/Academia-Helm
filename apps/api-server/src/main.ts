@@ -6,6 +6,26 @@ import { AppModule } from './app.module';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import { PrismaService } from './database/prisma.service';
 
+/**
+ * ⭐ Polyfill global : permet à JSON.stringify de sérialiser les BigInt.
+ *
+ * Problème : Prisma retourne des BigInt pour certaines colonnes Postgres
+ * (BIGINT, SERIAL). JSON.stringify() ne sait pas les sérialiser nativement
+ * → erreur "Do not know how to serialize a BigInt" → HTTP 500 sur toutes
+ * les routes qui retournent des données contenant un BigInt.
+ *
+ * Solution : on ajoute un toJSON() au prototype BigInt qui retourne la
+ * valeur en string (pour ne pas perdre de précision). Cela affecte toutes
+ * les réponses JSON du backend, pas seulement sync.service.ts.
+ *
+ * Note : on retourne une string pour préserver la précision (un BigInt
+ * peut dépasser Number.MAX_SAFE_INTEGER). Le frontend devra faire
+ * BigInt(value) ou Number(value) selon le cas.
+ */
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 /** Défaut Express ~100 ko — insuffisant pour identité + logos base64 (POST /settings/identity).
  *  Réduit de 10mb à 5mb pour limiter la consommation mémoire par requête.
  *  Note: This only applies to JSON/urlencoded bodies, NOT to multipart uploads

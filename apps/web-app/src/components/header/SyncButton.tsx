@@ -90,7 +90,7 @@ export function SyncButton() {
       const { outboxService } = await import('@/lib/offline/outbox.service');
       let tid = '';
       try {
-        const session = JSON.parse(localStorage.getItem('app_session') || '{}');
+        const session = JSON.parse(localStorage.getItem('session') || '{}');
         tid = session?.tenant?.id || session?.tenantId || '';
       } catch {}
       if (tid) pendingOps = await outboxService.getPendingEvents(tid, 50);
@@ -118,7 +118,7 @@ export function SyncButton() {
 
       let tenantId = '';
       try {
-        const session = JSON.parse(localStorage.getItem('app_session') || '{}');
+        const session = JSON.parse(localStorage.getItem('session') || '{}');
         tenantId = session?.tenant?.id || session?.tenantId || '';
       } catch {}
 

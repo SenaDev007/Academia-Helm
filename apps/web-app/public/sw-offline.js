@@ -23,7 +23,7 @@
  * ============================================================================
  */
 
-const CACHE_VERSION = 'ah-offline-v4'; // ⭐ bump v3 → v4 (pré-cache étendu des pages publiques + login)
+const CACHE_VERSION = 'ah-offline-v5'; // ⭐ bump v4 → v5 (fix page noire offline + fallback HTML inline)
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -156,7 +156,7 @@ async function handlePageRequest(request) {
   const cache = await caches.open(PAGE_CACHE);
 
   try {
-    // Tenter le réseau avec timeout court
+    // Tenter le réseau avec Timeout court
     const networkResponse = await fetchWithTimeout(request, HTML_TIMEOUT);
     if (networkResponse && networkResponse.ok) {
       cache.put(request, networkResponse.clone());
@@ -164,7 +164,7 @@ async function handlePageRequest(request) {
     }
     throw new Error('Network response not ok');
   } catch (err) {
-    // Fallback: cache
+    // Fallback: cache (PAGE_CACHE)
     const cachedResponse = await cache.match(request);
     if (cachedResponse) {
       return cachedResponse;
@@ -174,12 +174,94 @@ async function handlePageRequest(request) {
     const cachedRoot = await cache.match('/');
     if (cachedRoot) return cachedRoot;
 
-    // Dernier recours: page offline
-    const offlinePage = await cache.match('/offline');
+    // ⭐ Dernier recours: page offline
+    //    /offline est pre-cache dans STATIC_CACHE (à l'install du SW), PAS dans PAGE_CACHE.
+    //    Avant : cache.match('/offline') cherche uniquement dans PAGE_CACHE →
+    //    retourne undefined si PAGE_CACHE est vide (premier visite offline) →
+    //    fallback sur Response('Offline') qui rend une page noire avec "Offline"
+    //    en haut à gauche.
+    //    Maintenant : caches.match('/offline') cherche dans TOUS les caches
+    //    (STATIC_CACHE, PAGE_CACHE, etc.) → trouve /offline même si PAGE_CACHE
+    //    est vide.
+    const offlinePage = await caches.match('/offline');
     if (offlinePage) return offlinePage;
 
-    // Si rien en cache, retourner une réponse vide
-    return new Response('Offline', { status: 503, statusText: 'Offline' });
+    // ⭐ Si /offline n'est pas en cache (SW pas encore installé), retourner
+    //    une page HTML inline au lieu du texte brut "Offline" qui rendait
+    //    une page noire sur les navigateurs en mode sombre.
+    //    La page HTML a un fond clair + un message lisible + un bouton retry.
+    return new Response(
+      `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hors ligne — Academia Helm</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+      color: #1e293b;
+      padding: 2rem;
+    }
+    .container {
+      max-width: 28rem;
+      text-align: center;
+      background: white;
+      border-radius: 1rem;
+      padding: 2.5rem 2rem;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    }
+    .icon {
+      width: 4rem; height: 4rem; margin: 0 auto 1.5rem;
+      background: linear-gradient(135deg, #f59e0b, #f97316);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .icon svg { width: 2rem; height: 2rem; color: white; }
+    h1 { font-size: 1.5rem; font-weight: 700; margin: 0 0 0.75rem; color: #0f172a; }
+    p { font-size: 0.95rem; color: #475569; line-height: 1.6; margin: 0 0 1.5rem; }
+    button {
+      background: linear-gradient(135deg, #1A2BA6, #3B4FD4);
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.15s;
+    }
+    button:hover { transform: scale(1.03); }
+    .hint { font-size: 0.8rem; color: #94a3b8; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+      </svg>
+    </div>
+    <h1>Vous êtes hors ligne</h1>
+    <p>Nous n'avons pas pu charger cette page car votre connexion Internet semble indisponible. Vérifiez votre réseau puis réessayez.</p>
+    <button onclick="window.location.reload()">Réessayer</button>
+    <p class="hint">Astuce : les pages déjà visitées restent disponibles hors ligne.</p>
+  </div>
+</body>
+</html>`,
+      {
+        status: 503,
+        statusText: 'Offline',
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      }
+    );
   }
 }
 

@@ -23,6 +23,10 @@ export interface SyncOperation {
 
 export interface SyncModalState {
   isVisible: boolean;
+  /** Si true, le modal est réduit en une petite pastille en bas à droite.
+   *  L'opération de sync CONTINUE en arrière-plan — seul l'overlay est masqué.
+   *  L'utilisateur peut continuer à travailler pendant la sync. */
+  isMinimized: boolean;
   phase: 'push' | 'pull' | 'done' | 'error' | null;
   message: string;
   pushed: number;
@@ -35,6 +39,7 @@ export interface SyncModalState {
 let modalListeners: ((state: SyncModalState) => void)[] = [];
 let currentState: SyncModalState = {
   isVisible: false,
+  isMinimized: false,
   phase: null,
   message: '',
   pushed: 0,

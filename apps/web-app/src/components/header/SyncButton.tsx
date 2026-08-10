@@ -99,6 +99,7 @@ export function SyncButton() {
     // ⭐ Afficher le modal avec la liste des opérations (style GitHub)
     setSyncModalState({
       isVisible: true,
+      isMinimized: false, // ⭐ reset : au clic sur le bouton, le modal s'ouvre en mode full
       phase: 'push',
       message: pendingOps.length > 0 ? `Envoi de ${pendingOps.length} modification(s)...` : 'Vérification...',
       pushed: 0, pulled: 0,

@@ -47,6 +47,7 @@ class OfflineSyncService {
     console.log('[Sync] Bootstrap: pulling ALL data for tenant', tenantId);
     setSyncModalState({
       isVisible: true,
+      isMinimized: false, // ⭐ reset : à l'ouverture, le modal est en mode full
       phase: 'pull',
       message: 'Téléchargement initial des données de l\'école…',
       pushed: 0,

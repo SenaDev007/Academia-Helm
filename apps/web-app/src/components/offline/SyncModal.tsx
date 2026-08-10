@@ -26,7 +26,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   RefreshCw, Check, AlertCircle, CloudUpload, CloudDownload,
   ArrowUp, ArrowDown, FileText, Trash2, Edit, Plus,
-  HardDrive, Cloud, Database, Clock,
+  HardDrive, Cloud, Database, Clock, Minimize2, Maximize2, X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -140,28 +140,91 @@ export function SyncModal() {
   return (
     <AnimatePresence>
       {state.isVisible && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[9998] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
-        >
-          <motion.div
-            initial={{ scale: 0.9, y: 20 }}
-            animate={{ scale: 1, y: 0 }}
-            exit={{ scale: 0.9, y: 20 }}
-            className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full"
-          >
-            {/* ─── Header ─── */}
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0">
-                {isDone ? (
-                  <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
-                    <Check className="h-5 w-5 text-emerald-600" />
+        <>
+          {/* ─── MODE PASTILLE (réduit) — opération continue en arrière-plan ─── */}
+          {state.isMinimized ? (
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.8, opacity: 0, y: 20 }}
+              className="fixed bottom-4 right-4 z-[9998] bg-white rounded-2xl shadow-2xl border border-slate-200 p-3 flex items-center gap-3 cursor-pointer hover:shadow-lg transition-shadow max-w-xs"
+              onClick={() => setModalState({ isMinimized: false })}
+              title="Cliquez pour agrandir le modal de synchronisation"
+            >
+              {/* Icône spinner */}
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+                isDone ? 'bg-emerald-100' : isError ? 'bg-red-100' : isPull ? 'bg-emerald-100' : 'bg-blue-100'
+              }`}>
+                {isDone ? <Check className="h-4 w-4 text-emerald-600" />
+                  : isError ? <AlertCircle className="h-4 w-4 text-red-600" />
+                  : <RefreshCw className={`h-4 w-4 animate-spin ${isPull ? 'text-emerald-600' : 'text-blue-600'}`} />}
+              </div>
+              {/* Texte */}
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-slate-900 truncate">
+                  {isDone ? 'Sync terminée' : isError ? 'Erreur sync' : isPull ? 'Téléchargement…' : 'Envoi…'}
+                </p>
+                <p className="text-[10px] text-slate-500 truncate">
+                  {state.total > 0 ? `${state.current}/${state.total} · ${progress}%` : state.message || 'En cours…'}
+                </p>
+                {/* Mini barre de progression */}
+                {!isDone && !isError && (
+                  <div className="mt-1 h-1 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        isPull ? 'bg-emerald-500' : 'bg-blue-500'
+                      }`}
+                      style={{ width: `${minBarWidth}%` }}
+                    />
                   </div>
-                ) : isError ? (
-                  <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                    <AlertCircle className="h-5 w-5 text-red-600" />
+                )}
+              </div>
+              {/* Bouton agrandir */}
+              <button
+                onClick={(e) => { e.stopPropagation(); setModalState({ isMinimized: false }); }}
+                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 shrink-0"
+                title="Agrandir"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+            </motion.div>
+          ) : (
+            /* ─── MODE FULL OVERLAY (normal) ─── */
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[9998] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full relative"
+              >
+                {/* ⭐ Bouton "Réduire" — visible pendant push/pull/done/error */}
+                {/*    Permet à l'utilisateur de continuer à travailler pendant
+                      que la sync tourne en arrière-plan. */}
+                {isActive && (
+                  <button
+                    onClick={() => setModalState({ isMinimized: true })}
+                    className="absolute top-3 right-3 p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 z-10"
+                    title="Réduire — l'opération continue en arrière-plan"
+                  >
+                    <Minimize2 className="w-4 h-4" />
+                  </button>
+                )}
+
+                {/* ─── Header ─── */}
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0">
+                    {isDone ? (
+                      <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
+                        <Check className="h-5 w-5 text-emerald-600" />
+                      </div>
+                    ) : isError ? (
+                      <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                        <AlertCircle className="h-5 w-5 text-red-600" />
                   </div>
                 ) : isPull ? (
                   <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center">
@@ -347,8 +410,10 @@ export function SyncModal() {
                 Fermer
               </button>
             )}
-          </motion.div>
-        </motion.div>
+              </motion.div>
+            </motion.div>
+          )}
+        </>
       )}
     </AnimatePresence>
   );

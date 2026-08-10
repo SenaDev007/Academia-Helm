@@ -7,7 +7,7 @@
 
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
 import { PostLoginFlowWrapper } from '@/components/loading/PostLoginFlowWrapper';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { SettingsBootstrapPrefetch } from '@/components/settings/SettingsBootstrapPrefetch';
@@ -33,10 +33,11 @@ import { Toaster } from '@/components/ui/sonner';
 // Connecté à /sara/guide/stream (GLM 5.2). Aucun accès aux données tenant.
 import InAppSaraGuideWidget from '@/components/ai/InAppSaraGuideWidget';
 import OnboardingTour from '@/components/ai/OnboardingTour';
-// ⭐ Offline-first : bannière hors ligne + badge statut réseau + prompt d'installation PWA + SW offline
+// ⭐ Offline-first : bannière hors ligne + badge statut réseau + prompt d'installation PWA + SW offline + modal sync
 import OfflineGuard from '@/components/offline/OfflineGuard';
 import { OfflineStatusBadge } from '@/components/offline/OfflineStatusBadge';
 import { OfflineSWRegister } from '@/components/offline/OfflineSWRegister';
+import { SyncModal } from '@/components/offline/SyncModal';
 import { PWAInstallPrompt } from '@/components/pwa/PWAInstallPrompt';
 
 export interface AppLayoutClientProps {
@@ -67,6 +68,20 @@ export default function AppLayoutClient({
     // Console-only log (utile pour debug)
     console.log('[Push] Abonnement actif');
   }
+
+  // ⭐ Bootstrap offline-first : au premier login, télécharger TOUTES les données
+  //    du tenant dans IndexedDB pour permettre le mode offline.
+  useEffect(() => {
+    if (!tenant?.id) return;
+    // Vérifier si déjà bootstrapé
+    if (localStorage.getItem('academia_helm_bootstrapped') === 'true') return;
+
+    import('@/lib/offline/offline-sync.service').then(({ offlineSyncService }) => {
+      offlineSyncService.bootstrap(tenant.id);
+    }).catch((err) => {
+      console.warn('[Bootstrap] Failed:', err);
+    });
+  }, [tenant?.id]);
 
   return (
     <SessionManagerProvider>
@@ -122,6 +137,7 @@ export default function AppLayoutClient({
       <OfflineStatusBadge />
       <PWAInstallPrompt />
       <OfflineSWRegister />
+      <SyncModal />
       </OfflineGuard>
     </SessionManagerProvider>
   );

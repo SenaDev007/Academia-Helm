@@ -28,6 +28,7 @@ import { RefreshCw, CloudOff, Check, AlertCircle, Cloud } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { networkDetectionService } from "@/lib/offline/network-detection.service";
+import { setSyncModalState } from "@/components/offline/SyncModal";
 
 export function SyncButton() {
   const [isOnline, setIsOnline] = useState(networkDetectionService.isConnected());
@@ -83,13 +84,12 @@ export function SyncButton() {
     setIsSyncing(true);
     setError(null);
 
+    // ⭐ Afficher le modal de chargement
+    setSyncModalState({ isVisible: true, phase: 'push', message: 'Envoi de vos modifications...', pushed: 0, pulled: 0 });
+
     try {
-      // ⭐ Pattern Git : pull + push en une seule opération
-      // runSync fait : 1) PUSH (envoyer les écritures locales vers Neon)
-      //                 2) PULL (récupérer les changements distants depuis Neon)
       const { syncEngine } = await import('@/lib/offline/sync-engine.service');
 
-      // Récupérer le tenantId depuis la session
       let tenantId = '';
       try {
         const session = JSON.parse(localStorage.getItem('app_session') || '{}');
@@ -97,9 +97,16 @@ export function SyncButton() {
       } catch {}
 
       if (!tenantId) {
+        setSyncModalState({ isVisible: false });
         toast.info("Session requise", { description: "Connectez-vous pour synchroniser." });
         return;
       }
+
+      // ⭐ Phase 1 : PUSH
+      setSyncModalState({ isVisible: true, phase: 'push', message: 'Envoi de vos modifications vers le serveur...' });
+
+      // ⭐ Phase 2 : PULL (runSync fait les deux)
+      setSyncModalState({ isVisible: true, phase: 'pull', message: 'Récupération des dernières données du serveur...' });
 
       const result = await syncEngine.runSync(tenantId);
 
@@ -110,24 +117,25 @@ export function SyncButton() {
 
       const totalPulled = Object.values(result.pulled || {}).reduce((a: number, b: number) => a + b, 0) as number;
 
-      if (result.pushed > 0 || totalPulled > 0) {
-        toast.success("Synchronisation réussie", {
-          description: `${result.pushed} envoi(s) • ${totalPulled} mise(s) à jour reçue(s)${result.conflicts > 0 ? ` • ${result.conflicts} conflit(s)` : ''}`,
-        });
-      } else {
-        toast.success("Déjà à jour", {
-          description: "Aucun changement à synchroniser.",
-        });
-      }
+      // ⭐ Afficher le résultat dans le modal
+      setSyncModalState({
+        isVisible: true,
+        phase: 'done',
+        message: `${result.pushed} envoi(s) • ${totalPulled} mise(s) à jour reçue(s)${result.conflicts > 0 ? ` • ${result.conflicts} conflit(s)` : ''}`,
+        pushed: result.pushed,
+        pulled: totalPulled,
+      });
+
+      // Fermer le modal après 2s
+      setTimeout(() => setSyncModalState({ isVisible: false }), 2000);
 
       if (result.conflicts > 0) {
         setError(`${result.conflicts} conflit(s) détecté(s)`);
       }
     } catch (err: any) {
       setError(err.message);
-      toast.error("Échec de synchronisation", {
-        description: err.message,
-      });
+      setSyncModalState({ isVisible: true, phase: 'error', message: err.message });
+      setTimeout(() => setSyncModalState({ isVisible: false }), 3000);
     } finally {
       setIsSyncing(false);
     }

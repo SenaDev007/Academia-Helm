@@ -9,23 +9,81 @@
 
 import { networkDetectionService } from './network-detection.service';
 import { runSync } from './sync-engine.service';
+import { setSyncModalState } from '@/components/offline/SyncModal';
 
 class OfflineSyncService {
   private isSyncing: boolean = false;
   private syncInterval: any = null;
   private syncInterval30s: any = null;
   private syncInProgress: Promise<void> | null = null;
+  private hasBootstrapped: boolean = false;
 
   constructor() {
     // Écouter les changements de connexion
     networkDetectionService.onConnectionChange(async (online) => {
       if (online && (await this.getTenantId())) {
+        // ⭐ Au retour de connexion : PUSH automatique (envoyer les données locales)
+        //    + PULL (récupérer les changements distants)
         await this.sync();
       }
     });
 
     // Synchronisation automatique périodique
     this.startAutoSync();
+  }
+
+  /**
+   * ⭐ Bootstrap initial : téléchargement complet au premier login
+   *    Appelé par layout-client.tsx après le login réussi.
+   *    Fait un PULL complet (last_sync_at = epoch) pour récupérer TOUTES
+   *    les données du tenant dans IndexedDB.
+   */
+  async bootstrap(tenantId: string): Promise<void> {
+    if (this.hasBootstrapped) {
+      console.log('[Sync] Already bootstrapped, skipping');
+      return;
+    }
+
+    console.log('[Sync] Bootstrap: pulling ALL data for tenant', tenantId);
+    setSyncModalState({
+      isVisible: true,
+      phase: 'pull',
+      message: 'Téléchargement initial des données de l\'école...',
+      pushed: 0,
+      pulled: 0,
+    });
+
+    try {
+      const deviceId = this.getDeviceId();
+      const result = await runSync(tenantId, deviceId);
+
+      // Marquer comme bootstrap terminé
+      this.hasBootstrapped = true;
+      try { localStorage.setItem('academia_helm_bootstrapped', 'true'); } catch {}
+
+      const totalPulled = Object.values(result.pulled || {}).reduce((a: number, b: any) => a + (b as number), 0) as number;
+
+      setSyncModalState({
+        isVisible: true,
+        phase: 'done',
+        message: `${totalPulled} enregistrement(s) récupéré(s)`,
+        pushed: result.pushed,
+        pulled: totalPulled,
+      });
+
+      // Fermer le modal après 3s
+      setTimeout(() => setSyncModalState({ isVisible: false }), 3000);
+
+      console.log(`[Sync] Bootstrap complete: ${totalPulled} entities pulled`);
+    } catch (error: any) {
+      console.error('[Sync] Bootstrap failed:', error);
+      setSyncModalState({
+        isVisible: true,
+        phase: 'error',
+        message: `Erreur lors du téléchargement initial: ${error.message}`,
+      });
+      setTimeout(() => setSyncModalState({ isVisible: false }), 5000);
+    }
   }
 
   /**
@@ -60,9 +118,22 @@ class OfflineSyncService {
     this.isSyncing = true;
     try {
       const tenantId = await this.getTenantId();
-      // Pas de tenant : pages publiques ou session sans établissement — comportement attendu, pas de log.
       if (!tenantId) return;
       const deviceId = this.getDeviceId();
+
+      // ⭐ Afficher le modal seulement s'il y a des pending events
+      const { outboxService } = await import('./outbox.service');
+      const pendingCount = await outboxService.getPendingCount();
+      if (pendingCount > 0) {
+        setSyncModalState({
+          isVisible: true,
+          phase: 'push',
+          message: 'Envoi de vos modifications...',
+          pushed: 0,
+          pulled: 0,
+        });
+      }
+
       const result = await runSync(tenantId, deviceId);
       const total = result.pushed + result.conflicts + result.errors;
       if (typeof window !== 'undefined') {
@@ -78,11 +149,31 @@ class OfflineSyncService {
           })
         );
       }
+
+      // ⭐ Fermer le modal si on l'a ouvert
+      if (pendingCount > 0) {
+        const totalPulled = Object.values(result.pulled || {}).reduce((a: number, b: any) => a + (b as number), 0) as number;
+        setSyncModalState({
+          isVisible: true,
+          phase: 'done',
+          message: `${result.pushed} envoi(s) • ${totalPulled} mise(s) à jour`,
+          pushed: result.pushed,
+          pulled: totalPulled,
+        });
+        setTimeout(() => setSyncModalState({ isVisible: false }), 2000);
+      }
+
       console.log(
         `[Sync] Done: ${result.pushed} synced, ${result.conflicts} conflicts, ${result.errors} errors`
       );
     } catch (error: any) {
       console.error('[Sync] Sync error:', error);
+      setSyncModalState({
+        isVisible: true,
+        phase: 'error',
+        message: error?.message || 'Erreur de synchronisation',
+      });
+      setTimeout(() => setSyncModalState({ isVisible: false }), 3000);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
           new CustomEvent('sync-end', { detail: { success: false, error: error?.message } })

@@ -39,7 +39,11 @@ export class SyncService {
   // ===========================================================================
 
   async pull(dto: SyncPullDto) {
-    this.logger.log(`Pull request: tables=${dto.tables?.length || 'all'}, lastSync=${dto.lastSyncAt || 'initial'}`);
+    // ⭐ Normaliser snake_case → camelCase
+    const lastSyncAt = dto.lastSyncAt || (dto as any).last_sync_at;
+    const tenantId = dto.tenantId || (dto as any).tenant_id;
+
+    this.logger.log(`Pull request: tables=${dto.tables?.length || 'all'}, lastSync=${lastSyncAt || 'initial'}, tenant=${tenantId || 'none'}`);
 
     const tables = dto.tables?.length ? dto.tables : await this.getAllTableNames();
     const limit = dto.limit || 500;
@@ -50,7 +54,7 @@ export class SyncService {
       if (this.EXCLUDED_TABLES.has(tableName)) continue;
 
       try {
-        const records = await this.pullTable(tableName, dto.lastSyncAt, limit, dto.tenantId);
+        const records = await this.pullTable(tableName, lastSyncAt, limit, tenantId);
         results[tableName] = records;
         totalRecords += records.length;
       } catch (error) {
@@ -61,12 +65,20 @@ export class SyncService {
 
     this.logger.log(`Pull complete: ${totalRecords} records from ${Object.keys(results).length} tables`);
 
+    // ⭐ Format de retour compatible avec le frontend sync-engine
+    //    Le frontend attend { entities: { tableName: [...] } }
     return {
       success: true,
       pulledAt: new Date().toISOString(),
-      lastSyncAt: dto.lastSyncAt,
+      lastSyncAt: lastSyncAt,
+      syncToken: `sync-${Date.now()}`,
       totalRecords,
-      tables: results,
+      entities: results, // ⭐ format attendu par sync-engine.service.ts
+      tables: results,   // rétro-compat
+      stats: {
+        totalEntities: totalRecords,
+        tableCount: Object.keys(results).length,
+      },
     };
   }
 
@@ -114,37 +126,55 @@ export class SyncService {
   // ===========================================================================
 
   async push(dto: SyncPushDto) {
-    this.logger.log(`Push request: ${dto.records.length} records`);
+    // ⭐ Normaliser : accepter à la fois records[] et operations[]
+    let records: any[] = [];
+    if (dto.records && dto.records.length > 0) {
+      records = dto.records;
+    } else if (dto.operations && dto.operations.length > 0) {
+      // Convertir operations (snake_case) → records (camelCase)
+      records = dto.operations.map((op: any) => ({
+        tableName: op.table_name || op.tableName,
+        recordId: op.record_id || op.recordId,
+        operation: (op.operation_type || op.operation || 'UPDATE').toUpperCase(),
+        data: op.payload || op.data || {},
+        clientTimestamp: op.client_timestamp || op.clientTimestamp || new Date().toISOString(),
+      }));
+    }
+
+    this.logger.log(`Push request: ${records.length} records`);
 
     const results: Array<{
+      operation_id?: string;
       tableName: string;
       recordId: string;
-      status: 'success' | 'conflict' | 'error';
+      status: 'SUCCESS' | 'CONFLICT' | 'ERROR';
       error?: string;
     }> = [];
 
-    for (const record of dto.records) {
+    for (const record of records) {
       try {
         await this.applyRecord(record);
         results.push({
+          operation_id: (record as any).id,
           tableName: record.tableName,
           recordId: record.recordId,
-          status: 'success',
+          status: 'SUCCESS',
         });
       } catch (error) {
-        // Check if it's a conflict (version mismatch)
         if (error.message?.includes('conflict') || error.message?.includes('version')) {
           results.push({
+            operation_id: (record as any).id,
             tableName: record.tableName,
             recordId: record.recordId,
-            status: 'conflict',
+            status: 'CONFLICT',
             error: error.message,
           });
         } else {
           results.push({
+            operation_id: (record as any).id,
             tableName: record.tableName,
             recordId: record.recordId,
-            status: 'error',
+            status: 'ERROR',
             error: error.message,
           });
           this.logger.warn(`Push failed for ${record.tableName}/${record.recordId}: ${error.message}`);
@@ -152,19 +182,20 @@ export class SyncService {
       }
     }
 
-    const successCount = results.filter(r => r.status === 'success').length;
-    const conflictCount = results.filter(r => r.status === 'conflict').length;
-    const errorCount = results.filter(r => r.status === 'error').length;
+    const successCount = results.filter(r => r.status === 'SUCCESS').length;
+    const conflictCount = results.filter(r => r.status === 'CONFLICT').length;
+    const errorCount = results.filter(r => r.status === 'ERROR').length;
 
     this.logger.log(`Push complete: ${successCount} success, ${conflictCount} conflicts, ${errorCount} errors`);
 
+    // ⭐ Format de retour compatible avec le frontend sync-engine
     return {
       success: errorCount === 0,
       pushedAt: new Date().toISOString(),
-      total: dto.records.length,
-      success: successCount,
-      conflicts: conflictCount,
-      errors: errorCount,
+      total: records.length,
+      successful_operations: successCount,
+      conflicted_operations: conflictCount,
+      failed_operations: errorCount,
       results,
     };
   }

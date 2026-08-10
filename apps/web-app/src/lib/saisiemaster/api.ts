@@ -186,6 +186,7 @@ async function apiFetch<T>(
   const response = await fetch(apiUrl, {
     ...options,
     headers,
+    credentials: 'include', // ⭐ Nécessaire pour cross-origin (saisiemaster → www)
     signal: options.signal ?? AbortSignal.timeout(60000),
   });
 

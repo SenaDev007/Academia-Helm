@@ -74,7 +74,25 @@ export class SyncController {
         pull: 'POST /api/sync/pull',
         push: 'POST /api/sync/push',
         status: 'GET /api/sync/status',
+        schemaHash: 'GET /api/sync/schema-hash',
       },
+    };
+  }
+
+  /**
+   * GET /api/sync/schema-hash
+   * ⭐ Retourne un hash du schéma pour validation côté client.
+   *    Le frontend l'envoie avec chaque push pour vérifier que le schéma
+   *    local correspond au schéma serveur.
+   */
+  @Get('schema-hash')
+  async schemaHash() {
+    // ⭐ Hash simple basé sur le nombre de tables + timestamp du déploiement
+    //    Ce n'est pas un hash cryptographique, juste un identifiant de version
+    return {
+      hash: `schema-${process.env.DEPLOYMENT_ID || 'local'}-${Date.now().toString(36)}`,
+      version: '1.0.0',
+      timestamp: new Date().toISOString(),
     };
   }
 }

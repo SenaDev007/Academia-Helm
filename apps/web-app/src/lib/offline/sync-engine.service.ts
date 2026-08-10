@@ -684,68 +684,162 @@ export async function runSync(
     } catch {
       // Non-critique : on retombe sur le comportement sans progress granulaire
     }
-    onProgress(0, totalTables, 'démarrage', 0);
+    // ⭐ Indiquer que la récupération démarre — on met total=0 temporairement
+    //    pour déclencher le mode "indeterminate" (barre animée) pendant que le
+    //    serveur prépare les données. Sans ça, l'utilisateur voit "0/629 0%"
+    //    statique pendant 10 minutes sans comprendre ce qui se passe.
+    onProgress(0, 0, 'récupération serveur…', 0);
   }
 
-  const pullRes = await fetchWithAuth(`${SYNC_API}/pull`, {
-    method: 'POST',
-    body: JSON.stringify({
-      tenant_id: tenantId,
-      last_sync_at: lastSyncAt,
-      device_id: deviceId,
-      ...(tablesToPull ? { tables: tablesToPull } : {}),
-    }),
-  });
-  const pullData = await pullRes.json().catch(() => ({}));
+  // ⭐ CHUNKED PULL — au lieu d'envoyer une seule requête POST /api/sync/pull
+  //    avec 629 tables d'un coup (ce qui bloque le serveur pendant 10+ min
+  //    à construire la réponse JSON complète), on découpe en chunks de 25 tables.
+  //
+  //    Avantages :
+  //    1. Chaque requête prend ~30s au lieu de 10 min → l'utilisateur voit la
+  //       barre progresser toutes les 30s au lieu de rester bloquée.
+  //    2. Si une requête échoue (timeout, réseau), on ne perd pas tout le
+  //       travail déjà fait — les chunks précédents sont déjà persistés.
+  //    3. Le serveur peut paralléliser les requêtes SQL plus efficacement
+  //       car il n'a pas à construire un énorme objet en mémoire.
+  //
+  //    Si tablesToPull est undefined (pas de onProgress), on garde le
+  //    comportement historique (une seule requête avec toutes les tables).
+  const CHUNK_SIZE = 25;
+  let pulledAt = new Date().toISOString();
+  let pullServerId = 'remote-master';
 
-  if (pullRes.ok && pullData.entities) {
-    // Parcourir toutes les entités retournées et les persister en base locale
-    const entityTypes = Object.keys(pullData.entities);
-    let pulledSoFar = 0;
-    for (const type of entityTypes) {
-      const items = pullData.entities[type] || [];
-      if (items.length > 0) {
-        // ⭐ Déterminer le nom du store local — la convention IndexedDB est
-        //    "Prisma model name lowercased sans séparateurs, singulier"
-        //    (ex: TeacherClassAssignment → "teacherclassassignment").
-        //    Le backend retourne généralement les types en snake_case plural
-        //    (ex: "teacher_class_assignments"). On normalise les deux vers la
-        //    convention IndexedDB.
-        const storeName = normalizeToIdbStoreName(type);
-        try {
-          await localDb.executeBulk(storeName, 'put', items);
-          result.pulled[type] = items.length;
-          pulledSoFar += items.length;
-        } catch (e) {
-          // ⭐ Ne pas crasher si le store n'existe pas en IDB — c'est légitime
-          //    pour les entités qu'on n'a pas encore déclarées dans local-db.service.ts.
-          //    On log en warning pour visibilité, et on continue avec les autres tables.
-          console.warn(`[Sync] Store "${storeName}" (from type "${type}") not in IndexedDB — skipping ${items.length} items`);
+  if (tablesToPull && tablesToPull.length > 0 && onProgress) {
+    // ⭐ Mode chunked — découper en chunks de CHUNK_SIZE tables
+    const chunks: string[][] = [];
+    for (let i = 0; i < tablesToPull.length; i += CHUNK_SIZE) {
+      chunks.push(tablesToPull.slice(i, i + CHUNK_SIZE));
+    }
+
+    let tablesProcessed = 0;
+    let totalPulledSoFar = 0;
+
+    for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+      const chunk = chunks[chunkIdx];
+
+      // ⭐ Avant chaque chunk, mettre à jour la progression avec le total réel
+      //    (total=629) pour que la barre déterminée s'affiche.
+      onProgress(
+        tablesProcessed,
+        totalTables,
+        `récupération chunk ${chunkIdx + 1}/${chunks.length}…`,
+        totalPulledSoFar,
+      );
+
+      try {
+        const chunkRes = await fetchWithAuth(`${SYNC_API}/pull`, {
+          method: 'POST',
+          body: JSON.stringify({
+            tenant_id: tenantId,
+            last_sync_at: lastSyncAt,
+            device_id: deviceId,
+            tables: chunk,
+          }),
+        });
+        const chunkData = await chunkRes.json().catch(() => ({}));
+
+        if (chunkRes.ok && chunkData.entities) {
+          // Persister chaque table du chunk
+          for (const type of Object.keys(chunkData.entities)) {
+            const items = chunkData.entities[type] || [];
+            if (items.length > 0) {
+              const storeName = normalizeToIdbStoreName(type);
+              try {
+                await localDb.executeBulk(storeName, 'put', items);
+                result.pulled[type] = items.length;
+                totalPulledSoFar += items.length;
+              } catch (e) {
+                console.warn(`[Sync] Store "${storeName}" (from type "${type}") not in IndexedDB — skipping ${items.length} items`);
+              }
+            }
+            tablesProcessed += 1;
+          }
+
+          // Mettre à jour pulledAt avec le timestamp du serveur si dispo
+          if (chunkData.pulled_at) {
+            pulledAt = chunkData.pulled_at;
+          }
+          if (chunkData.server_id) {
+            pullServerId = chunkData.server_id;
+          }
+
+          // ⭐ Après chaque chunk, mettre à jour la progression
+          onProgress(tablesProcessed, totalTables, `chunk ${chunkIdx + 1}/${chunks.length} terminé`, totalPulledSoFar);
         }
-      }
-      // ⭐ Mise à jour de la progression après chaque table persistée
-      if (onProgress) {
-        try {
-          onProgress(
-            Object.keys(result.pulled).length,
-            totalTables || entityTypes.length,
-            type,
-            pulledSoFar,
-          );
-        } catch {}
+      } catch (chunkError) {
+        console.warn(`[Sync] Chunk ${chunkIdx + 1}/${chunks.length} failed:`, (chunkError as Error).message);
+        // Continuer avec le chunk suivant — ne pas tout arrêter pour un chunk
       }
     }
-    
-    const pulledAt = pullData.pulled_at || new Date().toISOString();
-    await setLastSyncTimestamp(tenantId, pulledAt);
 
-    // 6. Finalisation : Mise à jour du registre local (Section 11.2)
+    // Finalisation : mettre à jour le timestamp de sync + device registry
+    await setLastSyncTimestamp(tenantId, pulledAt);
     await localDb.execute('device_registry_local', 'put', {
       id: 'current_device',
-      lastSyncServerId: pullData.server_id || 'remote-master',
+      lastSyncServerId: pullServerId,
       lastSyncAt: pulledAt,
       status: 'SYNCED'
     });
+
+    // ⭐ Progression finale à 100%
+    onProgress(totalTables, totalTables, 'terminé', totalPulledSoFar);
+  } else {
+    // ⭐ Mode non-chunké (comportement historique) — une seule requête
+    const pullRes = await fetchWithAuth(`${SYNC_API}/pull`, {
+      method: 'POST',
+      body: JSON.stringify({
+        tenant_id: tenantId,
+        last_sync_at: lastSyncAt,
+        device_id: deviceId,
+        ...(tablesToPull ? { tables: tablesToPull } : {}),
+      }),
+    });
+    const pullData = await pullRes.json().catch(() => ({}));
+
+    if (pullRes.ok && pullData.entities) {
+      // Parcourir toutes les entités retournées et les persister en base locale
+      const entityTypes = Object.keys(pullData.entities);
+      let pulledSoFar = 0;
+      for (const type of entityTypes) {
+        const items = pullData.entities[type] || [];
+        if (items.length > 0) {
+          const storeName = normalizeToIdbStoreName(type);
+          try {
+            await localDb.executeBulk(storeName, 'put', items);
+            result.pulled[type] = items.length;
+            pulledSoFar += items.length;
+          } catch (e) {
+            console.warn(`[Sync] Store "${storeName}" (from type "${type}") not in IndexedDB — skipping ${items.length} items`);
+          }
+        }
+        if (onProgress) {
+          try {
+            onProgress(
+              Object.keys(result.pulled).length,
+              totalTables || entityTypes.length,
+              type,
+              pulledSoFar,
+            );
+          } catch {}
+        }
+      }
+
+      pulledAt = pullData.pulled_at || pulledAt;
+      if (pullData.server_id) pullServerId = pullData.server_id;
+
+      await setLastSyncTimestamp(tenantId, pulledAt);
+      await localDb.execute('device_registry_local', 'put', {
+        id: 'current_device',
+        lastSyncServerId: pullServerId,
+        lastSyncAt: pulledAt,
+        status: 'SYNCED'
+      });
+    }
   }
 
   result.success = result.errors === 0 && result.conflicts === 0;

@@ -1661,3 +1661,57 @@ Stage Summary:
 - Frontend type-check : 0 erreurs dans les fichiers modifiés.
 - Backend : même pattern que le code existant (pré-existant `$queryRawUnsafe` déjà utilisé à plusieurs endroits) — aucune nouvelle catégorie d'erreur.
 - Files modified: 5 (sync.service.ts, sync.controller.ts, sync-engine.service.ts, offline-sync.service.ts, SyncModal.tsx, SyncButton.tsx)
+
+---
+Task ID: 2026-08-10-logo-empty-tabs-badge
+Agent: main
+Task: 3 problèmes signalés après le travail offline-mode : (1) logo école ne s'affiche plus, (2) onglets qui chargent lentement ou nécessitent plusieurs refresh, (3) badge "Synchronisé" qui prend toute la largeur du navigateur.
+
+Work Log:
+
+=== Diagnostic (3 investigations parallèles via sub-agents Explore) ===
+
+- (1) Logo : le `useEffect` de `PilotageTopBar` qui fetch `/api/settings/identity` n'avait pas `isOnline` dans ses deps. Quand le fetch échouait (pendant offline ou après une tempête de sync), `schoolIdentity` restait `null` à vie → fallback sur l'icône `<School>` générique + `tenant.name` au lieu de l'acronyme. Pas de retry automatique.
+- (2) Onglets vides : la cause racine est dans `offline-fetch.ts` — quand le réseau échouait ET que IndexedDB était vide, on retournait silencieusement `[]` au lieu de propager l'erreur. React Query ne réessayait donc jamais. Combiné avec `refetchOnMount: false` et `SchoolLevelContext` qui n'utilisait PAS React Query (fetch manuel sans retry), les pages restaient vides.
+- (3) Badge : `SyncButton` affichait "Synchronisé" + compteur de temps écoulé en permanence. L'indicateur "En ligne" interne du TopBar affichait aussi "En ligne" en texte. Trop verbeux.
+
+=== Correctifs ===
+
+1. **PilotageTopBar.tsx — logo offline-aware** :
+   - Ajout d'un listener `window.addEventListener('online', ...)` qui re-fetch `/api/settings/identity` quand on revient online.
+   - Le `useEffect` existant (qui s'occupe du chargement initial + listener `SCHOOL_IDENTITY_UPDATED_EVENT`) reste en place, avec les nouveaux listeners online/offline ajoutés en parallèle.
+   - Quand on revient online après une période offline, le logo se recharge automatiquement — plus besoin de F5.
+
+2. **offline-fetch.ts — ne plus retourner [] silencieusement** :
+   - Quand le réseau échoue, on lit IndexedDB. Si le cache a des données réelles → on les retourne (comportement offline légitime). Si le cache est vide → on REJETTE l'erreur réseau d'origine. Cela permet à React Query de réessayer automatiquement (retry: 2 par défaut).
+   - Ajout d'un helper `hasRealData(data)` qui distingue "tableau vide" / "objet vide" (pas de vraies données) des données réelles.
+   - Effet : fini les pages blanches qui nécessitaient plusieurs F5 pour s'afficher.
+
+3. **SchoolLevelContext.tsx — migration vers React Query** :
+   - Avant : `loadSchoolLevels()` faisait un `fetch('/api/school-levels', { cache: 'no-store' })` dans un `useEffect`. Si le fetch échouait → `setIsLoading(false)` mais `availableLevels=[]` à vie. Pas de retry. Pas d'auto-récup sur `sync-end`.
+   - Maintenant : `useSchoolLevelsQuery()` (hook React Query déjà existant dans `lib/query/use-school-levels.ts`, avec staleTime 5min + refetchOnReconnect).
+   - Bénéficie automatiquement de l'invalidation sur `sync-end` et `session-resumed` gérée par `QueryProvider`.
+   - Supprimé le fetch vers `/api/pedagogy-space/my-classes` qui causait une race condition avec `AcademicYearProvider` (qui pouvait ne pas encore avoir écrit `currentAcademicYearId` dans localStorage). Les accreditations du user suffisent dans la grande majorité des cas.
+
+4. **BilingualContext.tsx — migration vers React Query** :
+   - Avant : `useEffect` qui faisait un fetch manuel via `settingsService.getBilingualSettings()`. Sur erreur : `setSettings(null)` + `setIsLoading(false)` → les pages interprétaient `isEnabled=false` comme "bilingue désactivé" au lieu de "chargement échoué".
+   - Maintenant : `useQuery({ queryKey: ['bilingual'], queryFn, staleTime: 5min, refetchOnReconnect: true })`. Auto-récup sur sync-end / session-resumed.
+   - Ajout d'un listener `settings-bilingual-updated` qui invalide le cache quand la page Settings met à jour la config.
+
+5. **SyncButton.tsx — rendu minimaliste** :
+   - Avant : bouton avec texte "Synchronisé" + badge compteur + temps écoulé. Affichage permanent en texte → visuellement lourd.
+   - Maintenant : bouton carré 32x32 (icône seule). Couleur : vert (sync OK) / bleu (en cours, spinner) / orange (offline) / rouge (erreur). Tooltip détaillé au survol (état + dernière sync + nombre en attente).
+   - Le badge "X en attente" reste affiché mais est maintenant superposé à l'icône Cloud (coin supérieur droit), pas séparé.
+
+6. **PilotageTopBar.tsx — indicateur online/offline minimaliste** :
+   - Avant : badge "En ligne" / "Sync..." / "X en attente" / "Hors ligne" avec icône + texte, toujours visible.
+   - Maintenant : juste un point coloré 10x10 (vert si online, orange si offline). Les badges "Sync..." et "X en attente" ne s'affichent QUE pendant qu'il y a une activité réelle, puis disparaissent.
+   - Gain visuel : ~200px de largeur libérés dans le header.
+
+Stage Summary:
+
+- Logo école se recharge automatiquement au retour online (plus besoin de F5).
+- Onglets vides après sync : cause racine corrigée (offline-fetch ne retourne plus [] silencieusement si IDB est vide — propage l'erreur réseau → React Query retry). SchoolLevelContext et BilingualContext migrés vers React Query (auto-récup sur sync-end / session-resumed).
+- Badge "Synchronisé" réduit à un bouton icône carré avec tooltip. Indicateur online réduit à un point coloré.
+- Frontend type-check : 0 erreurs dans les fichiers modifiés.
+- Files modified: 5 (SyncButton.tsx, PilotageTopBar.tsx, BilingualContext.tsx, SchoolLevelContext.tsx, offline-fetch.ts)

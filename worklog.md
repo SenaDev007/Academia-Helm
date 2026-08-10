@@ -2228,3 +2228,58 @@ Stage Summary:
 - FULL_ACCESS_ROLES (PROMOTER, DIRECTEUR_GENERAL) gardent accès complet.
 - Frontend type-check : 0 erreurs.
 - Files modified: 4 (sync-engine.service.ts, SchoolLevelSelector.tsx, AcademicTrackSelector.tsx, PilotageSidebar.tsx)
+
+---
+Task ID: 2026-08-10-sync-retry-directors-refactor
+Agent: main
+Task: 1) Fiabiliser les chunks de sync : aucun chunk ne doit échouer en production. 2) Refactoriser l'onglet Directeurs du module RH : sélectionner le directeur parmi le personnel existant, envoyer mail identifiants + lien portail école + modification mdp.
+
+Work Log:
+
+=== 1. SYNC — Fiabilisation des chunks ===
+- Ajout retry jusqu'à 3 fois par chunk en cas d'échec
+- Délai exponentiel : 1s, 2s, 4s
+- Si 3 retries échouent → erreur explicite stoppe la sync (message clair)
+- En production : AUCUN chunk ne doit échouer silencieusement
+
+=== 2. REFACTOR DIRECTEURS — Backend ===
+- Migration V2 : ajout colonne staffId à school_directors (scripts/migrate_school_directors_v2.cjs)
+- school-directors.service.ts :
+  * upsertDirector accepte staffId (résout fullName/email/phone depuis Staff)
+  * getDirectors : jointure avec staff pour infos à jour
+  * sendCredentialsToDirector() délègue à StaffCredentialService
+  * Auto-send credentials après upsert (sendCredentialsEmail=true)
+- school-directors.controller.ts :
+  * Nouveau endpoint POST /hr/school-directors/:id/send-credentials
+
+=== 3. REFACTOR DIRECTEURS — Frontend ===
+- DirectorsWorkspace.tsx :
+  * staffList chargé depuis /api/hr/staff?status=ACTIVE
+  * Filtre : staff avec email uniquement (sinon pas d'envoi possible)
+  * Sélecteur <select> en haut de chaque formulaire
+  * Auto-remplit fullName/email/phone/functionLabel depuis Staff
+  * Réplication Maternelle → Primaire quand toggle activé
+  * handleSave : envoie staffId + sendCredentialsEmail=true
+  * Bouton "Envoyer identifiants" à côté de "Supprimer"
+  * Indicateur visuel "Staff sélectionné"
+
+=== 4. MAIL ENVOYÉ AU DIRECTEUR ===
+- Réutilise renderCredentialEmail (même template que staff)
+- Contenu :
+  * Salutation personnalisée (prénom)
+  * Rôle : Directeur (+ niveau scolaire + piste linguistique)
+  * Identifiants : username (email) + mot de passe temporaire
+  * Lien du portail école (https://[sous-domaine].academiahelm.com/login)
+  * Lien du site institutionnel
+  * Bouton CTA "Se connecter à mon espace"
+  * Possibilité de modifier le mot de passe après connexion
+  * Signature du recruteur (depuis RecruiterProfile configuré dans RH)
+
+Stage Summary:
+
+- SYNC : chunks fiabilisés avec retry 3x + délai exponentiel + erreur explicite si échec.
+- DIRECTEURS : refactor complet — sélection depuis le personnel existant + auto-send credentials.
+- Le mail contient loginUrl + mdp temporaire + lien portail école + signature recruteur.
+- Le directeur peut modifier son mdp après connexion.
+- Frontend type-check : 0 erreurs.
+- Files modified: 4 + 1 new (sync-engine.service.ts, DirectorsWorkspace.tsx, school-directors.service.ts, school-directors.controller.ts, migrate_school_directors_v2.cjs)

@@ -60,7 +60,9 @@ class OfflineSyncService {
       const deviceId = this.getDeviceId();
       // ⭐ onProgress : met à jour la barre de progression en temps réel
       //    pendant que le pull télécharge chaque table.
+      let lastTotal = 0;
       const result = await runSync(tenantId, deviceId, (current, total, currentTable, pulledSoFar) => {
+        lastTotal = total;
         setSyncModalState({
           current,
           total,
@@ -90,8 +92,27 @@ class OfflineSyncService {
         });
         setTimeout(() => setSyncModalState({ isVisible: false }), 3000);
       } else {
-        // Pas de données à synchroniser — fermer silencieusement
-        setSyncModalState({ isVisible: false });
+        // ⭐ Cas « 0 enregistrement récupéré » — ne pas fermer silencieusement.
+        //    2 scénarios :
+        //    (a) Le serveur a renvoyé entities: {} (déjà synchronisé récemment)
+        //    (b) Le serveur n'a pas pu récupérer les données (erreur silencieuse)
+        //    Dans les 2 cas, on affiche un message clair pendant 2s pour que
+        //    l'utilisateur comprenne que la sync s'est terminée mais n'a rien
+        //    récupéré. Avant, le modal disparaissait instantanément ce qui
+        //    donnait l'impression que ça avait planté.
+        const tableCount = lastTotal || 0;
+        setSyncModalState({
+          isVisible: true,
+          phase: 'done',
+          message: tableCount > 0
+            ? `Données déjà à jour — ${tableCount} tables vérifiées, 0 nouvel enregistrement`
+            : 'Données déjà à jour',
+          pushed: 0,
+          pulled: 0,
+          total: tableCount,
+          current: tableCount,
+        });
+        setTimeout(() => setSyncModalState({ isVisible: false }), 2500);
       }
 
       console.log(`[Sync] Bootstrap complete: ${totalPulled} entities pulled`);
@@ -100,7 +121,8 @@ class OfflineSyncService {
       this.hasBootstrapped = true;
       try { localStorage.setItem('academia_helm_bootstrapped', 'true'); } catch {}
       console.error('[Sync] Bootstrap failed:', error);
-      setSyncModalState({ isVisible: false }); // Fermer silencieusement
+      // ⭐ Ne PAS fermer le modal avant d'afficher l'erreur — sinon on a un
+      //    flicker "modal disparaît puis réapparaît en erreur".
       setSyncModalState({
         isVisible: true,
         phase: 'error',

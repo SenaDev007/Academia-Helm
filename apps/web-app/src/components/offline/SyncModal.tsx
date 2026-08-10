@@ -59,6 +59,12 @@ export function SyncModal() {
   //    (stripes qui défilent) pour que l'utilisateur voie que ça travaille.
   const isIndeterminate =
     (state.phase === 'push' || state.phase === 'pull') && state.total === 0;
+  // ⭐ Si on est en pull avec un total connu MAIS current=0 (démarrage), on affiche
+  //    quand même une barre visible (minimum 5% de largeur) pour que l'utilisateur
+  //    voie que quelque chose se passe. Sinon la barre à 0% est invisible.
+  const minBarWidth = (state.phase === 'pull' || state.phase === 'push') && state.total > 0 && state.current === 0
+    ? 5
+    : progress;
 
   return (
     <AnimatePresence>
@@ -140,7 +146,7 @@ export function SyncModal() {
                   <motion.div
                     className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full"
                     initial={{ width: 0 }}
-                    animate={{ width: `${progress}%` }}
+                    animate={{ width: `${minBarWidth}%` }}
                     transition={{ duration: 0.3 }}
                   />
                 </div>

@@ -116,6 +116,10 @@ export default function OnboardingTour() {
   const [showPrompt, setShowPrompt] = useState(false);
   const [tourActive, setTourActive] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
+  // ⭐ Case à cocher "Ne plus afficher" — par défaut décochée.
+  //    Si cochée au moment du "Non merci", on persiste le skip définitivement.
+  //    Sinon, le "Non merci" ferme juste pour cette session (re-affiché au prochain login).
+  const [dontShowAgain, setDontShowAgain] = useState(false);
   const router = useRouter();
 
   // Vérifier au montage si l'utilisateur a déjà fait le tour
@@ -139,11 +143,28 @@ export default function OnboardingTour() {
     setCurrentStep(0);
   };
 
+  // ⭐ "Non merci" — ferme le modal.
+  //    Si la case "Ne plus afficher" est cochée → persiste le skip définitivement.
+  //    Sinon → ferme juste pour cette session (le modal réapparaîtra au prochain login).
+  //    Avant : le "Non merci" persistait TOUJOURS le skip, ce qui était trop
+  //    agressif (un clic malencontreux supprimait définitivement l'onboarding).
   const handleDecline = () => {
     setShowPrompt(false);
-    try {
-      localStorage.setItem(`${STORAGE_KEY}-skipped`, 'true');
-    } catch {}
+    if (dontShowAgain) {
+      try {
+        localStorage.setItem(`${STORAGE_KEY}-skipped`, 'true');
+      } catch {}
+    }
+    // Reset la case pour la prochaine fois
+    setDontShowAgain(false);
+  };
+
+  // ⭐ Fermer via le X — ne persiste JAMAIS le skip (juste ferme pour cette session).
+  //    Avant : handleDecline était appelé → skip persisté même si l'utilisateur
+  //    voulait juste fermer le modal pour le voir plus tard.
+  const handleClose = () => {
+    setShowPrompt(false);
+    setDontShowAgain(false);
   };
 
   const handleNext = () => {
@@ -220,7 +241,7 @@ export default function OnboardingTour() {
                   <p className="text-white/70 text-xs">Academia Helm · Onboarding</p>
                 </div>
                 <button
-                  onClick={handleDecline}
+                  onClick={handleClose}
                   className="text-white/60 hover:text-white p-1"
                   aria-label="Fermer"
                 >
@@ -245,13 +266,24 @@ export default function OnboardingTour() {
                   </p>
                 </div>
 
+                {/* ⭐ Case à cocher "Ne plus afficher" */}
+                <label className="flex items-center gap-2 mb-4 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={dontShowAgain}
+                    onChange={(e) => setDontShowAgain(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+                  />
+                  <span className="text-xs text-gray-600">Ne plus afficher ce message</span>
+                </label>
+
                 {/* Boutons */}
                 <div className="flex gap-3">
                   <button
                     onClick={handleDecline}
                     className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
                   >
-                    Non merci
+                    {dontShowAgain ? 'Non merci, ne plus afficher' : 'Non merci'}
                   </button>
                   <button
                     onClick={handleAccept}

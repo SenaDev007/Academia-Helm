@@ -663,6 +663,21 @@ class LocalDbService {
       "weeklysemainierdailyentry",
       "weeklysemainierincident",
       "whatsapplog",
+      // ⭐ Stores ajoutés en V13 (manquants détectés via diagnostic agent-browser) :
+      //    school_directors, positions, et autres tables backend qui n'avaient
+      //    pas de store IDB correspondant. Sans ces stores, la sync échouait
+      //    silencieusement à ~32% (quand elle atteignait ces tables).
+      "schooldirectors",
+      "positions",
+      "pedagogyacademiclevels",
+      "pedagogyacademicseries",
+      "pedagogyteacheracademicprofiles",
+      "pedagogyteacheravailabilities",
+      "rolepermissions",
+      "scheduledemails",
+      "taxsettings",
+      "tenantfeatures",
+      "schoolacademicsettings",
     ];
 
     entities.forEach(storeName => {
@@ -853,7 +868,7 @@ class LocalDbService {
 // Instance singleton
 export const localDb = new LocalDbService({
   dbName: 'academia-helm-local',
-  version: 12, // ⭐ 590 tables miroir de Neon (complet — toutes les tables Prisma)
+  version: 13, // ⭐ bump 12 → 13 (ajout stores manquants : schooldirectors, positions, etc.)
 });
 
 /**

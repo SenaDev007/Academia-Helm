@@ -547,20 +547,24 @@ function normalizeToIdbStoreName(type: string): string {
   // 2) Retirer les séparateurs (underscore, tiret, espace)
   name = name.replace(/[_\-\s]+/g, '');
 
-  // 3) Singulariser — retirer le 's' final si présent, sauf si ça donnerait
-  //    un nom vide ou si le mot se termine déjà par 's' au singulier
-  //    (ex: "class" reste "class"). On utilise une heuristique simple :
-  //    si ça finit par "ies" → remplacer par "y" (ex: "diaries" → "diary")
-  //    si ça finit par "ses" → remplacer par "s" (ex: "classes" → "class")
-  //    si ça finit par "s" (et > 3 chars) → retirer le "s"
-  //    sinon garder tel quel.
-  if (name.length > 3 && name.endsWith('ies')) {
-    name = name.slice(0, -3) + 'y';
-  } else if (name.length > 3 && name.endsWith('ses')) {
-    name = name.slice(0, -2); // retirer juste le 'es' final
-  } else if (name.length > 3 && name.endsWith('s') && !name.endsWith('ss')) {
-    name = name.slice(0, -1);
-  }
+  // ⭐ NE PLUS SINGULARISER !
+  //    Les stores IndexedDB sont créés à partir des noms de tables SQL
+  //    (qui sont au pluriel par convention Prisma : school_settings, students,
+  //    teachers, etc.). La convention IndexedDB est donc :
+  //      - lowercase
+  //      - sans séparateurs
+  //      - GARDER LE PLURIEL (ne pas retirer le 's' final)
+  //
+  //    Avant : on singularisait (school_settings → schoolsetting) ce qui
+  //    ne correspondait pas aux stores réellement créés (schoolsettings).
+  //    → erreur "store not in IndexedDB" sur ~30% des tables → sync échec.
+  //
+  //    Maintenant : on garde le pluriel. Si le backend retourne "students",
+  //    on obtient "students" qui correspond bien au store IDB "students".
+  //
+  //    Cas particulier : si le backend retourne déjà un singulier (ex: "class"
+  //    au lieu de "classes"), on le garde tel quel — les stores IDB singuliers
+  //    sont rares mais existent (ex: "class", "exam").
 
   return name;
 }

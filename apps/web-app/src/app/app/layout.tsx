@@ -74,14 +74,10 @@ export default async function AppLayout({
 
   // Pour les routes /app/teacher et /app/parent, on rend directement
   // les children SANS le PilotageLayout (ils ont leur propre layout).
-  // ⭐ FIX : utiliser le pathname de l'URL courante au lieu des headers
-  //    qui peuvent être vides ou peu fiables → causait une boucle de redirection
+  // ⭐ FIX : le middleware set x-path de manière fiable sur TOUTES les réponses
   const allHeaders = await headers();
-  const reqUrl = allHeaders.get('x-path') || allHeaders.get('x-forwarded-uri') || '';
-  // ⭐ Fallback : utiliser nextUrl.pathname (fiable côté serveur Next.js)
-  const pathname = (allHeaders.get('x-invoke-path') || reqUrl || '').toString();
-  const isOnDedicatedPortal = pathname.includes('/app/teacher') || pathname.includes('/app/parent') ||
-    reqUrl.includes('/app/teacher') || reqUrl.includes('/app/parent');
+  const reqPath = allHeaders.get('x-path') || '';
+  const isOnDedicatedPortal = reqPath.includes('/app/teacher') || reqPath.includes('/app/parent');
 
   if (isTeacherOrParent && !isOnDedicatedPortal) {
     // ⭐ Résoudre le portail effectif : portalType de session > user.portal > role-based fallback

@@ -223,10 +223,14 @@ const schoolSubdomainPublicRoutes = [
  * Empêche le buffering et la mise en cache des réponses HTML,
  * ce qui est essentiel pour le streaming Next.js / Suspense (loading.tsx).
  */
-function withAntiCacheHeaders(response: NextResponse): NextResponse {
+function withAntiCacheHeaders(response: NextResponse, pathname?: string): NextResponse {
   response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   response.headers.set('Pragma', 'no-cache');
   response.headers.set('X-Accel-Buffering', 'no'); // Empêche le buffering par reverse-proxy (nginx/Cloudflare)
+  // ⭐ Transmettre le pathname aux layouts SSR (fiable, jamais vide)
+  if (pathname) {
+    response.headers.set('x-path', pathname);
+  }
   return response;
 }
 
@@ -411,7 +415,7 @@ export async function middleware(request: NextRequest) {
         pathname === '/favicon.ico';
 
       if (isAdminLoginRoute || isPublicAsset || pathname.startsWith('/api/')) {
-        const adminResponse = withAntiCacheHeaders(NextResponse.next());
+        const adminResponse = withAntiCacheHeaders(NextResponse.next(), pathname);
         adminResponse.headers.set('x-admin-subdomain', 'true');
         if (admin) {
           adminResponse.headers.set('x-admin-id', admin.id);
@@ -440,7 +444,7 @@ export async function middleware(request: NextRequest) {
         return safeRedirect(adminUrl, request, redirectDepth);
       }
 
-      const adminResponse = withAntiCacheHeaders(NextResponse.next());
+      const adminResponse = withAntiCacheHeaders(NextResponse.next(), pathname);
       adminResponse.headers.set('x-admin-subdomain', 'true');
       adminResponse.headers.set('x-admin-id', admin.id);
       adminResponse.headers.set('x-admin-email', admin.email);
@@ -482,7 +486,7 @@ export async function middleware(request: NextRequest) {
     return apiResponse;
   }
 
-  const response = withAntiCacheHeaders(NextResponse.next());
+  const response = withAntiCacheHeaders(NextResponse.next(), pathname);
 
   // ─── Séparation stricte : /admin-login RÉSERVÉ au sous-domaine admin ───
   // Si un user tente /admin-login sur le domaine principal ou un sous-domaine
@@ -587,7 +591,7 @@ export async function middleware(request: NextRequest) {
       // Les pages RH récupèrent le tenant depuis la session (AppSessionContext),
       // pas depuis l'URL — donc le redirect était purement cosmétique.
       if (user?.tenantId) {
-        const tenantResponse = withAntiCacheHeaders(NextResponse.next());
+        const tenantResponse = withAntiCacheHeaders(NextResponse.next(), pathname);
         tenantResponse.headers.set('X-Tenant-ID', user.tenantId);
         if (user.tenantSlug) {
           tenantResponse.headers.set('X-Tenant-Slug', user.tenantSlug);
@@ -621,7 +625,7 @@ export async function middleware(request: NextRequest) {
         : true;
 
       if (sameTenantById && sameTenantBySlug) {
-        const tenantResponse = withAntiCacheHeaders(NextResponse.next());
+        const tenantResponse = withAntiCacheHeaders(NextResponse.next(), pathname);
         tenantResponse.headers.set('X-Tenant-ID', user.tenantId);
         if (user.tenantSlug) {
           tenantResponse.headers.set('X-Tenant-Slug', user.tenantSlug);
@@ -648,7 +652,7 @@ export async function middleware(request: NextRequest) {
 
     if (cachedTenantId && cachedTenantSlug && cachedTenantForSubdomain === tenantIdentifier) {
       // Use cached tenant data instead of making an API call
-      const cachedResponse = withAntiCacheHeaders(NextResponse.next());
+      const cachedResponse = withAntiCacheHeaders(NextResponse.next(), pathname);
       cachedResponse.headers.set('X-Tenant-ID', cachedTenantId);
       cachedResponse.headers.set('X-Tenant-Slug', cachedTenantSlug);
       if (user) {
@@ -678,7 +682,7 @@ export async function middleware(request: NextRequest) {
           endpoint: pathname,
           reason: 'Tenant not found — allowing request without tenant context',
         });
-        const fallbackResponse = withAntiCacheHeaders(NextResponse.next());
+        const fallbackResponse = withAntiCacheHeaders(NextResponse.next(), pathname);
         if (user) {
           fallbackResponse.headers.set('X-User-ID', user.id);
         }
@@ -692,7 +696,7 @@ export async function middleware(request: NextRequest) {
       }
 
       // Créer une nouvelle réponse pour ajouter les headers
-      const tenantResponse = withAntiCacheHeaders(NextResponse.next());
+      const tenantResponse = withAntiCacheHeaders(NextResponse.next(), pathname);
       tenantResponse.headers.set('X-Tenant-ID', tenant.id);
       tenantResponse.headers.set('X-Tenant-Slug', tenant.slug);
       if (tenant.subscriptionStatus) {
@@ -729,7 +733,7 @@ export async function middleware(request: NextRequest) {
       // redirection infinies. À la place, laisser passer la requête —
       // la page rendra et les composants géreront l'erreur d'API gracieusement.
       console.error('Error resolving tenant in middleware (non-blocking):', error);
-      const fallbackResponse = withAntiCacheHeaders(NextResponse.next());
+      const fallbackResponse = withAntiCacheHeaders(NextResponse.next(), pathname);
       if (user) {
         fallbackResponse.headers.set('X-User-ID', user.id);
       }

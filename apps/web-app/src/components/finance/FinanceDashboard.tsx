@@ -169,10 +169,10 @@ export default function FinanceDashboard() {
 
   return (
     <div className="space-y-6 pb-8">
-      {/* KPI Section — 7 cartes (pattern StudentsModuleDashboard) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 sm:gap-4">
+      {/* KPI Section — cartes aérées (pattern PilotageDashboardV2) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Prévisionnel Global (sans personnalisations) */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs sm:text-sm font-medium text-gray-500">Prévisionnel global</p>
@@ -188,7 +188,7 @@ export default function FinanceDashboard() {
         </div>
 
         {/* Réductions (personnalisations) */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs sm:text-sm font-medium text-gray-500">Réductions</p>
@@ -204,7 +204,7 @@ export default function FinanceDashboard() {
         </div>
 
         {/* Prévisionnel Net (après personnalisations) */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs sm:text-sm font-medium text-gray-500">Prévisionnel net</p>
@@ -219,7 +219,7 @@ export default function FinanceDashboard() {
           </div>
         </div>
         {/* Total Encaissé */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs sm:text-sm font-medium text-gray-500">Total encaissé</p>
@@ -234,7 +234,7 @@ export default function FinanceDashboard() {
         </div>
 
         {/* Taux Recouvrement */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs sm:text-sm font-medium text-gray-500">Taux recouvrement</p>
@@ -249,7 +249,7 @@ export default function FinanceDashboard() {
         </div>
 
         {/* Dépenses */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs sm:text-sm font-medium text-gray-500">Dépenses</p>
@@ -264,7 +264,7 @@ export default function FinanceDashboard() {
         </div>
 
         {/* Solde Net */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 hover:shadow-md transition-shadow">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs sm:text-sm font-medium text-gray-500">Solde net</p>

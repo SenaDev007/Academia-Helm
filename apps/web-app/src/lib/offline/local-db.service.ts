@@ -678,6 +678,32 @@ class LocalDbService {
       "taxsettings",
       "tenantfeatures",
       "schoolacademicsettings",
+      // ⭐ Stores ajoutés en V14 (manquants détectés via 2e diagnostic agent-browser) :
+      "tenantevents",
+      "tenantidentityprofiles",
+      "tenantmedia",
+      "tenantthemesettings",
+      "tenantwebsites",
+      "tenants",
+      "timetableconfigs",
+      "users",
+      "weeklylogdailyreports",
+      "weeklylogsummaries",
+      "weeklyseminarconfig",
+      "weeklyseminardailyreport",
+      "whatsapplogs",
+      // Tables supplémentaires détectées manquantes
+      "pedagogyacademiclevels",
+      "pedagogyacademicseries",
+      "playingwithneons",
+      "scheduledemails",
+      "schoolacademicsettings",
+      "schooldirectors",
+      "schoolsettings",
+      "securitysettings",
+      "taxsettings",
+      "tenantfeatures",
+      "rolepermissions",
     ];
 
     entities.forEach(storeName => {
@@ -868,7 +894,7 @@ class LocalDbService {
 // Instance singleton
 export const localDb = new LocalDbService({
   dbName: 'academia-helm-local',
-  version: 13, // ⭐ bump 12 → 13 (ajout stores manquants : schooldirectors, positions, etc.)
+  version: 14, // ⭐ bump 13 → 14 (ajout 14 stores manquants supplémentaires : tenantevents, tenantidentityprofiles, etc.)
 });
 
 /**

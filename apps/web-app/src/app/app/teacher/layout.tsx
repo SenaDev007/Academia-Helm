@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LogoutModal } from "@/components/auth/LogoutModal";
+import { SyncButton } from "@/components/header/SyncButton";
 
 const TEACHER_MODULES = [
   { path: "/app/teacher", label: "Dashboard", icon: LayoutDashboard, desc: "Cours du jour, classes assignées" },
@@ -214,8 +215,12 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
               {currentModuleLabel}
             </h1>
           </div>
-          <div className="text-xs sm:text-sm text-slate-500 flex-shrink-0">
-            {academicYear?.label || ""}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* ⭐ Bouton sync offline (pull/push) — disponible aussi pour les enseignants */}
+            <SyncButton />
+            <span className="text-xs sm:text-sm text-slate-500">
+              {academicYear?.label || ""}
+            </span>
           </div>
         </header>
 

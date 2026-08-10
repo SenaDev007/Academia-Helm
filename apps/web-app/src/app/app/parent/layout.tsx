@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LogoutModal } from "@/components/auth/LogoutModal";
+import { SyncButton } from "@/components/header/SyncButton";
 import AcademicYearSelector from "@/components/pilotage/AcademicYearSelector";
 
 const PARENT_MODULES = [
@@ -222,6 +223,8 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
             </h1>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* ⭐ Bouton sync offline (pull/push) — disponible aussi pour les parents */}
+            <SyncButton />
             <AcademicYearSelector />
           </div>
         </header>

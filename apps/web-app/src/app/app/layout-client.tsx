@@ -33,9 +33,10 @@ import { Toaster } from '@/components/ui/sonner';
 // Connecté à /sara/guide/stream (GLM 5.2). Aucun accès aux données tenant.
 import InAppSaraGuideWidget from '@/components/ai/InAppSaraGuideWidget';
 import OnboardingTour from '@/components/ai/OnboardingTour';
-// ⭐ Offline-first : bannière hors ligne + badge statut réseau + prompt d'installation PWA
+// ⭐ Offline-first : bannière hors ligne + badge statut réseau + prompt d'installation PWA + SW offline
 import OfflineGuard from '@/components/offline/OfflineGuard';
 import { OfflineStatusBadge } from '@/components/offline/OfflineStatusBadge';
+import { OfflineSWRegister } from '@/components/offline/OfflineSWRegister';
 import { PWAInstallPrompt } from '@/components/pwa/PWAInstallPrompt';
 
 export interface AppLayoutClientProps {
@@ -117,9 +118,10 @@ export default function AppLayoutClient({
       {/* ⭐ Toaster (sonner) — affiche les toast.success/toast.error partout
           dans l'app (sans lui, les notifications sont silencieuses) */}
       <Toaster richColors position="top-right" closeButton />
-      {/* ⭐ Offline-first : badge statut réseau + prompt d'installation PWA */}
+      {/* ⭐ Offline-first : badge statut réseau + prompt d'installation PWA + SW offline */}
       <OfflineStatusBadge />
       <PWAInstallPrompt />
+      <OfflineSWRegister />
       </OfflineGuard>
     </SessionManagerProvider>
   );

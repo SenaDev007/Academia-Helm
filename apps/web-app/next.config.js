@@ -300,10 +300,13 @@ if (process.env.ANALYZE === 'true') {
   }
 }
 
-// ⭐ PWA RÉACTIVÉ sur TOUS les environnements (Vercel inclus)
-// Le Service Worker met en cache les routes API (NetworkFirst) pour permettre
-// le mode offline-first. Les assets statiques sont en StaleWhileRevalidate.
-if (process.env.NODE_ENV === 'production') {
+// ⭐ PWA : next-pwa incompatible avec Turbopack (Next.js 16) sur Vercel.
+//    On utilise un Service Worker manuel à la place (voir hooks/usePushSubscription.ts
+//    qui enregistre /sw.js, et un nouveau SW offline-first enregistré par
+//    OfflineSWRegister dans layout-client.tsx).
+//    Sur les environnements non-Vercel (Docker/VPS), next-pwa peut toujours
+//    être activé avec `next build --webpack`.
+if (process.env.NODE_ENV === 'production' && !isVercel) {
   try {
     const withPWA = require('@ducanh2912/next-pwa').default({
       dest: 'public',

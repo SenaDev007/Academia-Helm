@@ -28,7 +28,7 @@ import { RefreshCw, CloudOff, Check, AlertCircle, Cloud } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { networkDetectionService } from "@/lib/offline/network-detection.service";
-import { setSyncModalState } from "@/components/offline/SyncModal";
+import { setSyncModalState, addSyncOperation } from "@/components/offline/SyncModal";
 
 export function SyncButton() {
   const [isOnline, setIsOnline] = useState(networkDetectionService.isConnected());
@@ -84,8 +84,34 @@ export function SyncButton() {
     setIsSyncing(true);
     setError(null);
 
-    // ⭐ Afficher le modal de chargement
-    setSyncModalState({ isVisible: true, phase: 'push', message: 'Envoi de vos modifications...', pushed: 0, pulled: 0 });
+    // ⭐ Lire les opérations pending depuis l'outbox
+    let pendingOps: any[] = [];
+    try {
+      const { outboxService } = await import('@/lib/offline/outbox.service');
+      let tid = '';
+      try {
+        const session = JSON.parse(localStorage.getItem('app_session') || '{}');
+        tid = session?.tenant?.id || session?.tenantId || '';
+      } catch {}
+      if (tid) pendingOps = await outboxService.getPendingEvents(tid, 50);
+    } catch {}
+
+    // ⭐ Afficher le modal avec la liste des opérations (style GitHub)
+    setSyncModalState({
+      isVisible: true,
+      phase: 'push',
+      message: pendingOps.length > 0 ? `Envoi de ${pendingOps.length} modification(s)...` : 'Vérification...',
+      pushed: 0, pulled: 0,
+      total: pendingOps.length || 1, current: 0,
+      operations: pendingOps.map((op, i) => ({
+        id: `push-${i}-${op.id}`,
+        type: 'push' as const,
+        action: (op.operationType || 'UPDATE') as 'INSERT' | 'UPDATE' | 'DELETE',
+        table: op.entityType || 'unknown',
+        recordId: op.entityId,
+        status: 'pending' as const,
+      })),
+    });
 
     try {
       const { syncEngine } = await import('@/lib/offline/sync-engine.service');
@@ -102,32 +128,49 @@ export function SyncButton() {
         return;
       }
 
-      // ⭐ Phase 1 : PUSH
-      setSyncModalState({ isVisible: true, phase: 'push', message: 'Envoi de vos modifications vers le serveur...' });
-
-      // ⭐ Phase 2 : PULL (runSync fait les deux)
-      setSyncModalState({ isVisible: true, phase: 'pull', message: 'Récupération des dernières données du serveur...' });
+      // ⭐ Phase PULL
+      setSyncModalState({ isVisible: true, phase: 'pull', message: 'Récupération des données du serveur...' });
 
       const result = await syncEngine.runSync(tenantId);
 
-      // Mettre à jour l'état
+      // ⭐ Marquer les opérations push comme terminées
+      setSyncModalState(prev => ({
+        operations: prev.operations.map(op =>
+          op.type === 'push' ? { ...op, status: 'success' as const } : op
+        ),
+      }));
+
+      // ⭐ Ajouter les opérations pull
+      const pulledTypes = Object.entries(result.pulled || {});
+      for (const [table, count] of pulledTypes) {
+        for (let i = 0; i < (count as number); i++) {
+          addSyncOperation({
+            id: `pull-${table}-${i}-${Date.now()}`,
+            type: 'pull',
+            action: 'UPDATE',
+            table: table,
+            status: 'success',
+          });
+        }
+      }
+
       setLastSync(new Date());
       setPendingCount(0);
       try { localStorage.setItem('academia_helm_last_sync', new Date().toISOString()); } catch {}
 
-      const totalPulled = Object.values(result.pulled || {}).reduce((a: number, b: number) => a + b, 0) as number;
+      const totalPulled = Object.values(result.pulled || {}).reduce((a: number, b: any) => a + (b as number), 0) as number;
 
-      // ⭐ Afficher le résultat dans le modal
       setSyncModalState({
         isVisible: true,
         phase: 'done',
         message: `${result.pushed} envoi(s) • ${totalPulled} mise(s) à jour reçue(s)${result.conflicts > 0 ? ` • ${result.conflicts} conflit(s)` : ''}`,
         pushed: result.pushed,
         pulled: totalPulled,
+        total: (pendingOps.length + totalPulled) || 1,
+        current: (pendingOps.length + totalPulled) || 1,
       });
 
-      // Fermer le modal après 2s
-      setTimeout(() => setSyncModalState({ isVisible: false }), 2000);
+      setTimeout(() => setSyncModalState({ isVisible: false }), 3000);
 
       if (result.conflicts > 0) {
         setError(`${result.conflicts} conflit(s) détecté(s)`);
@@ -135,7 +178,7 @@ export function SyncButton() {
     } catch (err: any) {
       setError(err.message);
       setSyncModalState({ isVisible: true, phase: 'error', message: err.message });
-      setTimeout(() => setSyncModalState({ isVisible: false }), 3000);
+      setTimeout(() => setSyncModalState({ isVisible: false }), 5000);
     } finally {
       setIsSyncing(false);
     }

@@ -222,6 +222,12 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
     await tryRefreshAccessToken().catch(() => {
       // Si le rafraîchissement échoue, on reste actif — le prochain cycle réessaiera
     });
+
+    // ⭐ Déclencher un refresh global des données (React Query)
+    //    Les composants écoutent cet event pour invalider leurs queries
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('session-resumed'));
+    }
   }, [recordActivity]);
 
   /** Déverrouiller la session après saisie des identifiants */
@@ -283,6 +289,11 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
         recordActivity();
         lockedAtRef.current = null;
         setSessionState('active');
+
+        // ⭐ Déclencher un refresh global des données (React Query)
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('session-resumed'));
+        }
 
         return { success: true };
       } catch (err: any) {
@@ -407,20 +418,32 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
         const lastActivity = parseInt(lastActivityStr, 10);
         const elapsed = Date.now() - lastActivity;
         if (elapsed >= IDLE_TIMEOUT_MS) {
-          // ⭐ L'activité est stale (trop ancienne). Au lieu de verrouiller
-          // et déconnecter immédiatement l'utilisateur (ce qui se produisait
-          // sur mobile après login car le timestamp datait de la session
-          // précédente), on RESET l'activité à maintenant.
-          // L'utilisateur est ACTIVEMENT sur la page → ce n'est pas de
-          // l'inactivité.
           recordActivity();
         }
       } else {
-        // Pas de timestamp → initialiser
         recordActivity();
       }
     } catch {}
-    // Uniquement au montage
+
+    // ⭐ Écouter visibilitychange pour rafraîchir les queries quand l'utilisateur
+    //    revient sur l'onglet (évite le problème de données stale après inactivité)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // L'utilisateur revient sur l'onglet → rafraîchir les queries
+        recordActivity();
+        // Déclencher un refresh des données
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('session-resumed'));
+        }
+        // Rafraîchir le token si nécessaire
+        refreshTokenProactively();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

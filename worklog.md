@@ -1897,3 +1897,40 @@ Stage Summary:
 - Graphique Évolution des moyennes : maintenant multi-séries par niveau scolaire + piste linguistique. Chaque niveau a sa propre ligne colorée. Si bilingme activé, FR et EN sont séparés avec des badges distincts. Échelles respectées (qualitatif pour maternelle FR, /20 pour primaire/secondaire FR, /100 pour anglophone).
 - Frontend type-check : 0 erreurs.
 - Files modified: 1 + 2 new (PilotageDashboardV2.tsx, tuition-personalizations/route.ts, grade-evolution/route.ts)
+
+---
+Task ID: 2026-08-10-sync-modal-onboarding
+Agent: main
+Task: 1) Sync modal disparaît sans barre progression pendant bootstrap — affichait "0 sur 629 démarrage" puis fermait silencieusement. 2) Sara Onboarding : ajouter case "Ne plus afficher" pour ne pas embêter l'utilisateur à chaque login.
+
+Work Log:
+
+=== Diagnostic ===
+- Sync : le bootstrap() dans offline-sync.service.ts fermait le modal immédiatement via setSyncModalState({isVisible: false}) quand totalPulled=0 (cas "déjà synchronisé"). Le catch faisait aussi un flicker (fermer puis réouvrir en erreur).
+- SyncModal : la barre avait width:0% quand current=0 → invisible sur le fond gris.
+- OnboardingTour : le bouton "Non merci" ET le bouton X persistaient TOUJOURS le skip définitivement → un clic malencontreux supprimait définitivement l'onboarding.
+
+=== Correctifs ===
+
+1. offline-sync.service.ts bootstrap() :
+   - else branch (0 pulled) : ne ferme plus silencieusement. Affiche "Données déjà à jour — X tables vérifiées, 0 nouvel enregistrement" pendant 2.5s.
+   - catch branch : ne ferme plus avant d'afficher l'erreur (plus de flicker).
+   - Mémorise lastTotal via onProgress pour pouvoir afficher le nombre de tables vérifiées.
+
+2. SyncModal.tsx :
+   - Ajout de minBarWidth = 5% si phase pull/push + total connu + current=0 (démarrage) → barre visible même à 0%.
+
+3. OnboardingTour.tsx :
+   - Nouvel état dontShowAgain (case à cocher, décochée par défaut).
+   - handleDecline : ne persiste le skip que si dontShowAgain=true. Sinon ferme juste pour cette session.
+   - Nouvelle fonction handleClose pour le bouton X : ne persiste JAMAIS le skip.
+   - Le bouton "Non merci" affiche "Non merci, ne plus afficher" quand la case est cochée (feedback visuel).
+   - Case à cocher avec label "Ne plus afficher ce message" en gris discret.
+
+Stage Summary:
+
+- Sync modal : ne disparaît plus silencieusement. Affiche un message clair "Données déjà à jour" si rien à télécharger, ou l'erreur sans flicker si crash.
+- Barre de progression : visible même à 0% (minimum 5% de largeur pendant le démarrage).
+- Onboarding : case "Ne plus afficher" ajoutée. L'utilisateur contrôle s'il veut voir le modal à chaque login ou non. Le bouton X ne supprime plus définitivement l'onboarding.
+- Frontend type-check : 0 erreurs.
+- Files modified: 3 (offline-sync.service.ts, SyncModal.tsx, OnboardingTour.tsx)

@@ -32,7 +32,7 @@
  * ============================================================================
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ClipboardList, Loader2, Save, RefreshCw, Send, Lock,
   FileText, BookOpen, BarChart3,
@@ -1400,8 +1400,16 @@ function AppelModal({
   onSaved: () => void;
 }) {
   const [students, setStudents] = useState<any[]>([]);
+  const studentsRef = useRef<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // ⭐ FIX : updateStudents met à jour studentsRef immédiatement (synchro)
+  const updateStudents = (updater: (prev: any[]) => any[]) => {
+    const newState = updater(studentsRef.current);
+    studentsRef.current = newState;
+    setStudents(newState);
+  };
 
   useEffect(() => {
     if (!selectedClassId || !appelDate) return;
@@ -1410,26 +1418,32 @@ function AppelModal({
       try {
         const res = await fetch(`/api/pedagogy-space/attendance/${selectedClassId}?date=${appelDate}`, { credentials: "include" });
         const data = await res.json();
-        setStudents(Array.isArray(data) ? data : []);
-      } catch { setStudents([]); }
+        const list = Array.isArray(data) ? data : [];
+        studentsRef.current = list;
+        setStudents(list);
+      } catch {
+        studentsRef.current = [];
+        setStudents([]);
+      }
       finally { setLoading(false); }
     })();
   }, [selectedClassId, appelDate]);
 
   const setMorning = (studentId: string, status: string) => {
-    setStudents(prev => prev.map(s => s.studentId === studentId ? { ...s, morningStatus: status } : s));
+    updateStudents(prev => prev.map(s => s.studentId === studentId ? { ...s, morningStatus: status } : s));
   };
   const setAfternoon = (studentId: string, status: string) => {
-    setStudents(prev => prev.map(s => s.studentId === studentId ? { ...s, afternoonStatus: status } : s));
+    updateStudents(prev => prev.map(s => s.studentId === studentId ? { ...s, afternoonStatus: status } : s));
   };
   const toggleLate = (studentId: string) => {
-    setStudents(prev => prev.map(s => s.studentId === studentId ? { ...s, late: !s.late } : s));
+    updateStudents(prev => prev.map(s => s.studentId === studentId ? { ...s, late: !s.late } : s));
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const records = students
+      // ⭐ FIX : lire depuis studentsRef (synchro immédiate) au lieu de students (peut être stale)
+      const records = studentsRef.current
         .filter(s => s && s.studentId)
         .map(s => ({
           studentId: s.studentId,

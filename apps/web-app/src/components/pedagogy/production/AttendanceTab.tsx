@@ -44,7 +44,17 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
   const studentsRef = useRef<any[]>(students);
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => { studentsRef.current = students; }, [students]);
+  // ⭐ FIX : Mettre à jour studentsRef IMMÉDIATEMENT (pas via useEffect)
+  //    Avant, le useEffect était asynchrone → l'auto-save et handleSave
+  //    lisaient l'ancienne valeur de studentsRef → écrasaient les données
+  //    fraîchement saisies.
+  const updateStudents = (updater: (prev: any[]) => any[]) => {
+    const newState = updater(studentsRef.current);
+    studentsRef.current = newState; // ⭐ Mise à jour immédiate du ref
+    setStudents(newState); // + mise à jour du state pour le re-render
+    isDirtyRef.current = true;
+    setSaveStatus("idle");
+  };
 
   // Charger mes classes
   useEffect(() => {
@@ -66,41 +76,34 @@ export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacher
     try {
       const res = await fetch(`/api/pedagogy-space/attendance/${selectedClassId}?date=${date}`, { credentials: "include" });
       const data = await res.json();
-      setStudents(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      // ⭐ FIX : mettre à jour studentsRef immédiatement (pas via useEffect différé)
+      studentsRef.current = list;
+      setStudents(list);
       isDirtyRef.current = false;
       setSaveStatus("idle");
-    } catch { setStudents([]); }
-    finally { setLoading(false); }
+    } catch {
+      studentsRef.current = [];
+      setStudents([]);
+    } finally { setLoading(false); }
   }, [selectedClassId, date]);
 
   useEffect(() => { loadAttendance(); }, [loadAttendance]);
 
-  // ⭐ Marquer matin/après-midi/retard
+  // ⭐ Marquer matin/après-midi/retard — utilise updateStudents pour synchro immédiate
   const setMorning = (studentId: string, status: string) => {
-    setStudents(prev => prev.map(s => {
-      if (s.studentId !== studentId) return s;
-      return { ...s, morningStatus: status };
-    }));
-    isDirtyRef.current = true;
-    setSaveStatus("idle");
+    updateStudents(prev => prev.map(s => s.studentId !== studentId ? s : { ...s, morningStatus: status }));
   };
 
   const setAfternoon = (studentId: string, status: string) => {
-    setStudents(prev => prev.map(s => {
-      if (s.studentId !== studentId) return s;
-      return { ...s, afternoonStatus: status };
-    }));
-    isDirtyRef.current = true;
-    setSaveStatus("idle");
+    updateStudents(prev => prev.map(s => s.studentId !== studentId ? s : { ...s, afternoonStatus: status }));
   };
 
   const toggleLate = (studentId: string) => {
-    setStudents(prev => prev.map(s => {
+    updateStudents(prev => prev.map(s => {
       if (s.studentId !== studentId) return s;
       return { ...s, late: !s.late };
     }));
-    isDirtyRef.current = true;
-    setSaveStatus("idle");
   };
 
   // Sauvegarder

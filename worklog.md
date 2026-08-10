@@ -1934,3 +1934,50 @@ Stage Summary:
 - Onboarding : case "Ne plus afficher" ajoutée. L'utilisateur contrôle s'il veut voir le modal à chaque login ou non. Le bouton X ne supprime plus définitivement l'onboarding.
 - Frontend type-check : 0 erreurs.
 - Files modified: 3 (offline-sync.service.ts, SyncModal.tsx, OnboardingTour.tsx)
+
+---
+Task ID: 2026-08-10-sync-modal-visual-animation
+Agent: main
+Task: Refonte SyncModal avec animation visuelle cloud ↔ stockage local selon push/pull + estimation temps + message patiente + aucune mention d'infrastructure.
+
+Work Log:
+
+=== Refonte complète du SyncModal ===
+
+1. NOUVELLE ANIMATION — DataFlowAnimation :
+   - Layout vertical : Cloud "Serveur" en haut, flèche au milieu, HardDrive "Stockage local" en bas.
+   - PULL (vert emerald) : cloud en haut, flèche ArrowDown animée qui monte/descend en boucle, 5 particules Database qui défilent du haut vers le bas.
+   - PUSH (bleu) : stockage local en bas, flèche ArrowUp animée, 5 particules Database qui défilent du bas vers le haut.
+   - Halo pulsant (animate-ping) autour du cloud pour montrer l'activité.
+   - Point d'activité pulsant sur le HardDrive.
+   - Légende en bas qui indique le sens du flux.
+
+2. NOUVELLE ESTIMATION DU TEMPS — useTimeEstimate hook :
+   - Calcule le taux opérations/seconde basé sur le temps écoulé depuis le début.
+   - Extrapole le temps restant : (total - current) / ratePerSec.
+   - Affiche "Calcul en cours…" au début, "Presque terminé…" si < 1s, sinon "~Xs restantes" ou "~X min Ys restantes".
+   - Réinitialisé à chaque nouvelle sync.
+
+3. MESSAGE DE PATIENCE :
+   - PULL : "⏳ Veuillez patienter pendant le téléchargement de vos données. Ne fermez pas l'application — cette opération peut prendre quelques instants selon votre connexion."
+   - PUSH : "⏳ Veuillez patienter pendant l'envoi de vos modifications. Ne fermez pas l'application — vos données sont en cours de transmission."
+
+4. CONSOLE DE LOGS — style terminal :
+   - Fond noir (bg-slate-900) au lieu de gris clair.
+   - Icônes colorées (INSERT vert, UPDATE bleu, DELETE rouge).
+   - Flèches colorées selon push (bleu) / pull (vert).
+
+5. AUCUNE MENTION D'INFRASTRUCTURE :
+   - UI utilisateur parle uniquement de "Serveur" et "Stockage local".
+   - Pas de "Neon", pas de "PostgreSQL", pas de "base de données distante".
+   - Vérifié : SyncModal.tsx et SyncButton.tsx ne contiennent aucune mention.
+   - Les commentaires internes des services (sync-worker, offline-sync) mentionnent toujours Neon pour les devs, mais ils ne sont jamais affichés à l'utilisateur.
+
+Stage Summary:
+
+- SyncModal complètement refait avec animation cloud ↔ stockage local selon direction.
+- Estimation du temps restant basée sur la vitesse réelle observée.
+- Message respectueux demandant de patienter et ne pas fermer l'app.
+- Aucune mention d'infrastructure interne dans l'UI.
+- Frontend type-check : 0 erreurs.
+- Files modified: 1 (SyncModal.tsx)

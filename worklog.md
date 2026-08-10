@@ -2177,3 +2177,54 @@ Stage Summary:
 - Recommandations techniques + plan de migration en 6 phases.
 - Frontend type-check : 0 erreurs.
 - Files modified: 1 (teacher/layout.tsx) + 1 new (director-ui-spec.md)
+
+---
+Task ID: 2026-08-10-director-ui-sync-chunked-fix
+Agent: main
+Task: 1) Implémenter l'UI directeur (lock SchoolLevelSelector + AcademicTrackSelector + compléter roles[] sidebar). 2) Fix sync stuck à "0/629 calcul en cours, 0%" pendant 10+ minutes — barre statique, pas de progression, pas d'estimation temps.
+
+Work Log:
+
+=== 1. SYNC STUCK — Diagnostic ===
+- Via agent-browser : la sync restait bloquée à "0/629 démarrage, 0%" pendant 10+ minutes.
+- Cause racine : le backend POST /api/sync/pull construit TOUTE la réponse en mémoire (629 tables × 500 records = ~314K enregistrements) AVANT de l'envoyer. Le frontend await fetchWithAuth() bloque sans aucune mise à jour de progression.
+- onProgress n'était appelé qu'avant (0/629) et après (persist loop) — JAMAIS pendant le fetch.
+
+=== 2. SYNC STUCK — Fix (chunked pull) ===
+- Découper les 629 tables en chunks de 25 → 26 requêtes POST /api/sync/pull
+- Chaque chunk prend ~30s au lieu de 10 min pour tout → barre progresse visiblement toutes les 30s
+- onProgress appelé AVANT chaque chunk (total=629) + APRÈS chaque chunk (current mis à jour)
+- Si un chunk échoue, on continue avec le suivant au lieu de tout annuler
+- Phase "récupération serveur…" au démarrage (total=0 → indeterminate bar animée)
+
+=== 3. UI DIRECTEUR — Phase 1 : SchoolLevelSelector lock ===
+- Filtre availableLevels selon user.accreditations
+- DIRECTEUR_MAT_PRI → ne voit que Maternelle + Primaire
+- DIRECTEUR_SECONDAIRE → ne voit que Secondaire
+- Si un seul niveau autorisé → auto-sélection + badge Lock (pas de dropdown)
+- En mode FUSED, l'option "Maternelle + Primaire" filtrée selon accreditation
+- FULL_ACCESS_ROLES voient tous les niveaux
+
+=== 4. UI DIRECTEUR — Phase 2 : AcademicTrackSelector lock ===
+- Si directeur niveau-spécifique avec langue assignée → sélecteur masqué, piste forcée
+- Détection de la langue via accreditations (contient 'EN' ou 'FR') ou function
+- FULL_ACCESS_ROLES (PROMOTER, DIRECTEUR_GENERAL…) basculent librement FR/EN
+- Hooks React déplacés avant les returns conditionnels (règle des hooks)
+
+=== 5. UI DIRECTEUR — Phase 3 : PilotageSidebar roles[] ===
+- Ajout DIRECTEUR_MATERNELLE, DIRECTEUR_PRIMAIRE, DIRECTEUR_SECONDAIRE, DIRECTEUR_MAT_PRI dans les roles[] de :
+  * /app/students (Élèves & Scolarité)
+  * /app/finance (Finances & Économat)
+  * /app/exams (Examens, Notes & Bulletins)
+  * /app/hr (Personnel, RH & Paie)
+- Avant : ces directeurs ne voyaient pas les modules car codes niveau-spécifiques non listés
+- Maintenant : ils voient les modules (avec filtrage par niveau + piste via sélecteurs lockés)
+
+Stage Summary:
+
+- SYNC : chunked pull (25 tables/requête) → barre progresse visiblement toutes les 30s au lieu de rester à 0/629 pendant 10 min.
+- UI DIRECTEUR : 3 phases implémentées (lock niveau + lock piste + roles sidebar).
+- Un directeur Maternelle+Primaire ne voit que ses niveaux, un directeur FR ne voit que la piste FR.
+- FULL_ACCESS_ROLES (PROMOTER, DIRECTEUR_GENERAL) gardent accès complet.
+- Frontend type-check : 0 erreurs.
+- Files modified: 4 (sync-engine.service.ts, SchoolLevelSelector.tsx, AcademicTrackSelector.tsx, PilotageSidebar.tsx)

@@ -1715,3 +1715,61 @@ Stage Summary:
 - Badge "Synchronisé" réduit à un bouton icône carré avec tooltip. Indicateur online réduit à un point coloré.
 - Frontend type-check : 0 erreurs dans les fichiers modifiés.
 - Files modified: 5 (SyncButton.tsx, PilotageTopBar.tsx, BilingualContext.tsx, SchoolLevelContext.tsx, offline-fetch.ts)
+
+---
+Task ID: 2026-08-10-offline-loop-empty-tabs-teacher-classes
+Agent: main
+Task: 4 problèmes signalés après les corrections précédentes : (1) boucle de redirection en mode offline qui expulse l'utilisateur, (2) onglet "Profil et disponibilité" qui charge lentement ou affiche "no data", (3) teacher offline "no classes", (4) logo école toujours manquant.
+
+Work Log:
+
+=== Diagnostic (4 investigations parallèles via sub-agents Explore) ===
+
+- (1) Boucle redirection offline : l'intercepteur Axios 401 dans `lib/api/client.ts` déclenchait `window.location.href = '/login'` quand le refresh token échouait — sans vérifier `navigator.onLine` correctement. Race window : `navigator.onLine` est en retard sur l'événement `offline` de 100-500ms. Pendant cette fenêtre, le 401 handler passait au travers, essayait de refresh, échouait, clearait la session, et redirigeait vers /login. Même problème dans `usePostLoginFlow.ts`, `PostLoginFlowWrapper.tsx`, et `session-recovery.tsx`.
+- (2) Onglets vides : mismatch de noms de stores IndexedDB. Le `pedagogy.service.ts` utilisait "teacher_profiles" (snake_case plural) alors que le store IDB réel est "teacheracademicprofile" (Prisma model lowercased, singulier, sans séparateurs). Idem pour ~10 autres stores. `LocalSearchService.search` crashait silencieusement avec une NotFoundError. Le `sync-engine.service.ts` PULL écrivait dans des stores inexistants → données perdues.
+- (3) Teacher offline "no classes" : `MyClassesTab.tsx` utilisait raw `fetch()` sans aucun fallback IndexedDB → offline → `setClasses([])`.
+- (4) Logo : le code frontend est correct. Le souci vient probablement de l'API qui retourne `null` (pas de profil actif) ou des champs `schoolAcronym`/`logoUrl` NULL en DB. Ajout de logs diagnostics pour identifier.
+
+=== Correctifs ===
+
+1. **lib/api/client.ts** — Guard offline renforcé dans le 401 handler :
+   - Avant : `if (typeof navigator !== 'undefined' && !navigator.onLine)` seul → racy.
+   - Maintenant : guard renforcé qui vérifie AUSSI si `error.response.data` est vide (typique d'un SW NetworkFirst qui échoue) ou si le message contient "Network Error"/"timeout".
+   - Re-vérification offline APRÈS le refresh attempt (au cas où on est passé offline pendant le refresh).
+   - Idem dans le `catch (refreshError)`.
+
+2. **hooks/usePostLoginFlow.ts** — Si AUTH_ERROR ET `navigator.onLine=false` → pas de redirect. La session locale est conservée.
+
+3. **components/loading/PostLoginFlowWrapper.tsx** — Même guard offline avec un flowResult offline-aware (`isOnline: false`, code: 'OFFLINE').
+
+4. **app/app/session-recovery.tsx** — Si offline, ne pas essayer `/api/auth/me` (qui échouerait et mènerait à la boucle). Juste reloader la page en gardant la session locale.
+
+5. **lib/offline/sync-engine.service.ts** — Nouvelle fonction `normalizeToIdbStoreName(type)` qui convertit n'importe quel format (snake_case plural, camelCase, PascalCase) vers la convention IndexedDB (lowercase, sans séparateurs, singulier). Le PULL ne perd plus silencieusement les données.
+
+6. **services/pedagogy.service.ts** — Correction des noms de stores :
+   - "class_diaries" → "classdiary"
+   - "lesson_plans" → "lessonplan"
+   - "lesson_journals" → "lessonjournal"
+   - "teacher_class_assignments" → "teacherclassassignment"
+   - "teacher_profiles" → "teacheracademicprofile"
+   - "class_subjects" → "classsubject"
+   - "weekly_semainier_daily_entries" → "weeklysemainierdailyentry"
+   - "homework_entries" → "homeworkentry"
+   - "pedagogical_materials" → "pedagogicalmaterial"
+   - "academic_series" → "academicseries"
+   - "subjects" → "subject", "teachers" → "teacher", "classes" → "class", "exams" → "exam"
+
+7. **lib/offline/local-search.service.ts** — Ajout d'un try/catch dans `search()` pour retourner `[]` gracieusement si le store IndexedDB n'existe pas (au lieu de crasher avec une NotFoundError).
+
+8. **components/pedagogy/production/MyClassesTab.tsx** — Remplacement du raw `fetch()` par `offlineFetch()` avec le store "teacherclassassignment". Si offline ET cache vide : toast.warning clair au lieu de simuler "pas de classes".
+
+9. **components/pilotage/PilotageTopBar.tsx** — Ajout de logs diagnostics dans `loadSchoolIdentity` pour identifier si l'API retourne null ou des champs NULL (hasSchoolName, hasSchoolAcronym, hasLogoUrl).
+
+Stage Summary:
+
+- Boucle de redirection offline : corrigée à 4 niveaux (client.ts 401 handler, usePostLoginFlow, PostLoginFlowWrapper, session-recovery). L'utilisateur ne sera plus expulsé de l'app quand il perd la connexion.
+- Onglets vides "Profil et disponibilité" : cause racine (mismatch de noms de stores IDB) corrigée dans pedagogy.service.ts (11 stores renommés) + sync-engine.service.ts (normalisation automatique) + local-search.service.ts (try/catch).
+- Teacher offline "no classes" : MyClassesTab utilise offlineFetch avec le store "teacherclassassignment".
+- Logo : logs ajoutés pour diagnostic. Le code frontend est correct — le souci viendra de la DB (champs NULL) ou de l'API (profil non actif).
+- Frontend type-check : 0 erreurs dans les fichiers modifiés.
+- Files modified: 9

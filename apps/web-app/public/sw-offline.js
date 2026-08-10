@@ -23,7 +23,7 @@
  * ============================================================================
  */
 
-const CACHE_VERSION = 'ah-offline-v3';
+const CACHE_VERSION = 'ah-offline-v4'; // ⭐ bump v3 → v4 (pré-cache étendu des pages publiques + login)
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -60,11 +60,39 @@ const IMAGE_ROUTES = /\.(png|jpg|jpeg|gif|webp|svg|ico|woff2?|ttf|eot)$/;
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE).then((cache) => {
+      // ⭐ Pré-cache des routes publiques + pages de login pour accès offline.
+      //    Avant : seul '/', '/manifest.json', '/offline' étaient pré-cachés.
+      //    Maintenant : toutes les pages publiques sont disponibles offline
+      //    dès la première visite du SW, sans nécessiter une navigation préalable.
+      //    On utilise addAll avec catch() — si une route n'existe pas (ex: /onboarding-error),
+      //    les autres sont quand même cachées.
       return cache.addAll([
+        // Pages principales
         '/',
         '/manifest.json',
         '/offline',
-      ]).catch(() => {});
+        // Pages publiques (landing + portal)
+        '/portal',
+        '/school-portal',
+        // Pages d'authentification (login + récupération)
+        '/login',
+        '/admin-login',
+        '/forgot-password',
+        '/reset-password',
+        // Pages publiques additionnelles
+        '/modules',
+        '/tarification',
+        '/contact',
+        '/signup',
+        '/onboarding',
+        '/testimonials',
+        '/avis',
+        '/public/pre-enrollment',
+        '/sign/contract',
+        '/reactivate',
+      ]).catch(() => {
+        // Silencieux — certaines routes peuvent ne pas exister, on continue
+      });
     })
   );
   self.skipWaiting();

@@ -94,6 +94,13 @@ export class SyncPushDto {
   @IsString()
   sqliteSchemaHash?: string;
 
+  /// ⭐ Version du schéma SQLite local (envoyée par le frontend sync-engine)
+  ///    Acceptée pour rétro-compatibilité — sinon NestJS rejette avec 400
+  ///    "property sqliteVersion should not exist".
+  @IsOptional()
+  @IsString()
+  sqliteVersion?: string;
+
   @IsOptional()
   @IsString()
   device_id?: string;

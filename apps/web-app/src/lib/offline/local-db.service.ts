@@ -855,3 +855,35 @@ export const localDb = new LocalDbService({
   dbName: 'academia-helm-local',
   version: 12, // ⭐ 590 tables miroir de Neon (complet — toutes les tables Prisma)
 });
+
+/**
+ * ⭐ Nettoyage automatique de l'ancienne base IndexedDB obsolète.
+ *
+ * Lors des premières itérations du projet, la base s'appelait `academia-helm-db`.
+ * Elle a été renommée en `academia-helm-local` pour cohérence avec le desktop
+ * (Tauri SQLite : `academia_helm.db`) et le mobile (Hive boxes).
+ *
+ * L'ancienne base reste présente chez les utilisateurs qui ont visité le site
+ * avant le renommage — elle est vide (0 stores) mais occupe de l'espace et
+ * peut prêter à confusion lors des diagnostics.
+ *
+ * Cette fonction la supprime automatiquement au chargement de l'app. Elle est
+ * silencieuse (catch tous les erreurs) et non-bloquante.
+ */
+if (typeof window !== 'undefined' && typeof indexedDB !== 'undefined') {
+  try {
+    // deleteDatabase est asynchrone — on ne l'attend pas
+    const deleteReq = indexedDB.deleteDatabase('academia-helm-db');
+    deleteReq.onsuccess = () => {
+      console.log('[LocalDb] Ancienne base "academia-helm-db" supprimée (nettoyage automatique)');
+    };
+    deleteReq.onerror = () => {
+      // Silencieux — l'ancienne base n'existait peut-être pas
+    };
+    deleteReq.onblocked = () => {
+      // Silencieux — une autre onglet l'utilise, on réessaiera au prochain chargement
+    };
+  } catch {
+    // Silencieux — non-critique
+  }
+}

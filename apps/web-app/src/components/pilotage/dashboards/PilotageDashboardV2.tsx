@@ -1002,6 +1002,130 @@ function GradeEvolutionByLevelSection({ academicYearId }: { academicYearId?: str
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// ⭐ NOUVEAU — Section Personnel (administration + enseignants par niveau)
+// ──────────────────────────────────────────────────────────────────────────
+
+interface HROverviewResponse {
+  totalStaff: number;
+  adminStaffCount: number;
+  teachersCount: number;
+  teachersByLevel: Array<{ levelCode: string; levelLabel: string; count: number }>;
+  _source?: string;
+}
+
+function useHROverview(tenantId?: string, academicYearId?: string) {
+  return useQuery<HROverviewResponse>({
+    queryKey: ['dashboard', 'hr-overview', tenantId, academicYearId],
+    queryFn: async () => {
+      if (!tenantId) return null;
+      const params = new URLSearchParams();
+      params.set('tenantId', tenantId);
+      if (academicYearId) params.set('academicYearId', academicYearId);
+      const url = `/api/dashboard/hr-overview?${params.toString()}`;
+      const data = await fetchJson(url);
+      return data;
+    },
+    enabled: !!tenantId,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    retry: 1,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: false,
+  });
+}
+
+function HROverviewSection({ tenantId, academicYearId }: { tenantId?: string; academicYearId?: string }) {
+  const { data, isLoading } = useHROverview(tenantId, academicYearId);
+
+  if (isLoading && !data) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 animate-pulse">
+        <div className="h-5 w-40 bg-gray-200 rounded mb-3" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-20 bg-gray-100 rounded-lg" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!data || data.totalStaff === 0) {
+    return null;
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-gradient-to-r from-rose-900 to-rose-800 px-5 py-3">
+        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+          <UserCog className="w-4 h-4" />
+          Personnel de l'établissement
+        </h3>
+        <p className="text-[11px] text-rose-100 mt-0.5">
+          {data.totalStaff} personne(s) au total · Administration + Corps enseignant
+        </p>
+      </div>
+
+      <div className="p-5">
+        {/* Bandeau résumé : 2 grandes cartes */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          {/* Personnel administratif */}
+          <div className="bg-gradient-to-br from-rose-50 to-rose-100/50 rounded-xl border border-rose-200 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="p-2 rounded-lg bg-rose-100">
+                <UserCog className="w-5 h-5 text-rose-700" />
+              </div>
+              <span className="text-[10px] uppercase tracking-wider font-bold text-rose-600">Administration</span>
+            </div>
+            <p className="text-xs text-gray-600 mb-1">Personnel administratif</p>
+            <p className="text-2xl font-bold text-rose-900">{formatNumber(data.adminStaffCount)}</p>
+            <p className="text-[10px] text-rose-600 mt-1">
+              {data.totalStaff > 0 ? `${Math.round((data.adminStaffCount / data.totalStaff) * 100)}% du personnel` : '—'}
+            </p>
+          </div>
+
+          {/* Corps enseignant */}
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-xl border border-blue-200 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="p-2 rounded-lg bg-blue-100">
+                <GraduationCap className="w-5 h-5 text-blue-700" />
+              </div>
+              <span className="text-[10px] uppercase tracking-wider font-bold text-blue-600">Enseignants</span>
+            </div>
+            <p className="text-xs text-gray-600 mb-1">Corps enseignant</p>
+            <p className="text-2xl font-bold text-blue-900">{formatNumber(data.teachersCount)}</p>
+            <p className="text-[10px] text-blue-600 mt-1">
+              {data.totalStaff > 0 ? `${Math.round((data.teachersCount / data.totalStaff) * 100)}% du personnel` : '—'}
+            </p>
+          </div>
+        </div>
+
+        {/* Détail par niveau scolaire */}
+        {data.teachersByLevel.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1">
+              <GraduationCap className="w-3.5 h-3.5 text-blue-600" />
+              Enseignants par niveau scolaire
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {data.teachersByLevel.map((lvl) => (
+                <div key={lvl.levelCode} className="bg-slate-50 rounded-lg border border-slate-200 p-3 text-center">
+                  <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">{lvl.levelLabel}</p>
+                  <p className="text-xl font-bold text-slate-900 mt-1">{formatNumber(lvl.count)}</p>
+                  <p className="text-[9px] text-slate-400">
+                    {data.teachersCount > 0 ? `${Math.round((lvl.count / data.teachersCount) * 100)}% des enseignants` : '—'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Composant principal
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -1287,6 +1411,25 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
   const academicYearId = currentYear?.id;
   const schoolLevelId = currentLevel?.id;
 
+  // ⭐ Récupérer le tenantId depuis localStorage (pour appeler /api/dashboard/hr-overview)
+  //    On le lit une seule fois au mount — pas besoin de re-render si ça change.
+  const tenantId = useMemo(() => {
+    if (typeof window === 'undefined') return undefined;
+    try {
+      const sessionStr = localStorage.getItem('session');
+      if (sessionStr) {
+        const session = JSON.parse(sessionStr);
+        return session.tenantId || session.tenant?.id || undefined;
+      }
+    } catch {}
+    // Fallback : cookie x-tenant-id
+    if (typeof document !== 'undefined') {
+      const match = document.cookie.match(/(?:^|.*;\s*)x-tenant-id\s*=\s*([^;]*).*$/);
+      if (match && match[1]) return decodeURIComponent(match[1]);
+    }
+    return undefined;
+  }, []);
+
   const consolidatedQuery = useConsolidatedReport(academicYearId, schoolLevelId);
   const weightedAvgQuery = useWeightedAverage(academicYearId, schoolLevelId);
   const studentsStatsQuery = useStudentsStatistics(academicYearId, schoolLevelId);
@@ -1503,6 +1646,9 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
 
       {/* ⭐ NOUVELLE SECTION — Personnalisations de frais de scolarité */}
       <TuitionPersonalizationsSection academicYearId={academicYearId} />
+
+      {/* ⭐ NOUVELLE SECTION — Personnel (administration + enseignants par niveau) */}
+      <HROverviewSection tenantId={tenantId} academicYearId={academicYearId} />
 
       {/* ── Section Graphiques ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

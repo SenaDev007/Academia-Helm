@@ -25,7 +25,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Loader2, Save, UserCog, CheckCircle2, AlertCircle, Trash2,
-  Upload, Pen, School, Globe, Link2, Link2Off, Eraser,
+  Upload, Pen, School, Globe, Link2, Link2Off, Eraser, Mail, UserCheck,
 } from 'lucide-react';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { useBilingual } from '@/contexts/BilingualContext';
@@ -48,6 +48,7 @@ interface Director {
   phone: string | null;
   signatureDataUrl: string | null;
   signatureUploadedUrl: string | null;
+  staffId?: string | null;
 }
 
 interface SchoolLevel {
@@ -57,6 +58,20 @@ interface SchoolLevel {
   isActive: boolean;
 }
 
+// ⭐ Type pour la liste du personnel sélectionnable comme directeur
+interface StaffOption {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  phone: string | null;
+  position: string | null;
+  roleType: string | null;
+  status: string;
+}
+
+const langLabels: Record<string, string> = { FR: 'Francophone', EN: 'Anglophone' };
+
 export default function DirectorsWorkspace() {
   const { tenant } = useAppSession();
   const { isEnabled: isBilingual } = useBilingual();
@@ -64,10 +79,13 @@ export default function DirectorsWorkspace() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [sendingCredentials, setSendingCredentials] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [directors, setDirectors] = useState<Director[]>([]);
   const [schoolLevels, setSchoolLevels] = useState<SchoolLevel[]>([]);
+  // ⭐ Liste du personnel existant (pour le sélecteur de directeur)
+  const [staffList, setStaffList] = useState<StaffOption[]>([]);
 
   // Form state: key = `${schoolLevelId}_${language}`
   const [forms, setForms] = useState<Record<string, any>>({});
@@ -90,6 +108,21 @@ export default function DirectorsWorkspace() {
       const activeLevels = levels.filter((l: any) => l.id !== 'ALL' && l.isActive);
       setSchoolLevels(activeLevels);
 
+      // ⭐ Charger la liste du personnel existant (pour le sélecteur de directeur)
+      //    On filtre : status=ACTIVE + email non null (sinon pas d'envoi d'identifiants possible)
+      try {
+        const staffRes = await apiClient.get('/hr/staff', {
+          params: { tenantId, status: 'ACTIVE', limit: 500 },
+        });
+        const allStaff = Array.isArray(staffRes.data) ? staffRes.data : (staffRes.data?.items || staffRes.data?.data || []);
+        // Filtrer : doit avoir un email (sinon pas d'envoi d'identifiants possible)
+        const eligibleStaff = allStaff.filter((s: any) => s.email);
+        setStaffList(eligibleStaff);
+      } catch (err) {
+        console.warn('Failed to load staff list for director picker:', err);
+        setStaffList([]);
+      }
+
       // Load existing directors
       const directorsRes = await apiClient.get('/hr/school-directors');
       const existingDirectors = Array.isArray(directorsRes.data) ? directorsRes.data : [];
@@ -109,6 +142,7 @@ export default function DirectorsWorkspace() {
           formState[key] = {
             schoolLevelId: level.id,
             language: lang,
+            staffId: existing?.staffId || '',
             fullName: existing?.fullName || '',
             functionLabel: existing?.functionLabel || '',
             email: existing?.email || '',
@@ -195,6 +229,13 @@ export default function DirectorsWorkspace() {
         functionLabel: formData.functionLabel || null,
         email: formData.email || null,
         phone: formData.phone || null,
+        // ⭐ Si un staff est sélectionné, l'inclure pour que le backend
+        //    puisse résoudre les infos à jour + envoyer les identifiants.
+        staffId: formData.staffId || null,
+        // ⭐ Demander au backend d'envoyer automatiquement les identifiants
+        //    au directeur (mail avec loginUrl + mdp temporaire + lien portail).
+        //    Le directeur recevra un mail "Vous êtes le directeur de [niveau]".
+        sendCredentialsEmail: true,
       };
       // ⭐ Envoyer la signature SEULEMENT si elle a une valeur
       //    (évite d'écraser une signature existante avec null)
@@ -205,8 +246,12 @@ export default function DirectorsWorkspace() {
         payload.signatureUploadedUrl = formData.signatureUploadedUrl;
       }
 
-      await apiClient.post('/hr/school-directors', payload);
-      setSuccess(`Directeur enregistré : ${formData.fullName}`);
+      const saveRes = await apiClient.post('/hr/school-directors', payload);
+      // ⭐ Si le backend a renvoyé un email envoyé, l'indiquer dans le succès
+      const emailSentInfo = saveRes?.data?.emailSent
+        ? ` · Identifiants envoyés à ${saveRes.data.email || formData.email}`
+        : '';
+      setSuccess(`Directeur enregistré : ${formData.fullName}${emailSentInfo}`);
 
       // ⭐ Si le toggle "même directeur Maternelle + Primaire" est activé POUR CETTE LANGUE,
       //    ET qu'on sauvegarde la Maternelle, sauvegarder aussi le Primaire (même langue)
@@ -314,8 +359,63 @@ export default function DirectorsWorkspace() {
     replicateToPrimaire(key, field, value);
   };
 
+  // ⭐ Sélection d'un staff depuis le dropdown — remplit automatiquement
+  //    les champs fullName/email/phone/functionLabel depuis le Staff record.
+  //    Le staff est la source de vérité ; les champs manuels deviennent
+  //    read-only (mais toujours modifiables manuellement si besoin).
+  const handleStaffSelect = (key: string, staffId: string) => {
+    const staff = staffList.find(s => s.id === staffId);
+    if (!staff) {
+      // Si on déselectionne (staffId vide), on ne clear pas les champs
+      // pour éviter de perdre des données déjà saisies manuellement.
+      setForms(prev => ({
+        ...prev,
+        [key]: { ...prev[key], staffId: '' },
+      }));
+      return;
+    }
+    const newFullName = `${staff.firstName || ''} ${staff.lastName || ''}`.trim();
+    setForms(prev => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        staffId: staff.id,
+        fullName: newFullName,
+        email: staff.email || prev[key].email || '',
+        phone: staff.phone || prev[key].phone || '',
+        functionLabel: staff.position || prev[key].functionLabel || '',
+      },
+    }));
+    // ⭐ Répliquer vers le Primaire si toggle activé
+    replicateToPrimaire(key, 'fullName', newFullName);
+    replicateToPrimaire(key, 'email', staff.email || '');
+    replicateToPrimaire(key, 'phone', staff.phone || '');
+    replicateToPrimaire(key, 'functionLabel', staff.position || '');
+  };
+
+  // ⭐ Envoi / Renvoi d'identifiants au directeur sélectionné.
+  //    Appelle POST /hr/school-directors/:id/send-credentials qui crée
+  //    (ou met à jour) un User + envoie un mail avec loginUrl + mdp temporaire.
+  const handleSendCredentials = async (directorId: string, directorName: string) => {
+    setSendingCredentials(directorId);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await apiClient.post(`/hr/school-directors/${directorId}/send-credentials`);
+      const data = res.data || {};
+      if (data.success) {
+        setSuccess(`Identifiants envoyés à ${directorName} (${data.email || 'email inconnu'}). Le directeur peut maintenant se connecter et modifier son mot de passe.`);
+      } else {
+        setError(data.message || 'Erreur lors de l\'envoi des identifiants');
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.message || err.message);
+    } finally {
+      setSendingCredentials(null);
+    }
+  };
+
   const languages = isBilingual ? ['FR', 'EN'] : ['FR'];
-  const langLabels: Record<string, string> = { FR: 'Francophone', EN: 'Anglophone' };
 
   // ⭐ Vérifier si on a au moins Maternelle + Primaire pour afficher le toggle
   const hasMaternelleAndPrimaire = schoolLevels.some(l => (l.code || '').toUpperCase().includes('MATERNELLE'))
@@ -481,17 +581,71 @@ export default function DirectorsWorkspace() {
                         )}
                       </div>
                       {existingDirector && (
-                        <button
-                          onClick={() => handleDelete(existingDirector.id)}
-                          className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
-                        >
-                          <Trash2 className="w-3 h-3" /> Supprimer
-                        </button>
+                        <div className="flex items-center gap-2">
+                          {/* ⭐ Bouton "Envoyer les identifiants" — visible seulement si le directeur est lié à un staff */}
+                          {existingDirector.staffId && (
+                            <button
+                              onClick={() => handleSendCredentials(existingDirector.id, existingDirector.fullName)}
+                              disabled={sendingCredentials === existingDirector.id}
+                              className="text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded flex items-center gap-1 disabled:opacity-50"
+                              title="Envoyer les identifiants de connexion par email au directeur"
+                            >
+                              {sendingCredentials === existingDirector.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Mail className="w-3 h-3" />
+                              )}
+                              {sendingCredentials === existingDirector.id ? 'Envoi…' : 'Envoyer identifiants'}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDelete(existingDirector.id)}
+                            className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
+                          >
+                            <Trash2 className="w-3 h-3" /> Supprimer
+                          </button>
+                        </div>
                       )}
                     </div>
 
                     {/* Form fields */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-3">
+                      {/* ⭐ Sélecteur de staff — le directeur est choisi parmi le personnel existant */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
+                          <UserCheck className="w-3 h-3" /> Sélectionner un membre du personnel
+                        </label>
+                        <select
+                          value={formData.staffId || ''}
+                          onChange={(e) => handleStaffSelect(key, e.target.value)}
+                          disabled={isLinked}
+                          className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500 bg-white"
+                        >
+                          <option value="">— Sélectionner dans le staff —</option>
+                          {staffList.map(s => (
+                            <option key={s.id} value={s.id}>
+                              {s.firstName} {s.lastName}
+                              {s.position ? ` (${s.position})` : ''}
+                              {s.email ? ` — ${s.email}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        {staffList.length === 0 && (
+                          <p className="text-[10px] text-amber-600 mt-1 flex items-center gap-1">
+                            <AlertCircle className="w-3 h-3" />
+                            Aucun membre du personnel éligible. Embauchez d'abord du personnel avec un email valide.
+                          </p>
+                        )}
+                        {formData.staffId && (
+                          <p className="text-[10px] text-emerald-600 mt-1 flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Staff sélectionné — coordonnées auto-remplies depuis la fiche personnelle.
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Champs manuels (pré-remplis si staff sélectionné) */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nom complet *</label>
                         <input
@@ -535,6 +689,7 @@ export default function DirectorsWorkspace() {
                           disabled={isLinked}
                           className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
                         />
+                      </div>
                       </div>
                     </div>
 

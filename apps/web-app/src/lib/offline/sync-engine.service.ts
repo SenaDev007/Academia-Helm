@@ -731,49 +731,95 @@ export async function runSync(
         totalPulledSoFar,
       );
 
-      try {
-        const chunkRes = await fetchWithAuth(`${SYNC_API}/pull`, {
-          method: 'POST',
-          body: JSON.stringify({
-            tenant_id: tenantId,
-            last_sync_at: lastSyncAt,
-            device_id: deviceId,
-            tables: chunk,
-          }),
-        });
-        const chunkData = await chunkRes.json().catch(() => ({}));
+      // ⭐ Fiabilisation : retry jusqu'à 3 fois en cas d'échec d'un chunk.
+      //    En production, on ne doit JAMAIS perdre un chunk — on réessaie
+      //    avec un délai exponentiel (1s, 2s, 4s) avant de déclarer l'échec.
+      //    Si après 3 tentatives le chunk échoue toujours, on lève une
+      //    erreur pour stopper la sync (l'utilisateur verra le message
+      //    d'erreur au lieu de croire que tout s'est bien passé).
+      const MAX_RETRIES = 3;
+      let chunkSuccess = false;
+      let lastChunkError: Error | null = null;
 
-        if (chunkRes.ok && chunkData.entities) {
-          // Persister chaque table du chunk
-          for (const type of Object.keys(chunkData.entities)) {
-            const items = chunkData.entities[type] || [];
-            if (items.length > 0) {
-              const storeName = normalizeToIdbStoreName(type);
-              try {
-                await localDb.executeBulk(storeName, 'put', items);
-                result.pulled[type] = items.length;
-                totalPulledSoFar += items.length;
-              } catch (e) {
-                console.warn(`[Sync] Store "${storeName}" (from type "${type}") not in IndexedDB — skipping ${items.length} items`);
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const chunkRes = await fetchWithAuth(`${SYNC_API}/pull`, {
+            method: 'POST',
+            body: JSON.stringify({
+              tenant_id: tenantId,
+              last_sync_at: lastSyncAt,
+              device_id: deviceId,
+              tables: chunk,
+            }),
+          });
+
+          if (!chunkRes.ok) {
+            throw new Error(`HTTP ${chunkRes.status} ${chunkRes.statusText}`);
+          }
+
+          const chunkData = await chunkRes.json().catch(() => ({}));
+
+          if (chunkData.entities) {
+            // Persister chaque table du chunk
+            for (const type of Object.keys(chunkData.entities)) {
+              const items = chunkData.entities[type] || [];
+              if (items.length > 0) {
+                const storeName = normalizeToIdbStoreName(type);
+                try {
+                  await localDb.executeBulk(storeName, 'put', items);
+                  result.pulled[type] = items.length;
+                  totalPulledSoFar += items.length;
+                } catch (e) {
+                  console.warn(`[Sync] Store "${storeName}" (from type "${type}") not in IndexedDB — skipping ${items.length} items`);
+                }
               }
+              tablesProcessed += 1;
             }
-            tablesProcessed += 1;
-          }
 
-          // Mettre à jour pulledAt avec le timestamp du serveur si dispo
-          if (chunkData.pulled_at) {
-            pulledAt = chunkData.pulled_at;
-          }
-          if (chunkData.server_id) {
-            pullServerId = chunkData.server_id;
-          }
+            // Mettre à jour pulledAt avec le timestamp du serveur si dispo
+            if (chunkData.pulled_at) {
+              pulledAt = chunkData.pulled_at;
+            }
+            if (chunkData.server_id) {
+              pullServerId = chunkData.server_id;
+            }
 
-          // ⭐ Après chaque chunk, mettre à jour la progression
-          onProgress(tablesProcessed, totalTables, `chunk ${chunkIdx + 1}/${chunks.length} terminé`, totalPulledSoFar);
+            // ⭐ Après chaque chunk, mettre à jour la progression
+            onProgress(tablesProcessed, totalTables, `chunk ${chunkIdx + 1}/${chunks.length} terminé`, totalPulledSoFar);
+
+            chunkSuccess = true;
+            break; // ✅ Succès — sortir de la boucle de retry
+          } else {
+            throw new Error('Réponse sans entités');
+          }
+        } catch (attemptError) {
+          lastChunkError = attemptError as Error;
+          console.warn(`[Sync] Chunk ${chunkIdx + 1}/${chunks.length} attempt ${attempt}/${MAX_RETRIES} failed:`, (attemptError as Error).message);
+
+          if (attempt < MAX_RETRIES) {
+            // ⭐ Délai exponentiel : 1s, 2s, 4s
+            const delayMs = Math.pow(2, attempt - 1) * 1000;
+            onProgress(
+              tablesProcessed,
+              totalTables,
+              `retry chunk ${chunkIdx + 1} ( tentative ${attempt + 1}/${MAX_RETRIES})…`,
+              totalPulledSoFar,
+            );
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+          }
         }
-      } catch (chunkError) {
-        console.warn(`[Sync] Chunk ${chunkIdx + 1}/${chunks.length} failed:`, (chunkError as Error).message);
-        // Continuer avec le chunk suivant — ne pas tout arrêter pour un chunk
+      }
+
+      if (!chunkSuccess) {
+        // ⭐ Tous les retries ont échoué — en production, on ne continue pas
+        //    silencieusement. On lève une erreur explicite pour que
+        //    l'utilisateur sache que la sync a échoué et puisse relancer.
+        throw new Error(
+          `Échec du chunk ${chunkIdx + 1}/${chunks.length} après ${MAX_RETRIES} tentatives. ` +
+          `Dernière erreur : ${lastChunkError?.message || 'inconnue'}. ` +
+          `Tables concernées : ${chunk.slice(0, 5).join(', ')}${chunk.length > 5 ? '…' : ''}. ` +
+          `Relancez la synchronisation pour réessayer.`
+        );
       }
     }
 

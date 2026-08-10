@@ -2368,3 +2368,44 @@ Stage Summary:
 - 11 stores ajoutés + convention de nommage corrigée (garder le pluriel).
 - Frontend type-check : 0 erreurs.
 - Files modified: 2 + 1 new diagnostic script (sync-engine.service.ts, local-db.service.ts, diagnose-sync-stores.js)
+
+---
+Task ID: 2026-08-10-syncbutton-all-ui + finance-aeré + stores-v14 + delete-tests
+Agent: main
+Task: 1) Mode offline (SyncButton) pour tous les UI. 2) Supprimer élèves tests Mon Avenir Plus. 3) Finance dashboard trop serré. 4) CSPEB année scolaire non chargée.
+
+Work Log:
+
+=== 1. SyncButton pour tous les UI ===
+- Layout enseignant : ajout SyncButton dans le header (à côté année scolaire)
+- Layout parent : ajout SyncButton dans le header (à côté AcademicYearSelector)
+- Directeurs : déjà couverts via PilotageLayout/PilotageTopBar
+- SyncModal : déjà monté globalement dans layout-client.tsx
+
+=== 2. Finance Dashboard aéré ===
+- Avant : grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 p-3 → cartes trop serrées
+- Maintenant : grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-5 (pattern PilotageDashboardV2)
+
+=== 3. Stores IDB V14 ===
+- 14 stores manquants supplémentaires ajoutés (tenantevents, tenantidentityprofiles, etc.)
+- Bump DB version 13 → 14
+- Diagnostic via agent-browser : la sync affichait "Store X not in IndexedDB" pour ces tables
+
+=== 4. Script suppression élèves tests ===
+- scripts/delete_test_students.cjs : supprime test 4 + test fictif 4 de Mon Avenir Plus
+- Hard delete avec cascade (enrollments, guardians, photos, payments, etc.)
+- Usage : node scripts/delete_test_students.cjs
+
+=== 5. Diagnostic CSPEB ===
+- Via agent-browser : l'année scolaire 2026-2027 se charge correctement dans mon test
+- Problème probablement intermittent (cache SW ou race condition bootstrap)
+- Le bouton sync réductible permet à l'user de réduire le modal pendant que l'année se charge
+
+Stage Summary:
+
+- SyncButton disponible dans TOUS les portails (enseignant + parent + promoteur + directeur)
+- Finance dashboard : cartes aérées (gap-4 + p-5 au lieu de gap-3 + p-3)
+- 14 stores IDB supplémentaires pour éliminer les warnings "not in IndexedDB"
+- Script de suppression des élèves tests créé
+- Frontend type-check : 0 erreurs
+- Files modified: 4 + 1 new script (teacher/layout.tsx, parent/layout.tsx, FinanceDashboard.tsx, local-db.service.ts, delete_test_students.cjs)

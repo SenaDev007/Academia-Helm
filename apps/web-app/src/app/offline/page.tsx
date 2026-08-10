@@ -12,10 +12,11 @@ export default function OfflinePage() {
             <WifiOff className="w-10 h-10 text-orange-600 dark:text-orange-400" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-            Vous êtes hors ligne
+            Mode hors ligne
           </h1>
           <p className="text-gray-600 dark:text-gray-300">
-            Impossible de se connecter à Internet. Vérifiez votre connexion réseau.
+            Vous êtes actuellement hors ligne. Vos données sont disponibles depuis le cache local.
+            Les modifications seront synchronisées automatiquement au retour de la connexion.
           </p>
         </div>
 
@@ -29,17 +30,18 @@ export default function OfflinePage() {
           </button>
 
           <Link
-            href="/"
+            href="/app"
             className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-medium rounded-lg transition-colors"
           >
             <Home className="w-5 h-5" />
-            Retour à l'accueil
+            Continuer en mode hors ligne
           </Link>
         </div>
 
         <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            💡 <strong>Astuce :</strong> Si vous avez installé l'application, certaines fonctionnalités peuvent être disponibles hors ligne.
+            💡 <strong>Astuce :</strong> Vous pouvez continuer à utiliser l'application hors ligne.
+            Vos données seront synchronisées dès le retour de la connexion.
           </p>
         </div>
       </div>

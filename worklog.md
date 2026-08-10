@@ -1837,3 +1837,63 @@ Stage Summary:
 - NOUVELLE SECTION complète : effectifs totaux/actifs/abandons + détail par niveau + scolarités payées/dues par les abandons.
 - Frontend type-check : 0 erreurs.
 - Files modified: 3 + 1 new (PilotageDashboardV2.tsx, OrionAlertsCard.tsx, weighted-average/route.ts, dashboard/overview/route.ts)
+
+---
+Task ID: 2026-08-10-dashboard-personalizations-grade-evolution
+Agent: main
+Task: 1) Carte personnalisations de frais par niveau scolaire (nombre d'élèves personnalisés, montant standard vs personnalisé, total réduction). 2) Évolution des moyennes par niveau scolaire (maternel/primaire/secondaire séparés) + par piste linguistique (FR/EN) si bilingue activé. Maternelle FR = qualitatif, Primaire/Secondaire FR = /20, Anglophone = /100.
+
+Work Log:
+
+=== Investigation ===
+- fee_overrides table existe déjà avec customAmount + reason (jointe à fee_structures qui a totalAmount).
+- Endpoint backend GET /finance/fee-structures/overrides retourne déjà totalOriginal/totalCustom/totalReduction.
+- /general/weighted-average retourne byLevel[] avec averages mais PAS evolution ni bilingualComparison.
+- Tables student_period_averages + quarters existent pour les moyennes par période.
+- settings_bilingual.isEnabled pour savoir si bilingme activé.
+- academic_tracks (FR/EN) + Grade.language pour la piste linguistique.
+- Score-entry-schema.service.ts définit les échelles : Maternelle FR = qualitatif, Primaire/Secondaire FR = /20, Anglophone (tous niveaux) = /100.
+
+=== Correctifs ===
+
+1. NOUVELLE ROUTE /api/dashboard/tuition-personalizations :
+   - Récupère toutes les FeeOverride de l'année académique (limit=1000).
+   - Agrège par niveau scolaire (Maternelle/Primaire/Secondaire) en utilisant schoolLevelCode du student ou du feeStructure.
+   - Calcule par niveau : studentCount, originalAmount, customAmount, reductionAmount, reductionPercentage.
+   - Totaux globaux : totalOverrides, totalOriginalAmount, totalCustomAmount, totalReductionAmount.
+   - Tri par ordre canonique (Maternelle → Primaire → Secondaire).
+
+2. NOUVELLE ROUTE /api/dashboard/grade-evolution :
+   - Vérifie settings_bilingual.isEnabled pour savoir si on sépare FR/EN.
+   - Récupère les quarters de l'année académique (périodes T1/T2/T3).
+   - Pour chaque période, appelle /exams/averages?periodId=X&academicYearId=Y&groupBy=level.
+   - Détermine l'échelle selon niveau + piste :
+     * Maternelle FR = qualitatif
+     * Primaire/Secondaire FR = /20
+     * Anglophone (tous niveaux) = /100
+   - Retourne { periods, series[], bilingualEnabled }.
+   - series = [{ levelCode, levelLabel, track, scale, data: [{period, value}] }].
+   - Fallback : si pas de données par période, utilise weighted-average global avec période "Année".
+
+3. NOUVEAU COMPOSANT TuitionPersonalizationsSection :
+   - Carte avec en-tête ambre.
+   - Bandeau résumé : montant standard (barré), après perso, réduction totale + %.
+   - Tableau par niveau avec % de réduction en badge.
+   - Masqué si aucune personnalisation.
+
+4. NOUVEAU COMPOSANT GradeEvolutionByLevelSection :
+   - Remplace l'ancien LineChartCard mono-série (mock 13.2/14.0/14.5).
+   - Graphique SVG multi-séries (jusqu'à 6 lignes : 3 niveaux × 2 pistes).
+   - Couleurs distinctes par combinaison (MATERNELLE-FR violet, PRIMAIRE-FR navy, etc.).
+   - Légende avec badges FR/EN si bilingue.
+   - Badges d'échelle (/20, /100, Qualitatif).
+   - Tooltips natifs SVG sur chaque point.
+   - Note explicative sur la lecture.
+   - États loading/empty propre.
+
+Stage Summary:
+
+- Carte Personnalisations de frais : visible dans le dashboard avec détail par niveau scolaire (nombre d'élèves, montant standard vs personnalisé, réduction + %).
+- Graphique Évolution des moyennes : maintenant multi-séries par niveau scolaire + piste linguistique. Chaque niveau a sa propre ligne colorée. Si bilingme activé, FR et EN sont séparés avec des badges distincts. Échelles respectées (qualitatif pour maternelle FR, /20 pour primaire/secondaire FR, /100 pour anglophone).
+- Frontend type-check : 0 erreurs.
+- Files modified: 1 + 2 new (PilotageDashboardV2.tsx, tuition-personalizations/route.ts, grade-evolution/route.ts)

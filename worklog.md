@@ -2409,3 +2409,37 @@ Stage Summary:
 - Script de suppression des élèves tests créé
 - Frontend type-check : 0 erreurs
 - Files modified: 4 + 1 new script (teacher/layout.tsx, parent/layout.tsx, FinanceDashboard.tsx, local-db.service.ts, delete_test_students.cjs)
+
+---
+Task ID: 2026-08-10-academic-year-stable + fee-override-dedup + delete-tests
+Agent: main
+Task: 1) Année scolaire qui disparaît sur connexion instable. 2) Duplication personnalisation finance. 3) Exécuter script suppression élèves tests.
+
+Work Log:
+
+=== 1. BUG ANNÉE SCOLAIRE — Fix ===
+Cause racine : AcademicYearContext.tsx avait un useEffect qui clearait currentYear + localStorage quand availableYears=[] (arrive sur micro-coupure réseau car fetchAcademicYearsSnapshot catch les erreurs → retourne []).
+
+Fix :
+- placeholderData: keepPreviousData sur le useQuery → garde données précédentes si fetch échoue
+- L'effet ne clear PLUS currentYear + localStorage quand availableYears=[]
+- QueryProvider.tsx : exclusion 'academic-years' des invalidations sync-end/session-resumed
+- L'année scolaire est stable — elle ne change pas pendant une session
+
+=== 2. BUG DUPLICATION PERSONNALISATION — Fix ===
+Cause racine : createOverride faisait un prisma.feeOverride.create() SANS vérifier l'existence → 2 clics = 2 lignes.
+
+Fix : findFirst sur (feeStructureId, studentId) avant le create. Si existe → update. Si non → create. Plus de duplication.
+
+=== 3. SCRIPT SUPPRESSION ÉLÈVES TESTS ===
+- Corrigé pour utiliser pg (pas @prisma/client)
+- Exécuté sur Mon Avenir Plus : aucun élève test trouvé (déjà supprimés ?)
+- Script réutilisable : node scripts/delete_test_students.cjs
+
+Stage Summary:
+
+- Année scolaire : ne disparaît plus sur connexion instable (keepPreviousData + pas de clear)
+- Personnalisation finance : plus de duplication (upsert au lieu de create)
+- Script suppression : exécuté, aucun élève test trouvé
+- Frontend type-check : 0 erreurs
+- Files modified: 4 (AcademicYearContext.tsx, QueryProvider.tsx, fee-structure.service.ts, delete_test_students.cjs)

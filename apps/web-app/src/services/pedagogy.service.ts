@@ -20,12 +20,12 @@ class PedagogyService {
   // --- Class Diaries (Cahier de Textes) ---
   async getClassDiaries(classSubjectId: string): Promise<any> {
     if (!networkDetectionService.isConnected()) {
-      return LocalSearchService.search("class_diaries", { tenantId: getTenantId(), filters: { classSubjectId } });
+      return LocalSearchService.search("classdiary", { tenantId: getTenantId(), filters: { classSubjectId } });
     }
     try {
       return await apiFetch(`/class-diaries?classSubjectId=${classSubjectId}`);
     } catch (e) {
-      return LocalSearchService.search("class_diaries", { tenantId: getTenantId(), filters: { classSubjectId } });
+      return LocalSearchService.search("classdiary", { tenantId: getTenantId(), filters: { classSubjectId } });
     }
   }
 
@@ -49,12 +49,12 @@ class PedagogyService {
   async getLessonPlans(classSubjectId?: string): Promise<any> {
     const qs = classSubjectId ? `?classSubjectId=${classSubjectId}` : '';
     if (!networkDetectionService.isConnected()) {
-      return LocalSearchService.search("lesson_plans", { tenantId: getTenantId() });
+      return LocalSearchService.search("lessonplan", { tenantId: getTenantId() });
     }
     try {
       return await apiFetch(`/lesson-plans${qs}`);
     } catch (e) {
-      return LocalSearchService.search("lesson_plans", { tenantId: getTenantId() });
+      return LocalSearchService.search("lessonplan", { tenantId: getTenantId() });
     }
   }
 
@@ -78,13 +78,13 @@ class PedagogyService {
   async getLessonJournals(date?: string): Promise<any> {
     const qs = date ? `?date=${date}` : '';
     if (!networkDetectionService.isConnected()) {
-      return LocalSearchService.search("lesson_journals", { tenantId: getTenantId() });
+      return LocalSearchService.search("lessonjournal", { tenantId: getTenantId() });
     }
     try {
       // Lesson journals route via pedagogy/teacher controller (daily logs)
       return await apiFetch(`/pedagogy/teacher/documents${qs}`);
     } catch (e) {
-      return LocalSearchService.search("lesson_journals", { tenantId: getTenantId() });
+      return LocalSearchService.search("lessonjournal", { tenantId: getTenantId() });
     }
   }
 
@@ -109,12 +109,12 @@ class PedagogyService {
   // NOT /pedagogy/assignments (NEW model: profileId + classId + subjectId) which expects a different payload
   async getTeacherAssignments(teacherId: string, academicYearId: string): Promise<any> {
     if (!networkDetectionService.isConnected()) {
-      return LocalSearchService.search("teacher_class_assignments", { tenantId: getTenantId(), filters: { teacherId, academicYearId } });
+      return LocalSearchService.search("teacherclassassignment", { tenantId: getTenantId(), filters: { teacherId, academicYearId } });
     }
     try {
       return await apiFetch(`/pedagogy/teacher-class-assignments?teacherId=${teacherId}&academicYearId=${academicYearId}`);
     } catch (e) {
-      return LocalSearchService.search("teacher_class_assignments", { tenantId: getTenantId(), filters: { teacherId, academicYearId } });
+      return LocalSearchService.search("teacherclassassignment", { tenantId: getTenantId(), filters: { teacherId, academicYearId } });
     }
   }
 
@@ -124,7 +124,7 @@ class PedagogyService {
       return await apiFetch(`/subjects?academicYearId=${academicYearId}`);
     } catch (e) {
       console.error('[pedagogyService.getSubjects] API failed, falling back to local:', e);
-      return LocalSearchService.search("subjects", { tenantId: getTenantId(), filters: { academicYearId } });
+      return LocalSearchService.search("subject", { tenantId: getTenantId(), filters: { academicYearId } });
     }
   }
 
@@ -170,12 +170,12 @@ class PedagogyService {
   // --- Series (Séries du Secondaire) ---
   async getSeries(academicYearId: string): Promise<any> {
     if (!networkDetectionService.isConnected()) {
-      return LocalSearchService.search("academic_series", { tenantId: getTenantId(), filters: { academicYearId } });
+      return LocalSearchService.search("academicseries", { tenantId: getTenantId(), filters: { academicYearId } });
     }
     try {
       return await apiFetch(`/pedagogy/academic-series?academicYearId=${academicYearId}`);
     } catch (e) {
-      return LocalSearchService.search("academic_series", { tenantId: getTenantId(), filters: { academicYearId } });
+      return LocalSearchService.search("academicseries", { tenantId: getTenantId(), filters: { academicYearId } });
     }
   }
 
@@ -214,12 +214,12 @@ class PedagogyService {
   // --- Teachers (Corps Enseignant) ---
   async getTeachers(): Promise<any> {
     if (!networkDetectionService.isConnected()) {
-      return LocalSearchService.search("teachers", { tenantId: getTenantId() });
+      return LocalSearchService.search("teacher", { tenantId: getTenantId() });
     }
     try {
       return await apiFetch('/teachers');
     } catch (e) {
-      return LocalSearchService.search("teachers", { tenantId: getTenantId() });
+      return LocalSearchService.search("teacher", { tenantId: getTenantId() });
     }
   }
 
@@ -242,12 +242,12 @@ class PedagogyService {
   // --- Teacher Profiles (Profils Académiques Enseignants) ---
   async getTeacherProfiles(academicYearId: string): Promise<any> {
     if (!networkDetectionService.isConnected()) {
-      return LocalSearchService.search("teacher_profiles", { tenantId: getTenantId(), filters: { academicYearId } });
+      return LocalSearchService.search("teacheracademicprofile", { tenantId: getTenantId(), filters: { academicYearId } });
     }
     try {
       return await apiFetch(`/pedagogy/teacher-profiles?academicYearId=${academicYearId}`);
     } catch (e) {
-      return LocalSearchService.search("teacher_profiles", { tenantId: getTenantId(), filters: { academicYearId } });
+      return LocalSearchService.search("teacheracademicprofile", { tenantId: getTenantId(), filters: { academicYearId } });
     }
   }
 
@@ -270,23 +270,23 @@ class PedagogyService {
   // --- Assignments (Affectations & Classes) ---
   async getAcademicClasses(academicYearId: string): Promise<any> {
     if (!networkDetectionService.isConnected()) {
-      return LocalSearchService.search("classes", { tenantId: getTenantId(), filters: { academicYearId } });
+      return LocalSearchService.search("class", { tenantId: getTenantId(), filters: { academicYearId } });
     }
     try {
       return await apiFetch(`/pedagogy/academic-structure/classes?academicYearId=${academicYearId}`);
     } catch (e) {
-      return LocalSearchService.search("classes", { tenantId: getTenantId(), filters: { academicYearId } });
+      return LocalSearchService.search("class", { tenantId: getTenantId(), filters: { academicYearId } });
     }
   }
 
   async getClassSubjects(classId: string, academicYearId: string): Promise<any> {
     if (!networkDetectionService.isConnected()) {
-      return LocalSearchService.search("class_subjects", { tenantId: getTenantId(), filters: { classId, academicYearId } });
+      return LocalSearchService.search("classsubject", { tenantId: getTenantId(), filters: { classId, academicYearId } });
     }
     try {
       return await apiFetch(`/pedagogy/class-subjects/${classId}?academicYearId=${academicYearId}`);
     } catch (e) {
-      return LocalSearchService.search("class_subjects", { tenantId: getTenantId(), filters: { classId, academicYearId } });
+      return LocalSearchService.search("classsubject", { tenantId: getTenantId(), filters: { classId, academicYearId } });
     }
   }
 
@@ -322,13 +322,13 @@ class PedagogyService {
   // --- Weekly Semainier (Cahier du Semainier) ---
   async getCurrentSemainier(academicYearId: string, schoolLevelId: string): Promise<any> {
     if (!networkDetectionService.isConnected()) {
-      const results = await LocalSearchService.search("weekly_semainier_daily_entries", { tenantId: getTenantId() });
+      const results = await LocalSearchService.search("weeklysemainierdailyentry", { tenantId: getTenantId() });
       return results[0] || null;
     }
     try {
       return await apiFetch(`/pedagogy/teacher/semainier/current?academicYearId=${academicYearId}&schoolLevelId=${schoolLevelId}`);
     } catch (e) {
-      const results = await LocalSearchService.search("weekly_semainier_daily_entries", { tenantId: getTenantId() });
+      const results = await LocalSearchService.search("weeklysemainierdailyentry", { tenantId: getTenantId() });
       return results[0] || null;
     }
   }
@@ -368,13 +368,13 @@ class PedagogyService {
   // --- Tests / Evaluations (Cahier de Texte) ---
   async getTests(classSubjectId: string): Promise<any> {
     if (!networkDetectionService.isConnected()) {
-      return LocalSearchService.search("exams", { tenantId: getTenantId(), filters: { classSubjectId } });
+      return LocalSearchService.search("exam", { tenantId: getTenantId(), filters: { classSubjectId } });
     }
     try {
       // Evaluations/tests route through class-diaries
       return await apiFetch(`/class-diaries?classSubjectId=${classSubjectId}`);
     } catch (e) {
-      return LocalSearchService.search("exams", { tenantId: getTenantId(), filters: { classSubjectId } });
+      return LocalSearchService.search("exam", { tenantId: getTenantId(), filters: { classSubjectId } });
     }
   }
 
@@ -405,12 +405,12 @@ class PedagogyService {
   // --- Pedagogical Materials ---
   async getPedagogicalMaterials(academicYearId: string): Promise<any> {
     if (!networkDetectionService.isConnected()) {
-      return LocalSearchService.search("pedagogical_materials", { tenantId: getTenantId() });
+      return LocalSearchService.search("pedagogicalmaterial", { tenantId: getTenantId() });
     }
     try {
       return await apiFetch(`/pedagogy/pedagogical-materials?academicYearId=${academicYearId}`);
     } catch (e) {
-      return LocalSearchService.search("pedagogical_materials", { tenantId: getTenantId() });
+      return LocalSearchService.search("pedagogicalmaterial", { tenantId: getTenantId() });
     }
   }
 
@@ -462,13 +462,13 @@ class PedagogyService {
   async getHomeworkEntries(classId?: string): Promise<any> {
     const qs = classId ? `?classId=${classId}` : '';
     if (!networkDetectionService.isConnected()) {
-      return LocalSearchService.search("homework_entries", { tenantId: getTenantId() });
+      return LocalSearchService.search("homeworkentry", { tenantId: getTenantId() });
     }
     try {
       // Homework entries route through daily-logs controller
       return await apiFetch(`/daily-logs${qs}`);
     } catch (e) {
-      return LocalSearchService.search("homework_entries", { tenantId: getTenantId() });
+      return LocalSearchService.search("homeworkentry", { tenantId: getTenantId() });
     }
   }
 

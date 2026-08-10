@@ -132,6 +132,12 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
       });
       if (response.ok) {
         const data = await response.json();
+        console.log('[PilotageTopBar] School identity loaded:', {
+          hasSchoolName: !!data?.schoolName,
+          hasSchoolAcronym: !!data?.schoolAcronym,
+          hasLogoUrl: !!data?.logoUrl,
+          data: data ? Object.keys(data) : 'null',
+        });
         if (data) {
           setSchoolIdentity({
             schoolName: data.schoolName,
@@ -139,9 +145,11 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
             logoUrl: data.logoUrl,
           });
         }
+      } else {
+        console.warn('[PilotageTopBar] /api/settings/identity returned', response.status);
       }
     } catch (error) {
-      console.error('Failed to load school identity:', error);
+      console.error('[PilotageTopBar] Failed to load school identity:', error);
     }
   }, []);
 

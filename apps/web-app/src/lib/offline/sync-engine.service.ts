@@ -520,6 +520,52 @@ export type SyncProgressCallback = (
 ) => void;
 
 /**
+ * ⭐ Normalise un nom d'entité retourné par le backend vers le nom du store
+ *    IndexedDB correspondant.
+ *
+ *    Le backend peut retourner plusieurs formats :
+ *      - "teacher_class_assignments" (snake_case plural)
+ *      - "teacherClassAssignments" (camelCase plural)
+ *      - "TeacherClassAssignment" (PascalCase singulier)
+ *      - "teacherclassassignment" (déjà normalisé IndexedDB)
+ *
+ *    La convention IndexedDB (déclarée dans local-db.service.ts) est :
+ *      - lowercase
+ *      - sans séparateurs (underscore ou tiret)
+ *      - singulier (pas de 's' final, sauf si le nom singulier finit par 's')
+ *
+ *    Exemples :
+ *      "teacher_class_assignments" → "teacherclassassignment"
+ *      "students" → "student"
+ *      "class_diaries" → "classdiary"
+ *      "Teachers" → "teacher"
+ */
+function normalizeToIdbStoreName(type: string): string {
+  // 1) Lowercase
+  let name = type.toLowerCase();
+
+  // 2) Retirer les séparateurs (underscore, tiret, espace)
+  name = name.replace(/[_\-\s]+/g, '');
+
+  // 3) Singulariser — retirer le 's' final si présent, sauf si ça donnerait
+  //    un nom vide ou si le mot se termine déjà par 's' au singulier
+  //    (ex: "class" reste "class"). On utilise une heuristique simple :
+  //    si ça finit par "ies" → remplacer par "y" (ex: "diaries" → "diary")
+  //    si ça finit par "ses" → remplacer par "s" (ex: "classes" → "class")
+  //    si ça finit par "s" (et > 3 chars) → retirer le "s"
+  //    sinon garder tel quel.
+  if (name.length > 3 && name.endsWith('ies')) {
+    name = name.slice(0, -3) + 'y';
+  } else if (name.length > 3 && name.endsWith('ses')) {
+    name = name.slice(0, -2); // retirer juste le 'es' final
+  } else if (name.length > 3 && name.endsWith('s') && !name.endsWith('ss')) {
+    name = name.slice(0, -1);
+  }
+
+  return name;
+}
+
+/**
  * Lance la synchronisation (push puis pull) pour un tenant
  */
 export async function runSync(
@@ -659,14 +705,22 @@ export async function runSync(
     for (const type of entityTypes) {
       const items = pullData.entities[type] || [];
       if (items.length > 0) {
-        // Déterminer le nom du store local
-        const storeName = type.endsWith('s') ? type : `${type}s`;
+        // ⭐ Déterminer le nom du store local — la convention IndexedDB est
+        //    "Prisma model name lowercased sans séparateurs, singulier"
+        //    (ex: TeacherClassAssignment → "teacherclassassignment").
+        //    Le backend retourne généralement les types en snake_case plural
+        //    (ex: "teacher_class_assignments"). On normalise les deux vers la
+        //    convention IndexedDB.
+        const storeName = normalizeToIdbStoreName(type);
         try {
           await localDb.executeBulk(storeName, 'put', items);
           result.pulled[type] = items.length;
           pulledSoFar += items.length;
         } catch (e) {
-          console.error(`[Sync] Failed to persist ${type}:`, e);
+          // ⭐ Ne pas crasher si le store n'existe pas en IDB — c'est légitime
+          //    pour les entités qu'on n'a pas encore déclarées dans local-db.service.ts.
+          //    On log en warning pour visibilité, et on continue avec les autres tables.
+          console.warn(`[Sync] Store "${storeName}" (from type "${type}") not in IndexedDB — skipping ${items.length} items`);
         }
       }
       // ⭐ Mise à jour de la progression après chaque table persistée

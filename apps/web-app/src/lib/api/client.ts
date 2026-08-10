@@ -137,10 +137,23 @@ apiClient.interceptors.response.use(
 
     // Erreur 401 : Non authentifié
     if (error.response.status === 401) {
-      // Vérifier si on est hors ligne — ne pas rediriger si c'est juste une erreur réseau
-      if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        console.warn('[API Client] 401 reçu hors ligne — probablement un token expiré, utilisation du cache');
-        const offlineError: any = new Error('Session expirée hors ligne. Les données en cache sont disponibles.');
+      // ⭐ Guard offline renforcé — `navigator.onLine` peut être en retard sur
+      //    l'événement `offline` (fenêtre de race ~100-500ms), donc on
+      //    vérifie AUSSI si on a une réponse typique d'un service worker
+      //    (réponse 401 avec corps vide/via cache) ou si l'erreur provient
+      //    du SW. Dans tous les cas : ne JAMAIS rediriger ni clearer la
+      //    session si on est offline.
+      const isLikelyOffline =
+        (typeof navigator !== 'undefined' && !navigator.onLine) ||
+        // Heuristique : si l'erreur ne contient pas de données de réponse réelles
+        // (cas typique d'un SW NetworkFirst qui échoue)
+        (error.response.data === null || error.response.data === undefined) ||
+        // Ou si l'erreur a un message réseau typique
+        (error.message && (error.message.includes('Network Error') || error.message.includes('timeout')));
+
+      if (isLikelyOffline) {
+        console.warn('[API Client] 401 reçu en contexte probablement offline — pas de redirect, utilisation du cache');
+        const offlineError: any = new Error('Session indisponible hors ligne. Les données en cache sont disponibles.');
         offlineError.isOffline = true;
         offlineError.isAuthExpired = true;
         return Promise.reject(offlineError);
@@ -209,6 +222,15 @@ apiClient.interceptors.response.use(
 
       try {
         const refreshed = await tryRefreshAccessToken();
+        // ⭐ Re-vérifier offline APRÈS le refresh — si on est passé offline
+        //    pendant le refresh attempt, ne pas rediriger.
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          console.warn('[API Client] Passé offline pendant refresh — pas de redirect');
+          const offlineError: any = new Error('Session indisponible hors ligne.');
+          offlineError.isOffline = true;
+          offlineError.isAuthExpired = true;
+          return Promise.reject(offlineError);
+        }
         if (refreshed) {
           const newToken = localStorage.getItem('accessToken')?.trim();
           if (newToken) {
@@ -225,6 +247,14 @@ apiClient.interceptors.response.use(
         }
         return Promise.reject(error);
       } catch (refreshError) {
+        // ⭐ Même garde offline ici
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          console.warn('[API Client] Refresh échoué (offline) — pas de redirect');
+          const offlineError: any = new Error('Session indisponible hors ligne.');
+          offlineError.isOffline = true;
+          offlineError.isAuthExpired = true;
+          return Promise.reject(offlineError);
+        }
         processQueue(refreshError, null);
         if (typeof window !== 'undefined') {
           clearClientSessionSync();

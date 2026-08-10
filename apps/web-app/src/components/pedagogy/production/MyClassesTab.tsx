@@ -4,11 +4,18 @@
  * Mes Classes — Vue d'ensemble des classes assignées à l'enseignant.
  * Affiche : nom, niveau, effectifs (G/F/total), matières enseignées.
  * Clic sur une classe → vue détaillée (liste élèves).
+ *
+ * ⭐ Offline-aware : si la connexion est indisponible, on retombe sur
+ *    IndexedDB (store `teacherclassassignment`) qui est peuplé par le sync
+ *    engine PULL. Avant ce fix, on utilisait raw fetch() → si offline,
+ *    on catchait l'erreur et on affichait "Aucune classe" — alors que
+ *    l'enseignant en avait bien.
  */
 
 import { useState, useEffect, useCallback } from "react";
 import { Users, BookOpen, ChevronRight, Loader2, RefreshCw, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { offlineFetch } from "@/lib/offline/offline-fetch";
 
 interface MyClassesTabProps {
   tenantId: string;
@@ -24,20 +31,32 @@ export function MyClassesTab({ tenantId, academicYearId, teacherId }: MyClassesT
   const loadClasses = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(
+      // ⭐ offlineFetch — essaie le réseau, et si ça échoue, lit IndexedDB
+      //    (store "teacherclassassignment"). Si le cache est aussi vide,
+      //    lance une erreur réelle pour que l'UI puisse la distinguer
+      //    d'un "légitimement pas de données".
+      const data = await offlineFetch<any>(
         `/api/pedagogy-space/my-classes?teacherId=${teacherId}&academicYearId=${academicYearId}`,
-        { credentials: "include" }
+        "teacherclassassignment",
+        { tenantId }
       );
-      if (!res.ok) throw new Error("Erreur de chargement");
-      const data = await res.json();
-      setClasses(Array.isArray(data) ? data : []);
+      setClasses(Array.isArray(data) ? data : (data?.data ?? []));
     } catch (e: any) {
-      toast.error("Erreur", { description: e.message });
+      // Si on est offline ET le cache est vide, on affiche un message clair
+      // plutôt que de simuler "pas de classes".
+      const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+      if (isOffline) {
+        toast.warning("Hors ligne", {
+          description: "Vous êtes hors ligne et les données de classes n'ont pas encore été mises en cache. Reconnectez-vous pour charger vos classes.",
+        });
+      } else {
+        toast.error("Erreur", { description: e?.message || "Erreur de chargement" });
+      }
       setClasses([]);
     } finally {
       setLoading(false);
     }
-  }, [teacherId, academicYearId]);
+  }, [teacherId, academicYearId, tenantId]);
 
   useEffect(() => {
     loadClasses();

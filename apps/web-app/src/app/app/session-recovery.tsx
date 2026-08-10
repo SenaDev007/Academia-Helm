@@ -38,6 +38,17 @@ export function SessionRecovery() {
         return;
       }
 
+      // ⭐ Guard offline — si on est hors ligne, ne PAS essayer de recovery
+      //    via /api/auth/me (qui échouera et mènerait à une boucle de redirect).
+      //    On a déjà un accessToken + session en localStorage, donc on peut
+      //    juste reloader la page et laisser l'app tourner en mode offline
+      //    (les composants offline-aware liront le cache IndexedDB).
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        console.warn('[SessionRecovery] Offline — reload silencieux, session locale conservée');
+        window.location.reload();
+        return;
+      }
+
       // Step 2: Try to re-establish the server session
       setState('recovering');
 
@@ -82,6 +93,14 @@ export function SessionRecovery() {
         } catch {
           // Refresh failed — fall through
         }
+      }
+
+      // ⭐ Re-vérifier offline avant de rediriger vers /login
+      //    (on a pu passer offline pendant les étapes précédentes)
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        console.warn('[SessionRecovery] Passé offline pendant recovery — reload, session conservée');
+        window.location.reload();
+        return;
       }
 
       // Step 4: All recovery attempts failed — redirect to login

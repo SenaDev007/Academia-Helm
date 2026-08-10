@@ -20,10 +20,22 @@ export interface SearchOptions {
 export class LocalSearchService {
   /**
    * Effectue une recherche dans un store spécifique
+   *
+   * ⭐ Robustesse : si le store n'existe pas en IndexedDB (par exemple si la
+   *    convention de nommage a changé ou si l'entité n'a pas encore été
+   *    déclarée dans local-db.service.ts), on retourne un tableau vide plutôt
+   *    que de crasher l'appelant. L'appelant pourra ainsi afficher un état
+   *    "pas de données" propre au lieu d'une page blanche.
    */
   static async search<T>(storeName: string, options: SearchOptions): Promise<T[]> {
-    const allData = await localDb.query<T>(storeName);
-    
+    let allData: T[];
+    try {
+      allData = await localDb.query<T>(storeName);
+    } catch (err) {
+      console.warn(`[LocalSearch] Store "${storeName}" not available in IndexedDB — returning empty list:`, (err as Error).message);
+      return [];
+    }
+
     let results = allData;
 
     // 1. Filtre par Tenant (Isolation obligatoire) et exclusion des éléments supprimés localement (_deleted)

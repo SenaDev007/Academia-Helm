@@ -162,6 +162,27 @@ export function PostLoginFlowWrapper({
     setError(err);
     console.error('Post-login flow error:', err);
 
+    // ⭐ Guard offline — si on est hors ligne, ne PAS rediriger vers /login.
+    //    L'utilisateur a simplement perdu la connexion, pas sa session.
+    //    Les données en cache IndexedDB restent disponibles.
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      console.warn('[PostLoginFlowWrapper] Erreur en mode offline — pas de redirect, session conservée');
+      markFlowCompleted();
+      moduleLevelFlowDone = true;
+      clearFreshLoginFlag();
+      setFlowResult({
+        success: false,
+        user,
+        tenant,
+        academicYear: null,
+        permissions: [],
+        offlineStatus: { isOnline: false, pendingOperations: 0, syncRequired: false },
+        orionAlerts: [],
+        error: { step: err.step || 'INIT_SECURE_CONTEXT', message: err.message || 'Hors ligne', code: err.code || 'OFFLINE' },
+      });
+      return;
+    }
+
     // Gérer les erreurs critiques
     // IMPORTANT: Toujours utiliser window.location.href (rechargement complet)
     // pour les redirections critiques, jamais router.push() qui peut causer

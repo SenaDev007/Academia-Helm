@@ -98,6 +98,19 @@ export function usePostLoginFlow(): UsePostLoginFlowReturn {
       if (!flowResult.success && flowResult.error) {
         setError(flowResult.error);
 
+        // ⭐ Guard offline — si on est hors ligne, ne PAS rediriger vers /login.
+        //    L'utilisateur a juste perdu la connexion, pas sa session. Les données
+        //    en cache IndexedDB restent disponibles. On garde la session locale
+        //    intacte pour qu'au retour online tout fonctionne normalement.
+        const isOfflineNow =
+          (typeof navigator !== 'undefined' && !navigator.onLine) ||
+          flowResult.error.code === 'AUTH_ERROR'; // AUTH_ERROR en offline = checkAuth a échoué
+
+        if (isOfflineNow && typeof navigator !== 'undefined' && !navigator.onLine) {
+          console.warn('[PostLoginFlow] Erreur en mode offline — pas de redirect, session conservée');
+          return;
+        }
+
         // Gérer les erreurs critiques
         // IMPORTANT: Toujours utiliser window.location.href (rechargement complet)
         // pour les redirections critiques, jamais router.push() qui peut causer

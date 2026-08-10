@@ -30,7 +30,7 @@ import {
   LayoutDashboard, BookOpen, CalendarDays, Users, Library,
   Video, ClipboardList, MessageSquare, Loader2, GraduationCap,
   FileEdit,
-  BarChart3, Settings, Building2, LogOut, Menu, X,
+  BarChart3, Building2, LogOut, Menu, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LogoutModal } from "@/components/auth/LogoutModal";
@@ -176,14 +176,6 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
 
         {/* Footer */}
         <div className="p-3 border-t border-slate-200 space-y-1">
-          <Link
-            href="/app"
-            onClick={() => setMobileSidebarOpen(false)}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-slate-500 hover:bg-slate-50 hover:text-slate-700"
-          >
-            <Settings className="h-4 w-4" />
-            <span>Portail École</span>
-          </Link>
           <button
             onClick={() => setLogoutOpen(true)}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-red-600 hover:bg-red-50 hover:text-red-700"

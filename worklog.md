@@ -1773,3 +1773,67 @@ Stage Summary:
 - Logo : logs ajoutés pour diagnostic. Le code frontend est correct — le souci viendra de la DB (champs NULL) ou de l'API (profil non actif).
 - Frontend type-check : 0 erreurs dans les fichiers modifiés.
 - Files modified: 9
+
+---
+Task ID: 2026-08-10-dashboard-improvements
+Agent: main
+Task: Améliorations du tableau de pilotage : ordre niveaux répartition sexe, espacer nombre/lettre, fix ORION clignotant, fix couleur barre effectif classe, refaire graphique évolution moyennes (pro + vraies données), clarifier "Alerte active" et "Recettes cumulées", ajouter carte effectif global (total/actifs/abandons), détail par niveau (G/F), abandons + scolarités par niveau.
+
+Work Log:
+
+=== 1. Répartition par sexe ===
+- genderByLevel trié par ordre canonique : Maternelle → Primaire → Secondaire (au lieu de l'ordre alphabétique du backend).
+- Espace ajouté entre nombre et lettre : "43 G" au lieu de "43G", "42 F" au lieu de "42F".
+- Détail en bas : "Garçons : 43" / "Filles : 42" (au lieu de "G: 43" / "F: 42").
+
+=== 2. Carte ORION stabilisée ===
+- OrionAlertsCard migré de useEffect+setInterval(60s) vers React Query avec placeholderData=keepPreviousData.
+- staleTime 5min (au lieu de 60s) → moins de re-fetch.
+- Au lieu de retourner null quand pas d'alertes, on affiche un état stable "Aucune alerte active — Tout est sous contrôle" (évite le clignotement de la mise en page).
+
+=== 3. BarChartCard couleur ===
+- Si barre < 30% : nombre affiché À DROITE du container gris (en slate-700 gras) au lieu d'être positionné par-dessus le gris → plus de blanc sur gris invisible.
+- Si barre > 30% : nombre reste blanc sur la barre bleue.
+
+=== 4. Graphique évolution des moyennes ===
+- Route /api/general/weighted-average transformée de MOCK → vrai proxy NestJS /general/weighted-average.
+- Normalisation des formats (weightedAverage/average/value, evolution/byPeriod/periods).
+- LineChartCard refait avec design pro :
+  * Échelle Y fixe 0→20 pour les moyennes /20
+  * Labels Y : 0, 5, 10, 15, 20
+  * Points colorés selon la valeur (vert ≥14, bleu 10-13, orange <10)
+  * Halo translucide autour de chaque point
+  * Padding propre + hauteur 224px
+  * Aucune donnée fictive si le backend ne répond pas
+
+=== 5. Clarification KPIs existants ===
+- "Recettes cumulées" → "Recettes encaissées" avec sous-titre "Total des paiements reçus (année en cours)".
+- "Impayés / Arriérés" sous-titre "Scolarités à recouvrer".
+- "Moyenne générale" affiche "— / 20" si pas de données.
+
+=== 6. NOUVELLE SECTION : Vue d'ensemble des effectifs + abandons + scolarités ===
+- Nouvelle route BFF /api/dashboard/overview qui agrège 3 sources backend :
+  * /students/statistics (effectifs par sexe/niveau)
+  * /students/abandons (abandons de l'année)
+  * /finance/student-balances (soldes scolarités par élève)
+- Bandeau de 3 cartes :
+  * Effectif total (y compris abandons)
+  * Élèves actifs (sans abandons) + % de l'effectif
+  * Abandons (année en cours) + % de l'effectif
+- Tableau détaillé par niveau scolaire (Maternelle/Primaire/Secondaire) :
+  * Total / Garçons / Filles / Actifs / Abandons
+  * Scolarités payées par les abandons (nombre + montant)
+  * Scolarités dues par les abandons (nombre + montant)
+- Version mobile en cartes (au lieu du tableau)
+- Note explicative en bas du tableau
+
+Stage Summary:
+
+- Répartition par sexe : ordre Maternelle→Primaire→Secondaire + espace "43 G" + texte complet.
+- ORION stabilisé : plus de clignotement (React Query + état stable vide).
+- BarChartCard : couleur adaptative (blanc sur barre, slate-700 à droite si barre courte).
+- Évolution des moyennes : vrai proxy NestJS + graphique pro (échelle 0-20, points colorés, halo).
+- KPIs clarifiés : "Recettes encaissées" + sous-titres explicites.
+- NOUVELLE SECTION complète : effectifs totaux/actifs/abandons + détail par niveau + scolarités payées/dues par les abandons.
+- Frontend type-check : 0 erreurs.
+- Files modified: 3 + 1 new (PilotageDashboardV2.tsx, OrionAlertsCard.tsx, weighted-average/route.ts, dashboard/overview/route.ts)

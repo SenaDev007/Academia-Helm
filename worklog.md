@@ -2283,3 +2283,38 @@ Stage Summary:
 - Le directeur peut modifier son mdp après connexion.
 - Frontend type-check : 0 erreurs.
 - Files modified: 4 + 1 new (sync-engine.service.ts, DirectorsWorkspace.tsx, school-directors.service.ts, school-directors.controller.ts, migrate_school_directors_v2.cjs)
+
+---
+Task ID: 2026-08-10-black-page-offline + sync-modal-minimizable
+Agent: main
+Task: 1) Page noire avec "offline" coin haut gauche sur academiahelm.com. 2) SyncModal bloquant — ajouter bouton réduire + opération continue en arrière-plan. 3) Bouton manuel dans header pour déclencher le pull.
+
+Work Log:
+
+=== 1. PAGE NOIRE OFFLINE — Fix ===
+Cause racine : Service Worker handlePageRequest() cherchait /offline uniquement dans PAGE_CACHE. Or /offline est pre-cache dans STATIC_CACHE. Quand PAGE_CACHE était vide (première visite), cache.match('/offline') retournait undefined → fallback sur Response('Offline', {status: 503}) qui rendait un texte brut → page noire en mode sombre.
+
+Fix :
+- caches.match('/offline') au lieu de cache.match('/offline') (cherche dans TOUS les caches)
+- Remplacement du fallback texte brut par une page HTML inline professionnelle (fond clair, icône nuage, message lisible, bouton "Réessayer")
+- Bump CACHE_VERSION v4 → v5
+
+=== 2. SYNCMODAL RÉDUCTIBLE ===
+- Ajout champ isMinimized dans SyncModalState
+- Bouton "Réduire" (Minimize2) en haut à droite du modal pendant push/pull
+- Cliquer → modal devient petite pastille en bas à droite (spinner + progression %)
+- L'opération de sync CONTINUE en arrière-plan — l'utilisateur peut travailler
+- Clic sur la pastille → redevient full overlay (Maximize2)
+- Reset isMinimized=false à l'ouverture (bootstrap + SyncButton)
+
+=== 3. BOUTON MANUEL HEADER ===
+- Le SyncButton existant déclenche déjà le pull+push manuellement
+- Au clic : setSyncModalState({ isMinimized: false }) pour ouvrir en mode full
+
+Stage Summary:
+
+- Page noire offline : plus jamais — page HTML inline professionnelle affichée
+- SyncModal : réductible en pastille, opération continue en arrière-plan
+- Bouton manuel header : déjà existant (SyncButton), reset isMinimized au clic
+- Frontend type-check : 0 erreurs
+- Files modified: 5 (sw-offline.js, sync-modal-state.ts, SyncModal.tsx, offline-sync.service.ts, SyncButton.tsx)

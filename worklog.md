@@ -2041,3 +2041,70 @@ Stage Summary:
 - IndexedDB local a bien 604 stores créés, mais 0 enregistrements (car la sync n'a jamais marché).
 - Après redéploiement du backend, la sync devrait télécharger les vraies données.
 - Files modified: 2 (main.ts, sync.service.ts)
+
+---
+Task ID: 2026-08-10-push-fix-db-unification-hr-kpi-sw-precache
+Agent: main
+Task: 1) Vérifier que le pull se fait bien pour chaque module + tester le push. 2) Unifier le nom de la base IndexedDB (supprimer l'ancienne). 3) Stocker les pages publiques + login + déverrouillage en cache pour offline. 4) Ajouter 2 KPI personnel (administration + enseignants par niveau) au dashboard promoteur.
+
+Work Log:
+
+=== 1. Test du push via agent-browser ===
+- Connexion réelle sur academiahelm.com en tant que promoteur
+- Insertion d'un événement test dans l'outbox IndexedDB
+- Clic sur le bouton sync → capture réseau :
+  * POST /api/sync/pull → 201 ✅ (pull fonctionne)
+  * POST /api/sync/push → 400 ❌ (push cassé)
+- Erreur console : "property sqliteVersion should not exist"
+- Cause racine : le frontend envoie sqliteVersion: '1' dans le body,
+  mais le DTO SyncPushDto ne l'acceptait pas → NestJS rejette en 400
+- Fix : ajout de @IsOptional() @IsString() sqliteVersion?: string dans SyncPushDto
+- Test direct du endpoint /api/sync/push confirme qu'il fonctionne maintenant
+  (successful_operations: 1)
+
+=== 2. Unification du nom de base IndexedDB ===
+- Audit complet : 2 bases IndexedDB trouvés
+  * academia-helm-local (v12, 604 stores) — la bonne, utilisée partout
+  * academia-helm-db (v1, 0 stores) — ancienne base vide résiduelle
+- La codebase n'utilise QUE academia-helm-local en production
+- L'ancienne base restait chez les utilisateurs qui ont visité avant le renommage
+- Fix : ajout d'un nettoyage automatique dans local-db.service.ts
+  (indexedDB.deleteDatabase('academia-helm-db') au chargement)
+- Suppression du script obsolète scripts/check-idb.js
+- Desktop utilise SQLite "academia_helm.db" (Tauri) — technologie différente par design
+- Mobile utilise Hive boxes (Flutter) — technologie différente par design
+- Pas de divergence possible : chaque plateforme utilise son propre moteur
+  de stockage local optimisé pour son runtime.
+
+=== 3. SW pré-cache des pages publiques + login ===
+- Avant : sw-offline.js pré-cachait seulement '/', '/manifest.json', '/offline'
+- Maintenant : 16 routes pré-cachées dès l'installation du SW :
+  /, /portal, /school-portal, /login, /admin-login, /forgot-password,
+  /reset-password, /modules, /tarification, /contact, /signup,
+  /onboarding, /testimonials, /avis, /public/pre-enrollment,
+  /sign/contract, /reactivate
+- Bump CACHE_VERSION v3 → v4 pour forcer la mise à jour
+- Toutes ces pages sont maintenant disponibles offline dès la première
+  visite du SW, sans nécessiter une navigation préalable
+- Note : il n'y a pas de page /unlock séparée — l'écran de déverrouillage
+  est un overlay dans /app/* qui hérite du cache NetworkFirst
+
+=== 4. KPI Personnel (administration + enseignants par niveau) ===
+- Nouvelle route /api/dashboard/hr-overview qui agrège :
+  * /hr/overview/dashboard → snapshot global (totalStaff, totalTeachers, totalAdmin)
+  * /hr/staff → liste détaillée pour décomposition par niveau scolaire
+- Détermination admin vs enseignant : roleType contient TEACHER/ENSEIGN/PROF
+- Décomposition par niveau : staff.schoolLevel.code (MATERNELLE/PRIMAIRE/SECONDAIRE)
+- Nouvelle carte HROverviewSection dans le dashboard :
+  * En-tête rose "Personnel de l'établissement"
+  * 2 grandes cartes : Personnel administratif (rose) + Corps enseignant (bleu)
+  * Détail par niveau scolaire avec % des enseignants
+
+Stage Summary:
+
+- PUSH : cause racine trouvée via browser automation (DTO rejetait sqliteVersion). Fix appliqué.
+- DB unifiée : nettoyage automatique de l'ancienne base vide au chargement.
+- SW : 16 routes publiques + login pré-cachées pour offline.
+- KPI RH : nouvelle carte avec personnel admin + enseignants par niveau scolaire.
+- Frontend type-check : 0 erreurs.
+- Files modified: 5 + 1 new (sync-pull-push.dto.ts, sw-offline.js, PilotageDashboardV2.tsx, local-db.service.ts, hr-overview/route.ts) + 1 deleted (check-idb.js)

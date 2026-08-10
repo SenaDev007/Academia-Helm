@@ -622,6 +622,386 @@ const QUICK_ACCESS: QuickAccessItem[] = [
 ];
 
 // ──────────────────────────────────────────────────────────────────────────
+// ⭐ NOUVEAU — Section Personnalisations de frais de scolarité
+// ──────────────────────────────────────────────────────────────────────────
+
+interface TuitionLevelAggregation {
+  levelCode: string;
+  levelLabel: string;
+  studentCount: number;
+  originalAmount: number;
+  customAmount: number;
+  reductionAmount: number;
+  reductionPercentage: number;
+}
+
+interface TuitionPersonalizationsResponse {
+  totalOverrides: number;
+  totalOriginalAmount: number;
+  totalCustomAmount: number;
+  totalReductionAmount: number;
+  reductionPercentage: number;
+  byLevel: TuitionLevelAggregation[];
+  _source?: string;
+}
+
+function useTuitionPersonalizations(academicYearId?: string) {
+  return useQuery<TuitionPersonalizationsResponse>({
+    queryKey: ['dashboard', 'tuition-personalizations', academicYearId],
+    queryFn: async () => {
+      if (!academicYearId) return null;
+      const url = `/api/dashboard/tuition-personalizations?academicYearId=${academicYearId}`;
+      const data = await fetchJson(url);
+      return data;
+    },
+    enabled: !!academicYearId,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    retry: 1,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: false,
+  });
+}
+
+function TuitionPersonalizationsSection({ academicYearId }: { academicYearId?: string }) {
+  const { data, isLoading } = useTuitionPersonalizations(academicYearId);
+
+  if (isLoading && !data) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 animate-pulse">
+        <div className="h-5 w-48 bg-gray-200 rounded mb-4" />
+        <div className="grid grid-cols-3 gap-4">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-16 bg-gray-100 rounded" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!data || data.totalOverrides === 0) {
+    // Pas de personnalisations — on n'affiche pas la carte (évite l'encombrement)
+    return null;
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-gradient-to-r from-amber-700 to-amber-600 px-5 py-3">
+        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+          <Coins className="w-4 h-4" />
+          Personnalisations de frais de scolarité
+        </h3>
+        <p className="text-[11px] text-amber-100 mt-0.5">
+          Élèves bénéficiant d'un tarif personnalisé · {data.totalOverrides} élève(s) concerné(s)
+        </p>
+      </div>
+
+      {/* Bandeau résumé */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-5 bg-amber-50/50 border-b border-amber-100">
+        <div>
+          <p className="text-[10px] uppercase tracking-wider font-bold text-amber-700">Montant standard</p>
+          <p className="text-lg font-bold text-slate-700 line-through">{formatCurrency(data.totalOriginalAmount)}</p>
+          <p className="text-[10px] text-slate-400">Ce qu'ils auraient dû payer</p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-wider font-bold text-emerald-700">Après personnalisation</p>
+          <p className="text-lg font-bold text-emerald-700">{formatCurrency(data.totalCustomAmount)}</p>
+          <p className="text-[10px] text-slate-400">Ce qu'ils vont payer</p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-wider font-bold text-red-700">Réduction totale</p>
+          <p className="text-lg font-bold text-red-700">{formatCurrency(data.totalReductionAmount)}</p>
+          <p className="text-[10px] text-slate-400">Soit -{data.reductionPercentage}% en moyenne</p>
+        </div>
+      </div>
+
+      {/* Détail par niveau */}
+      {data.byLevel.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className="text-left px-4 py-2 font-semibold text-slate-700">Niveau</th>
+                <th className="text-right px-4 py-2 font-semibold text-slate-700">Élèves</th>
+                <th className="text-right px-4 py-2 font-semibold text-slate-500">Tarif standard</th>
+                <th className="text-right px-4 py-2 font-semibold text-emerald-700">Après perso.</th>
+                <th className="text-right px-4 py-2 font-semibold text-red-700">Réduction</th>
+                <th className="text-right px-4 py-2 font-semibold text-amber-700">%</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {data.byLevel.map((lvl) => (
+                <tr key={lvl.levelCode} className="hover:bg-slate-50">
+                  <td className="px-4 py-3 font-bold text-slate-900">{lvl.levelLabel}</td>
+                  <td className="px-4 py-3 text-right font-medium text-slate-700">{lvl.studentCount}</td>
+                  <td className="px-4 py-3 text-right text-slate-500 line-through">{formatCurrency(lvl.originalAmount)}</td>
+                  <td className="px-4 py-3 text-right font-medium text-emerald-700">{formatCurrency(lvl.customAmount)}</td>
+                  <td className="px-4 py-3 text-right font-medium text-red-700">{formatCurrency(lvl.reductionAmount)}</td>
+                  <td className="px-4 py-3 text-right">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
+                      -{lvl.reductionPercentage}%
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="px-4 py-2 bg-slate-50 border-t border-slate-100">
+        <p className="text-[10px] text-slate-500">
+          <span className="font-semibold">Note :</span> Les personnalisations sont des ajustements individuels du tarif de scolarité accordés à certains élèves (bourses, réductions familiales, etc.).
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// ⭐ NOUVEAU — Section Évolution des moyennes par niveau scolaire + piste
+// ──────────────────────────────────────────────────────────────────────────
+
+interface GradeSeries {
+  levelCode: string;
+  levelLabel: string;
+  track: 'FR' | 'EN';
+  scale: 'qualitative' | '/20' | '/100';
+  data: Array<{ period: string; value: number }>;
+}
+
+interface GradeEvolutionResponse {
+  periods: string[];
+  series: GradeSeries[];
+  bilingualEnabled: boolean;
+  _source?: string;
+}
+
+function useGradeEvolution(academicYearId?: string) {
+  return useQuery<GradeEvolutionResponse>({
+    queryKey: ['dashboard', 'grade-evolution', academicYearId],
+    queryFn: async () => {
+      if (!academicYearId) return null;
+      const url = `/api/dashboard/grade-evolution?academicYearId=${academicYearId}`;
+      const data = await fetchJson(url);
+      return data;
+    },
+    enabled: !!academicYearId,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    retry: 1,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: false,
+  });
+}
+
+// Couleurs distinctes pour chaque combinaison niveau + piste
+const SERIES_COLORS: Record<string, string> = {
+  // Francophone
+  'MATERNELLE-FR': '#8b5cf6', // violet (qualitatif)
+  'PRIMAIRE-FR': '#1A2BA6',   // navy
+  'SECONDAIRE-FR': '#0ea5e9', // sky
+  // Anglophone
+  'MATERNELLE-EN': '#f59e0b', // amber
+  'PRIMAIRE-EN': '#10b981',   // emerald
+  'SECONDAIRE-EN': '#ef4444', // red
+};
+
+function getSeriesColor(levelCode: string, track: string): string {
+  return SERIES_COLORS[`${levelCode}-${track}`] || '#1A2BA6';
+}
+
+function GradeEvolutionByLevelSection({ academicYearId }: { academicYearId?: string }) {
+  const { data, isLoading } = useGradeEvolution(academicYearId);
+
+  if (isLoading && !data) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 animate-pulse">
+        <div className="h-5 w-64 bg-gray-200 rounded mb-4" />
+        <div className="h-48 bg-gray-100 rounded" />
+      </div>
+    );
+  }
+
+  if (!data || data.series.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-2">
+            <TrendingUp className="w-5 h-5 text-[#1A2BA6]" />
+            <h3 className="text-base font-semibold text-gray-900">Évolution des moyennes par niveau</h3>
+          </div>
+        </div>
+        <div className="h-48 flex items-center justify-center">
+          <div className="text-center">
+            <TrendingUp className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+            <p className="text-sm text-gray-400">Aucune donnée disponible</p>
+            <p className="text-xs text-gray-300 mt-1">Les moyennes par période apparaîtront après la première évaluation</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const { periods, series, bilingualEnabled } = data;
+
+  // Déterminer l'échelle maximale selon les scales présents
+  const hasQuantitative20 = series.some(s => s.scale === '/20');
+  const hasQuantitative100 = series.some(s => s.scale === '/100');
+  const hasQualitative = series.some(s => s.scale === 'qualitative');
+
+  // Trouver la valeur max pour calculer l'échelle Y
+  const maxValue = Math.max(
+    ...series.flatMap(s => s.data.map(d => d.value)),
+    hasQuantitative100 ? 100 : hasQuantitative20 ? 20 : 10
+  );
+
+  // Constantes pour le SVG
+  const PAD_L = 40, PAD_R = 15, PAD_T = 20, PAD_B = 30;
+  const W = 560, H = 280;
+  const chartW = W - PAD_L - PAD_R;
+  const chartH = H - PAD_T - PAD_B;
+
+  // Y labels
+  const yLabels = [0, 0.25, 0.5, 0.75, 1].map(p => Math.round(maxValue * p));
+
+  // Helper : position x pour une période
+  const getX = (i: number) => PAD_L + (periods.length > 1 ? (i * chartW) / (periods.length - 1) : chartW / 2);
+  // Helper : position y pour une valeur
+  const getY = (v: number) => PAD_T + chartH - (v / maxValue) * chartH;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center space-x-2">
+          <TrendingUp className="w-5 h-5 text-[#1A2BA6]" />
+          <h3 className="text-base font-semibold text-gray-900">Évolution des moyennes par niveau scolaire</h3>
+        </div>
+        <div className="flex items-center gap-2 text-[10px]">
+          {hasQuantitative20 && <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">/ 20</span>}
+          {hasQuantitative100 && <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-medium">/ 100</span>}
+          {hasQualitative && <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 font-medium">Qualitatif</span>}
+        </div>
+      </div>
+
+      {/* Légende des séries */}
+      <div className="flex flex-wrap items-center gap-3 mb-3 text-xs">
+        {series.map((s, i) => (
+          <div key={i} className="flex items-center gap-1.5">
+            <div
+              className="w-3 h-3 rounded-full"
+              style={{ backgroundColor: getSeriesColor(s.levelCode, s.track) }}
+            />
+            <span className="text-slate-700 font-medium">{s.levelLabel}</span>
+            {bilingualEnabled && (
+              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                s.track === 'FR' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+              }`}>
+                {s.track === 'FR' ? 'FR' : 'EN'}
+              </span>
+            )}
+            <span className="text-[9px] text-slate-400">
+              {s.scale === 'qualitative' ? '(qual.)' : s.scale}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Graphique SVG multi-séries */}
+      <div className="w-full overflow-x-auto">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: '480px' }} preserveAspectRatio="xMidYMid meet">
+          {/* Grille horizontale + labels Y */}
+          {yLabels.map((label, i) => {
+            const y = PAD_T + chartH - (i / 4) * chartH;
+            return (
+              <g key={i}>
+                <line x1={PAD_L} y1={y} x2={W - PAD_R} y2={y} stroke="#f1f5f9" strokeWidth="1" />
+                <text x={PAD_L - 5} y={y + 3} textAnchor="end" className="text-[9px] fill-gray-400 font-medium">
+                  {label}
+                </text>
+              </g>
+            );
+          })}
+
+          {/* Périodes (labels X) */}
+          {periods.map((period, i) => (
+            <text key={i} x={getX(i)} y={H - 8} textAnchor="middle" className="text-[10px] fill-gray-500 font-medium">
+              {period}
+            </text>
+          ))}
+
+          {/* Une ligne par série */}
+          {series.map((s, idx) => {
+            const color = getSeriesColor(s.levelCode, s.track);
+            const path = s.data.length > 0
+              ? s.data.map((p, i) => {
+                  const x = getX(i);
+                  const y = getY(p.value);
+                  return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+                }).join(' ')
+              : '';
+
+            return (
+              <g key={idx}>
+                {/* Aire dégradée sous la ligne (uniquement pour la 1ère série FR de chaque niveau) */}
+                {idx < 3 && s.data.length >= 2 && (
+                  <path
+                    d={`${path} L ${getX(s.data.length - 1).toFixed(1)} ${(PAD_T + chartH).toFixed(1)} L ${getX(0).toFixed(1)} ${(PAD_T + chartH).toFixed(1)} Z`}
+                    fill={color}
+                    opacity="0.05"
+                  />
+                )}
+                {/* Ligne */}
+                {s.data.length >= 2 && (
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                )}
+                {/* Points */}
+                {s.data.map((p, i) => (
+                  <g key={i}>
+                    <circle cx={getX(i)} cy={getY(p.value)} r="3.5" fill={color} stroke="white" strokeWidth="1.5" />
+                  </g>
+                ))}
+              </g>
+            );
+          })}
+
+          {/* Tooltip hint via <title> sur chaque point */}
+          {series.map((s, idx) =>
+            s.data.map((p, i) => (
+              <circle
+                key={`tip-${idx}-${i}`}
+                cx={getX(i)}
+                cy={getY(p.value)}
+                r="8"
+                fill="transparent"
+              >
+                <title>{`${s.levelLabel} ${s.track} — ${p.period} : ${p.value > 0 ? p.value.toFixed(2) : '—'} ${s.scale === 'qualitative' ? '' : s.scale}`}</title>
+              </circle>
+            ))
+          )}
+        </svg>
+      </div>
+
+      {/* Note explicative */}
+      <div className="mt-3 px-3 py-2 bg-slate-50 rounded text-[10px] text-slate-500">
+        <p>
+          <span className="font-semibold">Lecture :</span> Chaque ligne représente l'évolution de la moyenne générale des élèves d'un niveau scolaire (et d'une piste linguistique si bilingue activé) sur les périodes de l'année.
+          {hasQualitative && ' La maternelle FR utilise une notation qualitative (TS/S/PS) convertie en score pour le graphique.'}
+          {bilingualEnabled && ' Les pistes FR et EN sont séparées car elles utilisent des échelles différentes (/20 vs /100).'}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Composant principal
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -1121,6 +1501,9 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
       {/* ⭐ NOUVELLE SECTION — Vue d'ensemble des effectifs (total / actifs / abandons) */}
       <DashboardOverviewSection academicYearId={academicYearId} schoolLevelId={schoolLevelId} />
 
+      {/* ⭐ NOUVELLE SECTION — Personnalisations de frais de scolarité */}
+      <TuitionPersonalizationsSection academicYearId={academicYearId} />
+
       {/* ── Section Graphiques ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Effectifs par classe (barres) + bouton "Voir tout" */}
@@ -1202,16 +1585,11 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
         </div>
       </div>
 
-      {/* ── Évolution des moyennes + Alertes ORION ── */}
+      {/* ── ⭐ Évolution des moyennes par niveau scolaire + piste + Alertes ORION ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <LineChartCard
-            title="Évolution des moyennes par trimestre"
-            data={averageEvolution}
-            icon={TrendingUp}
-            accentColor="text-[#1A2BA6]"
-            unit="/ 20"
-          />
+          {/* ⭐ NOUVEAU : graphique multi-séries par niveau scolaire + piste linguistique */}
+          <GradeEvolutionByLevelSection academicYearId={academicYearId} />
         </div>
         <div>
           <OrionAlertsCard

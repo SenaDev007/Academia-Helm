@@ -418,16 +418,45 @@ export class FeeStructureService {
   ) {
     const fs = await this.findOne(data.feeStructureId, tenantId);
     await this.ensureAcademicYearNotClosed(fs.academicYearId, tenantId);
-    const override = await this.prisma.feeOverride.create({
-      data: {
+
+    // ⭐ Vérifier s'il existe déjà une personnalisation pour ce student + feeStructure.
+    //    Si oui, on la MET À JOUR (upsert) au lieu d'en créer une nouvelle.
+    //    Avant : on faisait un create() sans vérifier → duplication possible
+    //    si l'utilisateur cliquait 2x ou si le réseau renvoyait une erreur
+    //    transitoire.
+    const existing = await this.prisma.feeOverride.findFirst({
+      where: {
         feeStructureId: data.feeStructureId,
         studentId: data.studentId,
-        customAmount: data.customAmount,
-        reason: data.reason,
-        createdById: data.createdById ?? userId ?? null,
       },
-      include: { student: true, feeStructure: true },
     });
+
+    let override;
+    if (existing) {
+      // ⭐ Mettre à jour l'override existant
+      override = await this.prisma.feeOverride.update({
+        where: { id: existing.id },
+        data: {
+          customAmount: data.customAmount,
+          reason: data.reason,
+          updatedById: data.createdById ?? userId ?? null,
+        },
+        include: { student: true, feeStructure: true },
+      });
+    } else {
+      // Créer un nouvel override
+      override = await this.prisma.feeOverride.create({
+        data: {
+          feeStructureId: data.feeStructureId,
+          studentId: data.studentId,
+          customAmount: data.customAmount,
+          reason: data.reason,
+          createdById: data.createdById ?? userId ?? null,
+        },
+        include: { student: true, feeStructure: true },
+      });
+    }
+
     await this.audit(tenantId, userId, 'FEE_OVERRIDE_CREATE', 'FeeOverride', override.id, undefined, { feeStructureId: data.feeStructureId, studentId: data.studentId, customAmount: data.customAmount, reason: data.reason });
 
     // Recalculer le compte élève pour appliquer la personnalisation

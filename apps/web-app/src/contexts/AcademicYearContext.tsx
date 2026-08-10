@@ -14,7 +14,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { academicYearsKeys } from '@/lib/query/academic-years-keys';
 import { fetchAcademicYearsSnapshot } from '@/lib/query/academic-years-fetch';
@@ -71,6 +71,13 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
     queryFn: () => fetchAcademicYearsSnapshot(effectiveTenantId),
     staleTime: 2 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
+    // ⭐ keepPreviousData : si le fetch échoue (connexion instable), on garde
+    //    les données précédentes au lieu de les remplacer par [].
+    //    Sans ça, une micro-coupure réseau → availableYears=[] → l'effet
+    //    ci-dessous clear le currentYear + localStorage → l'utilisateur
+    //    perd son année scolaire et ne peut plus utiliser l'app.
+    placeholderData: keepPreviousData,
+    retry: 2,
   });
 
   const [currentYear, setCurrentYearState] = useState<AcademicYear | null>(null);
@@ -101,14 +108,12 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!availableYears.length) {
-      if (!isLoading) {
-        setCurrentYearState(null);
-        // Nettoyer aussi le localStorage quand aucune année n'est disponible
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem(STORAGE_KEY_ID);
-          localStorage.removeItem(STORAGE_KEY_OBJ);
-        }
-      }
+      // ⭐ NE PAS clear l'année si on est en train de charger (isLoading/isFetching).
+      //    Une connexion instable peut faire retourner [] au fetch, mais ça
+      //    ne veut pas dire qu'il n'y a pas d'année — juste que le réseau a
+      //    flanché temporairement. On garde le currentYear et le localStorage
+      //    intacts pour que l'utilisateur puisse continuer à travailler.
+      //    L'année sera rechargée quand le réseau sera stable.
       return;
     }
     const activeYear = availableYears.find((y) => y.isCurrent);

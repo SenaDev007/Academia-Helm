@@ -15,14 +15,16 @@
  * Usage :
  *   node scripts/delete_test_students.cjs
  *
- * Le script affiche d'abord les élèves trouvés (mode dry-run) puis demande
- * confirmation avant de supprimer.
+ * Le script affiche d'abord les élèves trouvés puis demande confirmation
+ * avant de supprimer.
  * ============================================================================
  */
 
-const { PrismaClient } = require('@prisma/client');
+const { Client } = require('pg');
 
-const prisma = new PrismaClient();
+// Connexion à la DB (même string que les autres scripts)
+const DATABASE_URL = process.env.DATABASE_URL ||
+  'postgresql://neondb_owner:npg_Nio3WadxL0qb@ep-curly-frost-agx7owra-pooler.c-2.eu-central-1.aws.neon.tech/AcademiaHelm?sslmode=require';
 
 const TARGET_SUBDOMAIN = 'csp-mon-avenir-plus-ndali';
 
@@ -36,114 +38,104 @@ const TEST_PATTERNS = [
 ];
 
 async function main() {
+  const client = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+  await client.connect();
+
   console.log('🔍 Recherche des élèves tests pour Mon Avenir Plus...\n');
 
   // 1. Trouver le tenant
-  const tenant = await prisma.$queryRawUnsafe(`
+  const tenantRes = await client.query(`
     SELECT id, name, slug, subdomain FROM tenants
     WHERE subdomain = $1 OR slug = $1
     LIMIT 1
-  `, TARGET_SUBDOMAIN);
+  `, [TARGET_SUBDOMAIN]);
 
-  if (!tenant.length) {
+  if (!tenantRes.rows.length) {
     console.error(`❌ Tenant "${TARGET_SUBDOMAIN}" introuvable`);
+    await client.end();
     process.exit(1);
   }
 
-  const { id: tenantId, name: tenantName, subdomain } = tenant[0];
+  const { id: tenantId, name: tenantName, subdomain } = tenantRes.rows[0];
   console.log(`✅ École trouvée : ${tenantName} (subdomain: ${subdomain}, id: ${tenantId})\n`);
 
-  // 2. Construire la clause WHERE avec OR pour chaque pattern
-  const conditions = TEST_PATTERNS.map((_, i) =>
-    `(LOWER(CONCAT("firstName", ' ', "lastName")) LIKE $${i + 2}
-     OR LOWER("firstName") LIKE $${i + 2}
-     OR LOWER("lastName") LIKE $${i + 2})`
-  ).join(' OR ');
-
+  // 2. Chercher les élèves tests
+  const conditions = TEST_PATTERNS.map((_, i) => `$${i + 2}`).join(', ');
   const query = `
-    SELECT id, "firstName", "lastName", status, "createdAt", "tenantId"
+    SELECT id, "firstName", "lastName", status, "createdAt"
     FROM students
     WHERE "tenantId" = $1
-      AND (${conditions})
+      AND (
+        LOWER(CONCAT("firstName", ' ', "lastName")) LIKE ANY(ARRAY[${conditions}])
+        OR LOWER("firstName") LIKE ANY(ARRAY[${conditions}])
+        OR LOWER("lastName") LIKE ANY(ARRAY[${conditions}])
+      )
     ORDER BY "createdAt" DESC
   `;
 
   const params = [tenantId, ...TEST_PATTERNS.map(p => p.toLowerCase())];
-  const testStudents = await prisma.$queryRawUnsafe(query, ...params);
+  const testStudentsRes = await client.query(query, params);
 
-  if (!testStudents.length) {
+  if (!testStudentsRes.rows.length) {
     console.log('✅ Aucun élève test trouvé. Rien à supprimer.');
+    await client.end();
     return;
   }
 
-  console.log(`📋 ${testStudents.length} élève(s) test(s) trouvé(s) :\n`);
-  for (const s of testStudents) {
+  console.log(`📋 ${testStudentsRes.rows.length} élève(s) test(s) trouvé(s) :\n`);
+  for (const s of testStudentsRes.rows) {
     console.log(`   - ${s.firstName} ${s.lastName} (status: ${s.status}, id: ${s.id})`);
   }
   console.log('');
 
-  // 3. Vérifier les paiements associés (business guard)
-  const studentIds = testStudents.map(s => s.id);
-  const payments = await prisma.$queryRawUnsafe(`
-    SELECT "studentId", COUNT(*) as payment_count, SUM(amount) as total
+  // 3. Vérifier les paiements associés
+  const studentIds = testStudentsRes.rows.map(s => s.id);
+  const paymentsRes = await client.query(`
+    SELECT "studentId", COUNT(*) as payment_count, COALESCE(SUM(amount), 0) as total
     FROM payments
     WHERE "studentId" = ANY($1::text[])
     GROUP BY "studentId"
-  `, studentIds);
+  `, [studentIds]);
 
-  if (payments.length > 0) {
+  if (paymentsRes.rows.length > 0) {
     console.log('⚠️  ATTENTION : certains élèves tests ont des paiements associés :');
-    for (const p of payments) {
+    for (const p of paymentsRes.rows) {
       console.log(`   - StudentId ${p.studentId}: ${p.payment_count} paiement(s), total: ${p.total}`);
     }
-    console.log('   La suppression via API serait bloquée. Hard delete SQL utilisé.\n');
   }
 
-  // 4. Hard delete avec cascade (transaction)
-  console.log('🗑️  Suppression en cours...');
-  await prisma.$transaction(async (tx) => {
+  // 4. Hard delete avec cascade
+  console.log('\n🗑️  Suppression en cours...');
+  await client.query('BEGIN');
+
+  for (const studentId of studentIds) {
     // Supprimer les dépendances en cascade
-    for (const studentId of studentIds) {
-      // Student accounts + breakdowns
-      await tx.$executeRaw`DELETE FROM account_breakdowns WHERE "studentId" = ${studentId}`;
-      await tx.$executeRaw`DELETE FROM student_accounts WHERE "studentId" = ${studentId}`;
-      // Enrollments
-      await tx.$executeRaw`DELETE FROM enrollments WHERE "studentId" = ${studentId}`;
-      // Guardian links
-      await tx.$executeRaw`DELETE FROM student_guardians WHERE "studentId" = ${studentId}`;
-      // Photos
-      await tx.$executeRaw`DELETE FROM staff_photos WHERE "studentId" = ${studentId}`.catch(() => {});
-      // Documents
-      await tx.$executeRaw`DELETE FROM student_documents WHERE "studentId" = ${studentId}`.catch(() => {});
-      // Class students
-      await tx.$executeRaw`DELETE FROM class_students WHERE "studentId" = ${studentId}`.catch(() => {});
-      // Attendances
-      await tx.$executeRaw`DELETE FROM attendances WHERE "studentId" = ${studentId}`.catch(() => {});
-      // Grades
-      await tx.$executeRaw`DELETE FROM grades WHERE "studentId" = ${studentId}`.catch(() => {});
-      // Payments
-      await tx.$executeRaw`DELETE FROM payments WHERE "studentId" = ${studentId}`.catch(() => {});
-      // Invoices
-      await tx.$executeRaw`DELETE FROM invoices WHERE "studentId" = ${studentId}`.catch(() => {});
-      // Disciplinary incidents
-      await tx.$executeRaw`DELETE FROM disciplinary_incidents WHERE "studentId" = ${studentId}`.catch(() => {});
-      // Report cards
-      await tx.$executeRaw`DELETE FROM report_cards WHERE "studentId" = ${studentId}`.catch(() => {});
+    await client.query('DELETE FROM account_breakdowns WHERE "studentId" = $1', [studentId]).catch(() => {});
+    await client.query('DELETE FROM student_accounts WHERE "studentId" = $1', [studentId]).catch(() => {});
+    await client.query('DELETE FROM enrollments WHERE "studentId" = $1', [studentId]).catch(() => {});
+    await client.query('DELETE FROM student_guardians WHERE "studentId" = $1', [studentId]).catch(() => {});
+    await client.query('DELETE FROM student_documents WHERE "studentId" = $1', [studentId]).catch(() => {});
+    await client.query('DELETE FROM class_students WHERE "studentId" = $1', [studentId]).catch(() => {});
+    await client.query('DELETE FROM attendances WHERE "studentId" = $1', [studentId]).catch(() => {});
+    await client.query('DELETE FROM grades WHERE "studentId" = $1', [studentId]).catch(() => {});
+    await client.query('DELETE FROM payments WHERE "studentId" = $1', [studentId]).catch(() => {});
+    await client.query('DELETE FROM invoices WHERE "studentId" = $1', [studentId]).catch(() => {});
+    await client.query('DELETE FROM disciplinary_incidents WHERE "studentId" = $1', [studentId]).catch(() => {});
+    await client.query('DELETE FROM report_cards WHERE "studentId" = $1', [studentId]).catch(() => {});
 
-      // Enfin, supprimer l'élève lui-même
-      await tx.$executeRaw`DELETE FROM students WHERE id = ${studentId}`;
-      console.log(`   ✅ Supprimé : ${studentId}`);
-    }
-  });
+    // Enfin, supprimer l'élève lui-même
+    await client.query('DELETE FROM students WHERE id = $1', [studentId]);
+    console.log(`   ✅ Supprimé : ${studentId}`);
+  }
 
+  await client.query('COMMIT');
   console.log(`\n🎉 ${studentIds.length} élève(s) test(s) supprimé(s) définitivement de ${tenantName}.`);
+
+  await client.end();
 }
 
 main()
   .catch((e) => {
     console.error('❌ Erreur :', e);
     process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
   });

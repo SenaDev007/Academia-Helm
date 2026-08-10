@@ -104,6 +104,19 @@ class OutboxService {
   }
 
   /**
+   * ⭐ Retourne le nombre d'événements PENDING (tous tenants confondus).
+   *    Utilisé par le SyncButton pour afficher un badge.
+   */
+  async getPendingCount(): Promise<number> {
+    try {
+      const events = await localDb.query<OutboxEventLocal>('outbox_events');
+      return events.filter(e => e.status === 'PENDING').length;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
    * Convertit un événement local en OutboxEvent
    */
   private convertToOutboxEvent(event: OutboxEventLocal): OutboxEvent {

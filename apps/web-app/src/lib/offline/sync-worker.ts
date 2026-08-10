@@ -238,26 +238,42 @@ export async function performSync(): Promise<{
  * - + au retour de connexion (event 'online')
  */
 export function startSyncWorker(): void {
-  if (!isDesktopApp()) return;
   if (syncInterval) return; // déjà démarré
 
   console.log('[sync] Starting sync worker (interval: 60s)');
 
-  // Première sync immédiate (au prochain tick pour éviter de bloquer le démarrage)
-  setTimeout(() => performSync(), 2000);
+  // ⭐ Sur desktop : sync via Tauri SQLite bridge
+  //    Sur web : la sync est gérée par offlineSyncService (offline-sync.service.ts)
+  //    qui tourne déjà avec un intervalle de 30s + 5min.
+  //    On ne démarre le worker Tauri QUE sur desktop.
+  if (isDesktopApp()) {
+    // Première sync immédiate (au prochain tick pour éviter de bloquer le démarrage)
+    setTimeout(() => performSync(), 2000);
 
-  // Sync périodique toutes les 60s
-  syncInterval = setInterval(() => {
-    if (isOnlineNow()) {
+    // Sync périodique toutes les 60s
+    syncInterval = setInterval(() => {
+      if (isOnlineNow()) {
+        performSync();
+      }
+    }, SYNC_INTERVAL_MS);
+
+    // Sync au retour de connexion
+    window.addEventListener('online', () => {
+      console.log('[sync] Connection restored — triggering sync');
       performSync();
-    }
-  }, SYNC_INTERVAL_MS);
-
-  // Sync au retour de connexion
-  window.addEventListener('online', () => {
-    console.log('[sync] Connection restored — triggering sync');
-    performSync();
-  });
+    });
+  } else {
+    // ⭐ Sur web : démarrer le offlineSyncService (IndexedDB + outbox + sync-engine)
+    //    Ce service tourne déjà mais il ne démarrait pas parce que useSyncWorker
+    //    retournait avant. Maintenant que useSyncWorker est activé sur web,
+    //    offlineSyncService.start() est appelé ici.
+    import('./offline-sync.service').then(({ offlineSyncService }) => {
+      offlineSyncService.start();
+      console.log('[sync] Web sync service started (IndexedDB + outbox)');
+    }).catch((err) => {
+      console.warn('[sync] Failed to start web sync service:', err);
+    });
+  }
 }
 
 /**

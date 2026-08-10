@@ -8,19 +8,20 @@
  * À utiliser une seule fois au niveau racine de l'app (dans PilotageLayout
  * ou AppLayout).
  *
+ * ⭐ RÉACTIVÉ sur TOUS les environnements (web + desktop) :
+ *    - Sur desktop (Tauri) : sync SQLite ↔ Neon via le bridge Tauri
+ *    - Sur web : sync IndexedDB ↔ Neon via le sync-engine.service.ts
+ *
  * Démarre le worker au mount, l'arrête au unmount.
- * Le worker ne tourne QUE dans l'app desktop (Tauri) — no-op sur le web.
  * ============================================================================
  */
 
 import { useEffect } from 'react';
 import { startSyncWorker, stopSyncWorker } from '@/lib/offline/sync-worker';
-import { isDesktopApp } from '@/lib/offline/offline-sync';
 
 export function useSyncWorker(): void {
   useEffect(() => {
-    if (!isDesktopApp()) return;
-
+    // ⭐ Démarrer le worker sur TOUS les environnements (web + desktop)
     startSyncWorker();
 
     return () => {

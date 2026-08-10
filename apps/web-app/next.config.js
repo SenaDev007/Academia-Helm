@@ -300,14 +300,10 @@ if (process.env.ANALYZE === 'true') {
   }
 }
 
-if (process.env.NODE_ENV === 'production' && !isVercel) {
-  // @ducanh2912/next-pwa (Workbox 7) : Stratégie offline-first
-  // StaleWhileRevalidate pour les API : réponse immédiate depuis le cache +
-  // mise à jour en arrière-plan. Plus de timeout 10s qui bloque l'UI.
-  // ⚠️ Désactivé sur Vercel : le plugin PWA injecte une config webpack qui
-  // conflite avec Turbopack (Next.js 16 par défaut), et Vercel gère déjà le
-  // cache via ses Edge Functions. Sur Vercel, le build utilise --webpack mais
-  // le PWA Service Worker n'est pas nécessaire.
+// ⭐ PWA RÉACTIVÉ sur TOUS les environnements (Vercel inclus)
+// Le Service Worker met en cache les routes API (NetworkFirst) pour permettre
+// le mode offline-first. Les assets statiques sont en StaleWhileRevalidate.
+if (process.env.NODE_ENV === 'production') {
   try {
     const withPWA = require('@ducanh2912/next-pwa').default({
       dest: 'public',

@@ -1,23 +1,27 @@
 /**
- * Offline Guard Component
+ * Offline Guard Component — RÉACTIVÉ
  *
- * ⚠️ DÉSACTIVÉ TEMPORAIREMENT — Le mode offline bloquait l'application
- * même quand la connexion était juste instable.
+ * Non-bloquant : affiche les children + l'OfflineIndicator (bannière orange).
+ * L'utilisateur peut continuer à utiliser l'app en offline (lecture depuis
+ * le cache IndexedDB, écritures dans l'outbox).
  *
- * Ce composant retourne maintenant simplement les children sans aucune
- * vérification. Il sera réactivé quand le mode offline sera réimplémenté
- * correctement.
+ * Au lieu de bloquer l'accès, on affiche juste la bannière + le badge.
  */
 
 'use client';
 
 import { ReactNode } from 'react';
+import OfflineIndicator from './OfflineIndicator';
 
 interface OfflineGuardProps {
   children: ReactNode;
 }
 
 export default function OfflineGuard({ children }: OfflineGuardProps) {
-  // ⚠️ Mode offline désactivé — toujours laisser passer
-  return <>{children}</>;
+  return (
+    <>
+      <OfflineIndicator />
+      {children}
+    </>
+  );
 }

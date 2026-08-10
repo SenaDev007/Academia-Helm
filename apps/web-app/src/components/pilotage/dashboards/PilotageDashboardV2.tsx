@@ -37,6 +37,7 @@ import {
   ArrowRight, BookOpen, UserCog, MessageSquare, School, DollarSign,
   PieChart, BarChart3, FileText, Calendar, Activity, Award, Banknote,
   UserPlus, TrendingDown, ChevronRight, AlertCircle, CheckCircle2,
+  UserCheck, UserX, Coins, Wallet2,
 } from 'lucide-react';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
@@ -274,34 +275,46 @@ function BarChartCard({ title, data, icon: Icon, accentColor }: {
         </div>
       ) : (
         <div className="space-y-2" style={{ maxHeight: showAll ? '400px' : '192px', overflowY: showAll ? 'auto' : 'visible' }}>
-          {visibleData.map((d, i) => (
-            <div key={i} className="flex items-center space-x-3">
-              <span className="text-xs font-medium text-gray-600 w-20 truncate" title={d.label}>
-                {d.label}
-              </span>
-              <div className="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden relative">
-                <div
-                  className="h-full rounded-full transition-all duration-700"
-                  style={{
-                    width: `${(d.value / maxValue) * 100}%`,
-                    background: d.color || 'linear-gradient(to right, #1A2BA6, #3B4FD4)',
-                  }}
-                />
-                {/* ⭐ Texte adaptatif : blanc si sur la barre colorée, sombre si sur le gris */}
-                {(() => {
-                  const barWidthPercent = (d.value / maxValue) * 100;
-                  const isOnBar = barWidthPercent > 25; // la barre occupe +25% → le texte est sur la barre
-                  return (
+          {visibleData.map((d, i) => {
+            const barWidthPercent = (d.value / maxValue) * 100;
+            const isOnBar = barWidthPercent > 30; // barre occupe +30% → texte sur la barre
+            // ⭐ Si le texte n'est PAS sur la barre, on le place À DROITE de la barre
+            //    (en dehors du container gris) au lieu de sur le gris — blanc sur gris
+            //    était invisible. Maintenant : blanc sur bleu si sur la barre,
+            //    slate-700 à droite de la barre si hors barre.
+            return (
+              <div key={i} className="flex items-center space-x-3">
+                <span className="text-xs font-medium text-gray-600 w-20 truncate" title={d.label}>
+                  {d.label}
+                </span>
+                <div className="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden relative">
+                  <div
+                    className="h-full rounded-full transition-all duration-700"
+                    style={{
+                      width: `${barWidthPercent}%`,
+                      background: d.color || 'linear-gradient(to right, #1A2BA6, #3B4FD4)',
+                    }}
+                  />
+                  {/* ⭐ Texte adaptatif : blanc si sur la barre colorée (>30%),
+                      sinon affiché dans une bulle blanche à droite de la barre */}
+                  {isOnBar ? (
                     <span
-                      className={`absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold ${isOnBar ? 'text-white drop-shadow-sm' : 'text-slate-700'}`}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-white drop-shadow-sm"
                     >
                       {formatNumber(d.value)}
                     </span>
-                  );
-                })()}
+                  ) : null}
+                </div>
+                {/* ⭐ Si la barre est < 30%, on affiche le nombre À DROITE du container
+                    gris (au lieu de blanc sur gris invisible) */}
+                {!isOnBar && (
+                  <span className="text-xs font-bold text-slate-700 w-8 text-right">
+                    {formatNumber(d.value)}
+                  </span>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -417,8 +430,52 @@ function LineChartCard({ title, data, icon: Icon, accentColor, unit }: {
   accentColor: string;
   unit?: string;
 }) {
-  const maxValue = Math.max(...data.map((d) => d.value), 20);
+  // ⭐ Échelle Y : si les valeurs sont des moyennes /20, on va de 0 à 20.
+  //    Sinon, on prend le max + 10% de marge.
+  const isOutOfTwenty = unit === '/ 20' || (data.length > 0 && data.every(d => d.value <= 20));
+  const maxValue = isOutOfTwenty ? 20 : Math.max(...data.map((d) => d.value), 10) * 1.1;
+  const minValue = isOutOfTwenty ? 0 : 0;
   const hasData = data.some((d) => d.value > 0);
+
+  // ⭐ Génère les labels Y — pour /20: 0, 5, 10, 15, 20
+  const yLabels = isOutOfTwenty ? [0, 5, 10, 15, 20] : [
+    Math.round(minValue),
+    Math.round(maxValue * 0.25),
+    Math.round(maxValue * 0.5),
+    Math.round(maxValue * 0.75),
+    Math.round(maxValue),
+  ];
+
+  // Calcul des points (x, y) avec padding
+  const PAD_L = 35, PAD_R = 15, PAD_T = 15, PAD_B = 25;
+  const W = 320, H = 180;
+  const chartW = W - PAD_L - PAD_R;
+  const chartH = H - PAD_T - PAD_B;
+
+  const points = data.map((p, i) => {
+    const x = PAD_L + (data.length > 1 ? (i * chartW) / (data.length - 1) : chartW / 2);
+    const y = PAD_T + chartH - ((p.value - minValue) / (maxValue - minValue)) * chartH;
+    return { x, y, ...p };
+  });
+
+  // ⭐ Trouve min/max réels pour colorer les points (vert si > 15/20, orange si < 10, bleu sinon)
+  const getColor = (value: number) => {
+    if (isOutOfTwenty) {
+      if (value >= 14) return '#10b981'; // emerald-500
+      if (value >= 10) return '#1A2BA6';  // navy
+      return '#f59e0b'; // amber-500
+    }
+    return '#1A2BA6';
+  };
+
+  // Path pour la ligne (smooth bezier optionnel — ici linéaire pour clarté)
+  const linePath = points.length > 0
+    ? points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
+    : '';
+  // Path pour l'aire (line + bottom)
+  const areaPath = points.length > 0
+    ? `${linePath} L ${points[points.length - 1].x.toFixed(1)} ${(PAD_T + chartH).toFixed(1)} L ${points[0].x.toFixed(1)} ${(PAD_T + chartH).toFixed(1)} Z`
+    : '';
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
@@ -441,43 +498,37 @@ function LineChartCard({ title, data, icon: Icon, accentColor, unit }: {
           </div>
         </div>
       ) : (
-        <div className="h-48">
-          <svg viewBox="0 0 320 180" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
-            {/* Grid lines */}
-            {[0, 1, 2, 3, 4].map((i) => (
-              <line key={i} x1="40" y1={10 + i * 40} x2="310" y2={10 + i * 40} stroke="#f1f5f9" strokeWidth="1" />
-            ))}
-            {/* Y-axis labels */}
-            {[4, 3, 2, 1, 0].map((i) => (
-              <text key={i} x="35" y={14 + i * 40} textAnchor="end" className="text-[9px] fill-gray-400">
-                {Math.round((maxValue / 4) * (4 - i))}
-              </text>
-            ))}
-            {/* Area fill */}
+        <div className="h-56">
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" preserveAspectRatio="xMidYMid meet">
             <defs>
               <linearGradient id="lineAreaGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#1A2BA6" stopOpacity="0.18" />
-                <stop offset="100%" stopColor="#1A2BA6" stopOpacity="0.01" />
+                <stop offset="0%" stopColor="#1A2BA6" stopOpacity="0.22" />
+                <stop offset="100%" stopColor="#1A2BA6" stopOpacity="0.02" />
               </linearGradient>
             </defs>
-            {data.length >= 2 && (
-              <path
-                d={data.map((p, i) => {
-                  const x = 55 + i * (250 / Math.max(data.length - 1, 1));
-                  const y = 170 - (p.value / maxValue) * 160;
-                  return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
-                }).join(' ') + ` L ${55 + (data.length - 1) * (250 / Math.max(data.length - 1, 1))} 170 L 55 170 Z`}
-                fill="url(#lineAreaGradient)"
-              />
+
+            {/* Grille horizontale + labels Y */}
+            {yLabels.map((label, i) => {
+              const y = PAD_T + chartH - ((label - minValue) / (maxValue - minValue)) * chartH;
+              return (
+                <g key={i}>
+                  <line x1={PAD_L} y1={y} x2={W - PAD_R} y2={y} stroke="#f1f5f9" strokeWidth="1" />
+                  <text x={PAD_L - 5} y={y + 3} textAnchor="end" className="text-[9px] fill-gray-400 font-medium">
+                    {label}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Aire */}
+            {points.length >= 2 && (
+              <path d={areaPath} fill="url(#lineAreaGradient)" />
             )}
-            {/* Line */}
-            {data.length >= 2 && (
+
+            {/* Ligne */}
+            {points.length >= 2 && (
               <path
-                d={data.map((p, i) => {
-                  const x = 55 + i * (250 / Math.max(data.length - 1, 1));
-                  const y = 170 - (p.value / maxValue) * 160;
-                  return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
-                }).join(' ')}
+                d={linePath}
                 fill="none"
                 stroke="#1A2BA6"
                 strokeWidth="2.5"
@@ -485,17 +536,22 @@ function LineChartCard({ title, data, icon: Icon, accentColor, unit }: {
                 strokeLinejoin="round"
               />
             )}
-            {/* Points */}
-            {data.map((p, i) => {
-              const x = 55 + i * (250 / Math.max(data.length - 1, 1));
-              const y = 170 - (p.value / maxValue) * 160;
+
+            {/* Points + labels */}
+            {points.map((p, i) => {
+              const color = getColor(p.value);
               return (
                 <g key={i}>
-                  <circle cx={x} cy={y} r="4.5" fill="#1A2BA6" stroke="white" strokeWidth="2" />
-                  <text x={x} y={y - 12} textAnchor="middle" className="text-[10px] font-bold fill-gray-700">
-                    {p.value > 0 ? (Number.isInteger(p.value) ? p.value : p.value.toFixed(1)) : '—'}
+                  {/* Halo pour le hover */}
+                  <circle cx={p.x} cy={p.y} r="8" fill={color} opacity="0.15" />
+                  {/* Point principal */}
+                  <circle cx={p.x} cy={p.y} r="4.5" fill={color} stroke="white" strokeWidth="2" />
+                  {/* Valeur au-dessus */}
+                  <text x={p.x} y={p.y - 12} textAnchor="middle" className="text-[10px] font-bold fill-gray-700">
+                    {p.value > 0 ? (Number.isInteger(p.value) ? p.value : p.value.toFixed(2)) : '—'}
                   </text>
-                  <text x={x} y={180} textAnchor="middle" className="text-[10px] fill-gray-500">
+                  {/* Période en bas */}
+                  <text x={p.x} y={H - 8} textAnchor="middle" className="text-[10px] fill-gray-500 font-medium">
                     {p.period}
                   </text>
                 </g>
@@ -574,6 +630,276 @@ interface PilotageDashboardV2Props {
   showQuickAccess?: boolean;
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// ⭐ NOUVEAU — Section Vue d'ensemble des effectifs + abandons + scolarités
+// ──────────────────────────────────────────────────────────────────────────
+
+interface LevelOverview {
+  level: string;
+  levelCode: string;
+  total: number;
+  boys: number;
+  girls: number;
+  abandons: number;
+  abandonBoys: number;
+  abandonGirls: number;
+  active: number;
+  abandonsWithPaidTuition: number;
+  abandonPaidAmount: number;
+  abandonsWithUnpaidTuition: number;
+  abandonUnpaidAmount: number;
+}
+
+interface OverviewResponse {
+  totalStudents: number;
+  activeStudents: number;
+  totalAbandons: number;
+  byLevel: LevelOverview[];
+  _sources?: {
+    studentsStats: string;
+    abandons: string;
+    balances: string;
+  };
+}
+
+function useDashboardOverview(academicYearId?: string, schoolLevelId?: string) {
+  return useQuery<OverviewResponse>({
+    queryKey: ['dashboard', 'overview', academicYearId, schoolLevelId],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (academicYearId) params.set('academicYearId', academicYearId);
+      if (schoolLevelId && schoolLevelId !== 'ALL') params.set('schoolLevelId', schoolLevelId);
+      const url = `/api/dashboard/overview${params.toString() ? `?${params.toString()}` : ''}`;
+      const data = await fetchJson(url);
+      return data || { totalStudents: 0, activeStudents: 0, totalAbandons: 0, byLevel: [] };
+    },
+    enabled: !!academicYearId,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    retry: 1,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: false,
+  });
+}
+
+function DashboardOverviewSection({ academicYearId, schoolLevelId }: { academicYearId?: string; schoolLevelId?: string }) {
+  const { data, isLoading } = useDashboardOverview(academicYearId, schoolLevelId);
+
+  if (isLoading && !data) {
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 animate-pulse">
+            <div className="h-4 w-24 bg-gray-200 rounded mb-3" />
+            <div className="h-8 w-20 bg-gray-200 rounded mb-2" />
+            <div className="h-3 w-32 bg-gray-100 rounded" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (!data || (data.totalStudents === 0 && data.byLevel.length === 0)) {
+    return null;
+  }
+
+  const { totalStudents, activeStudents, totalAbandons, byLevel } = data;
+
+  return (
+    <div className="space-y-4">
+      {/* Bandeau des 3 chiffres clés : Total / Actifs / Abandons */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Total élèves */}
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-xl border border-blue-200 p-5">
+          <div className="flex items-center justify-between mb-2">
+            <div className="p-2 rounded-lg bg-blue-100">
+              <Users className="w-5 h-5 text-blue-700" />
+            </div>
+            <span className="text-[10px] uppercase tracking-wider font-bold text-blue-600">Tous statuts</span>
+          </div>
+          <p className="text-xs text-gray-600 mb-1">Effectif total</p>
+          <p className="text-2xl font-bold text-blue-900">{formatNumber(totalStudents)}</p>
+          <p className="text-[10px] text-blue-600 mt-1">Y compris les abandons de l'année</p>
+        </div>
+
+        {/* Élèves actifs */}
+        <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-xl border border-emerald-200 p-5">
+          <div className="flex items-center justify-between mb-2">
+            <div className="p-2 rounded-lg bg-emerald-100">
+              <UserCheck className="w-5 h-5 text-emerald-700" />
+            </div>
+            <span className="text-[10px] uppercase tracking-wider font-bold text-emerald-600">Actuellement scolarisés</span>
+          </div>
+          <p className="text-xs text-gray-600 mb-1">Élèves actifs</p>
+          <p className="text-2xl font-bold text-emerald-900">{formatNumber(activeStudents)}</p>
+          <p className="text-[10px] text-emerald-600 mt-1">
+            {totalStudents > 0 ? `${Math.round((activeStudents / totalStudents) * 100)}% de l'effectif` : '—'}
+          </p>
+        </div>
+
+        {/* Abandons */}
+        <div className="bg-gradient-to-br from-red-50 to-red-100/50 rounded-xl border border-red-200 p-5">
+          <div className="flex items-center justify-between mb-2">
+            <div className="p-2 rounded-lg bg-red-100">
+              <UserX className="w-5 h-5 text-red-700" />
+            </div>
+            <span className="text-[10px] uppercase tracking-wider font-bold text-red-600">Année en cours</span>
+          </div>
+          <p className="text-xs text-gray-600 mb-1">Abandons</p>
+          <p className="text-2xl font-bold text-red-900">{formatNumber(totalAbandons)}</p>
+          <p className="text-[10px] text-red-600 mt-1">
+            {totalStudents > 0 ? `${Math.round((totalAbandons / totalStudents) * 100)}% de l'effectif total` : '—'}
+          </p>
+        </div>
+      </div>
+
+      {/* Détail par niveau scolaire + scolarités des abandons */}
+      {byLevel.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-5 py-3">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <School className="w-4 h-4 text-gold-400" />
+              Effectifs détaillés par niveau scolaire
+            </h3>
+            <p className="text-[11px] text-blue-200 mt-0.5">
+              Répartition par sexe, abandons et situation des scolarités
+            </p>
+          </div>
+
+          {/* Tableau desktop */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="text-left px-4 py-2 font-semibold text-slate-700">Niveau</th>
+                  <th className="text-right px-4 py-2 font-semibold text-slate-700">Total</th>
+                  <th className="text-right px-4 py-2 font-semibold text-blue-700">Garçons</th>
+                  <th className="text-right px-4 py-2 font-semibold text-pink-700">Filles</th>
+                  <th className="text-right px-4 py-2 font-semibold text-emerald-700">Actifs</th>
+                  <th className="text-right px-4 py-2 font-semibold text-red-700">Abandons</th>
+                  <th className="text-right px-4 py-2 font-semibold text-amber-700">
+                    Scolarités payées<br /><span className="text-[9px] font-normal text-amber-500">(par abandons)</span>
+                  </th>
+                  <th className="text-right px-4 py-2 font-semibold text-orange-700">
+                    Scolarités dues<br /><span className="text-[9px] font-normal text-orange-500">(par abandons)</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {byLevel.map((lvl) => (
+                  <tr key={lvl.levelCode} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 font-bold text-slate-900">{lvl.level}</td>
+                    <td className="px-4 py-3 text-right font-bold text-slate-900">{formatNumber(lvl.total)}</td>
+                    <td className="px-4 py-3 text-right text-blue-700 font-medium">{formatNumber(lvl.boys)}</td>
+                    <td className="px-4 py-3 text-right text-pink-700 font-medium">{formatNumber(lvl.girls)}</td>
+                    <td className="px-4 py-3 text-right text-emerald-700 font-medium">{formatNumber(lvl.active)}</td>
+                    <td className="px-4 py-3 text-right text-red-700 font-medium">{formatNumber(lvl.abandons)}</td>
+                    <td className="px-4 py-3 text-right">
+                      {lvl.abandonsWithPaidTuition > 0 ? (
+                        <div>
+                          <div className="font-medium text-amber-700">{lvl.abandonsWithPaidTuition} élève(s)</div>
+                          <div className="text-[10px] text-amber-500">{formatCurrency(lvl.abandonPaidAmount)}</div>
+                        </div>
+                      ) : (
+                        <span className="text-slate-300 text-xs">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {lvl.abandonsWithUnpaidTuition > 0 ? (
+                        <div>
+                          <div className="font-medium text-orange-700">{lvl.abandonsWithUnpaidTuition} élève(s)</div>
+                          <div className="text-[10px] text-orange-500">{formatCurrency(lvl.abandonUnpaidAmount)}</div>
+                        </div>
+                      ) : (
+                        <span className="text-slate-300 text-xs">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-slate-50 border-t-2 border-slate-200">
+                <tr className="font-bold">
+                  <td className="px-4 py-3 text-slate-900">TOTAL</td>
+                  <td className="px-4 py-3 text-right text-slate-900">{formatNumber(totalStudents)}</td>
+                  <td className="px-4 py-3 text-right text-blue-700">
+                    {formatNumber(byLevel.reduce((s, l) => s + l.boys, 0))}
+                  </td>
+                  <td className="px-4 py-3 text-right text-pink-700">
+                    {formatNumber(byLevel.reduce((s, l) => s + l.girls, 0))}
+                  </td>
+                  <td className="px-4 py-3 text-right text-emerald-700">{formatNumber(activeStudents)}</td>
+                  <td className="px-4 py-3 text-right text-red-700">{formatNumber(totalAbandons)}</td>
+                  <td className="px-4 py-3 text-right text-amber-700">
+                    {formatCurrency(byLevel.reduce((s, l) => s + l.abandonPaidAmount, 0))}
+                  </td>
+                  <td className="px-4 py-3 text-right text-orange-700">
+                    {formatCurrency(byLevel.reduce((s, l) => s + l.abandonUnpaidAmount, 0))}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* Cartes mobile (au lieu du tableau) */}
+          <div className="md:hidden divide-y divide-slate-100">
+            {byLevel.map((lvl) => (
+              <div key={lvl.levelCode} className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-bold text-slate-900">{lvl.level}</h4>
+                  <span className="text-xs font-medium text-slate-500">
+                    {formatNumber(lvl.total)} élèves • {formatNumber(lvl.active)} actifs
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-xs mb-3">
+                  <div className="bg-blue-50 rounded p-2 text-center">
+                    <div className="text-blue-700 font-bold">{formatNumber(lvl.boys)}</div>
+                    <div className="text-[9px] text-blue-500">Garçons</div>
+                  </div>
+                  <div className="bg-pink-50 rounded p-2 text-center">
+                    <div className="text-pink-700 font-bold">{formatNumber(lvl.girls)}</div>
+                    <div className="text-[9px] text-pink-500">Filles</div>
+                  </div>
+                  <div className="bg-red-50 rounded p-2 text-center">
+                    <div className="text-red-700 font-bold">{formatNumber(lvl.abandons)}</div>
+                    <div className="text-[9px] text-red-500">Abandons</div>
+                  </div>
+                </div>
+                {lvl.abandons > 0 && (
+                  <div className="text-xs space-y-1 bg-amber-50 rounded p-2">
+                    {lvl.abandonsWithPaidTuition > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-amber-700">Scolarités payées par abandons :</span>
+                        <span className="font-medium text-amber-700">
+                          {lvl.abandonsWithPaidTuition} él. • {formatCurrency(lvl.abandonPaidAmount)}
+                        </span>
+                      </div>
+                    )}
+                    {lvl.abandonsWithUnpaidTuition > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-orange-700">Scolarités dues par abandons :</span>
+                        <span className="font-medium text-orange-700">
+                          {lvl.abandonsWithUnpaidTuition} él. • {formatCurrency(lvl.abandonUnpaidAmount)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Note explicative */}
+          <div className="px-4 py-2 bg-slate-50 border-t border-slate-100">
+            <p className="text-[10px] text-slate-500">
+              <span className="font-semibold">Note :</span> Les « scolarités payées par abandons » correspondent au montant total déjà réglé par les élèves qui ont ensuite abandonné. Les « scolarités dues » représentent ce que ces élèves auraient encore dû payer.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PilotageDashboardV2({ showQuickAccess = true }: PilotageDashboardV2Props) {
   const { currentYear } = useAcademicYear();
   const { currentLevel } = useSchoolLevel();
@@ -619,8 +945,21 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
   }, [studentsStats, consolidated, showAllClasses]);
 
   // Répartition par sexe par niveau scolaire (tableau structuré)
+  // ⭐ Tri : Maternelle → Primaire → Secondaire (au lieu de l'ordre alphabétique du backend)
+  const LEVEL_ORDER_CODES = ['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE', 'COLLEGE', 'LYCEE'];
   const genderByLevel: Array<{ level: string; boys: number; girls: number; total: number }> = useMemo(() => {
-    return studentsStats?.byGenderByLevel || [];
+    const raw = studentsStats?.byGenderByLevel || [];
+    // Trier par ordre canonique
+    return [...raw].sort((a, b) => {
+      const aCode = (a.levelCode || a.level || '').toUpperCase();
+      const bCode = (b.levelCode || b.level || '').toUpperCase();
+      const aIdx = LEVEL_ORDER_CODES.indexOf(aCode);
+      const bIdx = LEVEL_ORDER_CODES.indexOf(bCode);
+      if (aIdx === -1 && bIdx === -1) return (a.level || '').localeCompare(b.level || '');
+      if (aIdx === -1) return 1;
+      if (bIdx === -1) return -1;
+      return aIdx - bIdx;
+    });
   }, [studentsStats]);
 
   // Répartition par sexe globale (donut — fallback)
@@ -756,12 +1095,12 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
           icon={AlertCircle}
           iconColor="text-red-600"
           iconBg="bg-red-50"
-          subtitle="À recouvrer"
+          subtitle="Scolarités à recouvrer"
           loading={financeKpisQuery.isLoading}
         />
         <MiniKpiCard
           label="Moyenne générale"
-          value={`${averageGrade.toFixed(2)} / 20`}
+          value={averageGrade > 0 ? `${averageGrade.toFixed(2)} / 20` : '— / 20'}
           icon={Award}
           iconColor="text-purple-600"
           iconBg="bg-purple-50"
@@ -769,15 +1108,18 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
           loading={weightedAvgQuery.isLoading}
         />
         <MiniKpiCard
-          label="Recettes cumulées"
+          label="Recettes encaissées"
           value={formatCurrency(totalRevenue)}
           icon={Banknote}
           iconColor="text-amber-600"
           iconBg="bg-amber-50"
-          subtitle="Sur l'année scolaire"
+          subtitle="Total des paiements reçus (année en cours)"
           loading={consolidatedQuery.isLoading}
         />
       </div>
+
+      {/* ⭐ NOUVELLE SECTION — Vue d'ensemble des effectifs (total / actifs / abandons) */}
+      <DashboardOverviewSection academicYearId={academicYearId} schoolLevelId={schoolLevelId} />
 
       {/* ── Section Graphiques ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -817,21 +1159,24 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
                     {/* Barre Garçons */}
                     <div
                       className="h-5 rounded-l flex items-center justify-center text-[9px] font-bold text-white"
-                      style={{ width: `${lvl.total > 0 ? (lvl.boys / lvl.total * 100) : 0}%`, backgroundColor: '#3B82F6', minWidth: lvl.boys > 0 ? '24px' : '0' }}
+                      style={{ width: `${lvl.total > 0 ? (lvl.boys / lvl.total * 100) : 0}%`, backgroundColor: '#3B82F6', minWidth: lvl.boys > 0 ? '28px' : '0' }}
                     >
-                      {lvl.boys > 0 ? `${lvl.boys}G` : ''}
+                      {/* ⭐ Espace entre le nombre et la lettre : "43 G" au lieu de "43G" */}
+                      {lvl.boys > 0 ? `${lvl.boys} G` : ''}
                     </div>
                     {/* Barre Filles */}
                     <div
                       className="h-5 rounded-r flex items-center justify-center text-[9px] font-bold text-white"
-                      style={{ width: `${lvl.total > 0 ? (lvl.girls / lvl.total * 100) : 0}%`, backgroundColor: '#EC4899', minWidth: lvl.girls > 0 ? '24px' : '0' }}
+                      style={{ width: `${lvl.total > 0 ? (lvl.girls / lvl.total * 100) : 0}%`, backgroundColor: '#EC4899', minWidth: lvl.girls > 0 ? '28px' : '0' }}
                     >
-                      {lvl.girls > 0 ? `${lvl.girls}F` : ''}
+                      {/* ⭐ Espace entre le nombre et la lettre : "42 F" au lieu de "42F" */}
+                      {lvl.girls > 0 ? `${lvl.girls} F` : ''}
                     </div>
                   </div>
+                  {/* ⭐ Détail G/F en bas — avec espace aussi */}
                   <div className="flex justify-between mt-0.5 text-[9px] text-slate-400">
-                    <span>G: {lvl.boys}</span>
-                    <span>F: {lvl.girls}</span>
+                    <span>Garçons : {lvl.boys}</span>
+                    <span>Filles : {lvl.girls}</span>
                   </div>
                 </div>
               ))}

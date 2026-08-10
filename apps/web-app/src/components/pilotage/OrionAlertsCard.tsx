@@ -1,60 +1,61 @@
 /**
  * ============================================================================
- * ORION ALERTS CARD
+ * ORION ALERTS CARD — Carte d'alertes ORION stable (React Query)
  * ============================================================================
- * 
- * Carte d'alertes ORION - Discrète, non envahissante
- * 
- * Philosophie : Alerter avant qu'il ne soit trop tard
+ *
+ * ⭐ Avant : utilisait useEffect + setInterval(60s) avec setAlerts([]) dans
+ *    le catch → pendant chaque re-fetch, la carte disparaissait (return null)
+ *    puis réapparaissait → effet "clignotement" toutes les 60s.
+ *
+ * ⭐ Maintenant : React Query avec staleTime 5min + placeholderData
+ *    (keepPreviousData). Les anciennes alertes restent affichées pendant
+ *    le re-fetch, donc pas de clignotement. La carte reste visible même
+ *    si pas d'alertes (état stable "Aucune alerte active" au lieu de null).
+ *
  * ============================================================================
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
-import { AlertTriangle, ChevronRight, Brain } from 'lucide-react';
+import { AlertTriangle, ChevronRight, Brain, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 
 interface OrionAlertsCardProps {
   academicYearId: string;
-  schoolLevelId: string;
+  schoolLevelId?: string;
+}
+
+async function fetchOrionAlerts({ queryKey }: { queryKey: any }): Promise<any[]> {
+  const [, academicYearId, schoolLevelId] = queryKey;
+  if (!academicYearId) return [];
+
+  try {
+    const url = `/api/orion/alerts?academicYearId=${academicYearId}&schoolLevelId=${schoolLevelId || ''}&status=active&limit=3`;
+    const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : (data?.items || []);
+  } catch {
+    return [];
+  }
 }
 
 export default function OrionAlertsCard({ academicYearId, schoolLevelId }: OrionAlertsCardProps) {
-  const [alerts, setAlerts] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const { data: alerts = [], isLoading } = useQuery<any[]>({
+    queryKey: ['orion-alerts', academicYearId, schoolLevelId],
+    queryFn: fetchOrionAlerts,
+    enabled: !!academicYearId,
+    staleTime: 5 * 60 * 1000, // 5 min — ne pas re-fetch trop souvent (évite clignotement)
+    gcTime: 30 * 60 * 1000,
+    retry: 1,
+    placeholderData: keepPreviousData, // ⭐ garder les anciennes données pendant le re-fetch
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+  });
 
-  useEffect(() => {
-    const loadAlerts = async () => {
-      // Ne pas déclencher si pas d'année scolaire
-      if (!academicYearId) return;
-      setIsLoading(true);
-      try {
-        const response = await fetch(
-          `/api/orion/alerts?academicYearId=${academicYearId}&schoolLevelId=${schoolLevelId || ''}&status=active&limit=3`,
-          { cache: 'no-store' }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setAlerts(Array.isArray(data) ? data : (data?.items || []));
-        } else {
-          setAlerts([]);
-        }
-      } catch (error) {
-        console.error('Failed to load ORION alerts:', error);
-        setAlerts([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadAlerts();
-    const interval = setInterval(loadAlerts, 60000); // Toutes les minutes
-    return () => clearInterval(interval);
-  }, [academicYearId, schoolLevelId]);
-
-  // Affichage initial discret (pas de animate-pulse infini)
-  if (isLoading && alerts.length === 0) {
+  // ⭐ Affichage initial (premier chargement, pas encore de données)
+  if (isLoading && (!alerts || alerts.length === 0)) {
     return (
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <div className="flex items-center space-x-2 mb-4">
@@ -62,15 +63,38 @@ export default function OrionAlertsCard({ academicYearId, schoolLevelId }: Orion
           <h3 className="text-lg font-semibold text-navy-900">Analyse ORION</h3>
         </div>
         <div className="text-center py-6">
-          <Brain className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+          <Brain className="w-8 h-8 text-gray-300 mx-auto mb-2 animate-pulse" />
           <p className="text-sm text-gray-400">Chargement des alertes…</p>
         </div>
       </div>
     );
   }
 
-  if (alerts.length === 0) {
-    return null; // Ne rien afficher s'il n'y a pas d'alertes
+  // ⭐ État stable : aucune alerte — on garde la carte visible (ne pas retourner null)
+  //    pour éviter le clignotement de la mise en page.
+  if (!alerts || alerts.length === 0) {
+    return (
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-2">
+            <Brain className="w-5 h-5 text-navy-900" />
+            <h3 className="text-lg font-semibold text-navy-900">Analyse ORION</h3>
+          </div>
+          <Link
+            href="/app#orion-alerts"
+            className="text-sm text-navy-600 hover:text-navy-900 font-medium flex items-center space-x-1"
+          >
+            <span>Voir l'analyse</span>
+            <ChevronRight className="w-4 h-4" />
+          </Link>
+        </div>
+        <div className="text-center py-8">
+          <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2" />
+          <p className="text-sm font-medium text-gray-600">Aucune alerte active</p>
+          <p className="text-xs text-gray-400 mt-1">Tout est sous contrôle</p>
+        </div>
+      </div>
+    );
   }
 
   const getSeverityColor = (severity: string) => {
@@ -121,4 +145,3 @@ export default function OrionAlertsCard({ academicYearId, schoolLevelId }: Orion
     </div>
   );
 }
-

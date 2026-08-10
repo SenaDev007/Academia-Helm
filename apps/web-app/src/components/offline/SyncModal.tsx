@@ -53,6 +53,12 @@ export function SyncModal() {
   }, [state.operations]);
 
   const progress = state.total > 0 ? Math.round((state.current / state.total) * 100) : 0;
+  // ⭐ "Indeterminate" = on est en train de sync mais on ne connaît pas encore le total
+  //    (par exemple pendant la résolution de la liste des tables, ou si l'endpoint
+  //    /api/sync/tables n'est pas disponible). Dans ce cas, on affiche une barre animée
+  //    (stripes qui défilent) pour que l'utilisateur voie que ça travaille.
+  const isIndeterminate =
+    (state.phase === 'push' || state.phase === 'pull') && state.total === 0;
 
   return (
     <AnimatePresence>
@@ -94,7 +100,7 @@ export function SyncModal() {
                       ? 'Erreur de synchronisation'
                       : 'Synchronisation en cours'}
                 </h3>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 truncate" title={state.message}>
                   {state.message || (state.phase === 'push'
                     ? 'Envoi des modifications locales...'
                     : state.phase === 'pull'
@@ -108,15 +114,44 @@ export function SyncModal() {
               )}
             </div>
 
-            {/* Barre de progression */}
+            {/* Barre de progression — déterminée OU indéterminée */}
             {state.phase !== 'done' && state.phase !== 'error' && (
-              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-4">
-                <motion.div
-                  className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${progress}%` }}
-                  transition={{ duration: 0.3 }}
-                />
+              isIndeterminate ? (
+                // ⭐ Barre indéterminée (style "indeterminate" Material/Stripe)
+                //    Quand on ne connaît pas encore le total, on anime des stripes
+                //    pour montrer que l'opération travaille.
+                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-4 relative">
+                  <div
+                    className="absolute inset-y-0 left-0 w-1/3 rounded-full bg-gradient-to-r from-blue-500 to-blue-600"
+                    style={{
+                      animation: 'sync-indeterminate 1.4s ease-in-out infinite',
+                    }}
+                  />
+                  <style>{`
+                    @keyframes sync-indeterminate {
+                      0%   { transform: translateX(-100%); }
+                      50%  { transform: translateX(150%); }
+                      100% { transform: translateX(300%); }
+                    }
+                  `}</style>
+                </div>
+              ) : (
+                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-4">
+                  <motion.div
+                    className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${progress}%` }}
+                    transition={{ duration: 0.3 }}
+                  />
+                </div>
+              )
+            )}
+
+            {/* Compteur current/total (visible dès qu'on a un total) */}
+            {state.phase !== 'done' && state.phase !== 'error' && state.total > 0 && (
+              <div className="text-[10px] text-slate-500 text-center mb-2 tabular-nums">
+                {state.current} / {state.total}
+                {state.pulled > 0 && <> · {state.pulled} enregistrement(s)</>}
               </div>
             )}
 

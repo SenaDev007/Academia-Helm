@@ -48,14 +48,29 @@ class OfflineSyncService {
     setSyncModalState({
       isVisible: true,
       phase: 'pull',
-      message: 'Téléchargement initial des données de l\'école...',
+      message: 'Téléchargement initial des données de l\'école…',
       pushed: 0,
       pulled: 0,
+      total: 0,
+      current: 0,
+      operations: [],
     });
 
     try {
       const deviceId = this.getDeviceId();
-      const result = await runSync(tenantId, deviceId);
+      // ⭐ onProgress : met à jour la barre de progression en temps réel
+      //    pendant que le pull télécharge chaque table.
+      const result = await runSync(tenantId, deviceId, (current, total, currentTable, pulledSoFar) => {
+        setSyncModalState({
+          current,
+          total,
+          pulled: pulledSoFar,
+          message:
+            total > 0
+              ? `Téléchargement : ${current} / ${total} — ${currentTable} (${pulledSoFar} enregistrements)`
+              : `Téléchargement : ${currentTable}…`,
+        });
+      });
 
       // Marquer comme bootstrap terminé (même si partiel)
       this.hasBootstrapped = true;
@@ -70,6 +85,8 @@ class OfflineSyncService {
           message: `${totalPulled} enregistrement(s) récupéré(s)`,
           pushed: result.pushed,
           pulled: totalPulled,
+          total: totalPulled,
+          current: totalPulled,
         });
         setTimeout(() => setSyncModalState({ isVisible: false }), 3000);
       } else {
@@ -141,7 +158,17 @@ class OfflineSyncService {
         });
       }
 
-      const result = await runSync(tenantId, deviceId);
+      const result = await runSync(tenantId, deviceId, (current, total, currentTable, pulledSoFar) => {
+        setSyncModalState({
+          current,
+          total,
+          pulled: pulledSoFar,
+          message:
+            total > 0
+              ? `Synchronisation : ${current} / ${total} — ${currentTable}`
+              : `Synchronisation : ${currentTable}...`,
+        });
+      });
       const total = result.pushed + result.conflicts + result.errors;
       if (typeof window !== 'undefined') {
         window.dispatchEvent(

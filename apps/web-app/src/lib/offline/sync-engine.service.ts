@@ -506,9 +506,27 @@ function toBackendOperation(event: OutboxEvent, deviceId?: string) {
 }
 
 /**
+ * Callback de progression appelé pendant le pull.
+ *   - `current` : nombre de tables traitées jusque-là
+ *   - `total` : nombre total de tables à traiter (0 si inconnu)
+ *   - `currentTable` : nom de la table en cours de traitement
+ *   - `pulledSoFar` : nombre total d'enregistrements récupérés
+ */
+export type SyncProgressCallback = (
+  current: number,
+  total: number,
+  currentTable: string,
+  pulledSoFar: number,
+) => void;
+
+/**
  * Lance la synchronisation (push puis pull) pour un tenant
  */
-export async function runSync(tenantId: string, deviceId?: string): Promise<{
+export async function runSync(
+  tenantId: string,
+  deviceId?: string,
+  onProgress?: SyncProgressCallback,
+): Promise<{
   success: boolean;
   pushed: number;
   conflicts: number;
@@ -604,12 +622,32 @@ export async function runSync(tenantId: string, deviceId?: string): Promise<{
   const lastSync = await getLastSyncTimestamp(tenantId);
   const lastSyncAt = lastSync || '1970-01-01T00:00:00.000Z';
   
+  // ⭐ Si on a un callback onProgress, on pré-récupère la liste des tables pour pouvoir
+  //    afficher une barre de progression réelle (current/total) pendant le pull.
+  //    Sinon, on laisse le serveur choisir toutes les tables (comportement historique).
+  let tablesToPull: string[] | undefined = undefined;
+  let totalTables = 0;
+  if (onProgress) {
+    try {
+      const tablesRes = await fetchWithAuth(`${SYNC_API}/tables`, { method: 'GET' });
+      if (tablesRes.ok) {
+        const tablesData = await tablesRes.json();
+        tablesToPull = Array.isArray(tablesData) ? tablesData : (tablesData.tables || tablesData.data || []);
+        totalTables = tablesToPull.length;
+      }
+    } catch {
+      // Non-critique : on retombe sur le comportement sans progress granulaire
+    }
+    onProgress(0, totalTables, 'démarrage', 0);
+  }
+
   const pullRes = await fetchWithAuth(`${SYNC_API}/pull`, {
     method: 'POST',
     body: JSON.stringify({
       tenant_id: tenantId,
       last_sync_at: lastSyncAt,
       device_id: deviceId,
+      ...(tablesToPull ? { tables: tablesToPull } : {}),
     }),
   });
   const pullData = await pullRes.json().catch(() => ({}));
@@ -617,6 +655,7 @@ export async function runSync(tenantId: string, deviceId?: string): Promise<{
   if (pullRes.ok && pullData.entities) {
     // Parcourir toutes les entités retournées et les persister en base locale
     const entityTypes = Object.keys(pullData.entities);
+    let pulledSoFar = 0;
     for (const type of entityTypes) {
       const items = pullData.entities[type] || [];
       if (items.length > 0) {
@@ -625,9 +664,21 @@ export async function runSync(tenantId: string, deviceId?: string): Promise<{
         try {
           await localDb.executeBulk(storeName, 'put', items);
           result.pulled[type] = items.length;
+          pulledSoFar += items.length;
         } catch (e) {
           console.error(`[Sync] Failed to persist ${type}:`, e);
         }
+      }
+      // ⭐ Mise à jour de la progression après chaque table persistée
+      if (onProgress) {
+        try {
+          onProgress(
+            Object.keys(result.pulled).length,
+            totalTables || entityTypes.length,
+            type,
+            pulledSoFar,
+          );
+        } catch {}
       }
     }
     

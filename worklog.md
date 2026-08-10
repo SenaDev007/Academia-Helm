@@ -1596,3 +1596,68 @@ Stage Summary:
 - Frontend type-check : 0 erreurs
 - Backend : aucune nouvelle erreur (3 erreurs de décalage de ligne préexistantes)
 - Files modified: 5 + 1 new file (DirectorsWorkspace.tsx)
+
+---
+Task ID: 2026-08-10-sync-speed-progressbar
+Agent: main
+Task: Synchronisation lente + barre de chargement non fonctionnelle pendant le bootstrap initial ("Téléchargement initial des données de l'école...").
+
+Work Log:
+
+=== Diagnostic ===
+
+- Problème 1 (lenteur) — Dans `apps/api-server/src/sync/sync.service.ts`, la méthode `pull()` appelait `columnExists(tableName, 'updated_at')` + `columnExists(tableName, 'tenant_id')` pour CHAQUE table. Avec ~150 tables, cela faisait ~300 requêtes séquentielles vers `information_schema.columns` (lent sur Neon/Postgres) AVANT même de récupérer les données. De plus, la boucle était séquentielle (pas de parallélisme).
+
+- Problème 2 (barre non fonctionnelle) — Dans `apps/web-app/src/lib/offline/offline-sync.service.ts`, la méthode `bootstrap()` appelait `setSyncModalState({ phase: 'pull', message: '...', pushed: 0, pulled: 0 })` SANS mettre `total` ni `current`. Comme `total = 0` → `progress = 0%` permanent → barre vide, pourcentage caché.
+
+=== Correctifs backend (apps/api-server/src/sync/sync.service.ts) ===
+
+- ⭐ NOUVELLE méthode `buildColumnMap(tables)` : UNE seule requête SQL `SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name IN (...)` pour pré-charger toutes les colonnes de toutes les tables en mémoire (Map<tableName, Set<columnName>>). Élimine les ~300 requêtes columnExists() individuelles.
+- ⭐ NOUVELLE méthode `pullTableFast(tableName, ..., columnMap)` : utilise la columnMap pré-chargée (au lieu de rappeler columnExists() à chaque fois).
+- ⭐ Parallélisation : on traite les tables par paquets de 5 avec `Promise.all` (évite de saturer le pool de connexions Prisma/Neon qui est généralement limité à 10-20).
+- ⭐ `getAllTableNames()` renommée en `getTableNames()` (public) — exposée via le nouveau endpoint `GET /api/sync/tables` pour permettre au frontend de connaître le total à l'avance.
+- L'ancienne méthode `columnExists()` et `pullTable()` sont conservées pour compat/réutilisation future mais ne sont plus appelées dans le flux principal.
+- Gain estimé : -60% à -80% du temps de pull sur un tenant avec beaucoup de tables.
+
+=== Correctifs backend (apps/api-server/src/sync/sync.controller.ts) ===
+
+- ⭐ Nouveau endpoint `GET /api/sync/tables` qui retourne `{ tables, count }` — utilisé par le frontend pour afficher une barre de progression réelle (current/total) pendant le bootstrap.
+- Mis à jour `GET /api/sync/status` pour documenter le nouvel endpoint.
+
+=== Correctifs frontend (apps/web-app/src/lib/offline/sync-engine.service.ts) ===
+
+- ⭐ Ajout du paramètre `onProgress?: SyncProgressCallback` à `runSync()`.
+- Le callback est appelé après chaque table persistée avec `(current, total, currentTable, pulledSoFar)`.
+- Si `onProgress` est fourni, on pré-récupère la liste des tables via `GET /api/sync/tables` pour connaître le total à l'avance. En cas d'échec (non-critique), on retombe sur le comportement historique sans progress granulaire.
+- Type `SyncProgressCallback` exporté pour réutilisation.
+
+=== Correctifs frontend (apps/web-app/src/lib/offline/offline-sync.service.ts) ===
+
+- `bootstrap(tenantId)` passe maintenant un callback `onProgress` à `runSync()` qui met à jour `setSyncModalState({ current, total, pulled, message })` en temps réel pendant le pull.
+- Initialisation explicite de `total: 0, current: 0, operations: []` à l'ouverture du modal pour éviter tout état stale.
+- Message dynamique pendant le pull : "Téléchargement : 12 / 145 — students (1234 enregistrements)".
+- À la fin, `total` et `current` sont mis au nombre total d'entités récupérées (cohérent avec `phase: 'done'`).
+
+=== Correctifs frontend (apps/web-app/src/components/offline/SyncModal.tsx) ===
+
+- ⭐ Nouvel état "indeterminate" : si `phase` est 'push'/'pull' MAIS `total === 0` (total inconnu — par ex. pendant la résolution de la liste des tables), on affiche une barre animée (bande bleue qui se déplace de gauche à droite en boucle, keyframe CSS `sync-indeterminate`). Effet visuel "indeterminate" style Material Design — l'utilisateur voit que ça travaille même sans chiffre.
+- Dès que `total > 0`, on bascule en barre déterminée (0-100%) avec le pourcentage à côté.
+- Ajout d'un compteur `current / total` + nombre d'enregistrements récupérés sous la barre.
+- Le message est maintenant tronqué avec `title=` pour voir le texte complet au survol (la table courante peut être longue).
+
+=== Correctifs frontend (apps/web-app/src/components/header/SyncButton.tsx) ===
+
+- Le bouton "Synchroniser" manuel passe aussi un callback `onProgress` à `runSync()` pour mettre à jour le modal pendant le pull (cohérent avec le bootstrap).
+
+=== Correctifs frontend (apps/web-app/src/lib/offline/offline-sync.service.ts) performSync() ===
+
+- L'auto-sync (toutes les 5 min + au retour de connexion) passe aussi le callback `onProgress` pour la même raison.
+
+Stage Summary:
+
+- **Lenteur corrigée** : pré-chargement unique des métadonnées de colonnes + parallélisation par chunks de 5 → élimine ~300 requêtes information_schema séquentielles + accélère le téléchargement des tables.
+- **Barre de progression fonctionnelle** : bootstrap initial affiche maintenant un compteur `current/total` + nom de la table en cours + nombre d'enregistrements récupérés, en temps réel. Barre animée "indeterminate" quand le total est encore inconnu (effet visuel immédiat).
+- **Nouveau endpoint** : `GET /api/sync/tables` expose la liste des tables synchronisables pour que le frontend puisse calculer le total à l'avance.
+- Frontend type-check : 0 erreurs dans les fichiers modifiés.
+- Backend : même pattern que le code existant (pré-existant `$queryRawUnsafe` déjà utilisé à plusieurs endroits) — aucune nouvelle catégorie d'erreur.
+- Files modified: 5 (sync.service.ts, sync.controller.ts, sync-engine.service.ts, offline-sync.service.ts, SyncModal.tsx, SyncButton.tsx)

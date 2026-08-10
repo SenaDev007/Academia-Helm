@@ -131,7 +131,17 @@ export function SyncButton() {
       // ⭐ Phase PULL
       setSyncModalState({ isVisible: true, phase: 'pull', message: 'Récupération des données du serveur...' });
 
-      const result = await syncEngine.runSync(tenantId);
+      const result = await syncEngine.runSync(tenantId, undefined, (current, total, currentTable, pulledSoFar) => {
+        setSyncModalState({
+          current,
+          total,
+          pulled: pulledSoFar,
+          message:
+            total > 0
+              ? `Synchronisation : ${current} / ${total} — ${currentTable}`
+              : `Synchronisation : ${currentTable}...`,
+        });
+      });
 
       // ⭐ Marquer les opérations push comme terminées
       setSyncModalState(prev => ({

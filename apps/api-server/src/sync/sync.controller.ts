@@ -75,8 +75,21 @@ export class SyncController {
         push: 'POST /api/sync/push',
         status: 'GET /api/sync/status',
         schemaHash: 'GET /api/sync/schema-hash',
+        tables: 'GET /api/sync/tables',
       },
     };
+  }
+
+  /**
+   * GET /api/sync/tables
+   * Retourne la liste des tables synchronisables (exclut les tables système).
+   * ⭐ Utilisé par le frontend pour afficher une barre de progression réelle
+   *    pendant le bootstrap initial (current/total).
+   */
+  @Get('tables')
+  async tables() {
+    const tables = await this.syncService.getTableNames();
+    return { tables, count: tables.length };
   }
 
   /**

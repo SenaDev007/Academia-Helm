@@ -2108,3 +2108,72 @@ Stage Summary:
 - KPI RH : nouvelle carte avec personnel admin + enseignants par niveau scolaire.
 - Frontend type-check : 0 erreurs.
 - Files modified: 5 + 1 new (sync-pull-push.dto.ts, sw-offline.js, PilotageDashboardV2.tsx, local-db.service.ts, hr-overview/route.ts) + 1 deleted (check-idb.js)
+
+---
+Task ID: 2026-08-10-teacher-portal-button-director-spec
+Agent: main
+Task: 1) Supprimer le bouton 'Portail école' dans la sidebar des enseignants. 2) Définir proprement l'UI des directeurs (filtrage par niveau scolaire + piste linguistique) et répertorier les interfaces accessibles.
+
+Work Log:
+
+=== 1. Suppression bouton 'Portail École' ===
+- Fichier : apps/web-app/src/app/app/teacher/layout.tsx (lignes 179-186)
+- Le bouton <Link href="/app">Portail École</Link> pointait vers le portail promoteur
+  auquel les enseignants n'ont pas accès → confusion.
+- Suppression du lien. Maintenant seul le bouton 'Se déconnecter' reste dans le footer.
+- Import Settings supprimé (plus utilisé).
+
+=== 2. Spec UI Directeur (docs/director-ui-spec.md) ===
+
+Audit complet de TOUS les modules via sub-agent Explore. Résumé :
+
+A. Rôles directeur existants :
+   - DIRECTEUR_MATERNELLE : Maternelle seulement
+   - DIRECTEUR_PRIMAIRE : Primaire seulement
+   - DIRECTEUR_SECONDAIRE : Secondaire seulement
+   - DIRECTEUR_MAT_PRI : Maternelle + Primaire
+   - DIRECTEUR_GENERAL : tous niveaux + toutes pistes
+   - DIRECTEUR_ETABLISSEMENT : tous niveaux
+
+B. Stockage des accreditations :
+   - user.accreditations (codes 'MATERNELLE'/'PRIMAIRE'/'SECONDAIRE')
+   - user.levelScopes (UUIDs)
+   - staff_admin_assignments (backend authoritative)
+   - school_directors (profil directeur, pas l'autorisation)
+
+C. Matrice d'accès par module (détail dans docs/director-ui-spec.md) :
+   - Tableau de pilotage : VISIBLE filtré (sauf personnalisations de frais)
+   - Organisation Pédagogique : VISIBLE filtré (tous sous-onglets)
+   - Élèves & Scolarité : VISIBLE filtré (sauf Agrégation & Bilan Global)
+   - Finances : VISIBLE filtré (sauf Agrégation, Audit, Settings → masqués)
+   - Examens : VISIBLE filtré (sauf Audit, Settings → masqués)
+   - RH : VISIBLE filtré (sauf Directors, Allowances, Payroll, CNSS, Settings → masqués)
+   - Communication : VISIBLE filtré (sauf Channels, Automation, Settings → masqués)
+   - Paramètres : MASQUÉ entièrement
+   - Boutique/Shop : MASQUÉ (implications financières)
+   - CMS, modules plateforme : MASQUÉS
+
+D. Mécanismes de filtrage recommandés :
+   1. Lock SchoolLevelSelector par user.accreditations (frontend)
+   2. Lock AcademicTrackSelector par langue directeur (frontend)
+   3. Compléter roles[] dans PilotageSidebar pour DIRECTEUR_* manquants
+   4. Filtrage backend (sécurité) sur tous les endpoints schoolLevelId
+   5. Sub-tab gating dans Finance/HR/Communication
+
+E. Plan de migration en 6 phases :
+   Phase 1 : lock SchoolLevelSelector
+   Phase 2 : lock AcademicTrackSelector
+   Phase 3 : compléter roles[] dans sidebar
+   Phase 4 : sub-tab gating
+   Phase 5 : filtrage backend
+   Phase 6 : unifier source de vérité accreditations
+
+Stage Summary:
+
+- Bouton 'Portail École' supprimé de la sidebar enseignant.
+- Spec UI directeur complète créée dans docs/director-ui-spec.md.
+- Couvre 9 modules + modules supplémentaires avec matrice d'accès détaillée.
+- Inclut les 4 cas d'usage (maternel+primaire, secondaire, bilingue FR/EN, général).
+- Recommandations techniques + plan de migration en 6 phases.
+- Frontend type-check : 0 erreurs.
+- Files modified: 1 (teacher/layout.tsx) + 1 new (director-ui-spec.md)

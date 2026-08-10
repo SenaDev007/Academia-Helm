@@ -2318,3 +2318,53 @@ Stage Summary:
 - Bouton manuel header : déjà existant (SyncButton), reset isMinimized au clic
 - Frontend type-check : 0 erreurs
 - Files modified: 5 (sw-offline.js, sync-modal-state.ts, SyncModal.tsx, offline-sync.service.ts, SyncButton.tsx)
+
+---
+Task ID: 2026-08-10-sync-32-percent-fail
+Agent: main
+Task: Sync échec à 32% — diagnostic via agent-browser (connexion fraîche avec identifiants promoteur).
+
+Work Log:
+
+=== Diagnostic via agent-browser ===
+1. Connexion fraîche sur academiahelm.com (cookies + storage cleared)
+2. Login avec salumerhel2036@gmail.com → OK
+3. Bootstrap sync déclenché automatiquement
+4. Capture console : nombreuses warnings "Store X not in IndexedDB — skipping N items"
+   pour : schooldirector, schoolsetting, securitysetting, position, rolepermission,
+   scheduledemail, taxsetting, tenantfeature, schoolacademicsetting, etc.
+5. Inspection IndexedDB : 604 stores créés, mais :
+   - schoolsettings EXISTS ✅ (mais normalize donnait schoolsetting ❌)
+   - securitysettings EXISTS ✅ (mais normalize donnait securitysetting ❌)
+   - schooldirectors MISSING ❌
+   - positions MISSING ❌
+   - rolepermissions EXISTS ✅ (mais normalize donnait rolepermission ❌)
+
+=== CAUSE RACINE ===
+Le normalizeToIdbStoreName() retirait le 's' final (singularisait) :
+- school_settings → schoolsetting (SINGULIER)
+- mais le store IDB réel est schoolsettings (PLURIEL — Prisma garde le pluriel)
+→ mismatch → executeBulk jette → retry 3x → erreur explicite → sync stop à 32%
+
+=== FIX 1 — normalizeToIdbStoreName() ===
+NE PLUS SINGULARISER. Garder le pluriel :
+- school_settings → schoolsettings ✅
+- students → students ✅
+- security_settings → securitysettings ✅
+- role_permissions → rolepermissions ✅
+
+=== FIX 2 — local-db.service.ts ===
+Ajout de 11 stores manquants :
+- schooldirectors, positions
+- pedagogyacademiclevels, pedagogyacademicseries,
+  pedagogyteacheracademicprofiles, pedagogyteacheravailabilities
+- rolepermissions, scheduledemails, taxsettings, tenantfeatures,
+  schoolacademicsettings
+Bump DB version 12 → 13 pour déclencher onupgradeneeded.
+
+Stage Summary:
+
+- Sync ne devrait plus échouer à 32% — toutes les tables backend ont maintenant un store IDB correspondant.
+- 11 stores ajoutés + convention de nommage corrigée (garder le pluriel).
+- Frontend type-check : 0 erreurs.
+- Files modified: 2 + 1 new diagnostic script (sync-engine.service.ts, local-db.service.ts, diagnose-sync-stores.js)

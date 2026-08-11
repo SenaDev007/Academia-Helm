@@ -2657,3 +2657,53 @@ Stage Summary:
   * apps/web-app/src/app/api/students/bulk-reenroll/route.ts (new)
   * apps/web-app/src/components/pilotage/modules/StudentsModulePage.tsx (UI)
 
+
+---
+Task ID: 2026-08-11-build-fix-finance-import + payment-auto-refresh
+Agent: main
+Task: 1) Fix build Vercel (FinanceDashboardV2 import broken). 2) Fix auto-refresh soldes après nouveau paiement. 3) Commit + push.
+
+Work Log:
+
+=== 1. BUILD VERCEL — FinanceDashboardV2.tsx ===
+Erreur Turbopack : "Export getAllFeeOverrides / getKpiReports /
+getStudentAccounts doesn't exist in target module".
+
+Cause racine : `import * as financeService from '@/services/finance.service'`
+Or, finance.service.ts n'exporte que `export const financeService = new FinanceService()`
+— pas de named exports pour les méthodes. L'import namespace créait un objet
+`{ financeService: FinanceService }` et `financeService.getKpiReports(...)`
+était en réalité `undefined.getKpiReports(...)`.
+
+Fix : `import { financeService } from '@/services/finance.service'`
+(pattern identique à tous les autres callers du module finance).
+
+=== 2. AUTO-REFRESH SOLDES — TransactionsContent.tsx ===
+Bug UX : après un paiement réussi dans NewPaymentModal, le sélecteur d'élèves
+gardait les anciens soldes. L'utilisateur devait fermer le modal, fermer
+l'onglet, revenir, et rouvrir le modal pour voir les soldes actualisés.
+
+Cause racine : handleSuccess() ne rechargeait que loadTransactions() —
+PAS les StudentAccounts. Or le modal reçoit `accounts` en prop, donc tant
+que le parent ne re-fetch pas, le sélecteur reste stale.
+
+Fix : extraction de reloadAccounts() (qui appelle financeService.
+getStudentAccounts avec exportAll=true) + ajout de l'appel dans
+handleSuccess(). Maintenant, après un paiement :
+1. loadTransactions() → rafraîchit la liste des transactions
+2. reloadAccounts() → rafraîchit les soldes du sélecteur d'élèves
+Le modal reste ouvert (reçu affiché), l'utilisateur peut enchaîner un
+second paiement avec les soldes à jour.
+
+=== 3. COMMIT + PUSH ===
+- Commit cf21ca21 : "fix: build vercel + auto-refresh soldes après paiement"
+- Push réussi vers origin/main (d66fe00d..cf21ca21)
+- Inclut aussi le commit précédent (bulk actions module Élèves)
+
+Stage Summary:
+- Build Vercel : réparé (import correct du financeService)
+- UX paiement : soldes auto-refresh dans le modal sans devoir le rouvrir
+- Frontend type-check : 0 erreurs (sauf pré-existant cms/useAutoSave.ts)
+- Push effectué — Vercel va re-déployer automatiquement
+- Files modified: 2 (FinanceDashboardV2.tsx, TransactionsContent.tsx)
+

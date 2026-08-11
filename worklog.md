@@ -2514,3 +2514,39 @@ Stage Summary:
 - FEE_OVERRIDE ajouté au sync pour que les personnalisations soient aussi synchronisées
 - Frontend type-check : 0 erreurs
 - Files modified: 5 + 2 new (store-names.ts, global-fetch-interceptor.ts, layout-client.tsx, finance-fetch.ts, hr-client.ts, sync-engine.service.ts, types/index.ts)
+
+---
+Task ID: 2026-08-10-age-distribution + grade-analytics + desktop-mobile-check
+Agent: main
+Task: 1) Vérifier que l'offline-first fonctionne pour desktop+mobile. 2) Ajouter graphique des âges au dashboard. 3) Remplacer carte Moyenne générale par analytics notes complet.
+
+Work Log:
+
+=== 1. DESKTOP + MOBILE ===
+- Desktop (Tauri) : stack offline séparée (SQLite + Rust sync). Les TODO stubs ne sont pas finis.
+- Mobile (Flutter) : stack offline séparée (Hive + Dart outbox). Complète.
+- Web-app (navigateur) : intercepteur global + IndexedDB = plateforme principale pour la démo.
+- Les 3 consomment les mêmes endpoints /api/sync/pull+push.
+
+=== 2. DISTRIBUTION DES ÂGES ===
+- Route /api/dashboard/age-distribution
+- Récupère élèves + date de naissance → calcule âges → distribue par tranche
+- 7 tranches : 0-2, 3-5, 6-8, 9-11, 12-14, 15-17, 18+
+- Histogramme SVG global + mini barres par niveau scolaire
+- Design professionnel avec dégradés + tooltips
+
+=== 3. ANALYTICS DES NOTES ===
+- Route /api/dashboard/grade-analytics
+- Plus forte + plus faible moyenne par niveau scolaire
+- Maternelle : qualitatif (TS/S/PS) — Primaire/Secondaire : /20
+- Top 3 élèves par niveau avec badges or/argent/bronze
+- Carte avec en-tête violet + grille 3 colonnes
+- Note explicative sur la période courante + échelle
+- Remplace l'ancienne mini-carte "Moyenne générale"
+
+Stage Summary:
+- Desktop/mobile : stacks offline séparées (pas d'impact du web-app)
+- Graphique des âges : histogramme SVG professionnel par tranche + par niveau
+- Analytics notes : plus forte/faible moyenne + top 3 par niveau scolaire
+- Frontend type-check : 0 erreurs
+- Files modified: 1 + 2 new routes

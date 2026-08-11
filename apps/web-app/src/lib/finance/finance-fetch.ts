@@ -22,6 +22,7 @@
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { offlineFetch } from '@/lib/offline/offline-fetch';
 import { deriveStoreName, getTenantIdForOffline } from '@/lib/offline/store-names';
+import { networkDetectionService } from '@/lib/offline/network-detection.service';
 
 // ⭐ Le mapping URL → store IDB est centralisé dans lib/offline/store-names.ts
 //    (function deriveStoreName). Plus de duplication locale.
@@ -32,8 +33,9 @@ export async function financeFetch<T>(
 ): Promise<T> {
   const method = options?.method ?? 'GET';
 
-  // ⭐ Pour les GET : utiliser offlineFetch qui lit IndexedDB en offline
-  if (method === 'GET' && !options?.body) {
+  // ⭐ Pour les GET : utiliser offlineFetch UNIQUEMENT en offline.
+  //    En online, on utilise le fetch natif pour éviter la latence.
+  if (method === 'GET' && !options?.body && !networkDetectionService.isConnected()) {
     const storeName = deriveStoreName(path);
     if (storeName) {
       const tenantId = getTenantIdForOffline();

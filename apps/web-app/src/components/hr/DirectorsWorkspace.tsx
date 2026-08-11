@@ -31,6 +31,7 @@ import { useAppSession } from '@/contexts/AppSessionContext';
 import { useBilingual } from '@/contexts/BilingualContext';
 import { SignatureCanvas } from '@/components/ui/SignatureCanvas';
 import apiClient from '@/lib/api/client';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { cn } from '@/lib/utils';
 
 const PRIMARY = '#1A2BA6';
@@ -110,17 +111,25 @@ export default function DirectorsWorkspace() {
 
       // ⭐ Charger la liste du personnel existant (pour le sélecteur de directeur)
       //    On filtre : status=ACTIVE + email non null (sinon pas d'envoi d'identifiants possible)
+      //    Utilisation de hrFetch (offline-aware) au lieu de apiClient direct.
       try {
-        const staffRes = await apiClient.get('/hr/staff', {
-          params: { tenantId, status: 'ACTIVE', limit: 500 },
-        });
-        const allStaff = Array.isArray(staffRes.data) ? staffRes.data : (staffRes.data?.items || staffRes.data?.data || []);
+        const staffData = await hrFetch<any[]>(hrUrl('staff', { tenantId, status: 'ACTIVE', limit: '500' }));
+        const allStaff = Array.isArray(staffData) ? staffData : (staffData?.items || staffData?.data || []);
         // Filtrer : doit avoir un email (sinon pas d'envoi d'identifiants possible)
         const eligibleStaff = allStaff.filter((s: any) => s.email);
         setStaffList(eligibleStaff);
       } catch (err) {
         console.warn('Failed to load staff list for director picker:', err);
-        setStaffList([]);
+        // Fallback : essayer sans le filtre status
+        try {
+          const staffData = await hrFetch<any[]>(hrUrl('staff', { tenantId, limit: '500' }));
+          const allStaff = Array.isArray(staffData) ? staffData : (staffData?.items || staffData?.data || []);
+          const eligibleStaff = allStaff.filter((s: any) => s.email);
+          setStaffList(eligibleStaff);
+        } catch (err2) {
+          console.warn('Failed to load staff list (fallback):', err2);
+          setStaffList([]);
+        }
       }
 
       // Load existing directors

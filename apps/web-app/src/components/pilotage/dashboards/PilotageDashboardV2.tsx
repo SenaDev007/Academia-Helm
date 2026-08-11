@@ -1173,7 +1173,24 @@ function AgeDistributionSection({ tenantId, academicYearId }: { tenantId?: strin
     );
   }
 
-  if (!data || data.totalStudents === 0) return null;
+  if (!data || data.totalStudents === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="bg-gradient-to-r from-indigo-900 to-indigo-700 px-5 py-3">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Users className="w-4 h-4" />
+            Distribution des âges
+          </h3>
+          <p className="text-[11px] text-indigo-100 mt-0.5">Tranches d'âge par niveau scolaire</p>
+        </div>
+        <div className="p-8 text-center">
+          <Users className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+          <p className="text-sm text-gray-400">Aucune donnée disponible</p>
+          <p className="text-xs text-gray-300 mt-1">Les données apparaîtront après l'inscription des élèves</p>
+        </div>
+      </div>
+    );
+  }
 
   const maxValue = Math.max(...data.global.map(d => d.count), 1);
 
@@ -1319,7 +1336,24 @@ function GradeAnalyticsSection({ tenantId, academicYearId }: { tenantId?: string
     );
   }
 
-  if (!data || data.byLevel.length === 0) return null;
+  if (!data || data.byLevel.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="bg-gradient-to-r from-purple-900 to-purple-700 px-5 py-3">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Award className="w-4 h-4" />
+            Analytics des notes
+          </h3>
+          <p className="text-[11px] text-purple-100 mt-0.5">Par niveau scolaire</p>
+        </div>
+        <div className="p-8 text-center">
+          <Award className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+          <p className="text-sm text-gray-400">Aucune donnée disponible</p>
+          <p className="text-xs text-gray-300 mt-1">Les résultats apparaîtront après la première évaluation</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">

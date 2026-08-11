@@ -3052,3 +3052,62 @@ Stage Summary:
 - Push effectué — Vercel va re-déployer automatiquement
 - ⚠️ IMPORTANT : le backend (api-server) doit être redéployé sur Railway pour
   que les fixes soient effectifs. Vercel ne déploie que le web-app.
+
+---
+Task ID: 2026-08-11-desktop-build-linux-x86_64
+Agent: main
+Task: Générer les exécutables desktop Academia Helm v1.1.0 pour Linux.
+
+Work Log:
+
+=== 1. PRÉPARATION ENVIRONNEMENT ===
+- Rust 1.97.1 installé via rustup (minimal profile)
+- Tauri CLI 2.11.4 installé via npm (@tauri-apps/cli)
+- Dépendances système webkit2gtk-4.1 extraites localement (sans sudo) :
+  * Téléchargement de 60+ packages .deb via apt-get download
+  * Extraction dans /home/z/tauri-libs/ via dpkg-deb -x
+  * Patch des fichiers .pc pour pointer vers le prefix local
+  * Variables d'environnement configurées :
+    - PKG_CONFIG_PATH=/home/z/tauri-libs/usr/lib/x86_64-linux-gnu/pkgconfig
+    - LD_LIBRARY_PATH=/home/z/tauri-libs/usr/lib/x86_64-linux-gnu
+    - LD_RUN_PATH, C_INCLUDE_PATH, CPLUS_INCLUDE_PATH
+  * patchelf 0.18.0 extrait pour post-traitement binaire
+
+Packages extraits : webkit2gtk-4.1, javascriptcoregtk-4.1, gtk+-3.0,
+libsoup-3.0, ayatana-appindicator3, atspi-2, dbus-1, libsystemd,
+cloudproviders, X11 (xi, xtst, xext, x11, xrender, xinerama, xcursor,
+xfixes, xrandr, xcomposite, xdamage, xkbcommon), EGL, GL, epoxy,
+pango, cairo, gdk-pixbuf, harfbuzz, freetype, fontconfig, pixman,
+fribidi, thai, datrie, png, ffi, blkid, mount, selinux, pcre2, zstd, lzma.
+
+=== 2. BUILD ===
+- cargo build --release -j 2 (parallelism limité pour éviter OOM)
+- 540+ crates Rust compilés (tauri, wry, tao, webkit2gtk bindings, etc.)
+- Binaire final : academia-helm-desktop (32 MB)
+- Bundle .deb généré via tauri build --bundles deb
+- AppImage échoué (linuxdeploy nécessite FUSE complet non disponible)
+
+=== 3. LIVRABLES ===
+- academia-helm_1.1.0_amd64.deb (10 MB) — package Debian installable
+  * Install via : sudo dpkg -i academia-helm_1.1.0_amd64.deb
+  * Dépendances auto-installées : libwebkit2gtk-4.1-0, libgtk-3-0,
+    libayatana-appindicator3-1, librsvg2-2
+- academia-helm-desktop-1.1.0-linux-x86_64.tar.gz (10 MB) — binaire portable
+  * Extract + run : tar xzf ... && ./academia-helm-desktop
+  * Dépendances à installer manuellement
+
+=== 4. PUSH GITHUB ===
+- docs/desktop-builds/ créé avec .deb + .tar.gz + README.md
+- Liens de téléchargement direct :
+  * .deb : https://github.com/SenaDev007/Academia-Helm/raw/main/docs/desktop-builds/academia-helm_1.1.0_amd64.deb
+  * .tar.gz : https://github.com/SenaDev007/Academia-Helm/raw/main/docs/desktop-builds/academia-helm-desktop-1.1.0-linux-x86_64.tar.gz
+- Commit 18ed2342 pushé vers origin/main
+
+Stage Summary:
+- 2 exécutables desktop Linux x86_64 générés (.deb + tarball)
+- Disponibles dans /home/z/my-project/download/desktop/ (local)
+  ET docs/desktop-builds/ (GitHub, téléchargeables)
+- Version 1.1.0, Tauri 2, Rust 1.97.1, webkit2gtk-4.1
+- Build réussi malgré l'absence de sudo (extraction locale des deps)
+- AppImage non disponible (FUSE manquant dans le conteneur)
+- Files: 3 new (README + .deb + .tar.gz)

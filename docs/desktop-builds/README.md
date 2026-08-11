@@ -1,68 +1,59 @@
-# Academia Helm — Application Desktop (Linux)
+# Academia Helm — Application Desktop
 
-Ce répertoire contient les exécutables desktop Academia Helm pour Linux x86_64.
+Ce répertoire contient les exécutables desktop Academia Helm.
 
 ## Fichiers disponibles
 
+### Windows (recommandé)
+
 | Fichier | Format | Taille | Usage |
 |---|---|---|---|
-| [academia-helm_1.1.0_amd64.deb](./academia-helm_1.1.0_amd64.deb) | Debian package | ~10 MB | Installation sur Ubuntu/Debian/Mint |
-| [academia-helm-desktop-1.1.0-linux-x86_64.tar.gz](./academia-helm-desktop-1.1.0-linux-x86_64.tar.gz) | Tarball | ~10 MB | Binaire portable (sans installation) |
+| [academia-helm_1.1.0_x64-setup.exe](./academia-helm_1.1.0_x64-setup.exe) | NSIS Installer | ~9 MB | Installation Windows 64-bit (double-clic pour installer) |
 
-## Liens de téléchargement direct (GitHub)
+**Lien de téléchargement direct** : https://github.com/SenaDev007/Academia-Helm/raw/main/docs/desktop-builds/academia-helm_1.1.0_x64-setup.exe
 
-- **.deb** : https://github.com/SenaDev007/Academia-Helm/raw/main/docs/desktop-builds/academia-helm_1.1.0_amd64.deb
-- **.tar.gz** : https://github.com/SenaDev007/Academia-Helm/raw/main/docs/desktop-builds/academia-helm-desktop-1.1.0-linux-x86_64.tar.gz
+### Linux
 
-## Installation
+| Fichier | Format | Taille | Usage |
+|---|---|---|---|
+| [academia-helm_1.1.0_amd64.deb](./academia-helm_1.1.0_amd64.deb) | Debian package | ~10 MB | Ubuntu/Debian/Mint |
+| [academia-helm-desktop-1.1.0-linux-x86_64.tar.gz](./academia-helm-desktop-1.1.0-linux-x86_64.tar.gz) | Tarball | ~10 MB | Binaire portable Linux |
 
-### Option 1 : Package .deb (recommandé pour Ubuntu/Debian)
+## Installation Windows
 
+1. Téléchargez `academia-helm_1.1.0_x64-setup.exe`
+2. Double-cliquez sur le fichier pour lancer l'installation
+3. Suivez l'assistant d'installation (NSIS)
+4. L'application sera installée dans le menu Démarrer → Academia Helm
+5. Lancez l'application depuis le raccourci bureau ou le menu Démarrer
+
+**Configuration requise** :
+- Windows 10/11 (64-bit)
+- WebView2 Runtime (installé automatiquement sur Windows 11, téléchargé automatiquement sur Windows 10 si manquant)
+
+## Installation Linux
+
+### .deb (Ubuntu/Debian)
 ```bash
-# Télécharger puis installer
 sudo dpkg -i academia-helm_1.1.0_amd64.deb
-sudo apt-get install -f  # résoudre les dépendances manquantes si nécessaire
-
-# Lancer
+sudo apt-get install -f  # résoudre les dépendances
 academia-helm-desktop
 ```
 
-**Dépendances système** (installées automatiquement par dpkg) :
-- `libwebkit2gtk-4.1-0` (moteur web)
-- `libgtk-3-0` (interface graphique)
-- `libayatana-appindicator3-1` (icône de notification)
-- `librsvg2-2` (rendu SVG)
-
-### Option 2 : Tarball portable (sans installation)
-
+### Tarball portable
 ```bash
-# Télécharger et extraire
 tar xzf academia-helm-desktop-1.1.0-linux-x86_64.tar.gz
-
-# Lancer directement
-./academia-helm-desktop
-```
-
-**Note** : Le tarball nécessite que les dépendances système soient déjà installées :
-```bash
 sudo apt-get install -y libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1 librsvg2-2
+./academia-helm-desktop
 ```
 
 ## Caractéristiques
 
 - **Version** : 1.1.0
-- **Plateforme** : Linux x86_64 (64-bit)
-- **Taille** : ~32 MB (binaire), ~10 MB (compressé)
-- **Architecture** : Tauri 2 (Rust + WebKit2GTK)
-- **Mode offline** : SQLite local + sync differée
-- **Cible** : Ubuntu 20.04+, Debian 11+, Mint 20+
-
-## Notes de version
-
-- Splash screen corrigé (HTML/CSS)
-- Synchronisation offline SQLite opérationnelle
-- Intégration web-app (frontendDist chargé depuis le bundle)
-- Mises à jour automatiques (updater plugin configuré)
+- **Architecture** : Tauri 2 (Rust + WebView2/WebKit2GTK)
+- **Mode offline** : SQLite local + sync différée
+- **Frontend** : Bundlé dans l'exécutable (custom-protocol)
+- **Auto-update** : Configuré (updater plugin)
 
 ---
 

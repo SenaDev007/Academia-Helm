@@ -3111,3 +3111,80 @@ Stage Summary:
 - Build réussi malgré l'absence de sudo (extraction locale des deps)
 - AppImage non disponible (FUSE manquant dans le conteneur)
 - Files: 3 new (README + .deb + .tar.gz)
+
+---
+Task ID: 2026-08-11-modal-pro + feeOverride-tenantId + abandons-endpoint
+Agent: main
+Task: 3 corrections : (1) modal pro multi-sélection, (2) FeeOverride tenantId crash, (3) élèves WITHDRAWN non comptabilisés.
+
+Work Log:
+
+=== 1. MODAL PERSONNALISÉ PRO pour multi-sélection ===
+L'utilisateur voulait un modal professionnel au lieu des confirm()/prompt()
+génériques du navigateur.
+
+Nouveau composant BulkActionModal.tsx (250 lignes) :
+- 3 variantes : 'confirm' (bleu), 'warning' (ambre), 'danger' (rouge)
+- Pour type='danger' : champ de saisie texte obligatoire (ex: 'SUPPRIMER')
+  qui active le bouton de confirmation uniquement quand le texte exact est saisi
+- Header avec icône (Info/AlertTriangle/Shield) + titre + compteur sélectionnés
+- Body : message + preview des éléments sélectionnés (≤5 = liste, >5 = compteur)
+- Footer : boutons Annuler / Confirmer avec spinner pendant le traitement
+- Animation framer-motion (fade-in + zoom-in-95 + slide-in-from-bottom-4)
+- Palette Academia Helm cohérente avec le reste de l'app
+
+Intégration dans EnrollmentsContent :
+- State bulkModal centralisé : { type, title, message, confirmText?, confirmLabel, action }
+- 3 boutons d'action ouvrent le modal avec config appropriée :
+  * 'Marquer anciens' → type='warning', action='old'
+  * 'Marquer nouveaux' → type='confirm', action='new'
+  * 'Supprimer' → type='danger', confirmText='SUPPRIMER', action='delete'
+- onConfirm dispatch vers le bon handler (handleBulkMarkAsOld/New/Delete)
+- Handlers mis à jour : setBulkModal(null) après traitement + reset state
+- Remplace 3 confirm() + 1 prompt() natifs
+
+=== 2. FIX 'Failed to fetch' Bilan des encaissements ===
+Cause racine : prisma.feeOverride.findMany({ where: { tenantId, studentId: { in: [...] } } })
+Le modèle FeeOverride dans le schéma Prisma n'a PAS de champ tenantId direct :
+  model FeeOverride {
+    id, feeStructureId, studentId, customAmount, reason, createdById, createdAt
+    // Pas de tenantId !
+  }
+Prisma throw 'Unknown arg tenantId' → backend 500 → BFF retourne erreur
+→ frontend affiche 'Failed to fetch' + 'Données invalides : Champ tenantId'.
+
+Fix : filtrer via la relation student (qui a tenantId) :
+  where: { student: { tenantId }, studentId: { in: studentIds } }
+
+=== 3. FIX élèves WITHDRAWN non comptabilisés dans le pilotage ===
+Cause racine : l'overview route (dashboard/overview) appelait l'endpoint
+/students/abandons qui n'existait PAS dans le backend → fallback [] →
+totalAbandons = 0 dans le dashboard promoteur, alors que les élèves étaient
+bien marqués WITHDRAWN dans l'UI Inscriptions.
+
+Fix backend :
+- Ajout endpoint GET /students/abandons au StudentsPrismaController
+- Ajout méthode getAbandonedStudents() au StudentsPrismaService :
+  * Filtre status = 'WITHDRAWN' + tenantId + academicYearId + schoolLevelId optionnel
+  * Include schoolLevel, studentEnrollments (class), studentAccounts (financial)
+  * Retourne : id, fullName, matricule, gender, schoolLevel, className,
+    totalDue, totalPaid, balance, hasPaidTuition, hasUnpaidTuition, unpaidAmount,
+    exitDate, createdAt
+- L'overview route existante récupère maintenant les vraies données d'abandons
+  et les agrège par niveau (abandons, abandonBoys, abandonGirls,
+  abandonsWithPaidTuition, abandonPaidAmount, abandonsWithUnpaidTuition,
+  abandonUnpaidAmount).
+
+=== 4. COMMIT + PUSH ===
+Commit e054d6d7 : 'fix: 3 bugs — modal pro multi-sélection + FeeOverride tenantId + abandons'
+Push réussi vers origin/main (afd6176e..e054d6d7)
+5 files changed, 428 insertions(+), 22 deletions(-)
+
+Stage Summary:
+- Modal pro pour multi-sélection : BulkActionModal.tsx (3 variantes, danger avec saisie)
+- FeeOverride tenantId : fix via student.tenantId (relation)
+- Élèves WITHDRAWN : endpoint /students/abandons ajouté + getAbandonedStudents()
+- Le pilotage affichera maintenant les abandons correctement (count + montants)
+- Frontend type-check : 0 erreurs
+- ⚠️ Backend (Railway) doit être redéployé pour les fixes 2 et 3
+- Files modified: 4 + 1 new (BulkActionModal.tsx)

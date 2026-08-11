@@ -326,9 +326,13 @@ export class CollectionSummaryController {
     // ⭐ Permet d'afficher la colonne "Personnalisation" qui indique si l'élève
     //    a une dérogation/exonération sur ses frais de scolarité, et le montant
     //    personnalisé (vs montant standard de la FeeStructure).
+    // ⭐ FeeOverride n'a PAS de champ tenantId direct — on filtre via
+    //    student.tenantId (relation vers Student qui a tenantId).
+    //    Avant ce fix : prisma.feeOverride.findMany({ where: { tenantId } })
+    //    → erreur "Unknown arg `tenantId`" → backend 500 → "Failed to fetch".
     const feeOverrides = await this.prisma.feeOverride.findMany({
       where: {
-        tenantId,
+        student: { tenantId },
         studentId: { in: studentIds },
       },
       include: {

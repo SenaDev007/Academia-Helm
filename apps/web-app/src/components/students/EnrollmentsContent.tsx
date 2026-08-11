@@ -36,6 +36,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import StudentEnrollmentForm from '@/components/students/StudentEnrollmentForm';
 import ImportElevesModal from '@/components/students/ImportElevesModal';
+import BulkActionModal from '@/components/students/BulkActionModal';
 import { studentsService } from '@/services/students.service';
 import { apiFetch } from '@/lib/api/client';
 import { financeService } from '@/services/finance.service';
@@ -207,6 +208,16 @@ export default function EnrollmentsContent() {
   const [selectedForBulk, setSelectedForBulk] = useState<Set<string>>(new Set());
   const [bulkTargetYear, setBulkTargetYear] = useState<string>('');
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
+
+  // ⭐ Modals personnalisés pour actions multiples (remplacent confirm()/prompt())
+  const [bulkModal, setBulkModal] = useState<{
+    type: 'confirm' | 'danger' | 'warning';
+    title: string;
+    message: string;
+    confirmText?: string;
+    confirmLabel: string;
+    action: 'old' | 'new' | 'delete';
+  } | null>(null);
   // Tracking de la génération PDF par classe (pour afficher un spinner par bouton)
   const [pdfGeneratingClassId, setPdfGeneratingClassId] = useState<string | null>(null);
   // Classes qui ont déjà un PDF généré en DB (pour afficher le check ✅)
@@ -732,7 +743,6 @@ export default function EnrollmentsContent() {
    */
   const handleBulkMarkAsOld = async () => {
     if (selectedForBulk.size === 0 || !academicYear) return;
-    if (!confirm(`Marquer ${selectedForBulk.size} élève(s) comme ANCIENS (frais de réinscription) ?`)) return;
     setIsProcessingBulk(true);
     let success = 0;
     let failed = 0;
@@ -756,6 +766,7 @@ export default function EnrollmentsContent() {
       variant: failed > 0 ? 'warning' : 'success',
     });
     clearBulkSelection();
+    setBulkModal(null);
     setIsProcessingBulk(false);
     loadData();
   };
@@ -766,7 +777,6 @@ export default function EnrollmentsContent() {
    */
   const handleBulkMarkAsNew = async () => {
     if (selectedForBulk.size === 0 || !academicYear) return;
-    if (!confirm(`Marquer ${selectedForBulk.size} élève(s) comme NOUVEAUX (frais d'inscription complets) ?`)) return;
     setIsProcessingBulk(true);
     let success = 0;
     let failed = 0;
@@ -788,32 +798,18 @@ export default function EnrollmentsContent() {
       variant: failed > 0 ? 'warning' : 'success',
     });
     clearBulkSelection();
+    setBulkModal(null);
     setIsProcessingBulk(false);
     loadData();
   };
 
   /**
    * ⭐ Action multiple : suppression définitive des élèves sélectionnés.
-   *    Double confirmation (prompt "SUPPRIMER") pour éviter les accidents.
+   *    Double confirmation (modal danger + saisie "SUPPRIMER") pour éviter les accidents.
    *    Ne supprime que les élèves en statut PRE_REGISTERED ou ADMITTED (sans paiements).
    */
   const handleBulkDelete = async () => {
     if (selectedForBulk.size === 0) return;
-    if (!confirm(
-      `⚠️ SUPPRESSION DÉFINITIVE de ${selectedForBulk.size} élève(s) ?\n\n` +
-      `Cette action est IRRÉVERSIBLE et supprimera :\n` +
-      `• Les inscriptions et dossiers académiques\n` +
-      `• Les comptes financiers (s'il n'y a pas de paiements)\n` +
-      `• Les photos, responsables, et toutes les données liées\n\n` +
-      `Confirmez en tapant SUPPRIMER dans le champ qui va s'ouvrir.`
-    )) return;
-
-    const input = prompt(`Tapez SUPPRIMER pour confirmer la suppression de ${selectedForBulk.size} élève(s) :`);
-    if (input !== 'SUPPRIMER') {
-      toast({ title: 'Suppression annulée', variant: 'info' });
-      return;
-    }
-
     setIsProcessingBulk(true);
     let success = 0;
     let failed = 0;
@@ -833,6 +829,7 @@ export default function EnrollmentsContent() {
       variant: failed > 0 ? 'warning' : 'success',
     });
     clearBulkSelection();
+    setBulkModal(null);
     setIsProcessingBulk(false);
     loadData();
   };
@@ -1148,7 +1145,13 @@ export default function EnrollmentsContent() {
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <button
-                onClick={handleBulkMarkAsOld}
+                onClick={() => setBulkModal({
+                  type: 'warning',
+                  title: 'Marquer comme anciens élèves',
+                  message: `Vous êtes sur le point de marquer ${selectedForBulk.size} élève(s) comme ANCIENS (frais de réinscription).\n\nLeur compte financier sera recalculé automatiquement pour appliquer les frais de réinscription au lieu des frais d'inscription complets.`,
+                  confirmLabel: 'Marquer comme anciens',
+                  action: 'old',
+                })}
                 disabled={isProcessingBulk || !academicYear}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-md border border-amber-200 transition disabled:opacity-50"
                 title="Marquer comme anciens (frais de réinscription)"
@@ -1157,7 +1160,13 @@ export default function EnrollmentsContent() {
                 Marquer anciens
               </button>
               <button
-                onClick={handleBulkMarkAsNew}
+                onClick={() => setBulkModal({
+                  type: 'confirm',
+                  title: 'Marquer comme nouveaux élèves',
+                  message: `Vous êtes sur le point de marquer ${selectedForBulk.size} élève(s) comme NOUVEAUX (frais d'inscription complets).\n\nLeur compte financier sera recalculé automatiquement pour appliquer les frais d'inscription complets au lieu des frais de réinscription.`,
+                  confirmLabel: 'Marquer comme nouveaux',
+                  action: 'new',
+                })}
                 disabled={isProcessingBulk || !academicYear}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md border border-blue-200 transition disabled:opacity-50"
                 title="Marquer comme nouveaux (frais d'inscription complets)"
@@ -1175,7 +1184,14 @@ export default function EnrollmentsContent() {
                 Réinscrire
               </button>
               <button
-                onClick={handleBulkDelete}
+                onClick={() => setBulkModal({
+                  type: 'danger',
+                  title: 'Suppression définitive',
+                  message: `Vous êtes sur le point de SUPPRIMER DÉFINITIVEMENT ${selectedForBulk.size} élève(s).\n\nCette action est IRRÉVERSIBLE et supprimera :\n• Les inscriptions et dossiers académiques\n• Les comptes financiers (s'il n'y a pas de paiements)\n• Les photos, responsables, et toutes les données liées`,
+                  confirmText: 'SUPPRIMER',
+                  confirmLabel: 'Supprimer définitivement',
+                  action: 'delete',
+                })}
                 disabled={isProcessingBulk}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-700 bg-red-50 hover:bg-red-100 rounded-md border border-red-200 transition disabled:opacity-50"
                 title="Supprimer définitivement (uniquement élèves sans paiements)"
@@ -1958,6 +1974,33 @@ export default function EnrollmentsContent() {
           window.location.reload();
         }}
       />
+
+      {/* ⭐ MODAL personnalisé pour actions multiples (remplace confirm()/prompt()) */}
+      {bulkModal && (
+        <BulkActionModal
+          isOpen={!!bulkModal}
+          type={bulkModal.type}
+          title={bulkModal.title}
+          message={bulkModal.message}
+          confirmText={bulkModal.confirmText}
+          confirmLabel={bulkModal.confirmLabel}
+          cancelLabel="Annuler"
+          isProcessing={isProcessingBulk}
+          selectedCount={selectedForBulk.size}
+          onCancel={() => {
+            if (!isProcessingBulk) setBulkModal(null);
+          }}
+          onConfirm={async () => {
+            if (bulkModal.action === 'old') {
+              await handleBulkMarkAsOld();
+            } else if (bulkModal.action === 'new') {
+              await handleBulkMarkAsNew();
+            } else if (bulkModal.action === 'delete') {
+              await handleBulkDelete();
+            }
+          }}
+        />
+      )}
     </>
   );
 }

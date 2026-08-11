@@ -588,6 +588,95 @@ export class StudentsPrismaService {
   }
 
   /**
+   * Liste les élèves abandonnés (status = WITHDRAWN) avec détails financiers.
+   *
+   * Utilisé par le tableau de pilotage (dashboard/overview) pour afficher :
+   *   - totalAbandons
+   *   - abandons par niveau (with gender breakdown)
+   *   - abandons qui avaient payé vs impayés
+   *   - montants payés/impayés par les abandons
+   *
+   * ⭐ FIX : avant cet endpoint, l'overview route appelait /students/abandons
+   *    qui n'existait pas → fallback [] → totalAbandons = 0 dans le dashboard
+   *    alors que les élèves étaient bien marqués WITHDRAWN dans l'UI.
+   */
+  async getAbandonedStudents(
+    tenantId: string,
+    academicYearId: string,
+    schoolLevelId?: string,
+  ) {
+    const where: any = {
+      tenantId,
+      academicYearId,
+      status: 'WITHDRAWN',
+    };
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
+      where.schoolLevelId = schoolLevelId;
+    }
+
+    const students = await this.prisma.student.findMany({
+      where,
+      include: {
+        schoolLevel: { select: { id: true, code: true, name: true, label: true } },
+        studentEnrollments: {
+          where: { academicYearId },
+          take: 1,
+          include: {
+            class: { select: { id: true, name: true, code: true } },
+            academicClass: { select: { id: true, name: true, code: true } },
+          },
+        },
+        studentAccounts: {
+          where: { academicYearId },
+          take: 1,
+          select: {
+            id: true,
+            totalDue: true,
+            totalPaid: true,
+            balance: true,
+          },
+        },
+      },
+      orderBy: [
+        { lastName: 'asc' },
+        { firstName: 'asc' },
+      ],
+    });
+
+    // Enrichir avec les infos financières + formatage
+    return students.map((s: any) => {
+      const account = s.studentAccounts?.[0];
+      const enrollment = s.studentEnrollments?.[0];
+      const totalDue = Number(account?.totalDue || 0);
+      const totalPaid = Number(account?.totalPaid || 0);
+      return {
+        id: s.id,
+        studentId: s.id,
+        firstName: s.firstName,
+        lastName: s.lastName,
+        fullName: `${s.lastName} ${s.firstName}`,
+        matricule: s.matricule ?? s.studentCode ?? null,
+        gender: s.gender,
+        dateOfBirth: s.dateOfBirth,
+        status: s.status,
+        schoolLevel: s.schoolLevel,
+        className: enrollment?.class?.name || enrollment?.academicClass?.name || '—',
+        academicYearId,
+        // Infos financières
+        totalDue,
+        totalPaid,
+        balance: Number(account?.balance || 0),
+        hasPaidTuition: totalPaid > 0,
+        hasUnpaidTuition: totalDue - totalPaid > 0,
+        unpaidAmount: Math.max(0, totalDue - totalPaid),
+        // Dates
+        exitDate: s.updatedAt,
+        createdAt: s.createdAt,
+      };
+    });
+  }
+
+  /**
    * Upload photo d'élève depuis un data URL (base64) — pattern identique au RH (staff).
    *
    * Le frontend compresse l'image côté navigateur (compressImageFileToDataUrl)

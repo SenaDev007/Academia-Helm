@@ -92,6 +92,25 @@ export class StudentsPrismaController {
     );
   }
 
+  /**
+   * GET /students/abandons?academicYearId=...&schoolLevelId=...
+   * Liste les élèves abandonnés (status = WITHDRAWN) avec détails pour le
+   * tableau de pilotage (effectifs + abandons + scolarités).
+   * Chaque abandon inclut : student, class, paidAmount, dueAmount, exitDate.
+   */
+  @Get('abandons')
+  async getAbandons(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
+  ) {
+    return this.studentsService.getAbandonedStudents(
+      tenantId,
+      academicYearId,
+      schoolLevelId,
+    );
+  }
+
   // ============================================================================
   // ⭐ BULK ACTIONS — Actions multiples sur un groupe d'élèves
   // ============================================================================

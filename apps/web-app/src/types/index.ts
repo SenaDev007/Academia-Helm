@@ -371,6 +371,7 @@ export type SyncEntityType =
   | 'FEE_CONFIGURATION'
   | 'FEE_DEFINITION'
   | 'FEE_REGIME'
+  | 'FEE_OVERRIDE'
   | 'EXPENSE'
   | 'FINANCE_SETTING'
   | 'FINANCE_TRANSACTION'

@@ -69,6 +69,14 @@ export default function AppLayoutClient({
     console.log('[Push] Abonnement actif');
   }
 
+  // ⭐ Installer l'intercepteur global de fetch (offline-first pour TOUS les GET /api/*)
+  //    Le plus tôt possible — avant tout autre useEffect.
+  useEffect(() => {
+    import('@/lib/offline/global-fetch-interceptor').then(({ installGlobalFetchInterceptor }) => {
+      installGlobalFetchInterceptor();
+    }).catch(() => {});
+  }, []);
+
   // ⭐ Bootstrap offline-first : au premier login, télécharger TOUTES les données
   //    du tenant dans IndexedDB pour permettre le mode offline.
   useEffect(() => {

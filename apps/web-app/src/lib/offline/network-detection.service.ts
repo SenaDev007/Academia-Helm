@@ -1,16 +1,28 @@
 /**
- * Network Detection Service — RÉACTIVÉ
+ * ============================================================================
+ * NETWORK DETECTION SERVICE — Simplifié et fiable
+ * ============================================================================
  *
- * Détection réseau robuste utilisant :
- *   1. navigator.onLine (API native du navigateur — immédiat)
- *   2. Ping léger HEAD /api/health (timeout 3s, toutes les 30s)
- *   3. Backoff sur échec pour éviter le spam
+ * ⭐ PHILOSOPHIE : faire confiance au navigateur (navigator.onLine).
+ *    Le navigateur sait mieux que nous si Internet fonctionne.
+ *    Il utilise des APIs système (NetworkManager sur Linux, NetListManager
+ *    sur Windows, reachability sur macOS/iOS) qui sont fiables.
  *
- * Distinction "instable" (réessayer) vs "vraiment offline" (bascule offline) :
- *   - Si navigator.onLine = false → vraiment offline immédiatement
- *   - Si navigator.onLine = true mais ping échoue 2 fois de suite → offline
- *   - Si navigator.onLine = true et ping réussit → online
- *   - À la reconnexion (online event), on re-pingue immédiatement
+ *    AVANT : on faisait un ping HEAD vers /api/auth/me toutes les 30s avec
+ *    un timeout de 3s. Si 2 pings consécutifs échouaient (timeout 3s),
+ *    on déclarait l'app "hors ligne" — même si Internet fonctionnait
+ *    parfaitement. Une micro-coupure serveur ou un ping lent suffisait
+ *    à basculer en mode offline → lenteurs, données manquantes,
+ *    mauvaise UX.
+ *
+ *    MAINTENANT : on utilise UNIQUEMENT navigator.onLine.
+ *    - navigator.onLine = true → online (fetch natif, performance normale)
+ *    - navigator.onLine = false → offline (offlineFetch, lecture IndexedDB)
+ *
+ *    Aucun ping, aucun timeout, aucune bascule intempestive.
+ *    Le navigateur gère les events 'online'/'offline' de manière
+ *    instantanée et fiable.
+ * ============================================================================
  */
 
 type NetworkStatusCallback = (isOnline: boolean) => void;
@@ -18,11 +30,6 @@ type NetworkStatusCallback = (isOnline: boolean) => void;
 class NetworkDetectionService {
   private isOnline: boolean = true;
   private listeners: NetworkStatusCallback[] = [];
-  private pingTimer: ReturnType<typeof setInterval> | null = null;
-  private consecutiveFailures = 0;
-  private readonly MAX_FAILURES_BEFORE_OFFLINE = 2; // 2 échecs = offline
-  private readonly PING_INTERVAL_MS = 30000; // 30s
-  private readonly PING_TIMEOUT_MS = 3000; // 3s timeout
 
   constructor() {
     if (typeof window === 'undefined') return; // SSR safety
@@ -30,33 +37,36 @@ class NetworkDetectionService {
     // ⭐ État initial depuis navigator.onLine
     this.isOnline = navigator.onLine;
 
-    // ⭐ Listeners natifs online/offline
+    // ⭐ Listeners natifs online/offline — source de vérité du navigateur
     window.addEventListener('online', () => {
-      // Reconnexion → re-pinguer immédiatement pour confirmer
-      this.checkConnection();
+      this.setOnline(true);
     });
 
     window.addEventListener('offline', () => {
       this.setOnline(false);
     });
 
-    // ⭐ Ping périodique léger (seulement si navigator.onLine = true)
-    this.startPeriodicPing();
+    // ⭐ AUCUN ping périodique — on fait confiance au navigateur.
+    //    Le navigateur détecte la perte de connexion en ~100-500ms
+    //    via les APIs système (bien plus fiable qu'un ping HTTP).
   }
 
   /**
-   * Retourne l'état de connexion actuel
+   * Retourne l'état de connexion actuel.
+   * Utilise navigator.onLine qui est l'API standard du navigateur.
    */
   isConnected(): boolean {
-    return this.isOnline;
+    if (typeof navigator === 'undefined') return true; // SSR
+    // ⭐ Toujours retourner navigator.onLine (temps réel)
+    return navigator.onLine;
   }
 
   /**
-   * Enregistre un callback appelé à chaque changement de statut réseau
+   * Enregistre un callback appelé à chaque changement de statut réseau.
    */
   onConnectionChange(callback: NetworkStatusCallback): void {
     this.listeners.push(callback);
-    callback(this.isOnline); // Notifier immédiatement avec l'état actuel
+    callback(this.isOnline);
   }
 
   onNetworkStatusChange(callback: NetworkStatusCallback): () => void {
@@ -72,63 +82,25 @@ class NetworkDetectionService {
   }
 
   /**
-   * Force une vérification de connexion (appelé par le bouton "Sync")
+   * Force une vérification de connexion.
+   * ⭐ Maintenant : retourne simplement navigator.onLine (pas de ping).
    */
   async checkConnection(): Promise<boolean> {
-    if (typeof window === 'undefined' || !navigator.onLine) {
-      this.setOnline(false);
-      return false;
-    }
-
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), this.PING_TIMEOUT_MS);
-      const res = await fetch('/api/auth/me', {
-        method: 'HEAD',
-        signal: controller.signal,
-        credentials: 'include',
-      });
-      clearTimeout(timeoutId);
-      // Même un 401 signifie que le serveur répond → on est online
-      this.consecutiveFailures = 0;
-      this.setOnline(true);
-      return true;
-    } catch {
-      // Ping échoué (timeout ou réseau)
-      this.consecutiveFailures++;
-      if (this.consecutiveFailures >= this.MAX_FAILURES_BEFORE_OFFLINE) {
-        this.setOnline(false);
-      }
-      return false;
-    }
+    if (typeof navigator === 'undefined') return true;
+    const online = navigator.onLine;
+    this.setOnline(online);
+    return online;
   }
 
   private setOnline(online: boolean): void {
-    if (this.isOnline === online) return; // Pas de changement
+    if (this.isOnline === online) return;
     this.isOnline = online;
-    // Notifier tous les listeners
     for (const cb of this.listeners) {
       try { cb(online); } catch { /* silent */ }
     }
   }
 
-  private startPeriodicPing(): void {
-    if (this.pingTimer) clearInterval(this.pingTimer);
-    this.pingTimer = setInterval(async () => {
-      // Seulement si le navigateur pense être online
-      if (typeof navigator !== 'undefined' && navigator.onLine) {
-        await this.checkConnection();
-      } else {
-        this.setOnline(false);
-      }
-    }, this.PING_INTERVAL_MS);
-  }
-
   destroy(): void {
-    if (this.pingTimer) {
-      clearInterval(this.pingTimer);
-      this.pingTimer = null;
-    }
     this.listeners = [];
   }
 }

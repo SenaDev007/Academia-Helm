@@ -2866,3 +2866,108 @@ Stage Summary:
   * apps/web-app/src/components/finance/NewPaymentModal.tsx
   * apps/web-app/src/components/finance/TransactionsContent.tsx
   * (scripts/*.py non commités car .gitignore — artefacts locaux)
+
+---
+Task ID: 2026-08-11-bugs-eleves-finance + dossier-github + multi-selection-inscriptions
+Agent: main
+Task: 3 corrections demandées par l'utilisateur + push livrables sur GitHub.
+
+Work Log:
+
+=== 1. SUPPRESSION onglet 'Liste & Actions en masse' ===
+L'utilisateur a clarifié : la multi-sélection devait être dans l'onglet
+Inscriptions EXISTANT, pas dans un nouvel onglet. Suppression complète :
+- Onglet 'list' retiré du subModules list
+- 10 variables state bulk supprimées (selectedStudentIds, isBulkStatusModalOpen, etc.)
+- 181 lignes de handlers bulk supprimées (handleBulkStatusSubmit, etc.)
+- Barre d'actions bulk (60 lignes) remplacée par toolbar simple original
+- Colonne checkbox supprimée (header + body)
+- 3 modales bulk (227 lignes) supprimées
+- Imports nettoyés (ListChecks, RefreshCw, CheckSquare, X)
+Total : -597 lignes dans StudentsModulePage.
+
+=== 2. MULTI-SÉLECTION DANS EnrollmentsContent (onglet Inscriptions) ===
+Ajout de 4 nouveaux handlers bulk dans EnrollmentsContent.tsx :
+- handleBulkMarkAsOld : bascule NEW → REPEAT (frais de réinscription)
+- handleBulkMarkAsNew : bascule REPEAT → NEW (frais d'inscription complets)
+- handleBulkDelete : suppression définitive avec double confirmation
+  (prompt 'SUPPRIMER')
+- toggleSelectAllVisible : sélectionne tous les élèves visibles
+  (non affectés + affectés)
+
+Barre d'actions multiple sticky (bleu clair) qui s'affiche quand ≥1 élève
+sélectionné, avec 5 boutons :
+- Marquer anciens (ambre)
+- Marquer nouveaux (bleu)
+- Réinscrire (indigo — existant, réutilisant handleBulkReEnroll)
+- Supprimer (rouge)
+- Effacer sélection (X)
+
+Colonne checkbox (w-6) ajoutée dans les 2 emplacements de rendu élèves :
+- Header '✓' (unassigned + affectés)
+- Body : input checkbox + ligne surlignée bg-blue-50 quand sélectionnée
+Badge 'N sélectionné(s)' dans la barre.
+
+=== 3. FIX FINANCE 'Bilan des encaissements' ===
+3 bugs avaient la MÊME CAUSE RACINE : le backend utilisait
+enrollment.class (classe physique) pour le matching niveau, mais
+beaucoup d'élèves n'ont QUE academicClass (classe officielle) → ils
+étaient exclus du filtre → 'Aucune donnée' + totalDue=0 + tranches vides.
+
+Fixes backend (collection-summary.controller.ts) :
+a) Inclure schoolLevel dans academicClass select (ligne 151)
+b) Filtre niveau : matcher aussi sur academicClass.schoolLevelId /
+   academicClass.schoolLevel.code (lignes 183-188)
+c) matchByType : utiliser effectiveLevelId = class.schoolLevelId ||
+   academicClass.schoolLevelId (ligne 391) → totalDue correctement calculé
+d) Chargement FeeOverrides pour colonne Personnalisation (lignes 328-352)
+e) Ajout champs scolarite, hasPersonalization, personalizationAmount,
+   personalizationReduction dans la réponse student (lignes 500-506)
+f) Mise à jour totalDue pour soustraire personalizationReduction (ligne 482)
+g) RecapRow interface étendue avec scolarite, personalizationCount,
+   personalizationReduction (lignes 678-682)
+
+=== 4. FIX FINANCE 'Récapitulatif' ===
+Frontend (CollectionSummaryContent.tsx) :
+- StudentPaymentRow + RecapRow interfaces étendues avec scolarite,
+  hasPersonalization, personalizationAmount, personalizationReduction,
+  personalizationCount
+- DetailTable : 2 nouvelles colonnes (Scolarité + Personnalisation)
+  insérées AVANT Total dû, avec badge ambre 'Oui (X FCFA)' si perso
+- RecapTable : 2 nouvelles colonnes (Scolarité + Personnalisation)
+  avec 'N élève(s) (X FCFA)' dans la cellule
+- whitespace-nowrap sur TOUS les headers et montants → 1 ligne par colonne
+- Ligne TOTAL mise à jour avec les 2 nouvelles colonnes
+- Les tranches s'affichent maintenant correctement pour tous les niveaux
+  (Maternelle/Primaire/Secondaire) car le matching levelId utilise
+  academicClass.schoolLevelId en fallback → tuitionStructures non vide
+  → matchedInstallments non vide → tuitionInstallments rempli.
+
+=== 5. DOSSIER COMMERCIAL v2 — 17 problèmes/solutions ===
+Déjà fait au commit précédent (dossier v2 avec 5 nouveaux problèmes).
+Confirmé : PDF 298 KB + Word 69 KB.
+
+=== 6. PUSH LIVRABLES SUR GITHUB ===
+- Création docs/commercial/ (non gitignored, contrairement à download/)
+- Copie PDF + DOCX + README.md avec liens de téléchargement direct
+- Liens GitHub raw :
+  * PDF : https://github.com/SenaDev007/Academia-Helm/raw/main/docs/commercial/Academia_Helm_Dossier_Commercial_2026.pdf
+  * Word : https://github.com/SenaDev007/Academia-Helm/raw/main/docs/commercial/Academia_Helm_Dossier_Commercial_2026.docx
+
+=== 7. COMMIT + PUSH ===
+Commit fd265985 : 'fix: 3 bugs Élèves/Finance + dossier commercial v2 (17 problèmes) + Word'
+Push réussi vers origin/main (8e81a1f6..fd265985)
+7 files changed, 459 insertions(+), 597 deletions(-)
+
+Stage Summary:
+- Onglet 'Liste & Actions en masse' supprimé (-597 lignes)
+- Multi-sélection ajoutée dans l'onglet Inscriptions EXISTANT
+  (4 handlers bulk + barre d'actions + checkbox column)
+- 3 bugs Finance 'Bilan des encaissements' corrigés (cause racine :
+  academicClass.schoolLevel non inclus dans le matching niveau)
+- 2 nouvelles colonnes (Scolarité + Personnalisation) dans DetailTable
+  ET RecapTable, avec whitespace-nowrap pour 1 ligne par colonne
+- Tranches de paiement s'affichent maintenant pour tous les niveaux
+- Livrables PDF + Word poussés sur GitHub (docs/commercial/)
+- Push effectué — Vercel va re-déployer automatiquement
+- Files modified: 4 + 3 new (docs/commercial/*)

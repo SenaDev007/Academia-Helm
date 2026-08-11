@@ -3,22 +3,19 @@
  * API ROUTE: /api/dashboard/finance-overview
  * ============================================================================
  *
- * Vue d'ensemble financière — v4 CORRIGÉE.
+ * Vue d'ensemble financière — v5 CORRIGÉE.
  *
- * ⭐ CORRECTION v4 :
- *    - Utilise les routes BFF (proxy Next.js) au lieu du backend direct
- *    - Les routes BFF ajoutent les headers d'auth + tenant correctement
- *    - Agrège les student-accounts côté serveur (BFF) avec les bonnes données
- *
- * Sources :
- *    - /api/finance/reports/kpi → totaux globaux (source de vérité)
- *    - /api/finance/student-accounts → par élève (totalDue, totalPaid, balance, level, class)
- *    - /api/finance/fee-structures/overrides → personnalisations
- *    - /api/students/statistics → effectifs par classe
+ * ⭐ CORRECTION v5 :
+ *    - Appelle le backend NestJS directement (pas les routes BFF)
+ *    - Transmet les headers d'auth + tenant via getProxyAuthHeaders
+ *    - Le KPI backend est la source de vérité pour les totaux globaux
+ *    - Les student-accounts sont agrégés par niveau + classe
  * ============================================================================
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { fetchWithTimeout } from '@/lib/api/fetch-with-timeout';
+import { getApiBaseUrlForRoutes, normalizeApiUrl } from '@/lib/utils/api-urls';
 import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const LEVEL_ORDER = ['MATERNELLE', 'PRIMAIRE', 'SECONDAIRE', 'COLLEGE', 'LYCEE'];
@@ -61,17 +58,6 @@ function sortClasses(classes: any[]): any[] {
   });
 }
 
-async function fetchJson(url: string, headers: Record<string, string>): Promise<any> {
-  try {
-    const res = await fetch(url, {
-      headers: { 'Content-Type': 'application/json', ...headers },
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
-    return await res.json().catch(() => null);
-  } catch { return null; }
-}
-
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -83,32 +69,42 @@ export async function GET(request: NextRequest) {
     }
 
     const headers = await getProxyAuthHeaders(request);
-
-    // Construire les query params
+    const baseUrl = getApiBaseUrlForRoutes();
     const qs = new URLSearchParams();
     qs.set('tenantId', tenantId);
     if (academicYearId) qs.set('academicYearId', academicYearId);
     const qsStr = qs.toString();
 
-    // ─── 1. KPI global (source de vérité pour les totaux) ─────────────
-    const kpi = await fetchJson(`/api/finance/reports/kpi?${qsStr}`, headers) || {};
+    // Helper : fetch backend NestJS directement
+    async function fetchBackend(path: string): Promise<any> {
+      try {
+        const url = normalizeApiUrl(`${baseUrl}${path}${path.includes('?') ? '&' : '?'}${qsStr}`);
+        const res = await fetchWithTimeout(url, { headers, cache: 'no-store' }, 12000);
+        if (!res.ok) return null;
+        return await res.json().catch(() => null);
+      } catch (e) {
+        console.warn(`[finance-overview] ${path} failed:`, (e as Error).message);
+        return null;
+      }
+    }
 
-    // ─── 2. Student-accounts (via route BFF) ───────────────────────────
-    //    La route BFF /api/finance/[...path] proxy correctement vers NestJS
-    //    avec les headers d'auth + tenant.
-    const saData = await fetchJson(`/api/finance/student-accounts?${qsStr}&limit=2000`, headers);
+    // ─── 1. KPI global (source de vérité pour les totaux) ─────────────
+    const kpi = await fetchBackend('/finance/reports/kpi') || {};
+
+    // ─── 2. Student-accounts ───────────────────────────────────────────
+    const saData = await fetchBackend('/finance/student-accounts?limit=10000');
     const studentAccounts: any[] = Array.isArray(saData)
       ? saData
       : (saData?.items || saData?.data || saData?.accounts || []);
 
-    // ─── 3. Overrides (via route BFF) ──────────────────────────────────
-    const ovrData = await fetchJson(`/api/finance/fee-structures/overrides?${qsStr}&limit=2000`, headers);
+    // ─── 3. Overrides ──────────────────────────────────────────────────
+    const ovrData = await fetchBackend('/finance/fee-structures/overrides?limit=10000');
     const overrides: any[] = Array.isArray(ovrData)
       ? ovrData
       : (ovrData?.items || ovrData?.overrides || ovrData?.data || []);
 
     // ─── 4. Students statistics ────────────────────────────────────────
-    const studentsStats = await fetchJson(`/api/students/statistics?${qsStr}`, headers) || {};
+    const studentsStats = await fetchBackend('/students/statistics') || {};
 
     // ─── 5. Agréger par niveau ─────────────────────────────────────────
     const levelMap = new Map<string, any>();
@@ -133,7 +129,6 @@ export async function GET(request: NextRequest) {
       return levelMap.get(c);
     };
 
-    // ⭐ Agréger les student-accounts par niveau
     for (const sa of studentAccounts) {
       const levelCode = (sa.student?.schoolLevel?.code || '').toUpperCase();
       if (!levelCode || levelCode === 'ALL') continue;
@@ -145,7 +140,6 @@ export async function GET(request: NextRequest) {
       entry.nombreEleves += 1;
     }
 
-    // ⭐ Agréger les overrides par niveau
     for (const override of overrides) {
       const levelCode = (
         override.feeStructure?.level?.code ||
@@ -162,7 +156,6 @@ export async function GET(request: NextRequest) {
       entry.totalReduction += Math.max(0, original - custom);
     }
 
-    // ⭐ montantTotalDu = montantPersonnalise + totalReduction
     for (const entry of levelMap.values()) {
       entry.montantTotalDu = entry.montantPersonnalise + entry.totalReduction;
       entry.tauxRecouvrement = entry.montantPersonnalise > 0
@@ -177,7 +170,6 @@ export async function GET(request: NextRequest) {
       const levelCode = (sa.student?.schoolLevel?.code || '').toUpperCase();
       if (!levelCode || levelCode === 'ALL') continue;
 
-      // Récupérer la classe depuis les enrollments
       const enrollments = sa.student?.studentEnrollments || [];
       const enrollment = enrollments.find((e: any) =>
         academicYearId ? e.academicYearId === academicYearId : true
@@ -211,19 +203,16 @@ export async function GET(request: NextRequest) {
       entry.montantRestant += Number(sa.balance || 0);
     }
 
-    // Ajouter les personnalisations par classe
     for (const override of overrides) {
       const studentId = override.studentId;
       const sa = studentAccounts.find((s: any) => s.studentId === studentId);
       if (!sa) continue;
-
       const levelCode = (sa.student?.schoolLevel?.code || '').toUpperCase();
       const enrollments = sa.student?.studentEnrollments || [];
       const enrollment = enrollments.find((e: any) =>
         academicYearId ? e.academicYearId === academicYearId : true
       ) || enrollments[0];
       const key = enrollment?.classId || `noclass_${levelCode}`;
-
       const entry = classMap.get(key);
       if (entry) {
         entry.nombrePersonnalisations += 1;
@@ -233,7 +222,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Calculer montantTotalDu et taux par classe
     for (const entry of classMap.values()) {
       entry.montantTotalDu = entry.montantPersonnalise + entry.totalReduction;
       entry.tauxRecouvrement = entry.montantPersonnalise > 0
@@ -241,20 +229,14 @@ export async function GET(request: NextRequest) {
         : 0;
     }
 
-    // Trier les classes et les ajouter aux niveaux
     const sortedClasses = sortClasses(Array.from(classMap.values()));
     for (const cls of sortedClasses) {
       const levelEntry = getLevel(cls.levelCode);
-      if (levelEntry) {
-        levelEntry.classes.push(cls);
-      }
+      if (levelEntry) levelEntry.classes.push(cls);
     }
 
     // ─── 7. Totaux globaux ─────────────────────────────────────────────
     const byLevel = sortByLevel(Array.from(levelMap.values()));
-
-    // ⭐ Totaux depuis le KPI backend (source de vérité pour les montants)
-    //    + nombreEleves depuis les student-accounts réels
     const totals = {
       montantTotalDu: Number(kpi.previsonnementGlobal || kpi.totalDue || 0),
       montantPersonnalise: Number(kpi.totalDue || 0),

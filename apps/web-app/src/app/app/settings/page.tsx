@@ -31,7 +31,6 @@ import {
   Pencil, CopyPlus, Layers, Building2, Wallet, Plus, X, Trash2
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
-import GeneratedStampsSignatures from '@/components/settings/GeneratedStampsSignatures';
 import StampDesigner from '@/components/settings/StampDesigner';
 import SchoolCalendarConfigSection from '@/components/settings/SchoolCalendarConfigSection';
 import { AdminStructureSection } from '@/components/settings/AdminStructureSection';

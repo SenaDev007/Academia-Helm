@@ -806,28 +806,7 @@ export default function PilotageSidebar({
               )}
             </a>
           )}
-          {/* SaisieMaster — app satellite de saisie de notes au format
-              EducMaster (Benin). Ouvre saisiemaster.academiahelm.com dans un
-              nouvel onglet. Visible pour tous les utilisateurs connectes
-              (sauf sur le sous-domaine admin, reserve au back-office). */}
-          {!isAdminSubdomain && (
-            <a
-              href={typeof window !== 'undefined' ? getSaisieMasterUrl() : '#'}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={onCloseMobileDrawer}
-              className="group flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-emerald-300/90 hover:bg-emerald-500/10 hover:text-emerald-200 border border-emerald-500/20 mb-1"
-              title={!effectiveOpen ? 'SaisieMaster — Saisie de notes EducMaster' : undefined}
-            >
-              <FileSpreadsheet className="w-[18px] h-[18px] flex-shrink-0 transition-transform duration-200 group-hover:scale-110" />
-              {effectiveOpen && (
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis">SaisieMaster</div>
-                  <div className="text-[9px] text-emerald-400/60 uppercase tracking-wider">Notes EducMaster</div>
-                </div>
-              )}
-            </a>
-          )}
+          {/* ⭐ SaisieMaster supprimé de la sidebar — pas pertinent pour les écoles */}
           {/* Visiter le site public */}
           <Link
             href={typeof window !== 'undefined' ? getLandingPageUrlFromApp() : '/'}
@@ -955,18 +934,7 @@ export default function PilotageSidebar({
           {supplementaryModules.map((item) => renderIconItem(item))}
         </nav>
         <div className="relative z-10 border-t border-white/[0.06] py-2 space-y-0.5">
-          {/* SaisieMaster — app satellite (icône seule en vue tablette) */}
-          {!isAdminSubdomain && (
-            <a
-              href={typeof window !== 'undefined' ? getSaisieMasterUrl() : '#'}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center p-2.5 rounded-xl transition-all duration-200 text-emerald-300/90 hover:bg-emerald-500/10 hover:text-emerald-200 border border-emerald-500/20 min-h-[44px] min-w-[44px]"
-              title="SaisieMaster — Saisie de notes EducMaster"
-            >
-              <FileSpreadsheet className="w-[18px] h-[18px] flex-shrink-0" />
-            </a>
-          )}
+          {/* ⭐ SaisieMaster supprimé de la sidebar tablette aussi */}
           <Link
             href={typeof window !== 'undefined' ? getLandingPageUrlFromApp() : '/'}
             className="flex items-center justify-center p-2.5 rounded-xl text-blue-200/60 hover:bg-white/[0.04] hover:text-white min-h-[44px] min-w-[44px]"

@@ -1958,22 +1958,13 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
         />
       </div>
 
-      {/* ⭐ NOUVELLE SECTION — Analytics des notes (remplace l'ancienne carte "Moyenne générale") */}
-      <GradeAnalyticsSection tenantId={tenantId} academicYearId={academicYearId} />
+      {/* ⭐ NOUVELLE SECTION — Vue d'ensemble des effectifs (total / actifs / abandons) */}
+      <DashboardOverviewSection academicYearId={academicYearId} schoolLevelId={schoolLevelId} />
 
       {/* ⭐ NOUVELLE SECTION — Distribution des âges */}
       <AgeDistributionSection tenantId={tenantId} academicYearId={academicYearId} />
 
-      {/* ⭐ NOUVELLE SECTION — Vue d'ensemble des effectifs (total / actifs / abandons) */}
-      <DashboardOverviewSection academicYearId={academicYearId} schoolLevelId={schoolLevelId} />
-
-      {/* ⭐ NOUVELLE SECTION — Personnalisations de frais de scolarité */}
-      <TuitionPersonalizationsSection academicYearId={academicYearId} />
-
-      {/* ⭐ NOUVELLE SECTION — Personnel (administration + enseignants par niveau) */}
-      <HROverviewSection tenantId={tenantId} academicYearId={academicYearId} />
-
-      {/* ── Section Graphiques ── */}
+      {/* ── Section Graphiques : Effectifs par classe + Répartition par sexe ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Effectifs par classe (barres) + bouton "Voir tout" */}
         <div className="lg:col-span-2">
@@ -2054,11 +2045,14 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
         </div>
       </div>
 
-      {/* ── ⭐ Évolution des moyennes par niveau scolaire + piste + Alertes ORION ── */}
+      {/* ⭐ Personnalisations de frais de scolarité */}
+      <TuitionPersonalizationsSection academicYearId={academicYearId} />
+
+      {/* ── Analytics des notes + Alertes ORION ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          {/* ⭐ NOUVEAU : graphique multi-séries par niveau scolaire + piste linguistique */}
-          <GradeEvolutionByLevelSection academicYearId={academicYearId} />
+          {/* ⭐ Analytics des notes remplace l'évolution des moyennes (plus complet) */}
+          <GradeAnalyticsSection tenantId={tenantId} academicYearId={academicYearId} />
         </div>
         <div>
           <OrionAlertsCard
@@ -2113,6 +2107,9 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
           </div>
         </div>
       )}
+
+      {/* ⭐ Personnel de l'établissement (administration + enseignants par niveau) — en dernier */}
+      <HROverviewSection tenantId={tenantId} academicYearId={academicYearId} />
 
       {/* ── Accès rapide aux modules ── */}
       {showQuickAccess && (

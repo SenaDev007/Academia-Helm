@@ -29,7 +29,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' tauri: asset:; img-src 'self' https: data: blob: asset:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.fedapay.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https: wss: ipc: http://ipc.localhost; frame-src 'self' https://cdn.fedapay.com"
+      "csp": "default-src 'self' tauri: asset: https://app.academiahelm.com https://*.academiahelm.com; img-src 'self' https: data: blob: asset:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.fedapay.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https: wss: ipc: http://ipc.localhost; frame-src 'self' https://cdn.fedapay.com"
     }
   },
   "bundle": {

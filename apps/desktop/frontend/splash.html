@@ -153,10 +153,15 @@
             }
 
             if (savedSchool && initialSyncCompleted) {
-                // ── École sauvegardée + sync terminée → Reprendre (LOCAL app.html) ──
-                // Toujours vers app.html (local) — fonctionne online ET offline
+                // ── École sauvegardée + sync terminée → Reprendre ──
+                // ⭐ Rediriger vers le web-app (pas app.html local) pour bénéficier
+                //    de l'intercepteur global fetch + IndexedDB (offline-first).
+                //    Le web-app gère lui-même le mode offline via IndexedDB.
+                const schoolUrl = savedSchool.subdomain
+                    ? `${APP_BASE}/app?tenant=${savedSchool.subdomain}&tenant_id=${savedSchool.tenantId || ''}`
+                    : `${APP_BASE}/app`;
                 buttonArea.innerHTML = `
-                    <a href="app.html" class="btn-primary">
+                    <a href="${schoolUrl}" class="btn-primary">
                         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
                             <polyline points="10 17 15 12 10 7"/>

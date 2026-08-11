@@ -86,17 +86,16 @@ export class CollectionSummaryController {
     const limitEff = Math.min(500, Math.max(1, limitNum ?? 50));
 
     // ─── 1. Récupérer TOUTES les FeeStructures actives de l'année ──────────────
-    // ⭐ On ne se limite plus à feeType='TUITION' : on a aussi besoin des
-    //    structures INSCRIPTION et REINSCRIPTION pour calculer les montants
-    //    attendus (Total dû) de chaque type de frais.
-    //    Les tranches (FeeStructureInstallment) ne s'appliquent qu'aux structures
-    //    TUITION isInstallment=true — on ne les charge que pour celles-ci.
+    // ⭐ On charge TOUTES les structures (class-spécifiques + level-spécifiques + globales)
+    //    sans filtre classId, car matchByType() fait le matching prioritaire :
+    //    academicClass > physicalClass > level > global.
+    //    Si on filtre par classId ici, on perd les structures level/globales → totalDue=0.
+    //    Le filtre classId s'applique uniquement sur les enrollments (plus bas).
     const feeStructures = await this.prisma.feeStructure.findMany({
       where: {
         tenantId,
         academicYearId,
         isActive: true,
-        ...(classId && { OR: [{ classId }, { academicClassId: classId }] }),
       },
       include: {
         structureInstallments: { orderBy: { orderIndex: 'asc' } },
@@ -143,12 +142,11 @@ export class CollectionSummaryController {
     const enrollments = await this.prisma.studentEnrollment.findMany({
       where: enrollmentWhere,
       include: {
-        student: { select: { id: true, firstName: true, lastName: true, matricule: true } },
+        // ⭐ Inclure schoolLevelId sur student — c'est la source de vérité pour
+        //    le niveau scolaire (AcademicClass n'a pas de schoolLevelId direct).
+        student: { select: { id: true, firstName: true, lastName: true, matricule: true, schoolLevelId: true } },
         class: { select: { id: true, name: true, code: true, schoolLevelId: true, schoolLevel: true } },
-        // ⭐ Inclure schoolLevel sur academicClass aussi — sinon le filtre par niveau
-        //    échoue pour les élèves qui n'ont QUE academicClass (pas de classId physique).
-        //    C'était la cause du bug "Aucune donnée" quand on sélectionnait Maternelle/Primaire/Secondaire.
-        academicClass: { select: { id: true, name: true, code: true, schoolLevelId: true, schoolLevel: true } },
+        academicClass: { select: { id: true, name: true, code: true, levelId: true } },
       },
       orderBy: [
         { student: { lastName: 'asc' } },
@@ -157,9 +155,10 @@ export class CollectionSummaryController {
     });
 
     // Filtrer par niveau si fourni (levelId = UUID de school_levels)
-    // ⭐ FIX : on matche sur class.schoolLevel ET academicClass.schoolLevel.
-    //    Beaucoup d'élèves n'ont que academicClass (pas de classId physique) —
-    //    avant ce fix, ils étaient exclus du filtre → "Aucune donnée".
+    // ⭐ FIX : on matche sur class.schoolLevel ET student.schoolLevelId.
+    //    AcademicClass n'a PAS de schoolLevelId direct — on utilise student.schoolLevelId
+    //    comme fallback (source de vérité : l'élève a toujours un schoolLevelId).
+    //    Avant ce fix, les élèves sans classId physique étaient exclus du filtre → "Aucune donnée".
     let filteredEnrollments = enrollments;
     if (levelId) {
       // Charger le niveau scolaire pour récupérer son code (au cas où levelId
@@ -180,12 +179,10 @@ export class CollectionSummaryController {
         // Match par UUID de school_levels sur la classe physique
         if (e.class?.schoolLevel?.id === levelId) return true;
         if (e.class?.schoolLevelId === levelId) return true;
-        // ⭐ Match par UUID de school_levels sur la classe académique (officielle)
-        if (e.academicClass?.schoolLevel?.id === levelId) return true;
-        if (e.academicClass?.schoolLevelId === levelId) return true;
+        // ⭐ Match par student.schoolLevelId (source de vérité — l'élève a toujours ce champ)
+        if (e.student?.schoolLevelId === levelId) return true;
         // Match par code (au cas où levelId soit un code comme "SECONDAIRE")
         if (levelCode && e.class?.schoolLevel?.code === levelCode) return true;
-        if (levelCode && e.academicClass?.schoolLevel?.code === levelCode) return true;
         return false;
       });
 
@@ -399,8 +396,8 @@ export class CollectionSummaryController {
       // ─── Matching EXCLUSIF des FeeStructures par type ─────────────────────
       // Priorité : academicClass > physicalClass > level > global (exclusive).
       // On retourne la(les) structure(s) qui matche(nt) au niveau le plus précis.
-      // ⭐ FIX : on matche aussi sur academicClass.schoolLevelId (pas seulement class.schoolLevelId)
-      //    car beaucoup d'élèves n'ont que academicClass — avant ce fix, totalDue = 0 pour eux.
+      // ⭐ FIX : utiliser student.schoolLevelId comme fallback pour le matching
+      //    par levelId (AcademicClass n'a pas de schoolLevelId direct).
       const matchByType = (feeType: string) => {
         const classSpecific = feeStructures.filter(fs =>
           fs.feeType === feeType && fs.academicClassId && fs.academicClassId === enrollment.academicClassId
@@ -412,9 +409,9 @@ export class CollectionSummaryController {
         );
         if (physicalClassSpecific.length > 0) return physicalClassSpecific;
 
-        // ⭐ Match par levelId : utiliser academicClass.schoolLevelId en fallback
-        //    si class.schoolLevelId est absent.
-        const effectiveLevelId = enrollment.class?.schoolLevelId || enrollment.academicClass?.schoolLevelId;
+        // ⭐ Match par levelId : utiliser class.schoolLevelId ou student.schoolLevelId
+        //    (les deux sont des UUID de school_levels ; AcademicClass n'en a pas).
+        const effectiveLevelId = enrollment.class?.schoolLevelId || enrollment.student?.schoolLevelId;
         const levelSpecific = feeStructures.filter(fs =>
           fs.feeType === feeType && !fs.academicClassId && !fs.classId && fs.levelId && fs.levelId === effectiveLevelId
         );

@@ -692,14 +692,28 @@ export default function EnrollmentsContent() {
    */
   const toggleSelectAllVisible = () => {
     const allVisibleIds: string[] = [];
-    // Élèves non affectés
-    unassignedEnrollments.forEach(enr => allVisibleIds.push(enr.student.id));
-    // Élèves dans les groupes
-    filteredTree.forEach(level => {
-      level.groups.forEach(group => {
-        group.students.forEach(enr => allVisibleIds.push(enr.student.id));
+    // Élèves non affectés (orphelins)
+    if (Array.isArray(unassignedEnrollments)) {
+      unassignedEnrollments.forEach(enr => {
+        if (enr?.student?.id) allVisibleIds.push(enr.student.id);
       });
-    });
+    }
+    // Élèves dans les classes de l'arborescence
+    // ⭐ Structure : filteredTree = [{ level, classes: [{ classInfo, students }], totalStudents }]
+    //    ( PAS "groups" — c'était le bug : level.groups était undefined → crash .forEach)
+    if (Array.isArray(filteredTree)) {
+      filteredTree.forEach(levelNode => {
+        const classes = levelNode?.classes;
+        if (!Array.isArray(classes)) return;
+        classes.forEach(cls => {
+          const students = cls?.students;
+          if (!Array.isArray(students)) return;
+          students.forEach(enr => {
+            if (enr?.student?.id) allVisibleIds.push(enr.student.id);
+          });
+        });
+      });
+    }
     // Si tous sont déjà sélectionnés → désélectionner tout, sinon → sélectionner tous
     const allSelected = allVisibleIds.length > 0 && allVisibleIds.every(id => selectedForBulk.has(id));
     if (allSelected) {
@@ -1110,8 +1124,18 @@ export default function EnrollmentsContent() {
                   type="checkbox"
                   checked={(() => {
                     const allIds: string[] = [];
-                    unassignedEnrollments.forEach(e => allIds.push(e.student.id));
-                    filteredTree.forEach(l => l.groups.forEach(g => g.students.forEach(e => allIds.push(e.student.id))));
+                    if (Array.isArray(unassignedEnrollments)) {
+                      unassignedEnrollments.forEach(e => { if (e?.student?.id) allIds.push(e.student.id); });
+                    }
+                    if (Array.isArray(filteredTree)) {
+                      filteredTree.forEach(l => {
+                        if (!Array.isArray(l?.classes)) return;
+                        l.classes.forEach(c => {
+                          if (!Array.isArray(c?.students)) return;
+                          c.students.forEach(e => { if (e?.student?.id) allIds.push(e.student.id); });
+                        });
+                      });
+                    }
                     return allIds.length > 0 && allIds.every(id => selectedForBulk.has(id));
                   })()}
                   onChange={() => {/* handled by onClick on parent */}}

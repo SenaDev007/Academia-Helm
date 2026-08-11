@@ -447,24 +447,42 @@ interface CircularStampProps {
 
 const CircularStamp = forwardRef<SVGSVGElement, CircularStampProps>(
   ({ acronym, contactLine, personName, personRole, logoUrl, style }, ref) => {
-    const SIZE = 300;
+    const SIZE = 320;
     const CENTER = SIZE / 2;
-    const OUTER_R = 140;
-    const INNER_R = 105;
-    const TEXT_R = 122; // rayon du texte circulaire
+    const OUTER_R = 150;
+    const INNER_R = 112;
+    const TEXT_R = 131; // rayon du texte circulaire — exactement entre les 2 cercles
     const stampColor = style === 'wax' ? WAX_RED : STAMP_RED;
 
-    // Texte circulaire supérieur (acronyme)
     const topText = acronym.toUpperCase();
 
-    // Texte circulaire inférieur (contacts) — on le met en 2 lignes si trop long
-    const contactParts = contactLine.split(' • ');
-    const bottomLine1 = contactParts.slice(0, 2).join(' • ');
-    const bottomLine2 = contactParts.slice(2).join(' • ');
+    // ⭐ Texte contacts sur UNE SEULE LIGNE — pas de retour à la ligne
+    //    Si trop long, on le tronque proprement
+    const bottomText = contactLine.length > 60
+      ? contactLine.substring(0, 57) + '…'
+      : contactLine;
 
-    // Calculer le path arc pour le texte circulaire
-    const topArcPath = `M ${CENTER - TEXT_R} ${CENTER} A ${TEXT_R} ${TEXT_R} 0 0 1 ${CENTER + TEXT_R} ${CENTER}`;
-    const bottomArcPath = `M ${CENTER - TEXT_R} ${CENTER} A ${TEXT_R} ${TEXT_R} 0 0 0 ${CENTER + TEXT_R} ${CENTER}`;
+    // ⭐ Arc supérieur : demi-cercle complet de gauche à droite (passant par le haut)
+    //    Le texte remplira tout le demi-cercle avec startOffset 50% + textAnchor middle
+    //    + letter-spacing pour bien répartir les lettres
+    const topArcStart = { x: CENTER - TEXT_R, y: CENTER };
+    const topArcEnd = { x: CENTER + TEXT_R, y: CENTER };
+    const topArcPath = `M ${topArcStart.x} ${topArcStart.y} A ${TEXT_R} ${TEXT_R} 0 0 1 ${topArcEnd.x} ${topArcEnd.y}`;
+
+    // ⭐ Arc inférieur : demi-cercle complet de gauche à droite (passant par le bas)
+    const bottomArcPath = `M ${topArcStart.x} ${topArcStart.y} A ${TEXT_R} ${TEXT_R} 0 0 0 ${topArcEnd.x} ${topArcEnd.y}`;
+
+    // Position des étoiles (à 9h et 3h — sur l'axe horizontal, dans l'anneau)
+    const starLeftX = CENTER - TEXT_R - 2;
+    const starRightX = CENTER + TEXT_R + 2;
+    const starY = CENTER + 4; // légèrement décalé vers le bas pour centrer visuellement
+
+    // Taille de police dynamique : si l'acronyme est long, on réduit
+    const topFontSize = topText.length > 15 ? 12 : topText.length > 10 ? 14 : 16;
+    const topLetterSpacing = topText.length > 12 ? 2 : 3;
+
+    // Taille de police pour le bas : adaptative aussi
+    const bottomFontSize = bottomText.length > 45 ? 8 : bottomText.length > 30 ? 9 : 10;
 
     return (
       <svg
@@ -475,133 +493,152 @@ const CircularStamp = forwardRef<SVGSVGElement, CircularStampProps>(
         xmlns="http://www.w3.org/2000/svg"
       >
         <defs>
-          {/* Filtre pour effet "encre/tampon" */}
-          <filter id="stamp-texture" x="-5%" y="-5%" width="110%" height="110%">
-            <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="3" />
-            <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -0.4 0.1" />
-            <feComposite in2="SourceGraphic" operator="in" />
-            <feMerge>
-              <feMergeNode in="SourceGraphic" />
-              <feMergeNode />
-            </feMerge>
+          {/* ⭐ Filtre tampon : texture granuleuse légère + opacité irrégulière
+              pour simuler l'encre de tampon qui n'est pas parfaitement uniforme */}
+          <filter id="stamp-grain" x="-2%" y="-2%" width="104%" height="104%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" seed="2" result="noise" />
+            <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.5" xChannelSelector="R" yChannelSelector="G" />
+          </filter>
+
+          {/* ⭐ Filtre pour l'effet "encre" : micro-bruit qui donne l'aspect tampon */}
+          <filter id="ink-texture" x="-5%" y="-5%" width="110%" height="110%">
+            <feTurbulence type="fractalNoise" baseFrequency="1.2" numOctaves="1" seed="7" result="grain" />
+            <feColorMatrix in="grain" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -0.5 0.15" result="grainAlpha" />
+            <feComposite in="SourceGraphic" in2="grainAlpha" operator="over" />
           </filter>
 
           {style === 'wax' && (
-            <radialGradient id="wax-gradient" cx="50%" cy="40%" r="60%">
-              <stop offset="0%" stopColor="#c41e3a" stopOpacity="0.9" />
-              <stop offset="60%" stopColor={WAX_RED} stopOpacity="1" />
-              <stop offset="100%" stopColor="#5a0000" stopOpacity="1" />
+            <radialGradient id="wax-gradient" cx="50%" cy="35%" r="65%">
+              <stop offset="0%" stopColor="#c41e3a" stopOpacity="0.85" />
+              <stop offset="50%" stopColor={WAX_RED} stopOpacity="1" />
+              <stop offset="100%" stopColor="#4a0000" stopOpacity="1" />
             </radialGradient>
           )}
 
-          {/* Clip path pour le logo circulaire au centre */}
-          <clipPath id="logo-clip">
-            <circle cx={CENTER} cy={CENTER} r="35" />
+          <clipPath id="logo-clip-stamp">
+            <circle cx={CENTER} cy={CENTER - 5} r="32" />
           </clipPath>
         </defs>
 
-        {/* Cercle extérieur */}
-        <circle
-          cx={CENTER}
-          cy={CENTER}
-          r={OUTER_R}
-          fill="none"
-          stroke={style === 'wax' ? 'url(#wax-gradient)' : stampColor}
-          strokeWidth="2.5"
-          filter={style === 'standard' ? 'url(#stamp-texture)' : undefined}
-        />
+        {/* ⭐ Groupe principal avec effet tampon */}
+        <g filter={style === 'standard' ? 'url(#ink-texture)' : undefined}>
 
-        {/* Cercle intérieur */}
-        <circle
-          cx={CENTER}
-          cy={CENTER}
-          r={INNER_R}
-          fill="none"
-          stroke={style === 'wax' ? 'url(#wax-gradient)' : stampColor}
-          strokeWidth="1.5"
-          filter={style === 'standard' ? 'url(#stamp-texture)' : undefined}
-        />
-
-        {style === 'wax' && (
+          {/* Cercle extérieur — épais, rouge tampon */}
           <circle
             cx={CENTER}
             cy={CENTER}
-            r={OUTER_R + 3}
-            fill="url(#wax-gradient)"
-            opacity="0.15"
+            r={OUTER_R}
+            fill="none"
+            stroke={style === 'wax' ? 'url(#wax-gradient)' : stampColor}
+            strokeWidth="3"
           />
-        )}
 
-        {/* Texte circulaire supérieur (acronyme) */}
-        <text
-          fill={stampColor}
-          fontSize="14"
-          fontWeight="bold"
-          fontFamily="'Arial', sans-serif"
-          letterSpacing="1"
-          filter={style === 'standard' ? 'url(#stamp-texture)' : undefined}
-        >
-          <textPath href={`#${TOP_PATH_ID}`} startOffset="50%" textAnchor="middle">
-            {topText}
-          </textPath>
-        </text>
-        <path id={TOP_PATH_ID} d={topArcPath} fill="none" />
+          {/* Cercle intérieur — plus fin */}
+          <circle
+            cx={CENTER}
+            cy={CENTER}
+            r={INNER_R}
+            fill="none"
+            stroke={style === 'wax' ? 'url(#wax-gradient)' : stampColor}
+            strokeWidth="1.5"
+          />
 
-        {/* Texte circulaire inférieur (contacts) */}
-        <text
-          fill={stampColor}
-          fontSize="9"
-          fontFamily="'Arial', sans-serif"
-          filter={style === 'standard' ? 'url(#stamp-texture)' : undefined}
-        >
-          <textPath href={`#${BOTTOM_PATH_ID_1}`} startOffset="50%" textAnchor="middle">
-            {bottomLine1}
-          </textPath>
-        </text>
-        <path id={BOTTOM_PATH_ID_1} d={bottomArcPath} fill="none" />
+          {/* ⭐ Étoiles séparatrices à 9h et 3h (gauche et droite) */}
+          <text
+            x={starLeftX}
+            y={starY}
+            fill={stampColor}
+            fontSize="12"
+            textAnchor="middle"
+            dominantBaseline="middle"
+          >
+            ★
+          </text>
+          <text
+            x={starRightX}
+            y={starY}
+            fill={stampColor}
+            fontSize="12"
+            textAnchor="middle"
+            dominantBaseline="middle"
+          >
+            ★
+          </text>
 
-        {bottomLine2 && (
+          {/* ⭐ Texte circulaire supérieur — ACRONYME qui remplit le demi-cercle */}
+          <path id={TOP_PATH_ID} d={topArcPath} fill="none" />
           <text
             fill={stampColor}
-            fontSize="9"
-            fontFamily="'Arial', sans-serif"
-            filter={style === 'standard' ? 'url(#stamp-texture)' : undefined}
+            fontSize={topFontSize}
+            fontWeight="bold"
+            fontFamily="'Arial', 'Helvetica', sans-serif"
+            letterSpacing={topLetterSpacing}
           >
-            <textPath href={`#${BOTTOM_PATH_ID_2}`} startOffset="50%" textAnchor="middle">
-              {bottomLine2}
+            <textPath href={`#${TOP_PATH_ID}`} startOffset="50%" textAnchor="middle">
+              {topText}
             </textPath>
           </text>
-        )}
-        <path id={BOTTOM_PATH_ID_2} d={`M ${CENTER - TEXT_R + 15} ${CENTER + 8} A ${TEXT_R - 15} ${TEXT_R - 15} 0 0 0 ${CENTER + TEXT_R - 15} ${CENTER + 8}`} fill="none" />
 
-        {/* Logo de l'école au centre */}
-        {logoUrl ? (
-          <image
-            href={logoUrl}
-            x={CENTER - 30}
-            y={CENTER - 30}
-            width="60"
-            height="60"
-            clipPath="url(#logo-clip)"
-            preserveAspectRatio="xMidYMid slice"
-          />
-        ) : (
-          <circle cx={CENTER} cy={CENTER} r="30" fill="none" stroke={stampColor} strokeWidth="1" strokeDasharray="3 3" />
-        )}
+          {/* ⭐ Texte circulaire inférieur — CONTACTS sur une seule ligne */}
+          <path id={BOTTOM_PATH_ID} d={bottomArcPath} fill="none" />
+          <text
+            fill={stampColor}
+            fontSize={bottomFontSize}
+            fontFamily="'Arial', 'Helvetica', sans-serif"
+            letterSpacing="0.5"
+          >
+            <textPath href={`#${BOTTOM_PATH_ID}`} startOffset="50%" textAnchor="middle">
+              {bottomText}
+            </textPath>
+          </text>
 
-        {/* Titre/poste occupé en bas du centre */}
-        <text
-          x={CENTER}
-          y={CENTER + 48}
-          fill={stampColor}
-          fontSize="11"
-          fontWeight="bold"
-          fontFamily="'Arial', sans-serif"
-          textAnchor="middle"
-          filter={style === 'standard' ? 'url(#stamp-texture)' : undefined}
-        >
-          {personRole.toUpperCase()}
-        </text>
+          {/* ⭐ Logo de l'école au centre */}
+          {logoUrl ? (
+            <image
+              href={logoUrl}
+              x={CENTER - 30}
+              y={CENTER - 35}
+              width="60"
+              height="60"
+              clipPath="url(#logo-clip-stamp)"
+              preserveAspectRatio="xMidYMid slice"
+            />
+          ) : (
+            <circle
+              cx={CENTER}
+              cy={CENTER - 5}
+              r="30"
+              fill="none"
+              stroke={stampColor}
+              strokeWidth="1"
+              strokeDasharray="3 3"
+              opacity="0.5"
+            />
+          )}
+
+          {/* ⭐ Titre/poste occupé en bas du centre */}
+          <text
+            x={CENTER}
+            y={CENTER + 38}
+            fill={stampColor}
+            fontSize="12"
+            fontWeight="bold"
+            fontFamily="'Arial', 'Helvetica', sans-serif"
+            textAnchor="middle"
+            letterSpacing="1"
+          >
+            {personRole.toUpperCase()}
+          </text>
+
+        </g>
+
+        {/* ⭐ Effet wax : overlay supplémentaire */}
+        {style === 'wax' && (
+          <>
+            <circle cx={CENTER} cy={CENTER} r={OUTER_R + 4} fill="url(#wax-gradient)" opacity="0.1" />
+            <circle cx={CENTER} cy={CENTER} r={OUTER_R + 2} fill="none" stroke="#5a0000" strokeWidth="0.5" opacity="0.3" />
+          </>
+        )}
       </svg>
     );
   }
@@ -609,8 +646,7 @@ const CircularStamp = forwardRef<SVGSVGElement, CircularStampProps>(
 CircularStamp.displayName = 'CircularStamp';
 
 const TOP_PATH_ID = 'stamp-top-arc';
-const BOTTOM_PATH_ID_1 = 'stamp-bottom-arc-1';
-const BOTTOM_PATH_ID_2 = 'stamp-bottom-arc-2';
+const BOTTOM_PATH_ID = 'stamp-bottom-arc';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Cachet nominatif rectangulaire

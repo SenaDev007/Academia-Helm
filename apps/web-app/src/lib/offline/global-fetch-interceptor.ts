@@ -1,29 +1,30 @@
 /**
  * ============================================================================
- * GLOBAL FETCH INTERCEPTOR — Offline-first automatique pour TOUS les fetch
+ * GLOBAL FETCH INTERCEPTOR — Offline-first SEULEMENT quand hors ligne
  * ============================================================================
  *
- * Patche window.fetch pour intercepter automatiquement TOUS les GET /api/*
- * et les faire passer par offlineFetch (qui lit IndexedDB en offline).
+ * ⭐ CORRECTION CRITIQUE :
+ *    Avant : l'intercepteur interceptait TOUS les GET /api/* même en online,
+ *    ce qui ralentissait TOUT (passage par offlineFetch + write IDB + parse
+ *    + Response synthétique). Les pages mettaient >1 min à charger.
  *
- * Avantage : aucun composant n'a besoin d'être modifié. Les 110+ fichiers
- * qui font `fetch('/api/...')` directs bénéficient automatiquement du
- * fallback IndexedDB.
+ *    Maintenant : l'intercepteur ne s'active QUE quand le navigateur est
+ *    hors ligne (navigator.onLine === false). En online, on utilise le
+ *    fetch natif sans aucune interception → performance normale.
+ *
+ *    Le cache IDB est toujours peuplé par le sync engine (pull), donc
+ *    quand l'utilisateur passe offline, les données sont déjà en cache
+ *    et l'intercepteur peut les lire.
  *
  * Comportement :
- *   - GET /api/* + store IDB connu → offlineFetch (lit IDB si offline)
- *   - GET /api/* + store IDB inconnu → fetch natif (comportement par défaut)
- *   - POST/PUT/PATCH/DELETE → fetch natif (les mutations offline passent
- *     par l'outbox via offlineMutation, pas par cet intercepteur)
- *   - URLs non /api/* (assets, images, etc.) → fetch natif
- *
- * ⭐ Important : on ne patche QUE si l'environnement est client (browser).
- *    En SSR, window.fetch n'existe pas.
+ *   - ONLINE  : fetch natif (aucune interception, performance normale)
+ *   - OFFLINE : offlineFetch (lit IndexedDB, fallback sur cache)
  * ============================================================================
  */
 
 import { offlineFetch } from './offline-fetch';
 import { deriveStoreName, getTenantIdForOffline } from './store-names';
+import { networkDetectionService } from './network-detection.service';
 
 let isInstalled = false;
 
@@ -38,13 +39,22 @@ export function installGlobalFetchInterceptor(): void {
     input: RequestInfo | URL,
     init?: RequestInit,
   ): Promise<Response> {
-    // ⭐ Ne pas intercepter les requêtes non-GET
-    const method = (init?.method || 'GET').toUpperCase();
-    if (method !== 'GET') {
+    // ⭐ EN LIGNE : ne surtout pas intercepter — performance normale
+    //    Le cache IDB est peuplé par le sync engine (pull), pas besoin
+    //    d'intercepter les GET en online.
+    if (networkDetectionService.isConnected()) {
       return originalFetch.call(window, input, init);
     }
 
-    // ⭐ Extraire l'URL
+    // ⭐ HORS LIGNE : intercepter les GET /api/* pour lire IndexedDB
+    const method = (init?.method || 'GET').toUpperCase();
+    if (method !== 'GET') {
+      // En offline, les mutations non-GET échouent normalement
+      // (elles devraient passer par offlineMutation/outbox)
+      return originalFetch.call(window, input, init);
+    }
+
+    // Extraire l'URL
     let url: string;
     if (typeof input === 'string') {
       url = input;
@@ -56,44 +66,34 @@ export function installGlobalFetchInterceptor(): void {
       return originalFetch.call(window, input, init);
     }
 
-    // ⭐ Ne pas intercepter les URLs non-API (assets, images, SW, etc.)
+    // Ne pas intercepter les URLs non-API
     if (!url.includes('/api/') && !url.startsWith('/api/')) {
       return originalFetch.call(window, input, init);
     }
 
-    // ⭐ Ne pas intercepter les routes d'auth/sync/export (NetworkOnly)
+    // Ne pas intercepter les routes d'auth/sync/export (NetworkOnly)
     const NEVER_INTERCEPT = [
-      '/api/auth/',
-      '/api/sync/',
-      '/api/admin-auth/',
-      '/api/portal/auth/',
-      '/export',
-      '/pdf',
-      '/download',
+      '/api/auth/', '/api/sync/', '/api/admin-auth/',
+      '/api/portal/auth/', '/export', '/pdf', '/download',
     ];
     if (NEVER_INTERCEPT.some(pattern => url.includes(pattern))) {
       return originalFetch.call(window, input, init);
     }
 
-    // ⭐ Résoudre le store IDB
+    // Résoudre le store IDB
     const storeName = deriveStoreName(url);
     if (!storeName) {
-      // Pas de store IDB connu → fetch natif
+      // Pas de store IDB connu → fetch natif (qui échouera en offline,
+      // mais le caller gérera l'erreur)
       return originalFetch.call(window, input, init);
     }
 
-    // ⭐ Utiliser offlineFetch (lit IDB en offline, cache en online)
+    // ⭐ Utiliser offlineFetch (lit IndexedDB en offline)
     try {
       const tenantId = getTenantIdForOffline();
-      const data = await offlineFetch<any>(url, storeName, {
-        tenantId,
-        fetchOptions: init,
-      });
+      const data = await offlineFetch<any>(url, storeName, { tenantId });
 
-      // ⭐ offlineFetch retourne les données parsées (pas une Response).
-      //    On construit une Response synthétique pour que les callers
-      //    qui font `const res = await fetch(...); res.json()` continuent
-      //    de fonctionner.
+      // Construire une Response synthétique
       const body = JSON.stringify(data);
       return new Response(body, {
         status: 200,
@@ -104,14 +104,23 @@ export function installGlobalFetchInterceptor(): void {
           'X-Offline-Store': storeName,
         },
       });
-    } catch (error) {
-      // ⭐ Si offlineFetch échoue (cache vide + offline, ou autre erreur),
-      //    on retombe sur le fetch natif. Le caller gérera l'erreur
-      //    comme il le faisait avant (catch → setState([])).
-      return originalFetch.call(window, input, init);
+    } catch {
+      // Si offlineFetch échoue (cache vide), retourner une réponse vide
+      // plutôt que de laisser le fetch natif échouer avec une erreur réseau
+      // qui affiche la page offline du Service Worker.
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        statusText: 'OK (offline cache empty)',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Offline-Fetch': 'true',
+          'X-Offline-Store': storeName,
+          'X-Offline-Empty': 'true',
+        },
+      });
     }
   };
 
   isInstalled = true;
-  console.log('[GlobalFetchInterceptor] ✅ Installed — all GET /api/* requests now use offlineFetch');
+  console.log('[GlobalFetchInterceptor] ✅ Installed — intercepts GET /api/* ONLY when offline');
 }

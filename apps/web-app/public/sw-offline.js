@@ -23,7 +23,7 @@
  * ============================================================================
  */
 
-const CACHE_VERSION = 'ah-offline-v5'; // ⭐ bump v4 → v5 (fix page noire offline + fallback HTML inline)
+const CACHE_VERSION = 'ah-offline-v6'; // ⭐ bump v5 → v6 (offline /app/* shell fallback + pas d'interception online)
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -154,6 +154,7 @@ self.addEventListener('fetch', (event) => {
 // ─── Handler spécial pour les pages HTML ───
 async function handlePageRequest(request) {
   const cache = await caches.open(PAGE_CACHE);
+  const requestUrl = new URL(request.url);
 
   try {
     // Tenter le réseau avec Timeout court
@@ -168,6 +169,14 @@ async function handlePageRequest(request) {
     const cachedResponse = await cache.match(request);
     if (cachedResponse) {
       return cachedResponse;
+    }
+
+    // ⭐ Pour les routes /app/*, retourner le shell /app en cache.
+    //    Le React router prendra le relais côté client et affichera les
+    //    données depuis IndexedDB (intercepteur global fetch).
+    if (requestUrl.pathname.startsWith('/app')) {
+      const appShell = await cache.match('/app') || await cache.match('/');
+      if (appShell) return appShell;
     }
 
     // Fallback: essayer la page racine

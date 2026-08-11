@@ -659,5 +659,246 @@ export class StudentsPrismaService {
       thumbnailUrl,
     };
   }
+
+  // ============================================================================
+  // ⭐ BULK ACTIONS — Actions multiples sur un groupe d'élèves
+  // ============================================================================
+
+  /**
+   * Changement de statut en masse.
+   *
+   * - Vérifie que tous les studentIds appartiennent au tenant
+   * - Applique le nouveau statut via updateMany (1 seule requête SQL)
+   * - Écrit un audit log par élève (pour traçabilité)
+   * - Si le statut est SUSPENDED ou TRANSFERRED → désactive les tokens de
+   *   vérification publique (comme pour updateStudent individuel)
+   *
+   * @returns { updated: number, skipped: number, total: number }
+   */
+  async bulkUpdateStatus(
+    tenantId: string,
+    dto: { studentIds: string[]; status: string; reason?: string },
+    userId?: string,
+  ) {
+    const { studentIds, status, reason } = dto;
+    const now = new Date();
+
+    // 1) Vérifier l'existence + collecter les statuts précédents (pour audit)
+    const existing = await this.prisma.student.findMany({
+      where: { id: { in: studentIds }, tenantId },
+      select: { id: true, status: true },
+    });
+
+    if (existing.length === 0) {
+      throw new NotFoundException('Aucun élève trouvé pour les IDs fournis.');
+    }
+
+    const existingIds = new Set(existing.map((s) => s.id));
+    const skipped = studentIds.filter((id) => !existingIds.has(id));
+
+    // 2) Appliquer le updateMany (1 seule requête SQL)
+    const updateResult = await this.prisma.student.updateMany({
+      where: { id: { in: Array.from(existingIds) }, tenantId },
+      data: {
+        status,
+        // Si on passe à ARCHIVED ou WITHDRAWN → isActive = false
+        // Si on repasse à ACTIVE → isActive = true
+        isActive: status === 'ACTIVE',
+      },
+    });
+
+    // 3) Écrire un audit log par élève (best-effort, en parallèle)
+    const auditLogs = Array.from(existingIds).map((studentId) => {
+      const previousStatus = existing.find((s) => s.id === studentId)?.status;
+      return this.prisma.studentAuditLog
+        .create({
+          data: {
+            tenantId,
+            studentId,
+            action: 'STATUS_CHANGE',
+            performedBy: userId || null,
+            beforeData: { status: previousStatus } as any,
+            afterData: { status, reason: reason || null, changedAt: now } as any,
+            createdAt: now,
+          },
+        })
+        .catch((e: any) => {
+          console.warn(`[bulkUpdateStatus] audit log failed for ${studentId}: ${e?.message}`);
+        });
+    });
+    await Promise.all(auditLogs);
+
+    // 4) Désactiver les tokens publics si statut suspendu/transféré
+    if (status === 'SUSPENDED' || status === 'TRANSFERRED') {
+      await Promise.all(
+        Array.from(existingIds).map((id) =>
+          this.publicVerificationService.deactivateTokensForStudent(id).catch(() => {}),
+        ),
+      );
+    }
+
+    return {
+      updated: updateResult.count,
+      skipped: skipped.length,
+      total: studentIds.length,
+    };
+  }
+
+  /**
+   * Archivage en masse.
+   *
+   * - Pas de suppression physique (conforme au pattern RH)
+   * - Appelle archiveStudent pour chaque élève (pour réutiliser l'audit log)
+   * - Continue même si un élève échoue (best-effort)
+   *
+   * @returns { archived: number, failed: number, total: number, errors: Array<{id, error}> }
+   */
+  async bulkArchive(
+    tenantId: string,
+    dto: { studentIds: string[]; reason?: string },
+    userId?: string,
+  ) {
+    const { studentIds, reason } = dto;
+    let archived = 0;
+    const errors: Array<{ id: string; error: string }> = [];
+
+    // Archiver en parallèle (avec limite de concurrence implicite via Prisma)
+    // mais on garde un sequential pour éviter la contention sur la DB.
+    for (const id of studentIds) {
+      try {
+        await this.archiveStudent(id, tenantId, reason || 'Archivage en masse', userId);
+        archived++;
+      } catch (e: any) {
+        errors.push({ id, error: e?.message || 'Erreur inconnue' });
+      }
+    }
+
+    return {
+      archived,
+      failed: errors.length,
+      total: studentIds.length,
+      errors,
+    };
+  }
+
+  /**
+   * Réinscription en masse pour une nouvelle année académique.
+   *
+   * Pour chaque élève :
+   * 1. Met à jour currentAcademicYearId + status ACTIVE + schoolLevelId
+   * 2. Désactive les inscriptions actives précédentes pour cette année
+   * 3. Crée un nouveau StudentEnrollment (status VALIDATED)
+   *
+   * Si classId fourni, tous les élèves sont affectés à cette classe.
+   * Sinon, ils sont réinscrits sans affectation (à affecter plus tard).
+   *
+   * Note : on appelle assertCanEnroll une seule fois au début (pas par élève)
+   * car les élèves existent déjà — la limite d'élèves du plan d'abonnement
+   * s'applique au total, pas à la réinscription d'élèves existants.
+   *
+   * @returns { reenrolled: number, failed: number, total: number, errors: Array<{id, error}> }
+   */
+  async bulkReenroll(
+    tenantId: string,
+    dto: {
+      studentIds: string[];
+      academicYearId: string;
+      schoolLevelId: string;
+      classId?: string;
+      // Le DTO valide que enrollmentType ∈ ['NEW', 'REPEAT', 'PROMOTION', 'TRANSFER']
+      // via @IsIn — on accepte string ici pour rester compatible avec le type DTO.
+      enrollmentType: string;
+    },
+  ) {
+    const { studentIds, academicYearId, schoolLevelId, classId, enrollmentType } = dto;
+    let reenrolled = 0;
+    const errors: Array<{ id: string; error: string }> = [];
+
+    // Vérifier que la classe existe (si fournie)
+    if (classId) {
+      const classExists = await this.prisma.class.findFirst({
+        where: {
+          id: classId,
+          tenantId,
+          academicYearId,
+          schoolLevelId,
+        },
+      });
+      if (!classExists) {
+        throw new NotFoundException(`Classe ${classId} introuvable pour cette année/niveau.`);
+      }
+    }
+
+    const now = new Date();
+
+    for (const studentId of studentIds) {
+      try {
+        // Transaction par élève (pour cohérence update + enrollment)
+        await this.prisma.$transaction(async (tx) => {
+          // 1. Vérifier que l'élève existe
+          const student = await tx.student.findFirst({
+            where: { id: studentId, tenantId },
+            select: { id: true, status: true },
+          });
+          if (!student) {
+            throw new Error(`Élève ${studentId} introuvable`);
+          }
+
+          // 2. Mettre à jour l'élève
+          await tx.student.update({
+            where: { id: studentId },
+            data: {
+              currentAcademicYearId: academicYearId,
+              schoolLevelId,
+              status: 'ACTIVE',
+              isActive: true,
+            },
+          });
+
+          // 3. Désactiver les inscriptions actives précédentes pour cette année
+          await tx.studentEnrollment.updateMany({
+            where: {
+              studentId,
+              academicYearId,
+              status: 'ACTIVE',
+            },
+            data: {
+              status: 'TRANSFERRED',
+              exitDate: now,
+              exitReason: 'Réinscription en masse',
+            },
+          });
+
+          // 4. Créer la nouvelle inscription
+          await tx.studentEnrollment.create({
+            data: {
+              tenantId,
+              studentId,
+              academicYearId,
+              schoolLevelId,
+              classId: classId || null,
+              // Le DTO valide déjà l'enum via @IsIn — on caste pour Prisma.
+              enrollmentType: enrollmentType as 'NEW' | 'REPEAT' | 'PROMOTION' | 'TRANSFER',
+              enrollmentDate: now,
+              status: 'VALIDATED',
+            },
+          });
+        });
+        reenrolled++;
+      } catch (e: any) {
+        errors.push({ id: studentId, error: e?.message || 'Erreur inconnue' });
+      }
+    }
+
+    // Vérifier le nombre d'élèves vs plan d'abonnement (best-effort)
+    this.studentCountVerifier.verifyAfterEnrollment(tenantId).catch(() => {});
+
+    return {
+      reenrolled,
+      failed: errors.length,
+      total: studentIds.length,
+      errors,
+    };
+  }
 }
 

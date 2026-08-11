@@ -2550,3 +2550,110 @@ Stage Summary:
 - Analytics notes : plus forte/faible moyenne + top 3 par niveau scolaire
 - Frontend type-check : 0 erreurs
 - Files modified: 1 + 2 new routes
+
+---
+Task ID: 2026-08-11-bulk-actions-students-module
+Agent: main
+Task: Implémenter les actions multiples dans le module Élèves (sélectionner un groupe → changer statut / réinscrire / supprimer).
+
+Work Log:
+
+=== ANALYSE ===
+- Le module Élèves (StudentsModulePage.tsx) possède 13 sous-modules + 1 fallback
+  "table view" avec filtres (search, classId, status, regimeType, hasArrears).
+- Le fallback table view était inaccessible depuis la navigation (dead code) —
+  aucun onglet ne pointait vers lui.
+- Backend : StudentsPrismaService avait déjà archiveStudent individuel mais
+  pas de variantes bulk.
+
+=== BACKEND (api-server) ===
+
+1. DTOs (dto/index.ts) — 3 nouveaux :
+- BulkStatusUpdateDto : studentIds[] (max 500) + status (7 valeurs) + reason?
+- BulkArchiveDto : studentIds[] + reason?
+- BulkReenrollDto : studentIds[] + academicYearId + schoolLevelId + classId? + enrollmentType
+
+2. Service (students-prisma.service.ts) — 3 nouvelles méthodes :
+- bulkUpdateStatus() : updateMany 1 requête SQL + audit log par élève +
+  désactivation tokens si SUSPENDED/TRANSFERRED.
+- bulkArchive() : boucle sur archiveStudent (réutilise audit log existant) +
+  collecte erreurs.
+- bulkReenroll() : transaction par élève (update + ancien enrollment →
+  TRANSFERRED + nouveau StudentEnrollment VALIDATED).
+
+3. Controller (students-prisma.controller.ts) — 3 nouvelles routes :
+- POST /students/bulk-status
+- POST /students/bulk-archive
+- POST /students/bulk-reenroll
+⚠️ Routes déclarées AVANT @Get(':id') pour éviter que "bulk-status" soit
+   interprété comme un UUID par ParseUUIDPipe.
+
+=== BFF (web-app/src/app/api/students/) ===
+3 nouvelles routes Next.js :
+- /api/students/bulk-status/route.ts
+- /api/students/bulk-archive/route.ts
+- /api/students/bulk-reenroll/route.ts
+Pattern identique à /api/students/[studentId]/archive — proxy vers backend
+avec getProxyAuthHeaders.
+
+=== UI (StudentsModulePage.tsx) ===
+
+1. Nouveau state (10 variables) :
+- selectedStudentIds: Set<string>
+- 3 modales isOpen (bulkStatus / bulkArchive / bulkReenroll)
+- bulkStatusValue / bulkStatusReason / bulkArchiveReason
+- bulkReenrollClassId / bulkReenrollType
+- isBulkProcessing / bulkResult {action, success, failed, total, errors?}
+
+2. Nouvel onglet "list" : "Liste & Actions en masse" (icône ListChecks).
+   Active le fallback table view existant qui était jusqu'ici inaccessible.
+
+3. Handlers (7 fonctions) :
+- toggleStudentSelection(id) → add/remove du Set
+- toggleSelectAll() → tous les élèves visibles
+- clearSelection()
+- handleBulkStatusSubmit / handleBulkArchiveSubmit / handleBulkReenrollSubmit
+  → POST fetch + gestion résultat + reload students + clearSelection
+
+4. UI table view modifiée :
+- En-tête : checkbox "select all" + colonne checkbox par ligne
+- Toolbar : affiche badge "N sélectionné(s)" + 4 boutons (Changer statut /
+  Réinscrire / Archiver / Effacer sélection) quand ≥1 sélectionné
+- Bandeau de résultat : affiche success/failed/total + erreurs (max 5)
+  avec code couleur (vert/ambre/rouge)
+- Lignes sélectionnées : fond bleu clair (bg-blue-50)
+
+5. 3 modales FormModal à la fin :
+- Modale Changement de statut : select (7 statuts) + textarea raison +
+  info-bulle sur audit log + tokens
+- Modale Archivage : avertissement rouge + textarea raison
+- Modale Réinscription : select enrollmentType (REPEAT/PROMOTION/NEW/
+  TRANSFER) + select classId optionnel + info-bulle verte
+Toutes : bouton Annuler + bouton Appliquer avec spinner si isBulkProcessing
+
+=== SÉCURITÉ & BONNES PRATIQUES ===
+- Pas de suppression physique (conforme au pattern RH)
+- Audit log par élève pour traçabilité (action STATUS_CHANGE / ARCHIVE)
+- Désactivation tokens publics si statut suspendu/transféré
+- Limite 500 élèves par requête (ArrayMaxSize)
+- Validation UUID sur tous les studentIds
+- Tenant isolation respectée (tenantId dans toutes les requêtes Prisma)
+- Transactions pour cohérence update + enrollment
+
+Stage Summary:
+- 3 endpoints backend + 3 routes BFF + UI complète avec sélection multiple
+- Nouvel onglet "Liste & Actions en masse" active le fallback table view
+- 3 actions : changer statut (7 valeurs), archiver, réinscrire (avec classe optionnelle)
+- Audit log par élève pour traçabilité (pas d'opération opaque)
+- Bandeau de résultat avec erreurs détaillées (max 5 affichées)
+- Frontend type-check : 0 erreurs dans mes fichiers (erreurs pré-existantes
+  dans cms/useAutoSave.ts et api-server node_modules non installés)
+- Files modified: 5 + 3 new
+  * apps/api-server/src/students/dto/index.ts (3 DTOs)
+  * apps/api-server/src/students/students-prisma.service.ts (3 méthodes)
+  * apps/api-server/src/students/students-prisma.controller.ts (3 routes)
+  * apps/web-app/src/app/api/students/bulk-status/route.ts (new)
+  * apps/web-app/src/app/api/students/bulk-archive/route.ts (new)
+  * apps/web-app/src/app/api/students/bulk-reenroll/route.ts (new)
+  * apps/web-app/src/components/pilotage/modules/StudentsModulePage.tsx (UI)
+

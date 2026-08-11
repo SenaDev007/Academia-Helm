@@ -20,13 +20,22 @@ import {
   Query,
   UseGuards,
   ParseUUIDPipe,
+  Req,
 } from '@nestjs/common';
 import { StudentsPrismaService } from './students-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { IMAGE_ONLY_DATA_URL_PIPE } from '../common/pipes/data-url-validation.pipe';
-import { CreateStudentPrismaDto, UpdateStudentPrismaDto, EnrollStudentDto, ArchiveStudentDto } from './dto';
+import {
+  CreateStudentPrismaDto,
+  UpdateStudentPrismaDto,
+  EnrollStudentDto,
+  ArchiveStudentDto,
+  BulkStatusUpdateDto,
+  BulkArchiveDto,
+  BulkReenrollDto,
+} from './dto';
 
 @Controller('students')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -81,6 +90,53 @@ export class StudentsPrismaController {
       academicYearId,
       schoolLevelId,
     );
+  }
+
+  // ============================================================================
+  // ⭐ BULK ACTIONS — Actions multiples sur un groupe d'élèves
+  // ============================================================================
+  // ⚠️ Ces routes DOIVENT être déclarées AVANT @Get(':id') sinon NestJS
+  //    interprète "bulk-status" comme un UUID et échoue (ParseUUIDPipe).
+
+  /**
+   * POST /students/bulk-status
+   * Change le statut de plusieurs élèves en une seule requête.
+   */
+  @Post('bulk-status')
+  async bulkUpdateStatus(
+    @TenantId() tenantId: string,
+    @Body() dto: BulkStatusUpdateDto,
+    @Req() req: any,
+  ) {
+    const userId = req?.user?.id || req?.user?.sub || null;
+    return this.studentsService.bulkUpdateStatus(tenantId, dto, userId);
+  }
+
+  /**
+   * POST /students/bulk-archive
+   * Archive plusieurs élèves (pas de suppression physique — audit log par élève).
+   */
+  @Post('bulk-archive')
+  async bulkArchive(
+    @TenantId() tenantId: string,
+    @Body() dto: BulkArchiveDto,
+    @Req() req: any,
+  ) {
+    const userId = req?.user?.id || req?.user?.sub || null;
+    return this.studentsService.bulkArchive(tenantId, dto, userId);
+  }
+
+  /**
+   * POST /students/bulk-reenroll
+   * Réinscrit plusieurs élèves pour une nouvelle année académique.
+   * Optionnellement les affecte à une classe cible.
+   */
+  @Post('bulk-reenroll')
+  async bulkReenroll(
+    @TenantId() tenantId: string,
+    @Body() dto: BulkReenrollDto,
+  ) {
+    return this.studentsService.bulkReenroll(tenantId, dto);
   }
 
   @Get(':id')

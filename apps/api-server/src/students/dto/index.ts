@@ -6,7 +6,7 @@ export * from './update-admission.dto';
 export * from './update-card-design.dto';
 
 // New DTOs for Prisma controller endpoints
-import { IsString, IsOptional, IsDateString, IsIn, IsUUID, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsIn, IsUUID, IsBoolean, IsArray, ArrayMinSize, ArrayMaxSize } from 'class-validator';
 
 export class CreateStudentPrismaDto {
   @IsString() firstName: string;
@@ -170,4 +170,74 @@ export class CreateTransferRequestDto {
 export class DecideAdmissionDto {
   @IsIn(['ACCEPTED', 'REJECTED']) decision: string;
   @IsOptional() @IsString() comment?: string;
+}
+
+// ============================================================================
+// ⭐ BULK ACTIONS — Actions multiples sur un groupe d'élèves
+// ============================================================================
+
+/**
+ * Changement de statut en masse.
+ * Statuts autorisés (cohérents avec StudentStatus Prisma) :
+ *   ACTIVE, INACTIVE, GRADUATED, TRANSFERRED, ARCHIVED, WITHDRAWN, SUSPENDED
+ */
+export class BulkStatusUpdateDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(500)
+  @IsUUID('4', { each: true })
+  studentIds: string[];
+
+  @IsIn(['ACTIVE', 'INACTIVE', 'GRADUATED', 'TRANSFERRED', 'ARCHIVED', 'WITHDRAWN', 'SUSPENDED'])
+  status: string;
+
+  @IsOptional() @IsString() reason?: string;
+
+  /** Frontend may send tenantId — ignored (resolved server-side) */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+/**
+ * Archivage en masse (pas de suppression physique — conforme au pattern RH).
+ * Écrit un audit log par élève avec la raison fournie.
+ */
+export class BulkArchiveDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(500)
+  @IsUUID('4', { each: true })
+  studentIds: string[];
+
+  @IsOptional() @IsString() reason?: string;
+
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+/**
+ * Réinscription en masse pour une nouvelle année académique.
+ *
+ * - Crée un StudentEnrollment par élève (status VALIDATED)
+ * - Met à jour currentAcademicYearId + status ACTIVE
+ * - Si classId fourni → affecte tous les élèves à cette classe
+ * - Si enrollmentType 'REPEAT' ou 'PROMOTION' → l'élève paiera les frais de
+ *   réinscription (exclut INSCRIPTION). Si 'NEW' → frais d'inscription complets.
+ */
+export class BulkReenrollDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(500)
+  @IsUUID('4', { each: true })
+  studentIds: string[];
+
+  @IsUUID() academicYearId: string;
+
+  @IsUUID() schoolLevelId: string;
+
+  /** Optionnel : si fourni, tous les élèves sont affectés à cette classe.
+   *  Sinon, les élèves sont réinscrits sans affectation de classe. */
+  @IsOptional() @IsUUID() classId?: string;
+
+  @IsIn(['NEW', 'REPEAT', 'PROMOTION', 'TRANSFER']) enrollmentType: string;
+
+  @IsOptional() @IsString() tenantId?: string;
 }

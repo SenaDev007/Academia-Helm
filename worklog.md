@@ -2971,3 +2971,84 @@ Stage Summary:
 - Livrables PDF + Word poussés sur GitHub (docs/commercial/)
 - Push effectué — Vercel va re-déployer automatiquement
 - Files modified: 4 + 3 new (docs/commercial/*)
+
+---
+Task ID: 2026-08-11-fix-multi-selection-crash + bilan-backend-crash
+Agent: main
+Task: 2 bugs rapportés par l'utilisateur : (1) crash 'forEach' sur multi-sélection Élèves, (2) 'Failed to fetch' sur Bilan des encaissements.
+
+Work Log:
+
+=== 1. CRASH 'Cannot read properties of undefined (reading forEach)' ===
+Cause : toggleSelectAllVisible (que j'ai ajouté au commit précédent) utilisait
+level.groups.forEach(group => group.students.forEach(...)) MAIS la structure
+réelle de filteredTree est [{ level, classes: [{ classInfo, students }] }]
+— la propriété s'appelle 'classes', pas 'groups'. Donc level.groups était
+undefined → crash sur .forEach.
+
+Fix : 
+- toggleSelectAllVisible : remplacer level.groups par level.classes
+- Ajout de guards défensifs : Array.isArray(unassignedEnrollments),
+  Array.isArray(filteredTree), Array.isArray(levelNode?.classes),
+  Array.isArray(cls?.students) + optional chaining (enr?.student?.id)
+- Même fix appliqué à l'IIFE 'checked' dans l'attribut checkbox de la
+  barre d'actions (même bug : l.groups → l.classes)
+
+=== 2. 'Failed to fetch' sur Bilan des encaissements ===
+Cause racine CRITIQUE : le backend crashait car mon commit précédent
+(fd265985) faisait :
+  academicClass: { select: { ..., schoolLevelId: true, schoolLevel: true } }
+MAIS le modèle AcademicClass dans le schéma Prisma n'a PAS de champ
+schoolLevelId ni de relation schoolLevel. Il a levelId → AcademicLevel
+qui n'a pas non plus de schoolLevelId.
+
+Prisma throw 'Unknown field schoolLevelId' → backend 500 → BFF retourne
+erreur → frontend affiche 'Failed to fetch'.
+
+Investigation schéma Prisma :
+- SchoolLevel : code, name, label (Maternelle/Primaire/Secondaire)
+- AcademicClass : levelId → AcademicLevel (PAS de schoolLevelId)
+- AcademicLevel : name, orderIndex (PAS de schoolLevelId)
+- Class (physique) : schoolLevelId → SchoolLevel ✓
+- Student : schoolLevelId → SchoolLevel ✓ ← C'EST LA CLÉ
+
+Fixes backend (collection-summary.controller.ts) :
+a) academicClass select : retirer schoolLevelId/schoolLevel (inexistants),
+   utiliser levelId à la place.
+b) student select : ajouter schoolLevelId (existe sur Student)
+c) Filtre niveau : matcher sur student.schoolLevelId au lieu de
+   academicClass.schoolLevelId (qui n'existe pas). L'élève a TOUJOURS
+   un schoolLevelId → le filtre fonctionne pour tous les élèves.
+d) matchByType : effectiveLevelId = class.schoolLevelId || student.schoolLevelId
+   (au lieu de academicClass.schoolLevelId qui n'existe pas).
+   → totalDue correctement calculé car tuitionStructures non vide.
+e) feeStructures query : retirer le filtre classId qui excluait les
+   structures level/globales quand on sélectionnait une classe →
+   totalDue=0. Maintenant on charge TOUTES les structures et matchByType
+   fait le matching prioritaire (class > level > global).
+
+Fix BFF (collection-summary/route.ts) :
+- fetchWithTimeout(30s) au lieu de fetch natif (évite timeout navigateur
+  qui affichait 'Failed to fetch' au lieu du message d'erreur du BFF)
+- maxDuration=60 pour Vercel serverless function
+- Messages d'erreur différenciés selon le type :
+  * 504 Gateway Timeout si AbortError/timeout
+  * 502 Bad Gateway si ECONNREFUSED/network error
+  * 500 pour les autres
+
+=== 3. COMMIT + PUSH ===
+Commit 9b5213b0 : 'fix: 2 bugs multi-sélection + Bilan encaissements (crash backend)'
+Push réussi vers origin/main (8fc49e20..9b5213b0)
+3 files changed, 83 insertions(+), 39 deletions(-)
+
+Stage Summary:
+- Crash multi-sélection Élèves : corrigé (level.groups → level.classes + guards)
+- 'Failed to fetch' Bilan encaissements : cause racine était un crash backend
+  (AcademicClass n'a pas schoolLevelId dans le schéma Prisma). Fix : utiliser
+  student.schoolLevelId comme source de vérité pour le niveau.
+- totalDue ne sera plus 0 car feeStructures query ne filtre plus par classId
+  (toutes les structures sont chargées, matchByType fait le matching prioritaire).
+- BFF renforce avec fetchWithTimeout(30s) + maxDuration=60 + messages clairs
+- Push effectué — Vercel va re-déployer automatiquement
+- ⚠️ IMPORTANT : le backend (api-server) doit être redéployé sur Railway pour
+  que les fixes soient effectifs. Vercel ne déploie que le web-app.

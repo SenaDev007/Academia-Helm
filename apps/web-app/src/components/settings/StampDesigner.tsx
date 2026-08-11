@@ -508,11 +508,47 @@ const CircularStamp = forwardRef<SVGSVGElement, CircularStampProps>(
           </filter>
 
           {style === 'wax' && (
-            <radialGradient id="wax-gradient" cx="50%" cy="35%" r="65%">
-              <stop offset="0%" stopColor="#c41e3a" stopOpacity="0.85" />
-              <stop offset="50%" stopColor={WAX_RED} stopOpacity="1" />
-              <stop offset="100%" stopColor="#4a0000" stopOpacity="1" />
-            </radialGradient>
+            <>
+              {/* ⭐ Dégradé radial pour le volume sphérique 3D de la cire */}
+              <radialGradient id="wax-gradient" cx="38%" cy="28%" r="75%">
+                <stop offset="0%" stopColor="#d4364a" stopOpacity="0.9" />
+                <stop offset="30%" stopColor="#a02020" stopOpacity="1" />
+                <stop offset="65%" stopColor={WAX_RED} stopOpacity="1" />
+                <stop offset="100%" stopColor="#2a0505" stopOpacity="1" />
+              </radialGradient>
+              {/* ⭐ Dégradé pour le reflet brillant (glossy) */}
+              <radialGradient id="wax-highlight" cx="35%" cy="22%" r="30%">
+                <stop offset="0%" stopColor="#ffcccc" stopOpacity="0.5" />
+                <stop offset="100%" stopColor="#ffcccc" stopOpacity="0" />
+              </radialGradient>
+              {/* ⭐ Dégradé pour le biseau 3D des bords */}
+              <linearGradient id="wax-bevel" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#ff8888" stopOpacity="0.4" />
+                <stop offset="50%" stopColor="#4a0000" stopOpacity="0" />
+                <stop offset="100%" stopColor="#1a0000" stopOpacity="0.5" />
+              </linearGradient>
+              {/* ⭐ Filtre pour le relief 3D du texte gravé (intaglio) */}
+              <filter id="wax-engrave" x="-20%" y="-20%" width="140%" height="140%">
+                <feOffset dx="1.5" dy="2" in="SourceAlpha" result="shadowOffset" />
+                <feGaussianBlur stdDeviation="1" in="shadowOffset" result="shadowBlur" />
+                <feFlood floodColor="#000000" floodOpacity="0.6" result="shadowColor" />
+                <feComposite in="shadowColor" in2="shadowBlur" operator="in" result="shadow" />
+                <feOffset dx="-0.8" dy="-1" in="SourceAlpha" result="hlOffset" />
+                <feGaussianBlur stdDeviation="0.6" in="hlOffset" result="hlBlur" />
+                <feFlood floodColor="#ffaaaa" floodOpacity="0.5" result="hlColor" />
+                <feComposite in="hlColor" in2="hlBlur" operator="in" result="highlight" />
+                <feMerge>
+                  <feMergeNode in="shadow" />
+                  <feMergeNode in="highlight" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+              {/* ⭐ Filtre pour le bord irrégulier (cire qui a coulé) */}
+              <filter id="wax-edge" x="-10%" y="-10%" width="120%" height="120%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" seed="5" result="noise" />
+                <feDisplacementMap in="SourceGraphic" in2="noise" scale="6" xChannelSelector="R" yChannelSelector="G" />
+              </filter>
+            </>
           )}
 
           <clipPath id="logo-clip-stamp">
@@ -632,11 +668,17 @@ const CircularStamp = forwardRef<SVGSVGElement, CircularStampProps>(
 
         </g>
 
-        {/* ⭐ Effet wax : overlay supplémentaire */}
+        {/* ⭐ Effet wax 3D : overlay + reflet + bord irrégulier */}
         {style === 'wax' && (
           <>
-            <circle cx={CENTER} cy={CENTER} r={OUTER_R + 4} fill="url(#wax-gradient)" opacity="0.1" />
-            <circle cx={CENTER} cy={CENTER} r={OUTER_R + 2} fill="none" stroke="#5a0000" strokeWidth="0.5" opacity="0.3" />
+            {/* Fond cire bombé avec dégradé radial */}
+            <circle cx={CENTER} cy={CENTER} r={OUTER_R + 3} fill="url(#wax-gradient)" filter="url(#wax-edge)" />
+            {/* Biseau 3D */}
+            <circle cx={CENTER} cy={CENTER} r={OUTER_R} fill="url(#wax-bevel)" opacity="0.6" />
+            {/* Reflet brillant en haut à gauche */}
+            <ellipse cx={CENTER - 40} cy={CENTER - 50} rx="45" ry="30" fill="url(#wax-highlight)" />
+            {/* Bord extérieur sombre */}
+            <circle cx={CENTER} cy={CENTER} r={OUTER_R + 2} fill="none" stroke="#1a0000" strokeWidth="0.5" opacity="0.4" filter="url(#wax-edge)" />
           </>
         )}
       </svg>

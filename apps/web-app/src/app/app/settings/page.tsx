@@ -200,10 +200,10 @@ function ActionBadge({ action }: { action: string }) {
 
 const SETTINGS_TAB_IDS: TabId[] = [
   'identity', 'academic-year', 'structure', 'departments', 'bilingual', 'features',
-  'roles', 'billing', 'security', 'seals', 'appareils', 'history',
-  // school-calendar et admin-structure conservés dans le type pour compat URL
-  // mais retirés de l'affichage (fusionnés dans academic-year et departments)
-  'school-calendar', 'admin-structure',
+  'roles', 'billing', 'security', 'appareils', 'history',
+  // school-calendar, admin-structure et seals conservés dans le type pour compat URL
+  // mais retirés de l'affichage (fusionnés dans academic-year, departments)
+  'school-calendar', 'admin-structure', 'seals',
   // Retirés de l'affichage mais conservés pour compat URL ancienne
   'communication', 'payments', 'orion', 'atlas', 'offline',
 ];
@@ -2418,8 +2418,8 @@ export default function SettingsPage() {
     { id: 'identity' as TabId, label: 'Identité', icon: Globe },
     { id: 'academic-year' as TabId, label: 'Année scolaire', icon: Calendar },
     { id: 'structure' as TabId, label: 'Structure', icon: GraduationCap },
-    // ⭐ Fusion : Administration + Départements → un seul onglet
-    { id: 'departments' as TabId, label: 'Administration', icon: Building2 },
+    // ⭐ Fusion : Administration + Départements + Cachets → un seul onglet "Administration et Cachets"
+    { id: 'departments' as TabId, label: 'Administration et Cachets', icon: Building2 },
     // school-calendar fusionné dans academic-year (plus d'onglet séparé)
     // M3 — Masquer l'onglet Bilingue si le plan ne l'autorise pas
     ...(billingSettings?.planDetails?.bilingualAllowed !== false ? [{ id: 'bilingual' as TabId, label: 'Bilingue', icon: Languages }] : []),
@@ -2427,7 +2427,8 @@ export default function SettingsPage() {
     { id: 'roles' as TabId, label: 'Rôles', icon: UserCog },
     { id: 'billing' as TabId, label: 'Facturation', icon: CreditCard },
     { id: 'security' as TabId, label: 'Sécurité', icon: Shield },
-    { id: 'seals' as TabId, label: 'Cachets', icon: Stamp },
+    // ⭐ Onglet Cachets supprimé — fusionné dans "Administration et Cachets"
+    // { id: 'seals' as TabId, label: 'Cachets', icon: Stamp },
     { id: 'appareils' as TabId, label: 'Appareils autorisés', icon: Smartphone },
     { id: 'history' as TabId, label: 'Historique', icon: History },
   ];
@@ -3365,6 +3366,14 @@ export default function SettingsPage() {
             </div>
             {/* Section Départements + Postes */}
             <DepartmentsAndPositionsTab tenantId={effectiveTenantId} showToast={showToast} />
+            {/* ⭐ Section Cachets & Tampons (fusionnée depuis l'ancien onglet "Cachets") */}
+            <div>
+              <h3 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
+                <Stamp className="w-5 h-5 text-red-600" />
+                Cachets &amp; Tampons officiels
+              </h3>
+              <StampDesigner />
+            </div>
           </div>
         );
 
@@ -5437,22 +5446,9 @@ export default function SettingsPage() {
           </div>
         );
 
+      // ⭐ case 'seals' supprimé — fusionné dans 'departments' (Administration et Cachets)
       case 'seals':
-        return (
-          <div className="space-y-6">
-            {/* ⭐ Nouveau : générateur de cachets professionnel SVG */}
-            <StampDesigner />
-            {/* Ancien système (génération backend) — conservé pour rétro-compatibilité */}
-            <details className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <summary className="cursor-pointer text-sm font-bold text-slate-600 hover:text-slate-800">
-                Gestion avancée des cachets (système legacy)
-              </summary>
-              <div className="mt-4">
-                <GeneratedStampsSignatures tenantId={effectiveTenantId ?? undefined} />
-              </div>
-            </details>
-          </div>
-        );
+        return null;
 
       case 'orion':
         return null; // Removed tab — ORION accessible via widget flottant

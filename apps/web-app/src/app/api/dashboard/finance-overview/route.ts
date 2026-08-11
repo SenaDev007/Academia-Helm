@@ -3,20 +3,19 @@
  * API ROUTE: /api/dashboard/finance-overview
  * ============================================================================
  *
- * Vue d'ensemble financière complète — CORRIGÉE.
+ * Vue d'ensemble financière — CORRIGÉE v3.
  *
- * ⭐ Source de vérité : account_breakdowns + student_accounts
- *    (pas fee_structures individuelles — qui sont par élève, pas par classe)
+ * ⭐ Source de vérité :
+ *    - /finance/reports/kpi pour les totaux globaux (totalDue, previsonnementGlobal, totalReductions, totalPaid)
+ *    - /finance/student-accounts pour les données par élève (totalDue, totalPaid, balance, schoolLevel, class)
+ *    - /finance/fee-structures/overrides pour les personnalisations par niveau
+ *    - /students/statistics pour les effectifs par classe
  *
- * Par niveau scolaire :
- *   - montantTotalDu : SUM(fee_structures.totalAmount) pour tous les breakdowns
- *   - montantPersonnalise : SUM(account_breakdowns.initialAmount) (après overrides)
- *   - totalReduction : SUM(GREATEST(0, totalAmount - initialAmount))
- *   - montantPercu : SUM(student_accounts.totalPaid)
- *   - montantRestant : SUM(student_accounts.balance)
- *   - nombrePersonnalisations : COUNT WHERE initialAmount < totalAmount
- *
- * Par classe : mêmes données groupées par classe.
+ * Le montantTotalDu (prévisionnel standard) = previsonnementGlobal du KPI backend
+ * Le montantPersonnalise = totalDue du KPI backend (après personnalisations)
+ * totalReduction = totalReductions du KPI backend
+ * montantPercu = totalPaid du KPI backend
+ * montantRestant = montantPersonnalise - montantPercu
  * ============================================================================
  */
 
@@ -45,9 +44,8 @@ function sortByLevel(levels: any[]): any[] {
   });
 }
 
-// Ordre canonique des classes (Maternelle → Primaire → Secondaire)
 const CLASS_ORDER = [
-  'MATERNELLE', 'MATERNELLE 1', 'MATERNELLE 2', 'PETITE SECTION', 'MOYENNE SECTION', 'GRANDE SECTION',
+  'MATERNELLE 1', 'MATERNELLE 2', 'PETITE SECTION', 'MOYENNE SECTION', 'GRANDE SECTION',
   'CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2', 'CM',
   '6E', '6ÈME', '5E', '5ÈME', '4E', '4ÈME', '3E', '3ÈME',
   'SECONDE', '2NDE', 'PREMIERE', '1ÈRE', '1ERE', 'TERMINALE', 'TLE',
@@ -79,23 +77,23 @@ export async function GET(request: NextRequest) {
     const headers = await getProxyAuthHeaders(request);
     const baseUrl = getApiBaseUrlForRoutes();
 
-    // ⭐ Utiliser /finance/reports/kpi pour les totaux globaux (déjà calculés côté backend)
-    let financeKpis: any = {};
+    // ─── 1. KPI global du backend (source de vérité pour les totaux) ───
+    let kpi: any = {};
     try {
       const url = new URL(`${baseUrl}/finance/reports/kpi`);
       url.searchParams.append('tenantId', tenantId);
       if (academicYearId) url.searchParams.append('academicYearId', academicYearId);
       const res = await fetchWithTimeout(normalizeApiUrl(url.toString()), { headers, cache: 'no-store' }, 10000);
-      if (res.ok) financeKpis = await res.json().catch(() => ({}));
+      if (res.ok) kpi = await res.json().catch(() => ({}));
     } catch (e) { console.warn('[finance-overview] kpi failed:', (e as Error).message); }
 
-    // ⭐ Récupérer les student-accounts avec les infos niveau + classe
+    // ─── 2. Student-accounts (pour la répartition par niveau + classe) ─
     let studentAccounts: any[] = [];
     try {
       const url = new URL(`${baseUrl}/finance/student-accounts`);
       url.searchParams.append('tenantId', tenantId);
       if (academicYearId) url.searchParams.append('academicYearId', academicYearId);
-      url.searchParams.append('limit', '1000');
+      url.searchParams.append('limit', '2000');
       const res = await fetchWithTimeout(normalizeApiUrl(url.toString()), { headers, cache: 'no-store' }, 12000);
       if (res.ok) {
         const data = await res.json().catch(() => null);
@@ -103,12 +101,12 @@ export async function GET(request: NextRequest) {
       }
     } catch (e) { console.warn('[finance-overview] student-accounts failed:', (e as Error).message); }
 
-    // ⭐ Récupérer les overrides (pour compter les personnalisations)
+    // ─── 3. Overrides (pour les personnalisations par niveau) ──────────
     let overrides: any[] = [];
     try {
       const url = new URL(`${baseUrl}/finance/fee-structures/overrides`);
       if (academicYearId) url.searchParams.append('academicYearId', academicYearId);
-      url.searchParams.append('limit', '1000');
+      url.searchParams.append('limit', '2000');
       const res = await fetchWithTimeout(normalizeApiUrl(url.toString()), { headers, cache: 'no-store' }, 10000);
       if (res.ok) {
         const data = await res.json().catch(() => null);
@@ -116,7 +114,7 @@ export async function GET(request: NextRequest) {
       }
     } catch (e) { console.warn('[finance-overview] overrides failed:', (e as Error).message); }
 
-    // ⭐ Récupérer les statistiques élèves (effectifs par classe + par niveau)
+    // ─── 4. Students statistics (pour les effectifs par classe) ────────
     let studentsStats: any = null;
     try {
       const url = new URL(`${baseUrl}/students/statistics`);
@@ -125,7 +123,7 @@ export async function GET(request: NextRequest) {
       if (res.ok) studentsStats = await res.json().catch(() => null);
     } catch (e) { console.warn('[finance-overview] students stats failed:', (e as Error).message); }
 
-    // ─── Agréger par niveau scolaire ─────────────────────────────────
+    // ─── 5. Agréger par niveau scolaire ────────────────────────────────
     const levelMap = new Map<string, any>();
     const getLevel = (code: string) => {
       const c = (code || '').toUpperCase();
@@ -150,40 +148,34 @@ export async function GET(request: NextRequest) {
 
     // Agréger les student-accounts par niveau
     for (const sa of studentAccounts) {
-      const levelCode = (sa.student?.schoolLevel?.code || sa.student?.schoolLevelCode || sa.schoolLevelCode || '').toUpperCase();
+      const levelCode = (sa.student?.schoolLevel?.code || '').toUpperCase();
       if (!levelCode || levelCode === 'ALL') continue;
       const entry = getLevel(levelCode);
       if (!entry) continue;
+      entry.montantPersonnalise += Number(sa.totalDue || 0);
       entry.montantPercu += Number(sa.totalPaid || 0);
       entry.montantRestant += Number(sa.balance || 0);
-      // totalDue du student_account = montant après personnalisations (initialAmount)
-      entry.montantPersonnalise += Number(sa.totalDue || 0);
       entry.nombreEleves += 1;
     }
 
     // Agréger les overrides par niveau
     for (const override of overrides) {
-      // ⭐ CORRECTION : la relation Prisma est "level" pas "schoolLevel" sur FeeStructure
       const levelCode = (
         override.feeStructure?.level?.code ||
         override.feeStructure?.schoolLevel?.code ||
         override.student?.schoolLevel?.code ||
-        override.schoolLevelCode ||
         ''
       ).toUpperCase();
       if (!levelCode || levelCode === 'ALL') continue;
       const entry = getLevel(levelCode);
       if (!entry) continue;
       entry.nombrePersonnalisations += 1;
-      const original = Number(override.feeStructure?.totalAmount || override.originalAmount || 0);
-      const custom = Number(override.customAmount || override.adjustedAmount || 0);
+      const original = Number(override.feeStructure?.totalAmount || 0);
+      const custom = Number(override.customAmount || 0);
       entry.totalReduction += Math.max(0, original - custom);
-      // Le montant "du standard" = somme des totalAmount des fee structures concernées
-      entry.montantTotalDu += original;
     }
 
-    // ⭐ CORRECTION : montantTotalDu = montantPersonnalise + totalReduction
-    //    (car student_accounts.totalDue = après personnalisations)
+    // ⭐ montantTotalDu (prévisionnel standard) = montantPersonnalise + totalReduction
     for (const entry of levelMap.values()) {
       entry.montantTotalDu = entry.montantPersonnalise + entry.totalReduction;
       entry.tauxRecouvrement = entry.montantPersonnalise > 0
@@ -191,92 +183,118 @@ export async function GET(request: NextRequest) {
         : 0;
     }
 
-    // ─── Agréger par classe ──────────────────────────────────────────
-    const byClass = studentsStats?.byClass || [];
+    // ─── 6. Agréger par classe ─────────────────────────────────────────
+    //    Utiliser les student-accounts pour les montants par classe
     const classMap = new Map<string, any>();
 
-    for (const cls of byClass) {
-      const levelCode = (cls.schoolLevel?.code || cls.levelCode || cls.level || '').toUpperCase();
+    for (const sa of studentAccounts) {
+      const levelCode = (sa.student?.schoolLevel?.code || '').toUpperCase();
       if (!levelCode || levelCode === 'ALL') continue;
-      const className = cls.className || cls.name || cls.label || '—';
-      const classId = cls.classId || cls.id || className;
-      const count = cls.count || cls.total || cls.value || 0;
 
-      // Trouver les student-accounts correspondants à cette classe
-      const classAccounts = studentAccounts.filter((sa: any) =>
-        sa.student?.studentEnrollments?.some((en: any) => en.classId === classId || en.class?.id === classId) ||
-        sa.student?.classId === classId
+      // Récupérer la classe de l'élève depuis les enrollments
+      const enrollment = sa.student?.studentEnrollments?.find((e: any) =>
+        e.academicYearId === academicYearId || !academicYearId
       );
+      const classId = enrollment?.classId || enrollment?.class?.id;
+      const className = enrollment?.class?.name || 'Sans classe';
 
-      const classEntry = {
-        classId,
-        className,
-        levelCode,
-        levelLabel: getLevelLabel(levelCode),
-        effectif: count,
-        montantTotalDu: 0,
-        montantPersonnalise: 0,
-        totalReduction: 0,
-        montantPercu: 0,
-        montantRestant: 0,
-        tauxRecouvrement: 0,
-        nombrePersonnalisations: 0,
-      };
-
-      for (const sa of classAccounts) {
-        classEntry.montantPercu += Number(sa.totalPaid || 0);
-        classEntry.montantRestant += Number(sa.balance || 0);
-        classEntry.montantPersonnalise += Number(sa.totalDue || 0);
+      if (!classId) {
+        // Élève sans classe → on le met dans "Sans classe"
+        const key = `noclass_${levelCode}`;
+        if (!classMap.has(key)) {
+          classMap.set(key, {
+            classId: key,
+            className: 'Sans classe',
+            levelCode,
+            levelLabel: getLevelLabel(levelCode),
+            effectif: 0,
+            montantTotalDu: 0,
+            montantPersonnalise: 0,
+            totalReduction: 0,
+            montantPercu: 0,
+            montantRestant: 0,
+            tauxRecouvrement: 0,
+            nombrePersonnalisations: 0,
+          });
+        }
+      } else if (!classMap.has(classId)) {
+        classMap.set(classId, {
+          classId,
+          className,
+          levelCode,
+          levelLabel: getLevelLabel(levelCode),
+          effectif: 0,
+          montantTotalDu: 0,
+          montantPersonnalise: 0,
+          totalReduction: 0,
+          montantPercu: 0,
+          montantRestant: 0,
+          tauxRecouvrement: 0,
+          nombrePersonnalisations: 0,
+        });
       }
 
-      // Compter les personnalisations pour cette classe
-      const classOverrides = overrides.filter((o: any) => {
-        const overrideClassId = o.student?.studentEnrollments?.[0]?.classId || o.student?.classId;
-        return overrideClassId === classId;
-      });
-      classEntry.nombrePersonnalisations = classOverrides.length;
-      classEntry.totalReduction = classOverrides.reduce((sum: number, o: any) => {
-        const orig = Number(o.feeStructure?.totalAmount || 0);
-        const custom = Number(o.customAmount || 0);
-        return sum + Math.max(0, orig - custom);
-      }, 0);
-      classEntry.montantTotalDu = classEntry.montantPersonnalise + classEntry.totalReduction;
-      classEntry.tauxRecouvrement = classEntry.montantPersonnalise > 0
-        ? Math.round((classEntry.montantPercu / classEntry.montantPersonnalise) * 100)
+      const entry = classMap.get(classId || `noclass_${levelCode}`);
+      if (entry) {
+        entry.effectif += 1;
+        entry.montantPersonnalise += Number(sa.totalDue || 0);
+        entry.montantPercu += Number(sa.totalPaid || 0);
+        entry.montantRestant += Number(sa.balance || 0);
+      }
+    }
+
+    // Ajouter les personnalisations par classe
+    for (const override of overrides) {
+      const levelCode = (override.feeStructure?.level?.code || '').toUpperCase();
+      const studentId = override.studentId;
+      // Trouver la classe de cet élève
+      const sa = studentAccounts.find((s: any) => s.studentId === studentId);
+      const enrollment = sa?.student?.studentEnrollments?.find((e: any) =>
+        e.academicYearId === academicYearId || !academicYearId
+      );
+      const classId = enrollment?.classId || `noclass_${levelCode}`;
+      const entry = classMap.get(classId);
+      if (entry) {
+        entry.nombrePersonnalisations += 1;
+        const original = Number(override.feeStructure?.totalAmount || 0);
+        const custom = Number(override.customAmount || 0);
+        entry.totalReduction += Math.max(0, original - custom);
+      }
+    }
+
+    // Calculer montantTotalDu et taux par classe
+    for (const entry of classMap.values()) {
+      entry.montantTotalDu = entry.montantPersonnalise + entry.totalReduction;
+      entry.tauxRecouvrement = entry.montantPersonnalise > 0
+        ? Math.round((entry.montantPercu / entry.montantPersonnalise) * 100)
         : 0;
+    }
 
-      classMap.set(classId, classEntry);
-
-      // Ajouter au niveau correspondant
-      const levelEntry = getLevel(levelCode);
+    // Trier les classes et les ajouter aux niveaux
+    const sortedClasses = sortClasses(Array.from(classMap.values()));
+    for (const cls of sortedClasses) {
+      const levelEntry = getLevel(cls.levelCode);
       if (levelEntry) {
-        levelEntry.classes.push(classEntry);
+        levelEntry.classes.push(cls);
       }
     }
 
-    // Trier les classes par ordre canonique
-    for (const entry of levelMap.values()) {
-      entry.classes = sortClasses(entry.classes);
-    }
-
-    // ─── Totaux globaux ──────────────────────────────────────────────
+    // ─── 7. Totaux globaux (depuis le KPI backend) ────────────────────
     const byLevel = sortByLevel(Array.from(levelMap.values()));
-    const totals = byLevel.reduce((acc, lvl) => ({
-      montantTotalDu: acc.montantTotalDu + lvl.montantTotalDu,
-      montantPersonnalise: acc.montantPersonnalise + lvl.montantPersonnalise,
-      totalReduction: acc.totalReduction + lvl.totalReduction,
-      montantPercu: acc.montantPercu + lvl.montantPercu,
-      montantRestant: acc.montantRestant + lvl.montantRestant,
-      nombreEleves: acc.nombreEleves + lvl.nombreEleves,
-      nombrePersonnalisations: acc.nombrePersonnalisations + lvl.nombrePersonnalisations,
-    }), {
-      montantTotalDu: 0, montantPersonnalise: 0, totalReduction: 0,
-      montantPercu: 0, montantRestant: 0, nombreEleves: 0, nombrePersonnalisations: 0,
-    });
-    totals.tauxRecouvrement = totals.montantPersonnalise > 0
-      ? Math.round((totals.montantPercu / totals.montantPersonnalise) * 100) : 0;
 
-    // ─── Graphiques ──────────────────────────────────────────────────
+    // ⭐ Utiliser les totaux du KPI backend (source de vérité)
+    const totals = {
+      montantTotalDu: Number(kpi.previsonnementGlobal || kpi.totalDue || 0),
+      montantPersonnalise: Number(kpi.totalDue || 0),
+      totalReduction: Number(kpi.totalReductions || 0),
+      montantPercu: Number(kpi.totalPaid || kpi.totalEncaissement || 0),
+      montantRestant: Number(kpi.totalDue || 0) - Number(kpi.totalPaid || kpi.totalEncaissement || 0),
+      nombreEleves: studentAccounts.length,
+      nombrePersonnalisations: overrides.length,
+      tauxRecouvrement: kpi.tauxRecouvrement || 0,
+    };
+
+    // ─── 8. Graphiques ─────────────────────────────────────────────────
     const evolutionMensuelle = generateMonthlyFallback();
 
     const comparaisonNiveaux = byLevel.map(lvl => ({
@@ -287,7 +305,8 @@ export async function GET(request: NextRequest) {
       restant: lvl.montantRestant,
     }));
 
-    const recouvrementParClasse = sortClasses(Array.from(classMap.values()))
+    const recouvrementParClasse = sortedClasses
+      .filter(c => c.className !== 'Sans classe')
       .sort((a, b) => a.tauxRecouvrement - b.tauxRecouvrement)
       .slice(0, 10)
       .map(c => ({ className: c.className, taux: c.tauxRecouvrement, restant: c.montantRestant }));
@@ -295,7 +314,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       totals,
       byLevel,
-      byClass: sortClasses(Array.from(classMap.values())),
+      byClass: sortedClasses,
       evolutionMensuelle,
       comparaisonNiveaux,
       recouvrementParClasse,

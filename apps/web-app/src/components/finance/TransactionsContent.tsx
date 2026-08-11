@@ -39,6 +39,9 @@ export default function TransactionsContent() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  // ⭐ Incrémenté après chaque paiement réussi pour forcer le refresh des
+  //    caisses ouvertes dans NewPaymentModal (qui ne rechargeait pas sinon).
+  const [modalRefreshTrigger, setModalRefreshTrigger] = useState(0);
   // Filtre par période
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -113,8 +116,11 @@ export default function TransactionsContent() {
     // (le modal affiche le reçu, l'utilisateur le fermera manuellement).
     // ⭐ reloadAccounts() met à jour les soldes du sélecteur d'élèves pour
     //    permettre un second paiement sans devoir fermer/rouvrir le modal.
+    // ⭐ setModalRefreshTrigger() force le rechargement des caisses ouvertes
+    //    dans le modal (qui sinon ne rechargeait qu'au montage).
     loadTransactions();
     reloadAccounts();
+    setModalRefreshTrigger((n) => n + 1);
   };
 
   // Filtrage par période (date de création de la transaction)
@@ -509,6 +515,7 @@ export default function TransactionsContent() {
           accounts={accounts}
           onClose={() => setModalOpen(false)}
           onSuccess={handleSuccess}
+          refreshTrigger={modalRefreshTrigger}
         />
       )}
 

@@ -59,12 +59,19 @@ export default function NewPaymentModal({
   onClose,
   onSuccess,
   defaultPaymentMethod,
+  refreshTrigger = 0,
 }: {
   academicYearId: string;
   accounts: any[];
   onClose: () => void;
   onSuccess: () => void;
   defaultPaymentMethod?: string;
+  /**
+   * ⭐ Incrémenté par le parent après un paiement réussi pour forcer le
+   *    rechargement des caisses ouvertes (et autres données locales du
+   *    modal) sans devoir fermer/rouvrir le modal.
+   */
+  refreshTrigger?: number;
 }) {
   const [studentAccountId, setStudentAccountId] = useState('');
   const [amount, setAmount] = useState('');
@@ -97,11 +104,13 @@ export default function NewPaymentModal({
   const [fedapayPhone, setFeexpayPhone] = useState('');
 
   // Charge les caisses ouvertes
+  // ⭐ Recharge quand refreshTrigger change (après un paiement réussi, le parent
+  //    l'incrémente pour forcer le refresh sans fermer le modal).
   useEffect(() => {
     financeService.getCashRegisters({ isActive: true, isOpen: true })
       .then((data) => setOpenCashRegisters(Array.isArray(data) ? data : []))
       .catch(() => setOpenCashRegisters([]));
-  }, []);
+  }, [refreshTrigger]);
 
   // Charge les niveaux scolaires activés
   useEffect(() => {

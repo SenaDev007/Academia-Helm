@@ -259,7 +259,10 @@ export default function StudentsModulePage() {
       const response = await fetch(`/api/students?${params}`);
         if (response.ok) {
           const data = await response.json();
-          setStudents(data);
+          // ⭐ L'API retourne un objet paginé { data: [...], total, page, ... }
+          //    mais peut aussi retourner un array (ancien format). On gère les deux.
+          const studentsArray = Array.isArray(data) ? data : (data?.data ?? data?.items ?? []);
+          setStudents(studentsArray);
         }
       } catch (error) {
         console.error('Failed to load students:', error);

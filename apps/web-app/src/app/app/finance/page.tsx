@@ -7,8 +7,8 @@
  * ============================================================================
  */
 
-import FinanceDashboard from '@/components/finance/FinanceDashboard';
+import FinanceDashboardV2 from '@/components/finance/FinanceDashboardV2';
 
 export default function FinancePage() {
-  return <FinanceDashboard />;
+  return <FinanceDashboardV2 />;
 }

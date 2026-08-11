@@ -87,8 +87,9 @@ export default function TransactionsContent() {
 
   useEffect(() => {
     if (!academicYear?.id) return;
-    financeService.getStudentAccounts({ academicYearId: academicYear.id })
-      .then((d) => setAccounts(Array.isArray(d) ? d : []))
+    // ⭐ Passer limit=2000 pour récupérer TOUS les comptes (pas de pagination par défaut)
+    financeService.getStudentAccounts({ academicYearId: academicYear.id, limit: '2000' })
+      .then((d) => setAccounts(Array.isArray(d) ? d : (d?.items || d?.data || [])))
       .catch(() => setAccounts([]));
   }, [academicYear?.id]);
 

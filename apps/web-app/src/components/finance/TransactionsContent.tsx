@@ -93,10 +93,28 @@ export default function TransactionsContent() {
       .catch(() => setAccounts([]));
   }, [academicYear?.id]);
 
+  /**
+   * Recharge les comptes élèves depuis le backend.
+   *
+   * Appelé après un paiement réussi pour mettre à jour les soldes affichés
+   * dans le sélecteur d'élèves du NewPaymentModal — sans cette mise à jour,
+   * l'utilisateur devait fermer + rouvrir le modal pour voir les soldes
+   * actualisés.
+   */
+  const reloadAccounts = () => {
+    if (!academicYear?.id) return;
+    financeService.getStudentAccounts({ academicYearId: academicYear.id, exportAll: 'true' })
+      .then((d) => setAccounts(Array.isArray(d) ? d : (d?.items || d?.data || [])))
+      .catch(() => {/* ignore — keep existing accounts */});
+  };
+
   const handleSuccess = () => {
-    // Recharger les transactions sans fermer le modal
-    // (le modal affiche le reçu, l'utilisateur le fermera manuellement)
+    // Recharger les transactions ET les comptes élèves sans fermer le modal
+    // (le modal affiche le reçu, l'utilisateur le fermera manuellement).
+    // ⭐ reloadAccounts() met à jour les soldes du sélecteur d'élèves pour
+    //    permettre un second paiement sans devoir fermer/rouvrir le modal.
     loadTransactions();
+    reloadAccounts();
   };
 
   // Filtrage par période (date de création de la transaction)

@@ -27,7 +27,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAcademicYear } from '@/hooks/useAcademicYear';
 import { useAppSession } from '@/contexts/AppSessionContext';
-import * as financeService from '@/services/finance.service';
+import { financeService } from '@/services/finance.service';
 
 interface LevelData {
   levelCode: string;

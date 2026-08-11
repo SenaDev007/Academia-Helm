@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { ModuleHeader } from '@/components/modules/blueprint';
 import GeneratedStampsSignatures from '@/components/settings/GeneratedStampsSignatures';
+import StampDesigner from '@/components/settings/StampDesigner';
 import SchoolCalendarConfigSection from '@/components/settings/SchoolCalendarConfigSection';
 import { AdminStructureSection } from '@/components/settings/AdminStructureSection';
 import DepartmentsManagement from '@/components/settings/DepartmentsManagement';
@@ -5439,9 +5440,17 @@ export default function SettingsPage() {
       case 'seals':
         return (
           <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <GeneratedStampsSignatures tenantId={effectiveTenantId ?? undefined} />
-            </div>
+            {/* ⭐ Nouveau : générateur de cachets professionnel SVG */}
+            <StampDesigner />
+            {/* Ancien système (génération backend) — conservé pour rétro-compatibilité */}
+            <details className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <summary className="cursor-pointer text-sm font-bold text-slate-600 hover:text-slate-800">
+                Gestion avancée des cachets (système legacy)
+              </summary>
+              <div className="mt-4">
+                <GeneratedStampsSignatures tenantId={effectiveTenantId ?? undefined} />
+              </div>
+            </details>
           </div>
         );
 

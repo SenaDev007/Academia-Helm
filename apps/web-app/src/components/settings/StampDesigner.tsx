@@ -23,7 +23,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Stamp, Download, Copy, Check, Loader2, AlertCircle, School, Globe, Link2, Link2Off, UserCog, Award, FlaskConical } from 'lucide-react';
+import { Stamp, Download, Copy, Check, Loader2, AlertCircle, School, Globe, Link2, Link2Off, UserCog, Award, Save } from 'lucide-react';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { useBilingual } from '@/contexts/BilingualContext';
 import apiClient from '@/lib/api/client';
@@ -64,7 +64,7 @@ interface SchoolLevel {
 }
 
 type StampRole = 'director' | 'promoter' | 'accountant' | 'secretary';
-type StampStyle = 'standard' | 'wax';
+type StampStyle = 'standard'; // ⭐ Version cire supprimée — pas assez aboutie
 
 const ROLE_LABELS: Record<StampRole, string> = {
   director: 'Directeur',
@@ -93,8 +93,10 @@ export default function StampDesigner() {
   const [selectedLevelId, setSelectedLevelId] = useState<string>('');
   const [selectedLang, setSelectedLang] = useState<string>('FR');
   const [selectedRole, setSelectedRole] = useState<StampRole>('director');
-  const [stampStyle, setStampStyle] = useState<StampStyle>('standard');
+  const [stampStyle] = useState<StampStyle>('standard'); // Toujours standard (cire supprimée)
   const [copiedSvg, setCopiedSvg] = useState(false);
+  const [savedStamps, setSavedStamps] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
   const [sameMaternellePrimaire, setSameMaternellePrimaire] = useState(false);
 
   // ─── Load data ─────────────────────────────────────────────────────
@@ -315,33 +317,35 @@ export default function StampDesigner() {
           </div>
         </div>
 
-        {/* Stamp style selector */}
+        {/* ⭐ Bouton sauvegarder le cachet */}
         <div className="flex flex-wrap items-center gap-3">
-          <label className="text-xs font-bold text-slate-600 uppercase">Style</label>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setStampStyle('standard')}
-              className={cn(
-                'px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1',
-                stampStyle === 'standard'
-                  ? 'bg-red-600 text-white'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              )}
-            >
-              <Stamp className="w-3 h-3" /> Standard (encre rouge)
-            </button>
-            <button
-              onClick={() => setStampStyle('wax')}
-              className={cn(
-                'px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1',
-                stampStyle === 'wax'
-                  ? 'bg-red-600 text-white'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              )}
-            >
-              <FlaskConical className="w-3 h-3" /> Tampon cire
-            </button>
-          </div>
+          <label className="text-xs font-bold text-slate-600 uppercase">Action</label>
+          <button
+            onClick={async () => {
+              if (!svgRef.current) return;
+              setSaving(true);
+              const svgData = new XMLSerializer().serializeToString(svgRef.current);
+              const key = `${selectedRole}_${currentLevel?.code || 'global'}_${selectedLang}`;
+              setSavedStamps(prev => ({ ...prev, [key]: svgData }));
+              // Sauvegarder dans localStorage pour réutilisation
+              try {
+                const allStamps = JSON.parse(localStorage.getItem('academia_saved_stamps') || '{}');
+                allStamps[key] = svgData;
+                localStorage.setItem('academia_saved_stamps', JSON.stringify(allStamps));
+              } catch {}
+              setSaving(false);
+            }}
+            disabled={saving}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            Sauvegarder ce cachet
+          </button>
+          {savedStamps[`${selectedRole}_${currentLevel?.code || 'global'}_${selectedLang}`] && (
+            <span className="text-[10px] text-emerald-600 flex items-center gap-1">
+              <Check className="w-3 h-3" /> Cachet sauvegardé
+            </span>
+          )}
         </div>
 
         {/* Toggle same director Maternelle + Primaire */}

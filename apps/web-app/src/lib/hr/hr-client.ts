@@ -10,6 +10,42 @@
  */
 
 import { getClientAuthorizationHeader, tryRefreshAccessToken } from '@/lib/auth/client-access-token';
+import { offlineFetch } from '@/lib/offline/offline-fetch';
+
+/**
+ * Mapping URL → store IDB pour le module RH.
+ * ⭐ Les noms correspondent aux stores déclarés dans local-db.service.ts.
+ */
+function deriveHrStoreName(path: string): string | undefined {
+  const lower = path.toLowerCase();
+  if (lower.includes('/staff') || lower.includes('/hr/staff')) return 'staff';
+  if (lower.includes('/teachers') || lower.includes('/teacher')) return 'teacher';
+  if (lower.includes('/contracts') || lower.includes('/contract')) return 'contract';
+  if (lower.includes('/leaves') || lower.includes('/leave')) return 'leaverequest';
+  if (lower.includes('/payroll') || lower.includes('/salary')) return 'salaryslip';
+  if (lower.includes('/attendance') || lower.includes('/staff-attendance')) return 'staffattendance';
+  if (lower.includes('/evaluations') || lower.includes('/evaluation')) return 'staffevaluation';
+  if (lower.includes('/documents') || lower.includes('/document')) return 'staffdocument';
+  if (lower.includes('/allowances') || lower.includes('/allowance')) return 'staffallowance';
+  if (lower.includes('/overtime') || lower.includes('/overtime')) return 'overtimerecord';
+  if (lower.includes('/school-directors') || lower.includes('/director')) return 'schooldirectors';
+  if (lower.includes('/recruitment') || lower.includes('/jobs')) return undefined; // pas de store IDB
+  return undefined;
+}
+
+function getTenantId(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const session = localStorage.getItem('session');
+    if (session) {
+      const parsed = JSON.parse(session);
+      return parsed.tenantId || parsed.tenant?.id || undefined;
+    }
+  } catch {}
+  const match = document.cookie.match(/(?:^|.*;\s*)x-tenant-id\s*=\s*([^;]*).*$/);
+  if (match && match[1]) return decodeURIComponent(match[1]);
+  return undefined;
+}
 
 export async function hrFetch<T>(
   path: string,
@@ -20,11 +56,25 @@ export async function hrFetch<T>(
   },
   _isRetry = false,
 ): Promise<T> {
-  // Cache-busting pour les requêtes GET : ajoute _t=timestamp
-  // pour contourner le cache Cloudflare même si les headers anti-cache
-  // ne sont pas respectés par le CDN
-  let fetchUrl = path;
   const method = options?.method ?? 'GET';
+
+  // ⭐ Pour les GET : utiliser offlineFetch qui lit IndexedDB en offline
+  if (method === 'GET' && !options?.body) {
+    const storeName = deriveHrStoreName(path);
+    if (storeName) {
+      const tenantId = getTenantId();
+      try {
+        // ⭐ Ne pas ajouter _t=Date.now() pour offlineFetch — ça casserait
+        //    le cache IDB. offlineFetch gère le cache-busting lui-même.
+        return await offlineFetch<T>(path, storeName, { tenantId });
+      } catch {
+        // Si offlineFetch échoue, on retombe sur le fetch direct
+      }
+    }
+  }
+
+  // Cache-busting pour les requêtes GET directes
+  let fetchUrl = path;
   if (method === 'GET') {
     const separator = fetchUrl.includes('?') ? '&' : '?';
     fetchUrl = `${fetchUrl}${separator}_t=${Date.now()}`;

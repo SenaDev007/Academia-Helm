@@ -704,6 +704,18 @@ class LocalDbService {
       "taxsettings",
       "tenantfeatures",
       "rolepermissions",
+      // ⭐ Stores ajoutés en V15 (cache stores pour offlineFetch) :
+      //    Ces stores sont utilisés par offlineFetch pour cacher les
+      //    réponses API qui ne correspondent pas à une table Prisma directe
+      //    (agrégations, settings, KPIs, etc.).
+      "settings_cache",
+      "kpi_cache",
+      "orion_cache",
+      "orion_alerts",
+      "admin_cache",
+      "pricing_cache",
+      "testimonials_cache",
+      "transfers_cache",
     ];
 
     entities.forEach(storeName => {
@@ -894,7 +906,7 @@ class LocalDbService {
 // Instance singleton
 export const localDb = new LocalDbService({
   dbName: 'academia-helm-local',
-  version: 14, // ⭐ bump 13 → 14 (ajout 14 stores manquants supplémentaires : tenantevents, tenantidentityprofiles, etc.)
+  version: 15, // ⭐ bump 14 → 15 (ajout cache stores pour offlineFetch)
 });
 
 /**

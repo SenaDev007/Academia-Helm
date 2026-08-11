@@ -145,7 +145,10 @@ export class CollectionSummaryController {
       include: {
         student: { select: { id: true, firstName: true, lastName: true, matricule: true } },
         class: { select: { id: true, name: true, code: true, schoolLevelId: true, schoolLevel: true } },
-        academicClass: { select: { id: true, name: true, code: true } },
+        // ⭐ Inclure schoolLevel sur academicClass aussi — sinon le filtre par niveau
+        //    échoue pour les élèves qui n'ont QUE academicClass (pas de classId physique).
+        //    C'était la cause du bug "Aucune donnée" quand on sélectionnait Maternelle/Primaire/Secondaire.
+        academicClass: { select: { id: true, name: true, code: true, schoolLevelId: true, schoolLevel: true } },
       },
       orderBy: [
         { student: { lastName: 'asc' } },
@@ -154,6 +157,9 @@ export class CollectionSummaryController {
     });
 
     // Filtrer par niveau si fourni (levelId = UUID de school_levels)
+    // ⭐ FIX : on matche sur class.schoolLevel ET academicClass.schoolLevel.
+    //    Beaucoup d'élèves n'ont que academicClass (pas de classId physique) —
+    //    avant ce fix, ils étaient exclus du filtre → "Aucune donnée".
     let filteredEnrollments = enrollments;
     if (levelId) {
       // Charger le niveau scolaire pour récupérer son code (au cas où levelId
@@ -171,12 +177,15 @@ export class CollectionSummaryController {
       }
 
       filteredEnrollments = enrollments.filter((e) => {
-        // Match par UUID de school_levels
+        // Match par UUID de school_levels sur la classe physique
         if (e.class?.schoolLevel?.id === levelId) return true;
-        // Match par UUID de schoolLevelId sur la classe
         if (e.class?.schoolLevelId === levelId) return true;
+        // ⭐ Match par UUID de school_levels sur la classe académique (officielle)
+        if (e.academicClass?.schoolLevel?.id === levelId) return true;
+        if (e.academicClass?.schoolLevelId === levelId) return true;
         // Match par code (au cas où levelId soit un code comme "SECONDAIRE")
         if (levelCode && e.class?.schoolLevel?.code === levelCode) return true;
+        if (levelCode && e.academicClass?.schoolLevel?.code === levelCode) return true;
         return false;
       });
 
@@ -316,6 +325,32 @@ export class CollectionSummaryController {
       });
     }
 
+    // ─── 3d. Récupérer les FeeOverrides (personnalisations) par élève ──────
+    // ⭐ Permet d'afficher la colonne "Personnalisation" qui indique si l'élève
+    //    a une dérogation/exonération sur ses frais de scolarité, et le montant
+    //    personnalisé (vs montant standard de la FeeStructure).
+    const feeOverrides = await this.prisma.feeOverride.findMany({
+      where: {
+        tenantId,
+        studentId: { in: studentIds },
+      },
+      include: {
+        feeStructure: { select: { id: true, feeType: true, totalAmount: true } },
+      },
+    });
+    // Map: studentId → { hasPersonalization: boolean, totalCustomAmount: number, totalReduction: number }
+    const overrideByStudent = new Map<string, { hasPersonalization: boolean; totalCustomAmount: number; totalReduction: number }>();
+    for (const ov of feeOverrides) {
+      const standardAmount = Number(ov.feeStructure?.totalAmount || 0);
+      const customAmount = Number(ov.customAmount || 0);
+      const reduction = Math.max(0, standardAmount - customAmount);
+      const current = overrideByStudent.get(ov.studentId) || { hasPersonalization: false, totalCustomAmount: 0, totalReduction: 0 };
+      current.hasPersonalization = true;
+      current.totalCustomAmount += customAmount;
+      current.totalReduction += reduction;
+      overrideByStudent.set(ov.studentId, current);
+    }
+
     // ─── 4. Construire les lignes élèves (détail) ────────────────────────────
     const students = filteredEnrollments.map((enrollment) => {
       const studentPayments = paymentsByStudent.get(enrollment.studentId) || [];
@@ -364,6 +399,8 @@ export class CollectionSummaryController {
       // ─── Matching EXCLUSIF des FeeStructures par type ─────────────────────
       // Priorité : academicClass > physicalClass > level > global (exclusive).
       // On retourne la(les) structure(s) qui matche(nt) au niveau le plus précis.
+      // ⭐ FIX : on matche aussi sur academicClass.schoolLevelId (pas seulement class.schoolLevelId)
+      //    car beaucoup d'élèves n'ont que academicClass — avant ce fix, totalDue = 0 pour eux.
       const matchByType = (feeType: string) => {
         const classSpecific = feeStructures.filter(fs =>
           fs.feeType === feeType && fs.academicClassId && fs.academicClassId === enrollment.academicClassId
@@ -375,8 +412,11 @@ export class CollectionSummaryController {
         );
         if (physicalClassSpecific.length > 0) return physicalClassSpecific;
 
+        // ⭐ Match par levelId : utiliser academicClass.schoolLevelId en fallback
+        //    si class.schoolLevelId est absent.
+        const effectiveLevelId = enrollment.class?.schoolLevelId || enrollment.academicClass?.schoolLevelId;
         const levelSpecific = feeStructures.filter(fs =>
-          fs.feeType === feeType && !fs.academicClassId && !fs.classId && fs.levelId && fs.levelId === enrollment.class?.schoolLevelId
+          fs.feeType === feeType && !fs.academicClassId && !fs.classId && fs.levelId && fs.levelId === effectiveLevelId
         );
         if (levelSpecific.length > 0) return levelSpecific;
 
@@ -434,7 +474,12 @@ export class CollectionSummaryController {
       // dans totalTuitionPaid → Total payé.
 
       // ─── Totaux cohérents ─────────────────────────────────────────────────
-      const totalDue = inscriptionExpected + reinscriptionExpected + totalTuitionExpected + arrearExpected;
+      // ⭐ totalTuitionExpected = "Scolarité" (colonne demandée par l'utilisateur)
+      //    totalDue = Inscription + Réinscription + Scolarité + Arriérés
+      // ⭐ Personnalisation : si l'élève a un FeeOverride, on ajuste totalDue en
+      //    remplaçant le montant standard par le montant personnalisé.
+      const overrideInfo = overrideByStudent.get(enrollment.studentId) || { hasPersonalization: false, totalCustomAmount: 0, totalReduction: 0 };
+      const totalDue = inscriptionExpected + reinscriptionExpected + totalTuitionExpected + arrearExpected - overrideInfo.totalReduction;
       const totalPaid = inscriptionPaid + reinscriptionPaid + arrearPaid + totalTuitionPaid + otherPaid;
       const reste = Math.max(0, totalDue - totalPaid);
 
@@ -452,7 +497,13 @@ export class CollectionSummaryController {
         inscriptionExpected,
         reinscriptionExpected,
         arrearExpected,
+        // ⭐ Scolarité = totalTuitionExpected (montant standard des frais de scolarité)
+        scolarite: totalTuitionExpected,
         totalTuitionExpected,
+        // ⭐ Personnalisation : indique si l'élève a un FeeOverride + montant de la réduction
+        hasPersonalization: overrideInfo.hasPersonalization,
+        personalizationAmount: overrideInfo.totalCustomAmount,
+        personalizationReduction: overrideInfo.totalReduction,
         // Montants payés
         inscriptionPaid,
         reinscriptionPaid,
@@ -484,6 +535,10 @@ export class CollectionSummaryController {
           tuitionInstallments: {},
           totalTuition: 0,
           totalTuitionPaid: 0,
+          // ⭐ Scolarité + Personnalisation (colonnes demandées)
+          scolarite: 0,
+          personalizationCount: 0,
+          personalizationReduction: 0,
           totalDue: 0,
           totalPaid: 0,
           reste: 0,
@@ -497,6 +552,11 @@ export class CollectionSummaryController {
       row.inscription += student.inscriptionExpected;
       row.reinscription += student.reinscriptionExpected;
       row.totalTuition += student.totalTuitionExpected;
+      // ⭐ Scolarité (alias de totalTuitionExpected pour clarté dans le récap)
+      row.scolarite += student.totalTuitionExpected;
+      // ⭐ Compteur de personnalisations dans la classe
+      if (student.hasPersonalization) row.personalizationCount += 1;
+      row.personalizationReduction += student.personalizationReduction || 0;
       row.totalDue += student.totalDue;
       // Payé
       row.arrieresPaid += student.arrearPaid;
@@ -615,6 +675,11 @@ interface RecapRow {
   inscription: number;
   reinscription: number;
   totalTuition: number;
+  // ⭐ Scolarité (alias de totalTuition pour clarté dans le récap)
+  scolarite: number;
+  // ⭐ Personnalisation : combien d'élèves de la classe ont un FeeOverride + montant total de la réduction
+  personalizationCount: number;
+  personalizationReduction: number;
   totalDue: number;
   // Payé
   arrieresPaid: number;

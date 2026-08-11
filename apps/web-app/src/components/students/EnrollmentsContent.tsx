@@ -27,7 +27,7 @@ import {
   FileText, Download, UserCheck, GraduationCap, BookOpen, Baby,
   RotateCcw, CheckCircle, XCircle, Clock, AlertCircle, Upload,
   ShieldAlert, Info, BrainCircuit, ChevronUp, EyeOff, Eye, FileDown, Pencil, FileSpreadsheet,
-  DollarSign, UserPlus, RefreshCw, Trash2,
+  DollarSign, UserPlus, RefreshCw, Trash2, X,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { FormModal } from '@/components/modules/blueprint';
@@ -686,6 +686,143 @@ export default function EnrollmentsContent() {
     setSelectedForBulk(prev => { const n = new Set(prev); n.has(studentId) ? n.delete(studentId) : n.add(studentId); return n; });
   };
 
+  /**
+   * ⭐ Sélectionne / désélectionne TOUS les élèves visibles dans l'arborescence
+   *    (tous niveaux + classes déployés). Utilisé par la case "select all" de la barre d'actions.
+   */
+  const toggleSelectAllVisible = () => {
+    const allVisibleIds: string[] = [];
+    // Élèves non affectés
+    unassignedEnrollments.forEach(enr => allVisibleIds.push(enr.student.id));
+    // Élèves dans les groupes
+    filteredTree.forEach(level => {
+      level.groups.forEach(group => {
+        group.students.forEach(enr => allVisibleIds.push(enr.student.id));
+      });
+    });
+    // Si tous sont déjà sélectionnés → désélectionner tout, sinon → sélectionner tous
+    const allSelected = allVisibleIds.length > 0 && allVisibleIds.every(id => selectedForBulk.has(id));
+    if (allSelected) {
+      setSelectedForBulk(new Set());
+    } else {
+      setSelectedForBulk(new Set(allVisibleIds));
+    }
+  };
+
+  const clearBulkSelection = () => setSelectedForBulk(new Set());
+
+  /**
+   * ⭐ Action multiple : marquer les élèves sélectionnés comme ANCIENS (REPEAT).
+   *    Bascule le type d'inscription de NEW → REPEAT, ce qui recalcul le StudentAccount
+   *    (frais de réinscription au lieu de frais d'inscription).
+   */
+  const handleBulkMarkAsOld = async () => {
+    if (selectedForBulk.size === 0 || !academicYear) return;
+    if (!confirm(`Marquer ${selectedForBulk.size} élève(s) comme ANCIENS (frais de réinscription) ?`)) return;
+    setIsProcessingBulk(true);
+    let success = 0;
+    let failed = 0;
+    const errors: string[] = [];
+    for (const studentId of Array.from(selectedForBulk)) {
+      try {
+        await studentsService.updateEnrollmentType({
+          studentId,
+          academicYearId: academicYear.id,
+          enrollmentType: 'REPEAT',
+        });
+        success++;
+      } catch (e: any) {
+        failed++;
+        errors.push(`${studentId.slice(0, 8)}: ${e.message}`);
+      }
+    }
+    toast({
+      title: '✅ Action terminée',
+      description: `${success} marqué(s) ancien(s) · ${failed} échec(s)`,
+      variant: failed > 0 ? 'warning' : 'success',
+    });
+    clearBulkSelection();
+    setIsProcessingBulk(false);
+    loadData();
+  };
+
+  /**
+   * ⭐ Action multiple : marquer les élèves sélectionnés comme NOUVEAUX (NEW).
+   *    Bascule REPEAT → NEW (frais d'inscription complets).
+   */
+  const handleBulkMarkAsNew = async () => {
+    if (selectedForBulk.size === 0 || !academicYear) return;
+    if (!confirm(`Marquer ${selectedForBulk.size} élève(s) comme NOUVEAUX (frais d'inscription complets) ?`)) return;
+    setIsProcessingBulk(true);
+    let success = 0;
+    let failed = 0;
+    for (const studentId of Array.from(selectedForBulk)) {
+      try {
+        await studentsService.updateEnrollmentType({
+          studentId,
+          academicYearId: academicYear.id,
+          enrollmentType: 'NEW',
+        });
+        success++;
+      } catch (e: any) {
+        failed++;
+      }
+    }
+    toast({
+      title: '✅ Action terminée',
+      description: `${success} marqué(s) nouveau(x) · ${failed} échec(s)`,
+      variant: failed > 0 ? 'warning' : 'success',
+    });
+    clearBulkSelection();
+    setIsProcessingBulk(false);
+    loadData();
+  };
+
+  /**
+   * ⭐ Action multiple : suppression définitive des élèves sélectionnés.
+   *    Double confirmation (prompt "SUPPRIMER") pour éviter les accidents.
+   *    Ne supprime que les élèves en statut PRE_REGISTERED ou ADMITTED (sans paiements).
+   */
+  const handleBulkDelete = async () => {
+    if (selectedForBulk.size === 0) return;
+    if (!confirm(
+      `⚠️ SUPPRESSION DÉFINITIVE de ${selectedForBulk.size} élève(s) ?\n\n` +
+      `Cette action est IRRÉVERSIBLE et supprimera :\n` +
+      `• Les inscriptions et dossiers académiques\n` +
+      `• Les comptes financiers (s'il n'y a pas de paiements)\n` +
+      `• Les photos, responsables, et toutes les données liées\n\n` +
+      `Confirmez en tapant SUPPRIMER dans le champ qui va s'ouvrir.`
+    )) return;
+
+    const input = prompt(`Tapez SUPPRIMER pour confirmer la suppression de ${selectedForBulk.size} élève(s) :`);
+    if (input !== 'SUPPRIMER') {
+      toast({ title: 'Suppression annulée', variant: 'info' });
+      return;
+    }
+
+    setIsProcessingBulk(true);
+    let success = 0;
+    let failed = 0;
+    const failedIds: string[] = [];
+    for (const studentId of Array.from(selectedForBulk)) {
+      try {
+        await studentsService.deleteStudent(studentId);
+        success++;
+      } catch (e: any) {
+        failed++;
+        failedIds.push(studentId);
+      }
+    }
+    toast({
+      title: '✅ Suppression terminée',
+      description: `${success} supprimé(s) · ${failed} échec(s) (peut-être des paiements liés)`,
+      variant: failed > 0 ? 'warning' : 'success',
+    });
+    clearBulkSelection();
+    setIsProcessingBulk(false);
+    loadData();
+  };
+
   // ─── Rendu ──────────────────────────────────────────────────────────
   return (
     <>
@@ -960,6 +1097,86 @@ export default function EnrollmentsContent() {
           </div>
         </div>
 
+        {/* ⭐ Barre d'actions multiples — s'affiche quand ≥1 élève est sélectionné */}
+        {selectedForBulk.size > 0 && (
+          <div className="flex items-center justify-between gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={toggleSelectAllVisible}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:text-blue-900"
+                title="Sélectionner / désélectionner tous les élèves visibles"
+              >
+                <input
+                  type="checkbox"
+                  checked={(() => {
+                    const allIds: string[] = [];
+                    unassignedEnrollments.forEach(e => allIds.push(e.student.id));
+                    filteredTree.forEach(l => l.groups.forEach(g => g.students.forEach(e => allIds.push(e.student.id))));
+                    return allIds.length > 0 && allIds.every(id => selectedForBulk.has(id));
+                  })()}
+                  onChange={() => {/* handled by onClick on parent */}}
+                  className="h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs font-bold">
+                  {selectedForBulk.size} sélectionné{selectedForBulk.size > 1 ? 's' : ''}
+                </span>
+              </button>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={handleBulkMarkAsOld}
+                disabled={isProcessingBulk || !academicYear}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-md border border-amber-200 transition disabled:opacity-50"
+                title="Marquer comme anciens (frais de réinscription)"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Marquer anciens
+              </button>
+              <button
+                onClick={handleBulkMarkAsNew}
+                disabled={isProcessingBulk || !academicYear}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md border border-blue-200 transition disabled:opacity-50"
+                title="Marquer comme nouveaux (frais d'inscription complets)"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                Marquer nouveaux
+              </button>
+              <button
+                onClick={() => setBulkReEnrollOpen(true)}
+                disabled={isProcessingBulk}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md border border-indigo-200 transition disabled:opacity-50"
+                title="Réinscription massive vers une autre année"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Réinscrire
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={isProcessingBulk}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-700 bg-red-50 hover:bg-red-100 rounded-md border border-red-200 transition disabled:opacity-50"
+                title="Supprimer définitivement (uniquement élèves sans paiements)"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Supprimer
+              </button>
+              <button
+                onClick={clearBulkSelection}
+                disabled={isProcessingBulk}
+                className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 transition disabled:opacity-50"
+                title="Effacer la sélection"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+        {isProcessingBulk && (
+          <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Traitement en cours...
+          </div>
+        )}
+
         {/* Arborescence + section orphelins */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex-1">
           {isLoading ? (
@@ -1029,6 +1246,7 @@ export default function EnrollmentsContent() {
                                       <div className="flex items-center gap-3 py-1.5 px-3 border-b border-amber-100 whitespace-nowrap min-w-max text-[10px] font-bold text-amber-500 uppercase">
                                         <span className="w-8 text-center shrink-0">N°</span>
                                         <span className="w-8 shrink-0"></span>
+                                        <span className="w-6 shrink-0 text-center">✓</span>
                                         <span className="w-56 shrink-0">Nom & Matricule</span>
                                         <span className="w-20 shrink-0">Type</span>
                                         <span className="w-24 shrink-0">Statut</span>
@@ -1038,8 +1256,9 @@ export default function EnrollmentsContent() {
                                       {group.students.map((enr, idx) => {
                                         const statusInfo = STATUS_META[enr.status] || { label: enr.status, color: 'bg-slate-50 text-slate-600 border-slate-200' };
                                         const typeInfo = TYPE_META[enr.enrollmentType] || { label: enr.enrollmentType, color: 'bg-slate-50 text-slate-600' };
+                                        const isBulkSelected = selectedForBulk.has(enr.student.id);
                                         return (
-                                          <div key={enr.id} className="flex items-center gap-3 py-2 px-3 hover:bg-amber-50/40 rounded-lg transition-colors group whitespace-nowrap min-w-max">
+                                          <div key={enr.id} className={`flex items-center gap-3 py-2 px-3 hover:bg-amber-50/40 rounded-lg transition-colors group whitespace-nowrap min-w-max ${isBulkSelected ? 'bg-blue-50' : ''}`}>
                                             <span className="w-8 text-center text-sm font-bold text-slate-500 shrink-0">{idx + 1}</span>
                                             <div className="w-8 h-8 rounded-full bg-amber-100 border border-amber-200 flex items-center justify-center text-xs font-bold text-amber-600 group-hover:bg-amber-200 group-hover:text-amber-700 transition-colors shrink-0 overflow-hidden">
                                               {enr.student.photoUrl ? (
@@ -1047,6 +1266,15 @@ export default function EnrollmentsContent() {
                                               ) : (
                                                 <>{enr.student.lastName[0]}{enr.student.firstName[0]}</>
                                               )}
+                                            </div>
+                                            <div className="w-6 shrink-0 flex justify-center">
+                                              <input
+                                                type="checkbox"
+                                                checked={isBulkSelected}
+                                                onChange={() => toggleBulkSelection(enr.student.id)}
+                                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                title="Sélectionner pour action multiple"
+                                              />
                                             </div>
                                             <div className="w-56 shrink-0">
                                               <p className="text-sm font-medium text-slate-800 truncate">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>
@@ -1310,6 +1538,7 @@ export default function EnrollmentsContent() {
                                               <div className="flex items-center gap-3 py-1.5 px-3 border-b border-slate-100 whitespace-nowrap min-w-max text-[10px] font-bold text-slate-400 uppercase">
                                                 <span className="w-8 text-center shrink-0">N°</span>
                                                 <span className="w-8 shrink-0"></span>
+                                                <span className="w-6 shrink-0 text-center">✓</span>
                                                 <span className="w-56 shrink-0">Nom & Matricule</span>
                                                 <span className="w-20 shrink-0">Type</span>
                                                 <span className="w-24 shrink-0">Statut</span>
@@ -1319,8 +1548,9 @@ export default function EnrollmentsContent() {
                                               {filteredStudents.map((enr, idx) => {
                                                 const statusInfo = STATUS_META[enr.status] || { label: enr.status, color: 'bg-slate-50 text-slate-600 border-slate-200' };
                                                 const typeInfo = TYPE_META[enr.enrollmentType] || { label: enr.enrollmentType, color: 'bg-slate-50 text-slate-600' };
+                                                const isBulkSelected = selectedForBulk.has(enr.student.id);
                                                 return (
-                                                  <div key={enr.id} className="flex items-center gap-3 py-2 px-3 hover:bg-slate-50 rounded-lg transition-colors group whitespace-nowrap min-w-max">
+                                                  <div key={enr.id} className={`flex items-center gap-3 py-2 px-3 hover:bg-slate-50 rounded-lg transition-colors group whitespace-nowrap min-w-max ${isBulkSelected ? 'bg-blue-50' : ''}`}>
                                                     <span className="w-8 text-center text-sm font-bold text-slate-500 shrink-0">{idx + 1}</span>
                                                     <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors shrink-0 overflow-hidden">
                                                       {enr.student.photoUrl ? (
@@ -1328,6 +1558,15 @@ export default function EnrollmentsContent() {
                                                       ) : (
                                                         <>{enr.student.lastName[0]}{enr.student.firstName[0]}</>
                                                       )}
+                                                    </div>
+                                                    <div className="w-6 shrink-0 flex justify-center">
+                                                      <input
+                                                        type="checkbox"
+                                                        checked={isBulkSelected}
+                                                        onChange={() => toggleBulkSelection(enr.student.id)}
+                                                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                        title="Sélectionner pour action multiple"
+                                                      />
                                                     </div>
                                                     <div className="w-56 shrink-0">
                                                       <p className="text-sm font-medium text-slate-800 truncate">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</p>

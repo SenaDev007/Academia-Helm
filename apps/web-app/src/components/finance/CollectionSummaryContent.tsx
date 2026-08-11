@@ -34,6 +34,12 @@ interface StudentPaymentRow {
   reinscriptionExpected: number;
   arrearExpected: number;
   totalTuitionExpected: number;
+  // ⭐ Scolarité = totalTuitionExpected (colonne explicite demandée par l'utilisateur)
+  scolarite?: number;
+  // ⭐ Personnalisation : indique si l'élève a un FeeOverride + montant de la réduction
+  hasPersonalization?: boolean;
+  personalizationAmount?: number;
+  personalizationReduction?: number;
   // Montants payés
   inscriptionPaid: number;
   reinscriptionPaid: number;
@@ -54,6 +60,10 @@ interface RecapRow {
   inscription: number;
   reinscription: number;
   totalTuition: number;
+  // ⭐ Scolarité + Personnalisation (colonnes demandées)
+  scolarite?: number;
+  personalizationCount?: number;
+  personalizationReduction?: number;
   totalDue: number;
   // Payé
   arrieresPaid: number;
@@ -405,19 +415,23 @@ function DetailTable({
       <Table>
         <TableHeader>
           <TableRow className="bg-gray-50">
-            <TableHead className="sticky left-0 bg-gray-50 z-10">Noms et Prénoms</TableHead>
-            <TableHead>Classe</TableHead>
-            <TableHead>Arriéré</TableHead>
-            <TableHead>Inscription</TableHead>
-            <TableHead>Réinscription</TableHead>
+            <TableHead className="sticky left-0 bg-gray-50 z-10 whitespace-nowrap">Noms et Prénoms</TableHead>
+            <TableHead className="whitespace-nowrap">Classe</TableHead>
+            <TableHead className="whitespace-nowrap text-right">Arriéré</TableHead>
+            <TableHead className="whitespace-nowrap text-right">Inscription</TableHead>
+            <TableHead className="whitespace-nowrap text-right">Réinscription</TableHead>
+            {/* ⭐ Scolarité (totalTuitionExpected) — colonne demandée avant Total dû */}
+            <TableHead className="whitespace-nowrap text-right font-bold">Scolarité</TableHead>
+            {/* ⭐ Personnalisation — colonne demandée après Scolarité */}
+            <TableHead className="whitespace-nowrap text-center font-bold">Personnalisation</TableHead>
             {installments.map((inst) => (
-              <TableHead key={inst.id} className="text-center">
+              <TableHead key={inst.id} className="text-center whitespace-nowrap">
                 {inst.label}
               </TableHead>
             ))}
-            <TableHead className="font-bold">Total dû</TableHead>
-            <TableHead className="font-bold">Total payé</TableHead>
-            <TableHead className="font-bold">Reste à payer</TableHead>
+            <TableHead className="font-bold whitespace-nowrap text-right">Total dû</TableHead>
+            <TableHead className="font-bold whitespace-nowrap text-right">Total payé</TableHead>
+            <TableHead className="font-bold whitespace-nowrap text-right">Reste à payer</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -426,31 +440,45 @@ function DetailTable({
               <TableCell className="font-medium sticky left-0 bg-white z-10 whitespace-nowrap">
                 {row.studentName}
               </TableCell>
-              <TableCell className="text-sm">{row.className}</TableCell>
-              <TableCell className="text-sm text-right">
+              <TableCell className="text-sm whitespace-nowrap">{row.className}</TableCell>
+              <TableCell className="text-sm text-right whitespace-nowrap">
                 {row.arrearPaid > 0 ? formatCurrency(row.arrearPaid) : '—'}
               </TableCell>
-              <TableCell className="text-sm text-right">
+              <TableCell className="text-sm text-right whitespace-nowrap">
                 {row.inscriptionPaid > 0 ? formatCurrency(row.inscriptionPaid) : '—'}
               </TableCell>
-              <TableCell className="text-sm text-right">
+              <TableCell className="text-sm text-right whitespace-nowrap">
                 {row.reinscriptionPaid > 0 ? formatCurrency(row.reinscriptionPaid) : '—'}
+              </TableCell>
+              {/* ⭐ Scolarité = totalTuitionExpected (montant attendu, pas payé) */}
+              <TableCell className="text-sm font-semibold text-right whitespace-nowrap">
+                {row.scolarite || row.totalTuitionExpected ? formatCurrency(row.scolarite ?? row.totalTuitionExpected) : '—'}
+              </TableCell>
+              {/* ⭐ Personnalisation : badge Oui/Non + montant réduction */}
+              <TableCell className="text-sm text-center whitespace-nowrap">
+                {row.hasPersonalization ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[10px] font-bold" title={`Réduction: ${formatCurrency(row.personalizationReduction || 0)}`}>
+                    Oui ({formatCurrency(row.personalizationReduction || 0)})
+                  </span>
+                ) : (
+                  <span className="text-slate-400 text-xs">—</span>
+                )}
               </TableCell>
               {installments.map((inst) => {
                 const paid = row.tuitionInstallments[inst.id] || 0;
                 return (
-                  <TableCell key={inst.id} className="text-sm text-right">
+                  <TableCell key={inst.id} className="text-sm text-right whitespace-nowrap">
                     {paid > 0 ? formatCurrency(paid) : '—'}
                   </TableCell>
                 );
               })}
-              <TableCell className="text-sm font-bold text-right">
+              <TableCell className="text-sm font-bold text-right whitespace-nowrap">
                 {formatCurrency(row.totalDue)}
               </TableCell>
-              <TableCell className="text-sm font-bold text-right">
+              <TableCell className="text-sm font-bold text-right whitespace-nowrap">
                 {formatCurrency(row.totalPaid)}
               </TableCell>
-              <TableCell className="text-sm font-bold text-right">
+              <TableCell className="text-sm font-bold text-right whitespace-nowrap">
                 <span className={row.reste > 0 ? 'text-red-600' : 'text-green-600'}>
                   {formatCurrency(row.reste)}
                 </span>
@@ -482,7 +510,7 @@ function RecapTable({
 
   // Calculer les totaux — cohérents avec la nouvelle semantique :
   //   - Colonnes Arriérés / Inscription / Réinscription / Tranches = montants PAYÉS
-  //   - Total dû = somme des montants attendus (Inscription + Réinscription + Scolarité + Arriérés)
+  //   - Total dû = somme des montants attendus (Inscription + Réinscription + Scolarité + Arriérés - Personnalisation)
   //   - Total payé = somme de tous les paiements
   //   - Reste à payer = Total dû - Total payé
   //   - Solde par classe = Total payé - Total dû
@@ -497,6 +525,9 @@ function RecapTable({
       // Attendu
       acc.totalDue += row.totalDue;
       acc.totalTuition += row.totalTuition;
+      acc.scolarite += row.scolarite || row.totalTuition || 0;
+      acc.personalizationCount += row.personalizationCount || 0;
+      acc.personalizationReduction += row.personalizationReduction || 0;
       // Reste
       acc.reste += row.reste;
       acc.soldeParClasse += row.soldeParClasse;
@@ -507,7 +538,8 @@ function RecapTable({
     },
     {
       effectif: 0, arrieres: 0, inscription: 0, reinscription: 0,
-      totalTuition: 0, totalDue: 0, totalPaid: 0,
+      totalTuition: 0, scolarite: 0, personalizationCount: 0, personalizationReduction: 0,
+      totalDue: 0, totalPaid: 0,
       reste: 0, soldeParClasse: 0,
       installments: {} as { [id: string]: number },
     },
@@ -518,51 +550,69 @@ function RecapTable({
       <Table>
         <TableHeader>
           <TableRow className="bg-gray-50">
-            <TableHead>Effectif</TableHead>
-            <TableHead>Classe</TableHead>
-            <TableHead>Arriérés</TableHead>
-            <TableHead>Inscription</TableHead>
-            <TableHead>Réinscription</TableHead>
+            <TableHead className="whitespace-nowrap text-center">Effectif</TableHead>
+            <TableHead className="whitespace-nowrap">Classe</TableHead>
+            <TableHead className="whitespace-nowrap text-right">Arriérés</TableHead>
+            <TableHead className="whitespace-nowrap text-right">Inscription</TableHead>
+            <TableHead className="whitespace-nowrap text-right">Réinscription</TableHead>
+            {/* ⭐ Scolarité (totalTuition) — colonne demandée avant Personnalisation */}
+            <TableHead className="whitespace-nowrap text-right font-bold">Scolarité</TableHead>
+            {/* ⭐ Personnalisation — colonne demandée après Scolarité */}
+            <TableHead className="whitespace-nowrap text-center font-bold">Personnalisation</TableHead>
             {installments.map((inst) => (
-              <TableHead key={inst.id} className="text-center">
+              <TableHead key={inst.id} className="text-center whitespace-nowrap">
                 {inst.label}
               </TableHead>
             ))}
-            <TableHead className="font-bold">Total dû</TableHead>
-            <TableHead className="font-bold">Total payé</TableHead>
-            <TableHead className="font-bold">Reste à payer</TableHead>
-            <TableHead className="font-bold">Solde par classe</TableHead>
+            <TableHead className="font-bold whitespace-nowrap text-right">Total dû</TableHead>
+            <TableHead className="font-bold whitespace-nowrap text-right">Total payé</TableHead>
+            <TableHead className="font-bold whitespace-nowrap text-right">Reste à payer</TableHead>
+            <TableHead className="font-bold whitespace-nowrap text-right">Solde par classe</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {recapRows.map((row, idx) => (
             <TableRow key={idx} className="hover:bg-slate-50">
-              <TableCell className="text-sm text-center">{row.effectif}</TableCell>
-              <TableCell className="font-medium">{row.className}</TableCell>
-              <TableCell className="text-sm text-right">
+              <TableCell className="text-sm text-center whitespace-nowrap">{row.effectif}</TableCell>
+              <TableCell className="font-medium whitespace-nowrap">{row.className}</TableCell>
+              <TableCell className="text-sm text-right whitespace-nowrap">
                 {row.arrieresPaid > 0 ? formatCurrency(row.arrieresPaid) : '—'}
               </TableCell>
-              <TableCell className="text-sm text-right">
+              <TableCell className="text-sm text-right whitespace-nowrap">
                 {row.inscriptionPaid > 0 ? formatCurrency(row.inscriptionPaid) : '—'}
               </TableCell>
-              <TableCell className="text-sm text-right">
+              <TableCell className="text-sm text-right whitespace-nowrap">
                 {row.reinscriptionPaid > 0 ? formatCurrency(row.reinscriptionPaid) : '—'}
+              </TableCell>
+              {/* ⭐ Scolarité = totalTuition (attendu) */}
+              <TableCell className="text-sm font-semibold text-right whitespace-nowrap">
+                {row.scolarite || row.totalTuition ? formatCurrency(row.scolarite ?? row.totalTuition) : '—'}
+              </TableCell>
+              {/* ⭐ Personnalisation : nb d'élèves avec FeeOverride + montant total réduction */}
+              <TableCell className="text-sm text-center whitespace-nowrap">
+                {(row.personalizationCount || 0) > 0 ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[10px] font-bold" title={`Réduction totale: ${formatCurrency(row.personalizationReduction || 0)}`}>
+                    {row.personalizationCount} élève(s) ({formatCurrency(row.personalizationReduction || 0)})
+                  </span>
+                ) : (
+                  <span className="text-slate-400 text-xs">—</span>
+                )}
               </TableCell>
               {installments.map((inst) => {
                 const amount = row.tuitionInstallments[inst.id] || 0;
                 return (
-                  <TableCell key={inst.id} className="text-sm text-right">
+                  <TableCell key={inst.id} className="text-sm text-right whitespace-nowrap">
                     {amount > 0 ? formatCurrency(amount) : '—'}
                   </TableCell>
                 );
               })}
-              <TableCell className="text-sm font-bold text-right">
+              <TableCell className="text-sm font-bold text-right whitespace-nowrap">
                 {formatCurrency(row.totalDue)}
               </TableCell>
-              <TableCell className="text-sm font-bold text-right">
+              <TableCell className="text-sm font-bold text-right whitespace-nowrap">
                 {formatCurrency(row.totalPaid)}
               </TableCell>
-              <TableCell className="text-sm font-bold text-right">
+              <TableCell className="text-sm font-bold text-right whitespace-nowrap">
                 <span className={row.reste > 0 ? 'text-red-600' : 'text-green-600'}>
                   {formatCurrency(row.reste)}
                 </span>
@@ -574,20 +624,30 @@ function RecapTable({
           ))}
           {/* Ligne TOTAL */}
           <TableRow className="bg-blue-50 font-bold">
-            <TableCell className="text-center">{totals.effectif}</TableCell>
-            <TableCell>TOTAL</TableCell>
-            <TableCell className="text-right">{formatCurrency(totals.arrieres)}</TableCell>
-            <TableCell className="text-right">{formatCurrency(totals.inscription)}</TableCell>
-            <TableCell className="text-right">{formatCurrency(totals.reinscription)}</TableCell>
+            <TableCell className="text-center whitespace-nowrap">{totals.effectif}</TableCell>
+            <TableCell className="whitespace-nowrap">TOTAL</TableCell>
+            <TableCell className="text-right whitespace-nowrap">{formatCurrency(totals.arrieres)}</TableCell>
+            <TableCell className="text-right whitespace-nowrap">{formatCurrency(totals.inscription)}</TableCell>
+            <TableCell className="text-right whitespace-nowrap">{formatCurrency(totals.reinscription)}</TableCell>
+            {/* ⭐ Scolarité total */}
+            <TableCell className="text-right whitespace-nowrap">{formatCurrency(totals.scolarite)}</TableCell>
+            {/* ⭐ Personnalisation total */}
+            <TableCell className="text-center whitespace-nowrap">
+              {totals.personalizationCount > 0 ? (
+                <span className="text-amber-700">{totals.personalizationCount} ({formatCurrency(totals.personalizationReduction)})</span>
+              ) : (
+                <span className="text-slate-400">—</span>
+              )}
+            </TableCell>
             {installments.map((inst) => (
-              <TableCell key={inst.id} className="text-right">
+              <TableCell key={inst.id} className="text-right whitespace-nowrap">
                 {formatCurrency(totals.installments[inst.id] || 0)}
               </TableCell>
             ))}
-            <TableCell className="text-right">{formatCurrency(totals.totalDue)}</TableCell>
-            <TableCell className="text-right">{formatCurrency(totals.totalPaid)}</TableCell>
-            <TableCell className="text-right text-red-600">{formatCurrency(totals.reste)}</TableCell>
-            <TableCell className="text-right">{formatCurrency(totals.soldeParClasse)}</TableCell>
+            <TableCell className="text-right whitespace-nowrap">{formatCurrency(totals.totalDue)}</TableCell>
+            <TableCell className="text-right whitespace-nowrap">{formatCurrency(totals.totalPaid)}</TableCell>
+            <TableCell className="text-right text-red-600 whitespace-nowrap">{formatCurrency(totals.reste)}</TableCell>
+            <TableCell className="text-right whitespace-nowrap">{formatCurrency(totals.soldeParClasse)}</TableCell>
           </TableRow>
         </TableBody>
       </Table>

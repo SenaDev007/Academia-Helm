@@ -38,10 +38,6 @@ import {
   Archive,
   MessageSquare,
   GraduationCap,
-  ListChecks,
-  RefreshCw,
-  X,
-  CheckSquare,
   // BadgeCheck supprimé — onglet Conformité retiré
 } from 'lucide-react';
 import {
@@ -150,24 +146,6 @@ export default function StudentsModulePage() {
   });
   const [classesList, setClassesList] = useState<{ id: string; name: string }[]>([]);
 
-  // ⭐ Actions multiples — sélection d'un groupe d'élèves
-  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
-  const [isBulkStatusModalOpen, setIsBulkStatusModalOpen] = useState(false);
-  const [isBulkArchiveModalOpen, setIsBulkArchiveModalOpen] = useState(false);
-  const [isBulkReenrollModalOpen, setIsBulkReenrollModalOpen] = useState(false);
-  const [bulkStatusValue, setBulkStatusValue] = useState<string>('ACTIVE');
-  const [bulkStatusReason, setBulkStatusReason] = useState<string>('');
-  const [bulkArchiveReason, setBulkArchiveReason] = useState<string>('');
-  const [bulkReenrollClassId, setBulkReenrollClassId] = useState<string>('');
-  const [bulkReenrollType, setBulkReenrollType] = useState<string>('REPEAT');
-  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
-  const [bulkResult, setBulkResult] = useState<{
-    action: string;
-    success: number;
-    failed: number;
-    total: number;
-    errors?: Array<{ id: string; error: string }>;
-  } | null>(null);
   /** Onglet actif (Dashboard par défaut à l'ouverture du module).
    *  Si l'URL contient ?tab=admissions (ex: depuis une notification), on active
    *  automatiquement l'onglet correspondant. */
@@ -395,187 +373,6 @@ export default function StudentsModulePage() {
   };
 
   // ============================================================================
-  // ⭐ ACTIONS MULTIPLES — Handlers pour les opérations en masse
-  // ============================================================================
-
-  const toggleStudentSelection = (studentId: string) => {
-    setSelectedStudentIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(studentId)) {
-        next.delete(studentId);
-      } else {
-        next.add(studentId);
-      }
-      return next;
-    });
-  };
-
-  const toggleSelectAll = () => {
-    setSelectedStudentIds((prev) => {
-      // Si tous les élèves visibles sont déjà sélectionnés → désélectionner
-      if (prev.size === students.length && students.length > 0) {
-        return new Set();
-      }
-      // Sinon → sélectionner tous les élèves visibles
-      return new Set(students.map((s) => s.id));
-    });
-  };
-
-  const clearSelection = () => setSelectedStudentIds(new Set());
-
-  const handleBulkStatusSubmit = async () => {
-    if (selectedStudentIds.size === 0) return;
-    setIsBulkProcessing(true);
-    setBulkResult(null);
-    try {
-      const response = await fetch('/api/students/bulk-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentIds: Array.from(selectedStudentIds),
-          status: bulkStatusValue,
-          reason: bulkStatusReason || undefined,
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (response.ok) {
-        setBulkResult({
-          action: 'Changement de statut',
-          success: data.updated ?? data.success ?? 0,
-          failed: data.failed ?? data.skipped ?? 0,
-          total: data.total ?? selectedStudentIds.size,
-          errors: data.errors,
-        });
-        setIsBulkStatusModalOpen(false);
-        setBulkStatusReason('');
-        clearSelection();
-        await loadStudents();
-        await loadStatistics();
-      } else {
-        setBulkResult({
-          action: 'Changement de statut',
-          success: 0,
-          failed: selectedStudentIds.size,
-          total: selectedStudentIds.size,
-          errors: [{ id: 'global', error: data.message || 'Erreur serveur' }],
-        });
-      }
-    } catch (e: any) {
-      setBulkResult({
-        action: 'Changement de statut',
-        success: 0,
-        failed: selectedStudentIds.size,
-        total: selectedStudentIds.size,
-        errors: [{ id: 'global', error: e?.message || 'Erreur réseau' }],
-      });
-    } finally {
-      setIsBulkProcessing(false);
-    }
-  };
-
-  const handleBulkArchiveSubmit = async () => {
-    if (selectedStudentIds.size === 0) return;
-    setIsBulkProcessing(true);
-    setBulkResult(null);
-    try {
-      const response = await fetch('/api/students/bulk-archive', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentIds: Array.from(selectedStudentIds),
-          reason: bulkArchiveReason || 'Archivage en masse',
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (response.ok) {
-        setBulkResult({
-          action: 'Archivage',
-          success: data.archived ?? 0,
-          failed: data.failed ?? 0,
-          total: data.total ?? selectedStudentIds.size,
-          errors: data.errors,
-        });
-        setIsBulkArchiveModalOpen(false);
-        setBulkArchiveReason('');
-        clearSelection();
-        await loadStudents();
-        await loadStatistics();
-      } else {
-        setBulkResult({
-          action: 'Archivage',
-          success: 0,
-          failed: selectedStudentIds.size,
-          total: selectedStudentIds.size,
-          errors: [{ id: 'global', error: data.message || 'Erreur serveur' }],
-        });
-      }
-    } catch (e: any) {
-      setBulkResult({
-        action: 'Archivage',
-        success: 0,
-        failed: selectedStudentIds.size,
-        total: selectedStudentIds.size,
-        errors: [{ id: 'global', error: e?.message || 'Erreur réseau' }],
-      });
-    } finally {
-      setIsBulkProcessing(false);
-    }
-  };
-
-  const handleBulkReenrollSubmit = async () => {
-    if (selectedStudentIds.size === 0 || !academicYear || !schoolLevel) return;
-    setIsBulkProcessing(true);
-    setBulkResult(null);
-    try {
-      const response = await fetch('/api/students/bulk-reenroll', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentIds: Array.from(selectedStudentIds),
-          academicYearId: academicYear.id,
-          schoolLevelId: schoolLevel.id,
-          classId: bulkReenrollClassId || undefined,
-          enrollmentType: bulkReenrollType,
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (response.ok) {
-        setBulkResult({
-          action: 'Réinscription',
-          success: data.reenrolled ?? 0,
-          failed: data.failed ?? 0,
-          total: data.total ?? selectedStudentIds.size,
-          errors: data.errors,
-        });
-        setIsBulkReenrollModalOpen(false);
-        setBulkReenrollClassId('');
-        setBulkReenrollType('REPEAT');
-        clearSelection();
-        await loadStudents();
-        await loadStatistics();
-      } else {
-        setBulkResult({
-          action: 'Réinscription',
-          success: 0,
-          failed: selectedStudentIds.size,
-          total: selectedStudentIds.size,
-          errors: [{ id: 'global', error: data.message || 'Erreur serveur' }],
-        });
-      }
-    } catch (e: any) {
-      setBulkResult({
-        action: 'Réinscription',
-        success: 0,
-        failed: selectedStudentIds.size,
-        total: selectedStudentIds.size,
-        errors: [{ id: 'global', error: e?.message || 'Erreur réseau' }],
-      });
-    } finally {
-      setIsBulkProcessing(false);
-    }
-  };
-
-  // ============================================================================
   // HELPERS
   // ============================================================================
 
@@ -648,7 +445,6 @@ export default function StudentsModulePage() {
             { id: 'enrollments', label: 'Inscriptions', icon: <GraduationCap className="w-4 h-4" /> },
             { id: 'assignments', label: 'Affectations & Mouvements', icon: <Share2 className="w-4 h-4" /> },
             { id: 'class-lists', label: 'Liste des Élèves', icon: <Users className="w-4 h-4" /> },
-            { id: 'list', label: 'Liste & Actions en masse', icon: <ListChecks className="w-4 h-4" /> },
             { id: 'movements', label: 'Sorties & Abandons', icon: <History className="w-4 h-4" /> },
             { id: 'cards', label: 'Cartes Scolaires', icon: <IdCard className="w-4 h-4" /> },
             { id: 'dossiers', label: 'Dossiers Élèves', icon: <FileText className="w-4 h-4" /> },
@@ -799,99 +595,10 @@ export default function StudentsModulePage() {
                   </div>
                 ),
                 toolbar: (
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm text-gray-600">
-                        {students.length} élève{students.length > 1 ? 's' : ''} trouvé{students.length > 1 ? 's' : ''}
-                        {selectedStudentIds.size > 0 && (
-                          <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
-                            {selectedStudentIds.size} sélectionné{selectedStudentIds.size > 1 ? 's' : ''}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {selectedStudentIds.size > 0 && (
-                          <>
-                            <button
-                              onClick={() => setIsBulkStatusModalOpen(true)}
-                              disabled={isBulkProcessing}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md border border-blue-200 disabled:opacity-50"
-                              title="Changer le statut des élèves sélectionnés"
-                            >
-                              <CheckSquare className="w-3.5 h-3.5" />
-                              Changer statut
-                            </button>
-                            <button
-                              onClick={() => setIsBulkReenrollModalOpen(true)}
-                              disabled={isBulkProcessing || !academicYear || !schoolLevel}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-md border border-emerald-200 disabled:opacity-50"
-                              title="Réinscrire les élèves sélectionnés pour l'année courante"
-                            >
-                              <RefreshCw className="w-3.5 h-3.5" />
-                              Réinscrire
-                            </button>
-                            <button
-                              onClick={() => setIsBulkArchiveModalOpen(true)}
-                              disabled={isBulkProcessing}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 rounded-md border border-red-200 disabled:opacity-50"
-                              title="Archiver les élèves sélectionnés"
-                            >
-                              <Archive className="w-3.5 h-3.5" />
-                              Archiver
-                            </button>
-                            <button
-                              onClick={clearSelection}
-                              disabled={isBulkProcessing}
-                              className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50"
-                              title="Effacer la sélection"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                      </div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-gray-600">
+                      {students.length} élève{students.length > 1 ? 's' : ''} trouvé{students.length > 1 ? 's' : ''}
                     </div>
-                    {bulkResult && (
-                      <div
-                        className={`rounded-md border px-3 py-2 text-xs ${
-                          bulkResult.failed > 0 && bulkResult.success === 0
-                            ? 'bg-red-50 border-red-200 text-red-800'
-                            : bulkResult.failed > 0
-                            ? 'bg-amber-50 border-amber-200 text-amber-800'
-                            : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <span className="font-semibold">{bulkResult.action} :</span>{' '}
-                            {bulkResult.success} réussi{bulkResult.success > 1 ? 's' : ''} ·{' '}
-                            {bulkResult.failed} échec{bulkResult.failed > 1 ? 's' : ''} ·{' '}
-                            {bulkResult.total} au total.
-                            {bulkResult.errors && bulkResult.errors.length > 0 && (
-                              <ul className="mt-1 ml-4 list-disc space-y-0.5 text-[11px]">
-                                {bulkResult.errors.slice(0, 5).map((e, i) => (
-                                  <li key={i}>
-                                    <span className="font-mono">{e.id.slice(0, 8)}…</span> : {e.error}
-                                  </li>
-                                ))}
-                                {bulkResult.errors.length > 5 && (
-                                  <li className="text-gray-500">
-                                    + {bulkResult.errors.length - 5} autre(s) erreur(s)…
-                                  </li>
-                                )}
-                              </ul>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => setBulkResult(null)}
-                            className="text-gray-500 hover:text-gray-800"
-                            title="Fermer"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 ),
                 isLoading,
@@ -901,15 +608,6 @@ export default function StudentsModulePage() {
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10">
-                          <input
-                            type="checkbox"
-                            checked={students.length > 0 && selectedStudentIds.size === students.length}
-                            onChange={toggleSelectAll}
-                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                            title="Sélectionner / désélectionner tous les élèves visibles"
-                          />
-                        </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Matricule
                         </th>
@@ -932,20 +630,11 @@ export default function StudentsModulePage() {
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {students.map((student) => {
-                        const isSelected = selectedStudentIds.has(student.id);
                         return (
                         <tr
                           key={student.id}
-                          className={`hover:bg-gray-50 ${isSelected ? 'bg-blue-50' : ''}`}
+                          className="hover:bg-gray-50"
                         >
-                          <td className="px-4 py-4 whitespace-nowrap">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => toggleStudentSelection(student.id)}
-                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                            />
-                          </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
                             {student.matricule ?? student.studentCode ?? 'N/A'}
                           </td>
@@ -1446,232 +1135,6 @@ export default function StudentsModulePage() {
               <span className="font-semibold ml-1">{importResult.failed}</span> en échec.
             </p>
           )}
-        </div>
-      </FormModal>
-
-      {/* =====================================================================
-          ⭐ ACTIONS MULTIPLES — 3 modales (Changer statut / Archiver / Réinscrire)
-          ===================================================================== */}
-
-      {/* Modale : Changement de statut en masse */}
-      <FormModal
-        title={`Changer le statut — ${selectedStudentIds.size} élève(s)`}
-        subtitle="Sélectionnez le nouveau statut à appliquer. Un audit log sera écrit pour chaque élève."
-        isOpen={isBulkStatusModalOpen}
-        onClose={() => {
-          if (isBulkProcessing) return;
-          setIsBulkStatusModalOpen(false);
-          setBulkStatusReason('');
-        }}
-        size="md"
-        actions={
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={isBulkProcessing}
-              onClick={() => {
-                setIsBulkStatusModalOpen(false);
-                setBulkStatusReason('');
-              }}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
-            >
-              Annuler
-            </button>
-            <button
-              type="button"
-              disabled={isBulkProcessing || selectedStudentIds.size === 0}
-              onClick={handleBulkStatusSubmit}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
-            >
-              {isBulkProcessing && (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              )}
-              Appliquer à {selectedStudentIds.size} élève(s)
-            </button>
-          </div>
-        }
-      >
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Nouveau statut *
-            </label>
-            <select
-              value={bulkStatusValue}
-              onChange={(e) => setBulkStatusValue(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="ACTIVE">Actif</option>
-              <option value="INACTIVE">Inactif</option>
-              <option value="GRADUATED">Diplômé</option>
-              <option value="TRANSFERRED">Transféré</option>
-              <option value="WITHDRAWN">Retiré</option>
-              <option value="SUSPENDED">Suspendu</option>
-              <option value="ARCHIVED">Archivé</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Raison (optionnel)
-            </label>
-            <textarea
-              value={bulkStatusReason}
-              onChange={(e) => setBulkStatusReason(e.target.value)}
-              rows={3}
-              placeholder="Ex: Passage en masse suite à validation du conseil de classe"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
-            ℹ️ Un audit log sera écrit pour chaque élève avec l'ancien et le nouveau statut.
-            {bulkStatusValue === 'SUSPENDED' || bulkStatusValue === 'TRANSFERRED'
-              ? ' Les tokens de vérification publique seront désactivés.'
-              : ''}
-          </div>
-        </div>
-      </FormModal>
-
-      {/* Modale : Archivage en masse */}
-      <FormModal
-        title={`Archiver — ${selectedStudentIds.size} élève(s)`}
-        subtitle="Action irréversible. Les élèves archivés ne seront plus actifs mais conservés en base pour l'historique."
-        isOpen={isBulkArchiveModalOpen}
-        onClose={() => {
-          if (isBulkProcessing) return;
-          setIsBulkArchiveModalOpen(false);
-          setBulkArchiveReason('');
-        }}
-        size="md"
-        actions={
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={isBulkProcessing}
-              onClick={() => {
-                setIsBulkArchiveModalOpen(false);
-                setBulkArchiveReason('');
-              }}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
-            >
-              Annuler
-            </button>
-            <button
-              type="button"
-              disabled={isBulkProcessing || selectedStudentIds.size === 0}
-              onClick={handleBulkArchiveSubmit}
-              className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
-            >
-              {isBulkProcessing && (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              )}
-              Archiver {selectedStudentIds.size} élève(s)
-            </button>
-          </div>
-        }
-      >
-        <div className="space-y-4">
-          <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-800">
-            ⚠️ Cette action va archiver <strong>{selectedStudentIds.size}</strong> élève(s).
-            Ils passeront en statut <strong>ARCHIVED</strong> et ne seront plus comptabilisés
-            dans les effectifs actifs. Un audit log sera écrit pour chaque élève.
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Raison de l'archivage (recommandé)
-            </label>
-            <textarea
-              value={bulkArchiveReason}
-              onChange={(e) => setBulkArchiveReason(e.target.value)}
-              rows={3}
-              placeholder="Ex: Fin de cycle, départ de l'établissement, etc."
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        </div>
-      </FormModal>
-
-      {/* Modale : Réinscription en masse */}
-      <FormModal
-        title={`Réinscrire — ${selectedStudentIds.size} élève(s)`}
-        subtitle={`Année académique : ${academicYear?.name || 'N/A'} · Niveau : ${schoolLevel?.label || schoolLevel?.code || 'N/A'}`}
-        isOpen={isBulkReenrollModalOpen}
-        onClose={() => {
-          if (isBulkProcessing) return;
-          setIsBulkReenrollModalOpen(false);
-          setBulkReenrollClassId('');
-          setBulkReenrollType('REPEAT');
-        }}
-        size="md"
-        actions={
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={isBulkProcessing}
-              onClick={() => {
-                setIsBulkReenrollModalOpen(false);
-                setBulkReenrollClassId('');
-                setBulkReenrollType('REPEAT');
-              }}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
-            >
-              Annuler
-            </button>
-            <button
-              type="button"
-              disabled={isBulkProcessing || selectedStudentIds.size === 0 || !academicYear || !schoolLevel}
-              onClick={handleBulkReenrollSubmit}
-              className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-md hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2"
-            >
-              {isBulkProcessing && (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              )}
-              Réinscrire {selectedStudentIds.size} élève(s)
-            </button>
-          </div>
-        }
-      >
-        <div className="space-y-4">
-          <div className="rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-800">
-            ✅ Chaque élève sera réinscrit pour l'année <strong>{academicYear?.name || 'courante'}</strong>.
-            Un nouveau <code>StudentEnrollment</code> sera créé et l'ancien sera marqué
-            comme <strong>TRANSFERRED</strong>.
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Type d'inscription *
-            </label>
-            <select
-              value={bulkReenrollType}
-              onChange={(e) => setBulkReenrollType(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="REPEAT">Refaire la même classe (REPEAT)</option>
-              <option value="PROMOTION">Passer dans la classe supérieure (PROMOTION)</option>
-              <option value="NEW">Nouvelle inscription (NEW — frais complets)</option>
-              <option value="TRANSFER">Transfert (TRANSFER)</option>
-            </select>
-            <p className="mt-1 text-xs text-gray-500">
-              REPEAT/PROMOTION → frais de <strong>réinscription</strong>. NEW → frais d'<strong>inscription</strong> complets.
-            </p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Affecter à une classe (optionnel)
-            </label>
-            <select
-              value={bulkReenrollClassId}
-              onChange={(e) => setBulkReenrollClassId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Pas d'affectation (à faire plus tard)</option>
-              {classesList.map((c) => (
-                <option key={c.id} value={c.id}>{formatGradeLabel(c.name)}</option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-gray-500">
-              Si sélectionnée, tous les élèves seront affectés à cette classe.
-            </p>
-          </div>
         </div>
       </FormModal>
     </>

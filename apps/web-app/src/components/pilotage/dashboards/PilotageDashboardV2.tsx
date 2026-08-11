@@ -1126,6 +1126,296 @@ function HROverviewSection({ tenantId, academicYearId }: { tenantId?: string; ac
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// ⭐ NOUVEAU — Section Distribution des âges
+// ──────────────────────────────────────────────────────────────────────────
+
+interface AgeDistributionData {
+  global: Array<{ ageRange: string; count: number }>;
+  byLevel: Array<{
+    levelCode: string;
+    levelLabel: string;
+    distribution: Array<{ ageRange: string; count: number }>;
+  }>;
+  totalStudents: number;
+}
+
+function useAgeDistribution(tenantId?: string, academicYearId?: string) {
+  return useQuery<AgeDistributionData>({
+    queryKey: ['dashboard', 'age-distribution', tenantId, academicYearId],
+    queryFn: async () => {
+      if (!tenantId) return null;
+      const params = new URLSearchParams();
+      params.set('tenantId', tenantId);
+      if (academicYearId) params.set('academicYearId', academicYearId);
+      return await fetchJson(`/api/dashboard/age-distribution?${params.toString()}`);
+    },
+    enabled: !!tenantId,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    retry: 1,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: false,
+  });
+}
+
+// Couleurs pour les barres du graphique par niveau
+const AGE_CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444'];
+
+function AgeDistributionSection({ tenantId, academicYearId }: { tenantId?: string; academicYearId?: string }) {
+  const { data, isLoading } = useAgeDistribution(tenantId, academicYearId);
+
+  if (isLoading && !data) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 animate-pulse">
+        <div className="h-5 w-48 bg-gray-200 rounded mb-4" />
+        <div className="h-48 bg-gray-100 rounded" />
+      </div>
+    );
+  }
+
+  if (!data || data.totalStudents === 0) return null;
+
+  const maxValue = Math.max(...data.global.map(d => d.count), 1);
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-gradient-to-r from-indigo-900 to-indigo-700 px-5 py-3">
+        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+          <Users className="w-4 h-4" />
+          Distribution des âges
+        </h3>
+        <p className="text-[11px] text-indigo-100 mt-0.5">
+          {data.totalStudents} élèves · Tranches d'âge par niveau scolaire
+        </p>
+      </div>
+
+      <div className="p-5">
+        {/* Graphique global (histogramme SVG professionnel) */}
+        <p className="text-xs font-semibold text-slate-700 mb-3">Vue globale de l'école</p>
+        <div className="flex items-end justify-between gap-2 h-40 mb-6">
+          {data.global.map((item, i) => {
+            const heightPercent = (item.count / maxValue) * 100;
+            const color = AGE_CHART_COLORS[i % AGE_CHART_COLORS.length];
+            return (
+              <div key={i} className="flex-1 flex flex-col items-center gap-1 group">
+                <span className="text-[10px] font-bold text-slate-700 tabular-nums">{item.count}</span>
+                <div className="relative w-full flex items-end" style={{ height: '100px' }}>
+                  <div
+                    className="w-full rounded-t-md transition-all duration-500 group-hover:opacity-80"
+                    style={{
+                      height: `${Math.max(heightPercent, 2)}%`,
+                      background: `linear-gradient(to top, ${color}, ${color}cc)`,
+                    }}
+                  />
+                </div>
+                <span className="text-[9px] text-slate-500 text-center">{item.ageRange}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Distribution par niveau scolaire */}
+        {data.byLevel.length > 0 && (
+          <div className="border-t border-slate-100 pt-4">
+            <p className="text-xs font-semibold text-slate-700 mb-3">Par niveau scolaire</p>
+            <div className="space-y-3">
+              {data.byLevel.map((level, idx) => {
+                const levelMax = Math.max(...level.distribution.map(d => d.count), 1);
+                const color = AGE_CHART_COLORS[idx % AGE_CHART_COLORS.length];
+                return (
+                  <div key={level.levelCode} className="border border-slate-100 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-slate-700">{level.levelLabel}</span>
+                      <span className="text-[10px] text-slate-400">
+                        {level.distribution.reduce((s, d) => s + d.count, 0)} élèves
+                      </span>
+                    </div>
+                    {/* Mini barres horizontales */}
+                    <div className="flex items-center gap-1 h-6">
+                      {level.distribution.map((d, i) => {
+                        const widthPercent = (d.count / levelMax) * 100;
+                        return (
+                          <div key={i} className="flex-1 flex flex-col items-center" title={`${d.ageRange}: ${d.count} élèves`}>
+                            <div className="w-full bg-slate-100 rounded-full h-4 overflow-hidden relative">
+                              <div
+                                className="h-full rounded-full transition-all duration-500"
+                                style={{ width: `${Math.max(widthPercent, 2)}%`, backgroundColor: color }}
+                              />
+                            </div>
+                            {d.count > 0 && (
+                              <span className="text-[8px] text-slate-500 mt-0.5">{d.count}</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Labels des tranches */}
+                    <div className="flex items-center gap-1 mt-1">
+                      {level.distribution.map((d, i) => (
+                        <span key={i} className="flex-1 text-[7px] text-slate-300 text-center">{d.ageRange.split(' ')[0]}</span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// ⭐ NOUVEAU — Section Analytics des notes (remplace "Moyenne générale")
+// ──────────────────────────────────────────────────────────────────────────
+
+interface GradeAnalyticsData {
+  byLevel: Array<{
+    levelCode: string;
+    levelLabel: string;
+    scale: 'qualitative' | '/20' | '/100';
+    highestAverage: { studentName: string; value: string; className: string } | null;
+    lowestAverage: { studentName: string; value: string; className: string } | null;
+    topStudents: Array<{ rank: number; studentName: string; average: string; className: string; scale: string }>;
+    studentCount: number;
+  }>;
+  currentPeriod: string;
+  totalStudents: number;
+}
+
+function useGradeAnalytics(tenantId?: string, academicYearId?: string) {
+  return useQuery<GradeAnalyticsData>({
+    queryKey: ['dashboard', 'grade-analytics', tenantId, academicYearId],
+    queryFn: async () => {
+      if (!tenantId) return null;
+      const params = new URLSearchParams();
+      params.set('tenantId', tenantId);
+      if (academicYearId) params.set('academicYearId', academicYearId);
+      return await fetchJson(`/api/dashboard/grade-analytics?${params.toString()}`);
+    },
+    enabled: !!tenantId,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    retry: 1,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: false,
+  });
+}
+
+function GradeAnalyticsSection({ tenantId, academicYearId }: { tenantId?: string; academicYearId?: string }) {
+  const { data, isLoading } = useGradeAnalytics(tenantId, academicYearId);
+
+  if (isLoading && !data) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 animate-pulse">
+        <div className="h-5 w-64 bg-gray-200 rounded mb-4" />
+        <div className="grid grid-cols-3 gap-4">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-32 bg-gray-100 rounded-lg" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!data || data.byLevel.length === 0) return null;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-gradient-to-r from-purple-900 to-purple-700 px-5 py-3">
+        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+          <Award className="w-4 h-4" />
+          Analytics des notes
+        </h3>
+        <p className="text-[11px] text-purple-100 mt-0.5">
+          Période : {data.currentPeriod} · {data.totalStudents} élèves évalués
+        </p>
+      </div>
+
+      <div className="p-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {data.byLevel.map((level) => (
+            <div key={level.levelCode} className="border border-slate-100 rounded-xl p-4 space-y-3">
+              {/* En-tête du niveau */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900">{level.levelLabel}</h4>
+                  <p className="text-[10px] text-slate-400">{level.studentCount} élèves évalués</p>
+                </div>
+                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                  level.scale === 'qualitative'
+                    ? 'bg-purple-50 text-purple-700'
+                    : 'bg-blue-50 text-blue-700'
+                }`}>
+                  {level.scale === 'qualitative' ? 'Qualitatif' : level.scale}
+                </span>
+              </div>
+
+              {/* Plus forte + Plus faible moyenne */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-emerald-50 rounded-lg p-2 border border-emerald-100">
+                  <p className="text-[9px] uppercase font-bold text-emerald-600">Plus forte</p>
+                  <p className="text-sm font-bold text-emerald-900 mt-0.5">
+                    {level.highestAverage?.value || '—'}
+                  </p>
+                  <p className="text-[9px] text-emerald-600 truncate" title={level.highestAverage?.studentName}>
+                    {level.highestAverage?.studentName || '—'}
+                  </p>
+                  <p className="text-[8px] text-emerald-400">{level.highestAverage?.className || ''}</p>
+                </div>
+                <div className="bg-red-50 rounded-lg p-2 border border-red-100">
+                  <p className="text-[9px] uppercase font-bold text-red-600">Plus faible</p>
+                  <p className="text-sm font-bold text-red-900 mt-0.5">
+                    {level.lowestAverage?.value || '—'}
+                  </p>
+                  <p className="text-[9px] text-red-600 truncate" title={level.lowestAverage?.studentName}>
+                    {level.lowestAverage?.studentName || '—'}
+                  </p>
+                  <p className="text-[8px] text-red-400">{level.lowestAverage?.className || ''}</p>
+                </div>
+              </div>
+
+              {/* Top 3 élèves */}
+              {level.topStudents.length > 0 && (
+                <div>
+                  <p className="text-[9px] uppercase font-bold text-slate-500 mb-1.5">Top 3</p>
+                  <div className="space-y-1">
+                    {level.topStudents.map((student) => (
+                      <div key={student.rank} className="flex items-center gap-2 text-xs">
+                        <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[9px] font-bold shrink-0 ${
+                          student.rank === 1 ? 'bg-amber-100 text-amber-700'
+                          : student.rank === 2 ? 'bg-slate-200 text-slate-600'
+                          : 'bg-orange-100 text-orange-700'
+                        }`}>
+                          {student.rank}
+                        </span>
+                        <span className="text-slate-700 truncate flex-1">{student.studentName}</span>
+                        <span className="font-bold text-slate-900 shrink-0">
+                          {student.average}{student.scale === '/20' ? '/20' : ''}
+                        </span>
+                        <span className="text-[9px] text-slate-400 shrink-0 hidden sm:inline">{student.className}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Note explicative */}
+        <div className="mt-3 px-3 py-2 bg-slate-50 rounded text-[10px] text-slate-500">
+          <span className="font-semibold">Note :</span> Ces résultats reflètent la période courante ({data.currentPeriod}).
+          Pour la maternelle, les notes sont qualitatives (TS = Très Satisfaisant, S = Satisfaisant, PS = Peu Satisfaisant).
+          Les moyennes du primaire et secondaire sont sur 20.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Composant principal
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -1601,8 +1891,10 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
       {/* ── KPI Cards principales (Effectifs, Assiduité, Recettes, Alertes) ── */}
       <KPICards data={kpiData} isLoading={false} />
 
-      {/* ── Mini KPIs : Recette du jour, Impayés, Moyenne générale, Trésorerie ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* ── Mini KPIs : Recette du jour, Impayés, Recettes encaissées ── */}
+      {/* ⭐ La carte "Moyenne générale" a été remplacée par la section
+          GradeAnalyticsSection plus bas (plus complète et professionnelle) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <MiniKpiCard
           label="Recette du jour"
           value={formatCurrency(todayRevenueQuery.data || 0)}
@@ -1622,15 +1914,6 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
           loading={financeKpisQuery.isLoading}
         />
         <MiniKpiCard
-          label="Moyenne générale"
-          value={averageGrade > 0 ? `${averageGrade.toFixed(2)} / 20` : '— / 20'}
-          icon={Award}
-          iconColor="text-purple-600"
-          iconBg="bg-purple-50"
-          subtitle="Toutes classes confondues"
-          loading={weightedAvgQuery.isLoading}
-        />
-        <MiniKpiCard
           label="Recettes encaissées"
           value={formatCurrency(totalRevenue)}
           icon={Banknote}
@@ -1640,6 +1923,12 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
           loading={consolidatedQuery.isLoading}
         />
       </div>
+
+      {/* ⭐ NOUVELLE SECTION — Analytics des notes (remplace l'ancienne carte "Moyenne générale") */}
+      <GradeAnalyticsSection tenantId={tenantId} academicYearId={academicYearId} />
+
+      {/* ⭐ NOUVELLE SECTION — Distribution des âges */}
+      <AgeDistributionSection tenantId={tenantId} academicYearId={academicYearId} />
 
       {/* ⭐ NOUVELLE SECTION — Vue d'ensemble des effectifs (total / actifs / abandons) */}
       <DashboardOverviewSection academicYearId={academicYearId} schoolLevelId={schoolLevelId} />

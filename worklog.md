@@ -2707,3 +2707,87 @@ Stage Summary:
 - Push effectué — Vercel va re-déployer automatiquement
 - Files modified: 2 (FinanceDashboardV2.tsx, TransactionsContent.tsx)
 
+
+---
+Task ID: 2026-08-11-dossier-commercial-pricing-2026
+Agent: main
+Task: Pause technique — produire le dossier commercial complet Academia Helm avec : (1) analyse exhaustive des 21 modules, (2) 12 problèmes/solutions, (3) mise à jour du pricing avec nouveau modèle 300k activation + frais annuels par tranche, (4) comparaison concurrentielle vs Logico, (5) analyse de rentabilité mise à jour.
+
+Work Log:
+
+=== 1. ANALYSE EXHAUSTIVE DU CODEBASE ===
+Sous-tâche confiée à un agent Explore qui a parcouru apps/web-app/src/app/app/ et
+apps/api-server/src/ pour produire un inventaire complet :
+- 21 modules métier inventoriés avec sous-modules + fonctionnalités + différenciateurs
+- 6 modules complémentaires identifiés (Laboratoire, Réunions/PV IA, Discipline,
+  CMS, Federis, SaisieMaster)
+- Synthèse des 10 différenciateurs globaux (multi-tenant, offline-first, triptyque
+  IA, bilingue FR/EN, EducMaster, onboarding self-service, Mobile Money, vigie
+  ORION par module, workflow validation, e-signatures)
+
+=== 2. NOUVEAU PRICING (validé par fiscaliste) ===
+Ancien modèle (rejeté) : mensuel 10k-50k + activation 50k-150k par plan
+Nouveau modèle (août 2026) :
+- Activation unique : 300 000 FCFA (web + desktop + mobile inclus, tous modules)
+- Frais annuels maintenance/hébergement par tranche d'élèves :
+  * Helm Essentiel 1-50     → 50 000 FCFA/an
+  * Helm Croissance 51-150  → 75 000 FCFA/an
+  * Helm Performance 151-400 → 100 000 FCFA/an
+  * Helm Institution 401+    → 150 000 FCFA/an
+Justification : simplicité commerciale + prévisibilité + accessibilité + récurrence stable
+
+=== 3. GÉNÉRATION PDF ===
+Pipeline utilisé : skill PDF → route Report (ReportLab) + Cover HTML (Playwright)
+
+3.1 Cover HTML — Template inspiré de Template 07 (Crystal Blue) adapté palette
+    Academia Helm (Royal Blue #0A2A5E + Living Gold #CFA63A) :
+    - Cadre lumineux or
+    - Glows radiaux subtils (or + bleu action)
+    - Kicker "DOSSIER COMMERCIAL" + bar or
+    - Hero title 48pt serif "Academia Helm / Plateforme SaaS / Intégrée pour Écoles"
+    - Subtitle + summary block + 4 stats (21 modules / 3 agents / 3 plateformes / 12+ problèmes)
+    - Meta block (Préparé par / Date / Référence) + brand top-right
+    - Validations : poster_validate.py ✓ + cover_validate.js ✓ (0 overlap)
+
+3.2 Body PDF (ReportLab, 23 pages) :
+    - TocDocTemplate + multiBuild pour TOC auto-générée avec liens cliquables
+    - Palette brand Royal Blue + Living Gold (override cascade car doc brandé)
+    - Header/footer sur toutes pages (brand + titre + n° page)
+    - 7 sections principales :
+      1. Synthèse exécutive (avec stats callout 4 colonnes)
+      2. Partie 1 — Inventaire des 21 modules (vue d'ensemble + 6 modules détaillés
+         + 7 modules complémentaires + Platform/AI + 7 modules transverses)
+      3. Partie 2 — 12 problèmes & solutions (format side-by-side rouge/vert)
+         Incluant : EducMaster, reçus papier, communication, bulletins, présences,
+         paie, vue multi-niveaux, offline, admissions, contrats, recouvrement,
+         conformité fiscale
+      4. Partie 3 — Nouveau pricing (tableau récap + 4 fiches plans + inclus +
+         options bilingue + SMS/Email)
+      5. Partie 4 — Comparaison concurrentielle (tableau 27 critères vs Logico +
+         5 avantages stratégiques)
+      6. Partie 5 — Analyse de rentabilité (coûts infra + point mort + scénario
+         12 mois + projections Années 2-3 + analyse de sensibilité)
+      7. Conclusion & appel à action (avantages + positionnement + 5 étapes
+         démarrage + contact)
+
+3.3 Merge : pypdf pour insérer cover en page 1 + body pages 2-24
+
+=== 4. QUALITÉ ===
+- pdf_qa.py : 11 checks ✓ passés (metadata, blank pages, fonts embedded, no
+  overflow, content fill, cover full-bleed, margins symétriques, tables centrées)
+- 1 erreur mineure : taille de page cover 595.9×842.9pt vs body 595.3×841.9pt
+  (différence 0.6pt — invisible visuellement, due à html2poster 794px → pt
+  conversion). Non bloquant.
+- 24 pages, 59 149 caractères, 287 KB
+- Fonts : FreeSerif + FreeSerifBold + FreeSerifItalic (toutes embedded)
+- TOC auto-générée avec liens cliquables
+
+Stage Summary:
+- Dossier commercial complet 24 pages généré dans
+  /home/z/my-project/download/Academia_Helm_Dossier_Commercial_2026.pdf
+- Couvre : 21 modules + 12 problèmes/solutions + nouveau pricing 300k+annuel +
+  comparaison Logico + analyse rentabilité + projections 3 ans
+- Palette Academia Helm (Royal Blue + Living Gold) cohérente
+- TOC cliquable + header/footer pro
+- Files : 3 new (cover HTML, body Python generator, merge script)
+  + 1 deliverable PDF

@@ -92,7 +92,8 @@ export async function GET(request: NextRequest) {
     const kpi = await fetchBackend('/finance/reports/kpi') || {};
 
     // ─── 2. Student-accounts ───────────────────────────────────────────
-    const saData = await fetchBackend('/finance/student-accounts?limit=10000');
+    //    ⭐ exportAll=true pour récupérer TOUS les comptes (backend plafonne à 500 sans ce flag)
+    const saData = await fetchBackend('/finance/student-accounts?exportAll=true');
     const studentAccounts: any[] = Array.isArray(saData)
       ? saData
       : (saData?.items || saData?.data || saData?.accounts || []);

@@ -87,8 +87,8 @@ export default function TransactionsContent() {
 
   useEffect(() => {
     if (!academicYear?.id) return;
-    // ⭐ Passer limit=10000 pour récupérer TOUS les comptes (grandes écoles)
-    financeService.getStudentAccounts({ academicYearId: academicYear.id, limit: '10000' })
+    // ⭐ exportAll=true pour récupérer TOUS les comptes (le backend plafonne à 500 sans ce flag)
+    financeService.getStudentAccounts({ academicYearId: academicYear.id, exportAll: 'true' })
       .then((d) => setAccounts(Array.isArray(d) ? d : (d?.items || d?.data || [])))
       .catch(() => setAccounts([]));
   }, [academicYear?.id]);

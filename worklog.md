@@ -2791,3 +2791,78 @@ Stage Summary:
 - TOC cliquable + header/footer pro
 - Files : 3 new (cover HTML, body Python generator, merge script)
   + 1 deliverable PDF
+
+---
+Task ID: 2026-08-11-bugs-students-finance + dossier-v2-17-problemes + word
+Agent: main
+Task: 3 corrections de bugs + enrichissement dossier commercial (17 problèmes au lieu de 12) + génération version Word.
+
+Work Log:
+
+=== 1. BUG 'p.map is not a function' (module Élèves) ===
+Cause : le fallback table view de StudentsModulePage (activé par le nouvel
+onglet 'Liste & Actions en masse') faisait setStudents(data) où data est
+l'objet paginé {data: [...], total, page, ...} retourné par l'API.
+students.map() échouait car students était un objet, pas un array.
+Fix : extraction data.data ?? data.items ?? [] (gère ancien et nouveau format).
+
+=== 2. BUG refresh caisses dans NewPaymentModal ===
+Cause : openCashRegisters chargé dans useEffect([]) (mount only). Le modal
+restant ouvert après paiement (pour afficher le reçu), les caisses n'étaient
+jamais rechargées. L'utilisateur devait fermer/rouvrir le modal.
+Fix : ajout prop refreshTrigger (number) au modal + dépendance
+[refreshTrigger] dans le useEffect. TransactionsContent.handleSuccess
+incrémente modalRefreshTrigger → force le refresh.
+
+=== 3. BUG refresh comptes (déjà fixé au commit précédent) ===
+TransactionsContent.handleSuccess appelait déjà reloadAccounts() (commit
+précédent). Combiné avec le refreshTrigger pour les caisses, le refresh
+est maintenant complet (comptes + caisses) après chaque paiement.
+
+=== 4. ENRICHISSEMENT DOSSIER COMMERCIAL ===
+Ajout de 5 nouveaux problèmes/solutions au dossier (de 12 à 17) :
+- 3.13 Bulletins maternelle et primaire spécifiques (formats adaptés par cycle)
+- 3.14 Fiches pédagogiques et cahier journal papier (workflow enseignant→directeur)
+- 3.15 Cahier de semaine (semainier) papier (récap automatique)
+- 3.16 Registre des notes + calcul demi-journées (saisie rapide + calculs auto)
+- 3.17 Export listes + notes par classe pour EducMaster (1 clic par classe)
+
+Mise à jour cover HTML : '12+ problèmes résolus' → '17+ problèmes résolus'.
+Régénération PDF complet (298 KB, 26 pages).
+
+=== 5. GÉNÉRATION VERSION WORD ===
+Nouveau script generate_academia_helm_dossier_docx.py (python-docx) :
+- Cover page sombre (Royal Blue) avec titre 42pt + meta + accent gold
+- Header/footer sur toutes les pages (brand + n° page)
+- 7 sections identiques au PDF :
+  1. Synthèse exécutive
+  2. Partie 1 — 21 modules (tableaux + bullets + différenciateurs)
+  3. Partie 2 — 17 problèmes & solutions (tableaux 1x2 rouge/vert side-by-side)
+  4. Partie 3 — Nouveau pricing (tableau récap + 4 plans + inclusions + options)
+  5. Partie 4 — Comparaison Logico (27 critères + 5 avantages)
+  6. Partie 5 — Rentabilité (coûts + point mort + scénario 12 mois + projections)
+  7. Conclusion (6 avantages + 5 étapes démarrage + contact + closing banner)
+- Palette Academia Helm (Royal Blue + Living Gold) cohérente avec le PDF
+- Tables avec shading header bleu + lignes alternées
+- Headings avec border-bottom or
+- Output : 69 KB
+
+=== 6. LIVRAISON FINALE ===
+- /home/z/my-project/download/Academia_Helm_Dossier_Commercial_2026.pdf (298 KB, 26 pages)
+- /home/z/my-project/download/Academia_Helm_Dossier_Commercial_2026.docx (69 KB)
+
+=== 7. COMMIT + PUSH ===
+Commit 69a10458 : 'fix: 3 bugs module Élèves + Finance + refresh modal paiement'
+Push réussi vers origin/main (4c802c77..69a10458)
+
+Stage Summary:
+- 3 bugs UI corrigés (students pagination + 2 refresh modal paiement)
+- Dossier commercial enrichi (17 problèmes/solutions au lieu de 12)
+- Version Word ajoutée (éditable par l'équipe commerciale)
+- Livrables : PDF 298 KB + Word 69 KB dans /home/z/my-project/download/
+- Push effectué — Vercel va re-déployer automatiquement
+- Files modified: 3 + 1 new
+  * apps/web-app/src/components/pilotage/modules/StudentsModulePage.tsx
+  * apps/web-app/src/components/finance/NewPaymentModal.tsx
+  * apps/web-app/src/components/finance/TransactionsContent.tsx
+  * (scripts/*.py non commités car .gitignore — artefacts locaux)

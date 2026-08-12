@@ -40,15 +40,18 @@ export default function OfflineGuard({ children }: OfflineGuardProps) {
     };
 
     // ⭐ Intercepter les toasts d'erreur réseau
+    //    Restauration : on sauvegarde la fonction originale et on la restaure
+    //    dans le cleanup pour éviter de surcharger toast.error définitivement.
     const originalToastError = toast.error;
-    const patchedToastError = (msg: string, opts?: any) => {
+    toast.error = (msg: string, opts?: any) => {
       // Si on est offline et que le message parle de connexion, ne pas afficher
       if (!networkDetectionService.isConnected() && (
         msg.includes('Connexion') ||
         msg.includes('connexion') ||
         msg.includes('réseau') ||
-        msg.includes('Erreur') ||
-        msg.includes('erreur')
+        msg.includes('Erreur réseau') ||
+        msg.includes('erreur réseau') ||
+        msg.includes('Failed to fetch')
       )) {
         return;
       }
@@ -59,6 +62,8 @@ export default function OfflineGuard({ children }: OfflineGuardProps) {
 
     return () => {
       window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+      // ⭐ Restaurer toast.error original pour éviter de surcharger définitivement
+      toast.error = originalToastError;
     };
   }, []);
 

@@ -80,10 +80,19 @@ export default function AppLayoutClient({
 
   // ⭐ Bootstrap offline-first : au premier login, télécharger TOUTES les données
   //    du tenant dans IndexedDB pour permettre le mode offline.
+  // ⭐ FIX : re-bootstrap si le tenant change (multi-tenant,切换 école).
+  //    Avant : le flag 'academia_helm_bootstrapped' restait 'true' même si
+  //    l'utilisateur changeait de tenant → IndexedDB n'était jamais re-bootstrapé
+  //    pour le nouveau tenant.
   useEffect(() => {
     if (!tenant?.id) return;
-    // Vérifier si déjà bootstrapé
-    if (localStorage.getItem('academia_helm_bootstrapped') === 'true') return;
+
+    // Vérifier si déjà bootstrapé POUR CE tenant spécifiquement
+    const bootstrapKey = `academia_helm_bootstrapped_${tenant.id}`;
+    if (localStorage.getItem(bootstrapKey) === 'true') return;
+
+    // Marquer comme bootstrapé pour ce tenant
+    localStorage.setItem(bootstrapKey, 'true');
 
     import('@/lib/offline/offline-sync.service').then(({ offlineSyncService }) => {
       offlineSyncService.bootstrap(tenant.id);
@@ -93,6 +102,13 @@ export default function AppLayoutClient({
   }, [tenant?.id]);
 
   return (
+    <>
+    {/* ⭐ OFFLINE-FIRST : OfflineSWRegister monté EN HAUT de l'arbre (avant
+        SessionManagerProvider et QueryProvider) pour que le Service Worker
+        soit enregistré AVANT que les premières requêtes API ne partent.
+        Avant : monté en bas de l'arbre → le SW n'était pas actif quand les
+        premières requêtes fetch() étaient émises → pas de cache offline. */}
+    <OfflineSWRegister />
     <SessionManagerProvider>
       {/* ⭐ Offline-first : bannière orange si hors ligne */}
       <OfflineGuard>
@@ -142,13 +158,14 @@ export default function AppLayoutClient({
       {/* ⭐ Toaster (sonner) — affiche les toast.success/toast.error partout
           dans l'app (sans lui, les notifications sont silencieuses) */}
       <Toaster richColors position="top-right" closeButton />
-      {/* ⭐ Offline-first : badge statut réseau + prompt d'installation PWA + SW offline */}
+      {/* ⭐ Offline-first : badge statut réseau + prompt d'installation PWA */}
       <OfflineStatusBadge />
       <PWAInstallPrompt />
-      <OfflineSWRegister />
+      {/* ⭐ OfflineSWRegister déplacé EN HAUT de l'arbre (voir plus haut) */}
       <SyncModal />
       <ConflictResolutionModal />
       </OfflineGuard>
     </SessionManagerProvider>
+    </>
   );
 }

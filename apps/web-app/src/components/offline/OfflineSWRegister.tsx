@@ -19,8 +19,12 @@ export function OfflineSWRegister() {
     if (typeof window === 'undefined') return;
     if (!('serviceWorker' in navigator)) return;
 
-    // ⭐ Ne pas enregistrer en dev (sauf si explicitement demandé)
-    if (process.env.NODE_ENV === 'development') return;
+    // ⭐ Ne pas enregistrer en dev sauf si ?sw=1 dans l'URL (pour tester offline)
+    if (process.env.NODE_ENV === 'development') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('sw') !== '1') return;
+      console.log('[SW] Dev mode: SW offline enabled via ?sw=1');
+    }
 
     // ⭐ Ne pas enregistrer si déjà enregistré
     if (navigator.serviceWorker.controller) {

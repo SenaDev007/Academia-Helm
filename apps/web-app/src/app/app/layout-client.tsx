@@ -71,6 +71,48 @@ export default function AppLayoutClient({
     console.log('[Push] Abonnement actif');
   }
 
+  // ⭐ TAURI : sauvegarder le token + tenant dans le Tauri Store pour le sync engine Rust
+  //    Quand le web-app est chargé dans la webview Tauri, on détecte window.__TAURI__
+  //    et on persiste les infos d'auth pour que sync.html puisse les récupérer.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const tauri = (window as any).__TAURI__;
+    if (!tauri?.store?.Store) return;
+
+    (async () => {
+      try {
+        const store = await tauri.store.Store.load('academia-helm-store.json');
+
+        // Récupérer le token depuis localStorage
+        const sessionRaw = localStorage.getItem('session');
+        if (sessionRaw) {
+          const session = JSON.parse(sessionRaw);
+          if (session.accessToken) {
+            await store.set('accessToken', session.accessToken);
+          }
+          if (session.refreshToken) {
+            await store.set('refreshToken', session.refreshToken);
+          }
+        }
+
+        // Sauvegarder le tenant
+        if (tenant?.id) {
+          await store.set('tenantId', tenant.id);
+          await store.set('selectedSchool', {
+            tenantId: tenant.id,
+            subdomain: tenant.subdomain || tenant.slug || '',
+            name: tenant.name || tenant.label || '',
+          });
+        }
+
+        await store.save();
+        console.log('[Tauri] Token + tenant saved to Tauri Store');
+      } catch (e) {
+        // Non-bloquant — le web-app fonctionne sans Tauri Store
+      }
+    })();
+  }, [tenant?.id]);
+
   // ⭐ Installer l'intercepteur global de fetch (offline-first pour TOUS les GET /api/*)
   //    Le plus tôt possible — avant tout autre useEffect.
   useEffect(() => {

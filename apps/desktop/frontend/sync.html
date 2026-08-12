@@ -218,9 +218,33 @@
                 return;
             }
 
-            addLog('info', 'Connexion OK. Démarrage de la sync...');
+            // ⭐ Récupérer le token depuis le Tauri Store (sauvegardé au login)
             if (window.__TAURI__?.core?.invoke) {
                 try {
+                    // Récupérer le token depuis le store
+                    const { Store } = window.__TAURI__.store;
+                    if (Store) {
+                        const store = await Store.load('academia-helm-store.json');
+                        const token = await store.get('accessToken');
+                        const tenantId = await store.get('tenantId');
+
+                        if (token) {
+                            // ⭐ Set le token dans le sync engine Rust
+                            await window.__TAURI__.core.invoke('set_sync_token', { token: token });
+                            addLog('info', `Token d'authentification chargé (tenant: ${tenantId || 'N/A'})`);
+                        } else {
+                            addLog('error', 'Aucun token trouvé. Connectez-vous d\'abord sur le web-app.');
+                            updateStatus('error', 'Authentification requise');
+                            document.getElementById('continueBtn').style.display = 'inline-flex';
+                            document.getElementById('continueBtn').textContent = 'Se connecter';
+                            document.getElementById('continueBtn').onclick = () => {
+                                window.location.href = 'https://app.academiahelm.com/desktop';
+                            };
+                            return;
+                        }
+                    }
+
+                    addLog('info', 'Connexion OK. Démarrage de la sync...');
                     await window.__TAURI__.core.invoke('trigger_initial_sync');
                 } catch (e) {
                     addLog('error', 'Erreur: ' + e);

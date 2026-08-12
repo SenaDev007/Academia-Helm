@@ -24,6 +24,7 @@
 
 import { offlineFetch, offlineMutation } from './offline-fetch';
 import { deriveStoreName, getTenantIdForOffline } from './store-names';
+import { isTauriEnvironment, tauriSqlFetch, tauriSqlMutation } from './tauri-sql-fetch';
 
 let isInstalled = false;
 
@@ -31,6 +32,12 @@ export function installGlobalFetchInterceptor(): void {
   if (isInstalled) return;
   if (typeof window === 'undefined') return;
   if (typeof window.fetch !== 'function') return;
+
+  // ⭐ Détecter Tauri une seule fois au montage
+  const isTauri = isTauriEnvironment();
+  if (isTauri) {
+    console.log('[GlobalFetchInterceptor] 🖥️ Tauri environment detected — routing to SQLite');
+  }
 
   const originalFetch = window.fetch;
 
@@ -78,9 +85,27 @@ export function installGlobalFetchInterceptor(): void {
 
     const method = (init?.method || 'GET').toUpperCase();
 
-    // ─── GET : lecture via offlineFetch (réseau → IDB fallback) ───
+    // ─── GET : lecture ───
     if (method === 'GET') {
-      // ⭐ Utiliser offlineFetch (lit IDB en offline, cache en online)
+      // ⭐ TAURI : lire directement depuis SQLite
+      if (isTauri) {
+        try {
+          const data = await tauriSqlFetch(url, storeName);
+          return new Response(JSON.stringify(data), {
+            status: 200,
+            statusText: 'OK (Tauri SQLite)',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Tauri-SQL': 'true',
+              'X-Offline-Store': storeName,
+            },
+          });
+        } catch (error) {
+          // Si SQLite échoue, retomber sur offlineFetch (IndexedDB)
+        }
+      }
+
+      // ⭐ WEB : utiliser offlineFetch (lit IDB en offline, cache en online)
       try {
         const tenantId = getTenantIdForOffline();
         const data = await offlineFetch<any>(url, storeName, {
@@ -120,13 +145,38 @@ export function installGlobalFetchInterceptor(): void {
       }
     }
 
-    // ─── POST/PUT/PATCH/DELETE : mutation via offlineMutation ───
-    // ⭐ Étend l'intercepteur aux mutations pour que TOUS les composants
-    //    qui font fetch(POST/PUT/DELETE) bénéficient automatiquement de
-    //    l'offline (IndexedDB + outbox) sans modification de code.
-    //    Avant : l'intercepteur skipait les non-GET → 184 composants
-    //    faisaient fetch() direct qui échouait en offline.
+    // ─── POST/PUT/PATCH/DELETE : mutation ───
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      // ⭐ TAURI : écrire directement dans SQLite (triggers → _sync_outbox)
+      if (isTauri) {
+        try {
+          let bodyData: any = undefined;
+          if (init?.body) {
+            try {
+              bodyData = typeof init.body === 'string'
+                ? JSON.parse(init.body)
+                : init.body;
+            } catch {
+              bodyData = init.body;
+            }
+          }
+          const result = await tauriSqlMutation(url, method as any, bodyData, storeName);
+          const responseBody = JSON.stringify(result.data ?? { success: true, offline: true });
+          return new Response(responseBody, {
+            status: 200,
+            statusText: result.offline ? 'OK (Tauri SQLite — queued)' : 'OK',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Tauri-SQL': 'true',
+              'X-Offline-Store': storeName,
+            },
+          });
+        } catch (error) {
+          // Si Tauri SQL échoue, retomber sur offlineMutation
+        }
+      }
+
+      // ⭐ WEB : utiliser offlineMutation (IndexedDB + outbox)
       try {
         // Parse le body de la requête
         let bodyData: any = undefined;

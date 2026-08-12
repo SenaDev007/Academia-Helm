@@ -37,6 +37,7 @@ import OnboardingTour from '@/components/ai/OnboardingTour';
 import OfflineGuard from '@/components/offline/OfflineGuard';
 import { OfflineStatusBadge } from '@/components/offline/OfflineStatusBadge';
 import { OfflineSWRegister } from '@/components/offline/OfflineSWRegister';
+import AppGate from '@/components/auth/AppGate';
 import { SyncModal } from '@/components/offline/SyncModal';
 import ConflictResolutionModal from '@/components/offline/ConflictResolutionModal';
 import { PWAInstallPrompt } from '@/components/pwa/PWAInstallPrompt';
@@ -109,6 +110,8 @@ export default function AppLayoutClient({
         Avant : monté en bas de l'arbre → le SW n'était pas actif quand les
         premières requêtes fetch() étaient émises → pas de cache offline. */}
     <OfflineSWRegister />
+    {/* ⭐ TAURI : AppGate remplace le middleware côté client (résolution tenant + validation session) */}
+    <AppGate>
     <SessionManagerProvider>
       {/* ⭐ Offline-first : bannière orange si hors ligne */}
       <OfflineGuard>
@@ -166,6 +169,7 @@ export default function AppLayoutClient({
       <ConflictResolutionModal />
       </OfflineGuard>
     </SessionManagerProvider>
+    </AppGate>
     </>
   );
 }

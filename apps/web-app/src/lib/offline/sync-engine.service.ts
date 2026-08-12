@@ -18,6 +18,60 @@ const SYNC_API = '/api/sync';
 const BATCH_SIZE = 100;
 const SQLITE_VERSION = '1';
 
+/**
+ * ⭐ WHITELIST DES TABLES ESSENTIELLES POUR LE BOOTSTRAP INITIAL.
+ *
+ *    Au lieu de tirer 590+ tables (qui prend 10+ minutes), on ne tire que
+ *    les tables nécessaires pour afficher le dashboard et les modules
+ *    principaux. Les autres tables seront tirées en lazy au fil de la
+ *    navigation (via offlineFetch cache-miss → network → cache).
+ *
+ *    Critères de sélection :
+ *    - Tables utilisées par le dashboard pilotage (students, classes, payments, attendance, exam_scores)
+ *    - Tables de référence (school_levels, academic_years, subjects, fee_structures)
+ *    - Tables des modules principaux (finance, hr, pedagogy)
+ *
+ *    Impact : bootstrap passe de ~10 min à ~30s pour la plupart des tenants.
+ */
+const ESSENTIAL_BOOTSTRAP_TABLES: ReadonlySet<string> = new Set([
+  // ─── Dashboard pilotage (effectifs, abandons, finances) ───
+  'students',
+  'student_enrollments',
+  'classes',
+  'academic_classes',
+  'school_levels',
+  'academic_years',
+  // ─── Finances ───
+  'student_accounts',
+  'finance_transactions',
+  'fee_structures',
+  'fee_overrides',
+  'fee_regimes',
+  'payments',
+  'invoices',
+  // ─── Pédagogie ───
+  'subjects',
+  'attendance_records',
+  'exam_scores',
+  'exams',
+  'evaluations',
+  'grades',
+  'bulletins',
+  // ─── RH ───
+  'staff',
+  'teachers',
+  'contracts',
+  // ─── Communication ───
+  'announcements',
+  'messages',
+  // ─── Référence ───
+  'tenants',
+  'users', // pour résolution des noms (sans hashes — filtré par backend)
+  'countries',
+  'cities',
+  'departments',
+]);
+
 const ENTITY_TO_TABLE: Record<SyncEntityType, string> = {
   // ─── Élèves & Scolarité ───
   STUDENT: 'students',
@@ -719,16 +773,25 @@ export async function runSync(
       const tablesRes = await fetchWithAuth(`${SYNC_API}/tables`, { method: 'GET' });
       if (tablesRes.ok) {
         const tablesData = await tablesRes.json();
-        tablesToPull = Array.isArray(tablesData) ? tablesData : (tablesData.tables || tablesData.data || []);
+        const allTables: string[] = Array.isArray(tablesData) ? tablesData : (tablesData.tables || tablesData.data || []);
+
+        // ⭐ FIX PERFORMANCE : filtrer pour ne garder que les tables essentielles.
+        //    Avant : on tirait 590+ tables → 10+ minutes de bootstrap
+        //    Maintenant : on tire ~30 tables essentielles → ~30 secondes
+        //    Les autres tables seront tirées en lazy au fil de la navigation
+        //    (via offlineFetch cache-miss → network → cache IDB).
+        tablesToPull = allTables.filter((t) => ESSENTIAL_BOOTSTRAP_TABLES.has(t));
         totalTables = tablesToPull.length;
+
+        console.log(`[Sync] Bootstrap: ${totalTables}/${allTables.length} essential tables selected (filtered from ${allTables.length})`);
       }
     } catch {
       // Non-critique : on retombe sur le comportement sans progress granulaire
     }
     // ⭐ Indiquer que la récupération démarre — on met total=0 temporairement
     //    pour déclencher le mode "indeterminate" (barre animée) pendant que le
-    //    serveur prépare les données. Sans ça, l'utilisateur voit "0/629 0%"
-    //    statique pendant 10 minutes sans comprendre ce qui se passe.
+    //    serveur prépare les données. Sans ça, l'utilisateur voit "0/30 0%"
+    //    statique pendant 30s sans comprendre ce qui se passe.
     onProgress(0, 0, 'récupération serveur…', 0);
   }
 
@@ -760,26 +823,16 @@ export async function runSync(
     let tablesProcessed = 0;
     let totalPulledSoFar = 0;
 
-    for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
-      const chunk = chunks[chunkIdx];
+    // ⭐ PARALLÉLISATION des chunks avec concurrence limitée à 3.
+    //    Avant : boucle for séquentielle → 24 chunks × 30s = 12 min
+    //    Maintenant : 3 chunks en parallèle → 24/3 × 30s = 4 min (ou moins car
+    //    les chunks essentiels sont plus petits maintenant — ~30 tables / 25 = 2 chunks)
+    //    La concurrence est limitée à 3 pour ne pas saturer le pool Postgres/Neon.
+    const MAX_CONCURRENCY = 3;
+    const MAX_RETRIES = 3;
 
-      // ⭐ Avant chaque chunk, mettre à jour la progression avec le total réel
-      //    (total=629) pour que la barre déterminée s'affiche.
-      onProgress(
-        tablesProcessed,
-        totalTables,
-        `récupération chunk ${chunkIdx + 1}/${chunks.length}…`,
-        totalPulledSoFar,
-      );
-
+    const processChunk = async (chunkIdx: number, chunk: string[]) => {
       // ⭐ Fiabilisation : retry jusqu'à 3 fois en cas d'échec d'un chunk.
-      //    En production, on ne doit JAMAIS perdre un chunk — on réessaie
-      //    avec un délai exponentiel (1s, 2s, 4s) avant de déclarer l'échec.
-      //    Si après 3 tentatives le chunk échoue toujours, on lève une
-      //    erreur pour stopper la sync (l'utilisateur verra le message
-      //    d'erreur au lieu de croire que tout s'est bien passé).
-      const MAX_RETRIES = 3;
-      let chunkSuccess = false;
       let lastChunkError: Error | null = null;
 
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -802,19 +855,30 @@ export async function runSync(
 
           if (chunkData.entities) {
             // Persister chaque table du chunk
+            const pulledInChunk: Record<string, number> = {};
+            let pulledCount = 0;
+            let tablesInChunk = 0;
+
             for (const type of Object.keys(chunkData.entities)) {
               const items = chunkData.entities[type] || [];
               if (items.length > 0) {
                 const storeName = normalizeToIdbStoreName(type);
                 try {
                   await localDb.executeBulk(storeName, 'put', items);
-                  result.pulled[type] = items.length;
-                  totalPulledSoFar += items.length;
+                  pulledInChunk[type] = items.length;
+                  pulledCount += items.length;
                 } catch (e) {
                   console.warn(`[Sync] Store "${storeName}" (from type "${type}") not in IndexedDB — skipping ${items.length} items`);
                 }
               }
-              tablesProcessed += 1;
+              tablesInChunk += 1;
+            }
+
+            // ⭐ Mettre à jour les compteurs globaux de façon thread-safe
+            tablesProcessed += tablesInChunk;
+            totalPulledSoFar += pulledCount;
+            for (const [type, count] of Object.entries(pulledInChunk)) {
+              result.pulled[type] = (result.pulled[type] || 0) + count;
             }
 
             // Mettre à jour pulledAt avec le timestamp du serveur si dispo
@@ -825,11 +889,9 @@ export async function runSync(
               pullServerId = chunkData.server_id;
             }
 
-            // ⭐ Après chaque chunk, mettre à jour la progression
-            onProgress(tablesProcessed, totalTables, `chunk ${chunkIdx + 1}/${chunks.length} terminé`, totalPulledSoFar);
-
-            chunkSuccess = true;
-            break; // ✅ Succès — sortir de la boucle de retry
+            // ⭐ Mettre à jour la progression
+            onProgress(tablesProcessed, totalTables, `chunk ${chunkIdx + 1}/${chunks.length} OK`, totalPulledSoFar);
+            return; // ✅ Succès
           } else {
             throw new Error('Réponse sans entités');
           }
@@ -838,30 +900,37 @@ export async function runSync(
           console.warn(`[Sync] Chunk ${chunkIdx + 1}/${chunks.length} attempt ${attempt}/${MAX_RETRIES} failed:`, (attemptError as Error).message);
 
           if (attempt < MAX_RETRIES) {
-            // ⭐ Délai exponentiel : 1s, 2s, 4s
             const delayMs = Math.pow(2, attempt - 1) * 1000;
-            onProgress(
-              tablesProcessed,
-              totalTables,
-              `retry chunk ${chunkIdx + 1} ( tentative ${attempt + 1}/${MAX_RETRIES})…`,
-              totalPulledSoFar,
-            );
             await new Promise(resolve => setTimeout(resolve, delayMs));
           }
         }
       }
 
-      if (!chunkSuccess) {
-        // ⭐ Tous les retries ont échoué — en production, on ne continue pas
-        //    silencieusement. On lève une erreur explicite pour que
-        //    l'utilisateur sache que la sync a échoué et puisse relancer.
-        throw new Error(
-          `Échec du chunk ${chunkIdx + 1}/${chunks.length} après ${MAX_RETRIES} tentatives. ` +
-          `Dernière erreur : ${lastChunkError?.message || 'inconnue'}. ` +
-          `Tables concernées : ${chunk.slice(0, 5).join(', ')}${chunk.length > 5 ? '…' : ''}. ` +
-          `Relancez la synchronisation pour réessayer.`
-        );
-      }
+      // ⭐ Tous les retries ont échoué — lever une erreur
+      throw new Error(
+        `Échec du chunk ${chunkIdx + 1}/${chunks.length} après ${MAX_RETRIES} tentatives. ` +
+        `Dernière erreur : ${lastChunkError?.message || 'inconnue'}. ` +
+        `Tables concernées : ${chunk.slice(0, 5).join(', ')}${chunk.length > 5 ? '…' : ''}. ` +
+        `Relancez la synchronisation pour réessayer.`
+      );
+    };
+
+    // ⭐ Exécuter les chunks avec concurrence limitée
+    //    Approche simple : on traite les chunks par batches de MAX_CONCURRENCY
+    //    en parallèle, et on attend que chaque batch termine avant de passer au suivant.
+    //    Ce n'est pas optimal (un chunk rapide attend les lents du batch), mais c'est
+    //    robuste et évite les bugs de pool de promesses.
+    for (let batchStart = 0; batchStart < chunks.length; batchStart += MAX_CONCURRENCY) {
+      const batch = chunks.slice(batchStart, batchStart + MAX_CONCURRENCY);
+      const batchPromises = batch.map((chunk, i) => {
+        const chunkIdx = batchStart + i;
+        onProgress(tablesProcessed, totalTables, `démarrage chunk ${chunkIdx + 1}/${chunks.length}…`, totalPulledSoFar);
+        return processChunk(chunkIdx, chunk);
+      });
+
+      // ⭐ Si un chunk du batch échoue, on lève l'erreur (les autres sont perdus)
+      //    mais c'est acceptable car chaque chunk a déjà ses 3 retries internes.
+      await Promise.all(batchPromises);
     }
 
     // Finalisation : mettre à jour le timestamp de sync + device registry

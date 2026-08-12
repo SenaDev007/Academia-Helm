@@ -113,43 +113,54 @@ export async function GET(request: NextRequest) {
     const headers = await getProxyAuthHeaders(request);
     const baseUrl = getApiBaseUrlForRoutes();
 
-    // ─── Appel 1 : Statistiques élèves (effectifs par sexe/niveau) ─────────
-    let studentsStats: any = null;
-    let studentsStatsStatus: 'ok' | 'fallback' | 'error' = 'fallback';
-    try {
-      const url = new URL(`${baseUrl}/students/statistics`);
-      url.searchParams.append('academicYearId', academicYearId);
-      if (schoolLevelId) url.searchParams.append('schoolLevelId', schoolLevelId);
-      url.searchParams.append('include', 'abandons');
+    // ─── Appels backend parallélisés (Promise.all au lieu de 3 awaits séquentiels)
+    //    Avant : 3 fetchs séquentiels × 8-12s timeout = 24-36s dans le pire cas
+    //    Maintenant : 3 fetchs en parallèle = max(12s, 8s, 8s) = 12s dans le pire cas
+    // ──────────────────────────────────────────────────────────────────────────
 
-      const res = await fetchWithTimeout(
-        normalizeApiUrl(url.toString()),
+    // ⭐ Appel 1 : Statistiques élèves (effectifs par sexe/niveau)
+    const statsUrl = new URL(`${baseUrl}/students/statistics`);
+    statsUrl.searchParams.append('academicYearId', academicYearId);
+    if (schoolLevelId) statsUrl.searchParams.append('schoolLevelId', schoolLevelId);
+    statsUrl.searchParams.append('include', 'abandons');
+
+    // ⭐ Appel 2 : Abandons (endpoint dédié)
+    const abandonsUrl = new URL(`${baseUrl}/students/abandons`);
+    abandonsUrl.searchParams.append('academicYearId', academicYearId);
+    if (schoolLevelId) abandonsUrl.searchParams.append('schoolLevelId', schoolLevelId);
+
+    // ⚠️ L'appel à /finance/student-balances a été SUPPRIMÉ car :
+    //   1. Cet endpoint n'existe PAS côté backend (aucun match dans apps/api-server/src)
+    //   2. Les données financières sont déjà incluses dans la réponse /students/abandons
+    //      (champs totalDue, totalPaid, balance, hasPaidTuition, hasUnpaidTuition, unpaidAmount)
+    //   3. L'appel fantôme causait un timeout silencieux de 8s à chaque requête dashboard
+
+    const [statsRes, abandonsRes] = await Promise.allSettled([
+      fetchWithTimeout(
+        normalizeApiUrl(statsUrl.toString()),
         { headers, cache: 'no-store' },
         12000,
-      );
-
-      if (res.ok) {
-        studentsStats = await res.json().catch(() => null);
-        studentsStatsStatus = 'ok';
-      }
-    } catch (e) {
-      console.warn('[dashboard/overview] students/statistics failed:', (e as Error).message);
-    }
-
-    // ─── Appel 2 : Abandons (endpoint dédié si disponible) ─────────────────
-    let abandonsData: any[] = [];
-    let abandonsStatus: 'ok' | 'fallback' | 'error' = 'fallback';
-    try {
-      const url = new URL(`${baseUrl}/students/abandons`);
-      url.searchParams.append('academicYearId', academicYearId);
-      if (schoolLevelId) url.searchParams.append('schoolLevelId', schoolLevelId);
-
-      const res = await fetchWithTimeout(
-        normalizeApiUrl(url.toString()),
+      ),
+      fetchWithTimeout(
+        normalizeApiUrl(abandonsUrl.toString()),
         { headers, cache: 'no-store' },
         8000,
-      ).catch(() => null);
+      ).catch(() => null),
+    ]);
 
+    // ─── Parsing réponse 1 : studentsStats ────────────────────────────────
+    let studentsStats: any = null;
+    let studentsStatsStatus: 'ok' | 'fallback' | 'error' = 'fallback';
+    if (statsRes.status === 'fulfilled' && statsRes.value?.ok) {
+      studentsStats = await statsRes.value.json().catch(() => null);
+      studentsStatsStatus = 'ok';
+    }
+
+    // ─── Parsing réponse 2 : abandonsData ────────────────────────────────
+    let abandonsData: any[] = [];
+    let abandonsStatus: 'ok' | 'fallback' | 'error' = 'fallback';
+    if (abandonsRes.status === 'fulfilled') {
+      const res = abandonsRes.value;
       if (res && res.ok) {
         const data = await res.json().catch(() => null);
         if (Array.isArray(data)) {
@@ -163,53 +174,17 @@ export async function GET(request: NextRequest) {
           abandonsStatus = 'ok';
         }
       }
-    } catch (e) {
-      console.warn('[dashboard/overview] students/abandons failed:', (e as Error).message);
     }
 
-    // ─── Appel 3 : Soldes / scolarités par élève ───────────────────────────
-    let balancesData: any[] = [];
-    let balancesStatus: 'ok' | 'fallback' | 'error' = 'fallback';
-    try {
-      const url = new URL(`${baseUrl}/finance/student-balances`);
-      url.searchParams.append('academicYearId', academicYearId);
-      if (schoolLevelId) url.searchParams.append('schoolLevelId', schoolLevelId);
-
-      const res = await fetchWithTimeout(
-        normalizeApiUrl(url.toString()),
-        { headers, cache: 'no-store' },
-        8000,
-      ).catch(() => null);
-
-      if (res && res.ok) {
-        const data = await res.json().catch(() => null);
-        if (Array.isArray(data)) {
-          balancesData = data;
-          balancesStatus = 'ok';
-        } else if (data && Array.isArray(data.items)) {
-          balancesData = data.items;
-          balancesStatus = 'ok';
-        } else if (data && Array.isArray(data.balances)) {
-          balancesData = data.balances;
-          balancesStatus = 'ok';
-        }
-      }
-    } catch (e) {
-      console.warn('[dashboard/overview] finance/student-balances failed:', (e as Error).message);
-    }
+    // ⚠️ balancesData supprimé — les données financières sont lues directement
+    //    depuis abandonsData[i].totalPaid / totalDue / balance (fournies par le backend)
+    const balancesStatus: 'ok' | 'fallback' | 'error' = 'skipped';
 
     // ─── Agrégation par niveau ─────────────────────────────────────────────
     // Map<levelCode, LevelOverview>
     const levelMap = new Map<string, LevelOverview>();
 
-    // Index des soldes par studentId pour lookup rapide
-    const balanceByStudent = new Map<string, any>();
-    for (const b of balancesData) {
-      if (b && (b.studentId || b.id)) {
-        balanceByStudent.set(b.studentId || b.id, b);
-      }
-    }
-    // Index des abandons par studentId
+    // Index des abandons par studentId (pour lookup rapide)
     const abandonByStudent = new Map<string, any>();
     for (const a of abandonsData) {
       if (a && (a.studentId || a.id)) {
@@ -257,8 +232,21 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. Abandons par niveau
+    //    ⭐ FIX : le backend retourne schoolLevel comme OBJET imbriqué { id, code, name, label }
+    //       Avant : on cherchait abandon.schoolLevelCode à plat → toujours undefined →
+    //       if (!code) continue → tous les abandons skippés → abandons = 0 partout
+    //       Maintenant : on extrait le code depuis abandon.schoolLevel.code (ou .name en fallback)
     for (const abandon of abandonsData) {
-      const code = (abandon.schoolLevelCode || abandon.levelCode || abandon.level || '').toUpperCase();
+      const sl = abandon.schoolLevel || {};
+      const code = (
+        abandon.schoolLevelCode ||
+        abandon.levelCode ||
+        abandon.level ||
+        sl.code ||
+        sl.name ||
+        sl.label ||
+        ''
+      ).toString().toUpperCase();
       if (!code) continue;
       const entry = getLevel(code);
       entry.abandons += 1;
@@ -267,21 +255,23 @@ export async function GET(request: NextRequest) {
       if (isBoy) entry.abandonBoys += 1;
       else if (isGirl) entry.abandonGirls += 1;
 
-      // ⭐ Chercher le solde de scolarité de cet élève abandon
-      const studentId = abandon.studentId || abandon.id;
-      const balance = balanceByStudent.get(studentId);
-      if (balance) {
-        const paid = balance.totalPaid || balance.paidAmount || balance.amountPaid || 0;
-        const due = balance.totalDue || balance.dueAmount || balance.amountDue || 0;
-        const unpaid = Math.max(0, due - paid);
-        if (paid > 0) {
-          entry.abandonsWithPaidTuition += 1;
-          entry.abandonPaidAmount += paid;
-        }
-        if (unpaid > 0) {
-          entry.abandonsWithUnpaidTuition += 1;
-          entry.abandonUnpaidAmount += unpaid;
-        }
+      // ⭐ FIX : les données financières sont directement sur l'objet abandon
+      //    (fournies par le backend /students/abandons : totalDue, totalPaid, balance,
+      //    hasPaidTuition, hasUnpaidTuition, unpaidAmount)
+      //    Avant : on cherchait dans balanceByStudent (Map vide car /finance/student-balances
+      //    n'existait pas) → montants = 0
+      //    Maintenant : on lit directement abandon.totalPaid / abandon.totalDue
+      const paid = Number(abandon.totalPaid || 0);
+      const due = Number(abandon.totalDue || 0);
+      const unpaid = Number(abandon.unpaidAmount || Math.max(0, due - paid));
+
+      if (paid > 0) {
+        entry.abandonsWithPaidTuition += 1;
+        entry.abandonPaidAmount += paid;
+      }
+      if (unpaid > 0) {
+        entry.abandonsWithUnpaidTuition += 1;
+        entry.abandonUnpaidAmount += unpaid;
       }
     }
 

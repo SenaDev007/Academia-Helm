@@ -88,24 +88,32 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // ⭐ PARALLÉLISATION des 4 appels backend (au lieu de 4 awaits séquentiels)
+    //    Avant : 4 fetchs × 12s timeout = 48s dans le pire cas
+    //    Maintenant : 4 fetchs en parallèle = 12s dans le pire cas
+    const [kpiResult, saData, ovrData, studentsStatsResult] = await Promise.all([
+      fetchBackend('/finance/reports/kpi'),
+      fetchBackend('/finance/student-accounts?exportAll=true'),
+      fetchBackend('/finance/fee-structures/overrides?limit=10000'),
+      fetchBackend('/students/statistics'),
+    ]);
+
     // ─── 1. KPI global (source de vérité pour les totaux) ─────────────
-    const kpi = await fetchBackend('/finance/reports/kpi') || {};
+    const kpi = kpiResult || {};
 
     // ─── 2. Student-accounts ───────────────────────────────────────────
     //    ⭐ exportAll=true pour récupérer TOUS les comptes (backend plafonne à 500 sans ce flag)
-    const saData = await fetchBackend('/finance/student-accounts?exportAll=true');
     const studentAccounts: any[] = Array.isArray(saData)
       ? saData
       : (saData?.items || saData?.data || saData?.accounts || []);
 
     // ─── 3. Overrides ──────────────────────────────────────────────────
-    const ovrData = await fetchBackend('/finance/fee-structures/overrides?limit=10000');
     const overrides: any[] = Array.isArray(ovrData)
       ? ovrData
       : (ovrData?.items || ovrData?.overrides || ovrData?.data || []);
 
     // ─── 4. Students statistics ────────────────────────────────────────
-    const studentsStats = await fetchBackend('/students/statistics') || {};
+    const studentsStats = studentsStatsResult || {};
 
     // ─── 5. Agréger par niveau ─────────────────────────────────────────
     const levelMap = new Map<string, any>();

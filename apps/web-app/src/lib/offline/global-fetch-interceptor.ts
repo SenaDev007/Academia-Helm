@@ -63,11 +63,17 @@ export function installGlobalFetchInterceptor(): void {
     }
 
     // ⭐ Ne pas intercepter les routes d'auth/sync/export (NetworkOnly)
+    // ⭐ Ne pas intercepter non plus les routes dashboard BFF : ce sont des agrégations
+    //    complexes qui changent à chaque requête (selon academicYearId, schoolLevelId),
+    //    les cacher dans IDB n'a pas de sens business et masque les timeouts backend
+    //    (l'utilisateur attend 8-12s au lieu de voir une erreur immédiate).
+    //    Les routes dashboard sont déjà couvertes par le cache HTTP Next.js (s-maxage=60).
     const NEVER_INTERCEPT = [
       '/api/auth/',
       '/api/sync/',
       '/api/admin-auth/',
       '/api/portal/auth/',
+      '/api/dashboard/', // ⭐ BFF agrégations — pas de cache IDB
       '/export',
       '/pdf',
       '/download',

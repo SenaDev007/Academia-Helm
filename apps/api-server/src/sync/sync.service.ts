@@ -98,7 +98,7 @@ export class SyncService {
     this.logger.log(`Pull request: tables=${dto.tables?.length || 'all'}, lastSync=${lastSyncAt ? 'delta' : 'initial'}, tenant=${tenantId || 'none'}`);
 
     const tables = dto.tables?.length ? dto.tables : await this.getTableNames();
-    const limit = dto.limit || 500;
+    const limit = dto.limit || 5000; // ⭐ Augmenté de 500 à 5000 pour récupérer plus de données
 
     // ⭐ OPTIMISATION MAJEURE :
     //    Avant : pour chaque table on appelait columnExists() 2x

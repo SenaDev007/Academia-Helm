@@ -9,7 +9,7 @@ use log::{info, warn, error};
 // ============================================================================
 
 const SYNC_INTERVAL_MS: u64 = 60 * 60 * 1000; // 1 heure
-const BATCH_SIZE: usize = 500;
+const BATCH_SIZE: usize = 5000; // ⭐ Augmenté de 500 à 5000 pour récupérer plus de données
 const MAX_RETRIES: u32 = 3;
 const API_BASE_URL: &str = "https://api.academiahelm.com/api";
 
@@ -57,7 +57,10 @@ pub struct OutboxRecord {
 }
 
 /// Réponse de l'API /api/sync/pull
+/// ⭐ rename_all = "camelCase" pour matcher le JSON du backend NestJS
+///    qui renvoie pulledAt (pas pulled_at), totalRecords (pas total_records)
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct PullResponse {
     success: bool,
     pulled_at: String,
@@ -215,9 +218,13 @@ async fn pull_changes(app: &AppHandle, sync_type: &str) -> Result<u64, String> {
     };
 
     // Construire le body de la requête
+    // ⭐ Inclure le tenantId pour filtrer les données par école
+    //    Avant : pas de tenantId → le backend retournait les données de TOUTES les écoles
+    let tenant_id = get_tenant_id(app);
     let body = serde_json::json!({
         "lastSyncAt": last_sync,
         "limit": BATCH_SIZE,
+        "tenantId": tenant_id,
     });
 
     // Appel HTTP vers /api/sync/pull
@@ -336,6 +343,15 @@ async fn push_outbox(app: &AppHandle) -> Result<u64, String> {
 // ============================================================================
 // SQLite Operations — via tauri-plugin-sql (Database plugin)
 // ============================================================================
+
+/// Récupère le tenantId depuis le Tauri Store
+fn get_tenant_id(_app: &AppHandle) -> Option<String> {
+    // Le tenantId est stocké dans le Tauri Store par le web-app (layout-client.tsx)
+    // Pour l'instant, on ne peut pas lire le Store depuis Rust directement,
+    // donc on retourne None et le backend filtrera via le JWT.
+    // ⭐ Le backend devrait extraire le tenantId du JWT pour sécuriser.
+    None
+}
 
 async fn is_online() -> bool {
     // Tenter un HEAD request vers l'API avec un timeout court

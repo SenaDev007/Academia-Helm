@@ -549,24 +549,26 @@ function normalizeToIdbStoreName(type: string): string {
   // 2) Retirer les séparateurs (underscore, tiret, espace)
   name = name.replace(/[_\-\s]+/g, '');
 
-  // ⭐ NE PLUS SINGULARISER !
-  //    Les stores IndexedDB sont créés à partir des noms de tables SQL
-  //    (qui sont au pluriel par convention Prisma : school_settings, students,
-  //    teachers, etc.). La convention IndexedDB est donc :
-  //      - lowercase
-  //      - sans séparateurs
-  //      - GARDER LE PLURIEL (ne pas retirer le 's' final)
+  // ⭐ SINGULARISER — les stores IndexedDB sont au singulier (student, teacher, payment)
+  //    Le backend renvoie des noms de tables au pluriel (students, teachers, payments)
+  //    Il faut donc singulariser pour matcher les stores IDB réels.
   //
-  //    Avant : on singularisait (school_settings → schoolsetting) ce qui
-  //    ne correspondait pas aux stores réellement créés (schoolsettings).
-  //    → erreur "store not in IndexedDB" sur ~30% des tables → sync échec.
-  //
-  //    Maintenant : on garde le pluriel. Si le backend retourne "students",
-  //    on obtient "students" qui correspond bien au store IDB "students".
-  //
-  //    Cas particulier : si le backend retourne déjà un singulier (ex: "class"
-  //    au lieu de "classes"), on le garde tel quel — les stores IDB singuliers
-  //    sont rares mais existent (ex: "class", "exam").
+  //    Règles de singularisation :
+  //    - "ies" → "y"  (categories → category, entries → entry)
+  //    - "ses" → "s"  (classes → class, glasses → glass) — ATTENTION : classes → class (pas clas)
+  //    - "xes" → "x"  (boxes → box)
+  //    - "s" (non "ss") → retirer le "s"  (students → student, teachers → teacher)
+  //    - pas de "s" final → garder tel quel (staff, data, etc.)
+
+  if (name.endsWith('ies') && name.length > 3) {
+    name = name.slice(0, -3) + 'y';       // categories → category
+  } else if (name.endsWith('ses') && name.length > 3) {
+    name = name.slice(0, -2);              // classes → class (retire "es")
+  } else if (name.endsWith('xes') && name.length > 3) {
+    name = name.slice(0, -2);              // boxes → box
+  } else if (name.endsWith('s') && !name.endsWith('ss') && name.length > 1) {
+    name = name.slice(0, -1);              // students → student, teachers → teacher
+  }
 
   return name;
 }

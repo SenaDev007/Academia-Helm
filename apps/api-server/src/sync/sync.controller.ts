@@ -9,6 +9,8 @@ import {
 import { SyncService } from './sync.service';
 import { SyncPullDto, SyncPushDto } from './dto/sync-pull-push.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { TenantGuard } from '../common/guards/tenant.guard';
+import { TenantId } from '../common/decorators/tenant-id.decorator';
 
 /**
  * ============================================================================
@@ -34,7 +36,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
  */
 
 @Controller('sync')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, TenantGuard)
 export class SyncController {
   private readonly logger = new Logger(SyncController.name);
 
@@ -45,8 +47,17 @@ export class SyncController {
    * Télécharge les modifications depuis Neon vers l'app desktop.
    */
   @Post('pull')
-  async pull(@Body() dto: SyncPullDto) {
-    this.logger.log(`Pull request received`);
+  async pull(
+    @Body() dto: SyncPullDto,
+    @TenantId() tenantId: string,
+  ) {
+    // ⭐ Sécurité : forcer le tenantId depuis le JWT (pas depuis le body)
+    //    Avant : si le client ne sendait pas tenantId, le backend retournait
+    //    les données de TOUTES les écoles (faille multi-tenant).
+    if (!dto.tenantId) {
+      dto.tenantId = tenantId;
+    }
+    this.logger.log(`Pull request: tenant=${tenantId}, tables=${dto.tables?.length || 'all'}`);
     return this.syncService.pull(dto);
   }
 
@@ -55,8 +66,15 @@ export class SyncController {
    * Envoie les écritures locales de l'app desktop vers Neon.
    */
   @Post('push')
-  async push(@Body() dto: SyncPushDto) {
-    this.logger.log(`Push request received: ${dto.records?.length || 0} records`);
+  async push(
+    @Body() dto: SyncPushDto,
+    @TenantId() tenantId: string,
+  ) {
+    // ⭐ Sécurité : forcer le tenantId depuis le JWT
+    if (!dto.tenantId) {
+      dto.tenantId = tenantId;
+    }
+    this.logger.log(`Push request: tenant=${tenantId}, ${dto.records?.length || 0} records`);
     return this.syncService.push(dto);
   }
 

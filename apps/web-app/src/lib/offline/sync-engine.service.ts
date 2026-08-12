@@ -572,6 +572,103 @@ function normalizeToIdbStoreName(type: string): string {
 }
 
 /**
+ * ⭐ Pousse uniquement les changements locaux (outbox) vers Neon.
+ *    Ne fait PAS de pull — utile pour envoyer rapidement ses modifications
+ *    sans attendre le téléchargement complet des données distantes.
+ *
+ *    Utilisé par le bouton "Push only" dans le header de l'app.
+ */
+export async function pushOutbox(
+  tenantId: string,
+  deviceId?: string,
+  onProgress?: SyncProgressCallback,
+): Promise<{
+  pushed: number;
+  conflicts: number;
+  errors: number;
+}> {
+  const { hash } = await getSchemaHash();
+
+  const pending = await outboxService.getPendingEvents(tenantId, BATCH_SIZE);
+
+  // Trier par priorité avant l'envoi
+  const sortedPending = [...pending].sort((a, b) => {
+    const prioA = ENTITY_PRIORITY[a.entityType] || 0;
+    const prioB = ENTITY_PRIORITY[b.entityType] || 0;
+    return prioB - prioA; // Décroissant
+  });
+
+  if (sortedPending.length === 0) {
+    return { pushed: 0, conflicts: 0, errors: 0 };
+  }
+
+  const body = {
+    tenantId,
+    sqliteSchemaHash: hash,
+    sqliteVersion: SQLITE_VERSION,
+    device_id: deviceId,
+    operations: sortedPending.map((e) => toBackendOperation(e, deviceId)),
+  };
+
+  const pushRes = await fetchWithAuth(`${SYNC_API}/push`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  const pushData = await pushRes.json().catch(() => ({}));
+
+  if (!pushRes.ok) {
+    throw new Error(pushData?.message || pushData?.error || 'Push failed');
+  }
+
+  const pushed = pushData.successful_operations ?? 0;
+  const conflicts = pushData.conflicted_operations ?? 0;
+  const errors = pushData.failed_operations ?? 0;
+
+  const results = pushData.results || [];
+  const pendingById = new Map(sortedPending.map((e) => [e.id, e]));
+
+  for (const r of results) {
+    const eventId = r.operation_id;
+    const ev = pendingById.get(eventId);
+    if (r.status === 'SUCCESS') {
+      await outboxService.markAsSynced(eventId);
+      // Clear the _isDirty flag on the synced entity in IndexedDB
+      if (ev) {
+        try {
+          const storeName = ENTITY_TO_TABLE[ev.entityType] || `${ev.entityType.toLowerCase()}s`;
+          const entities = await localDb.query<{ id: string; _isDirty?: boolean; _lastSync?: string }>(storeName);
+          const entity = entities.find((e) => e.id === ev.entityId);
+          if (entity && entity._isDirty) {
+            await localDb.execute(storeName, 'put', {
+              ...entity,
+              _isDirty: false,
+              _lastSync: new Date().toISOString(),
+            });
+          }
+        } catch {
+          // Store may not exist — not an error
+        }
+      }
+    } else if (r.status === 'CONFLICT') {
+      await outboxService.markAsConflict(eventId, r.conflict_reason || 'Conflit');
+      try {
+        await localDb.execute('sync_conflicts', 'add', {
+          id: `conflict-${eventId}-${Date.now()}`,
+          table_name: ev?.entityType ?? 'unknown',
+          local_data: JSON.stringify(ev?.payload ?? {}),
+          server_data: JSON.stringify(r.server_data ?? {}),
+          detected_at: new Date().toISOString(),
+        });
+      } catch (_) { /* store non présent */ }
+    } else {
+      await outboxService.markAsFailed(eventId, r.error_message || 'Erreur');
+    }
+  }
+
+  return { pushed, conflicts, errors };
+}
+
+/**
  * Lance la synchronisation (push puis pull) pour un tenant
  */
 export async function runSync(
@@ -593,82 +690,11 @@ export async function runSync(
     pulled: {} as Record<string, number>,
   };
 
-  const { hash } = await getSchemaHash();
-  
   // 1. PUSH (Envoyer les changements locaux)
-  const pending = await outboxService.getPendingEvents(tenantId, BATCH_SIZE);
-  
-  // Trier par priorité avant l'envoi
-  const sortedPending = [...pending].sort((a, b) => {
-    const prioA = ENTITY_PRIORITY[a.entityType] || 0;
-    const prioB = ENTITY_PRIORITY[b.entityType] || 0;
-    return prioB - prioA; // Décroissant
-  });
-
-  if (sortedPending.length > 0) {
-    const body = {
-      tenantId,
-      sqliteSchemaHash: hash,
-      sqliteVersion: SQLITE_VERSION,
-      device_id: deviceId,
-      operations: sortedPending.map((e) => toBackendOperation(e, deviceId)),
-    };
-    
-    const pushRes = await fetchWithAuth(`${SYNC_API}/push`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    });
-    const pushData = await pushRes.json().catch(() => ({}));
-
-    if (!pushRes.ok) {
-      throw new Error(pushData?.message || pushData?.error || 'Push failed');
-    }
-
-    result.pushed = pushData.successful_operations ?? 0;
-    result.conflicts = pushData.conflicted_operations ?? 0;
-    result.errors = pushData.failed_operations ?? 0;
-
-    const results = pushData.results || [];
-    const pendingById = new Map(sortedPending.map((e) => [e.id, e]));
-    
-    for (const r of results) {
-      const eventId = r.operation_id;
-      const ev = pendingById.get(eventId);
-      if (r.status === 'SUCCESS') {
-        await outboxService.markAsSynced(eventId);
-        // Clear the _isDirty flag on the synced entity in IndexedDB
-        if (ev) {
-          try {
-            const storeName = ENTITY_TO_TABLE[ev.entityType] || `${ev.entityType.toLowerCase()}s`;
-            const entities = await localDb.query<{ id: string; _isDirty?: boolean; _lastSync?: string }>(storeName);
-            const entity = entities.find((e) => e.id === ev.entityId);
-            if (entity && entity._isDirty) {
-              await localDb.execute(storeName, 'put', {
-                ...entity,
-                _isDirty: false,
-                _lastSync: new Date().toISOString(),
-              });
-            }
-          } catch {
-            // Store may not exist — not an error
-          }
-        }
-      } else if (r.status === 'CONFLICT') {
-        await outboxService.markAsConflict(eventId, r.conflict_reason || 'Conflit');
-        try {
-          await localDb.execute('sync_conflicts', 'add', {
-            id: `conflict-${eventId}-${Date.now()}`,
-            table_name: ev?.entityType ?? 'unknown',
-            local_data: JSON.stringify(ev?.payload ?? {}),
-            server_data: JSON.stringify(r.server_data ?? {}),
-            detected_at: new Date().toISOString(),
-          });
-        } catch (_) { /* store store non présent */ }
-      } else {
-        await outboxService.markAsFailed(eventId, r.error_message || 'Erreur');
-      }
-    }
-  }
+  const pushResult = await pushOutbox(tenantId, deviceId, onProgress);
+  result.pushed = pushResult.pushed;
+  result.conflicts = pushResult.conflicts;
+  result.errors = pushResult.errors;
 
   // 2. PULL (Récupérer les changements serveur)
   const lastSync = await getLastSyncTimestamp(tenantId);
@@ -938,6 +964,7 @@ export async function getSyncState(tenantId: string): Promise<SyncState> {
 
 export const syncEngine = {
   runSync,
+  pushOutbox,
   isOnline,
   getSyncState,
   getLastSyncTimestamp,

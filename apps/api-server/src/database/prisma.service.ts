@@ -148,9 +148,11 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     // Fire-and-forget: warm up in background (non-bloquant pour le bootstrap)
     warmupWithRetry().catch(() => {});
 
-    // Keepalive : ping la BDD toutes les 5 minutes pour garder la connexion chaude.
-    // Évite les timeouts de connexion après une période d'inactivité entre
-    // Railway et Neon PostgreSQL (cold connection = 10-13s, warm = <1s).
+    // Keepalive : ping la BDD toutes les 4 minutes pour garder la connexion chaude.
+    // ⭐ 4 min (pas 5) — le free-tier Neon suspend après 5 min d'inactivité.
+    //    Si on ping exactement à 5 min, une dérive de quelques secondes du
+    //    setInterval laisse Neon suspendre la connexion → erreur P1001.
+    //    4 min garantit que le ping arrive AVANT le seuil de suspension.
     this.keepaliveInterval = setInterval(async () => {
       try {
         await this.$queryRawUnsafe('SELECT 1');
@@ -160,7 +162,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         // se fait en arrière-plan, pas sur une requête utilisateur.
         this.logger.warn('⚠️ Prisma keepalive: connection lost, will retry on next query');
       }
-    }, 5 * 60 * 1000); // 5 minutes
+    }, 4 * 60 * 1000); // 4 minutes (sous le seuil Neon de 5 min)
   }
 
   private keepaliveInterval: NodeJS.Timeout | null = null;

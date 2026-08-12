@@ -24,7 +24,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { RefreshCw, CloudOff, Check, AlertCircle, Cloud } from "lucide-react";
+import { RefreshCw, CloudOff, Check, AlertCircle, Cloud, CloudUpload } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { networkDetectionService } from "@/lib/offline/network-detection.service";
@@ -33,9 +33,11 @@ import { setSyncModalState, addSyncOperation } from "@/components/offline/SyncMo
 export function SyncButton() {
   const [isOnline, setIsOnline] = useState(networkDetectionService.isConnected());
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isPushing, setIsPushing] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [showMenu, setShowMenu] = useState(false);
 
   // ── Écouter les changements de statut réseau ──
   useEffect(() => {
@@ -208,46 +210,145 @@ export function SyncButton() {
     return `Il y a ${diffH}h`;
   };
 
-  return (
-    <button
-      onClick={handleSync}
-      disabled={isSyncing}
-      className={cn(
-        "inline-flex items-center justify-center w-8 h-8 rounded-lg transition-all border shrink-0",
-        !isOnline
-          ? "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100"
-          : isSyncing
-            ? "bg-blue-50 text-blue-700 border-blue-200"
-            : error
-              ? "bg-red-50 text-red-700 border-red-200 hover:bg-red-100"
-              : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100",
-      )}
-      title={
-        !isOnline
-          ? "Hors ligne — la sync reprendra à la reconnexion"
-          : isSyncing
-            ? "Synchronisation en cours..."
-            : error
-              ? `Erreur: ${error}`
-              : `Synchronisé — dernière sync: ${formatLastSync(lastSync)}${pendingCount > 0 ? ` · ${pendingCount} en attente` : ''} — cliquez pour relancer`
+  // ── ⭐ Push only : envoyer uniquement les modifications locales vers Neon ──
+  const handlePushOnly = async () => {
+    setShowMenu(false);
+    if (!isOnline) {
+      toast.info("Hors ligne", {
+        description: "Impossible d'envoyer les données sans connexion.",
+      });
+      return;
+    }
+    if (pendingCount === 0) {
+      toast.info("Rien à envoyer", {
+        description: "Aucune modification en attente.",
+      });
+      return;
+    }
+
+    setIsPushing(true);
+    setError(null);
+
+    try {
+      const { syncEngine } = await import('@/lib/offline/sync-engine.service');
+      let tenantId = '';
+      try {
+        const session = JSON.parse(localStorage.getItem('session') || '{}');
+        tenantId = session?.tenant?.id || session?.tenantId || '';
+      } catch {}
+
+      if (!tenantId) {
+        toast.info("Session requise", { description: "Connectez-vous pour envoyer." });
+        return;
       }
-    >
-      {isSyncing ? (
-        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-      ) : !isOnline ? (
-        <CloudOff className="w-3.5 h-3.5" />
-      ) : error ? (
-        <AlertCircle className="w-3.5 h-3.5" />
-      ) : pendingCount > 0 ? (
-        <span className="relative">
-          <Cloud className="w-3.5 h-3.5" />
-          <span className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center min-w-[14px] h-[14px] px-1 text-[9px] font-bold rounded-full bg-amber-400 text-white">
+
+      setSyncModalState({
+        isVisible: true,
+        isMinimized: false,
+        phase: 'push',
+        message: `Envoi de ${pendingCount} modification(s)...`,
+        pushed: 0, pulled: 0,
+        total: pendingCount, current: 0,
+        operations: [],
+      });
+
+      const result = await syncEngine.pushOutbox(tenantId);
+
+      setPendingCount(0);
+      setSyncModalState({
+        isVisible: true,
+        phase: 'done',
+        message: `${result.pushed} modification(s) envoyée(s)${result.conflicts > 0 ? ` • ${result.conflicts} conflit(s)` : ''}`,
+        pushed: result.pushed,
+        pulled: 0,
+        total: pendingCount,
+        current: pendingCount,
+      });
+
+      setTimeout(() => setSyncModalState({ isVisible: false }), 3000);
+
+      if (result.pushed > 0) {
+        toast.success("Modifications envoyées", {
+          description: `${result.pushed} modification(s) poussée(s) vers le serveur.`,
+        });
+      }
+    } catch (err: any) {
+      setError(err.message);
+      setSyncModalState({ isVisible: true, phase: 'error', message: err.message });
+      setTimeout(() => setSyncModalState({ isVisible: false }), 5000);
+    } finally {
+      setIsPushing(false);
+    }
+  };
+
+  return (
+    <div className="relative inline-flex items-center gap-1">
+      {/* ⭐ Bouton principal : Synchroniser (pull + push) */}
+      <button
+        onClick={handleSync}
+        disabled={isSyncing || isPushing}
+        className={cn(
+          "inline-flex items-center justify-center w-8 h-8 rounded-lg transition-all border shrink-0",
+          !isOnline
+            ? "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100"
+            : isSyncing
+              ? "bg-blue-50 text-blue-700 border-blue-200"
+              : error
+                ? "bg-red-50 text-red-700 border-red-200 hover:bg-red-100"
+                : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100",
+        )}
+        title={
+          !isOnline
+            ? "Hors ligne — la sync reprendra à la reconnexion"
+            : isSyncing
+              ? "Synchronisation en cours..."
+              : error
+                ? `Erreur: ${error}`
+                : `Synchronisé — dernière sync: ${formatLastSync(lastSync)}${pendingCount > 0 ? ` · ${pendingCount} en attente` : ''} — cliquez pour relancer`
+        }
+      >
+        {isSyncing ? (
+          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+        ) : !isOnline ? (
+          <CloudOff className="w-3.5 h-3.5" />
+        ) : error ? (
+          <AlertCircle className="w-3.5 h-3.5" />
+        ) : pendingCount > 0 ? (
+          <span className="relative">
+            <Cloud className="w-3.5 h-3.5" />
+            <span className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center min-w-[14px] h-[14px] px-1 text-[9px] font-bold rounded-full bg-amber-400 text-white">
+              {pendingCount > 9 ? '9+' : pendingCount}
+            </span>
+          </span>
+        ) : (
+          <Check className="w-3.5 h-3.5" />
+        )}
+      </button>
+
+      {/* ⭐ Bouton "Push only" — visible quand il y a des modifications en attente */}
+      {pendingCount > 0 && (
+        <button
+          onClick={handlePushOnly}
+          disabled={isSyncing || isPushing || !isOnline}
+          className={cn(
+            "inline-flex items-center justify-center h-8 px-2 rounded-lg transition-all border shrink-0 text-xs font-semibold gap-1",
+            isPushing
+              ? "bg-blue-50 text-blue-700 border-blue-200"
+              : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100",
+          )}
+          title="Envoyer mes modifications vers le serveur (push only — sans télécharger les mises à jour)"
+        >
+          {isPushing ? (
+            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <CloudUpload className="w-3.5 h-3.5" />
+          )}
+          <span className="hidden sm:inline">Envoyer</span>
+          <span className="inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 text-[9px] font-bold rounded-full bg-amber-400 text-white">
             {pendingCount > 9 ? '9+' : pendingCount}
           </span>
-        </span>
-      ) : (
-        <Check className="w-3.5 h-3.5" />
+        </button>
       )}
-    </button>
+    </div>
   );
 }

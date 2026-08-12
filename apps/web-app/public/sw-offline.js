@@ -23,14 +23,17 @@
  * ============================================================================
  */
 
-const CACHE_VERSION = 'ah-offline-v6'; // ⭐ bump v5 → v6 (offline /app/* shell fallback + pas d'interception online)
+const CACHE_VERSION = 'ah-offline-v6'; // ⭐ bump v5 → v6 (fix offline-first : /app pré-caché + timeouts longs + fallback IndexedDB)
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 
-const API_TIMEOUT = 5000;
-const HTML_TIMEOUT = 3000;
+// ⭐ Timeouts augmentés : Neon cold start = 10-13s, on laisse 8s pour HTML et 10s pour API
+//    Avant : HTML_TIMEOUT=3s → le SW croyait être offline même si Neon était en train
+//    de se réveiller → page blanche "hors ligne" injustifiée.
+const API_TIMEOUT = 10000;
+const HTML_TIMEOUT = 8000;
 
 // Routes à NE JAMAIS cacher
 const NEVER_CACHE = [
@@ -71,6 +74,12 @@ self.addEventListener('install', (event) => {
         '/',
         '/manifest.json',
         '/offline',
+        // ⭐ /app shell — CRITIQUE pour offline-first
+        //    Sans cela, quand internet coupe, le SW ne trouve pas /app en cache
+        //    → fallback sur page "hors ligne" → page blanche.
+        //    Avec /app pré-caché, le shell React se charge depuis le cache
+        //    et l'app fonctionne avec IndexedDB.
+        '/app',
         // Pages publiques (landing + portal)
         '/portal',
         '/school-portal',
@@ -154,7 +163,7 @@ self.addEventListener('fetch', (event) => {
 // ─── Handler spécial pour les pages HTML ───
 async function handlePageRequest(request) {
   const cache = await caches.open(PAGE_CACHE);
-  const requestUrl = new URL(request.url);
+  const url = new URL(request.url);
 
   try {
     // Tenter le réseau avec Timeout court
@@ -171,12 +180,13 @@ async function handlePageRequest(request) {
       return cachedResponse;
     }
 
-    // ⭐ Pour les routes /app/*, retourner le shell /app en cache.
-    //    Le React router prendra le relais côté client et affichera les
-    //    données depuis IndexedDB (intercepteur global fetch).
-    if (requestUrl.pathname.startsWith('/app')) {
-      const appShell = await cache.match('/app') || await cache.match('/');
-      if (appShell) return appShell;
+    // ⭐ Fallback /app : si on navigue vers /app/xxx et que /app est en cache
+    //    (pré-caché à l'install), on retourne le shell /app pour que l'app
+    //    React se charge et utilise IndexedDB.
+    //    Avant : on retombait sur la page "hors ligne" → page blanche.
+    if (url.pathname.startsWith('/app')) {
+      const cachedApp = await caches.match('/app');
+      if (cachedApp) return cachedApp;
     }
 
     // Fallback: essayer la page racine
@@ -276,6 +286,11 @@ async function handlePageRequest(request) {
 
 // ─── Helpers ───
 
+// ─── Handler pour API NetworkFirst avec fallback IndexedDB ───
+// ⭐ Le SW ne peut pas accéder directement à IndexedDB (limite SW),
+//    mais il peut retourner un 200 avec [] pour que l'app React
+//    ne crash pas. L'intercepteur global (dans la fenêtre principale)
+//    se charge de lire IndexedDB pour les requêtes API.
 async function networkFirst(request, cacheName, timeoutMs) {
   const cache = await caches.open(cacheName);
 
@@ -287,8 +302,26 @@ async function networkFirst(request, cacheName, timeoutMs) {
     }
     throw new Error('Network response not ok');
   } catch (err) {
+    // Fallback 1: Cache API (HTTP cache)
     const cachedResponse = await cache.match(request);
     if (cachedResponse) return cachedResponse;
+
+    // Fallback 2: Retourner un 200 avec [] pour les requêtes API
+    //    → l'app React ne crash pas, elle affiche "Aucune donnée"
+    //    → l'intercepteur global (fenêtre principale) va lire IndexedDB
+    //      et remplir les données si disponibles
+    const url = new URL(request.url);
+    if (url.pathname.startsWith('/api/')) {
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        statusText: 'OK (offline — SW fallback)',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Offline-Fallback': 'true',
+        },
+      });
+    }
+
     throw err;
   }
 }

@@ -173,6 +173,13 @@ export class SchoolSearchService {
     } catch (error: any) {
       if (error?.code === 'P1001' || error?.message?.includes('Can\'t reach database server')) {
         this.logger.error('Database connection failed:', error.message);
+        // ⭐ FIX : retourner le cache stale au lieu de 503 → l'utilisateur
+        //    voit la liste des écoles même si Neon dort.
+        const stale = await this.cacheService.get<any[]>(CACHE_KEY_ALL_SCHOOLS).catch(() => null);
+        if (stale && Array.isArray(stale) && stale.length > 0) {
+          this.logger.warn(`listAllSchools: DB unreachable, returning stale cache (${stale.length} schools)`);
+          return stale;
+        }
         throw new ServiceUnavailableException(
           'Service temporairement indisponible. Veuillez réessayer plus tard.'
         );
@@ -282,6 +289,11 @@ export class SchoolSearchService {
     } catch (error: any) {
       if (error?.code === 'P1001' || error?.message?.includes('Can\'t reach database server')) {
         this.logger.error('Database connection failed:', error.message);
+        const stale = await this.cacheService.get<any[]>(CACHE_KEY_SCHOOLS_WITH_JOBS).catch(() => null);
+        if (stale && Array.isArray(stale) && stale.length > 0) {
+          this.logger.warn(`listSchoolsWithJobs: DB unreachable, returning stale cache (${stale.length} schools)`);
+          return stale;
+        }
         throw new ServiceUnavailableException(
           'Service temporairement indisponible. Veuillez réessayer plus tard.',
         );
@@ -353,6 +365,19 @@ export class SchoolSearchService {
     } catch (error: any) {
       if (error?.code === 'P1001' || error?.message?.includes('Can\'t reach database server')) {
         this.logger.error('Database connection failed:', error.message);
+        // ⭐ FIX : retourner le cache stale pour les recherches aussi
+        const stale = await this.cacheService.get<any[]>(CACHE_KEY_ALL_SCHOOLS).catch(() => null);
+        if (stale && Array.isArray(stale) && stale.length > 0) {
+          // Filtrer le cache par terme de recherche
+          const term = searchTerm.toLowerCase();
+          const filtered = stale.filter(s =>
+            (s.name || '').toLowerCase().includes(term) ||
+            (s.subdomain || '').toLowerCase().includes(term) ||
+            (s.city || '').toLowerCase().includes(term)
+          );
+          this.logger.warn(`searchSchools: DB unreachable, returning stale filtered cache (${filtered.length} results)`);
+          return filtered;
+        }
         throw new ServiceUnavailableException(
           'Service temporairement indisponible. Veuillez réessayer plus tard.'
         );

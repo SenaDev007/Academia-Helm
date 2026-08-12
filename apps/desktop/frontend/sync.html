@@ -202,6 +202,98 @@
                 }
                 document.getElementById('continueBtn').style.display = 'inline-flex';
             });
+
+            // ⭐ CRITIQUE : écouter sync-upsert-data PENDANT la sync pour insérer
+            //    les données dans SQLite. Avant, seul app.html écoutait cet événement,
+            //    mais app.html n'est pas ouvert pendant la sync → données perdues !
+            const _tableColumnsCache = {}; // Cache des colonnes par table
+            listen('sync-upsert-data', async (event) => {
+                const { table, records } = event.payload || {};
+                if (!table || !records || records.length === 0) return;
+
+                addLog('info', `Insertion de ${records.length} enregistrements dans ${table}...`);
+
+                try {
+                    const sql = window.__TAURI__?.sql;
+                    if (sql) {
+                        const db = await sql.Database.load('sqlite:academia_helm.db');
+
+                        // ⭐ Récupérer les colonnes de la table SQLite une seule fois
+                        let validColumns = _tableColumnsCache[table];
+                        if (!validColumns) {
+                            try {
+                                const cols = await db.select(`PRAGMA table_info("${table}")`);
+                                validColumns = new Set(cols.map(c => c.name));
+                                _tableColumnsCache[table] = validColumns;
+                            } catch (_) {
+                                // La table n'existe pas en SQLite → la créer avec les colonnes du premier record
+                                if (records.length > 0) {
+                                    const firstRecord = records[0];
+                                    const colDefs = Object.keys(firstRecord).map(col => {
+                                        const val = firstRecord[col];
+                                        let type = 'TEXT';
+                                        if (typeof val === 'number') type = val % 1 === 0 ? 'INTEGER' : 'REAL';
+                                        if (typeof val === 'boolean') type = 'INTEGER';
+                                        return `"${col}" ${type}`;
+                                    });
+                                    try {
+                                        await db.execute(`CREATE TABLE IF NOT EXISTS "${table}" (${colDefs.join(', ')})`);
+                                        validColumns = new Set(Object.keys(firstRecord));
+                                        _tableColumnsCache[table] = validColumns;
+                                        addLog('info', `Table "${table}" créée avec ${validColumns.size} colonnes`);
+                                    } catch (e) {
+                                        addLog('error', `Impossible de créer la table ${table}: ${e}`);
+                                        return;
+                                    }
+                                } else {
+                                    return;
+                                }
+                            }
+                        }
+
+                        let inserted = 0;
+                        let skipped = 0;
+                        for (const record of records) {
+                            try {
+                                // Ne garder que les colonnes qui existent dans la table SQLite
+                                const filteredEntries = Object.entries(record).filter(([k]) => validColumns.has(k));
+                                if (filteredEntries.length === 0) { skipped++; continue; }
+
+                                const columns = filteredEntries.map(([k]) => `"${k}"`);
+                                const values = filteredEntries.map(([, v]) => {
+                                    if (v === null || v === undefined) return 'NULL';
+                                    if (typeof v === 'number') return v.toString();
+                                    if (typeof v === 'boolean') return v ? '1' : '0';
+                                    return `'${String(v).replace(/'/g, "''")}'`;
+                                });
+                                const sqlText = `INSERT OR REPLACE INTO "${table}" (${columns.join(', ')}) VALUES (${values.join(', ')})`;
+                                await db.execute(sqlText);
+                                inserted++;
+                            } catch (err) {
+                                skipped++;
+                            }
+                        }
+                        addLog('success', `✓ ${inserted}/${records.length} insérés dans ${table}${skipped > 0 ? ` (${skipped} ignorés)` : ''}`);
+
+                        // Mettre à jour les métadonnées de sync
+                        try {
+                            await db.execute(
+                                `INSERT OR REPLACE INTO _sync_metadata (table_name, last_sync_at, records_pulled, records_pushed) VALUES ('${table}', datetime('now'), ${inserted}, 0)`
+                            );
+                        } catch (_) {}
+
+                        // Mettre à jour les stats affichées
+                        const pulledEl = document.getElementById('recordsPulled');
+                        const tablesEl = document.getElementById('tablesSynced');
+                        const currentPulled = parseInt(pulledEl.textContent) || 0;
+                        const currentTables = parseInt(tablesEl.textContent) || 0;
+                        pulledEl.textContent = currentPulled + inserted;
+                        tablesEl.textContent = currentTables + 1;
+                    }
+                } catch (e) {
+                    addLog('error', `Erreur insertion ${table}: ${e}`);
+                }
+            });
         }
 
         async function startSync() {

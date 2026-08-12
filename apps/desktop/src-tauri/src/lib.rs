@@ -36,6 +36,12 @@ pub fn run() {
                         sql: include_str!("../migrations/002_full_schema_sqlite.sql"),
                         kind: tauri_plugin_sql::MigrationKind::Up,
                     },
+                    tauri_plugin_sql::Migration {
+                        version: 3,
+                        description: "create_outbox_triggers",
+                        sql: include_str!("../migrations/003_outbox_triggers.sql"),
+                        kind: tauri_plugin_sql::MigrationKind::Up,
+                    },
                 ])
                 .build(),
         )

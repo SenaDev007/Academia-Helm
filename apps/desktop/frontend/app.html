@@ -172,6 +172,13 @@
         async function loadData() {
             const content = document.getElementById('content');
 
+            // ⭐ OFFLINE-FIRST : toujours charger les données depuis SQLite,
+            //    que ce soit online ou offline. Le réseau ne doit jamais
+            //    bloquer l'affichage des données locales.
+            //    Avant : en offline, seul un message "Mode hors ligne" était affiché
+            //    sans charger les données → page vide.
+            content.innerHTML = '';
+
             if (!isOnline) {
                 content.innerHTML = `
                     <div class="offline-notice">
@@ -184,14 +191,12 @@
                             <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
                             <line x1="12" y1="20" x2="12.01" y2="20"/>
                         </svg>
-                        Mode hors ligne — Les données affichées proviennent du cache local. Les modifications seront synchronisées au retour de la connexion.
+                        Mode hors ligne — Données locales. Les modifications seront synchronisées au retour de la connexion.
                     </div>
                 `;
-            } else {
-                content.innerHTML = '';
             }
 
-            // Try to query SQLite via Tauri
+            // Try to query SQLite via Tauri (toujours, même en offline)
             try {
                 const sql = window.__TAURI__?.sql;
                 if (sql) {
@@ -202,6 +207,7 @@
                     await loadStats(content);
                     await loadRecentStudents(content);
                     await loadRecentPayments(content);
+                    await loadPendingOutbox(content);
                 } else {
                     // Tauri SQL not available — show demo data
                     showDemoData(content);
@@ -330,6 +336,31 @@
                     </div>
                 </div>
             `);
+        }
+
+        // ⭐ Affiche les écritures en attente de synchronisation (outbox)
+        async function loadPendingOutbox(container) {
+            try {
+                const pending = await db.select("SELECT table_name, operation, record_id, created_at FROM _sync_outbox WHERE status = 'pending' ORDER BY created_at DESC LIMIT 10");
+                if (!pending || pending.length === 0) return;
+
+                const opLabels = { INSERT: 'Création', UPDATE: 'Modification', DELETE: 'Suppression' };
+                const html = `
+                    <div class="section">
+                        <div class="section-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                            Écritures en attente (${pending.length})
+                        </div>
+                        <table>
+                            <thead><tr><th>Table</th><th>Opération</th><th>Record ID</th><th>Date</th></tr></thead>
+                            <tbody>
+                                ${pending.map(p => `<tr><td>${p.table_name}</td><td>${opLabels[p.operation] || p.operation}</td><td>${(p.record_id || '—').substring(0,8)}</td><td>${p.created_at || '—'}</td></tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', html);
+            } catch(e) { console.log('Outbox load failed:', e); }
         }
 
         // ── Sync ──

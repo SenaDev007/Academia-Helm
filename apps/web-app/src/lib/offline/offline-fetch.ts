@@ -131,6 +131,9 @@ function hasRealData(data: any): boolean {
 
 /**
  * Requête réseau standard avec headers d'authentification
+ * ⭐ Ajoute le header X-Offline-Internal pour court-circuiter l'intercepteur
+ *    global-fetch-interceptor.ts et éviter la récursion infinie :
+ *    patchedFetch → offlineMutation → networkFetch → fetch (= patchedFetch) → ...
  */
 async function networkFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(url, {
@@ -139,6 +142,7 @@ async function networkFetch<T>(url: string, options: RequestInit = {}): Promise<
     headers: {
       'Content-Type': 'application/json',
       ...getClientAuthorizationHeader(),
+      'X-Offline-Internal': 'true', // ⭐ guard de réentrance
       ...options.headers,
     },
   });

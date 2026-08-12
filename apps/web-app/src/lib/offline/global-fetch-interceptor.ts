@@ -41,10 +41,36 @@ export function installGlobalFetchInterceptor(): void {
 
   const originalFetch = window.fetch;
 
+  // ⭐ GUARD DE RÉENTRANCE — empêche la récursion infinie quand offlineMutation
+  //    appelle fetch() qui est intercepté à nouveau par patchedFetch.
+  //    Sans ce guard, les mutations POST/PUT/DELETE vers URLs à store IDB connu
+  //    causent une boucle infinie : patchedFetch → offlineMutation → networkFetch
+  //    → fetch (= patchedFetch) → offlineMutation → ...
+  //    Le header X-Offline-Internal est détecté en début de patchedFetch et
+  //    court-circuite vers originalFetch.
+  const INTERNAL_HEADER = 'X-Offline-Internal';
+
   window.fetch = async function patchedFetch(
     input: RequestInfo | URL,
     init?: RequestInit,
   ): Promise<Response> {
+    // ⭐ GUARD DE RÉENTRANCE — si l'appelant a posé le header interne, on bypass
+    //    l'intercepteur et on appelle directement originalFetch.
+    //    Cas d'usage : offlineMutation appelle networkFetch qui fait fetch()
+    //    avec ce header pour éviter la récursion.
+    if (init?.headers) {
+      const headers = new Headers(init.headers);
+      if (headers.has(INTERNAL_HEADER)) {
+        // Retirer le header avant l'envoi (il ne doit pas partir vers le serveur)
+        const cleanInit = { ...init, headers: undefined };
+        // Recopier les headers sans le header interne
+        const newHeaders = new Headers(headers);
+        newHeaders.delete(INTERNAL_HEADER);
+        cleanInit.headers = newHeaders;
+        return originalFetch.call(window, input, cleanInit);
+      }
+    }
+
     // ⭐ Extraire l'URL
     let url: string;
     if (typeof input === 'string') {

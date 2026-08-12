@@ -400,7 +400,7 @@
             } catch(e) { stats.push({ icon: '👥', color: '#10b981', value: '—', label: 'Personnel' }); }
 
             try {
-                const payments = await db.select("SELECT COUNT(*) as count FROM finance_transactions WHERE created_at > date('now','-30 days') LIMIT 1");
+                const payments = await db.select("SELECT COUNT(*) as count FROM finance_transactions WHERE createdAt > date('now','-30 days') LIMIT 1");
                 stats.push({ icon: '💰', color: '#f59e0b', value: payments[0]?.count || 0, label: 'Paiements (30j)' });
             } catch(e) { stats.push({ icon: '💰', color: '#f59e0b', value: '—', label: 'Paiements (30j)' }); }
 
@@ -423,7 +423,7 @@
 
         async function loadRecentStudents(container) {
             try {
-                const students = await db.select('SELECT first_name, last_name, matricule, created_at FROM students ORDER BY created_at DESC LIMIT 5');
+                const students = await db.select('SELECT firstName, lastName, matricule, createdAt FROM students ORDER BY createdAt DESC LIMIT 5');
                 if (students.length === 0) return;
 
                 const html = `
@@ -435,7 +435,7 @@
                         <table>
                             <thead><tr><th>Nom</th><th>Matricule</th><th>Date</th></tr></thead>
                             <tbody>
-                                ${students.map(s => `<tr><td>${s.first_name} ${s.last_name}</td><td>${s.matricule || '—'}</td><td>${s.created_at || '—'}</td></tr>`).join('')}
+                                ${students.map(s => `<tr><td>${s.firstName} ${s.lastName}</td><td>${s.matricule || '—'}</td><td>${s.createdAt || '—'}</td></tr>`).join('')}
                             </tbody>
                         </table>
                     </div>
@@ -446,7 +446,7 @@
 
         async function loadRecentPayments(container) {
             try {
-                const payments = await db.select("SELECT * FROM finance_transactions ORDER BY created_at DESC LIMIT 5");
+                const payments = await db.select("SELECT * FROM finance_transactions ORDER BY createdAt DESC LIMIT 5");
                 if (payments.length === 0) return;
 
                 const html = `
@@ -458,7 +458,7 @@
                         <table>
                             <thead><tr><th>ID</th><th>Montant</th><th>Date</th></tr></thead>
                             <tbody>
-                                ${payments.map(p => `<tr><td>${p.id?.substring(0,8) || '—'}</td><td>${p.amount || '—'}</td><td>${p.created_at || '—'}</td></tr>`).join('')}
+                                ${payments.map(p => `<tr><td>${p.id?.substring(0,8) || '—'}</td><td>${p.amount || '—'}</td><td>${p.createdAt || '—'}</td></tr>`).join('')}
                             </tbody>
                         </table>
                     </div>
@@ -501,9 +501,11 @@
         }
 
         // ⭐ Affiche les écritures en attente de synchronisation (outbox)
+        //    Schéma _sync_outbox après migration 004 : colonnes camelCase
+        //    (tableName, recordId, createdAt, status)
         async function loadPendingOutbox(container) {
             try {
-                const pending = await db.select("SELECT table_name, operation, record_id, created_at FROM _sync_outbox WHERE status = 'pending' ORDER BY created_at DESC LIMIT 10");
+                const pending = await db.select("SELECT tableName, operation, recordId, createdAt FROM _sync_outbox WHERE status = 'pending' ORDER BY createdAt DESC LIMIT 10");
                 if (!pending || pending.length === 0) return;
 
                 const opLabels = { INSERT: 'Création', UPDATE: 'Modification', DELETE: 'Suppression' };
@@ -516,7 +518,7 @@
                         <table>
                             <thead><tr><th>Table</th><th>Opération</th><th>Record ID</th><th>Date</th></tr></thead>
                             <tbody>
-                                ${pending.map(p => `<tr><td>${p.table_name}</td><td>${opLabels[p.operation] || p.operation}</td><td>${(p.record_id || '—').substring(0,8)}</td><td>${p.created_at || '—'}</td></tr>`).join('')}
+                                ${pending.map(p => `<tr><td>${p.tableName}</td><td>${opLabels[p.operation] || p.operation}</td><td>${(p.recordId || '—').substring(0,8)}</td><td>${p.createdAt || '—'}</td></tr>`).join('')}
                             </tbody>
                         </table>
                     </div>

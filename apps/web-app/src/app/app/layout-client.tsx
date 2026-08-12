@@ -145,6 +145,10 @@ export default function AppLayoutClient({
   //    ralentissait les requêtes dashboard → 30s-1min de chargement.
   //    Maintenant : dashboard charge en ~5s (network direct), puis bootstrap
   //    démarre en arrière-plan.
+  // ⭐ FIX EAGER FLAG : le flag localStorage est posé SEULEMENT après que le
+  //    bootstrap a effectivement démarré (dans le .then()). Avant, il était
+  //    posé avant l'appel → si le setTimeout était clear ou si l'import
+  //    échouait, la session suivante sautait le bootstrap → IDB vide.
   useEffect(() => {
     if (!tenant?.id) return;
 
@@ -154,13 +158,15 @@ export default function AppLayoutClient({
 
     // ⭐ DIFFÉRER le bootstrap de 5s pour ne pas concurrencer le dashboard
     const bootstrapTimer = setTimeout(() => {
-      // Marquer comme bootstrapé pour ce tenant juste avant de lancer
-      localStorage.setItem(bootstrapKey, 'true');
-
       import('@/lib/offline/offline-sync.service').then(({ offlineSyncService }) => {
+        // ⭐ Marquer comme bootstrapé SEULEMENT après que l'import a réussi
+        //    et juste avant de lancer le bootstrap effectif.
+        //    Si l'import échoue, le flag n'est pas posé → retry au prochain mount.
+        localStorage.setItem(bootstrapKey, 'true');
         offlineSyncService.bootstrap(tenant.id);
       }).catch((err) => {
-        console.warn('[Bootstrap] Failed:', err);
+        // ⭐ Ne PAS poser le flag si l'import a échoué → retry au prochain mount
+        console.warn('[Bootstrap] Failed to import offline-sync.service:', err);
       });
     }, 5000);
 

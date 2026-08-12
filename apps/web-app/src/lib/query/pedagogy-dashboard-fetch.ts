@@ -1,11 +1,17 @@
 /**
  * Fetchers HTTP pour le tableau de bord pédagogique (routes Next /api).
+ * ⭐ PERF : ne pas utiliser `cache: 'no-store'` pour permettre au navigateur
+ *    et au CDN de cacher les réponses selon les headers Cache-Control du serveur.
+ *    Les routes BFF dashboard ont `s-maxage=60, stale-while-revalidate=300`
+ *    → navigations suivantes instantanées (cache CDN + navigateur).
  */
 export async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url, {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    cache: 'no-store',
+    // ⭐ Pas de `cache: 'no-store'` — on respecte les Cache-Control du serveur
+    //    next: { revalidate: 60 } pour Next.js (en plus du Cache-Control HTTP)
+    next: { revalidate: 60 },
   });
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as { message?: string; error?: string };

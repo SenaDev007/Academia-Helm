@@ -76,10 +76,12 @@ export async function GET(request: NextRequest) {
     const qsStr = qs.toString();
 
     // Helper : fetch backend NestJS directement
+    // ⭐ TIMEOUT RÉDUIT à 5s (avant : 12s × 4 appels = 48s dans le pire cas)
+    //    Maintenant : 4 appels en parallèle × 5s = 5s max
     async function fetchBackend(path: string): Promise<any> {
       try {
         const url = normalizeApiUrl(`${baseUrl}${path}${path.includes('?') ? '&' : '?'}${qsStr}`);
-        const res = await fetchWithTimeout(url, { headers, cache: 'no-store' }, 12000);
+        const res = await fetchWithTimeout(url, { headers, cache: 'no-store' }, 5000);
         if (!res.ok) return null;
         return await res.json().catch(() => null);
       } catch (e) {
@@ -284,7 +286,9 @@ export async function GET(request: NextRequest) {
       recouvrementParClasse,
     }, {
       status: 200,
-      headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120' },
+      headers: {
+        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+      },
     });
   } catch (error) {
     console.error('Error in /api/dashboard/finance-overview:', error);

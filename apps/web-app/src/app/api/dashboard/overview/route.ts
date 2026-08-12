@@ -135,16 +135,20 @@ export async function GET(request: NextRequest) {
     //      (champs totalDue, totalPaid, balance, hasPaidTuition, hasUnpaidTuition, unpaidAmount)
     //   3. L'appel fantôme causait un timeout silencieux de 8s à chaque requête dashboard
 
+    // ⭐ TIMEOUT RÉDUIT à 5s (avant : 12s + 8s = 20s dans le pire cas)
+    //    Si le backend ne répond pas en 5s, on affiche les données partielles
+    //    plutôt que de faire attendre l'utilisateur. Les requêtes suivantes
+    //    (refresh) récupéreront les données manquantes.
     const [statsRes, abandonsRes] = await Promise.allSettled([
       fetchWithTimeout(
         normalizeApiUrl(statsUrl.toString()),
         { headers, cache: 'no-store' },
-        12000,
+        5000,
       ),
       fetchWithTimeout(
         normalizeApiUrl(abandonsUrl.toString()),
         { headers, cache: 'no-store' },
-        8000,
+        5000,
       ).catch(() => null),
     ]);
 
@@ -303,7 +307,13 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response, {
       status: 200,
-      headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120' },
+      // ⭐ CACHE HTTP AGRESSIF pour navigations suivantes instantanées
+      //    s-maxage=60 : Vercel/CDN cache la réponse 60s
+      //    stale-while-revalidate=300 : sert le cache périmé pendant 5min pendant
+      //    qu'on revalide en arrière-plan → navigations suivantes = 0ms
+      headers: {
+        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+      },
     });
   } catch (error) {
     console.error('Error in /api/dashboard/overview:', error);

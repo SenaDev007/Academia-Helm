@@ -139,6 +139,12 @@ export default function AppLayoutClient({
   //    Avant : le flag 'academia_helm_bootstrapped' restait 'true' même si
   //    l'utilisateur changeait de tenant → IndexedDB n'était jamais re-bootstrapé
   //    pour le nouveau tenant.
+  // ⭐ PERF : le bootstrap est DIFFÉRÉ de 5 secondes après le montage pour
+  //    laisser le dashboard se charger sans concurrence réseau. Avant, le
+  //    bootstrap (24 chunks de 25 tables) saturait le pool backend et
+  //    ralentissait les requêtes dashboard → 30s-1min de chargement.
+  //    Maintenant : dashboard charge en ~5s (network direct), puis bootstrap
+  //    démarre en arrière-plan.
   useEffect(() => {
     if (!tenant?.id) return;
 
@@ -146,14 +152,19 @@ export default function AppLayoutClient({
     const bootstrapKey = `academia_helm_bootstrapped_${tenant.id}`;
     if (localStorage.getItem(bootstrapKey) === 'true') return;
 
-    // Marquer comme bootstrapé pour ce tenant
-    localStorage.setItem(bootstrapKey, 'true');
+    // ⭐ DIFFÉRER le bootstrap de 5s pour ne pas concurrencer le dashboard
+    const bootstrapTimer = setTimeout(() => {
+      // Marquer comme bootstrapé pour ce tenant juste avant de lancer
+      localStorage.setItem(bootstrapKey, 'true');
 
-    import('@/lib/offline/offline-sync.service').then(({ offlineSyncService }) => {
-      offlineSyncService.bootstrap(tenant.id);
-    }).catch((err) => {
-      console.warn('[Bootstrap] Failed:', err);
-    });
+      import('@/lib/offline/offline-sync.service').then(({ offlineSyncService }) => {
+        offlineSyncService.bootstrap(tenant.id);
+      }).catch((err) => {
+        console.warn('[Bootstrap] Failed:', err);
+      });
+    }, 5000);
+
+    return () => clearTimeout(bootstrapTimer);
   }, [tenant?.id]);
 
   return (

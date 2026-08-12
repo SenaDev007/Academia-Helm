@@ -486,6 +486,12 @@ async function setLastSyncTimestamp(tenantId: string, iso: string): Promise<void
 
 /**
  * Convertit un événement outbox en opération attendue par le backend (spec ERP)
+ *
+ * ⭐ `local_id` est envoyé explicitement pour l'idempotence côté backend
+ *    (voir sync.service.ts → INSERT INTO _sync_outbox). Si le réseau coupe
+ *    pendant que le serveur a traité l'écriture mais avant que la réponse
+ *    ne revienne, le retry renverra le MÊME local_id et le serveur saura
+ *    qu'il peut skip sans réappliquer.
  */
 function toBackendOperation(event: OutboxEvent, deviceId?: string) {
   const tableName = ENTITY_TO_TABLE[event.entityType] || event.entityType.toLowerCase() + 's';
@@ -496,7 +502,8 @@ function toBackendOperation(event: OutboxEvent, deviceId?: string) {
     version: event.localVersion ?? 1,
   };
   return {
-    id: event.id,
+    id: event.id,                    // ID outbox local (rétro-compat)
+    local_id: event.id,              // ⭐ explicite pour l'idempotence backend
     table_name: tableName,
     record_id: event.entityId,
     operation_type: operationType,

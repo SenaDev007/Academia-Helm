@@ -72,10 +72,18 @@ struct PullResponse {
 #[derive(Serialize)]
 struct PushRequest {
     records: Vec<PushRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tenant_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    device_id: Option<String>,
 }
 
 #[derive(Serialize)]
 struct PushRecord {
+    /// ⭐ local_id pour l'idempotence côté backend (table _sync_outbox).
+    ///    Si le réseau coupe avant que la réponse ne revienne, le retry
+    ///    renverra le MÊME local_id et le serveur saura qu'il peut skip.
+    local_id: String,
     table_name: String,
     record_id: String,
     operation: String,
@@ -297,6 +305,7 @@ async fn push_outbox(app: &AppHandle) -> Result<u64, String> {
     let push_records: Vec<PushRecord> = pending
         .iter()
         .map(|r| PushRecord {
+            local_id: r.id.to_string(), // ⭐ id local de l'outbox SQLite
             table_name: r.table_name.clone(),
             record_id: r.record_id.clone(),
             operation: r.operation.clone(),
@@ -305,7 +314,11 @@ async fn push_outbox(app: &AppHandle) -> Result<u64, String> {
         })
         .collect();
 
-    let push_request = PushRequest { records: push_records };
+    let push_request = PushRequest {
+        records: push_records,
+        tenant_id: get_tenant_id(app), // ⭐ optionnel — backend extrait du JWT
+        device_id: None,
+    };
 
     // Appel HTTP vers /api/sync/push
     let client = reqwest::Client::new();

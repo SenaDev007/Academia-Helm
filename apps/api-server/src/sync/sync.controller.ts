@@ -64,6 +64,11 @@ export class SyncController {
   /**
    * POST /api/sync/push
    * Envoie les écritures locales de l'app desktop vers Neon.
+   *
+   * ⭐ Idempotence : chaque enregistrement doit avoir un `localId` (ou `id`).
+   *    Le service vérifie dans `_sync_outbox` si ce local_id a déjà été traité
+   *    pour ce tenant. Si oui, il renvoie SUCCESS sans réappliquer.
+   *    Voir create_sync_outbox_idempotency.sql pour le schéma.
    */
   @Post('push')
   async push(
@@ -74,8 +79,8 @@ export class SyncController {
     if (!dto.tenantId) {
       dto.tenantId = tenantId;
     }
-    this.logger.log(`Push request: tenant=${tenantId}, ${dto.records?.length || 0} records`);
-    return this.syncService.push(dto);
+    this.logger.log(`Push request: tenant=${tenantId}, ${dto.records?.length || dto.operations?.length || 0} records`);
+    return this.syncService.push(dto, tenantId);
   }
 
   /**

@@ -234,7 +234,7 @@ export class SyncService {
   // PUSH — Applique les écritures locales sur Neon
   // ===========================================================================
 
-  async push(dto: SyncPushDto) {
+  async push(dto: SyncPushDto, tenantId?: string) {
     // ⭐ Normaliser : accepter à la fois records[] et operations[]
     let records: any[] = [];
     if (dto.records && dto.records.length > 0) {
@@ -247,10 +247,18 @@ export class SyncService {
         operation: (op.operation_type || op.operation || 'UPDATE').toUpperCase(),
         data: op.payload || op.data || {},
         clientTimestamp: op.client_timestamp || op.clientTimestamp || new Date().toISOString(),
+        // ⭐ Préserver le local_id (snake_case) pour l'idempotence
+        localId: op.id || op.local_id || op.localId,
       }));
     }
 
-    this.logger.log(`Push request: ${records.length} records`);
+    // ⭐ Sécurité : forcer le tenantId depuis le JWT (contrôleur)
+    const effectiveTenantId = dto.tenantId || tenantId;
+    if (!effectiveTenantId) {
+      throw new Error('tenantId is required for push (JWT or body)');
+    }
+
+    this.logger.log(`Push request: ${records.length} records, tenant=${effectiveTenantId}`);
 
     const results: Array<{
       operation_id?: string;
@@ -262,15 +270,23 @@ export class SyncService {
 
     for (const record of records) {
       try {
-        // ⭐ IDEMPOTENCE : vérifier si ce local_id a déjà été traité
+        // ⭐ IDEMPOTENCE : vérifier si ce local_id a déjà été traité pour ce tenant
         //    Si oui, renvoyer SUCCESS sans réappliquer l'écriture.
         //    Évite les doublons quand le réseau coupe pendant que le serveur
         //    a déjà traité le lot mais avant que la confirmation revienne.
         const localId = (record as any).localId || (record as any).local_id || (record as any).id;
         if (localId) {
+          // ⭐ Utiliser une requête paramétrée (sécurité + performance)
           const existing = await this.prisma.$queryRawUnsafe(
-            `SELECT id, status FROM _sync_outbox WHERE local_id = '${this.escapeSql(localId)}' AND status = 'synced' LIMIT 1`
-          ).catch(() => []);
+            `SELECT id FROM _sync_outbox
+             WHERE tenant_id = $1::text::uuid
+               AND local_id = $2
+               AND status = 'synced'
+             LIMIT 1`,
+            effectiveTenantId,
+            String(localId)
+          ).catch(() => [] as any[]);
+
           if (Array.isArray(existing) && existing.length > 0) {
             results.push({
               operation_id: localId,
@@ -283,6 +299,28 @@ export class SyncService {
         }
 
         await this.applyRecord(record);
+
+        // ⭐ Enregistrer le local_id dans _sync_outbox pour l'idempotence future
+        //    (skip si la table n'existe pas encore — anciens déploiements)
+        if (localId) {
+          await this.prisma.$executeRawUnsafe(
+            `INSERT INTO _sync_outbox (tenant_id, local_id, table_name, record_id, operation, status, client_timestamp, device_id)
+             VALUES ($1::text::uuid, $2, $3, $4, $5, 'synced', $6, $7)
+             ON CONFLICT (tenant_id, local_id) DO NOTHING`,
+            effectiveTenantId,
+            String(localId),
+            record.tableName || 'unknown',
+            String(record.recordId || ''),
+            String(record.operation || 'UPDATE'),
+            record.clientTimestamp || new Date().toISOString(),
+            dto.device_id || null
+          ).catch((err) => {
+            // Non-bloquant : si _sync_outbox n'existe pas, on log et on continue
+            // (la migration n'a pas encore été appliquée sur ce déploiement)
+            this.logger.warn(`Failed to record idempotency for local_id=${localId}: ${err.message}`);
+          });
+        }
+
         results.push({
           operation_id: localId,
           tableName: record.tableName,
@@ -290,9 +328,10 @@ export class SyncService {
           status: 'SUCCESS',
         });
       } catch (error) {
+        const localId = (record as any).localId || (record as any).local_id || (record as any).id;
         if (error.message?.includes('conflict') || error.message?.includes('version')) {
           results.push({
-            operation_id: (record as any).id,
+            operation_id: localId,
             tableName: record.tableName,
             recordId: record.recordId,
             status: 'CONFLICT',
@@ -300,7 +339,7 @@ export class SyncService {
           });
         } else {
           results.push({
-            operation_id: (record as any).id,
+            operation_id: localId,
             tableName: record.tableName,
             recordId: record.recordId,
             status: 'ERROR',

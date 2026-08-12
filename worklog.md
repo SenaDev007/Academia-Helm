@@ -3289,3 +3289,164 @@ Stage Summary:
 - Frontend type-check : 0 erreurs
 - ⚠️ auth_notifier.dart (Flutter) modifié dans le submodule — commit séparé nécessaire
 - Files modified: 10 + 1 new (ConflictResolutionModal.tsx)
+
+---
+Task ID: 2026-08-13-auto-push-sync-completion
+Agent: main
+Task: Finaliser l'implémentation du déclencheur de push automatique selon la spec Claude (9 exigences) sur 3 plateformes (Web, Flutter, Tauri) + backend idempotence.
+
+Work Log:
+
+=== CONSTAT INITIAL ===
+Audit rapide de l'existant après les phases 1-2-5 précédentes :
+- Web : auto-sync-trigger.ts + pushOutbox batch + Background Sync API → ✅ opérationnel
+- Tauri : polling 1h + push_outbox → ✅ opérationnel (amélioration possible avec if-watch, non-bloquant)
+- Flutter : FlutterSyncEngine existe MAIS n'est JAMAIS instancié → 🚨 CODE MORT
+- Backend : /api/sync/push accepte batch + check idempotence sur _sync_outbox MAIS :
+  * La table _sync_outbox N'EXISTE PAS sur Postgres (check toujours vide)
+  * Aucun INSERT n'est fait après applyRecord → idempotence cassée
+  * Requête SQL vulnérable à injection (escapeSql custom)
+- Tauri PushRecord : n'envoie pas local_id → idempotence impossible
+
+=== 1. FLUTTER — Wire FlutterSyncEngine (gap critique) ===
+
+1.1 Nouveau fichier : lib/core/offline/flutter_sync_provider.dart
+- Provider Riverpod `flutterSyncEngineProvider` qui crée le singleton
+- Dépendances : dioProvider (avec AuthInterceptor) + Connectivity()
+- ref.onDispose → engine.stop() pour cleanup propre
+
+1.2 Modification : lib/core/widgets/adaptive_scaffold.dart
+- Conversion ConsumerWidget → ConsumerStatefulWidget (pour initState)
+- initState : ref.read(flutterSyncEngineProvider).start() dans postFrameCallback
+- build : ref.watch(flutterSyncEngineProvider) pour garder le provider en vie
+- _currentIndex moved to State getter (utilise widget.destinations)
+
+1.3 Refactor : lib/core/offline/flutter_sync_engine.dart
+- Constructeur ne prend plus OfflineDbService (lazy via getInstance())
+- _pullChanges : try/catch par table, skip tables inconnues (5 tables connues :
+  students, classes, payments, attendance_records, exam_scores)
+- _pushOutbox : parsing robuste du JSON outbox (data peut être String ou Map)
+- Vérification isOnline avant chaque retry (pas juste avant la boucle)
+- Traitement des results individuels (SUCCESS/CONFLICT/ERROR) avec markOutboxSynced
+- DioException typé explicitement
+- Jitter clamp(1000, 120000) pour éviter délais négatifs ou explosifs
+
+=== 2. BACKEND — Idempotence réelle sur _sync_outbox ===
+
+2.1 Migration SQL : prisma/migrations/create_sync_outbox_idempotency.sql
+- Création table _sync_outbox sur Postgres (UUID, tenant_id, local_id, status, ...)
+- Contrainte UNIQUE (tenant_id, local_id) — un local_id traité une seule fois par tenant
+- Index sur (tenant_id, local_id) WHERE status='synced' (recherche rapide)
+- Index sur synced_at pour nettoyage périodique (>30 jours)
+- Function cleanup_old_sync_outbox_entries(days_to_keep INT) pour cron pg_cron
+- Commentaires SQL pour documentation
+
+2.2 Modification : src/sync/sync.service.ts (push method)
+- Ajout paramètre tenantId (passé par contrôleur depuis JWT)
+- Validation : throw si pas de tenantId (sécurité)
+- Conversion operations[] → records[] préserve localId (op.id || op.local_id || op.localId)
+- Requête idempotence paramétrée ($1, $2) au lieu de string interpolation (sécurité SQL)
+- Cast $1::text::uuid pour conversion string → UUID Postgres
+- Après applyRecord succès : INSERT INTO _sync_outbox ON CONFLICT DO NOTHING
+  (non-bloquant si la table n'existe pas — migration pas encore appliquée)
+- error.message?.includes('conflict') → CONFLICT au lieu de ERROR
+
+2.3 Modification : src/sync/sync.controller.ts
+- Push endpoint : passe tenantId au syncService.push(dto, tenantId)
+- Doc JSDoc : explique l'idempotence et la table _sync_outbox
+
+=== 3. WEB — Envoi explicite de local_id ===
+
+3.1 Modification : apps/web-app/src/lib/offline/sync-engine.service.ts
+- toBackendOperation : ajoute `local_id: event.id` (en plus de `id` pour rétro-compat)
+- Commentaire JSDoc explique le scénario de retry réseau et l'idempotence
+
+=== 4. TAURI — Envoi de local_id dans PushRecord ===
+
+4.1 Modification : apps/desktop/src-tauri/src/sync/mod.rs
+- PushRecord struct : ajoute `local_id: String` (premier champ)
+- PushRequest struct : ajoute `tenant_id: Option<String>` et `device_id: Option<String>`
+  (skip_serializing_if Option::is_none pour ne pas envoyer de nulls)
+- push_outbox : local_id = r.id.to_string() (ID SQLite AUTOINCREMENT)
+- tenant_id = get_tenant_id(app) (actuellement None, backend extrait du JWT)
+
+=== 5. VÉRIFICATIONS ===
+
+5.1 Web auto-sync-trigger.ts (audit)
+- Déjà câblé dans layout-client.tsx (ligne 131) ✅
+- Background Sync API register('sync-outbox') présent ✅
+- sw-offline.js : handler 'sync' event → postMessage BACKGROUND_SYNC_TRIGGER ✅
+- Listener côté client → debounce 500ms → autoSync ✅
+- Mutex global isAutoSyncing ✅
+- Backoff exponentiel [2s, 5s, 15s, 45s, 60s] + jitter ±20% ✅
+- Max 10 retries avant markAsFailed ✅
+- BATCH_SIZE = 50 ✅
+
+5.2 Backend (sans node_modules, audit manuel)
+- push() method accepte records[] ET operations[] ✅
+- Idempotence check paramétrée ($1, $2) ✅
+- INSERT ON CONFLICT DO NOTHING après applyRecord ✅
+- catch err non-bloquant si table _sync_outbox absente ✅
+
+5.3 Flutter (sans flutter CLI, audit manuel)
+- flutterSyncEngineProvider exposé ✅
+- AHAdaptiveScaffold démarre l'engine au montage ✅
+- FlutterSyncEngine.start() idempotent (_started flag) ✅
+- Écoute connectivity_plus → debounce 1.5s → _autoSync ✅
+- Mutex _isSyncing ✅
+- _pullChanges : bulkUpsert par table avec try/catch ✅
+- _pushOutbox : batch 50, retry backoff, markOutboxSynced par record ✅
+
+=== HONEST SLA ASSESSMENT (30s objectif) ===
+
+⚠️ Le SLA de 30s "retour réseau → fin de sync" est HONNÊTE seulement
+   pour des volumes modérés. Voici les scénarios réels au Bénin :
+
+1. Petit volume (< 50 events, 3G stable)
+   - Push : ~1-3s (50 events × ~50ms par requête batch)
+   - Pull : skip si <5min depuis dernier pull
+   - Total : ~3-5s ✅ SLA respecté
+
+2. Volume moyen (50-200 events, 3G instable)
+   - Push : 2-4 batches × 1-3s = ~5-12s
+   - Pull : si déclenché, ~5-10s pour 5 tables × ~1-2s chacune
+   - Total : ~10-22s ✅ SLA respecté
+
+3. Gros volume (200+ events, connexion faible edge)
+   - Push : 4-10 batches × 2-5s = ~10-50s ⚠️
+   - Pull : ~10-30s pour tables pleines
+   - Total : 20-80s ⚠️ SLA potentiellement dépassé
+   - Mitigation : batches de 50 limitent la perte (si coupure, les lots
+     déjà poussés restent en succès), et le retry reprend là où il s'est arrêté
+
+4. Bootstrap initial (premier login, ~5000 records par table)
+   - HORS SLA — explicitement hors scope (déclenché manuellement une seule fois)
+   - ~5-15 minutes selon connexion
+
+⚠️ Le déclencheur n'est pas instantané :
+   - Debounce 1.5s pour filtrer les flaps réseau (nécessaire au Bénin rural)
+   - Donc le T0 est "1.5s après retour réseau stable", pas "au retour réseau"
+
+=== DÉCISIONS NON PRISES (améliorations futures, non-bloquants) ===
+
+1. Bannière UX "Synchronisation..." pendant le push auto
+   → SyncButton affiche déjà un badge avec count. Cosmétique.
+
+2. Tauri start_auto_sync réactif au retour réseau (if-watch)
+   → Actuellement polling 1h. L'utilisateur va cliquer "Sync manuelle"
+     ou fermer/rouvrir l'app. Amélioration, pas bloqueur.
+
+3. Flutter WorkManager/BGTaskScheduler (sync en arrière-plan app fermée)
+   → Foreground sync via connectivity_plus fonctionne déjà.
+     Le cas d'usage principal (enseignant en classe avec app ouverte) est couvert.
+
+Stage Summary:
+- Flutter : FlutterSyncEngine enfin câblé (provider + shell) — n'était JAMAIS instancié avant
+- Backend : table _sync_outbox créée + INSERT après applyRecord → idempotence RÉELLE
+- Sécurité : requêtes SQL paramétrées ($1, $2) au lieu de string interpolation
+- Tauri : local_id ajouté au PushRecord pour idempotence
+- Web : local_id envoyé explicitement dans toBackendOperation
+- SLA 30s : honnête pour <200 events, peut dépasser pour gros volumes (mitigation via batches)
+- Files modified: 6 (flutter_sync_provider.dart new, flutter_sync_engine.dart, adaptive_scaffold.dart, sync.service.ts, sync.controller.ts, sync-engine.service.ts web)
+- Files added: 1 (create_sync_outbox_idempotency.sql migration)
+- ⚠️ Action requise : appliquer la migration SQL sur Neon (Railway/Fly) + recompiler Tauri + rebuild Flutter APK

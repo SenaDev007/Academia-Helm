@@ -3188,3 +3188,104 @@ Stage Summary:
 - Frontend type-check : 0 erreurs
 - ⚠️ Backend (Railway) doit être redéployé pour les fixes 2 et 3
 - Files modified: 4 + 1 new (BulkActionModal.tsx)
+
+---
+Task ID: 2026-08-12-offline-first-phases-1-2-5
+Agent: main
+Task: Implémentation des phases 1 (quick wins), 2 (verrou sécurité) et 5 (nettoyage) de l'offline-first.
+
+Work Log:
+
+=== PHASE 1 — QUICK WINS (câblage) ===
+
+1.1 AUTH WEB — hasLocalSessionHints() au montage de LoginPage.tsx
+- Ajout useEffect au montage qui vérifie hasLocalSessionHints()
+- Si session locale valide → auto-redirect vers /app sans attendre clic
+- Avant : l'utilisateur voyait la page de login même si sa session était valide
+  → page blanche si réseau coupé.
+
+1.2 AUTH FLUTTER — _restoreSession() check connectivity_plus avant /me
+- Import connectivity_plus dans auth_notifier.dart
+- Si offline : restaure session depuis TokenStorage.getSessionUserSync()
+  + TokenStorage.getSessionTenantSync() + TokenStorage.getAccessToken()
+  → pas d'appel /me, pas de déconnexion
+- Avant : _restoreSession() forçait fetch /me → déconnexion en offline.
+
+1.3 3 HOOKS CRITIQUES — offlineMutation au lieu de fetch() direct
+- useMarkAttendance.ts : fetch('/api/attendance') → offlineMutation('/api/attendance', 'POST', data, { tenantId })
+- useSaveGrades.ts : fetch('/api/exams/evaluations/.../grades') → offlineMutation(...)
+- useRecordPayment.ts : financeService.createTransaction() → offlineMutation('/api/finance/transactions', 'POST', data, { tenantId })
+- Avant : fetch() échouait en offline → onError rollback → action perdue (pas d'outbox)
+- Maintenant : offlineMutation écrit en IndexedDB + outbox → synchronisation auto à la reconnexion
+
+1.4 PRÉCACHER CHUNKS JS dans sw-offline.js
+- Retirer l'exclusion /\/_next\/static\/chunks\// du NEVER_CACHE
+- Les chunks JS sont maintenant cachés via StaleWhileRevalidate (déjà configuré pour /_next/static/*)
+- Avant : /app HTML en cache mais chunks JS manquants → page blanche offline
+- Maintenant : chunks JS remplis au premier passage online, servis depuis le cache en offline
+
+=== PHASE 2 — VERROU DE SÉCURITÉ DONNÉES ===
+
+2.1 MERGE_FIELDS sur Finance + Notes (au lieu de LAST_WRITE_WINS)
+- CRITICAL_ENTITIES Set dans dual-write.service.ts + outbox.service.ts
+- 10 entités sensibles : FINANCE_TRANSACTION, STUDENT_ACCOUNT, FEE_OVERRIDE,
+  FEE_STRUCTURE, PAYMENT, EXAM_SCORE, GRADE, REPORT_CARD, ATTENDANCE_RECORD, BULLETIN
+- getConflictStrategyForEntity() retourne MERGE_FIELDS pour ces entités
+- Avant : LAST_WRITE_WINS partout → celui qui sync en dernier écrase l'autre silencieusement
+  → une transaction financière pouvait disparaître sans que personne ne le sache
+- Maintenant : MERGE_FIELDS fusionne les champs ({ ...serverData, ...localData })
+
+2.2 ConflictResolutionModal — composant UI
+- Nouveau composant ConflictResolutionModal.tsx (170 lignes)
+- Auto-monté dans layout-client.tsx
+- Vérifie les conflits toutes les 30s (store sync_conflicts)
+- 3 options par conflit : Garder ma version (CLIENT_WINS) / Garder la version
+  serveur (SERVER_WINS) / Fusionner (MERGE_FIELDS)
+- Comparaison côte à côte des données locales vs serveur (JSON formaté)
+- Header ambre + body scrollable + footer "Plus tard"
+
+2.3 PIN OFFLINE pour SessionLockScreen
+- Au login réussi : hash SHA-256 du mot de passe stocké dans localStorage
+  (academia_helm_pin_hash + academia_helm_pin_email)
+- Au déverrouillage : si navigator.onLine === false, compare le hash saisi
+  avec le hash stocké via crypto.subtle.digest('SHA-256')
+- Si correct → déverrouille sans appel réseau
+- Si incorrect → "Mot de passe incorrect (vérification hors ligne)"
+- Si pas de hash stocké → "Déverrouillage hors ligne impossible"
+- Avant : handleUnlock() faisait fetch('/api/auth/login') → échouait en offline
+
+=== PHASE 5 — NETTOYAGE ===
+
+5.1 Étendre URL_TO_STORE (store-names.ts)
+- +45 patterns ajoutés couvrant les routes non mappées :
+  * Pédagogie : pedagogy-space/, pedagogy/daily-logs, pedagogy/class-logs,
+    pedagogy/subjects, pedagogy/teachers, pedagogy/timetables, pedagogy/
+    academic-levels, pedagogy/academic-series, pedagogy/academic-cycles,
+    pedagogy/rooms, pedagogy/control, pedagogy/weekly-reports
+  * Communication : templates, automations, campaigns, scheduled, channels, inbox
+  * Dashboard : overview, finance-overview, age-distribution, grade-analytics,
+    hr-overview, tuition-personalizations, grade-evolution
+  * ORION : kpis, dashboard, audit, intelligence, bilingual
+  * Finance : cash-registers, collection-summary, collection-cases,
+    collection-reminders, arrears, recovery
+  * RH : positions, collaborators, planning, reporting, cnss, taxes
+  * Students : transfers, documents, id-cards, admissions, movements, abandons
+  * Billing : subscriptions, invoices
+  * Meetings : minutes, decisions
+- Avant : ~80 patterns (couvrait ~70% des routes API)
+- Maintenant : ~125 patterns (couvrent ~95% des routes API)
+
+=== COMMIT + PUSH ===
+Commit b42f9366 : 'feat: offline-first phases 1-2-5 — auth + hooks + sécurité + cache'
+Push réussi vers origin/main (ab719cf8..b42f9366)
+11 files changed, 429 insertions(+), 32 deletions(-)
+
+Stage Summary:
+- Phase 1 (4 quick wins) : login auto-redirect web + restore session Flutter +
+  3 hooks offlineMutation + chunks JS précachés
+- Phase 2 (3 verrous) : MERGE_FIELDS sur 10 entités critiques +
+  ConflictResolutionModal + PIN offline pour SessionLockScreen
+- Phase 5.1 : +45 routes API mappées dans store-names.ts
+- Frontend type-check : 0 erreurs
+- ⚠️ auth_notifier.dart (Flutter) modifié dans le submodule — commit séparé nécessaire
+- Files modified: 10 + 1 new (ConflictResolutionModal.tsx)

@@ -3450,3 +3450,195 @@ Stage Summary:
 - Files modified: 6 (flutter_sync_provider.dart new, flutter_sync_engine.dart, adaptive_scaffold.dart, sync.service.ts, sync.controller.ts, sync-engine.service.ts web)
 - Files added: 1 (create_sync_outbox_idempotency.sql migration)
 - ⚠️ Action requise : appliquer la migration SQL sur Neon (Railway/Fly) + recompiler Tauri + rebuild Flutter APK
+
+---
+Task ID: 2026-08-13-P0-to-P2-fixes-complete
+Agent: main + subagent (P2)
+Task: Correction exhaustive de tous les gaps P0 à P2 identifiés par l'audit offline-first.
+
+Work Log:
+
+=== P0 #1 — BACKEND MULTI-TENANT BYPASS (CRITIQUE SÉCURITÉ) ===
+- sync.controller.ts : `dto.tenantId = tenantId;` (écrasement inconditionnel du JWT)
+  AVANT : `if (!dto.tenantId) dto.tenantId = tenantId;` → un client malveillant pouvait
+  envoyer `tenantId: '<uuid-autre-école>'` dans le body et récupérer/écrire chez un autre tenant
+- sync.service.ts : `pull(dto, jwtTenantId)` et `push(dto, jwtTenantId)` — le tenantId vient
+  UNIQUEMENT du JWT, jamais du body
+- applyInsert : injecte `tenantId` + `tenant_id` du JWT dans le payload (écrase toute valeur client)
+- applyUpdate : clause WHERE = `id = $X AND (tenant_id = $Y OR tenantId = $Y)` → cross-tenant blocked
+- applyDelete : idem
+- Si 0 ligne affectée → vérifie si cross-tenant et lève une erreur explicite
+
+=== P0 #5 — BACKEND EXCLUDED_TABLES COMPLET ===
+Ajouté au set EXCLUDED_TABLES :
+- User, users (hashes de mots de passe)
+- PasswordResetToken, password_reset_tokens
+- Session, sessions
+- RefreshToken, refresh_tokens
+- ApiKey, api_keys, TenantApiKey, tenant_api_keys
+- EmailVerificationToken, email_verification_tokens
+- TwoFactorSecret, two_factor_secrets
+- UserSession, user_sessions
+- MagicLinkToken, magic_link_tokens
+- OAuthAccount, oauth_accounts
+- WebAuthnCredential, webauthn_credentials
+- BackupCode, backup_codes
+- AppRelease, app_releases
+- FeatureFlag, feature_flags, TenantFeatureFlag, tenant_feature_flags
+- DeploymentLog, deployment_logs
+
+=== BACKEND — WHITELIST + REQUÊTES PARAMÉTRÉES ===
+- syncableTablesCache : Set<string> construit au démarrage (OnModuleInit)
+- refreshSyncableTablesCache() toutes les 10 min (CACHE_TTL_MS)
+- pullTableFast : tenant_id bindé en paramètre ($1::text::uuid) au lieu de string interpolation
+- applyInsert : valeurs bindées ($1, $2, ...) au lieu de escapeSql
+- applyUpdate/applyDelete : id et tenantId bindés
+- Cap limit à 10000 (anti-DoS)
+- Tables non whitelistées → refusées avec erreur explicite
+
+=== P0 #2 — FLUTTER SCHÉMA MISMATCH (CRITIQUE) ===
+- offline_db.dart : toutes les colonnes en camelCase (tenantId, firstName, lastName, ...)
+  AVANT : snake_case → backend renvoie camelCase → "no such column: tenantId" → 0 record écrit
+- Ajout d'index sur tenantId pour accélérer les requêtes offline
+- _sync_outbox : id TEXT (UUID) au lieu de INTEGER AUTOINCREMENT
+
+=== P0 #4 — FLUTTER + TAURI local_id AUTOINCREMENT → UUID ===
+- offline_db_service.dart : _generateUuid() génère un UUID v4 pour chaque event outbox
+  AVANT : AUTOINCREMENT → deux appareils du même tenant avaient local_id="1" →
+  fausse idempotence backend (le 2e était considéré comme déjà synchronisé)
+- markOutboxSynced(String) au lieu de markOutboxSynced(int)
+- Nouvelles méthodes : markOutboxConflict, markOutboxFailed
+- Tauri OutboxRecord.id : String (UUID) au lieu de i64
+
+=== P0 #3 — TAURI PUSH JAMAIS EXÉCUTÉ (CRITIQUE) ===
+- sync/mod.rs : push_outbox émet 'sync-push-outbox' event vers le frontend
+  AVANT : get_pending_outbox_records retournait vec![] → push jamais exécuté
+- app.html : listener 'sync-push-outbox' avec :
+  * Lecture SQLite `SELECT * FROM _sync_outbox WHERE status='pending'`
+  * fetch('/api/sync/push') en batch de 50
+  * Marquage individuel SUCCESS/CONFLICT/ERROR via db.execute
+  * Émission 'sync-push-complete' vers Rust avec le count
+- Rust attend la réponse avec timeout 30s
+
+=== P1 #6 — FLUTTER DOUBLE OUTBOX ===
+- offline_service.dart : _syncOutbox() désactivé (vidage du Hive outbox)
+  Le SQLite outbox géré par FlutterSyncEngine prend le relais (avec idempotence)
+  AVANT : Hive outbox poussait vers endpoints métier directs sans idempotence
+
+=== P1 #7 — FLUTTER RE-PUSH DONNÉES SERVEUR ===
+- offline_db_service.dart : skipOutbox: true par défaut sur bulkUpsert
+  AVANT : bulkUpsert appelait _addToOutbox silencieusement → re-push infini des données serveur
+- upsertStudent, insertPayment, markAttendance, saveExamScore : paramètre skipOutbox
+- Tous les repositories : skipOutbox: true pendant le dual-write online
+
+=== P1 #8 — FLUTTER CONFLITS AVALÉS SILENCIEUSEMENT ===
+- flutter_sync_engine.dart :
+  * CONFLICT → markOutboxConflict (AVANT : markOutboxSynced → conflit perdu)
+  * ERROR → markOutboxFailed (AVANT : restait pending indéfiniment)
+  * Compteurs conflictCount et errorCount affichés dans les logs
+
+=== P1 #9 — FLUTTER tenant_id HARDCODED '' ===
+- payment_repository_impl.dart : _getTenantId() depuis TokenStorage
+- grade_repository_impl.dart : idem
+- absence_repository_impl.dart : idem
+- child_repository_impl.dart : idem
+- student_repository_impl.dart : idem
+  AVANT : 'tenant_id': '' → aucun record ne matchait en offline
+
+=== P1 #10 — FLUTTER StudentRepositoryImpl BYPASS OUTBOX ===
+- createStudent : écrit dans SQLite + outbox si offline (skipOutbox: false)
+- updateStudent : idem
+- getStudents : bulkUpsert avec skipOutbox: true (pas de re-push)
+- getStudentById : fallback offline SQLite
+  AVANT : createStudent/updateStudent appelaient directement _studentApi → échouaient en offline
+
+=== P1 #11 — TAURI PushResponse MISMATCH ===
+- #[serde(rename_all = "camelCase")] ajouté
+- Champs : successful_operations, conflicted_operations, failed_operations
+  AVANT : succès, conflicts, errors → ne matchait pas le JSON backend
+- Nouveau PushResultEntry pour traitement individuel des résultats
+
+=== P1 #12 — TAURI mark_outbox_record_synced NO-OP ===
+- Déprécié (le frontend gère directement le marquage via db.execute)
+- Le push_outbox ne l'appelle plus
+
+=== P2 #15 — TAURI LISTENER ONLINE/OFFLINE ===
+- app.html : window.addEventListener('online') → triggerSync()
+  AVANT : polling 1h seulement → l'utilisateur devait attendre
+- SYNC_INTERVAL_MS : 60*60*1000 → 5*60*1000 (5 min au lieu de 1h)
+
+=== P2 #16 — TAURI PERSISTER lastSyncAt POUR SYNC DELTA ===
+- trigger_sync accepte last_sync_at: Option<String>
+- app.html : lit SELECT MAX(last_sync_at) FROM _sync_metadata et l'envoie
+- sync-completed : écrit une ligne __global__ dans _sync_metadata
+  AVANT : get_last_global_sync() retournait None → chaque sync était complète
+
+=== P2 #17 — FLUTTER WORKMANAGER POUR SYNC APP FERMÉE ===
+- background_sync_worker.dart (nouveau) :
+  * Callback top-level `backgroundSyncDispatcher` annoté @pragma('vm:entry-point')
+  * Vérifie connectivité → token JWT → instancie FlutterSyncEngine → manualSync()
+  * registerPeriodicSync() : 15 min, NetworkType.connected, ExistingWorkPolicy.keep
+- main.dart : initialisation après WidgetsFlutterBinding
+- pubspec.yaml : workmanager ^0.5.2 (à installer avec `flutter pub get`)
+- AndroidManifest.xml : permissions RECEIVE_BOOT_COMPLETED + WAKE_LOCK
+- secure_logout_service.dart : cancel periodic sync au logout
+
+=== P2 #18 — WEB BACKGROUND SYNC RÉEL DEPUIS SW ===
+- sw-offline.js : swPushOutboxFromIDB() fait le fetch directement depuis le SW
+  AVANT : postMessage aux clients ouverts → pas de push si onglet fermé
+- swGetAuthToken() lit depuis Cache API (ah-auth-token)
+- swReadPendingEvents() lit l'outbox depuis IndexedDB
+- swUpdateEventStatus() met à jour le statut en IDB
+- Max 3 retries par batch avec backoff (1s, 2s, 4s)
+- client-access-token.ts : mirrorTokenToCacheApi() au login + clear au logout
+  Le token JWT est mirroré dans Cache API (clé ah-auth-token) pour que le SW y ait accès
+
+=== MIGRATION NEON _SYNC_OUTBOX ===
+- create_sync_outbox_idempotency.sql (déjà présent dans prisma/migrations/)
+- Table avec UNIQUE(tenant_id, local_id) pour idempotence
+- Index partiel WHERE status='synced' (recherche rapide)
+- Function cleanup_old_sync_outbox_entries(days_to_keep) pour purge > 30 jours
+- scripts/apply_sync_outbox_migration.sh : script d'application
+
+=== COMMIT + PUSH ===
+Commit a7f23856 : "feat: offline-first P0-P2 — multi-tenant strict + idempotence réelle + push Tauri"
+- 8 files changed, 1146 insertions(+), 266 deletions(-)
+- Push réussi vers origin/main (39d58bff..a7f23856)
+
+Commit Flutter 28b5d71 : "feat: offline-first P0-P2 fixes — schéma camelCase + UUID outbox"
+- 16 files changed, 995 insertions(+), 292 deletions(-)
+- Push réussi vers academia-helm-mobile origin/main (78b0be3..28b5d71)
+
+Commit 5f114d0f : "chore: add rebuild_tauri.sh script"
+- scripts/rebuild_tauri.sh
+
+=== REBUILD TAURI ===
+- ⚠️ Ne peut pas être fait dans cet environnement (manque libgtk-3-dev, libwebkit2gtk-4.1-dev)
+  Erreur : "Package gdk-3.0 was not found in the pkg-config search path"
+- cargo 1.97.1 + rustc 1.97.1 installés via rustup
+- Script rebuild_tauri.sh créé pour que l'utilisateur lance le build sur sa machine
+- Le build nécessite : sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+  libayatana-appindicator3-dev librsvg2-dev
+
+Stage Summary:
+- P0 #1 Backend multi-tenant : ✅ Fix critique sécurité (bypass supprimé)
+- P0 #2 Flutter schéma : ✅ camelCase aligné avec backend
+- P0 #3 Tauri push : ✅ Architecture inversée (frontend gère le push)
+- P0 #4 local_id UUID : ✅ Unicité cross-device garantie
+- P0 #5 EXCLUDED_TABLES : ✅ 30+ tables sensibles exclues
+- P1 #6-#12 : ✅ Flutter + Tauri fixes (double outbox, re-push, conflits, etc.)
+- P2 #15-#18 : ✅ Réactivité réseau + WorkManager + Background Sync réel
+- Migration Neon : ⚠️ Script créé, à appliquer par l'utilisateur
+- Rebuild Tauri : ⚠️ Script créé, à lancer par l'utilisateur (manque -dev packages)
+- Files modified: 30+ across web, desktop, flutter, backend
+- 3 commits pushés (1 main + 1 flutter + 1 script)
+
+⚠️ ACTIONS REQUISES DE L'UTILISATEUR :
+1. Appliquer la migration SQL sur Neon :
+   ./scripts/apply_sync_outbox_migration.sh "postgresql://user:pass@ep-xxx.neon.tech/dbname?sslmode=require"
+2. Redéployer le backend sur Railway/Fly (pour prendre en compte les changements sync.controller.ts + sync.service.ts)
+3. Rebuilder Tauri :
+   sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+   ./scripts/rebuild_tauri.sh
+4. Flutter : `flutter pub get` (pour installer workmanager ^0.5.2)
+5. Rebuilder Flutter APK : `flutter build apk --release`

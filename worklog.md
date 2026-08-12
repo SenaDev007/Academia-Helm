@@ -3642,3 +3642,106 @@ Stage Summary:
    ./scripts/rebuild_tauri.sh
 4. Flutter : `flutter pub get` (pour installer workmanager ^0.5.2)
 5. Rebuilder Flutter APK : `flutter build apk --release`
+
+---
+Task ID: 2026-08-13-perf-dashboard + abandons-fix
+Agent: main
+Task: 2 bugs rapportés par utilisateur : (1) dashboard prend 10min pour charger après login + chaque changement d'onglet, (2) abandons=0 dans effectif détaillé par niveau scolaire.
+
+Work Log:
+
+=== PROBLÈME 1 — LENTEUR 10 MIN DASHBOARD ===
+
+Diagnostic (via subagent auditor) :
+- Bootstrap offline-first tire 590+ tables en 24 chunks séquentiels
+- SELECT * sur chaque table avec LIMIT 5000 → ~3M records à sérialiser
+- BFF overview fait 3 awaits séquentiels (12+8+8 = 28s)
+- BFF finance-overview fait 4 awaits séquentiels (4×12 = 48s)
+- Intercepteur global fetch wrap les routes dashboard dans offlineFetch → masque timeouts
+
+Fix appliqués :
+
+1. WHITELIST ESSENTIAL_BOOTSTRAP_TABLES (~30 tables au lieu de 590)
+   - sync-engine.service.ts : nouvelle constante avec tables essentielles
+     (students, classes, payments, attendance, exam_scores, fee_structures,
+     school_levels, academic_years, staff, teachers, contracts, etc.)
+   - runSync filtre allTables.filter(t => ESSENTIAL_BOOTSTRAP_TABLES.has(t))
+   - Impact : bootstrap passe de ~10 min à ~30s
+   - Les autres tables seront tirées en lazy au fil de la navigation
+
+2. PARALLÉLISATION des chunks (concurrence limitée à 3)
+   - sync-engine.service.ts : Promise.all par batch de 3 chunks
+   - MAX_CONCURRENCY = 3 (évite saturation pool Postgres/Neon)
+   - Chaque chunk a toujours ses 3 retries internes
+   - Impact : divisé par 3 (10 min → 3-4 min, ou 30s → 10s avec whitelist)
+
+3. DÉSACTIVER INTERCEPTEUR OFFLINEFETCH POUR ROUTES DASHBOARD
+   - global-fetch-interceptor.ts : ajout '/api/dashboard/' à NEVER_INTERCEPT
+   - Les routes BFF dashboard ne sont plus wrappées dans offlineFetch
+   - Avant : offlineFetch attendait timeout complet (8-12s) avant erreur
+   - Maintenant : fetch natif, erreurs immédiates
+   - Cache HTTP Next.js (s-maxage=60) toujours actif
+
+4. BFF OVERVIEW : Promise.allSettled (au lieu de 3 awaits séquentiels)
+   - route.ts : 2 appels backend en parallèle (studentsStats + abandonsData)
+   - Supprimé appel fantôme /finance/student-balances (n'existe pas côté backend)
+   - Impact : 12s max au lieu de 28s
+
+5. BFF FINANCE-OVERVIEW : Promise.all (au lieu de 4 awaits séquentiels)
+   - route.ts : 4 appels backend en parallèle (kpi + studentAccounts + overrides + stats)
+   - Impact : 12s max au lieu de 48s
+
+=== PROBLÈME 2 — ABANDONS = 0 DANS EFFECTIF DÉTAILLÉ ===
+
+Diagnostic (via subagent auditor) :
+- Backend /students/abandons fonctionne correctement (commit e054d6d7)
+  et retourne chaque abandon avec schoolLevel comme OBJET imbriqué
+  { id, code, name, label } + champs financiers (totalDue, totalPaid, balance, etc.)
+- Mais BFF /api/dashboard/overview avait 2 bugs :
+
+Bug #1 : Mismatch schoolLevelCode
+- BFF cherchait abandon.schoolLevelCode à plat (toujours undefined)
+- Au lieu de abandon.schoolLevel.code (objet imbriqué)
+- → Tous les abandons skippés par 'if (!code) continue'
+- → abandons = 0 partout
+
+Bug #2 : Appel fantôme /finance/student-balances
+- BFF appelait un endpoint qui n'existe PAS côté backend
+- → balancesData = [] → balanceByStudent (Map vide)
+- → montants (abandonPaidAmount, abandonUnpaidAmount) = 0
+
+Fix appliqués (route.ts) :
+
+1. Extraire le code depuis l'objet imbriqué schoolLevel
+   - AVANT : abandon.schoolLevelCode || abandon.levelCode || abandon.level
+   - APRÈS : abandon.schoolLevelCode || abandon.levelCode || abandon.level
+            || sl.code || sl.name || sl.label
+            (où sl = abandon.schoolLevel || {})
+
+2. Supprimer l'appel fantôme /finance/student-balances
+   - Les données financières sont déjà dans abandonsData[i].totalPaid / totalDue
+   - Fournies par le backend /students/abandons
+
+3. Lire les montants directement depuis l'objet abandon
+   - paid = Number(abandon.totalPaid || 0)
+   - due = Number(abandon.totalDue || 0)
+   - unpaid = Number(abandon.unpaidAmount || Math.max(0, due - paid))
+   - abandonsWithPaidTuition, abandonPaidAmount, abandonsWithUnpaidTuition,
+     abandonUnpaidAmount maintenant correctement calculés
+
+=== COMMIT + PUSH ===
+Commit b70bf908 : 'fix: dashboard 10min load + abandons=0 bug'
+- 4 files changed, 209 insertions(+), 136 deletions(-)
+- Push réussi vers origin/main (5f114d0f..b70bf908)
+
+Stage Summary:
+- Lenteur dashboard : 5 fixes (whitelist 30 tables, parallélisation chunks,
+  désactivation intercepteur dashboard, Promise.all BFF overview + finance)
+  → temps estimé de 10 min à ~30s-1min
+- Abandons=0 : 3 fixes (mismatch schoolLevelCode, suppression appel fantôme,
+  lecture montants depuis objet abandon)
+  → abandons maintenant correctement comptés + montants scolarité payée/due
+- Files modified: 4 (sync-engine.service.ts, global-fetch-interceptor.ts,
+  overview/route.ts, finance-overview/route.ts)
+- ⚠️ Le backend (Railway) doit être redéployé pour /students/abandons
+  (commit e054d6d7 ou plus récent). Si déjà déployé, le fix BFF suffit.

@@ -41,6 +41,17 @@ interface OutboxEventLocal {
 }
 
 class OutboxService {
+  // ⭐ Entités critiques nécessitant MERGE_FIELDS au lieu de LAST_WRITE_WINS
+  private static readonly CRITICAL_ENTITIES: Set<string> = new Set([
+    'FINANCE_TRANSACTION', 'STUDENT_ACCOUNT', 'FEE_OVERRIDE', 'FEE_STRUCTURE',
+    'PAYMENT', 'EXAM_SCORE', 'GRADE', 'REPORT_CARD', 'ATTENDANCE_RECORD', 'BULLETIN',
+  ]);
+
+  /** Retourne la stratégie de conflit appropriée pour l'entité */
+  private getConflictStrategy(entityType: string): string {
+    return OutboxService.CRITICAL_ENTITIES.has(entityType) ? 'MERGE_FIELDS' : 'LAST_WRITE_WINS';
+  }
+
   /**
    * Crée un événement dans l'outbox
    */
@@ -76,7 +87,9 @@ class OutboxService {
       localVersion: Date.now(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      conflictStrategy: 'LAST_WRITE_WINS',
+      // ⭐ MERGE_FIELDS pour les entités critiques (Finance + Notes)
+      //    au lieu de LAST_WRITE_WINS par défaut.
+      conflictStrategy: this.getConflictStrategy(entityType),
     };
 
     await localDb.execute('outbox_events', 'put', event);

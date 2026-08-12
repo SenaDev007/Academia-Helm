@@ -6,6 +6,10 @@
  * Optimistic UI : le paiement apparaît instantanément dans la liste
  * avant la confirmation du serveur. En cas d'erreur, rollback automatique.
  *
+ * ⭐ OFFLINE-FIRST : utilise offlineMutation au lieu de fetch() direct.
+ *    En offline, l'écriture est sauvegardée dans IndexedDB + outbox pour
+ *    synchronisation automatique à la reconnexion.
+ *
  * Utilise @tanstack/react-query useMutation avec onMutate/onError/onSuccess.
  * ============================================================================
  */
@@ -14,7 +18,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query/query-keys';
-import { FinanceService } from '@/services/finance.service';
+import { offlineMutation } from '@/lib/offline/offline-fetch';
 
 interface PaymentInput {
   academicYearId: string;
@@ -32,12 +36,20 @@ interface PaymentResult {
 
 export function useRecordPayment(tenantId: string, academicYearId: string) {
   const queryClient = useQueryClient();
-  const financeService = new FinanceService();
 
   return useMutation<PaymentResult, Error, PaymentInput>({
     mutationFn: async (data: PaymentInput) => {
-      const result = await financeService.createTransaction(data);
-      return result;
+      // ⭐ offlineMutation : en ligne → fetch serveur, hors ligne → IndexedDB + outbox
+      const result = await offlineMutation<PaymentResult>(
+        '/api/finance/transactions',
+        'POST',
+        data,
+        { tenantId }
+      );
+      if (result.error) {
+        throw new Error(result.error);
+      }
+      return result.data ?? { id: `local-${Date.now()}`, ...data, _offline: true } as PaymentResult;
     },
 
     // ── Optimistic update : ajouter le paiement avant la réponse serveur ──

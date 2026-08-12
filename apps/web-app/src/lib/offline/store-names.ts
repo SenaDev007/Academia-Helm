@@ -163,6 +163,77 @@ const URL_TO_STORE: Array<{ pattern: RegExp; store: string }> = [
   { pattern: /\/api\/library\/books/, store: 'librarybook' },
   { pattern: /\/api\/library\/loans/, store: 'libraryloan' },
   { pattern: /\/api\/library\/reservations/, store: 'libraryreservation' },
+
+  // ⭐ Routes manquantes identifiées par l'audit offline-first
+  // ─── Pédagogie (routes non couvertes) ───
+  { pattern: /\/api\/pedagogy-space\//, store: 'pedagogicalworkspace' },
+  { pattern: /\/api\/pedagogy\/daily-logs/, store: 'dailylog' },
+  { pattern: /\/api\/pedagogy\/class-logs/, store: 'classlog' },
+  { pattern: /\/api\/pedagogy\/subjects/, store: 'subject' },
+  { pattern: /\/api\/pedagogy\/teachers/, store: 'teacher' },
+  { pattern: /\/api\/pedagogy\/timetables/, store: 'timetable' },
+  { pattern: /\/api\/pedagogy\/academic-levels/, store: 'academiclevel' },
+  { pattern: /\/api\/pedagogy\/academic-series/, store: 'academicseries' },
+  { pattern: /\/api\/pedagogy\/academic-cycles/, store: 'academiccycle' },
+  { pattern: /\/api\/pedagogy\/rooms/, store: 'room' },
+  { pattern: /\/api\/pedagogy\/control/, store: 'pedagogicalcontrol' },
+  { pattern: /\/api\/pedagogy\/weekly-reports/, store: 'weeklyreport' },
+
+  // ─── Communication (routes non couvertes) ───
+  { pattern: /\/api\/communication\/templates/, store: 'communicationtemplate' },
+  { pattern: /\/api\/communication\/automations/, store: 'automationrule' },
+  { pattern: /\/api\/communication\/campaigns/, store: 'communicationcampaign' },
+  { pattern: /\/api\/communication\/scheduled/, store: 'scheduledemail' },
+  { pattern: /\/api\/communication\/channels/, store: 'communicationchannel' },
+  { pattern: /\/api\/communication\/inbox/, store: 'inboundemail' },
+
+  // ─── Dashboard (routes non couvertes) ───
+  { pattern: /\/api\/dashboard\/overview/, store: 'orion_cache' },
+  { pattern: /\/api\/dashboard\/finance-overview/, store: 'orion_cache' },
+  { pattern: /\/api\/dashboard\/age-distribution/, store: 'orion_cache' },
+  { pattern: /\/api\/dashboard\/grade-analytics/, store: 'orion_cache' },
+  { pattern: /\/api\/dashboard\/hr-overview/, store: 'orion_cache' },
+  { pattern: /\/api\/dashboard\/tuition-personalizations/, store: 'orion_cache' },
+  { pattern: /\/api\/dashboard\/grade-evolution/, store: 'orion_cache' },
+
+  // ─── ORION (routes non couvertes) ───
+  { pattern: /\/api\/orion\/kpis/, store: 'orion_cache' },
+  { pattern: /\/api\/orion\/dashboard/, store: 'orion_cache' },
+  { pattern: /\/api\/orion\/audit/, store: 'orion_cache' },
+  { pattern: /\/api\/orion\/intelligence/, store: 'orion_cache' },
+  { pattern: /\/api\/orion\/bilingual/, store: 'orion_cache' },
+
+  // ─── Finance (routes non couvertes) ───
+  { pattern: /\/api\/finance\/cash-registers/, store: 'cashregister' },
+  { pattern: /\/api\/finance\/collection-summary/, store: 'orion_cache' },
+  { pattern: /\/api\/finance\/collection-cases/, store: 'collectioncase' },
+  { pattern: /\/api\/finance\/collection-reminders/, store: 'collectionreminder' },
+  { pattern: /\/api\/finance\/arrears/, store: 'feearrear' },
+  { pattern: /\/api\/finance\/recovery/, store: 'orion_cache' },
+
+  // ─── RH (routes non couvertes) ───
+  { pattern: /\/api\/hr\/positions/, store: 'position' },
+  { pattern: /\/api\/hr\/collaborators/, store: 'staff' },
+  { pattern: /\/api\/hr\/planning/, store: 'staffplanning' },
+  { pattern: /\/api\/hr\/reporting/, store: 'orion_cache' },
+  { pattern: /\/api\/hr\/cnss/, store: 'orion_cache' },
+  { pattern: /\/api\/hr\/taxes/, store: 'orion_cache' },
+
+  // ─── Students (routes non couvertes) ───
+  { pattern: /\/api\/students\/transfers/, store: 'studenttransfer' },
+  { pattern: /\/api\/students\/documents/, store: 'studentdocument' },
+  { pattern: /\/api\/students\/id-cards/, store: 'studentidcard' },
+  { pattern: /\/api\/students\/admissions/, store: 'admission' },
+  { pattern: /\/api\/students\/movements/, store: 'studentmovement' },
+  { pattern: /\/api\/students\/abandons/, store: 'student' },
+
+  // ─── Billing ───
+  { pattern: /\/api\/billing\/subscriptions/, store: 'subscription' },
+  { pattern: /\/api\/billing\/invoices/, store: 'billinginvoice' },
+
+  // ─── Meetings (routes non couvertes) ───
+  { pattern: /\/api\/meetings\/minutes/, store: 'meetingminutes' },
+  { pattern: /\/api\/meetings\/decisions/, store: 'meetingdecision' },
 ];
 
 /**

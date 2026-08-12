@@ -36,6 +36,33 @@ import type { SyncEntityType, SyncOperationType } from '@/types';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 
 // ─────────────────────────────────────────────────────────────────
+// ⭐ Stratégie de conflit par entité — VERROU DE SÉCURITÉ
+// ─────────────────────────────────────────────────────────────────
+// LAST_WRITE_WINS peut faire disparaître une transaction financière
+// ou une note silencieusement. MERGE_FIELDS fusionne les champs pour
+// éviter toute perte de donnée sur les entités sensibles.
+
+const CRITICAL_ENTITIES: Set<string> = new Set([
+  'FINANCE_TRANSACTION',
+  'STUDENT_ACCOUNT',
+  'FEE_OVERRIDE',
+  'FEE_STRUCTURE',
+  'PAYMENT',
+  'EXAM_SCORE',
+  'GRADE',
+  'REPORT_CARD',
+  'ATTENDANCE_RECORD',
+  'BULLETIN',
+]);
+
+function getConflictStrategyForEntity(entityType: string): ConflictResolutionStrategy {
+  if (CRITICAL_ENTITIES.has(entityType)) {
+    return 'MERGE_FIELDS';
+  }
+  return 'LAST_WRITE_WINS';
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────
 
@@ -524,7 +551,14 @@ class DualWriteService {
       entityId,
       operation,
       data,
-      conflictStrategy = 'LAST_WRITE_WINS',
+      // ⭐ FIX : MERGE_FIELDS pour les tables sensibles (Finance + Notes)
+      //    au lieu de LAST_WRITE_WINS par défaut.
+      //    LAST_WRITE_WINS peut faire disparaître une transaction financière
+      //    ou une note silencieusement si deux utilisateurs modifient la même
+      //    donnée hors ligne en simultané.
+      //    MERGE_FIELDS fusionne les champs modifiés localement avec ceux
+      //    du serveur ({ ...serverData, ...localData }) → aucune donnée perdue.
+      conflictStrategy = getConflictStrategyForEntity(entityType),
       userId,
       metadata,
       localOnly = false,

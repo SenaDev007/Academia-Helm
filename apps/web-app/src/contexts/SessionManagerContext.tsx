@@ -234,6 +234,32 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
   const handleUnlock = useCallback(
     async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
       try {
+        // ⭐ OFFLINE-FIRST : si pas de réseau, vérifier le hash local du mot de passe
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          const storedHash = localStorage.getItem('academia_helm_pin_hash');
+          const storedEmail = localStorage.getItem('academia_helm_pin_email');
+          if (storedHash && storedEmail === email) {
+            // Vérifier le mot de passe contre le hash stocké (SHA-256 simple)
+            const encoder = new TextEncoder();
+            const data = encoder.encode(password);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            if (hashHex === storedHash) {
+              // Mot de passe correct → déverrouiller
+              setIsLocked(false);
+              lastActivityRef.current = Date.now();
+              window.dispatchEvent(new CustomEvent('session-resumed'));
+              return { success: true };
+            }
+            return { success: false, error: 'Mot de passe incorrect (vérification hors ligne).' };
+          }
+          return {
+            success: false,
+            error: 'Déverrouillage hors ligne impossible. Aucun identifiant local enregistré. Reconnectez-vous avec Internet.',
+          };
+        }
+
         // Récupérer le tenant_id pour le passer au login
         let tenantId: string | undefined;
         try {
@@ -284,6 +310,20 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
           tenant: data.tenant,
           expiresAt: data.expiresAt,
         });
+
+        // ⭐ OFFLINE-FIRST : stocker le hash SHA-256 du mot de passe pour le
+        //    déverrouillage offline de SessionLockScreen.
+        //    Le hash est stocké UNIQUEMENT côté client (jamais envoyé au serveur).
+        //    Il permet de déverrouiller l'app sans réseau après inactivité.
+        try {
+          const encoder = new TextEncoder();
+          const hashData = encoder.encode(password);
+          const hashBuffer = await crypto.subtle.digest('SHA-256', hashData);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+          localStorage.setItem('academia_helm_pin_hash', hashHex);
+          localStorage.setItem('academia_helm_pin_email', email);
+        } catch {}
 
         // Réinitialiser l'état
         recordActivity();

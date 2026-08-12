@@ -38,6 +38,7 @@ import OfflineGuard from '@/components/offline/OfflineGuard';
 import { OfflineStatusBadge } from '@/components/offline/OfflineStatusBadge';
 import { OfflineSWRegister } from '@/components/offline/OfflineSWRegister';
 import { SyncModal } from '@/components/offline/SyncModal';
+import ConflictResolutionModal from '@/components/offline/ConflictResolutionModal';
 import { PWAInstallPrompt } from '@/components/pwa/PWAInstallPrompt';
 
 export interface AppLayoutClientProps {
@@ -146,6 +147,7 @@ export default function AppLayoutClient({
       <PWAInstallPrompt />
       <OfflineSWRegister />
       <SyncModal />
+      <ConflictResolutionModal />
       </OfflineGuard>
     </SessionManagerProvider>
   );

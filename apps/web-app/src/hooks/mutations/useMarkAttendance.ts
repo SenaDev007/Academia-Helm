@@ -5,6 +5,10 @@
  *
  * Optimistic UI : le statut de présence est mis à jour instantanément
  * avant la confirmation du serveur. En cas d'erreur, rollback automatique.
+ *
+ * ⭐ OFFLINE-FIRST : utilise offlineMutation au lieu de fetch() direct.
+ *    En offline, l'écriture est sauvegardée dans IndexedDB + outbox pour
+ *    synchronisation automatique à la reconnexion.
  * ============================================================================
  */
 
@@ -12,6 +16,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query/query-keys';
+import { offlineMutation } from '@/lib/offline/offline-fetch';
 
 interface AttendanceInput {
   academicYearId: string;
@@ -32,16 +37,18 @@ export function useMarkAttendance(tenantId: string) {
 
   return useMutation<AttendanceResult, Error, AttendanceInput>({
     mutationFn: async (data: AttendanceInput) => {
-      const response = await fetch('/api/attendance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Erreur réseau' }));
-        throw new Error(error.message || `Erreur ${response.status}`);
+      // ⭐ offlineMutation : en ligne → fetch serveur, hors ligne → IndexedDB + outbox
+      const result = await offlineMutation<AttendanceResult>(
+        '/api/attendance',
+        'POST',
+        data,
+        { tenantId }
+      );
+      if (result.error) {
+        throw new Error(result.error);
       }
-      return response.json();
+      // Si offline, result.data peut être undefined → on retourne une version optimiste
+      return result.data ?? { id: `local-${Date.now()}`, ...data, _offline: true } as AttendanceResult;
     },
 
     // ── Optimistic update ──

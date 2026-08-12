@@ -5,6 +5,10 @@
  *
  * Optimistic UI : les notes sont mises à jour instantanément dans le cache
  * avant la confirmation du serveur. En cas d'erreur, rollback automatique.
+ *
+ * ⭐ OFFLINE-FIRST : utilise offlineMutation au lieu de fetch() direct.
+ *    En offline, l'écriture est sauvegardée dans IndexedDB + outbox pour
+ *    synchronisation automatique à la reconnexion.
  * ============================================================================
  */
 
@@ -12,6 +16,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query/query-keys';
+import { offlineMutation } from '@/lib/offline/offline-fetch';
 
 interface GradeEntry {
   studentId: string;
@@ -38,20 +43,17 @@ export function useSaveGrades(tenantId: string) {
 
   return useMutation<SaveGradesResult, Error, SaveGradesInput>({
     mutationFn: async (data: SaveGradesInput) => {
-      const response = await fetch(`/api/exams/evaluations/${data.evaluationId}/grades`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          grades: data.grades,
-          formula: data.formula,
-          submit: data.submit,
-        }),
-      });
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Erreur réseau' }));
-        throw new Error(error.message || `Erreur ${response.status}`);
+      // ⭐ offlineMutation : en ligne → fetch serveur, hors ligne → IndexedDB + outbox
+      const result = await offlineMutation<SaveGradesResult>(
+        `/api/exams/evaluations/${data.evaluationId}/grades`,
+        'POST',
+        { grades: data.grades, formula: data.formula, submit: data.submit },
+        { tenantId }
+      );
+      if (result.error) {
+        throw new Error(result.error);
       }
-      return response.json();
+      return result.data ?? { success: true, _offline: true } as SaveGradesResult;
     },
 
     // ── Optimistic update : les notes sont déjà dans le state local ──

@@ -50,9 +50,16 @@ const NEVER_CACHE = [
   /\/sw\.js$/,
   /\/sw-offline\.js$/,
   /\/sw-site\.js$/,
-  // ⭐ Ne JAMAIS cacher les chunks Next.js — ils changent à chaque déploiement
-  //    Si on les cache, le nouveau HTML référence des chunks inexistants → erreur
-  /\/_next\/static\/chunks\//,
+  // ⭐ FIX : les chunks Next.js DOIVENT être cachés pour que l'app shell
+  //    fonctionne offline. Sans les chunks JS, le HTML /app en cache ne
+  //    peut pas s'exécuter → page blanche.
+  //    La stratégie StaleWhileRevalidate (définie plus bas pour /_next/static/*)
+  //    gère la invalidation : au online, on re-télécharge le chunk et on
+  //    remplace l'ancien. Au offline, on sert le chunk en cache.
+  //    Si un nouveau déploiement change les noms de chunks, le nouveau HTML
+  //    référencera de nouveaux chemins → StaleWhileRevalidate les téléchargera.
+  //    L'ancien cache n'est jamais servi pour les nouveaux chemins car les
+  //    URLs contiennent un hash (ex: webpack-abc123.js).
 ];
 
 const API_ROUTES = /\/api\//;

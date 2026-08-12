@@ -58,7 +58,7 @@ import TurnstileWidget from '@/components/auth/TurnstileWidget';
 import LogoCircle from '@/components/ui/LogoCircle';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
-import { persistClientSession, markFreshLogin } from '@/lib/auth/client-access-token';
+import { persistClientSession, markFreshLogin, hasLocalSessionHints } from '@/lib/auth/client-access-token';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
 import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
@@ -371,6 +371,18 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const redirectPath = searchParams?.get('redirect') || '/app';
 
   // ── Fetch dynamique des niveaux + classes du tenant ──────────────────
+  // ⭐ OFFLINE-FIRST : si une session locale valide existe, rediriger vers /app
+  //    SANS attendre un clic utilisateur ou un appel réseau.
+  //    Avant : l'utilisateur sur un appareil déjà provisionné voyait la page de login
+  //    même si sa session était valide → page blanche si réseau coupé.
+  //    Maintenant : auto-redirect vers /app si session locale détectée.
+  useEffect(() => {
+    if (hasLocalSessionHints()) {
+      const redirectUrl = getTenantRedirectUrl(tenantSlug || tenantIdFromUrl || '');
+      window.location.href = redirectUrl;
+    }
+  }, []); // Au montage uniquement
+
   // Permet au formulaire public de s'adapter à ce que l'établissement a configuré
   // dans le module Paramètres. Aucun hardcoding : si le tenant n'a que Maternelle
   // et Primaire, seules ces deux cartes s'affichent (+ la carte "Juste info").

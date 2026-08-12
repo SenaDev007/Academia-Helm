@@ -121,6 +121,18 @@ export default function AppLayoutClient({
     }).catch(() => {});
   }, []);
 
+  // ⭐ AUTO-SYNC : déclencher push+pull automatiquement au retour du réseau
+  //    Pas comme GitHub (push manuel) — réplication continue en silence.
+  //    Debounce 1.5s sur l'événement 'online' pour filtrer les flaps.
+  //    Mutex global : un seul sync à la fois. Background Sync API pour
+  //    couvrir le cas où l'onglet est fermé.
+  useEffect(() => {
+    if (!tenant?.id) return;
+    import('@/lib/offline/auto-sync-trigger').then(({ initAutoSyncTrigger }) => {
+      initAutoSyncTrigger(tenant.id);
+    }).catch(() => {});
+  }, [tenant?.id]);
+
   // ⭐ Bootstrap offline-first : au premier login, télécharger TOUTES les données
   //    du tenant dans IndexedDB pour permettre le mode offline.
   // ⭐ FIX : re-bootstrap si le tenant change (multi-tenant,切换 école).

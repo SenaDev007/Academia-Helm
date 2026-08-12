@@ -262,9 +262,29 @@ export class SyncService {
 
     for (const record of records) {
       try {
+        // ⭐ IDEMPOTENCE : vérifier si ce local_id a déjà été traité
+        //    Si oui, renvoyer SUCCESS sans réappliquer l'écriture.
+        //    Évite les doublons quand le réseau coupe pendant que le serveur
+        //    a déjà traité le lot mais avant que la confirmation revienne.
+        const localId = (record as any).localId || (record as any).local_id || (record as any).id;
+        if (localId) {
+          const existing = await this.prisma.$queryRawUnsafe(
+            `SELECT id, status FROM _sync_outbox WHERE local_id = '${this.escapeSql(localId)}' AND status = 'synced' LIMIT 1`
+          ).catch(() => []);
+          if (Array.isArray(existing) && existing.length > 0) {
+            results.push({
+              operation_id: localId,
+              tableName: record.tableName,
+              recordId: record.recordId,
+              status: 'SUCCESS',
+            });
+            continue; // Déjà traité — skip
+          }
+        }
+
         await this.applyRecord(record);
         results.push({
-          operation_id: (record as any).id,
+          operation_id: localId,
           tableName: record.tableName,
           recordId: record.recordId,
           status: 'SUCCESS',

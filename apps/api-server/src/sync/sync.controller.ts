@@ -45,25 +45,33 @@ export class SyncController {
   /**
    * POST /api/sync/pull
    * Télécharge les modifications depuis Neon vers l'app desktop.
+   *
+   * ⭐ SÉCURITÉ MULTI-TENANT STRICTE : le tenantId est TOUJOURS extrait du JWT
+   *    via le décorateur @TenantId(). La valeur du body `dto.tenantId` est
+   *    IGNORÉE et ÉCRASÉE inconditionnellement. Un client malveillant ne peut
+   *    PAS récupérer les données d'un autre tenant en spoofant le body.
+   *
+   *    Avant : `if (!dto.tenantId) dto.tenantId = tenantId;` → si le client
+   *    envoyait `tenantId: '<uuid-autre-école>'`, le backend retournait les
+   *    données de cette autre école (faille critique).
    */
   @Post('pull')
   async pull(
     @Body() dto: SyncPullDto,
     @TenantId() tenantId: string,
   ) {
-    // ⭐ Sécurité : forcer le tenantId depuis le JWT (pas depuis le body)
-    //    Avant : si le client ne sendait pas tenantId, le backend retournait
-    //    les données de TOUTES les écoles (faille multi-tenant).
-    if (!dto.tenantId) {
-      dto.tenantId = tenantId;
-    }
+    // ⭐ ÉCRASEMENT INCONDITIONNEL : le JWT prime sur le body
+    dto.tenantId = tenantId;
     this.logger.log(`Pull request: tenant=${tenantId}, tables=${dto.tables?.length || 'all'}`);
-    return this.syncService.pull(dto);
+    return this.syncService.pull(dto, tenantId);
   }
 
   /**
    * POST /api/sync/push
    * Envoie les écritures locales de l'app desktop vers Neon.
+   *
+   * ⭐ SÉCURITÉ MULTI-TENANT STRICTE : idem pull — le tenantId vient du JWT,
+   *    pas du body. La valeur du body est ignorée et écrasée.
    *
    * ⭐ Idempotence : chaque enregistrement doit avoir un `localId` (ou `id`).
    *    Le service vérifie dans `_sync_outbox` si ce local_id a déjà été traité
@@ -75,10 +83,8 @@ export class SyncController {
     @Body() dto: SyncPushDto,
     @TenantId() tenantId: string,
   ) {
-    // ⭐ Sécurité : forcer le tenantId depuis le JWT
-    if (!dto.tenantId) {
-      dto.tenantId = tenantId;
-    }
+    // ⭐ ÉCRASEMENT INCONDITIONNEL : le JWT prime sur le body
+    dto.tenantId = tenantId;
     this.logger.log(`Push request: tenant=${tenantId}, ${dto.records?.length || dto.operations?.length || 0} records`);
     return this.syncService.push(dto, tenantId);
   }

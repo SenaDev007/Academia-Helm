@@ -120,7 +120,11 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((name) => !name.startsWith(CACHE_VERSION))
+          // ⭐ P2 — préserver le cache 'ah-auth-token' qui contient le miroir
+          //    du JWT pour le background sync. Sans cela, le SW perdrait le
+          //    token à chaque activation et ne pourrait plus pousser l'outbox
+          //    quand l'onglet est fermé.
+          .filter((name) => !name.startsWith(CACHE_VERSION) && !name.startsWith('ah-auth-'))
           .map((name) => caches.delete(name))
       );
     })
@@ -396,27 +400,387 @@ self.addEventListener('message', (event) => {
 });
 
 // ─── BACKGROUND SYNC API ─────────────────────────────────────────────────
-// ⭐ Quand l'onglet est fermé et que le réseau revient, le SW déclenche
-//    le push de l'outbox automatiquement. Le client register('sync-outbox')
-//    via auto-sync-trigger.ts, et le SW reçoit l'évent 'sync' ici.
+// ⭐ P2 — Quand l'onglet est fermé et que le réseau revient, le SW déclenche
+//    le push de l'outbox LUI-MÊME (et non plus seulement via postMessage
+//    aux clients ouverts, qui ne marche pas si l'onglet est fermé).
+//
+//    Le SW a accès à IndexedDB (globals `indexedDB` et `caches`) — il peut
+//    donc lire le store `outbox_events`, envoyer les events PENDING vers
+//    /api/sync/push par batchs de 50, et mettre à jour leur statut en IDB.
+//
+//    Le token JWT (qui n'est pas accessible depuis le SW car stocké dans
+//    localStorage) est miroité dans Cache API par client-access-token.ts
+//    (fonction mirrorTokenToCacheApi) sous la clé `ah-auth-token`.
+//
+//    Le postMessage aux clients ouverts est conservé pour qu'ils puissent
+//    faire le pull et mettre à jour l'UI (le SW ne fait que le push).
 self.addEventListener('sync', (event) => {
   if (event.tag === 'sync-outbox') {
     event.waitUntil(
-      // Le SW ne peut pas accéder à IndexedDB directement via l'API offlineFetch
-      // (pas de window.fetch intercepté), mais il peut faire un fetch vers
-      // /api/sync/push avec les données de l'outbox stockées en Cache API.
-      // Pour l'instant, on notifie les clients ouverts pour qu'ils sync.
-      self.clients.matchAll({ includeUncontrolled: true }).then((clients) => {
-        clients.forEach((client) => {
-          client.postMessage({ type: 'BACKGROUND_SYNC_TRIGGER' });
-        });
-        // Si aucun client ouvert, on ne peut pas sync (limite SW).
-        // Le sync se fera au prochain ouverture d'onglet (initAutoSyncTrigger
-        // au montage vérifie les events en attente).
-      })
+      (async () => {
+        // ⭐ P2 — 1. Push direct depuis le SW (marche même si aucun client ouvert)
+        try {
+          await swPushOutboxFromIDB();
+        } catch (err) {
+          console.error('[SW P2] Background push failed:', err);
+        }
+
+        // ⭐ P2 — 2. Notifier les clients ouverts (pour pull + MAJ UI)
+        //    Le push a déjà été fait par le SW ; le client ne devrait faire
+        //    que le pull. On ajoute `source: 'sw'` pour que le client sache
+        //    qu'il peut skip le push (économie de doublons idempotents).
+        try {
+          const clients = await self.clients.matchAll({ includeUncontrolled: true });
+          clients.forEach((client) => {
+            client.postMessage({ type: 'BACKGROUND_SYNC_TRIGGER', source: 'sw' });
+          });
+        } catch (err) {
+          // Non-critique — le push a déjà été fait
+          console.warn('[SW P2] postMessage to clients failed:', err);
+        }
+      })()
     );
   }
 });
+
+// ─── P2 — HELPERS POUR LE PUSH DEPUIS LE SW ───────────────────────────────
+
+// ⭐ P2 — Constantes pour le push direct depuis le SW.
+//    Ces constantes doivent rester en phase avec :
+//    - local-db.service.ts (DB name='academia-helm-local', version=15)
+//    - client-access-token.ts (cache name='ah-auth-token', URL='/__sw_auth_token__')
+//    - sync-engine.service.ts (endpoint='/api/sync/push', BATCH_SIZE=50)
+const SW_DB_NAME = 'academia-helm-local';
+const SW_DB_VERSION = 15;
+const SW_OUTBOX_STORE = 'outbox_events';
+const SW_AUTH_CACHE_NAME = 'ah-auth-token';
+const SW_AUTH_TOKEN_URL = '/__sw_auth_token__';
+const SW_SYNC_PUSH_BATCH = 50;
+const SW_SYNC_MAX_RETRIES = 3;
+const SW_DEVICE_ID = 'sw-bg-sync';
+
+/**
+ * ⭐ P2 — Récupère le token JWT depuis le Cache API.
+ *    Le SW n'a pas accès à localStorage, mais le main thread y écrit une
+ *    copie via mirrorTokenToCacheApi() dans client-access-token.ts.
+ *    Retourne null si le token n'est pas trouvé (sans crasher).
+ */
+async function swGetAuthToken() {
+  try {
+    const cache = await caches.open(SW_AUTH_CACHE_NAME);
+    const response = await cache.match(SW_AUTH_TOKEN_URL);
+    if (!response) return null;
+    const text = await response.text();
+    return text && text.trim() ? text.trim() : null;
+  } catch (err) {
+    console.warn('[SW P2] Failed to read auth token from Cache API:', err);
+    return null;
+  }
+}
+
+/**
+ * ⭐ P2 — Ouvre IndexedDB (même base que local-db.service.ts).
+ *    Le SW ne déclenche PAS onupgradeneeded — il ne fait que lire/écrire
+ *    dans les stores existants. Si la base n'existe pas encore (premier
+ *    visite), la lecture échouera et le push sera skip sans crasher.
+ */
+function swOpenLocalDB() {
+  return new Promise((resolve, reject) => {
+    try {
+      const req = indexedDB.open(SW_DB_NAME, SW_DB_VERSION);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+      // ⭐ Pas de onupgradeneeded — le SW ne doit PAS modifier le schéma IDB.
+      //    Si la version actuelle de la base diffère de SW_DB_VERSION, IDB
+      //    lèvera une VersionChangeEvent qu'on ignore (le SW n'a pas besoin
+      //    de migrer — il sera réessayé au prochain sync event une fois que
+      //    le main thread aura migré).
+      req.onblocked = () => reject(new Error('IDB open blocked'));
+      req.onupgradeneeded = (event) => {
+        // Si IDB veut upgrade/downgrade, on abandonne proprement — le main
+        // thread gérera la migration. On ne touche pas au schéma depuis le SW.
+        event.target.transaction && event.target.transaction.abort();
+      };
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+/**
+ * ⭐ P2 — Lit les événements PENDING depuis l'outbox IndexedDB (tous tenants).
+ */
+function swReadPendingEvents(db, limit = 500) {
+  return new Promise((resolve, reject) => {
+    try {
+      // Vérifier que le store existe (sinon la transaction lèverait une erreur)
+      if (!db.objectStoreNames.contains(SW_OUTBOX_STORE)) {
+        console.warn(`[SW P2] Store '${SW_OUTBOX_STORE}' not found in IDB — skipping`);
+        resolve([]);
+        return;
+      }
+      const tx = db.transaction([SW_OUTBOX_STORE], 'readonly');
+      const store = tx.objectStore(SW_OUTBOX_STORE);
+      const req = store.getAll();
+      req.onsuccess = () => {
+        const all = req.result || [];
+        const pending = all
+          .filter((e) => e && e.status === 'PENDING')
+          .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+          .slice(0, limit);
+        resolve(pending);
+      };
+      req.onerror = () => reject(req.error);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+/**
+ * ⭐ P2 — Met à jour le statut d'un événement outbox dans IndexedDB.
+ */
+function swUpdateEventStatus(db, eventId, patch) {
+  return new Promise((resolve, reject) => {
+    try {
+      const tx = db.transaction([SW_OUTBOX_STORE], 'readwrite');
+      const store = tx.objectStore(SW_OUTBOX_STORE);
+      const getReq = store.get(eventId);
+      getReq.onsuccess = () => {
+        const event = getReq.result;
+        if (!event) {
+          // Déjà supprimé par un autre process (ex: foreground sync)
+          resolve();
+          return;
+        }
+        const updated = { ...event, ...patch };
+        const putReq = store.put(updated);
+        putReq.onsuccess = () => resolve();
+        putReq.onerror = () => reject(putReq.error);
+      };
+      getReq.onerror = () => reject(getReq.error);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+/**
+ * ⭐ P2 — Construit le payload d'opération attendu par le backend /api/sync/push.
+ *    Miroir minimal de toBackendOperation() dans sync-engine.service.ts.
+ *    Le SW n'a pas accès au map complet ENTITY_TO_TABLE (500+ entrées) — on
+ *    utilise le fallback `entityType.toLowerCase() + 's'` qui est la même
+ *    règle que dans sync-engine.service.ts pour les entités non mappées.
+ */
+function swToBackendOperation(event) {
+  const tableName = (event.entityType || '').toLowerCase() + 's';
+  const opMap = { CREATE: 'INSERT', UPDATE: 'UPDATE', DELETE: 'DELETE' };
+  const operationType = opMap[event.operation] || event.operation;
+
+  // Payload — peut être une string JSON ou un objet (selon outbox.service.ts)
+  let payload = event.payload;
+  if (typeof payload === 'string') {
+    try {
+      payload = JSON.parse(payload);
+    } catch {
+      // Garder la string brute — le backend gérera
+    }
+  }
+  payload = {
+    ...(payload || {}),
+    tenantId: event.tenantId,
+    version: event.localVersion ?? 1,
+  };
+
+  return {
+    id: event.id,
+    local_id: event.id, // ⭐ idempotence backend
+    table_name: tableName,
+    record_id: event.entityId,
+    operation_type: operationType,
+    payload,
+    local_updated_at: event.createdAt,
+    device_id: SW_DEVICE_ID,
+    priority: event.priority || 0,
+  };
+}
+
+/**
+ * ⭐ P2 — Envoie un batch d'opérations vers /api/sync/push.
+ *    Retourne la réponse JSON du backend.
+ *    Lance une Error si le fetch échoue ou si la réponse n'est pas ok
+ *    (pour déclencher le retry au niveau supérieur).
+ */
+async function swPushBatch(authToken, tenantId, operations) {
+  const body = {
+    tenantId,
+    sqliteSchemaHash: 'unknown', // Le SW n'a pas accès au schema hash
+    sqliteVersion: '1',
+    device_id: SW_DEVICE_ID,
+    operations,
+  };
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (authToken) {
+    headers['Authorization'] = `Bearer ${authToken}`;
+  }
+
+  const response = await fetch('/api/sync/push', {
+    method: 'POST',
+    headers,
+    credentials: 'include', // Pour les cookies httpOnly (si utilisés)
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Push HTTP ${response.status} ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * ⭐ P2 — Orchestrateur principal du push depuis le SW.
+ *
+ *    Étapes :
+ *      1. Lit le token JWT depuis Cache API (skip si absent)
+ *      2. Ouvre IndexedDB (skip si erreur)
+ *      3. Lit les events PENDING (tous tenants, max 500)
+ *      4. Groupe par tenantId
+ *      5. Pour chaque tenant, envoie par batchs de 50 (max 3 retries / batch)
+ *      6. Pour chaque résultat (SUCCESS/CONFLICT/FAILED), met à jour le statut
+ *
+ *    Sécurité :
+ *      - Ne boucle pas infiniment (max 3 retries par batch)
+ *      - Ne marque PAS les events comme FAILED en cas d'erreur réseau
+ *        (ils seront retry au prochain sync event ou au prochain foreground sync)
+ *      - Skip silencieux si le token ou la base n'est pas disponible
+ */
+async function swPushOutboxFromIDB() {
+  // 1. Token JWT
+  const authToken = await swGetAuthToken();
+  if (!authToken) {
+    console.warn(
+      '[SW P2] No auth token in Cache API — skipping background push. ' +
+      'Le token sera écrit au prochain login ou au prochain chargement de page.'
+    );
+    return;
+  }
+
+  // 2. IndexedDB
+  let db;
+  try {
+    db = await swOpenLocalDB();
+  } catch (err) {
+    console.warn('[SW P2] Cannot open IndexedDB — skipping:', err?.message || err);
+    return;
+  }
+
+  // 3. Lire PENDING events
+  let pendingEvents;
+  try {
+    pendingEvents = await swReadPendingEvents(db, 500);
+  } catch (err) {
+    console.warn('[SW P2] Cannot read outbox_events store — skipping:', err?.message || err);
+    return;
+  }
+
+  if (pendingEvents.length === 0) {
+    console.log('[SW P2] No pending events — nothing to push.');
+    return;
+  }
+
+  console.log(`[SW P2] Found ${pendingEvents.length} pending events to push from SW`);
+
+  // 4. Grouper par tenantId
+  const byTenant = new Map();
+  for (const event of pendingEvents) {
+    const tid = event.tenantId;
+    if (!tid) continue; // Sans tenantId, on ne peut pas push (le backend l'exige)
+    if (!byTenant.has(tid)) byTenant.set(tid, []);
+    byTenant.get(tid).push(event);
+  }
+
+  // 5. Pour chaque tenant, envoyer par batchs de SW_SYNC_PUSH_BATCH
+  for (const [tenantId, events] of byTenant) {
+    for (let i = 0; i < events.length; i += SW_SYNC_PUSH_BATCH) {
+      const batch = events.slice(i, i + SW_SYNC_PUSH_BATCH);
+      const operations = batch.map(swToBackendOperation);
+
+      let success = false;
+      let lastError = null;
+      for (let attempt = 1; attempt <= SW_SYNC_MAX_RETRIES; attempt++) {
+        try {
+          const result = await swPushBatch(authToken, tenantId, operations);
+
+          // Traiter les résultats individuels
+          const results = Array.isArray(result?.results) ? result.results : [];
+          const resultById = new Map(results.map((r) => [r.operation_id, r]));
+
+          for (const event of batch) {
+            const r = resultById.get(event.id);
+            if (!r) continue;
+
+            if (r.status === 'SUCCESS') {
+              await swUpdateEventStatus(db, event.id, {
+                status: 'ACKNOWLEDGED',
+                syncedAt: new Date().toISOString(),
+              });
+            } else if (r.status === 'CONFLICT') {
+              await swUpdateEventStatus(db, event.id, {
+                status: 'CONFLICT',
+                errorMessage: r.conflict_reason || 'Conflit',
+                attemptCount: (event.attemptCount || 0) + 1,
+                lastAttemptAt: new Date().toISOString(),
+              });
+            } else {
+              // FAILED (erreur applicative — pas réseau)
+              await swUpdateEventStatus(db, event.id, {
+                status: 'FAILED',
+                errorMessage: r.error_message || 'Erreur (SW push)',
+                retryCount: (event.retryCount || 0) + 1,
+                attemptCount: (event.attemptCount || 0) + 1,
+                lastAttemptAt: new Date().toISOString(),
+              });
+            }
+          }
+
+          success = true;
+          console.log(
+            `[SW P2] Batch push success (tenant ${tenantId.substring(0, 8)}…): ` +
+            `${result?.successful_operations || 0} ok, ` +
+            `${result?.conflicted_operations || 0} conflicts, ` +
+            `${result?.failed_operations || 0} errors`
+          );
+          break;
+        } catch (err) {
+          lastError = err;
+          console.warn(
+            `[SW P2] Push attempt ${attempt}/${SW_SYNC_MAX_RETRIES} failed:`,
+            err?.message || err
+          );
+          if (attempt < SW_SYNC_MAX_RETRIES) {
+            // Backoff exponentiel : 1s, 2s, 4s (max 3 tentatives)
+            const delayMs = 1000 * Math.pow(2, attempt - 1);
+            await new Promise((r) => setTimeout(r, delayMs));
+          }
+        }
+      }
+
+      if (!success) {
+        console.error(
+          `[SW P2] Batch push failed after ${SW_SYNC_MAX_RETRIES} attempts:`,
+          lastError?.message || lastError
+        );
+        // ⭐ Ne PAS marquer les events comme FAILED ici : l'échec est réseau,
+        //    pas applicatif. Les events seront retry au prochain 'sync' event
+        //    ou au prochain foreground sync (auto-sync-trigger.ts).
+      }
+    }
+  }
+
+  console.log('[SW P2] Background push complete.');
+}
 
 // ─── NOTIFICATION PUSH (depuis le SW vers les clients) ───────────────────
 // Quand le SW reçoit 'BACKGROUND_SYNC_TRIGGER', le client déclenche autoSync.

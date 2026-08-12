@@ -24,6 +24,65 @@ export type PersistClientSessionInput = {
   expiresAt?: string | null;
 };
 
+// ⭐ P2 — Constantes pour le miroir du token JWT dans Cache API.
+//    Le Service Worker (sw-offline.js) n'a pas accès à localStorage (les SW
+//    sont isolés du DOM), mais il peut lire Cache API. On y écrit une copie
+//    du token pour qu'il puisse faire le push de l'outbox en Background Sync
+//    (quand l'onglet est fermé et que le réseau revient).
+//
+//    Ces constantes DOIVENT rester en phase avec sw-offline.js :
+//    - SW_AUTH_CACHE_NAME = 'ah-auth-token'
+//    - SW_AUTH_TOKEN_URL  = '/__sw_auth_token__'
+const AUTH_TOKEN_CACHE_NAME = 'ah-auth-token';
+const AUTH_TOKEN_CACHE_URL = '/__sw_auth_token__';
+
+// ⭐ P2 — Flag pour éviter de réécrire le token dans Cache API à chaque appel
+//    de getClientAuthorizationHeader() (qui est appelé très fréquemment).
+//    On n'écrit qu'une fois par session, puis à chaque refresh.
+let tokenMirrorDone = false;
+
+/**
+ * ⭐ P2 — Écrit une copie du token JWT dans Cache API pour que le Service
+ *    Worker puisse l'utiliser lors d'un Background Sync (quand l'onglet est
+ *    fermé). Best-effort : ne crash pas si Cache API n'est pas disponible.
+ */
+async function mirrorTokenToCacheApi(token: string | null | undefined): Promise<void> {
+  if (typeof window === 'undefined' || !('caches' in window)) return;
+  try {
+    const cache = await caches.open(AUTH_TOKEN_CACHE_NAME);
+    const trimmed = token?.trim();
+    if (trimmed) {
+      // Cache API stocke des paires Request/Response. On utilise une URL
+      // factice comme clé (l'URL n'est jamais fetchée, elle sert juste de
+      // clé unique dans le cache).
+      const response = new Response(trimmed, {
+        headers: { 'Content-Type': 'text/plain' },
+      });
+      await cache.put(AUTH_TOKEN_CACHE_URL, response);
+    } else {
+      // Pas de token → supprimer l'entrée existante (logout)
+      await cache.delete(AUTH_TOKEN_CACHE_URL);
+    }
+  } catch (err) {
+    // Non-critique — best effort. Le SW ne pourra pas faire de push en
+    // background, mais l'app foreground fonctionnera normalement.
+    console.warn('[Auth] Failed to mirror token to Cache API:', err);
+  }
+}
+
+/**
+ * ⭐ P2 — Supprime la copie du token JWT du Cache API (au logout).
+ */
+async function clearTokenFromCacheApi(): Promise<void> {
+  if (typeof window === 'undefined' || !('caches' in window)) return;
+  try {
+    const cache = await caches.open(AUTH_TOKEN_CACHE_NAME);
+    await cache.delete(AUTH_TOKEN_CACHE_URL);
+  } catch {
+    // Non-critique
+  }
+}
+
 /**
  * En-tête Authorization pour les fetch client → `/api/*` (proxy Next vers Nest).
  * Les cookies httpOnly ne suffisent pas si la session repose sur localStorage.
@@ -31,6 +90,16 @@ export type PersistClientSessionInput = {
 export function getClientAuthorizationHeader(): Record<string, string> {
   if (typeof window === 'undefined') return {};
   const t = localStorage.getItem('accessToken')?.trim();
+  // ⭐ P2 — Fire-and-forget : miroir du token vers Cache API pour le SW.
+  //    On ne le fait qu'une fois par session (flag tokenMirrorDone) pour
+  //    éviter d'écrire dans Cache API à chaque appel (cette fonction est
+  //    appelée très fréquemment par les hooks React).
+  //    Le flag est reset à chaque logout (clearClientSessionSync) et à
+  //    chaque refresh (persistClientAccessToken).
+  if (t && !tokenMirrorDone) {
+    tokenMirrorDone = true;
+    mirrorTokenToCacheApi(t);
+  }
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
@@ -43,6 +112,14 @@ export function persistClientAccessToken(data: {
   if (at) localStorage.setItem('accessToken', at);
   const rt = data.refreshToken?.trim();
   if (rt) localStorage.setItem('refreshToken', rt);
+  // ⭐ P2 — Miroir du token dans Cache API pour le Service Worker
+  //    (background sync quand l'onglet est fermé). On marque le flag
+  //    tokenMirrorDone pour éviter que getClientAuthorizationHeader ne
+  //    réécrive inutilement le même token.
+  if (at) {
+    tokenMirrorDone = true;
+    mirrorTokenToCacheApi(at);
+  }
 }
 
 /**
@@ -107,6 +184,12 @@ export function clearClientSessionSync(): void {
   // ⭐ Clear LAST_ACTIVITY_KEY pour éviter qu'une session ultérieure
   // détecte une "inactivité prolongée" basée sur un timestamp stale.
   localStorage.removeItem('academia_helm_last_activity');
+  // ⭐ P2 — Supprimer aussi la copie du token dans Cache API pour que le
+  //    Service Worker ne puisse plus pousser l'outbox après logout.
+  //    Reset du flag tokenMirrorDone pour qu'un nouveau login déclenche à
+  //    nouveau le miroir.
+  tokenMirrorDone = false;
+  clearTokenFromCacheApi();
 }
 
 /**
@@ -139,6 +222,11 @@ export async function tryRefreshAccessToken(): Promise<boolean> {
     if (data.refreshToken?.trim()) {
       localStorage.setItem('refreshToken', data.refreshToken.trim());
     }
+
+    // ⭐ P2 — Miroir du NOUVEAU token dans Cache API pour le SW.
+    //    tryRefreshAccessToken() est appelé quand l'access token court a
+    //    expiré — le SW DOIT utiliser le token frais, pas l'ancien.
+    mirrorTokenToCacheApi(data.accessToken.trim());
 
     // Update the academia_token cookie (used by Axios / getClientToken)
     try {

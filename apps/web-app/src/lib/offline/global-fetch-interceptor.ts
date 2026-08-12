@@ -22,7 +22,7 @@
  * ============================================================================
  */
 
-import { offlineFetch } from './offline-fetch';
+import { offlineFetch, offlineMutation } from './offline-fetch';
 import { deriveStoreName, getTenantIdForOffline } from './store-names';
 
 let isInstalled = false;
@@ -38,12 +38,6 @@ export function installGlobalFetchInterceptor(): void {
     input: RequestInfo | URL,
     init?: RequestInit,
   ): Promise<Response> {
-    // ⭐ Ne pas intercepter les requêtes non-GET
-    const method = (init?.method || 'GET').toUpperCase();
-    if (method !== 'GET') {
-      return originalFetch.call(window, input, init);
-    }
-
     // ⭐ Extraire l'URL
     let url: string;
     if (typeof input === 'string') {
@@ -82,52 +76,114 @@ export function installGlobalFetchInterceptor(): void {
       return originalFetch.call(window, input, init);
     }
 
-    // ⭐ Utiliser offlineFetch (lit IDB en offline, cache en online)
-    try {
-      const tenantId = getTenantIdForOffline();
-      const data = await offlineFetch<any>(url, storeName, {
-        tenantId,
-        fetchOptions: init,
-      });
+    const method = (init?.method || 'GET').toUpperCase();
 
-      // ⭐ offlineFetch retourne les données parsées (pas une Response).
-      //    On construit une Response synthétique pour que les callers
-      //    qui font `const res = await fetch(...); res.json()` continuent
-      //    de fonctionner.
-      const body = JSON.stringify(data);
-      return new Response(body, {
-        status: 200,
-        statusText: 'OK',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Offline-Fetch': 'true',
-          'X-Offline-Store': storeName,
-        },
-      });
-    } catch (error) {
-      // ⭐ Si offlineFetch échoue (cache vide + offline) :
-      //    Retourner une 503 explicite au lieu de retomber sur le fetch natif
-      //    (qui va lui-même échouer et crasher l'app).
-      //    La 503 permet à React Query de déclencher son retry et à l'app
-      //    d'afficher un message d'erreur propre au lieu d'une page blanche.
-      if (!navigator.onLine) {
-        return new Response(
-          JSON.stringify({ error: 'Offline — data not in cache', offline: true }),
-          {
-            status: 503,
-            statusText: 'Offline — data not in cache',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Offline-Empty': 'true',
-            },
+    // ─── GET : lecture via offlineFetch (réseau → IDB fallback) ───
+    if (method === 'GET') {
+      // ⭐ Utiliser offlineFetch (lit IDB en offline, cache en online)
+      try {
+        const tenantId = getTenantIdForOffline();
+        const data = await offlineFetch<any>(url, storeName, {
+          tenantId,
+          fetchOptions: init,
+        });
+
+        const body = JSON.stringify(data);
+        return new Response(body, {
+          status: 200,
+          statusText: 'OK',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Offline-Fetch': 'true',
+            'X-Offline-Store': storeName,
           },
-        );
+        });
+      } catch (error) {
+        // ⭐ Si offlineFetch échoue (cache vide + offline) :
+        //    Retourner une 503 explicite au lieu de retomber sur le fetch natif
+        //    (qui va lui-même échouer et crasher l'app).
+        if (!navigator.onLine) {
+          return new Response(
+            JSON.stringify({ error: 'Offline — data not in cache', offline: true }),
+            {
+              status: 503,
+              statusText: 'Offline — data not in cache',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Offline-Empty': 'true',
+              },
+            },
+          );
+        }
+        // Si on est online, retomber sur le fetch natif (pour les routes non cachées)
+        return originalFetch.call(window, input, init);
       }
-      // Si on est online, retomber sur le fetch natif (pour les routes non cachées)
-      return originalFetch.call(window, input, init);
     }
+
+    // ─── POST/PUT/PATCH/DELETE : mutation via offlineMutation ───
+    // ⭐ Étend l'intercepteur aux mutations pour que TOUS les composants
+    //    qui font fetch(POST/PUT/DELETE) bénéficient automatiquement de
+    //    l'offline (IndexedDB + outbox) sans modification de code.
+    //    Avant : l'intercepteur skipait les non-GET → 184 composants
+    //    faisaient fetch() direct qui échouait en offline.
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      try {
+        // Parse le body de la requête
+        let bodyData: any = undefined;
+        if (init?.body) {
+          try {
+            bodyData = typeof init.body === 'string'
+              ? JSON.parse(init.body)
+              : init.body;
+          } catch {
+            bodyData = init.body;
+          }
+        }
+
+        const tenantId = getTenantIdForOffline();
+        const result = await offlineMutation<any>(
+          url,
+          method as 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+          bodyData,
+          { tenantId },
+        );
+
+        // Construire une Response synthétique
+        const responseBody = JSON.stringify(result.data ?? { success: true, offline: result.offline });
+        return new Response(responseBody, {
+          status: 200,
+          statusText: result.offline ? 'OK (offline)' : 'OK',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Offline-Mutation': 'true',
+            'X-Offline-Store': storeName,
+          },
+        });
+      } catch (error) {
+        // Si offlineMutation échoue complètement, retomber sur le fetch natif
+        // (qui va probablement échouer aussi en offline, mais au moins l'erreur
+        // sera cohérente pour le caller)
+        if (!navigator.onLine) {
+          return new Response(
+            JSON.stringify({ error: 'Offline — mutation queued in outbox', offline: true }),
+            {
+              status: 200, // 200 pour que le caller ne crash pas — l'outbox a l'opération
+              statusText: 'OK (offline — queued)',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Offline-Queued': 'true',
+              },
+            },
+          );
+        }
+        return originalFetch.call(window, input, init);
+      }
+    }
+
+    // Fallback pour toute autre méthode (HEAD, OPTIONS, etc.)
+    return originalFetch.call(window, input, init);
   };
 
   isInstalled = true;
-  console.log('[GlobalFetchInterceptor] ✅ Installed — all GET /api/* requests now use offlineFetch');
+  console.log('[GlobalFetchInterceptor] ✅ Installed — all GET + POST/PUT/PATCH/DELETE /api/* requests now intercepted for offline');
 }

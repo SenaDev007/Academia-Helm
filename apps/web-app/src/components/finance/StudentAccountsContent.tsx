@@ -883,6 +883,29 @@ export default function StudentAccountsContent() {
                       );
                     })
                   )}
+                  {/* ⭐ Ligne TOTAUX en rouge — frappe l'œil */}
+                  {filteredAccounts.length > 0 && (
+                    <TableRow className="bg-red-50 border-t-2 border-red-300 font-bold">
+                      <TableCell className="text-right text-red-700 py-3">
+                        TOTAUX ({filteredAccounts.length} élève(s))
+                      </TableCell>
+                      <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
+                        {formatCurrency(filteredAccounts.reduce((s, a) => s + Number(a.totalDue ?? 0), 0))}
+                      </TableCell>
+                      <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
+                        {formatCurrency(filteredAccounts.reduce((s, a) =>
+                          s + Math.max(Number(a.actualArrears ?? 0), Number(a.arrearsAmount ?? 0) + Number(a.carriedArrears ?? 0)), 0
+                        ))}
+                      </TableCell>
+                      <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
+                        {formatCurrency(filteredAccounts.reduce((s, a) => s + Number(a.totalPaid ?? 0), 0))}
+                      </TableCell>
+                      <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
+                        {formatCurrency(filteredAccounts.reduce((s, a) => s + Number(a.balance ?? 0), 0))}
+                      </TableCell>
+                      <TableCell colSpan={3} className="py-3"></TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </div>

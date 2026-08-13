@@ -539,6 +539,41 @@ function DetailTable({
               </TableCell>
             </TableRow>
           ))}
+          {/* ⭐ Ligne TOTAUX en rouge — frappe l'œil */}
+          {studentRows.length > 0 && (
+            <TableRow className="bg-red-50 border-t-2 border-red-300 font-bold">
+              <TableCell colSpan={2} className="text-right text-red-700 py-3">
+                TOTAUX ({studentRows.length} élève(s))
+              </TableCell>
+              <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
+                {formatCurrency(studentRows.reduce((s, r) => s + Number(r.arrearPaid ?? 0), 0))}
+              </TableCell>
+              <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
+                {formatCurrency(studentRows.reduce((s, r) => s + Number(r.inscriptionPaid ?? 0), 0))}
+              </TableCell>
+              <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
+                {formatCurrency(studentRows.reduce((s, r) => s + Number(r.reinscriptionPaid ?? 0), 0))}
+              </TableCell>
+              <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
+                {formatCurrency(studentRows.reduce((s, r) => s + Number(r.totalTuitionExpected ?? 0), 0))}
+              </TableCell>
+              <TableCell className="py-3"></TableCell>
+              {installments.map((inst) => (
+                <TableCell key={inst.id} className="text-right text-red-700 whitespace-nowrap py-3">
+                  {formatCurrency(studentRows.reduce((s, r) => s + Number(r.tuitionInstallments?.[inst.label] ?? 0), 0))}
+                </TableCell>
+              ))}
+              <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
+                {formatCurrency(studentRows.reduce((s, r) => s + Number(r.totalDue ?? 0), 0))}
+              </TableCell>
+              <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
+                {formatCurrency(studentRows.reduce((s, r) => s + Number(r.totalPaid ?? 0), 0))}
+              </TableCell>
+              <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
+                {formatCurrency(studentRows.reduce((s, r) => s + Number(r.reste ?? 0), 0))}
+              </TableCell>
+            </TableRow>
+          )}
         </TableBody>
       </Table>
     </div>

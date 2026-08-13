@@ -535,6 +535,32 @@ export default function FeeOverridesContent() {
                     </TableRow>
                   );
                 })
+              }
+              {/* ⭐ Ligne TOTAUX en rouge — frappe l'œil */}
+              {filteredOverrides.length > 0 && (
+                <TableRow className="bg-red-50 border-t-2 border-red-300 font-bold">
+                  <TableCell colSpan={4} className="text-right text-red-700 py-3">
+                    TOTAUX ({filteredOverrides.length} personnalisation(s))
+                  </TableCell>
+                  <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
+                    {formatCurrency(
+                      filteredOverrides.reduce((sum, o) => sum + Number(o.feeStructure?.totalAmount ?? 0), 0)
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
+                    {formatCurrency(
+                      filteredOverrides.reduce((sum, o) => sum + Number(o.customAmount ?? 0), 0)
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
+                    {formatCurrency(
+                      filteredOverrides.reduce((sum, o) =>
+                        sum + Math.max(0, Number(o.feeStructure?.totalAmount ?? 0) - Number(o.customAmount ?? 0)), 0
+                      )
+                    )}
+                  </TableCell>
+                  <TableCell colSpan={3} className="py-3"></TableCell>
+                </TableRow>
               )}
             </TableBody>
           </Table>

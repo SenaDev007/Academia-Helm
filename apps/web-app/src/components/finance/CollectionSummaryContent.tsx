@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   Download, FileText, Loader2, Filter,
-  ChevronLeft, ChevronRight, MoreHorizontal, Upload, Crown,
+  ChevronLeft, ChevronRight, MoreHorizontal, Upload, Crown, Search, X,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
@@ -95,6 +95,9 @@ export default function CollectionSummaryContent() {
   // ⭐ Toggle : exclure les paiements reçus sur la caisse FONDE (caisse promoteur)
   //    du bilan des encaissements. Permet d'isoler les stats caissiers.
   const [excludePromoterCaisse, setExcludePromoterCaisse] = useState<boolean>(false);
+
+  // ⭐ Recherche par numéro de reçu ou nom d'élève (filtre côté client)
+  const [searchQuery, setSearchQuery] = useState('');
 
   // ⭐ Liste des élèves marqués "paiement fondateur" (sous-onglet dédié)
   const [promoterEligibleList, setPromoterEligibleList] = useState<any[]>([]);
@@ -223,6 +226,18 @@ export default function CollectionSummaryContent() {
     });
   }, [classes, selectedLevelId, schoolLevels]);
 
+  // ⭐ Filtrage par recherche (nom d'élève) — côté client sur studentRows
+  const filteredStudentRows = useMemo(() => {
+    if (!searchQuery.trim()) return studentRows;
+    const q = searchQuery.toLowerCase().trim();
+    return studentRows.filter((row) =>
+      row.studentName.toLowerCase().includes(q) ||
+      row.studentId.toLowerCase().includes(q) ||
+      row.className.toLowerCase().includes(q) ||
+      row.classCode.toLowerCase().includes(q)
+    );
+  }, [studentRows, searchQuery]);
+
   // ─── Export Excel ───────────────────────────────────────────────────────────
   const handleExportExcel = () => {
     console.log('Export Excel — à implémenter');
@@ -340,6 +355,30 @@ export default function CollectionSummaryContent() {
           />
           Exclure caisse promoteur
         </label>
+        {/* ⭐ Recherche par nom d'élève — filtre côté client sur studentRows */}
+        {activeSubTab === 'detail' && (
+          <div className="flex-1 max-w-xs ml-auto">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Rechercher un élève</label>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Nom, prénom, classe..."
+                className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Tableaux */}
@@ -355,7 +394,7 @@ export default function CollectionSummaryContent() {
       ) : activeSubTab === 'detail' ? (
         <div className="space-y-3">
           <DetailTable
-            studentRows={studentRows}
+            studentRows={filteredStudentRows}
             installments={installments}
           />
           {/* ⭐ Pagination serveur — uniquement sur le sous-onglet « Bilan détaillé ».

@@ -2546,6 +2546,7 @@ export default function OnboardingWizard() {
                 </button>
               </div>
             </div>
+          </div>
           )}
 
           {/* PHASE 3: Plan & Options */}

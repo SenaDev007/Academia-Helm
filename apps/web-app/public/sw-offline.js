@@ -23,7 +23,7 @@
  * ============================================================================
  */
 
-const CACHE_VERSION = 'ah-offline-v6'; // ⭐ bump v5 → v6 (fix offline-first : /app pré-caché + timeouts longs + fallback IndexedDB)
+const CACHE_VERSION = 'ah-offline-v7'; // ⭐ bump v6 → v7 (pattern App Shell : offline immédiat sans timeout)
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -158,6 +158,15 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // ⭐ Strategy 2b: Chunks JS dynamiques → StaleWhileRevalidate
+  //    Next.js charge certains chunks via /app/_next/static/chunks/... qui peut
+  //    ne pas matcher STATIC_ROUTES si l'URL est /app/finance/_next/...
+  //    On les cache aussi pour que les modules visités restent accessibles offline.
+  if (url.pathname.includes('/_next/') && (url.pathname.endsWith('.js') || url.pathname.endsWith('.css'))) {
+    event.respondWith(staleWhileRevalidate(request, STATIC_CACHE));
+    return;
+  }
+
   // ─── Strategy 3: Images/Fonts → CacheFirst ───
   if (IMAGE_ROUTES.test(url.pathname)) {
     event.respondWith(cacheFirst(request, IMAGE_CACHE));
@@ -172,29 +181,62 @@ self.addEventListener('fetch', (event) => {
 });
 
 // ─── Handler spécial pour les pages HTML ───
+// ⭐ PATTERN APP SHELL : l'app ne doit JAMAIS dépendre du réseau pour se rendre.
+//    Seule la couche de données (IndexedDB) gère la présence/absence de connexion.
+//
+//    Stratégie :
+//    1. Si navigator.onLine === false → servir le cache immédiatement (zéro latence)
+//       - Cache exact (route déjà visitée) → OK
+//       - Sinon shell /app (pré-caché) → l'app React se charge + routing client
+//    2. Si online → NetworkFirst avec cache write (pour les prochaines visites)
+//       - Si réseau échoue/t timeout → fallback cache (pattern app shell)
+//    3. En parallèle → pré-cacher la route visitée pour les prochaines fois
 async function handlePageRequest(request) {
   const cache = await caches.open(PAGE_CACHE);
   const url = new URL(request.url);
 
+  // ⭐ ÉTAPE 1 : si offline, servir le cache immédiatement (zéro latence)
+  //    Avant : on tentait quand même le réseau avec timeout 8s → 8s de page blanche
+  //    Maintenant : si navigator.onLine === false, on skip le réseau
+  if (!self.navigator || self.navigator.onLine === false) {
+    // Cache exact d'abord (route déjà visitée et cachée)
+    const cachedExact = await cache.match(request);
+    if (cachedExact) return cachedExact;
+
+    // ⭐ App Shell : servir /app pour toute route /app/*
+    //    L'app React se charge depuis le cache, puis le routing client
+    //    affiche le module demandé. Les données viennent d'IndexedDB.
+    if (url.pathname.startsWith('/app')) {
+      const cachedApp = await caches.match('/app');
+      if (cachedApp) return cachedApp;
+    }
+
+    // Fallback racine
+    const cachedRoot = await caches.match('/');
+    if (cachedRoot) return cachedRoot;
+
+    // Dernier recours : page offline
+    const offlinePage = await caches.match('/offline');
+    if (offlinePage) return offlinePage;
+  }
+
+  // ⭐ ÉTAPE 2 : online → NetworkFirst avec cache write
   try {
-    // Tenter le réseau avec Timeout court
     const networkResponse = await fetchWithTimeout(request, HTML_TIMEOUT);
     if (networkResponse && networkResponse.ok) {
+      // ⭐ Mettre en cache la réponse pour les prochaines visites offline
       cache.put(request, networkResponse.clone());
       return networkResponse;
     }
     throw new Error('Network response not ok');
   } catch (err) {
-    // Fallback: cache (PAGE_CACHE)
+    // ⭐ Fallback : cache exact d'abord
     const cachedResponse = await cache.match(request);
-    if (cachedResponse) {
-      return cachedResponse;
-    }
+    if (cachedResponse) return cachedResponse;
 
-    // ⭐ Fallback /app : si on navigue vers /app/xxx et que /app est en cache
+    // ⭐ App Shell : si on navigue vers /app/xxx et que /app est en cache
     //    (pré-caché à l'install), on retourne le shell /app pour que l'app
     //    React se charge et utilise IndexedDB.
-    //    Avant : on retombait sur la page "hors ligne" → page blanche.
     if (url.pathname.startsWith('/app')) {
       const cachedApp = await caches.match('/app');
       if (cachedApp) return cachedApp;
@@ -205,21 +247,12 @@ async function handlePageRequest(request) {
     if (cachedRoot) return cachedRoot;
 
     // ⭐ Dernier recours: page offline
-    //    /offline est pre-cache dans STATIC_CACHE (à l'install du SW), PAS dans PAGE_CACHE.
-    //    Avant : cache.match('/offline') cherche uniquement dans PAGE_CACHE →
-    //    retourne undefined si PAGE_CACHE est vide (premier visite offline) →
-    //    fallback sur Response('Offline') qui rend une page noire avec "Offline"
-    //    en haut à gauche.
-    //    Maintenant : caches.match('/offline') cherche dans TOUS les caches
-    //    (STATIC_CACHE, PAGE_CACHE, etc.) → trouve /offline même si PAGE_CACHE
-    //    est vide.
     const offlinePage = await caches.match('/offline');
     if (offlinePage) return offlinePage;
 
     // ⭐ Si /offline n'est pas en cache (SW pas encore installé), retourner
     //    une page HTML inline au lieu du texte brut "Offline" qui rendait
     //    une page noire sur les navigateurs en mode sombre.
-    //    La page HTML a un fond clair + un message lisible + un bouton retry.
     return new Response(
       `<!DOCTYPE html>
 <html lang="fr">

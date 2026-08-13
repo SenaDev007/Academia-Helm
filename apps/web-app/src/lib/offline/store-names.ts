@@ -234,6 +234,16 @@ const URL_TO_STORE: Array<{ pattern: RegExp; store: string }> = [
   // ─── Meetings (routes non couvertes) ───
   { pattern: /\/api\/meetings\/minutes/, store: 'meetingminutes' },
   { pattern: /\/api\/meetings\/decisions/, store: 'meetingdecision' },
+
+  // ⭐ FALLBACK GÉNÉRIQUE pour les routes /api/* non mappées ci-dessus.
+  //    Avant : si aucune pattern ne matchait, deriveStoreName retournait undefined
+  //    → l'intercepteur ne cachait pas la réponse → en offline, le composant
+  //    affichait "pas de données" au lieu de lire le cache local.
+  //    Maintenant : on utilise un store générique 'api_cache' pour toutes les
+  //    routes GET /api/* non mappées. Les données seront cachées en online et
+  //    servies depuis le cache en offline (même si le store n'est pas "idéal",
+  //    c'est mieux que rien — l'utilisateur voit les données au lieu d'une page vide).
+  { pattern: /\/api\/.+/, store: 'api_cache' },
 ];
 
 /**

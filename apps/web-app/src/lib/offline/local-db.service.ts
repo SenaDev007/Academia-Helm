@@ -716,6 +716,8 @@ class LocalDbService {
       "pricing_cache",
       "testimonials_cache",
       "transfers_cache",
+      // ⭐ Fallback générique pour routes API non mappées spécifiquement
+      "api_cache",
     ];
 
     entities.forEach(storeName => {
@@ -906,7 +908,7 @@ class LocalDbService {
 // Instance singleton
 export const localDb = new LocalDbService({
   dbName: 'academia-helm-local',
-  version: 15, // ⭐ bump 14 → 15 (ajout cache stores pour offlineFetch)
+  version: 16, // ⭐ bump 15 → 16 (ajout api_cache store pour fallback générique)
 });
 
 /**

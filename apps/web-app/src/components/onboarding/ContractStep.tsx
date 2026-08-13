@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { FileText, PenTool, Send, CheckCircle2, Loader2, Crown, Calendar, User, Building2 } from 'lucide-react';
+import Image from 'next/image';
+import { PenTool, Send, CheckCircle2, Loader2, User, Building2, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { SignatureCanvas } from '@/app/app/hr/_components/onboarding/components/SignatureCanvas';
-import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { formatCurrency } from '@/lib/utils';
 
 interface ContractStepProps {
@@ -30,10 +30,10 @@ interface ContractStepProps {
 }
 
 const PLAN_TABLE = [
-  { name: 'Helm Essentiel', range: '1 à 50 élèves', activation: '300 000 FCFA', annual: '50 000 FCFA/an', total: '350 000 FCFA', code: 'SEED' },
-  { name: 'Helm Croissance', range: '51 à 150 élèves', activation: '300 000 FCFA', annual: '75 000 FCFA/an', total: '375 000 FCFA', code: 'GROW' },
-  { name: 'Helm Performance', range: '151 à 400 élèves', activation: '300 000 FCFA', annual: '100 000 FCFA/an', total: '400 000 FCFA', code: 'LEAD' },
-  { name: 'Helm Institution', range: '401 élèves et +', activation: '300 000 FCFA', annual: '150 000 FCFA/an', total: '450 000 FCFA', code: 'NETWORK' },
+  { name: 'Helm Essentiel', range: '1 à 50', activation: '300 000', annual: '50 000', total: '350 000', code: 'SEED' },
+  { name: 'Helm Croissance', range: '51 à 150', activation: '300 000', annual: '75 000', total: '375 000', code: 'GROW' },
+  { name: 'Helm Performance', range: '151 à 400', activation: '300 000', annual: '100 000', total: '400 000', code: 'LEAD' },
+  { name: 'Helm Institution', range: '401 et +', activation: '300 000', annual: '150 000', total: '450 000', code: 'NETWORK' },
 ];
 
 const today = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
@@ -46,24 +46,28 @@ export default function ContractStep({
   const [promoterSignature, setPromoterSignature] = useState<string | null>(null);
   const [providerSignature, setProviderSignature] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [contractGenerated, setContractGenerated] = useState(false);
   const { toast } = useToast();
 
   const totalYearOne = activationFee + annualFee + (bilingual ? 50000 : 0);
   const selectedPlan = PLAN_TABLE.find(p => p.code === planCode) || PLAN_TABLE[0];
+  const contractRef = `CT-AH-2026-${subdomain.toUpperCase().substring(0, 12)}`;
 
   const handleSignNow = async () => {
     if (!promoterSignature) {
-      toast({ title: 'Signature manquante', description: 'Le promoteur doit signer le contrat.', variant: 'destructive' });
+      toast({
+        title: 'Signature manquante',
+        description: 'Le promoteur doit apposer sa signature avant de finaliser.',
+        variant: 'destructive',
+      });
       return;
     }
     setLoading(true);
     try {
-      const authHeaders = getClientAuthorizationHeader();
-      // Generate the contract with both signatures
+      // ⭐ Endpoints publics — pas d'en-tête Authorization (le contrat est signé
+      //    pendant le flux d'onboarding, l'utilisateur n'est pas encore authentifié).
       const genResponse = await fetch('/api/onboarding/contract/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           schoolName, promoterName, directorName: directorName || promoterName,
           schoolAddress, schoolCity, schoolPhone, schoolEmail,
@@ -79,10 +83,9 @@ export default function ContractStep({
       if (!genResponse.ok) throw new Error(`HTTP ${genResponse.status}`);
       const genData = await genResponse.json();
 
-      // Sign the contract (triggers school creation)
       const signResponse = await fetch('/api/onboarding/contract/sign', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           draftId, promoterSignature, providerSignature: providerSignature || undefined,
           signLater: false,
@@ -92,8 +95,8 @@ export default function ContractStep({
       if (!signResponse.ok) throw new Error(`HTTP ${signResponse.status}`);
 
       toast({
-        title: '✅ Contrat signé',
-        description: 'Le contrat signé a été envoyé par email avec les identifiants de connexion.',
+        title: 'Contrat signé',
+        description: "Le contrat signé a été envoyé par email avec les identifiants de connexion de l'école.",
       });
       onComplete({ signed: true, contractUrl: genData.fileUrl });
     } catch (err: any) {
@@ -106,14 +109,16 @@ export default function ContractStep({
   const handleSendForLater = async () => {
     setLoading(true);
     try {
-      const authHeaders = getClientAuthorizationHeader();
       const response = await fetch('/api/onboarding/contract/sign', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ draftId, promoterSignature: null, signLater: true }),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      toast({ title: '✅ Lien envoyé', description: 'Le promoteur recevra un email pour signer.' });
+      toast({
+        title: 'Lien envoyé',
+        description: 'Le promoteur recevra un email pour signer le contrat à son rythme.',
+      });
       onComplete({ signed: false });
     } catch (err: any) {
       toast({ title: 'Erreur', description: err.message, variant: 'destructive' });
@@ -123,186 +128,292 @@ export default function ContractStep({
   };
 
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl mx-auto">
-      {/* Header */}
-      <div className="text-center mb-6">
-        <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl mb-3 shadow-lg">
-          <FileText className="w-7 h-7 text-white" />
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="w-full max-w-[1280px] mx-auto"
+    >
+      {/* Titre */}
+      <div className="text-center mb-3">
+        <div className="inline-flex items-center justify-center w-11 h-11 bg-gradient-to-br from-amber-500 to-amber-600 rounded-xl mb-2 shadow-lg">
+          <FileText className="w-5 h-5 text-white" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-900">Contrat d'abonnement</h2>
-        <p className="text-sm text-gray-500 mt-1">Contrat d'abonnement et de licence d'utilisation — Academia Helm</p>
+        <h2 className="text-xl font-bold text-gray-900">Contrat d'abonnement</h2>
+        <p className="text-xs text-gray-500 mt-0.5">
+          Contrat d'abonnement et de licence d'utilisation — Academia Helm
+        </p>
       </div>
 
-      {/* Contract body — styled like a real document */}
-      <div className="bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
-        {/* Logos header */}
-        <div className="bg-gradient-to-r from-[#0a1d3f] to-[#0b2f73] px-8 py-6 text-white">
-          <div className="flex justify-between items-center">
-            <div className="text-lg font-bold">YEHI OR <span className="text-[#f5b335]">Tech</span></div>
-            <div className="text-lg font-bold">Academia <span className="text-[#f5b335]">Helm</span></div>
-          </div>
-          <div className="text-center mt-3">
-            <h3 className="text-base font-bold uppercase tracking-wide">Contrat d'abonnement et de licence d'utilisation</h3>
-            <p className="text-xs text-blue-200 mt-1">Référence : CT-AH-2026-{subdomain.toUpperCase()}</p>
-          </div>
-        </div>
-
-        {/* Contract content */}
-        <div className="px-8 py-6 space-y-4 text-sm text-gray-700 max-h-[500px] overflow-y-auto">
-          {/* Entre les soussignés */}
-          <div>
-            <h4 className="font-bold text-[#0a1d3f] border-b border-gray-200 pb-1 mb-2">Entre les soussignés</h4>
-            <p className="text-xs leading-relaxed">
-              <strong>YEHI OR Tech</strong>, agence de développement digital et éditrice de la plateforme SaaS Academia Helm,
-              dont le siège social est à Parakou, République du Bénin, représentée par son Directeur Technique et Co-fondateur,
-              ci-après dénommée « <strong>le Prestataire</strong> ».
-            </p>
-            <p className="text-xs leading-relaxed mt-2">
-              <strong>{schoolName}</strong>, représentée par son promoteur <strong>{promoterName}</strong>,
-              ci-après désigné « <strong>le Client</strong> » ou « l'École ».
-            </p>
-          </div>
-
-          {/* Article 1 — Fiche de souscription */}
-          <div>
-            <h4 className="font-bold text-[#0a1d3f] border-b border-gray-200 pb-1 mb-2">Article 1 — Fiche de souscription</h4>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-              <div><span className="text-gray-500">École :</span> <strong>{schoolName}</strong></div>
-              <div><span className="text-gray-500">Promoteur :</span> <strong>{promoterName}</strong></div>
-              <div><span className="text-gray-500">Ville :</span> {schoolCity}</div>
-              <div><span className="text-gray-500">Téléphone :</span> {schoolPhone}</div>
-              <div><span className="text-gray-500">Email :</span> {schoolEmail}</div>
-              <div><span className="text-gray-500">Élèves :</span> <strong>{studentCount}</strong></div>
-              <div><span className="text-gray-500">Plan :</span> <strong>{planName}</strong></div>
-              <div><span className="text-gray-500">Bilingue :</span> {bilingual ? 'Oui' : 'Non'}</div>
-              <div><span className="text-gray-500">Sous-domaine :</span> {subdomain}.academiahelm.com</div>
-              <div><span className="text-gray-500">Date d'effet :</span> {today}</div>
+      {/* ─── Document contrat — pleine page, sans scroll ─── */}
+      <div
+        className="bg-white border border-gray-300 rounded-lg shadow-xl overflow-hidden"
+        style={{
+          // ⭐ On force une hauteur qui tient dans le viewport sans scroll.
+          //    Le contenu est dimensionné en `text-[10px]` à `text-xs` pour
+          //    rentrer intégralement dans la zone disponible.
+          maxHeight: 'calc(100vh - 220px)',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        {/* ── En-tête avec logos ── */}
+        <div className="bg-gradient-to-r from-[#0a1d3f] via-[#0b2f73] to-[#0a1d3f] px-5 py-3 text-white flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <Image
+              src="/images/logo-yehi-or-tech.webp"
+              alt="YEHI OR Tech"
+              width={50}
+              height={50}
+              className="rounded-md bg-white/95 p-1"
+              unoptimized
+            />
+            <div className="leading-tight">
+              <div className="text-xs font-bold">YEHI OR <span className="text-[#f5b335]">Tech</span></div>
+              <div className="text-[9px] text-blue-200">Digital Agency · Parakou</div>
             </div>
           </div>
 
-          {/* Article 3 — Plan et grille tarifaire */}
-          <div>
-            <h4 className="font-bold text-[#0a1d3f] border-b border-gray-200 pb-1 mb-2">Article 3 — Plan souscrit et grille tarifaire</h4>
-            <table className="w-full text-xs border border-gray-300">
-              <thead className="bg-[#0a1d3f] text-white">
-                <tr>
-                  <th className="px-2 py-1 text-left">Plan</th>
-                  <th className="px-2 py-1 text-left">Tranche</th>
-                  <th className="px-2 py-1 text-right">Activation</th>
-                  <th className="px-2 py-1 text-right">Frais annuels</th>
-                  <th className="px-2 py-1 text-right">Total An 1</th>
-                </tr>
-              </thead>
-              <tbody>
-                {PLAN_TABLE.map(p => (
-                  <tr key={p.code} className={p.code === planCode ? 'bg-blue-50 font-bold' : ''}>
-                    <td className="px-2 py-1">{p.name}{p.code === planCode && ' ☑'}</td>
-                    <td className="px-2 py-1">{p.range}</td>
-                    <td className="px-2 py-1 text-right">{p.activation}</td>
-                    <td className="px-2 py-1 text-right">{p.annual}</td>
-                    <td className="px-2 py-1 text-right">{p.total}</td>
+          <div className="text-center flex-1">
+            <h3 className="text-[11px] font-bold uppercase tracking-wider">
+              Contrat d'abonnement et de licence d'utilisation
+            </h3>
+            <p className="text-[9px] text-blue-200 mt-0.5">
+              Plateforme SaaS Academia Helm · Réf. {contractRef}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="leading-tight text-right">
+              <div className="text-xs font-bold">Academia <span className="text-[#f5b335]">Helm</span></div>
+              <div className="text-[9px] text-blue-200">School Management</div>
+            </div>
+            <Image
+              src="/images/logo-academia-helm-signature.webp"
+              alt="Academia Helm"
+              width={50}
+              height={50}
+              className="rounded-md bg-white/95 p-1"
+              unoptimized
+            />
+          </div>
+        </div>
+
+        {/* ── Corps du contrat — flex-1, pas de scroll interne ── */}
+        <div className="flex-1 overflow-hidden px-5 py-3 grid grid-cols-12 gap-3 text-[10px] text-gray-700">
+          {/* Colonne gauche — Parties + Objet + Fiche */}
+          <div className="col-span-5 space-y-2">
+            <section>
+              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
+                Entre les soussignés
+              </h4>
+              <p className="leading-snug">
+                <strong>YEHI OR Tech</strong>, éditrice de la plateforme SaaS Academia Helm, sise à Parakou,
+                République du Bénin, ci-après « <strong>le Prestataire</strong> ».
+              </p>
+              <p className="leading-snug mt-1">
+                <strong>{schoolName}</strong>, représentée par son promoteur{' '}
+                <strong>{promoterName}</strong>, ci-après « <strong>le Client</strong> ».
+              </p>
+            </section>
+
+            <section>
+              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
+                Article 1 — Fiche de souscription
+              </h4>
+              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px]">
+                <div><span className="text-gray-500">École :</span> <strong>{schoolName}</strong></div>
+                <div><span className="text-gray-500">Promoteur :</span> <strong>{promoterName}</strong></div>
+                <div><span className="text-gray-500">Ville :</span> {schoolCity}</div>
+                <div><span className="text-gray-500">Tél :</span> {schoolPhone}</div>
+                <div><span className="text-gray-500">Email :</span> {schoolEmail}</div>
+                <div><span className="text-gray-500">Élèves :</span> <strong>{studentCount}</strong></div>
+                <div><span className="text-gray-500">Plan :</span> <strong>{planName}</strong></div>
+                <div><span className="text-gray-500">Bilingue :</span> {bilingual ? 'Oui' : 'Non'}</div>
+                <div className="col-span-2"><span className="text-gray-500">Sous-domaine :</span> {subdomain}.academiahelm.com</div>
+                <div className="col-span-2"><span className="text-gray-500">Date d'effet :</span> {today}</div>
+              </div>
+            </section>
+
+            <section>
+              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
+                Article 2 — Objet
+              </h4>
+              <p className="leading-snug">
+                Concession d'un droit d'usage non exclusif de la plateforme Academia Helm (Web, Desktop, Mobile),
+                hébergement, maintenance, support et accès aux agents IA (ORION, SARA, ATLAS).
+              </p>
+            </section>
+
+            <section>
+              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
+                Article 5 — Durée et reconduction
+              </h4>
+              <p className="leading-snug">
+                Durée initiale d'un (1) an, renouvelable par tacite reconduction sauf dénonciation 60 jours
+                avant la <strong>date d'échéance annuelle</strong>.
+              </p>
+            </section>
+
+            <section>
+              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
+                Article 8 — Propriété intellectuelle
+              </h4>
+              <p className="leading-snug">
+                La plateforme demeure propriété exclusive du Prestataire. Les données saisies par le Client
+                demeurent sa propriété.
+              </p>
+            </section>
+
+            <section>
+              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
+                Article 13 — Droit applicable
+              </h4>
+              <p className="leading-snug">
+                Droit de la République du Bénin. Compétence des juridictions de Parakou en cas de différend.
+              </p>
+            </section>
+          </div>
+
+          {/* Colonne droite — Tarifs + Signatures */}
+          <div className="col-span-7 space-y-2 flex flex-col">
+            <section>
+              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
+                Article 3 — Plan souscrit et grille tarifaire
+              </h4>
+              <table className="w-full text-[9px] border border-gray-300 border-collapse">
+                <thead className="bg-[#0a1d3f] text-white">
+                  <tr>
+                    <th className="px-1.5 py-0.5 text-left">Plan</th>
+                    <th className="px-1.5 py-0.5 text-left">Élèves</th>
+                    <th className="px-1.5 py-0.5 text-right">Activation</th>
+                    <th className="px-1.5 py-0.5 text-right">Annuel</th>
+                    <th className="px-1.5 py-0.5 text-right">Total An 1</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {bilingual && (
-              <p className="text-xs mt-2 text-amber-700">Option bilingue FR/EN : <strong>50 000 FCFA/an</strong> (en supplément)</p>
-            )}
-            <p className="text-xs mt-2 font-semibold text-green-700">Coût total Année 1 : {formatCurrency(totalYearOne)} FCFA</p>
-          </div>
+                </thead>
+                <tbody>
+                  {PLAN_TABLE.map(p => (
+                    <tr
+                      key={p.code}
+                      className={p.code === planCode ? 'bg-blue-50 font-bold' : ''}
+                    >
+                      <td className="px-1.5 py-0.5">
+                        {p.name}{p.code === planCode && <span className="text-emerald-600 ml-1">☑</span>}
+                      </td>
+                      <td className="px-1.5 py-0.5">{p.range}</td>
+                      <td className="px-1.5 py-0.5 text-right">{p.activation}</td>
+                      <td className="px-1.5 py-0.5 text-right">{p.annual}</td>
+                      <td className="px-1.5 py-0.5 text-right">{p.total}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {bilingual && (
+                <p className="text-[9px] mt-1 text-amber-700">
+                  Option bilingue FR/EN : <strong>50 000 FCFA/an</strong> (en supplément)
+                </p>
+              )}
+              <p className="text-[10px] mt-1 font-bold text-emerald-700">
+                Coût total Année 1 : {formatCurrency(totalYearOne)} FCFA
+              </p>
+            </section>
 
-          {/* Article 4 — Paiement */}
-          <div>
-            <h4 className="font-bold text-[#0a1d3f] border-b border-gray-200 pb-1 mb-2">Article 4 — Prix et modalités de paiement</h4>
-            <p className="text-xs leading-relaxed">
-              Les frais d'activation de <strong>300 000 FCFA</strong> sont dus à la signature. Les frais annuels de
-              <strong> {formatCurrency(annualFee)} FCFA</strong> sont dus chaque année à la date anniversaire.
-              Réglement par virement bancaire, Mobile Money (FedaPay/FeexPay) ou espèces contre reçu.
-              WhatsApp gratuit et illimité. SMS, Email et Voice facturés au prix coûtant.
-            </p>
-          </div>
+            <section>
+              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
+                Article 4 — Prix et modalités de paiement
+              </h4>
+              <p className="leading-snug">
+                Frais d'activation de <strong>300 000 FCFA</strong> dus à la signature. Frais annuels de{' '}
+                <strong>{formatCurrency(annualFee)} FCFA</strong> dus chaque année à la{' '}
+                <strong>date d'échéance annuelle</strong>. Réglement par virement bancaire, Mobile Money
+                (FedaPay) ou espèces contre reçu. WhatsApp inclus gratuitement et illimité. SMS, Email et
+                Voice facturés au prix coûtant.
+              </p>
+            </section>
 
-          {/* Article 5 — Durée */}
-          <div>
-            <h4 className="font-bold text-[#0a1d3f] border-b border-gray-200 pb-1 mb-2">Article 5 — Durée et reconduction</h4>
-            <p className="text-xs leading-relaxed">
-              Le Contrat prend effet à la signature pour une durée initiale d'un (1) an, renouvelable par tacite reconduction
-              sauf dénonciation 60 jours avant la date anniversaire.
-            </p>
-          </div>
+            <section>
+              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
+                Articles 6 & 7 — Obligations des Parties
+              </h4>
+              <p className="leading-snug">
+                <strong>Prestataire :</strong> disponibilité, maintenance, support, onboarding, formation,
+                confidentialité des données. <strong>Client :</strong> paiement aux échéances, informations
+                exactes, usage conforme, confidentialité des identifiants.
+              </p>
+            </section>
 
-          {/* Article 8 — Propriété intellectuelle */}
-          <div>
-            <h4 className="font-bold text-[#0a1d3f] border-b border-gray-200 pb-1 mb-2">Article 8 — Propriété intellectuelle</h4>
-            <p className="text-xs leading-relaxed">
-              La plateforme Academia Helm demeure la propriété exclusive du Prestataire. Les données saisies par le Client
-              demeurent sa propriété exclusive.
-            </p>
+            {/* ── Section signatures — intégrée sans scroll ── */}
+            <section className="bg-gray-50 border border-gray-200 rounded p-2 mt-auto">
+              <h4 className="font-bold text-[#0a1d3f] mb-1.5 flex items-center gap-1.5 text-[10px]">
+                <PenTool className="w-3 h-3" /> Signatures électroniques
+              </h4>
+              <div className="grid grid-cols-2 gap-2">
+                {/* Promoteur */}
+                <div>
+                  <div className="flex items-center gap-1 mb-1 text-[9px] font-semibold text-gray-600">
+                    <User className="w-2.5 h-2.5" /> Pour le Client — {promoterName}
+                  </div>
+                  <SignatureCanvas
+                    width={300}
+                    height={80}
+                    onSignatureChange={setPromoterSignature}
+                    placeholder="Signature du promoteur"
+                  />
+                  <p className="text-[8px] text-gray-400 mt-0.5">Date : {today}</p>
+                </div>
+                {/* Prestataire */}
+                <div>
+                  <div className="flex items-center gap-1 mb-1 text-[9px] font-semibold text-gray-600">
+                    <Building2 className="w-2.5 h-2.5" /> Pour le Prestataire — YEHI OR Tech
+                  </div>
+                  <SignatureCanvas
+                    width={300}
+                    height={80}
+                    onSignatureChange={setProviderSignature}
+                    placeholder="Signature du représentant YEHI OR Tech"
+                  />
+                  <p className="text-[8px] text-gray-400 mt-0.5">
+                    Date : {providerSignature ? today : '____ / ____ / ________'}
+                  </p>
+                </div>
+              </div>
+              <p className="text-center text-[9px] text-gray-500 mt-1.5">
+                Fait à Parakou, le {today}, en deux (2) exemplaires originaux.
+              </p>
+            </section>
           </div>
-
-          {/* Article 13 — Droit applicable */}
-          <div>
-            <h4 className="font-bold text-[#0a1d3f] border-b border-gray-200 pb-1 mb-2">Article 13 — Droit applicable</h4>
-            <p className="text-xs leading-relaxed">
-              Le présent Contrat est soumis au droit de la République du Bénin. En cas de différend, les Parties recherchent
-              une résolution amiable. À défaut, compétence des juridictions de Parakou.
-            </p>
-          </div>
-
-          <p className="text-center text-xs text-gray-500 pt-2">Fait à Parakou, le {today}, en deux (2) exemplaires originaux.</p>
         </div>
 
-        {/* Signature section */}
-        <div className="px-8 py-6 bg-gray-50 border-t border-gray-200">
-          <h4 className="font-bold text-[#0a1d3f] mb-4 flex items-center gap-2">
-            <PenTool className="w-4 h-4" /> Signatures électroniques
-          </h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Promoteur */}
-            <div>
-              <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-gray-600">
-                <User className="w-3 h-3" /> Pour le Client — {promoterName} (Promoteur)
-              </div>
-              <SignatureCanvas
-                width={350} height={140}
-                onSignatureChange={setPromoterSignature}
-                placeholder="Signature du promoteur"
-              />
-              <p className="text-[10px] text-gray-400 mt-1">Date : {today}</p>
-            </div>
-            {/* Prestataire */}
-            <div>
-              <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-gray-600">
-                <Building2 className="w-3 h-3" /> Pour le Prestataire — YEHI OR Tech
-              </div>
-              <SignatureCanvas
-                width={350} height={140}
-                onSignatureChange={setProviderSignature}
-                placeholder="Signature du représentant YEHI OR Tech"
-              />
-              <p className="text-[10px] text-gray-400 mt-1">Date : {providerSignature ? today : '____ / ____ / ________'}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="px-8 py-3 bg-[#0a1d3f] text-center">
-          <p className="text-[10px] text-blue-200">YEHI OR Tech — Academia Helm · contact@academiahelm.com · www.academiahelm.com</p>
+        {/* ── Pied de page ── */}
+        <div className="bg-[#0a1d3f] px-5 py-1.5 text-center border-t border-[#f5b335]/20">
+          <p className="text-[9px] text-blue-200">
+            YEHI OR Tech — Academia Helm · contact@academiahelm.com · www.academiahelm.com · Parakou, République du Bénin
+          </p>
         </div>
       </div>
 
       {/* Actions */}
-      <div className="flex flex-col sm:flex-row gap-3 justify-center mt-6">
-        <Button onClick={handleSignNow} disabled={loading || !promoterSignature} size="lg" className="bg-emerald-600 hover:bg-emerald-700">
-          {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
+      <div className="flex flex-col sm:flex-row gap-2 justify-center mt-2">
+        <Button
+          onClick={handleSignNow}
+          disabled={loading || !promoterSignature}
+          size="sm"
+          className="bg-emerald-600 hover:bg-emerald-700 text-xs h-9"
+        >
+          {loading ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />}
           Signer et créer l'école
         </Button>
-        <Button onClick={handleSendForLater} disabled={loading} size="lg" variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50">
-          <Send className="w-4 h-4 mr-2" /> Envoyer pour signature différée
+        <Button
+          onClick={handleSendForLater}
+          disabled={loading}
+          size="sm"
+          variant="outline"
+          className="border-blue-300 text-blue-700 hover:bg-blue-50 text-xs h-9"
+        >
+          <Send className="w-3.5 h-3.5 mr-1.5" /> Envoyer pour signature différée
         </Button>
-      </div>
-      <div className="mt-4 text-center">
-        <button onClick={onBack} className="text-sm text-gray-500 hover:text-gray-700">← Retour</button>
+        <Button onClick={onBack} size="sm" variant="ghost" className="text-xs h-9">
+          ← Retour
+        </Button>
       </div>
     </motion.div>
   );

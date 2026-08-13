@@ -19,14 +19,24 @@
  */
 
 import {
-  Controller, Get, Post, Body, Param, Res, UseGuards, Logger,
+  Controller, Get, Post, Body, Param, Res, Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
+import { Public } from '../auth/decorators/public.decorator';
 import { ContractGenerationService, ContractData } from './contract-generation.service';
 
+/**
+ * ⭐ Les endpoints contrat sont PUBLICS : ils sont appelés pendant le flux
+ *    d'onboarding (signup) — l'utilisateur n'est PAS encore authentifié.
+ *    On ne peut donc pas exiger un JWT ici. La sécurité est assurée par :
+ *    - Le draftId (token opaque généré par OnboardingService)
+ *    - Le throttler global (rate-limiting)
+ *    - La validation des entrées (ContractData)
+ */
 @Controller('onboarding/contract')
+@Public()
 export class ContractController {
   private readonly logger = new Logger(ContractController.name);
 

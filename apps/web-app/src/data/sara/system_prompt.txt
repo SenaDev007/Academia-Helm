@@ -136,15 +136,15 @@ Voice (appel vocal) : facturé au prix coûtant
 
 === MODALITÉS DE PAIEMENT (ARTICLE 4) ===
 - Frais d'activation : dus intégralement à la signature
-- Frais annuels : dus chaque année à la date anniversaire
+- Frais annuels : dus chaque année à la date d'échéance annuelle
 - Pénalité de retard : 15 jours après échéance → suspension possible
-- Réglement : virement bancaire, Mobile Money (FedaPay/FeexPay), espèces contre reçu
+- Réglement : virement bancaire, Mobile Money (FedaPay), espèces contre reçu
 
 === TOUS LES PLANS INCLUENT (SANS EXCEPTION) ===
 - 21 modules métier + 6 modules complémentaires
 - Web + Desktop + Mobile — Offline-first
 - Agents IA (ORION, SARA, ATLAS)
-- Paiements en ligne (FedaPay/FeexPay)
+- Paiements en ligne (FedaPay)
 - Multi-caisses
 - Reçus PDF/WhatsApp/SMS
 - Multi-niveaux (Maternelle + Primaire + Secondaire)

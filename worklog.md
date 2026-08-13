@@ -3745,3 +3745,113 @@ Stage Summary:
   overview/route.ts, finance-overview/route.ts)
 - ⚠️ Le backend (Railway) doit être redéployé pour /students/abandons
   (commit e054d6d7 ou plus récent). Si déjà déployé, le fix BFF suffit.
+
+---
+Task ID: 30
+Agent: main
+Task: Corriger les bugs du contrat d'onboarding (HTTP 401 + design sans scroll + logos) + nettoyer FeexPay + intégrer liens FedaPay directs sur page tarification.
+
+Work Log:
+
+=== PROBLÈME 1 — HTTP 401 sur boutons "Signer et créer l'école" + "Envoyer pour signature différée" ===
+
+Diagnostic :
+- ContractController (api-server) n'avait pas le décorateur @Public()
+- Le JwtAuthGuard global (APP_GUARD dans app.module.ts) rejetait toutes les requêtes
+  vers /api/onboarding/contract/* car l'utilisateur est en flux d'onboarding
+  (NON authentifié) → 401 Unauthorized
+
+Fix :
+- Ajouté `@Public()` au ContractController (contract.controller.ts)
+- Ajouté commentaire expliquant pourquoi les endpoints sont publics
+  (sécurité assurée par draftId + throttler global)
+- Retiré import inutilisé `UseGuards` de la liste des imports
+- Retiré l'en-tête Authorization des fetch() dans ContractStep.tsx (plus nécessaire)
+
+=== PROBLÈME 2 — Contrat doit tenir sans scroll + logos en-tête ===
+
+Diagnostic :
+- ContractStep.tsx avait `max-h-[500px] overflow-y-auto` sur le corps du contrat
+  → scroll interne, l'utilisateur ne voit pas tout le contrat d'un coup
+- En-tête sans logos réels (juste texte "YEHI OR Tech" / "Academia Helm")
+
+Fix :
+- Refonte complète de ContractStep.tsx :
+  * Layout 2 colonnes (5/7) en grid pour tout faire tenir en viewport
+  * max-height: calc(100vh - 220px) au lieu de max-h-500px fixe
+  * Polices réduites à text-[10px] pour gain de place
+  * En-tête bleu navy dégradé avec logos réels (logo-yehi-or-tech.webp +
+    logo-academia-helm-signature.webp) en boîtes blanches arrondies
+  * Section signatures intégrée dans la colonne droite (mt-auto) sans scroll
+  * Pied de page bleu navy avec coordonnées
+- Refonte de contract-generation.service.ts :
+  * HTML du PDF identique à l'interface (mêmes logos, mêmes couleurs, même
+    structure 2 colonnes)
+  * Logos chargés depuis https://academiahelm.com/images/... (URLs absolues)
+  * Style CSS-in-HTML avec palette navy + gold
+  * Tableau Article 3 avec plan sélectionné mis en évidence (bg bleu clair)
+
+=== PROBLÈME 3 — "Date d'anniversaire" pas professionnel ===
+
+Fix :
+- Remplacé partout par "date d'échéance annuelle" (plus juridique)
+- Fichiers touchés :
+  * apps/web-app/src/lib/services/HelmPricingService.ts (commentaires + PRICING_NOTES)
+  * apps/web-app/src/data/sara/system_prompt.txt
+  * apps/web-app/src/components/public/TarificationPage.tsx (FAQ)
+  * apps/api-server/src/onboarding/services/onboarding.service.ts (commentaire)
+  * apps/api-server/src/sara/site-content.service.ts
+  * apps/api-server/src/sara/sara.service.ts (2 occurrences)
+  * apps/api-server/prisma/migrations/20260901000000_align_pricing_to_contract/migration.sql
+
+=== PROBLÈME 4 — FeexPay à retirer (uniquement FedaPay) ===
+
+Fix :
+- Retiré toutes les mentions "FedaPay/FeexPay" → "FedaPay" dans :
+  * apps/web-app/src/data/sara/system_prompt.txt
+  * apps/web-app/src/lib/services/HelmPricingService.ts (commentaires + PRICING_NOTES)
+  * apps/web-app/src/components/public/TarificationPage.tsx (FAQ)
+  * apps/api-server/src/sara/site-content.service.ts
+  * apps/api-server/src/sara/sara.service.ts
+  * apps/api-server/src/ai/tools/tool-definitions-sara.ts
+  * apps/api-server/prisma/migrations/.../migration.sql
+- L'infrastructure backend FeexPay (controllers, services, webhooks) reste en
+  legacy code (non user-facing) — pas de suppression risquée
+
+=== PROBLÈME 5 — Liens FedaPay directs pour les 4 plans + option bilingue ===
+
+Fix :
+- Ajouté map FEDAPAY_LINKS dans TarificationPage.tsx :
+  * SEED → https://me.fedapay.com/fR9fHMGM (Helm Essentiel)
+  * GROW → https://me.fedapay.com/C10KvvLW (Helm Croissance)
+  * LEAD → https://me.fedapay.com/UwOWk2GZ (Helm Performance)
+  * NETWORK → https://me.fedapay.com/IlZhBDDi (Helm Institution)
+  * BILINGUAL → https://me.fedapay.com/JZSXICow (Option bilingue)
+- PlanCard CTA : `<a href={FEDAPAY_LINKS[plan.code]} target="_blank">`
+  avec icône ExternalLink + label "Payer l'activation via FedaPay"
+- Carte Option bilingue : `<a href={FEDAPAY_LINKS.BILINGUAL} target="_blank">`
+  avec label "Payer l'option bilingue"
+- Ajouté icône ExternalLink aux imports lucide-react
+- Ajouté nouvelle question FAQ "Comment payer l'activation de mon compte ?"
+  qui explique le flux (FedaPay → email → contrat → création école)
+
+Stage Summary:
+- HTTP 401 corrigé : @Public() sur ContractController
+- Contrat sans scroll : layout 2 colonnes, polices réduites, signatures en bas
+- Logos : Academia Helm + YEHI OR Tech dans en-tête interface ET PDF
+- "Date d'anniversaire" → "date d'échéance annuelle" (7 fichiers)
+- FeexPay retiré du user-facing (6 fichiers) — infrastructure legacy conservée
+- Liens FedaPay directs intégrés sur page tarification (5 liens)
+- Files modified: 9
+  * apps/api-server/src/onboarding/contract.controller.ts
+  * apps/api-server/src/onboarding/contract-generation.service.ts
+  * apps/web-app/src/components/onboarding/ContractStep.tsx
+  * apps/web-app/src/components/public/TarificationPage.tsx
+  * apps/web-app/src/lib/services/HelmPricingService.ts
+  * apps/web-app/src/data/sara/system_prompt.txt
+  * apps/api-server/src/sara/sara.service.ts
+  * apps/api-server/src/sara/site-content.service.ts
+  * apps/api-server/src/ai/tools/tool-definitions-sara.ts
+  * apps/api-server/src/onboarding/services/onboarding.service.ts
+  * apps/api-server/prisma/migrations/20260901000000_align_pricing_to_contract/migration.sql
+- ⚠️ Pas encore commit (à pusher sur origin/main après validation utilisateur)

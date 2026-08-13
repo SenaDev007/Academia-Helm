@@ -19,9 +19,9 @@
 --
 -- Modalités de paiement (Article 4) :
 --   - Frais d'activation : dus intégralement à la signature
---   - Frais annuels : dus chaque année à la date anniversaire
+--   - Frais annuels : dus chaque année à la date d'échéance annuelle
 --   - Pénalité de retard : 15 jours après échéance → suspension possible
---   - Réglement : virement bancaire, Mobile Money (FedaPay/FeexPay), espèces
+--   - Réglement : virement bancaire, Mobile Money (FedaPay), espèces
 --
 -- ⚠️ Cette migration met à jour les plans SEED/GROW/LEAD/NETWORK existants
 -- (leurs codes restent inchangés pour la compatibilité avec HelmSubscription.plan

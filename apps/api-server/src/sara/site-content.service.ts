@@ -192,7 +192,7 @@ CRÉATEUR : YEHI OR Tech — entreprise technologique béninoise (Parakou, Béni
         lines.push('- 21 modules métier + 6 modules complémentaires (27 modules au total)');
         lines.push('- Web + Desktop + Mobile — Offline-first');
         lines.push('- Agents IA : ORION (analytique), SARA (closing & guide), ATLAS (exécution)');
-        lines.push('- Paiements en ligne (FedaPay/FeexPay)');
+        lines.push('- Paiements en ligne (FedaPay)');
         lines.push('- Multi-caisses, multi-niveaux (Maternelle + Primaire + Secondaire)');
         lines.push('- Reçus PDF/WhatsApp/SMS');
         lines.push('- Personnalisation de marque');
@@ -209,13 +209,13 @@ CRÉATEUR : YEHI OR Tech — entreprise technologique béninoise (Parakou, Béni
         lines.push('');
         lines.push('MODALITÉS DE PAIEMENT (Article 4) :');
         lines.push('- Frais d\'activation : dus intégralement à la signature');
-        lines.push('- Frais annuels : dus chaque année à la date anniversaire');
+        lines.push('- Frais annuels : dus chaque année à la date d\'échéance annuelle');
         lines.push(`- Pénalité de retard : ${config.graceDays || 15} jours après échéance → suspension possible`);
-        lines.push('- Réglement : virement bancaire, Mobile Money (FedaPay/FeexPay), ou espèces contre reçu');
+        lines.push('- Réglement : virement bancaire, Mobile Money (FedaPay), ou espèces contre reçu');
       }
 
       lines.push('');
-      lines.push('Réassurance : "Paiement sécurisé via FedaPay/FeexPay • Données conservées en cas de suspension"');
+      lines.push('Réassurance : "Paiement sécurisé via FedaPay • Données conservées en cas de suspension"');
 
       return lines.join('\n');
     } catch (error: any) {

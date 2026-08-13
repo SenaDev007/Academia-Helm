@@ -134,7 +134,7 @@ const PRODUCT_KNOWLEDGE = {
       { name: 'Email', description: 'Facturé au prix coûtant selon la consommation réelle (Article 4)' },
       { name: 'Voice (appel vocal)', description: 'Facturé au prix coûtant selon le pays de destination (Article 4)' },
     ],
-    paymentMethods: ['Virement bancaire', 'Mobile Money (FedaPay/FeexPay)', 'Espèces contre reçu'],
+    paymentMethods: ['Virement bancaire', 'Mobile Money (FedaPay)', 'Espèces contre reçu'],
     gracePeriod: 'Pénalité de retard : 15 jours après échéance → suspension possible (Article 4)',
     trial: 'Période d\'essai de 30 jours incluse après le paiement des frais d\'activation',
   },

@@ -874,9 +874,9 @@ ACCÈS AUX DONNÉES — STRICTEMENT LIMITÉ AU PRICING
 ⭐ CONNAISSANCE DU CONTRAT (Article 4) :
 - Facturation ANNUELLE uniquement (pas d'option mensuelle)
 - Frais d'activation : dus intégralement à la signature
-- Frais annuels : dus chaque année à la date anniversaire
+- Frais annuels : dus chaque année à la date d'échéance annuelle
 - Pénalité de retard : 15 jours après échéance → suspension possible
-- Réglement : virement bancaire, Mobile Money (FedaPay/FeexPay), espèces contre reçu
+- Réglement : virement bancaire, Mobile Money (FedaPay), espèces contre reçu
 - TOUS les plans incluent : 21 modules métier + 6 modules complémentaires, Web + Desktop + Mobile, Offline-first, Agents IA (ORION, SARA, ATLAS), paiements en ligne, multi-caisses, multi-niveaux, personnalisation de marque, site institutionnel
 
 ❌ CE QUE TU NE PEUX PAS LIRE (interdit d'accès DB) :
@@ -1079,9 +1079,9 @@ ACCÈS AUX DONNÉES — STRICTEMENT LIMITÉ AU PRICING
 ⭐ CONNAISSANCE DU CONTRAT (Article 4) :
 - Facturation ANNUELLE uniquement (pas d'option mensuelle)
 - Frais d'activation : dus intégralement à la signature
-- Frais annuels : dus chaque année à la date anniversaire
+- Frais annuels : dus chaque année à la date d'échéance annuelle
 - Pénalité de retard : 15 jours après échéance → suspension possible
-- Réglement : virement bancaire, Mobile Money (FedaPay/FeexPay), espèces contre reçu
+- Réglement : virement bancaire, Mobile Money (FedaPay), espèces contre reçu
 - TOUS les plans incluent : 21 modules métier + 6 modules complémentaires, Web + Desktop + Mobile, Offline-first, Agents IA (ORION, SARA, ATLAS), paiements en ligne, multi-caisses, multi-niveaux, personnalisation de marque, site institutionnel
 
 ❌ CE QUE TU NE PEUX PAS LIRE (interdit d'accès DB) :

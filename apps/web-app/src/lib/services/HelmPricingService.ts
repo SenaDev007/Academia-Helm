@@ -11,9 +11,9 @@
 // Règles du contrat (Article 4) :
 //   - Facturation ANNUELLE uniquement (pas d'option mensuelle)
 //   - Frais d'activation : 300 000 FCFA (uniforme, payables à la signature)
-//   - Frais annuels : dus chaque année à la date anniversaire
+//   - Frais annuels : dus chaque année à la date d'échéance annuelle
 //   - Pénalité de retard : 15 jours après échéance → suspension possible
-//   - Réglement : virement bancaire, Mobile Money (FedaPay/FeexPay), espèces
+//   - Réglement : virement bancaire, Mobile Money (FedaPay), espèces
 //
 // Add-ons (Article 4) :
 //   - Option bilingue FR/EN : 50 000 FCFA/an (en supplément du plan)
@@ -112,12 +112,12 @@ export const ALL_MODULES = [
 export const PRICING_NOTES = [
   '21 modules métier + 6 modules complémentaires inclus dans TOUS les plans — aucune restriction',
   'Frais d\'activation uniques : 300 000 FCFA (payables à la signature)',
-  'Frais annuels dus chaque année à la date anniversaire',
+  'Frais annuels dus chaque année à la date d\'échéance annuelle',
   'Option bilingue FR/EN : 50 000 FCFA/an (en supplément du plan)',
   'WhatsApp inclus gratuitement et illimité dans tous les plans',
   'SMS, Email et Voice : facturés au prix coûtant selon consommation',
   'Web + Desktop + Mobile — Offline-first — Agents IA (ORION, SARA, ATLAS)',
-  'Règlement : virement bancaire, Mobile Money (FedaPay/FeexPay), espèces contre reçu',
+  'Règlement : virement bancaire, Mobile Money (FedaPay), espèces contre reçu',
 ] as const;
 
 export function getRecommendedPlan(studentCount: number): HelmPlanKey {

@@ -29,8 +29,22 @@ import {
   MessageSquare,
   Mail,
   Phone,
+  ExternalLink,
 } from 'lucide-react';
 import { Footer2 } from '@/components/ui/footer-2';
+
+// ─── Liens FedaPay directs (page de paiement hébergée par FedaPay) ────────
+// ⭐ Configuration fournie par le client (14 août 2026) :
+//    Chaque plan a son propre lien FedaPay qui pré-remplit le montant
+//    d'activation (300 000 FCFA) + le libellé du plan.
+//    L'option bilingue a son propre lien séparé (50 000 FCFA/an).
+const FEDAPAY_LINKS: Record<string, string> = {
+  SEED: 'https://me.fedapay.com/fR9fHMGM',     // Helm Essentiel — 300k activation
+  GROW: 'https://me.fedapay.com/C10KvvLW',     // Helm Croissance — 300k activation
+  LEAD: 'https://me.fedapay.com/UwOWk2GZ',     // Helm Performance — 300k activation
+  NETWORK: 'https://me.fedapay.com/IlZhBDDi',  // Helm Institution — 300k activation
+  BILINGUAL: 'https://me.fedapay.com/JZSXICow', // Option bilingue — 50k/an
+};
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -181,13 +195,15 @@ export default function TarificationPage() {
                   Interface et documents générés en FR et EN simultanément. Séparation
                   des matières, examens et bulletins par langue.
                 </p>
-                {/* ⭐ Bouton "Ajouter l'option" → redirige vers /signup?bilingual=true */}
-                <Link
-                  href="/signup?bilingual=true"
+                {/* ⭐ Bouton "Payer l'option bilingue" → ouvre FedaPay direct */}
+                <a
+                  href={FEDAPAY_LINKS.BILINGUAL}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-[#f5b335] text-[#0a1d3f] rounded-lg text-xs font-bold hover:scale-105 transition-transform"
                 >
-                  Ajouter l'option <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
+                  Payer l'option bilingue <ExternalLink className="w-3.5 h-3.5" />
+                </a>
               </div>
 
               {/* WhatsApp */}
@@ -259,7 +275,7 @@ export default function TarificationPage() {
               />
               <FAQItem
                 question="Comment fonctionne la facturation annuelle ?"
-                answer="Vous payez le frais d'activation à la signature, puis le frais annuel de votre plan (50 000 à 150 000 FCFA selon la tranche d'élèves) chaque année à la date anniversaire. Une pénalité de retard est applicable 15 jours après l'échéance, avec suspension possible du service."
+                answer="Vous payez le frais d'activation à la signature, puis le frais annuel de votre plan (50 000 à 150 000 FCFA selon la tranche d'élèves) chaque année à la date d'échéance annuelle. Une pénalité de retard est applicable 15 jours après l'échéance, avec suspension possible du service."
               />
               <FAQItem
                 question="Tous les modules sont-ils vraiment inclus ?"
@@ -274,8 +290,12 @@ export default function TarificationPage() {
                 answer="L'option bilingue FR/EN est un add-on de 50 000 FCFA/an qui permet de séparer les matières et examens pour les écoles qui enseignent en français ET en anglais. Elle peut être ajoutée à n'importe quel plan, quel que soit le nombre d'élèves."
               />
               <FAQItem
-                question="Quels sont les moyens de paiement acceptés ?"
-                answer="Conformément au contrat (Article 4) : virement bancaire, Mobile Money via FedaPay/FeexPay, ou espèces contre reçu. WhatsApp est gratuit et illimité dans tous les plans. Les SMS, emails et appels vocaux sont refacturés au prix coûtant selon la consommation."
+                question="Comment payer l'activation de mon compte ?"
+                answer="Le paiement des frais d'activation (300 000 FCFA) se fait directement en ligne via FedaPay (Mobile Money ou carte bancaire). Cliquez sur le bouton « Payer l'activation via FedaPay » du plan choisi sur cette page. Après confirmation du paiement, vous recevez un email avec le lien de finalisation de votre contrat d'abonnement et la création de votre école."
+              />
+              <FAQItem
+                question="Quels sont les autres moyens de paiement acceptés ?"
+                answer="Conformément au contrat (Article 4) : virement bancaire, Mobile Money via FedaPay, ou espèces contre reçu. WhatsApp est gratuit et illimité dans tous les plans. Les SMS, emails et appels vocaux sont refacturés au prix coûtant selon la consommation."
               />
               <FAQItem
                 question="Comment sont déterminées les tranches d'élèves ?"
@@ -414,17 +434,41 @@ function PlanCard({ plan }: { plan: PricingPlan }) {
           ))}
         </ul>
 
-        {/* CTA — aligné en bas */}
-        <Link
-          href="/signup"
-          className={`block text-center py-3 rounded-xl font-bold text-sm transition-all mt-auto ${
-            plan.isPopular
-              ? 'bg-[#f5b335] text-[#0a1d3f] hover:scale-105'
-              : 'bg-[#0b2f73] text-white hover:bg-[#144798]'
-          }`}
-        >
-          {isSurDevis ? 'Demander un devis' : 'Choisir ce plan'}
-        </Link>
+        {/* CTA — Paiement direct via FedaPay (lien hébergé) */}
+        {(() => {
+          const fedapayUrl = FEDAPAY_LINKS[plan.code];
+          if (isSurDevis || !fedapayUrl) {
+            return (
+              <Link
+                href="/signup"
+                className={`block text-center py-3 rounded-xl font-bold text-sm transition-all mt-auto ${
+                  plan.isPopular
+                    ? 'bg-[#f5b335] text-[#0a1d3f] hover:scale-105'
+                    : 'bg-[#0b2f73] text-white hover:bg-[#144798]'
+                }`}
+              >
+                Demander un devis
+              </Link>
+            );
+          }
+          return (
+            <a
+              href={fedapayUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`group block text-center py-3 rounded-xl font-bold text-sm transition-all mt-auto ${
+                plan.isPopular
+                  ? 'bg-[#f5b335] text-[#0a1d3f] hover:scale-105'
+                  : 'bg-[#0b2f73] text-white hover:bg-[#144798]'
+              }`}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                Payer l'activation via FedaPay
+                <ExternalLink className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+              </span>
+            </a>
+          );
+        })()}
       </div>
 
       {/* Animations */}

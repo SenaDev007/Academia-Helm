@@ -734,7 +734,7 @@ export class OnboardingService {
 
         // ⭐ Créer la souscription ACTIVE (pas de trial — aligné sur le contrat)
         //    Le contrat prévoit : frais d'activation à la signature + frais annuels
-        //    à la date anniversaire. Pas de période d'essai.
+        //    à la date d'échéance annuelle. Pas de période d'essai.
         const pricing = draft.priceSnapshot as any;
         const subscriptionStart = new Date();
         const subscriptionEnd = new Date(subscriptionStart);

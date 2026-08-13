@@ -845,19 +845,30 @@ export default function OnboardingWizard() {
       try {
         // Normaliser le numéro de téléphone du promoteur avant l'envoi
         const normalizedPromoterPhone = normalizePhoneNumber(data.promoterPhone, data.country);
-        
+
+        // ⭐ Mode YEHI OR Tech : skip OTP, envoyer les credentials admin à la place
+        const payload: any = {
+          draftId: data.draftId,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          email: data.promoterEmail,
+          phone: normalizedPromoterPhone,
+          password: data.password,
+        };
+
+        if (creationMode === 'self-service') {
+          payload.otp = data.otp;
+        } else {
+          // Mode YEHI OR Tech : envoyer les credentials admin pour validation backend
+          payload.adminEmail = adminEmail;
+          payload.adminPassword = adminPassword;
+          payload.creationMode = 'yehi-or-tech';
+        }
+
         const response = await fetch('/api/onboarding/promoter', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            draftId: data.draftId,
-            firstName: data.firstName,
-            lastName: data.lastName,
-            email: data.promoterEmail,
-            phone: normalizedPromoterPhone,
-            password: data.password,
-            otp: data.otp,
-          }),
+          body: JSON.stringify(payload),
         });
 
         if (!response.ok) {

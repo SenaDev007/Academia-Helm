@@ -31,14 +31,23 @@ export async function POST(request: NextRequest) {
     console.log('🔍 [Onboarding Promoter] API Base URL:', apiBaseUrl);
 
     // Mapper les champs frontend -> backend
-    const backendBody = {
+    const backendBody: any = {
       firstName: body.firstName,
       lastName: body.lastName,
       email: body.email,
       phone: body.phone,
       password: body.password,
-      otpCode: body.otp, // Frontend envoie 'otp', backend attend 'otpCode'
     };
+
+    // ⭐ Mode self-service : envoyer l'OTP. Mode yehi-or-tech : skip OTP.
+    if (body.creationMode === 'yehi-or-tech') {
+      backendBody.creationMode = 'yehi-or-tech';
+      backendBody.adminEmail = body.adminEmail;
+      backendBody.adminPassword = body.adminPassword;
+      // Pas d'otpCode en mode yehi-or-tech
+    } else {
+      backendBody.otpCode = body.otp;
+    }
 
     let response: Response;
     try {

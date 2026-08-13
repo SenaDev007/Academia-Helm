@@ -74,6 +74,13 @@ export default function NotificationDropdown() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen, setIsOpen]);
 
+  // ⭐ Écouter l'événement custom 'open-notifications' (émis par la cloche ORION)
+  useEffect(() => {
+    const handleOpen = () => setIsOpen(true);
+    window.addEventListener('open-notifications', handleOpen);
+    return () => window.removeEventListener('open-notifications', handleOpen);
+  }, [setIsOpen]);
+
   const handleClickNotif = (notif: typeof notifications[0]) => {
     if (!notif.isRead) markAsRead(notif.id);
     const url = notif.data?.url;

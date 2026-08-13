@@ -375,12 +375,15 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
             {/* ── Bouton "Synchroniser" — visible uniquement dans l'app desktop ── */}
             <SyncButton />
 
-            {/* Alertes ORION */}
+            {/* Alertes ORION — ⭐ ouvre le dropdown de notifications au lieu de rediriger */}
             {orionAlertsCount > 0 && (
               <button
-                onClick={() => router.push('/app')}
+                onClick={() => {
+                  // ⭐ Déclencher l'ouverture du NotificationDropdown via un event custom
+                  window.dispatchEvent(new CustomEvent('open-notifications'));
+                }}
                 className="relative p-2 rounded-lg hover:bg-gray-50 transition-all duration-200 hover:scale-105 active:scale-95 group"
-                title="Alertes ORION"
+                title="Alertes ORION — cliquez pour voir les notifications"
               >
                 <Bell className="w-[18px] h-[18px] text-gray-500 group-hover:text-blue-900 transition-colors" />
                 <span className="absolute -top-0.5 -right-0.5 bg-gradient-to-r from-red-500 to-red-600 text-white text-[10px] rounded-full w-4.5 h-4.5 flex items-center justify-center font-bold shadow-sm animate-pulse leading-none" style={{ minWidth: '18px', height: '18px' }}>

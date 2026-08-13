@@ -117,11 +117,20 @@ const DEFAULT_RELEASE: Release = {
 
 // ── Hook: vérifie si un fichier de téléchargement existe (HEAD request) ──
 // Retourne true si le fichier est disponible, false si 404
+// ⭐ Pour les URLs GitHub raw, on skip la vérification HEAD (GitHub renvoie 405)
+//    et on considère le fichier comme disponible
 function useFileAvailability(url: string): { available: boolean; checking: boolean } {
   const [available, setAvailable] = useState(false);
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
+    // ⭐ Skip HEAD check pour les URLs GitHub (retournent 405 Method Not Allowed)
+    if (url.includes('github.com') || url.includes('raw.githubusercontent.com')) {
+      setAvailable(true);
+      setChecking(false);
+      return;
+    }
+
     let cancelled = false;
     async function check() {
       try {

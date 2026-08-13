@@ -52,6 +52,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PrismaService } from '../database/prisma.service';
 import { CollectionSummaryImportService } from './collection-summary-import.service';
+import { PromoterEligibilityService } from './promoter-eligibility.service';
 
 @Controller('finance')
 @UseGuards(JwtAuthGuard)
@@ -61,6 +62,7 @@ export class CollectionSummaryController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly importService: CollectionSummaryImportService,
+    private readonly promoterEligibilityService: PromoterEligibilityService,
   ) {}
 
   @Get('collection-summary')
@@ -72,12 +74,13 @@ export class CollectionSummaryController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('excludePromoterCaisse') excludePromoterCaisse?: string,
+    @Query('includePromoterStudents') includePromoterStudents?: string,
   ) {
     if (!academicYearId) {
       return { students: [], recap: [], installments: [] };
     }
 
-    this.logger.log(`Collection summary: tenant=${tenantId}, year=${academicYearId}, level=${levelId || 'all'}, class=${classId || 'all'}, page=${page || 'all'}, limit=${limit || 'all'}, excludePromoterCaisse=${excludePromoterCaisse || 'false'}`);
+    this.logger.log(`Collection summary: tenant=${tenantId}, year=${academicYearId}, level=${levelId || 'all'}, class=${classId || 'all'}, page=${page || 'all'}, limit=${limit || 'all'}, excludePromoterCaisse=${excludePromoterCaisse || 'false'}, includePromoterStudents=${includePromoterStudents || 'false'}`);
 
     // ⭐ Toggle : exclure les paiements reçus sur la caisse FONDE (caisse promoteur)
     //    pour ne pas gonfler les stats caissiers. Par défaut false (comportement
@@ -198,6 +201,22 @@ export class CollectionSummaryController {
       });
 
       this.logger.debug(`Filter by level: levelId=${levelId}, levelCode=${levelCode}, total=${enrollments.length}, filtered=${filteredEnrollments.length}`);
+    }
+
+    // ⭐ EXCLUSION AUTOMATIQUE des élèves marqués "paiement fondateur"
+    //    Ces élèves sont exclus du sous-onglet "Encaissements standard" et
+    //    apparaissent dans le sous-onglet dédié "Reçu par le fondateur".
+    //    Le paramètre includePromoterStudents=true permet de les inclure
+    //    (utilisé par le sous-onglet "Reçu par le fondateur" pour afficher
+    //    la liste de CES élèves avec leurs paiements).
+    const shouldIncludePromoterStudents = includePromoterStudents === 'true' || includePromoterStudents === '1';
+    if (!shouldIncludePromoterStudents) {
+      const promoterStudentIds = await this.promoterEligibilityService.getActiveStudentIds(tenantId, academicYearId);
+      if (promoterStudentIds.size > 0) {
+        const beforeCount = filteredEnrollments.length;
+        filteredEnrollments = filteredEnrollments.filter((e) => !promoterStudentIds.has(e.studentId));
+        this.logger.debug(`Excluded ${beforeCount - filteredEnrollments.length} promoter-eligible students from standard collection summary`);
+      }
     }
 
     // ─── 3. Récupérer tous les paiements pour ces élèves ──────────────────────

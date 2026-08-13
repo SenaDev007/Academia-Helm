@@ -32,6 +32,7 @@ import {
   studentAccountsFilename,
   studentHistoryFilename,
 } from '@/lib/exports/filename-helpers';
+import PromoterEligibilityToggle from './PromoterEligibilityToggle';
 
 const STATUS_COLORS: Record<string, string> = {
   PAID: 'bg-green-100 text-green-800',
@@ -647,17 +648,19 @@ export default function StudentAccountsContent() {
                     <TableHead className="text-right">Payé</TableHead>
                     <TableHead className="text-right">Solde</TableHead>
                     <TableHead>Statut</TableHead>
+                    {/* ⭐ Colonne "Fondateur" — toggle pour marquer les élèves dont les parents paient directement le fondateur */}
+                    <TableHead className="text-center" title="Marquer pour paiement direct au fondateur">Fondateur</TableHead>
                     <TableHead className="text-center">Historique</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-gray-500 py-8">Chargement...</TableCell>
+                      <TableCell colSpan={8} className="text-center text-gray-500 py-8">Chargement...</TableCell>
                     </TableRow>
                   ) : filteredAccounts.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-gray-500 py-12">
+                      <TableCell colSpan={8} className="text-center text-gray-500 py-12">
                         {searchQuery ? `Aucun élève trouvé pour « ${searchQuery} ».` : 'Aucun compte élève.'}
                       </TableCell>
                     </TableRow>
@@ -851,6 +854,14 @@ export default function StudentAccountsContent() {
                           </TableCell>
                           <TableCell>
                             <Badge className={STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-800'}>{a.status}</Badge>
+                          </TableCell>
+                          {/* ⭐ Toggle "Fondateur" — marquer cet élève pour paiement direct au fondateur */}
+                          <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                            <PromoterEligibilityToggle
+                              studentId={a.studentId}
+                              studentName={a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId}
+                              academicYearId={effectiveYearId}
+                            />
                           </TableCell>
                           <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                             <Button

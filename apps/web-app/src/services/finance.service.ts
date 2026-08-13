@@ -663,6 +663,52 @@ class FinanceService {
   async validateTreasuryClosure(id: string): Promise<any> {
     return financeFetch(`/api/finance/treasury/daily-closures/${encodeURIComponent(id)}/validate`, { method: 'POST' });
   }
+
+  // ─── Promoter Eligibility — élèves "paiement direct au fondateur" ─────────
+
+  /**
+   * Active le flag "paiement fondateur" pour un élève (avec motif obligatoire).
+   */
+  async activatePromoterEligibility(data: {
+    studentId: string;
+    academicYearId: string;
+    motif: string;
+    expectedDate?: string;
+  }): Promise<{ success: boolean; id: string }> {
+    return financeFetch('/api/finance/promoter-eligibility/activate', {
+      method: 'POST',
+      body: data,
+    });
+  }
+
+  /**
+   * Désactive le flag (toggle off).
+   */
+  async deactivatePromoterEligibility(studentId: string, academicYearId: string): Promise<{ success: boolean }> {
+    return financeFetch('/api/finance/promoter-eligibility/deactivate', {
+      method: 'POST',
+      body: { studentId, academicYearId },
+    });
+  }
+
+  /**
+   * Liste tous les élèves marqués actifs (sous-onglet "Reçu par le fondateur").
+   */
+  async listPromoterEligible(academicYearId: string): Promise<any[]> {
+    if (!academicYearId) return [];
+    const res = await financeFetch(`/api/finance/promoter-eligibility?academicYearId=${encodeURIComponent(academicYearId)}`);
+    return Array.isArray(res) ? res : [];
+  }
+
+  /**
+   * Vérifie en masse les statuts d'éligibilité (pour afficher les toggles).
+   */
+  async bulkCheckPromoterEligibility(studentIds: string[], academicYearId: string): Promise<Set<string>> {
+    if (!academicYearId || studentIds.length === 0) return new Set();
+    const idsParam = studentIds.join(',');
+    const res = await financeFetch(`/api/finance/promoter-eligibility/bulk-check?academicYearId=${encodeURIComponent(academicYearId)}&studentIds=${encodeURIComponent(idsParam)}`);
+    return new Set(res.eligibleStudentIds || []);
+  }
 }
 
 export const financeService = new FinanceService();

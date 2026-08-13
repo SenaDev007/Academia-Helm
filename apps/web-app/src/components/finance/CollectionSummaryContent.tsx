@@ -5,13 +5,15 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   Download, FileText, Loader2, Filter,
-  ChevronLeft, ChevronRight, MoreHorizontal, Upload,
+  ChevronLeft, ChevronRight, MoreHorizontal, Upload, Crown,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
 import { getAcademicYears } from '@/services/settings.service';
+import { financeService } from '@/services/finance.service';
 import { formatCurrency, cn } from '@/lib/utils';
 import ImportBilanModal from './ImportBilanModal';
 
@@ -80,7 +82,7 @@ interface RecapRow {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function CollectionSummaryContent() {
-  const [activeSubTab, setActiveSubTab] = useState<'detail' | 'recap'>('detail');
+  const [activeSubTab, setActiveSubTab] = useState<'detail' | 'recap' | 'promoter'>('detail');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -93,6 +95,10 @@ export default function CollectionSummaryContent() {
   // ⭐ Toggle : exclure les paiements reçus sur la caisse FONDE (caisse promoteur)
   //    du bilan des encaissements. Permet d'isoler les stats caissiers.
   const [excludePromoterCaisse, setExcludePromoterCaisse] = useState<boolean>(false);
+
+  // ⭐ Liste des élèves marqués "paiement fondateur" (sous-onglet dédié)
+  const [promoterEligibleList, setPromoterEligibleList] = useState<any[]>([]);
+  const [promoterLoading, setPromoterLoading] = useState(false);
 
   // Données
   const [installments, setInstallments] = useState<FeeInstallment[]>([]);
@@ -192,6 +198,19 @@ export default function CollectionSummaryContent() {
     setCurrentPage(1);
   }, [academicYearId, selectedLevelId, selectedClassId]);
 
+  // ⭐ Charger la liste des élèves "paiement fondateur" quand le sous-onglet est actif
+  useEffect(() => {
+    if (activeSubTab !== 'promoter' || !academicYearId) return;
+    setPromoterLoading(true);
+    financeService.listPromoterEligible(academicYearId)
+      .then((list) => setPromoterEligibleList(list))
+      .catch((err) => {
+        console.error('[PromoterEligible] Load failed:', err);
+        setPromoterEligibleList([]);
+      })
+      .finally(() => setPromoterLoading(false));
+  }, [activeSubTab, academicYearId]);
+
   // ─── Filtered classes based on selected level ──────────────────────────────
   const filteredClasses = useMemo(() => {
     if (!selectedLevelId) return classes;
@@ -259,6 +278,18 @@ export default function CollectionSummaryContent() {
           }`}
         >
           Récapitulatif
+        </button>
+        {/* ⭐ Sous-onglet "Reçu par le fondateur" — élèves marqués paiement direct fondateur */}
+        <button
+          onClick={() => setActiveSubTab('promoter')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+            activeSubTab === 'promoter'
+              ? 'border-amber-600 text-amber-700'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Crown className="w-4 h-4" />
+          Reçu par le fondateur
         </button>
       </div>
 
@@ -392,6 +423,12 @@ export default function CollectionSummaryContent() {
             </div>
           )}
         </div>
+      ) : activeSubTab === 'promoter' ? (
+        <PromoterEligibleList
+          list={promoterEligibleList}
+          loading={promoterLoading}
+          academicYearId={academicYearId}
+        />
       ) : (
         <RecapTable
           recapRows={recapRows}
@@ -668,6 +705,108 @@ function RecapTable({
           </TableRow>
         </TableBody>
       </Table>
+    </div>
+  );
+}
+
+// ─── Sous-onglet "Reçu par le fondateur" ─────────────────────────────────────
+// Liste des élèves marqués "paiement direct au fondateur" avec leur motif
+// et leur date d'échéance prévue.
+
+function PromoterEligibleList({
+  list,
+  loading,
+  academicYearId,
+}: {
+  list: any[];
+  loading: boolean;
+  academicYearId: string;
+}) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
+        <span className="ml-3 text-sm text-gray-600">Chargement...</span>
+      </div>
+    );
+  }
+
+  if (list.length === 0) {
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-8 text-center">
+        <Crown className="w-12 h-12 text-amber-400 mx-auto mb-3" />
+        <p className="text-sm text-amber-800 font-medium mb-1">
+          Aucun élève marqué "paiement fondateur"
+        </p>
+        <p className="text-xs text-amber-600">
+          Activez le toggle "Fondateur" sur la ligne d'un élève dans Comptes élèves
+          pour le faire apparaître ici.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
+      <div className="bg-gradient-to-r from-amber-500 to-amber-600 p-4 text-white">
+        <div className="flex items-center gap-2">
+          <Crown className="w-5 h-5" />
+          <h3 className="font-bold">Élèves — Paiement direct au fondateur</h3>
+          <Badge className="ml-auto bg-white/20 text-white border-white/30">
+            {list.length} élève(s)
+          </Badge>
+        </div>
+      </div>
+      <div className="overflow-auto" style={{ maxHeight: '70vh' }}>
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-amber-50">
+              <TableHead>Élève</TableHead>
+              <TableHead>Classe</TableHead>
+              <TableHead>Motif</TableHead>
+              <TableHead className="text-center">Échéance prévue</TableHead>
+              <TableHead className="text-center">Marqué par</TableHead>
+              <TableHead className="text-center">Date marquage</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {list.map((row) => (
+              <TableRow key={row.id} className="hover:bg-amber-50/50">
+                <TableCell className="font-medium">
+                  <div className="flex items-center gap-2">
+                    <Crown className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                    <div>
+                      <div className="font-semibold">{row.studentName}</div>
+                      <div className="text-xs text-gray-500">{row.studentMatricule || '—'}</div>
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell>{row.className}</TableCell>
+                <TableCell className="text-sm text-gray-700 max-w-xs">
+                  <div className="truncate" title={row.motif}>{row.motif}</div>
+                </TableCell>
+                <TableCell className="text-center text-sm">
+                  {row.expectedDate
+                    ? new Date(row.expectedDate).toLocaleDateString('fr-FR', {
+                        day: '2-digit', month: 'short', year: 'numeric',
+                      })
+                    : <span className="text-gray-400">—</span>}
+                </TableCell>
+                <TableCell className="text-center text-sm text-gray-600">
+                  {row.createdByName || '—'}
+                </TableCell>
+                <TableCell className="text-center text-sm text-gray-500">
+                  {row.createdAt
+                    ? new Date(row.createdAt).toLocaleDateString('fr-FR', {
+                        day: '2-digit', month: '2-digit', year: 'numeric',
+                      })
+                    : '—'}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }

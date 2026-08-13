@@ -87,6 +87,9 @@ import { FeeOverrideImportService } from './fee-override-import.service';
 import { CollectionSummaryImportService } from './collection-summary-import.service';
 import { CollectionSummaryController } from './collection-summary.controller';
 import { MultiActionPaymentService } from './multi-action-payment.service';
+// ⭐ Promoter Eligibility — élèves "paiement direct au fondateur"
+import { PromoterEligibilityController } from './promoter-eligibility.controller';
+import { PromoterEligibilityService } from './promoter-eligibility.service';
 import { MultiActionPaymentController } from './multi-action-payment.controller';
 import { CommunicationModule } from '../communication/communication.module';
 
@@ -133,6 +136,8 @@ import { CommunicationModule } from '../communication/communication.module';
     CollectionSummaryController,
     // Multi-action : frais + articles boutique en un seul encaissement
     MultiActionPaymentController,
+    // ⭐ Promoter Eligibility — élèves "paiement direct au fondateur"
+    PromoterEligibilityController,
   ],
   providers: [
     FeesPrismaService,
@@ -184,6 +189,8 @@ import { CommunicationModule } from '../communication/communication.module';
     CollectionSummaryImportService,
     // Multi-action : frais + articles boutique en un seul encaissement
     MultiActionPaymentService,
+    // ⭐ Promoter Eligibility — élèves "paiement direct au fondateur"
+    PromoterEligibilityService,
   ],
   exports: [
     FeesPrismaService,

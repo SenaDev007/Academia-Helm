@@ -156,13 +156,14 @@ export class CollectionSummaryController {
     const enrollments = await this.prisma.studentEnrollment.findMany({
       where: enrollmentWhere,
       include: {
-        // ⭐ Inclure schoolLevelId sur student — c'est la source de vérité pour
-        //    le niveau scolaire (AcademicClass n'a pas de schoolLevelId direct).
         student: { select: { id: true, firstName: true, lastName: true, matricule: true, schoolLevelId: true } },
-        class: { select: { id: true, name: true, code: true, schoolLevelId: true, schoolLevel: true } },
+        class: { select: { id: true, name: true, code: true, schoolLevelId: true, schoolLevel: { select: { id: true, code: true, name: true, order: true } } } },
         academicClass: { select: { id: true, name: true, code: true, levelId: true } },
       },
       orderBy: [
+        // ⭐ Tri par défaut : Maternelle → Primaire → Secondaire
+        //    Utilise schoolLevel.order (0=Maternelle, 1=Primaire, 2=Secondaire)
+        { class: { schoolLevel: { order: 'asc' } } },
         { student: { lastName: 'asc' } },
         { student: { firstName: 'asc' } },
       ],
@@ -190,13 +191,16 @@ export class CollectionSummaryController {
       }
 
       filteredEnrollments = enrollments.filter((e) => {
-        // Match par UUID de school_levels sur la classe physique
+        // Match par UUID sur class.schoolLevel.id
         if (e.class?.schoolLevel?.id === levelId) return true;
+        // Match par UUID sur class.schoolLevelId
         if (e.class?.schoolLevelId === levelId) return true;
         // ⭐ Match par student.schoolLevelId (source de vérité — l'élève a toujours ce champ)
         if (e.student?.schoolLevelId === levelId) return true;
         // Match par code (au cas où levelId soit un code comme "SECONDAIRE")
         if (levelCode && e.class?.schoolLevel?.code === levelCode) return true;
+        // ⭐ Match par academicClass.levelId (classe officielle)
+        if (e.academicClass?.levelId === levelId) return true;
         return false;
       });
 

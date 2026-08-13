@@ -2463,26 +2463,26 @@ export default function OnboardingWizard() {
                       <span className="font-semibold text-amber-800 text-sm">Création par YEHI OR Tech</span>
                     </div>
                     <p className="text-xs text-amber-700">
-                      Veuillez saisir vos identifiants admin du back-office pour valider la création.
+                      Veuillez saisir vos identifiants pour valider la création.
                       L'étape de paiement sera remplacée par la signature du contrat d'abonnement.
                     </p>
                   </div>
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Email admin back-office <span className="text-red-600">*</span>
+                        Email <span className="text-red-600">*</span>
                       </label>
                       <input
                         type="email"
                         value={adminEmail}
                         onChange={(e) => setAdminEmail(e.target.value)}
-                        placeholder="admin@academiahelm.com"
+                        placeholder="exemple@email.com"
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                       />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Mot de passe admin <span className="text-red-600">*</span>
+                        Mot de passe <span className="text-red-600">*</span>
                       </label>
                       <input
                         type="password"

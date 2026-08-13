@@ -12968,19 +12968,28 @@ model PricingConfig {
 /// Plans de tarification dynamiques d'Academia Helm.
 /// Gérables depuis le back-office /platform/subscriptions.
 /// Affichés sur la page publique /tarification via GET /api/public/pricing/plans.
+///
+/// ⭐ Contrat d'abonnement Academia Helm (Article 4) :
+///   - 4 plans : Helm Essentiel (SEED), Helm Croissance (GROW),
+///     Helm Performance (LEAD), Helm Institution (NETWORK)
+///   - Tranches d'élèves : 1-50, 51-150, 151-400, 401+
+///   - Frais d'activation uniques : 300 000 FCFA (uniforme)
+///   - Facturation annuelle uniquement (plus d'option mensuelle)
+///   - Add-on bilingue FR/EN : 50 000 FCFA/an
+///   - Add-on BILINGUAL : plan code 'BILINGUAL' pour l'option bilingue
 model PricingPlan {
   id               String   @id @default(uuid())
-  code             String   @unique // SEED, GROW, LEAD, NETWORK
-  name             String // "Helm Seed"
+  code             String   @unique // SEED, GROW, LEAD, NETWORK, BILINGUAL
+  name             String // "Helm Essentiel"
   tagline          String? // "L'essentiel pour bien démarrer"
   description      String?
   studentMin       Int      @default(0) // 1
-  studentMax       Int? // 150 (null = illimité)
-  initialFee       Int      @default(0) // 75000 FCFA
-  monthlyAmount    Int? // 19900 FCFA (null = sur devis)
-  yearlyAmount     Int? // 199000 FCFA (optionnel, -2 mois)
-  bilingualMonthly Int? // 10000 FCFA/mois pour l'option bilingue
-  bilingualYearly  Int? // 100000 FCFA/an
+  studentMax       Int? // 50 (null = illimité)
+  initialFee       Int      @default(0) // 300 000 FCFA (frais d'activation uniformes — Article 4)
+  monthlyAmount    Int? // null = plus d'option mensuelle (contrat en annuel uniquement)
+  yearlyAmount     Int? // 50000 à 150000 FCFA/an selon le plan
+  bilingualMonthly Int? // null = plus d'option mensuelle (contrat en annuel uniquement)
+  bilingualYearly  Int? // 50000 FCFA/an (option bilingue — Article 4)
   features         String? // JSON array de strings
   isPopular        Boolean  @default(false) // badge "Populaire" sur la page tarification
   isActive         Boolean  @default(true)

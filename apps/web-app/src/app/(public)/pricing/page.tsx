@@ -10,7 +10,7 @@ import { generateSEOMetadata } from '@/lib/seo';
 export const metadata: Metadata = generateSEOMetadata({
   title: 'Tarifs et offres',
   description:
-    'Découvrez les offres Academia Helm : 9 modules inclus, tarification claire selon le nombre d’élèves. Pilotez votre établissement sans surprise.',
+    'Découvrez les offres Academia Helm : 21 modules métier + 6 modules complémentaires inclus, tarification annuelle claire selon le nombre d\'élèves. Pilotez votre établissement sans surprise.',
   keywords: ['tarifs Academia Helm', 'prix logiciel école', 'abonnement gestion scolaire', 'SaaS éducation'],
   path: '/pricing',
 });
@@ -33,8 +33,8 @@ export default function Page() {
             Tout inclus. Un seul prix. Zéro surprise.
           </p>
           <p className="text-sm md:text-base text-slate-600 max-w-3xl mx-auto">
-            Les 9 modules complets dans chaque plan — élèves, finances, IA ORION,
-            bulletins, RH, QHSE, communication et modules complémentaires. La seule
+            Les 21 modules métier + 6 modules complémentaires dans chaque plan — élèves, finances,
+            IA ORION, bulletins, RH, QHSE, communication et modules complémentaires. La seule
             variable est le nombre d&apos;élèves dans votre établissement.
           </p>
         </section>

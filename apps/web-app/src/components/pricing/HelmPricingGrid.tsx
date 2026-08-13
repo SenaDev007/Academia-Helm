@@ -1,56 +1,40 @@
 'use client';
 
-import { useState } from 'react';
 import HelmPricingCard from './HelmPricingCard';
-import type { HelmPlanKey } from '@/lib/services/HelmPricingService';
 
 export interface HelmPricingGridProps {
   initialBillingCycle?: 'MONTHLY' | 'ANNUAL';
 }
 
+/**
+ * Grille des 4 plans Academia Helm.
+ *
+ * ⭐ Aligné sur le contrat d'abonnement (Article 4) :
+ *   - Facturation ANNUELLE uniquement (plus d'option mensuelle)
+ *   - Frais d'activation uniformes : 300 000 FCFA
+ *   - 4 plans : Helm Essentiel / Croissance / Performance / Institution
+ */
 export default function HelmPricingGrid({
-  initialBillingCycle = 'MONTHLY',
+  initialBillingCycle = 'ANNUAL',
 }: HelmPricingGridProps) {
-  const [billingCycle, setBillingCycle] = useState<'MONTHLY' | 'ANNUAL'>(
-    initialBillingCycle,
-  );
+  // Le contrat prévoit uniquement de la facturation annuelle.
+  // On garde l'argument initialBillingCycle pour rétro-compatibilité
+  // mais il est forcé à 'ANNUAL'.
+  const billingCycle: 'MONTHLY' | 'ANNUAL' = 'ANNUAL';
+  void initialBillingCycle;
 
-  const plans: HelmPlanKey[] = ['SEED', 'GROW', 'LEAD', 'NETWORK'];
+  const plans: Array<'SEED' | 'GROW' | 'LEAD' | 'NETWORK'> = ['SEED', 'GROW', 'LEAD', 'NETWORK'];
 
   return (
     <section className="w-full">
       <div className="flex flex-col items-center mb-10">
         <div className="bg-white/80 rounded-full border border-gold-300 px-4 py-2 inline-flex items-center gap-3 shadow-sm">
-          <span className="text-xs font-medium text-slate-600">
-            Période de facturation
+          <span className="text-xs font-semibold text-slate-700">
+            Facturation annuelle — Frais d&apos;activation 300 000 FCFA
           </span>
-          <button
-            type="button"
-            onClick={() => setBillingCycle('MONTHLY')}
-            className={`px-3 py-1 text-xs rounded-full font-semibold ${
-              billingCycle === 'MONTHLY'
-                ? 'bg-navy-900 text-white'
-                : 'bg-transparent text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            Mensuel
-          </button>
-          <button
-            type="button"
-            onClick={() => setBillingCycle('ANNUAL')}
-            className={`px-3 py-1 text-xs rounded-full font-semibold ${
-              billingCycle === 'ANNUAL'
-                ? 'bg-gold-500 text-white'
-                : 'bg-transparent text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            Annuel
-          </button>
-          {billingCycle === 'ANNUAL' && (
-            <span className="ml-2 text-xs font-semibold text-gold-600">
-              2 mois offerts
-            </span>
-          )}
+          <span className="ml-2 text-xs font-semibold text-gold-600">
+            WhatsApp illimité inclus
+          </span>
         </div>
       </div>
 
@@ -66,4 +50,3 @@ export default function HelmPricingGrid({
     </section>
   );
 }
-

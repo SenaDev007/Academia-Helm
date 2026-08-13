@@ -2086,10 +2086,10 @@ export class PlatformService {
     };
 
     const planLabels: Record<string, string> = {
-      SEED: 'Helm Seed',
-      GROW: 'Helm Grow',
-      LEAD: 'Helm Lead',
-      NETWORK: 'Helm Network',
+      SEED: 'Helm Essentiel',
+      GROW: 'Helm Croissance',
+      LEAD: 'Helm Performance',
+      NETWORK: 'Helm Institution',
     };
 
     const planLabel = inv.plan ? planLabels[inv.plan] || inv.plan : '';

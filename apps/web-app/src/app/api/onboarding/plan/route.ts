@@ -15,8 +15,15 @@
  *
  * ⭐ AVANT : ce fichier convertissait planCode SEED → BASIC_MONTHLY (ancien
  * système de plans). Cela provoquait l'affichage de "Plan Mensuel - 1 École"
- * au lieu de "Helm Seed" dans l'email de bienvenue.
+ * au lieu de "Helm Essentiel" dans l'email de bienvenue.
  * APRÈS : on envoie planCode tel quel (SEED/GROW/LEAD/NETWORK).
+ *
+ * ⭐ CONTRAT D'ABONNEMENT (Article 4) : la facturation est ANNUELLE uniquement.
+ * On force donc `periodType: 'YEARLY'` quel que soit `billingPeriod` envoyé par
+ * le frontend (qui peut encore envoyer 'monthly' depuis d'anciennes sessions).
+ * Les codes plan restent SEED/GROW/LEAD/NETWORK pour la compatibilité avec
+ * l'enum HelmPlan (Prisma) — les noms d'affichage sont Helm Essentiel,
+ * Helm Croissance, Helm Performance, Helm Institution.
  * ============================================================================
  */
 
@@ -51,10 +58,14 @@ export async function POST(request: NextRequest) {
     // PricingService récupère alors le plan depuis pricing_plans WHERE code = 'SEED'.
     // Pas de conversion BASIC_MONTHLY — les plans SEED/GROW/LEAD/NETWORK sont
     // la source de vérité dans pricing_plans.
+    //
+    // ⭐ Contrat Article 4 : facturation annuelle uniquement. On force YEARLY
+    // quel que soit le billingPeriod envoyé par le frontend.
     const backendBody = {
       planId: planCode, // Le backend gère planCode vs planId via la présence de '-'
-      periodType: (billingPeriod || 'monthly').toUpperCase() === 'YEARLY' ? 'YEARLY' : 'MONTHLY',
+      periodType: 'YEARLY',
     };
+    void billingPeriod; // Ignoré — contrat en annuel uniquement
 
     const finalUrl = normalizeApiUrl(planUrl);
     const response = await fetch(finalUrl, {

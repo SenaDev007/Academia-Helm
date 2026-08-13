@@ -2,9 +2,16 @@
  * ============================================================================
  * SUBSCRIPTION PLAN SEED SERVICE - INITIALISATION DES PLANS
  * ============================================================================
- * 
- * Service pour initialiser les plans de souscription par défaut
- * 
+ *
+ * ⚠️ OBSOLÈTE — Cette table `subscription_plans` n'est plus utilisée pour le
+ * pricing réel. La source de vérité est désormais `pricing_plans` (gérée par
+ * la migration `20260620080000_add_pricing_plans` et seedée avec les 4 plans
+ * du contrat d'abonnement Academia Helm : Helm Essentiel, Helm Croissance,
+ * Helm Performance, Helm Institution).
+ *
+ * Ce service est conservé pour rétro-compatibilité mais ne crée plus de plans
+ * actifs dans `subscription_plans`. Voir `pricing-config-seed.service.ts` et
+ * `PricingService` pour la logique de pricing active.
  * ============================================================================
  */
 
@@ -33,65 +40,19 @@ export class SubscriptionPlanSeedService implements OnModuleInit {
   }
 
   /**
-   * Initialise les plans de souscription par défaut
+   * ⚠️ No-op — La table `subscription_plans` est obsolète.
+   *
+   * Les plans actifs sont désormais gérés via `pricing_plans` (4 plans du
+   * contrat : Helm Essentiel, Helm Croissance, Helm Performance, Helm Institution).
+   * Voir la migration `20260620080000_add_pricing_plans` et la nouvelle
+   * migration d'alignement au contrat.
+   *
+   * Cette méthode ne crée plus aucun plan pour éviter toute confusion avec
+   * d'anciens codes (BASIC_MONTHLY, GROUP_*).
    */
   async seedPlans() {
-    const plans = [
-      {
-        code: 'BASIC_MONTHLY',
-        name: 'Plan Mensuel - 1 École',
-        monthlyPrice: 15000,
-        yearlyPrice: 150000,
-        maxSchools: 1,
-        bilingualAllowed: true,
-      },
-      {
-        code: 'BASIC_YEARLY',
-        name: 'Plan Annuel - 1 École',
-        monthlyPrice: 15000,
-        yearlyPrice: 150000,
-        maxSchools: 1,
-        bilingualAllowed: true,
-      },
-      {
-        code: 'GROUP_2_MONTHLY',
-        name: 'Plan Mensuel - 2 Écoles',
-        monthlyPrice: 25000,
-        yearlyPrice: 250000,
-        maxSchools: 2,
-        bilingualAllowed: true,
-      },
-      {
-        code: 'GROUP_3_MONTHLY',
-        name: 'Plan Mensuel - 3 Écoles',
-        monthlyPrice: 35000,
-        yearlyPrice: 350000,
-        maxSchools: 3,
-        bilingualAllowed: true,
-      },
-      {
-        code: 'GROUP_4_MONTHLY',
-        name: 'Plan Mensuel - 4 Écoles',
-        monthlyPrice: 45000,
-        yearlyPrice: 450000,
-        maxSchools: 4,
-        bilingualAllowed: true,
-      },
-    ];
-
-    for (const planData of plans) {
-      const existing = await this.prisma.subscriptionPlan.findUnique({
-        where: { code: planData.code },
-      });
-
-      if (!existing) {
-        await this.prisma.subscriptionPlan.create({
-          data: planData,
-        });
-        this.logger.log(`✅ Subscription plan created: ${planData.code}`);
-      }
-    }
-
-    this.logger.log('✅ Subscription plans seeded');
+    this.logger.log('ℹ️ subscription_plans table is deprecated — pricing_plans is the source of truth (contrat Academia Helm).');
+    return;
   }
 }
+

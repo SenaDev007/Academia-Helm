@@ -81,62 +81,62 @@ const PRODUCT_KNOWLEDGE = {
     website: 'https://academiahelm.com',
   },
 
-  // ─── TARIFICATION ─────────────────────────────────────────────────────────
+  // ─── TARIFICATION (contrat d'abonnement Academia Helm — Article 4) ─────────
   pricing: {
-    philosophy: 'Tous les plans incluent les 9 modules. Aucun module verrouillé. Aucune surprise.',
+    philosophy: 'Tous les plans incluent les 21 modules métier + 6 modules complémentaires (27 modules au total). Aucun module verrouillé. Facturation annuelle uniquement. Frais d\'activation uniques de 300 000 FCFA. Aucune surprise.',
     plans: [
       {
         name: 'HELM ESSENTIEL',
         target: 'Petites écoles (1-50 élèves)',
-        subscription: 50000,
-        monthly: 10000,
-        annual: 100000,
+        activationFee: 300000, // one-shot, à la signature (uniforme)
+        annual: 50000, // frais annuels (contrat Article 4)
+        yearOneTotal: 350000, // activation + annuel
         currency: 'FCFA',
-        highlights: ['Idéal pour démarrer', '9 modules inclus', '3 agents IA', 'Support dédié'],
-        dailyCost: 'Moins de 330 FCFA/jour',
+        highlights: ['Idéal pour démarrer', '21 modules métier + 6 complémentaires inclus', '3 agents IA (ORION, SARA, ATLAS)', 'Support dédié'],
+        monthlyEquivalent: 'Moins de 4 200 FCFA/mois',
       },
       {
         name: 'HELM CROISSANCE',
         target: 'Écoles en croissance (51-150 élèves)',
-        subscription: 75000,
-        monthly: 15000,
-        annual: 150000,
+        activationFee: 300000,
+        annual: 75000,
+        yearOneTotal: 375000,
         currency: 'FCFA',
         recommended: true,
-        highlights: ['Le plus populaire', '9 modules inclus', '3 agents IA', 'Support prioritaire', 'Formation avancée'],
-        dailyCost: 'Moins de 500 FCFA/jour',
+        highlights: ['Le plus populaire', '21 modules métier + 6 complémentaires inclus', '3 agents IA (ORION, SARA, ATLAS)', 'Support prioritaire', 'Formation avancée'],
+        monthlyEquivalent: 'Moins de 6 250 FCFA/mois',
       },
       {
         name: 'HELM PERFORMANCE',
         target: 'Grands établissements (151-400 élèves)',
-        subscription: 100000,
-        monthly: 25000,
-        annual: 250000,
+        activationFee: 300000,
+        annual: 100000,
+        yearOneTotal: 400000,
         currency: 'FCFA',
-        highlights: ['Pour les leaders', '9 modules inclus', '3 agents IA', 'Support VIP', 'Formation complète', 'Consultant dédié'],
-        dailyCost: 'Moins de 830 FCFA/jour',
+        highlights: ['Pour les leaders', '21 modules métier + 6 complémentaires inclus', '3 agents IA (ORION, SARA, ATLAS)', 'Support VIP', 'Formation complète', 'Consultant dédié'],
+        monthlyEquivalent: 'Moins de 8 330 FCFA/mois',
       },
       {
         name: 'HELM INSTITUTION',
         target: 'Réseau multi-campus (401+ élèves)',
-        subscription: 150000,
-        monthly: 50000,
-        annual: 500000,
+        activationFee: 300000,
+        annual: 150000,
+        yearOneTotal: 450000,
         currency: 'FCFA',
-        customPricing: false,
-        highlights: ['Multi-campus', '9 modules inclus', '3 agents IA', 'Account manager dédié', 'SLA personnalisé', 'API avancée'],
-        dailyCost: 'Moins de 1 670 FCFA/jour',
+        highlights: ['Multi-campus', '21 modules métier + 6 complémentaires inclus', '3 agents IA (ORION, SARA, ATLAS)', 'Account manager dédié', 'SLA personnalisé', 'API avancée'],
+        monthlyEquivalent: 'Moins de 12 500 FCFA/mois',
       },
     ],
     addOns: [
-      { name: 'Fédération FEDERIS', description: 'Intégration avec la Fédération Patronat pour les écoles sous convention' },
-      { name: 'Export Educmaster', description: 'Export natif vers le format ministériel Educmaster (Bénin)' },
-      { name: 'Paiement en ligne FedaPay', description: 'Intégration FedaPay pour les paiements en ligne des frais de scolarité' },
-      { name: 'WhatsApp Business API', description: 'Connexion directe avec WhatsApp Business pour les communications automatiques' },
+      { name: 'Option bilingue FR/EN', description: '50 000 FCFA/an en supplément du plan (Article 4). Interface et documents générés en FR et EN simultanément.' },
+      { name: 'WhatsApp', description: 'GRATUIT et illimité — inclus dans tous les plans (Article 4)' },
+      { name: 'SMS', description: 'Facturé au prix coûtant selon le pays de destination (Article 4)' },
+      { name: 'Email', description: 'Facturé au prix coûtant selon la consommation réelle (Article 4)' },
+      { name: 'Voice (appel vocal)', description: 'Facturé au prix coûtant selon le pays de destination (Article 4)' },
     ],
-    paymentMethods: ['Virement bancaire', 'Mobile Money', 'FedaPay (en ligne)', 'Espèces'],
-    gracePeriod: 'Période de grâce de 7 jours après expiration pour récupérer vos données',
-    trial: 'Essai gratuit de 7 jours — aucun engagement, aucune carte bancaire requise',
+    paymentMethods: ['Virement bancaire', 'Mobile Money (FedaPay/FeexPay)', 'Espèces contre reçu'],
+    gracePeriod: 'Pénalité de retard : 15 jours après échéance → suspension possible (Article 4)',
+    trial: 'Période d\'essai de 30 jours incluse après le paiement des frais d\'activation',
   },
 
   // ─── MODULES DÉTAILLÉS ────────────────────────────────────────────────────
@@ -413,7 +413,7 @@ const PRODUCT_KNOWLEDGE = {
   faq: [
     {
       question: 'Combien coûte Academia Helm ?',
-      answer: 'Academia Helm propose 4 plans : HELM SEED à partir de 14 900 FCFA/mois (1-150 élèves), HELM GROW à 24 900 FCFA/mois (151-400 élèves, le plus populaire), HELM LEAD à 39 900 FCFA/mois (401-800 élèves), et HELM NETWORK sur devis pour les multi-campus. Tous les plans incluent les 9 modules et les 3 agents IA. Un essai gratuit de 7 jours est disponible.',
+      answer: 'Academia Helm propose 4 plans alignés sur le contrat d\'abonnement (Article 4) : HELM ESSENTIEL à 50 000 FCFA/an (1-50 élèves), HELM CROISSANCE à 75 000 FCFA/an (51-150 élèves, le plus populaire), HELM PERFORMANCE à 100 000 FCFA/an (151-400 élèves), et HELM INSTITUTION à 150 000 FCFA/an (401 élèves et +). Frais d\'activation uniques de 300 000 FCFA à la signature (uniforme). Facturation annuelle uniquement. Tous les plans incluent les 21 modules métier + 6 modules complémentaires et les 3 agents IA (ORION, SARA, ATLAS). Option bilingue FR/EN : 50 000 FCFA/an en supplément. WhatsApp gratuit et illimité.',
       category: 'PRICING',
     },
     {
@@ -479,12 +479,12 @@ const PRODUCT_KNOWLEDGE = {
     { title: 'Offline-first', description: 'Fonctionne même sans Internet, synchronisation automatique quand le réseau revient' },
     { title: 'Mobile-first', description: 'Application Flutter native disponible sur Android et iOS pour tous les utilisateurs' },
     { title: '3 Agents IA intégrés', description: 'ORION (analyse), ATLAS (exécution), SARA (assistance) propulsés par GLM 5.2' },
-    { title: '9 modules inclus', description: 'Quel que soit le plan, vous accédez à tous les modules — zéro fonctionnalité verrouillée' },
+    { title: '27 modules inclus', description: '21 modules métier + 6 modules complémentaires dans tous les plans — zéro fonctionnalité verrouillée (contrat Article 4)' },
     { title: 'Export Educmaster natif', description: 'Conformité ministérielle Bénin assurée, export en un clic' },
     { title: 'Sécurité bancaire', description: 'Chiffrement, RBAC, audit logs, conformité RGPD' },
     { title: 'Support dédié', description: 'Assistance réactive, formation incluse, répond dans l\'heure' },
     { title: 'Déploiement rapide', description: 'Opérationnel en 48h, configuration et formation incluses' },
-    { title: 'Rapport qualité-prix imbattable', description: 'À partir de 14 900 FCFA/mois pour un ERP complet avec IA intégrée' },
+    { title: 'Rapport qualité-prix imbattable', description: 'À partir de 50 000 FCFA/an (Helm Essentiel) + 300 000 FCFA d\'activation one-shot, pour un ERP complet avec IA intégrée' },
   ],
 
   // ─── GUIDE DE NAVIGATION ──────────────────────────────────────────────────

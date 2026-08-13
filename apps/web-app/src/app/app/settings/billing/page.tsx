@@ -139,12 +139,14 @@ export default function BillingPage() {
     setIsRenewing(true);
     setMessage(null);
     try {
-      // TODO: intégrer FedaPay pour le paiement réel
-      // Pour l'instant, simulation de paiement
+      // ⭐ Contrat (Article 4) : facturation annuelle uniquement.
+      // Le montant est récupéré dynamiquement depuis le statut d'abonnement
+      // (plan annuel du tenant). Fallback : frais annuels minimum (50 000 FCFA — Helm Essentiel).
+      const annualAmount = subStatus?.annualAmount ?? 50000;
       const res = await fetch(`/api/billing/renew/${currentTenantId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: 19900, paymentReference: 'sim-' + Date.now() }),
+        body: JSON.stringify({ amount: annualAmount, paymentReference: 'sim-' + Date.now() }),
       });
       const data = await res.json();
       if (data.success) {
@@ -450,17 +452,14 @@ export default function BillingPage() {
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+            <div className="grid grid-cols-1 gap-4 text-sm mb-4">
               <div>
-                <span className="text-slate-400 font-medium">Tarif mensuel</span>
+                <span className="text-slate-400 font-medium">Tarif annuel (contrat Article 4)</span>
                 <p className="font-bold text-slate-700">
-                  {bilingualStatus.monthlyAddon.toLocaleString('fr-FR')} FCFA / mois
+                  {(bilingualStatus.yearlyAddon ?? 50000).toLocaleString('fr-FR')} FCFA / an
                 </p>
-              </div>
-              <div>
-                <span className="text-slate-400 font-medium">Tarif annuel</span>
-                <p className="font-bold text-slate-700">
-                  {bilingualStatus.yearlyAddon.toLocaleString('fr-FR')} FCFA / an
+                <p className="text-xs text-slate-500 mt-1">
+                  Facturation annuelle uniquement — pas d&apos;option mensuelle.
                 </p>
               </div>
             </div>
@@ -524,15 +523,12 @@ export default function BillingPage() {
                   <p className="text-sm text-slate-700">
                     Vous allez activer l'option bilingue pour{' '}
                     <strong>
-                      {(bilingualStatus.billingCycle === 'YEARLY'
-                        ? bilingualStatus.yearlyAddon
-                        : bilingualStatus.monthlyAddon
-                      ).toLocaleString('fr-FR')} FCFA
+                      {(bilingualStatus.yearlyAddon ?? 50000).toLocaleString('fr-FR')} FCFA
                     </strong>{' '}
-                    {bilingualStatus.billingCycle === 'YEARLY' ? '/ an' : '/ mois'}.
+                    / an (contrat Article 4 — facturation annuelle uniquement).
                   </p>
                   <p className="text-xs text-slate-500 mt-1">
-                    Cycle de facturation actuel : {bilingualStatus.billingCycle === 'YEARLY' ? 'Annuel' : 'Mensuel'}
+                    Cycle de facturation : Annuel
                   </p>
                 </div>
 

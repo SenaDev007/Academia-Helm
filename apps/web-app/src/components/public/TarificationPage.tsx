@@ -6,6 +6,12 @@
  * Page de tarification DYNAMIQUE — fetch les plans depuis l'API
  * (GET /api/public/pricing/plans) au lieu d'avoir les prix codés en dur.
  *
+ * ⭐ Alignée sur le contrat d'abonnement Academia Helm (Article 4) :
+ *   - 4 plans : Helm Essentiel / Croissance / Performance / Institution
+ *   - Facturation ANNUELLE uniquement (pas d'option mensuelle)
+ *   - Frais d'activation uniformes : 300 000 FCFA
+ *   - Add-ons : bilingue 50 000 FCFA/an, WhatsApp gratuit, SMS/Email/Voice au prix coûtant
+ *
  * Palette : Navy #0b2f73, Blue #1d4fa5, Gold #f5b335, White
  */
 
@@ -16,13 +22,13 @@ import {
   CheckCircle,
   Users,
   ArrowRight,
-  Shield,
-  Zap,
-  Star,
-  Loader2,
   AlertCircle,
   Languages,
   Sparkles,
+  Loader2,
+  MessageSquare,
+  Mail,
+  Phone,
 } from 'lucide-react';
 import { Footer2 } from '@/components/ui/footer-2';
 
@@ -63,7 +69,6 @@ export default function TarificationPage() {
   const [plans, setPlans] = useState<PricingPlan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
 
   useEffect(() => {
     fetch('/api/public/pricing/plans', { cache: 'no-store' })
@@ -81,8 +86,8 @@ export default function TarificationPage() {
       });
   }, []);
 
-  const bilingualMonthly = plans[0]?.bilingualMonthly || 10000;
-  const bilingualYearly = plans[0]?.bilingualYearly || 100000;
+  // Add-ons (contrat Article 4) — bilingue 50 000 FCFA/an
+  const bilingualYearly = plans[0]?.bilingualYearly || 50000;
 
   return (
     <>
@@ -95,34 +100,24 @@ export default function TarificationPage() {
           <div className="relative max-w-5xl mx-auto text-center">
             <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-full px-4 py-1.5 mb-6">
               <Sparkles className="w-4 h-4 text-[#f5b335]" />
-              <span className="text-sm font-semibold">Tous les modules inclus — sans restriction</span>
+              <span className="text-sm font-semibold">21 modules métier + 6 modules complémentaires inclus — sans restriction</span>
             </div>
             <h1 className="text-4xl md:text-6xl font-black tracking-tight mb-4">
               Une tarification <span className="text-[#f5b335]">simple</span> et <span className="text-[#f5b335]">transparente</span>
             </h1>
             <p className="text-lg md:text-xl text-blue-100 max-w-2xl mx-auto mb-8">
-              Choisissez le plan adapté à la taille de votre établissement. Tous les modules sont inclus.
-              30 jours d'essai gratuit après la souscription initiale.
+              Choisissez le plan adapté à la taille de votre établissement. Facturation
+              annuelle, frais d&apos;activation uniques de 300 000 FCFA, WhatsApp illimité
+              inclus dans tous les plans.
             </p>
 
-            {/* Toggle Mensuel / Annuel */}
             <div className="inline-flex items-center bg-white/10 backdrop-blur-sm rounded-full p-1 border border-white/20">
-              <button
-                onClick={() => setBillingCycle('monthly')}
-                className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${
-                  billingCycle === 'monthly' ? 'bg-[#f5b335] text-[#0a1d3f]' : 'text-blue-100 hover:text-white'
-                }`}
-              >
-                Mensuel
-              </button>
-              <button
-                onClick={() => setBillingCycle('yearly')}
-                className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${
-                  billingCycle === 'yearly' ? 'bg-[#f5b335] text-[#0a1d3f]' : 'text-blue-100 hover:text-white'
-                }`}
-              >
-                Annuel <span className="text-xs opacity-80">(-2 mois)</span>
-              </button>
+              <span className="px-6 py-2 rounded-full text-sm font-bold bg-[#f5b335] text-[#0a1d3f]">
+                Facturation annuelle
+              </span>
+              <span className="px-6 py-2 text-sm font-bold text-blue-100">
+                Frais d&apos;activation : 300 000 FCFA
+              </span>
             </div>
           </div>
         </section>
@@ -148,56 +143,79 @@ export default function TarificationPage() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {plans.map((plan) => (
-                  <PlanCard key={plan.id} plan={plan} billingCycle={billingCycle} />
+                  <PlanCard key={plan.id} plan={plan} />
                 ))}
               </div>
             )}
           </div>
         </section>
 
-        {/* ─── Option Bilingue ─── */}
-        <section className="py-16 px-4">
-          <div className="max-w-4xl mx-auto">
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0a1d3f] via-[#0b2f73] to-[#1d4fa5] text-white shadow-2xl">
-              {/* Décor */}
-              <div className="absolute -top-20 -right-20 w-64 h-64 rounded-full bg-[radial-gradient(circle,rgba(245,179,53,0.2),transparent_70%)]" />
-              <div className="absolute -bottom-16 -left-16 w-48 h-48 rounded-full bg-[radial-gradient(circle,rgba(29,79,165,0.3),transparent_70%)]" />
+        {/* ─── Add-ons (Article 4 du contrat) ─── */}
+        <section className="py-16 px-4 bg-slate-50">
+          <div className="max-w-5xl mx-auto">
+            <div className="text-center mb-10">
+              <h2 className="text-2xl md:text-3xl font-black text-[#0b2f73] mb-3">
+                Add-ons & canaux de communication
+              </h2>
+              <p className="text-sm md:text-base text-slate-600 max-w-3xl mx-auto">
+                Alignés sur le contrat d&apos;abonnement (Article 4). WhatsApp est gratuit
+                et illimité dans tous les plans. SMS, Email et Voice sont refacturés au
+                prix coûtant selon la consommation réelle.
+              </p>
+            </div>
 
-              <div className="relative p-8 md:p-12 flex flex-col md:flex-row items-center gap-8">
-                {/* Icône */}
-                <div className="flex-shrink-0">
-                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#f5b335] to-[#e0a020] flex items-center justify-center shadow-xl shadow-amber-500/20">
-                    <Languages className="w-10 h-10 text-[#0a1d3f]" strokeWidth={2.5} />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Bilingue */}
+              <div className="bg-white rounded-2xl p-6 border-2 border-[#f5b335]/30 shadow-sm">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#f5b335] to-[#e0a020] flex items-center justify-center">
+                    <Languages className="w-5 h-5 text-[#0a1d3f]" strokeWidth={2.5} />
                   </div>
+                  <h3 className="font-black text-[#0b2f73]">Option bilingue FR/EN</h3>
                 </div>
+                <p className="text-3xl font-black text-[#f5b335] mb-1">
+                  {formatFCFA(bilingualYearly)}
+                </p>
+                <p className="text-xs text-slate-500 mb-3">par an · en supplément du plan</p>
+                <p className="text-xs text-slate-600">
+                  Interface et documents générés en FR et EN simultanément. Séparation
+                  des matières, examens et bulletins par langue.
+                </p>
+              </div>
 
-                {/* Texte */}
-                <div className="flex-1 text-center md:text-left">
-                  <div className="inline-flex items-center gap-1.5 bg-[#f5b335]/20 border border-[#f5b335]/30 rounded-full px-3 py-1 mb-3">
-                    <Sparkles className="w-3.5 h-3.5 text-[#f5b335]" />
-                    <span className="text-[10px] font-bold text-[#f5b335] uppercase tracking-wider">Add-on optionnel</span>
+              {/* WhatsApp */}
+              <div className="bg-white rounded-2xl p-6 border-2 border-emerald-200 shadow-sm">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+                    <MessageSquare className="w-5 h-5 text-emerald-600" strokeWidth={2.5} />
                   </div>
-                  <h3 className="text-2xl font-black mb-2">Option Bilingue</h3>
-                  <p className="text-blue-100 text-sm leading-relaxed max-w-md">
-                    Séparation des matières et examens pour les écoles bilingues (français / anglais).
-                    Gérez les programmes des deux langues indépendamment, avec des bulletins adaptés.
+                  <h3 className="font-black text-[#0b2f73]">WhatsApp</h3>
+                </div>
+                <p className="text-3xl font-black text-emerald-600 mb-1">Gratuit</p>
+                <p className="text-xs text-slate-500 mb-3">illimité · inclus dans tous les plans</p>
+                <p className="text-xs text-slate-600">
+                  Notifications parents, annonces, échanges sans limite. Aucun surcoût,
+                  quelle que soit votre consommation.
+                </p>
+              </div>
+
+              {/* SMS / Email / Voice */}
+              <div className="bg-white rounded-2xl p-6 border-2 border-slate-200 shadow-sm">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
+                    <Phone className="w-5 h-5 text-slate-600" strokeWidth={2.5} />
+                  </div>
+                  <h3 className="font-black text-[#0b2f73]">SMS · Email · Voice</h3>
+                </div>
+                <p className="text-3xl font-black text-slate-700 mb-1">Au prix coûtant</p>
+                <p className="text-xs text-slate-500 mb-3">refacturation transparente</p>
+                <div className="space-y-1 text-xs text-slate-600">
+                  <p className="flex items-center gap-2">
+                    <Mail className="w-3.5 h-3.5 text-slate-400" /> Email selon consommation réelle
                   </p>
-                </div>
-
-                {/* Prix */}
-                <div className="text-center md:text-right flex-shrink-0">
-                  <div className="text-3xl font-black text-[#f5b335] mb-1">
-                    {formatFCFA(billingCycle === 'monthly' ? bilingualMonthly : bilingualYearly)}
-                  </div>
-                  <div className="text-xs text-blue-200 font-medium mb-3">
-                    {billingCycle === 'monthly' ? 'par mois' : 'par an'}
-                  </div>
-                  <Link
-                    href="/signup"
-                    className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all"
-                  >
-                    Ajouter l'option <ArrowRight className="w-3.5 h-3.5" />
-                  </Link>
+                  <p className="flex items-center gap-2">
+                    <Phone className="w-3.5 h-3.5 text-slate-400" /> SMS / Voice selon pays de destination
+                  </p>
                 </div>
               </div>
             </div>
@@ -211,7 +229,8 @@ export default function TarificationPage() {
               Prêt à transformer votre établissement ?
             </h2>
             <p className="text-blue-100 mb-8 text-lg">
-              Créez votre école sur Academia Helm et bénéficiez de 30 jours d'essai gratuit.
+              Créez votre école sur Academia Helm. Frais d&apos;activation de 300 000 FCFA
+              à la signature, puis abonnement annuel à partir de 50 000 FCFA/an.
             </p>
             <Link
               href="/signup"
@@ -228,24 +247,32 @@ export default function TarificationPage() {
             <h2 className="text-2xl font-black text-[#0b2f73] mb-8 text-center">Questions fréquentes</h2>
             <div className="space-y-4">
               <FAQItem
-                question="Que se passe-t-il après la souscription initiale ?"
-                answer="Vous payez le frais de souscription initial une seule fois. Vous avez ensuite 30 jours d'essai gratuit avec accès à tous les modules. Après ces 30 jours, l'abonnement mensuel (ou annuel) démarre automatiquement."
+                question="Que comprend le frais d'activation de 300 000 FCFA ?"
+                answer="Le frais d'activation unique de 300 000 FCFA est payable à la signature du contrat. Il couvre la configuration de votre établissement, l'initialisation de la plateforme, la formation initiale et le démarrage. Il est identique quel que soit le plan choisi."
+              />
+              <FAQItem
+                question="Comment fonctionne la facturation annuelle ?"
+                answer="Vous payez le frais d'activation à la signature, puis le frais annuel de votre plan (50 000 à 150 000 FCFA selon la tranche d'élèves) chaque année à la date anniversaire. Une pénalité de retard est applicable 15 jours après l'échéance, avec suspension possible du service."
               />
               <FAQItem
                 question="Tous les modules sont-ils vraiment inclus ?"
-                answer="Oui ! Contrairement à nos concurrents, nous ne limitons pas les modules. Vous avez accès à tous les modules principaux et supplémentaires, quel que soit votre plan. La seule différence entre les plans est le nombre d'élèves et le niveau de support."
+                answer="Oui ! Contrat en main : 21 modules métier + 6 modules complémentaires sont inclus dans tous les plans, sans restriction. Web + Desktop + Mobile, offline-first, agents IA (ORION, SARA, ATLAS), paiements en ligne, multi-caisses, multi-niveaux, personnalisation de marque et site institutionnel."
               />
               <FAQItem
                 question="Puis-je changer de plan en cours d'abonnement ?"
-                answer="Oui, vous pouvez upgrader votre plan à tout moment. Le changement prend effet immédiatement et le prorata est calculé automatiquement. Le downgrade prend effet au début du prochain cycle de facturation."
+                answer="Oui, vous pouvez upgrader votre plan à tout moment si votre effectif augmente. Le changement prend effet immédiatement et le prorata est calculé automatiquement. Le downgrade prend effet au début du prochain cycle annuel."
               />
               <FAQItem
                 question="Comment fonctionne l'option bilingue ?"
-                answer="L'option bilingue est un add-on qui permet de séparer les matières et examens pour les écoles qui enseignent en français ET en anglais. Elle peut être ajoutée à n'importe quel plan, moyennant un supplément mensuel ou annuel."
+                answer="L'option bilingue FR/EN est un add-on de 50 000 FCFA/an qui permet de séparer les matières et examens pour les écoles qui enseignent en français ET en anglais. Elle peut être ajoutée à n'importe quel plan, quel que soit le nombre d'élèves."
               />
               <FAQItem
                 question="Quels sont les moyens de paiement acceptés ?"
-                answer="Nous acceptons les paiements par carte bancaire (Visa, Mastercard), mobile money (FedaPay) et virement bancaire. Le paiement annuel bénéficie de 2 mois gratuits."
+                answer="Conformément au contrat (Article 4) : virement bancaire, Mobile Money via FedaPay/FeexPay, ou espèces contre reçu. WhatsApp est gratuit et illimité dans tous les plans. Les SMS, emails et appels vocaux sont refacturés au prix coûtant selon la consommation."
+              />
+              <FAQItem
+                question="Comment sont déterminées les tranches d'élèves ?"
+                answer="Les tranches sont : Helm Essentiel (1-50 élèves), Helm Croissance (51-150 élèves), Helm Performance (151-400 élèves) et Helm Institution (401 élèves et +). Si votre effectif réel dépasse la limite de votre plan, vous serez invité à upgrader vers le plan supérieur."
               />
             </div>
           </div>
@@ -258,9 +285,11 @@ export default function TarificationPage() {
 
 // ─── Sous-composants ─────────────────────────────────────────────────────
 
-function PlanCard({ plan, billingCycle }: { plan: PricingPlan; billingCycle: 'monthly' | 'yearly' }) {
-  const monthly = billingCycle === 'monthly' ? plan.monthlyAmount : plan.yearlyAmount;
-  const isSurDevis = monthly == null;
+function PlanCard({ plan }: { plan: PricingPlan }) {
+  // Contrat : facturation annuelle uniquement.
+  const annual = plan.yearlyAmount;
+  const isSurDevis = annual == null;
+  const yearOneTotal = (annual ?? 0) + (plan.initialFee ?? 0);
 
   return (
     <div
@@ -277,7 +306,7 @@ function PlanCard({ plan, billingCycle }: { plan: PricingPlan; billingCycle: 'mo
             className="flex items-center gap-1.5 bg-gradient-to-br from-[#f5b335] to-[#e0a020] text-[#0a1d3f] px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider shadow-lg"
             style={{ animation: 'badgeFloat 2.5s ease-in-out infinite' }}
           >
-            <Star className="w-3 h-3 fill-[#0a1d3f]" />
+            <Sparkles className="w-3 h-3 fill-[#0a1d3f]" />
             Populaire
           </div>
         </div>
@@ -300,7 +329,7 @@ function PlanCard({ plan, billingCycle }: { plan: PricingPlan; billingCycle: 'mo
           {studentRange(plan)}
         </div>
 
-        {/* Prix abonnement */}
+        {/* Prix annuel */}
         <div className="mb-3">
           {isSurDevis ? (
             <div className={`text-3xl font-black ${plan.isPopular ? 'text-[#f5b335]' : 'text-[#0b2f73]'}`}>
@@ -309,17 +338,17 @@ function PlanCard({ plan, billingCycle }: { plan: PricingPlan; billingCycle: 'mo
           ) : (
             <>
               <div className={`text-3xl font-black ${plan.isPopular ? 'text-[#f5b335]' : 'text-[#0b2f73]'}`}>
-                {formatFCFA(monthly)}
+                {formatFCFA(annual)}
               </div>
               <div className={`text-xs font-medium ${plan.isPopular ? 'text-blue-200' : 'text-slate-400'}`}>
-                {billingCycle === 'monthly' ? 'par mois' : 'par an'}
+                par an · frais annuels
               </div>
             </>
           )}
         </div>
 
-        {/* Souscription initiale — MISE EN VALEUR */}
-        <div className={`rounded-xl p-3 mb-4 flex items-center justify-between ${
+        {/* Frais d'activation — MISE EN VALEUR */}
+        <div className={`rounded-xl p-3 mb-3 flex items-center justify-between ${
           plan.isPopular
             ? 'bg-[#f5b335]/15 border border-[#f5b335]/30'
             : 'bg-amber-50 border border-amber-200'
@@ -328,7 +357,7 @@ function PlanCard({ plan, billingCycle }: { plan: PricingPlan; billingCycle: 'mo
             <div className={`text-[10px] font-bold uppercase tracking-wider mb-0.5 ${
               plan.isPopular ? 'text-[#f5b335]' : 'text-amber-700'
             }`}>
-              Souscription initiale
+              Frais d&apos;activation
             </div>
             <div className={`text-lg font-black ${
               plan.isPopular ? 'text-[#f5b335]' : 'text-amber-900'
@@ -340,6 +369,31 @@ function PlanCard({ plan, billingCycle }: { plan: PricingPlan; billingCycle: 'mo
             plan.isPopular ? 'text-blue-200' : 'text-amber-600'
           }`}>
             Paiement<br />unique
+          </div>
+        </div>
+
+        {/* Total Année 1 */}
+        <div className={`rounded-xl p-3 mb-4 flex items-center justify-between ${
+          plan.isPopular
+            ? 'bg-emerald-400/15 border border-emerald-400/30'
+            : 'bg-emerald-50 border border-emerald-200'
+        }`}>
+          <div>
+            <div className={`text-[10px] font-bold uppercase tracking-wider mb-0.5 ${
+              plan.isPopular ? 'text-emerald-300' : 'text-emerald-700'
+            }`}>
+              Coût total Année 1
+            </div>
+            <div className={`text-lg font-black ${
+              plan.isPopular ? 'text-white' : 'text-emerald-900'
+            }`}>
+              {formatFCFA(yearOneTotal)}
+            </div>
+          </div>
+          <div className={`text-[10px] font-medium text-right ${
+            plan.isPopular ? 'text-emerald-200' : 'text-emerald-600'
+          }`}>
+            Activation<br />+ Annuel
           </div>
         </div>
 

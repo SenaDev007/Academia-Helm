@@ -7,11 +7,11 @@
  * au nombre réel d'élèves en base de données, et que le plan d'abonnement
  * correspond bien à ce nombre.
  *
- * Règles :
- *   - SEED : 1-150 élèves
- *   - GROW : 151-400 élèves
- *   - LEAD : 401-800 élèves
- *   - NETWORK : 800+ élèves
+ * ⭐ Règles alignées sur le contrat d'abonnement Academia Helm (Article 4) :
+ *   - SEED   (Helm Essentiel)   : 1-50 élèves
+ *   - GROW   (Helm Croissance)  : 51-150 élèves
+ *   - LEAD   (Helm Performance) : 151-400 élèves
+ *   - NETWORK (Helm Institution): 401 élèves et +
  *
  * Si le nombre réel d'élèves dépasse la limite du plan actuel :
  *   1. Notifier l'école (Email + WhatsApp) qu'elle doit upgrader
@@ -40,8 +40,8 @@ interface PlanLimit {
   studentMax: number | null;
 }
 
-// ⭐ Pricing mis à jour — août 2026
-// Tranches : Essentiel 1-50, Croissance 51-150, Performance 151-400, Institution 401+
+// ⭐ Pricing aligné sur le contrat d'abonnement Academia Helm (Article 4)
+// Tranches d'élèves : 1-50 (Essentiel), 51-150 (Croissance), 151-400 (Performance), 401+ (Institution)
 const PLAN_LIMITS: PlanLimit[] = [
   { code: 'SEED', name: 'Helm Essentiel', studentMin: 1, studentMax: 50 },
   { code: 'GROW', name: 'Helm Croissance', studentMin: 51, studentMax: 150 },

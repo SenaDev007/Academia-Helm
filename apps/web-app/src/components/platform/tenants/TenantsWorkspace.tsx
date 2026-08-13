@@ -63,10 +63,10 @@ interface TenantsData {
 }
 
 const PLANS = [
-  { code: 'SEED', label: 'Helm Seed' },
-  { code: 'GROW', label: 'Helm Grow' },
-  { code: 'LEAD', label: 'Helm Lead' },
-  { code: 'NETWORK', label: 'Helm Network' },
+  { code: 'SEED', label: 'Helm Essentiel' },
+  { code: 'GROW', label: 'Helm Croissance' },
+  { code: 'LEAD', label: 'Helm Performance' },
+  { code: 'NETWORK', label: 'Helm Institution' },
 ] as const;
 
 const TENANT_TYPES = [

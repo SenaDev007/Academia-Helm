@@ -2285,7 +2285,7 @@ export class FedaPayService implements OnModuleInit {
       }
     }
 
-    // Format final : "Helm Seed" ou "Helm Seed · 1 à 150 élèves"
+    // Format final : "Helm Essentiel" ou "Helm Essentiel · 1 à 50 élèves"
     const plan = planRange ? `${planName} · ${planRange}` : planName;
     const links = {
       siteUrl: cfg.siteUrl,

@@ -95,18 +95,22 @@ export class PricingAdminController {
     });
 
     // Créer la nouvelle version
+    // ⭐ Alignée sur le contrat d'abonnement Academia Helm (Article 4) :
+    //   - Frais d'activation : 300 000 FCFA (uniforme)
+    //   - Facturation annuelle uniquement
+    //   - Option bilingue : 50 000 FCFA/an
     const newConfig = await this.prisma.pricingConfig.create({
       data: {
-        initialSubscriptionFee: data.initialSubscriptionFee || 100000,
-        monthlyBasePrice: data.monthlyBasePrice || 15000,
-        yearlyBasePrice: data.yearlyBasePrice || 150000,
-        yearlyDiscountPercent: data.yearlyDiscountPercent || 17,
-        bilingualMonthlyAddon: data.bilingualMonthlyAddon || 5000,
-        bilingualYearlyAddon: data.bilingualYearlyAddon || 50000,
-        schoolAdditionalPrice: data.schoolAdditionalPrice || 10000,
-        trialDays: data.trialDays || 30,
-        graceDays: data.graceDays || 7,
-        reminderDays: data.reminderDays || [7, 3, 1],
+        initialSubscriptionFee: data.initialSubscriptionFee ?? 300000,
+        monthlyBasePrice: data.monthlyBasePrice ?? 0, // 0 = plus d'option mensuelle
+        yearlyBasePrice: data.yearlyBasePrice ?? 50000,
+        yearlyDiscountPercent: data.yearlyDiscountPercent ?? 0,
+        bilingualMonthlyAddon: data.bilingualMonthlyAddon ?? 0,
+        bilingualYearlyAddon: data.bilingualYearlyAddon ?? 50000,
+        schoolAdditionalPrice: data.schoolAdditionalPrice ?? 0,
+        trialDays: data.trialDays ?? 30,
+        graceDays: data.graceDays ?? 15, // Contrat : 15 jours après échéance → suspension
+        reminderDays: data.reminderDays ?? [15, 7, 3, 1],
         currency: data.currency || 'XOF',
         isActive: true,
         version: newVersion,

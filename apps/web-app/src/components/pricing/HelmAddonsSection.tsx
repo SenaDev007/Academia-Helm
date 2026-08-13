@@ -1,38 +1,47 @@
+// Add-ons optionnels — alignés sur le contrat d'abonnement Academia Helm (Article 4).
+//
+// Contrat :
+//   - Option bilingue FR/EN : 50 000 FCFA/an (en supplément du plan, quel que soit le plan)
+//   - SMS : facturé au Client au prix coûtant (selon pays de destination)
+//   - Email : facturé au Client au prix coûtant
+//   - Voice (appel vocal) : facturé au Client au prix coûtant
+//   - WhatsApp : GRATUIT et illimité, inclus dans tous les plans
+
 const ADDONS = [
   {
-    code: 'SMS_500',
-    name: 'Pack SMS 500',
-    price: '5 000 F CFA / mois',
-    description:
-      '500 SMS vers parents et personnel via opérateurs béninois.',
-  },
-  {
-    code: 'SMS_2000',
-    name: 'Pack SMS 2000',
-    price: '15 000 F CFA / mois',
-    description:
-      '2000 SMS — pour grandes écoles ou communication intensive.',
-  },
-  {
-    code: 'SUPPORT_PREMIUM',
-    name: 'Support Prioritaire',
-    price: '10 000 F CFA / mois',
-    description:
-      'SLA &lt; 2h, hotline dédiée, gestionnaire de compte attitré.',
-  },
-  {
-    code: 'TRAINING_ONSITE',
-    name: 'Formation On-Site',
-    price: '50 000 F CFA / jour',
-    description:
-      'Formation supplémentaire sur site (hors formation initiale incluse).',
-  },
-  {
     code: 'BILINGUAL',
-    name: 'Bilingue FR/EN',
-    price: '5 000 F CFA / mois',
+    name: 'Option bilingue FR/EN',
+    price: '50 000 FCFA / an',
     description:
-      'Interface et tous documents générés en FR et EN simultanément.',
+      'Interface et tous documents générés en FR et EN simultanément. Séparation des matières, examens et bulletins par langue.',
+  },
+  {
+    code: 'WHATSAPP',
+    name: 'WhatsApp',
+    price: 'Gratuit — illimité',
+    description:
+      'Inclus dans tous les plans sans surcoût. Notifications parents, diffusez annonces et échanges sans limite.',
+  },
+  {
+    code: 'SMS',
+    name: 'SMS',
+    price: 'Au prix coûtant',
+    description:
+      'Facturé au prix coûtant selon le pays de destination et la consommation réelle (refacturation transparente).',
+  },
+  {
+    code: 'EMAIL',
+    name: 'Email',
+    price: 'Au prix coûtant',
+    description:
+      'Facturé au prix coûtant selon la consommation réelle (refacturation transparente de l\'infrastructure email).',
+  },
+  {
+    code: 'VOICE',
+    name: 'Voice (appel vocal)',
+    price: 'Au prix coûtant',
+    description:
+      'Facturé au prix coûtant selon le pays de destination et la consommation réelle (notifications vocales automatiques).',
   },
 ] as const;
 
@@ -44,9 +53,10 @@ export default function HelmAddonsSection() {
           Add-ons optionnels
         </h2>
         <p className="text-sm md:text-base text-slate-600 max-w-3xl mx-auto">
-          Ces add-ons représentent des coûts opérationnels réels refacturés. Ils ne
-          sont pas des modules verrouillés et peuvent s&apos;ajouter à n&apos;importe
-          quel plan.
+          Add-ons alignés sur le contrat d&apos;abonnement (Article 4). WhatsApp est
+          gratuit et illimité dans tous les plans. SMS, Email et Voice sont refacturés
+          au prix coûtant selon la consommation réelle. L&apos;option bilingue FR/EN est
+          disponible en supplément, quel que soit le plan.
         </p>
       </div>
 
@@ -88,4 +98,3 @@ export default function HelmAddonsSection() {
     </section>
   );
 }
-

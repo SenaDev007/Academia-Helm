@@ -71,10 +71,11 @@ export class PricingController {
 
   /**
    * Récupère le prix initial pour l'onboarding
-   * 
+   *
    * GET /public/pricing/initial
-   * 
-   * Retourne toujours 100 000 FCFA (paiement initial fixe)
+   *
+   * ⭐ Contrat Article 4 : frais d'activation uniques de 300 000 FCFA,
+   * payables à la signature du contrat d'abonnement.
    */
   @Public()
   @Get('initial')
@@ -83,7 +84,7 @@ export class PricingController {
     return {
       amount: config.initialSubscriptionFee,
       currency: config.currency,
-      description: `Paiement initial Academia Hub (inclut période d'essai ${config.trialDays} jours)`,
+      description: `Frais d'activation Academia Helm (contrat Article 4 — payable à la signature, inclut période d'essai ${config.trialDays} jours)`,
     };
   }
 }

@@ -51,7 +51,7 @@ interface EnterpriseQuoteForm {
 
 const QUICK_REPLIES: QuickReply[] = [
   { id: 'pricing', label: 'Voir les plans & tarifs', emoji: '📌', category: 'billing' },
-  { id: 'modules', label: 'Les 9 modules inclus', emoji: '📊', category: 'features' },
+  { id: 'modules', label: 'Les 27 modules inclus', emoji: '📊', category: 'features' },
   { id: 'payment', label: 'Paiement & Fedapay', emoji: '💳', category: 'payment' },
   { id: 'trial', label: 'Demander une démo', emoji: '🧪', category: 'trial' },
   { id: 'groups', label: 'Groupes scolaires', emoji: '🏫', category: 'groups' },
@@ -62,7 +62,7 @@ const QUICK_REPLIES: QuickReply[] = [
 
 const WELCOME_MESSAGE = `👋 Bonjour ! Je suis **SARA**, l'assistante IA d'Academia Helm.
 
-Je peux vous renseigner sur nos plans (de 14 900 à 39 900 F CFA/mois, tous modules inclus), les 9 modules, le free trial guidé, ou organiser une démonstration pour votre école.
+Je peux vous renseigner sur nos 4 plans du contrat d'abonnement (Helm Essentiel, Croissance, Performance, Institution — à partir de 50 000 FCFA/an, frais d'activation 300 000 FCFA), les 21 modules métier + 6 modules complémentaires, le free trial guidé, ou organiser une démonstration pour votre école.
 
 Comment puis-je vous aider aujourd'hui ? 😊`;
 
@@ -430,20 +430,26 @@ export default function SupportChatWidget() {
         // Cas spécial : pricing → retourner un résumé structuré des plans Helm
         if (intent.id === 'pricing_general') {
           answer =
-            "📌 **Grille Academia Helm — tout inclus, sans modules cachés**\n\n" +
-            "• **HELM SEED** (1–150 élèves)\n" +
-            "  - Souscription initiale : 75 000 F CFA (une seule fois)\n" +
-            "  - Abonnement : 14 900 F CFA / mois ou 149 000 F CFA / an\n\n" +
-            "• **HELM GROW** (151–400 élèves) — plan le plus choisi\n" +
-            "  - Souscription initiale : 100 000 F CFA\n" +
-            "  - Abonnement : 24 900 F CFA / mois ou 249 000 F CFA / an\n\n" +
-            "• **HELM LEAD** (401–800 élèves)\n" +
-            "  - Souscription initiale : 150 000 F CFA\n" +
-            "  - Abonnement : 39 900 F CFA / mois ou 399 000 F CFA / an\n\n" +
-            "• **HELM NETWORK** (2+ écoles / multi-campus)\n" +
-            "  - Souscription initiale : 200 000 F CFA\n" +
-            "  - Tarif sur devis selon le nombre de campus\n\n" +
-            "Tous les plans incluent les 9 modules complets (élèves, finances, IA ORION, QHSE, communication, etc.).";
+            "📌 **Grille Academia Helm — contrat d'abonnement (Article 4)**\n\n" +
+            "Facturation annuelle uniquement · Frais d'activation 300 000 FCFA (uniforme)\n\n" +
+            "• **HELM ESSENTIEL** (1–50 élèves)\n" +
+            "  - Frais d'activation : 300 000 F CFA (one-shot)\n" +
+            "  - Frais annuels : 50 000 F CFA / an\n" +
+            "  - Coût total Année 1 : 350 000 F CFA\n\n" +
+            "• **HELM CROISSANCE** (51–150 élèves) — plan le plus choisi\n" +
+            "  - Frais d'activation : 300 000 F CFA\n" +
+            "  - Frais annuels : 75 000 F CFA / an\n" +
+            "  - Coût total Année 1 : 375 000 F CFA\n\n" +
+            "• **HELM PERFORMANCE** (151–400 élèves)\n" +
+            "  - Frais d'activation : 300 000 F CFA\n" +
+            "  - Frais annuels : 100 000 F CFA / an\n" +
+            "  - Coût total Année 1 : 400 000 F CFA\n\n" +
+            "• **HELM INSTITUTION** (401 élèves et +)\n" +
+            "  - Frais d'activation : 300 000 F CFA\n" +
+            "  - Frais annuels : 150 000 F CFA / an\n" +
+            "  - Coût total Année 1 : 450 000 F CFA\n\n" +
+            "Tous les plans incluent les 21 modules métier + 6 modules complémentaires, Web + Desktop + Mobile, offline-first, agents IA (ORION, SARA, ATLAS), paiements en ligne, multi-caisses, multi-niveaux, personnalisation de marque et site institutionnel.\n\n" +
+            "Add-ons : Option bilingue FR/EN 50 000 FCFA/an · WhatsApp gratuit illimité · SMS/Email/Voice au prix coûtant.";
         } else if (faq[category] && faq[category].questions[0]) {
           answer = faq[category].questions[0].a;
         }

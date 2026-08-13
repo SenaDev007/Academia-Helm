@@ -180,7 +180,7 @@ export default function OnboardingWizard() {
     confirmPassword: '',
     otp: '',
     planCode: 'SEED',
-    billingPeriod: 'monthly',
+    billingPeriod: 'yearly', // Contrat Article 4 : facturation annuelle uniquement
     preferredSubdomain: '',
   });
 
@@ -507,9 +507,9 @@ export default function OnboardingWizard() {
     const monthlyBase = plan.monthlyAmount || 0;
     const yearlyBase = plan.yearlyAmount || 0;
 
-    // Prix de l'option bilingue
-    const bilingualMonthly = data.bilingual ? (plan.bilingualMonthly || 10000) : 0;
-    const bilingualYearly = data.bilingual ? (plan.bilingualYearly || 100000) : 0;
+    // Prix de l'option bilingue (contrat Article 4 : 50 000 FCFA/an uniquement, pas d'option mensuelle)
+    const bilingualMonthly = 0; // Plus d'option mensuelle — contrat en annuel uniquement
+    const bilingualYearly = data.bilingual ? (plan.bilingualYearly || 50000) : 0;
 
     setPriceCalculation({
       monthly: {
@@ -1297,7 +1297,7 @@ export default function OnboardingWizard() {
       confirmPassword: '',
       otp: '',
       planCode: 'SEED',
-      billingPeriod: 'monthly',
+      billingPeriod: 'yearly', // Contrat Article 4 : facturation annuelle uniquement
     });
 
     setSubdomainSuggestions([]);
@@ -1807,9 +1807,9 @@ export default function OnboardingWizard() {
                   {data.bilingual && (
                     <div className="mt-2 space-y-1">
                       <p className="text-sm font-semibold text-blue-600">
-                        +{formatCurrency(pricingPlans.find((p: any) => p.code === 'SEED')?.bilingualMonthly || 10000)} / mois pour l'option bilingue
+                        +{formatCurrency(pricingPlans.find((p: any) => p.code === 'SEED')?.bilingualYearly || 50000)} / an pour l'option bilingue
                         <span className="text-xs text-slate-500 font-normal ml-1">
-                          (ou {formatCurrency(pricingPlans.find((p: any) => p.code === 'SEED')?.bilingualYearly || 100000)} / an)
+                          (FR/EN — facturée annuellement, contrat Article 4)
                         </span>
                       </p>
                       <p className="text-xs text-slate-500">
@@ -2442,20 +2442,24 @@ export default function OnboardingWizard() {
                     Sélectionnez le plan correspondant à votre effectif. La section montant se met à jour automatiquement.
                   </p>
 
-                  {/* Cartes de sélection de plan */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {(['SEED', 'GROW', 'LEAD'] as const).map((planKey) => {
+                  {/* Cartes de sélection de plan — 4 plans (contrat Academia Helm) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {(['SEED', 'GROW', 'LEAD', 'NETWORK'] as const).map((planKey) => {
                       const plan = HELM_PLANS[planKey];
                       const dynamicPlan = pricingPlans.find((p: any) => p.code === planKey);
                       const isSelected = data.planCode === planKey;
                       const rangeLabel = planKey === 'SEED'
-                        ? '1 – 150 élèves'
+                        ? '1 – 50 élèves'
                         : planKey === 'GROW'
-                          ? '151 – 400 élèves'
-                          : '401 – 800 élèves';
-                      const monthlyAmount = dynamicPlan?.monthlyAmount ?? plan.monthlyPrice ?? 0;
+                          ? '51 – 150 élèves'
+                          : planKey === 'LEAD'
+                            ? '151 – 400 élèves'
+                            : '401 élèves et +';
+                      // Contrat (Article 4) : facturation annuelle uniquement.
+                      // On affiche le prix annuel et les frais d'activation (300 000 FCFA uniformes).
                       const yearlyAmount = dynamicPlan?.yearlyAmount ?? plan.annualPrice ?? 0;
                       const setupFee = dynamicPlan?.initialFee ?? plan.setupFee ?? 0;
+                      const yearOneTotal = (yearlyAmount ?? 0) + (setupFee ?? 0);
 
                       return (
                         <button
@@ -2467,12 +2471,13 @@ export default function OnboardingWizard() {
                             // la suite du workflow — la validation step 3 l'exige).
                             const representativeCount =
                               planKey === 'SEED' ? 1
-                                : planKey === 'GROW' ? 151
-                                  : 401;
+                                : planKey === 'GROW' ? 51
+                                  : planKey === 'LEAD' ? 151 : 401;
                             setData({
                               ...data,
                               planCode: planKey,
                               estimatedStudentCount: representativeCount,
+                              billingPeriod: 'yearly', // Contrat : facturation annuelle uniquement
                             });
                             if (errors.planCode || errors.estimatedStudentCount) {
                               setErrors({ ...errors, planCode: '', estimatedStudentCount: '' });
@@ -2512,22 +2517,19 @@ export default function OnboardingWizard() {
                             {rangeLabel}
                           </div>
 
-                          {/* Prix mensuel */}
+                          {/* Prix annuel + frais d'activation + total Année 1 */}
                           <div className="space-y-1">
                             <div className="flex items-baseline gap-1">
                               <span className="text-xl font-bold text-blue-900">
-                                {formatCurrency(monthlyAmount)}
-                              </span>
-                              <span className="text-[11px] text-graphite-600">/ mois</span>
-                            </div>
-                            <div className="flex items-baseline gap-1">
-                              <span className="text-sm font-semibold text-graphite-700">
                                 {formatCurrency(yearlyAmount)}
                               </span>
                               <span className="text-[11px] text-graphite-600">/ an</span>
                             </div>
-                            <div className="text-[11px] text-graphite-500 mt-1">
-                              Paiement initial : <strong>{formatCurrency(setupFee)}</strong>
+                            <div className="text-[11px] text-graphite-500">
+                              Activation : <strong>{formatCurrency(setupFee)}</strong>
+                            </div>
+                            <div className="text-[11px] font-semibold text-emerald-700">
+                              Total Année 1 : {formatCurrency(yearOneTotal)} FCFA
                             </div>
                           </div>
                         </button>
@@ -2535,15 +2537,10 @@ export default function OnboardingWizard() {
                     })}
                   </div>
 
-                  {/* Lien pour Network (>800 élèves) */}
+                  {/* Note contrat */}
                   <div className="mt-4 text-center text-xs text-graphite-600">
-                    Au‑delà de 800 élèves ?{' '}
-                    <a
-                      href="mailto:contact@academia-helm.com?subject=Demande%20de%20demo%20HELM%20NETWORK"
-                      className="font-semibold text-blue-700 hover:underline"
-                    >
-                      Contactez‑nous pour HELM NETWORK
-                    </a>
+                    Facturation annuelle · Frais d&apos;activation uniques de 300 000 FCFA ·
+                    WhatsApp illimité inclus dans tous les plans
                   </div>
 
                   {errors.planCode && (
@@ -2551,7 +2548,7 @@ export default function OnboardingWizard() {
                   )}
                 </div>
 
-                {/* Section 1: Période de facturation - Design premium avec cartes */}
+                {/* Section 1: Période de facturation — Annuelle uniquement (contrat Article 4) */}
                 <div className="bg-gradient-to-br from-blue-50 to-mist rounded-xl p-6 border border-blue-200">
                   <div className="flex items-center mb-5">
                     <Calendar className="w-5 h-5 text-blue-700 mr-2" />
@@ -2559,71 +2556,21 @@ export default function OnboardingWizard() {
                     Période de facturation
                   </label>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <button
-                      type="button"
-                      onClick={() => handleChange('billingPeriod', 'monthly')}
-                      className={`relative p-6 border-2 rounded-xl text-left transition-all duration-300 transform ${
-                        data.billingPeriod === 'monthly'
-                          ? 'border-blue-700 bg-white shadow-lg scale-105'
-                          : 'border-gray-300 bg-white hover:border-blue-400 hover:shadow-md'
-                      }`}
+                  <p className="text-xs text-graphite-600 mb-4">
+                    Conformément au contrat d&apos;abonnement (Article 4), Academia Helm
+                    fonctionne en facturation <strong>annuelle</strong> uniquement. Les frais
+                    d&apos;activation de 300 000 FCFA sont payables à la signature.
+                  </p>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div
+                      className="relative p-6 border-2 border-blue-700 bg-white rounded-xl shadow-lg"
                     >
-                      {data.billingPeriod === 'monthly' && (
-                        <div className="absolute -top-2 -right-2 bg-blue-700 text-white text-xs font-semibold px-2 py-1 rounded-full">
-                          Sélectionné
+                      <div className="absolute -top-2 -right-2 bg-blue-700 text-white text-xs font-semibold px-2 py-1 rounded-full">
+                        Sélectionné
                       </div>
-                      )}
                       <div className="flex items-center mb-3">
-                        <div className={`p-2 rounded-lg mr-3 ${
-                          data.billingPeriod === 'monthly' ? 'bg-blue-100' : 'bg-gray-100'
-                        }`}>
-                          <Calendar className={`w-4 h-4 ${
-                            data.billingPeriod === 'monthly' ? 'text-blue-700' : 'text-gray-600'
-                          }`} />
-                        </div>
-                        <div className="font-semibold text-lg text-blue-900">Mensuel</div>
-                      </div>
-                      {priceCalculation.isLoading ? (
-                        <div className="flex items-center gap-2">
-                          <Loader className="w-4 h-4 animate-spin text-blue-600" />
-                          <span className="text-sm text-graphite-600">Calcul en cours...</span>
-                        </div>
-                      ) : priceCalculation.error ? (
-                        <div className="text-sm text-red-600">{priceCalculation.error}</div>
-                      ) : priceCalculation.monthly ? (
-                        <>
-                          <div className="text-3xl font-bold text-blue-900 mb-1">
-                            {formatCurrency(priceCalculation.monthly.basePrice)}
-                          </div>
-                          <div className="text-sm text-graphite-600">/ mois</div>
-                        </>
-                      ) : (
-                        <div className="text-sm text-graphite-600">Chargement...</div>
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleChange('billingPeriod', 'yearly')}
-                      className={`relative p-6 border-2 rounded-xl text-left transition-all duration-300 transform ${
-                        data.billingPeriod === 'yearly'
-                          ? 'border-blue-700 bg-white shadow-lg scale-105'
-                          : 'border-gray-300 bg-white hover:border-blue-400 hover:shadow-md'
-                      }`}
-                    >
-                      {data.billingPeriod === 'yearly' && (
-                        <div className="absolute -top-2 -right-2 bg-blue-700 text-white text-xs font-semibold px-2 py-1 rounded-full">
-                          Sélectionné
-                      </div>
-                      )}
-                      <div className="flex items-center mb-3">
-                        <div className={`p-2 rounded-lg mr-3 ${
-                          data.billingPeriod === 'yearly' ? 'bg-blue-100' : 'bg-gray-100'
-                        }`}>
-                          <Calendar className={`w-4 h-4 ${
-                            data.billingPeriod === 'yearly' ? 'text-blue-700' : 'text-gray-600'
-                          }`} />
+                        <div className="p-2 rounded-lg mr-3 bg-blue-100">
+                          <Calendar className="w-4 h-4 text-blue-700" />
                         </div>
                         <div className="font-semibold text-lg text-blue-900">Annuel</div>
                       </div>
@@ -2639,18 +2586,15 @@ export default function OnboardingWizard() {
                           <div className="text-3xl font-bold text-blue-900 mb-1">
                             {formatCurrency(priceCalculation.yearly.basePrice)}
                           </div>
-                          <div className="text-sm text-graphite-600 mb-2">/ an</div>
-                          {priceCalculation.monthly && (
-                            <div className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 px-2 py-1 rounded-md">
-                              <TrendingDown className="w-3 h-3" />
-                              Économisez {((priceCalculation.monthly.basePrice * 12 - priceCalculation.yearly.basePrice) / (priceCalculation.monthly.basePrice * 12) * 100).toFixed(0)}%
-                            </div>
-                          )}
+                          <div className="text-sm text-graphite-600 mb-2">/ an · frais annuels</div>
+                          <div className="text-xs text-graphite-500">
+                            + Frais d&apos;activation : <strong>300 000 FCFA</strong> (one-shot)
+                          </div>
                         </>
                       ) : (
                         <div className="text-sm text-graphite-600">Chargement...</div>
                       )}
-                    </button>
+                    </div>
                   </div>
                 </div>
 

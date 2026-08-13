@@ -46,19 +46,25 @@ export class PricingConfigSeedService implements OnModuleInit {
     }
 
     // Créer la configuration par défaut
+    // ⭐ Alignée sur le contrat d'abonnement Academia Helm (Article 4) :
+    //   - Frais d'activation uniques : 300 000 FCFA (uniforme)
+    //   - Facturation annuelle uniquement (monthlyBasePrice = 0)
+    //   - Base annuelle (Helm Essentiel) : 50 000 FCFA/an
+    //   - Option bilingue : 50 000 FCFA/an (pas d'option mensuelle)
+    //   - Plus de réduction annuelle (l'annuel est le seul cycle)
     const defaultConfig = await this.prisma.pricingConfig.create({
       data: {
-        initialSubscriptionFee: 100000, // 100 000 FCFA
+        initialSubscriptionFee: 300000, // 300 000 FCFA — frais d'activation uniformes
         multiSchoolInitialDiscountPercent: 10, // 10% de réduction sur la souscription initiale pour les promoteurs gérant plusieurs écoles
-        monthlyBasePrice: 15000, // 15 000 FCFA
-        yearlyBasePrice: 150000, // 150 000 FCFA
-        yearlyDiscountPercent: 17, // -17%
-        bilingualMonthlyAddon: 5000, // +5 000 FCFA/mois
-        bilingualYearlyAddon: 50000, // +50 000 FCFA/an
-        schoolAdditionalPrice: 10000, // +10 000 FCFA par école supplémentaire
+        monthlyBasePrice: 0, // 0 — plus d'option mensuelle (contrat en annuel uniquement)
+        yearlyBasePrice: 50000, // 50 000 FCFA/an — base Helm Essentiel
+        yearlyDiscountPercent: 0, // 0% — pas de remise (annuel = seul cycle)
+        bilingualMonthlyAddon: 0, // 0 — plus d'option mensuelle
+        bilingualYearlyAddon: 50000, // 50 000 FCFA/an (contrat Article 4)
+        schoolAdditionalPrice: 0, // 0 — plus de surcoût par école (pricing par tranche d'élèves)
         trialDays: 30,
-        graceDays: 7,
-        reminderDays: [7, 3, 1], // J-7, J-3, J-1
+        graceDays: 15, // Contrat : 15 jours après échéance → suspension possible
+        reminderDays: [15, 7, 3, 1], // J-15, J-7, J-3, J-1
         currency: 'XOF',
         isActive: true,
         version: 1,
@@ -66,24 +72,32 @@ export class PricingConfigSeedService implements OnModuleInit {
         metadata: {
           seeded: true,
           seededAt: new Date().toISOString(),
+          contractAligned: true,
+          contractArticle: 'Article 4',
         },
       },
     });
 
-    this.logger.log(`✅ Default pricing config created: version ${defaultConfig.version}`);
+    this.logger.log(`✅ Default pricing config created (contrat Article 4): version ${defaultConfig.version}`);
 
     // Créer les group tiers par défaut
+    // ⭐ Contrat : le pricing est par tranche d'élèves (Helm Essentiel/Croissance/Performance/Institution),
+    // pas par nombre d'écoles. Les group tiers sont conservés pour compatibilité ascendante
+    // mais ne sont plus la logique principale de pricing.
     await this.seedDefaultGroupTiers();
   }
 
   /**
    * Initialise les group tiers par défaut
+   *
+   * ⭐ Contrat Article 4 : le pricing dépend du nombre d'élèves (tranches), pas du nombre d'écoles.
+   * Les group tiers sont conservés pour rétro-compatibilité mais ne sont plus la logique principale.
    */
   async seedDefaultGroupTiers() {
     const tiers = [
-      { schoolsCount: 2, monthlyPrice: 25000, yearlyPrice: 250000 },
-      { schoolsCount: 3, monthlyPrice: 35000, yearlyPrice: 350000 },
-      { schoolsCount: 4, monthlyPrice: 45000, yearlyPrice: 450000 },
+      { schoolsCount: 2, monthlyPrice: 0, yearlyPrice: 0 },
+      { schoolsCount: 3, monthlyPrice: 0, yearlyPrice: 0 },
+      { schoolsCount: 4, monthlyPrice: 0, yearlyPrice: 0 },
     ];
 
     for (const tierData of tiers) {

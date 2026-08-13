@@ -86,6 +86,10 @@ export class SubscriptionLifecycleController {
   /**
    * GET /api/billing/subscription-status/:tenantId
    * Retourne le statut d'abonnement (pour le frontend — bandeau, lecture seule, etc.)
+   *
+   * ⭐ Inclut désormais les montants (annualAmount, monthlyAmount, setupFee) pour
+   * que le frontend puisse afficher le prix dudit plan dynamiquement, alignés sur
+   * le contrat d'abonnement (Article 4 — facturation annuelle uniquement).
    */
   @Public()
   @Get('subscription-status/:tenantId')
@@ -102,6 +106,10 @@ export class SubscriptionLifecycleController {
         suspendedAt: true,
         blockedAt: true,
         reactivationFee: true,
+        annualAmount: true,
+        monthlyAmount: true,
+        setupFee: true,
+        bilingualEnabled: true,
       },
     });
 
@@ -325,9 +333,10 @@ export class SubscriptionLifecycleController {
       where: { code: 'BILINGUAL' as any },
     });
 
-    // Fallback si le plan bilingue n'existe pas en DB
-    const monthlyAddon = (bilingualPlan as any)?.bilingualMonthly ?? 10000;
-    const yearlyAddon = (bilingualPlan as any)?.bilingualYearly ?? 100000;
+    // ⭐ Contrat Article 4 : option bilingue à 50 000 FCFA/an uniquement (pas d'option mensuelle).
+    // Fallback si le plan bilingue n'existe pas en DB.
+    const monthlyAddon = (bilingualPlan as any)?.bilingualMonthly ?? null; // null = plus d'option mensuelle
+    const yearlyAddon = (bilingualPlan as any)?.bilingualYearly ?? 50000;
 
     return {
       enabled: sub?.bilingualEnabled || false,
@@ -384,10 +393,13 @@ export class SubscriptionLifecycleController {
     const bilingualPlan = await this.prisma.pricingPlan.findFirst({
       where: { code: 'BILINGUAL' as any },
     });
-    const monthlyAddon = (bilingualPlan as any)?.bilingualMonthly ?? 10000;
-    const yearlyAddon = (bilingualPlan as any)?.bilingualYearly ?? 100000;
+    // ⭐ Contrat Article 4 : option bilingue à 50 000 FCFA/an uniquement (pas d'option mensuelle).
+    const monthlyAddon = (bilingualPlan as any)?.bilingualMonthly ?? null; // null = plus d'option mensuelle
+    const yearlyAddon = (bilingualPlan as any)?.bilingualYearly ?? 50000;
 
-    const amount = sub.billingCycle === 'YEARLY' ? yearlyAddon : monthlyAddon;
+    // ⭐ Contrat : facturation annuelle uniquement. Si billingCycle est MONTHLY
+    // (anciennes données), on force l'usage du tarif annuel.
+    const amount = sub.billingCycle === 'YEARLY' ? yearlyAddon : yearlyAddon;
     if (!amount) {
       throw new BadRequestException('Montant bilingue introuvable');
     }
@@ -516,9 +528,10 @@ export class SubscriptionLifecycleController {
         select: { name: true, subdomain: true },
       });
 
-      const amount = sub.billingCycle === 'ANNUAL'
-        ? 100000  // bilingualYearly
-        : 10000;  // bilingualMonthly
+      // ⭐ Contrat Article 4 : option bilingue à 50 000 FCFA/an uniquement (pas d'option mensuelle).
+      // Quel que soit le billingCycle stocké (potentiellement MONTHLY pour d'anciennes données),
+      // on facture le tarif annuel.
+      const amount = 50000;  // bilingualYearly — 50 000 FCFA/an (contrat Article 4)
 
       await this.invoiceService.createAndSendInvoice({
         tenantId,
@@ -828,11 +841,16 @@ export class SubscriptionLifecycleController {
       const oldPlan = (tenant.subscriptionPlan || '').toLowerCase();
       const isCspeb = tenant.name.includes('Éveil') || tenant.name.includes('Eveil') || tenant.slug.includes('cspeb');
 
+      // ⭐ Aligné sur le contrat d'abonnement Academia Helm (Article 4) :
+      //   - Facturation ANNUELLE uniquement (plus de mensuel)
+      //   - Frais d'activation uniques : 300 000 FCFA (uniforme)
+      //   - Helm Essentiel (SEED) : 50 000 FCFA/an — 1-50 élèves
+      //   - Helm Croissance (GROW) : 75 000 FCFA/an — 51-150 élèves
       const plan = isCspeb ? 'GROW' : 'SEED';
-      const billingCycle = 'MONTHLY';
-      const monthlyAmount = isCspeb ? 24900 : 19900;
-      const annualAmount = isCspeb ? 249000 : 199000;
-      const setupFee = isCspeb ? 100000 : 75000;
+      const billingCycle = 'ANNUAL';
+      const monthlyAmount = 0; // Plus d'option mensuelle (contrat Article 4)
+      const annualAmount = isCspeb ? 75000 : 50000;
+      const setupFee = 300000; // Frais d'activation uniformes
       const status = isCspeb ? 'ACTIVE' : 'TRIALING';
 
       const now = new Date();
@@ -874,7 +892,7 @@ export class SubscriptionLifecycleController {
               reference: `SEED-CSPEB-${Date.now()}`,
               metadata: {
                 seededBy: adminEmail,
-                description: 'Souscription initiale - Helm Grow (mensuel)',
+                description: 'Frais d\'activation - Helm Croissance (annuel, contrat Article 4)',
                 planCode: plan,
                 helmSubscriptionId: sub.id,
               },
@@ -899,7 +917,7 @@ export class SubscriptionLifecycleController {
                 invoiceNumber,
                 customerEmail: 'contact@cspeb-eveilafrique.bj',
                 customerName: tenant.name,
-                description: 'Souscription initiale — Helm Grow (mensuel) + frais d\'activation',
+                description: 'Frais d\'activation — Helm Croissance (annuel, contrat Article 4)',
                 type: 'INITIAL_SUBSCRIPTION',
                 paymentReference: `SEED-CSPEB-${Date.now()}`,
                 paymentMethod: 'MOBILE_MONEY',
@@ -1006,12 +1024,12 @@ export class SubscriptionLifecycleController {
         data: {
           tenantId: cspeb.id,
           type: 'INITIAL_SUBSCRIPTION' as any,
-          amount: 100000,
+          amount: 300000, // Frais d'activation — contrat Article 4 (uniforme)
           channel: 'FEDAPAY',
           reference: `CSPEB-INIT-${Date.now()}`,
           metadata: {
             seededBy: adminEmail,
-            description: 'Souscription initiale - Helm Grow (mensuel) + frais d\'activation',
+            description: 'Frais d\'activation - Helm Croissance (annuel, contrat Article 4)',
             planCode: 'GROW',
             helmSubscriptionId: sub.id,
             paymentMethod: 'MOBILE_MONEY',
@@ -1019,7 +1037,7 @@ export class SubscriptionLifecycleController {
           },
         },
       });
-      results.push({ step: 'BillingEvent créé', eventId: event.id, amount: 100000 });
+      results.push({ step: 'BillingEvent créé', eventId: event.id, amount: 300000 });
     } else {
       results.push({ step: 'BillingEvent existe déjà', eventId: existingEvent.id });
     }
@@ -1035,17 +1053,17 @@ export class SubscriptionLifecycleController {
         data: {
           subscriptionId: sub.id,
           tenantId: cspeb.id,
-          amount: 100000,
+          amount: 300000, // Frais d'activation — contrat Article 4 (uniforme)
           currency: 'XOF',
           plan: 'GROW' as any,
-          billingCycle: 'MONTHLY' as any,
+          billingCycle: 'ANNUAL' as any, // Contrat Article 4 — annuel uniquement
           period: 'INITIAL',
           status: 'PAID',
           paidAt: now,
           invoiceNumber,
           customerEmail: 's.akpovitohou@gmail.com',
           customerName: cspeb.name,
-          description: 'Souscription initiale — Helm Grow (mensuel) + frais d\'activation 100 000 FCFA',
+          description: 'Frais d\'activation — Helm Croissance (annuel, contrat Article 4) — 300 000 FCFA',
           type: 'INITIAL_SUBSCRIPTION',
           paymentReference: `CSPEB-INIT-${Date.now()}`,
           paymentMethod: 'MOBILE_MONEY',
@@ -1151,7 +1169,7 @@ export class SubscriptionLifecycleController {
           promoterPasswordHash: '$2b$12$placeholder.hash.for.seed.data',
           otpVerified: true,
           selectedPlanId: null,
-          priceSnapshot: { planCode: 'GROW', billingCycle: 'MONTHLY', monthlyPrice: 24900, setupFee: 100000 } as any,
+          priceSnapshot: { planCode: 'GROW', billingCycle: 'ANNUAL', yearlyPrice: 75000, setupFee: 300000 } as any,
           status: 'COMPLETED',
         },
       });
@@ -1161,7 +1179,7 @@ export class SubscriptionLifecycleController {
           draftId: draft.id,
           provider: 'fedapay',
           reference: `CSPEB-ONBOARD-${Date.now()}`,
-          amount: 100000,
+          amount: 300000, // Frais d'activation — contrat Article 4 (uniforme)
           currency: 'XOF',
           status: 'SUCCESS',
           metadata: {
@@ -1175,7 +1193,7 @@ export class SubscriptionLifecycleController {
       });
 
       results.push({ step: 'OnboardingDraft créé', draftId: draft.id });
-      results.push({ step: 'OnboardingPayment créé', paymentId: payment.id, amount: 100000 });
+      results.push({ step: 'OnboardingPayment créé', paymentId: payment.id, amount: 300000 });
     } else {
       results.push({ step: 'OnboardingDraft existe déjà', draftId: existingDraft.id });
     }

@@ -9,6 +9,15 @@ export interface HelmPricingCardProps {
   onSelectPlan?: (plan: HelmPlanKey) => void;
 }
 
+/**
+ * Carte de plan tarifaire — alignée sur le contrat d'abonnement Academia Helm.
+ *
+ * Affichage :
+ *   - Tranche d'élèves
+ *   - Frais annuels (50 000 → 150 000 FCFA selon le plan)
+ *   - Frais d'activation : 300 000 FCFA (uniforme)
+ *   - Total Année 1 : activation + annuel
+ */
 export default function HelmPricingCard({
   plan,
   billingCycle,
@@ -17,17 +26,22 @@ export default function HelmPricingCard({
   const config = HELM_PLANS[plan];
   const isHighlighted = config.highlighted;
   const isNetwork = plan === 'NETWORK';
-  const price =
-    billingCycle === 'MONTHLY' ? config.monthlyPrice : config.annualPrice;
+
+  // Contrat : facturation annuelle uniquement. On ignore l'argument billingCycle
+  // mensuel (hérité de l'ancien toggle) et on affiche toujours le prix annuel.
+  const annualPrice = config.annualPrice;
+  const setupFee = config.setupFee;
+  const yearOneTotal = (annualPrice ?? 0) + (setupFee ?? 0);
+  void billingCycle;
 
   const studentsRange =
     plan === 'SEED'
-      ? '1 – 150 élèves'
+      ? '1 – 50 élèves'
       : plan === 'GROW'
-      ? '151 – 400 élèves'
+      ? '51 – 150 élèves'
       : plan === 'LEAD'
-      ? '401 – 800 élèves'
-      : 'Multi-campus';
+      ? '151 – 400 élèves'
+      : '401 élèves et +';
 
   const href = isNetwork ? '/contact-enterprise' : `/signup?plan=${plan.toLowerCase()}`;
 
@@ -113,42 +127,45 @@ export default function HelmPricingCard({
       </div>
 
       <div className="mt-4 mb-4">
-        <div className="text-sm text-slate-500 mb-1">
-          {billingCycle === 'MONTHLY' ? 'Abonnement mensuel' : 'Abonnement annuel'}
-        </div>
+        <div className="text-sm text-slate-500 mb-1">Frais annuels</div>
         <div className="flex items-baseline gap-2">
           <span className="text-3xl font-extrabold text-navy-900">
-            {price == null ? 'Sur devis' : formatCurrency(price)}
+            {annualPrice == null ? 'Sur devis' : formatCurrency(annualPrice)}
           </span>
-          {price != null && (
-            <span className="text-sm text-slate-600">
-              {billingCycle === 'MONTHLY' ? '/ mois' : '/ an'}
-            </span>
+          {annualPrice != null && (
+            <span className="text-sm text-slate-600">/ an</span>
           )}
         </div>
-        {billingCycle === 'ANNUAL' && price != null && config.monthlyPrice != null && (
-          <p className="mt-1 text-xs text-gold-600 font-medium">
-            Équivalent {formatCurrency(Math.round(price / 12))}/mois — 2 mois offerts
-          </p>
-        )}
       </div>
 
       <div className="mb-4">
         <div className="flex items-center gap-2 text-sm text-slate-700">
           <CheckCircle className="w-4 h-4 text-emerald-600" />
-          <span>9 modules inclus dans chaque plan</span>
+          <span>21 modules métier + 6 modules complémentaires inclus</span>
         </div>
       </div>
 
       <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
         <div className="text-xs font-semibold text-slate-500 uppercase mb-1">
-          Souscription initiale
+          Frais d&apos;activation (one-shot)
         </div>
         <div className="flex items-baseline gap-2">
           <span className="text-lg font-bold text-navy-900">
-            {formatCurrency(config.setupFee)}
+            {formatCurrency(setupFee)}
           </span>
-          <span className="text-xs text-slate-600">one-shot à l&apos;ouverture</span>
+          <span className="text-xs text-slate-600">à la signature</span>
+        </div>
+      </div>
+
+      <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+        <div className="text-xs font-semibold text-emerald-700 uppercase mb-1">
+          Coût total Année 1
+        </div>
+        <div className="flex items-baseline gap-2">
+          <span className="text-xl font-extrabold text-emerald-900">
+            {formatCurrency(yearOneTotal)}
+          </span>
+          <span className="text-xs text-emerald-700">FCFA</span>
         </div>
       </div>
 
@@ -179,4 +196,3 @@ export default function HelmPricingCard({
     </div>
   );
 }
-

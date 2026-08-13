@@ -4,12 +4,21 @@
 -- Crée la table `pricing_plans` pour stocker les plans de tarification
 -- d'Academia Helm de manière dynamique (gérables depuis le back-office).
 --
--- 4 plans + 1 option bilingue :
---   - Helm Seed   (1-150 élèves)     — Initial 75 000, Mensuel 19 900
---   - Helm Grow   (151-400 élèves)   — Initial 100 000, Mensuel 24 900
---   - Helm Lead   (401-800 élèves)   — Initial 150 000, Mensuel 39 900
---   - Helm Network (800+ élèves)     — Initial 200 000, Mensuel sur devis
---   - Option Bilingue                — Mensuel 10 000, Annuel 100 000
+-- ⚠️ NOTE : Les valeurs seedées ci-dessous sont les valeurs INITIALES (août 2026).
+-- Une migration ultérieure (20260901000000_align_pricing_to_contract) met à jour
+-- ces plans pour les aligner sur le CONTRAT D'ABONNEMENT ACADEMIA HELM (Article 4) :
+--
+--   | Plan              | Tranche élèves | Activation | Annuel  | Total An |
+--   |-------------------|----------------|------------|---------|----------|
+--   | Helm Essentiel    | 1-50           | 300 000    | 50 000  | 350 000  |
+--   | Helm Croissance   | 51-150         | 300 000    | 75 000  | 375 000  |
+--   | Helm Performance  | 151-400        | 300 000    | 100 000 | 400 000  |
+--   | Helm Institution  | 401+           | 300 000    | 150 000 | 450 000  |
+--
+-- Add-ons (Article 4) :
+--   - Option bilingue FR/EN : 50 000 FCFA/an (en supplément, quel que soit le plan)
+--   - SMS / Email / Voice : facturés au prix coûtant
+--   - WhatsApp : GRATUIT et illimité, inclus dans tous les plans
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS "pricing_plans" (
@@ -39,7 +48,8 @@ CREATE TABLE IF NOT EXISTS "pricing_plans" (
 CREATE INDEX IF NOT EXISTS "pricing_plans_isActive_idx" ON "pricing_plans"("isActive");
 CREATE INDEX IF NOT EXISTS "pricing_plans_sortOrder_idx" ON "pricing_plans"("sortOrder");
 
--- Seed initial des 4 plans + option bilingue
+-- Seed initial des 4 plans (valeurs INITIALES — voir migration 20260901000000_align_pricing_to_contract
+-- pour les valeurs définitives alignées sur le contrat d'abonnement).
 INSERT INTO "pricing_plans" ("id", "code", "name", "tagline", "description", "studentMin", "studentMax", "initialFee", "monthlyAmount", "yearlyAmount", "bilingualMonthly", "bilingualYearly", "features", "isPopular", "isActive", "sortOrder", "updatedAt")
 VALUES
     (gen_random_uuid(), 'SEED', 'Helm Seed', 'L''essentiel pour bien démarrer', 'Idéal pour les petites écoles qui démarrent leur transformation numérique.', 1, 150, 75000, 19900, 199000, 10000, 100000, '["Tous les modules principaux et supplémentaires inclus","Jusqu''à 150 élèves","Essai gratuit 30 jours","Support email","Sauvegarde quotidienne"]', false, true, 1, NOW()),
@@ -47,3 +57,4 @@ VALUES
     (gen_random_uuid(), 'LEAD', 'Helm Lead', 'Dominez votre marché', 'Pour les grandes écoles qui veulent un pilotage avancé et l''analytics.', 401, 800, 150000, 39900, 399000, 10000, 100000, '["Tous les modules principaux et supplémentaires inclus","401 à 800 élèves","Essai gratuit 30 jours","Support dédié 7j/7","Sauvegarde horaire","ORION Analytics complet","API d''intégration"]', false, true, 3, NOW()),
     (gen_random_uuid(), 'NETWORK', 'Helm Network', 'La catégorie multi-campus', 'Pour les réseaux d''écoles et les établissements multi-campus.', 801, NULL, 200000, NULL, NULL, 10000, 100000, '["Tous les modules principaux et supplémentaires inclus","Plus de 800 élèves","Essai gratuit 30 jours","Account manager dédié","Sauvegarde temps réel","ORION Analytics complet","API d''intégration","Déploiement multi-campus","Formation sur site"]', false, true, 4, NOW())
 ON CONFLICT ("code") DO NOTHING;
+

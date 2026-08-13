@@ -72,7 +72,7 @@ export const emailTemplates = {
     data: {
       promoteurPrenom: string;
       etablissementNom: string;
-      /** ⭐ Nom AFFICHABLE du plan (ex: "Helm Seed") — NE PAS passer le code (SEED/GROW). */
+      /** ⭐ Nom AFFICHABLE du plan (ex: "Helm Essentiel") — NE PAS passer le code (SEED/GROW). */
       plan: string;
       transactionRef: string;
       montant: number;

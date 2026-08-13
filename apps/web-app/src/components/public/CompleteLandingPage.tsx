@@ -123,25 +123,27 @@ function ModuleCard({
 
 function LandingPlanCard({
   planKey,
-  billingCycle,
 }: {
   planKey: HelmPlanKey;
-  billingCycle: 'monthly' | 'annual';
+  // Contrat : facturation annuelle uniquement — l'argument billingCycle est ignoré.
+  billingCycle?: 'monthly' | 'annual';
 }) {
   const plan = HELM_PLANS[planKey];
   const isHighlighted = plan.highlighted;
   const isNetwork = planKey === 'NETWORK';
-  const price =
-    billingCycle === 'monthly' ? plan.monthlyPrice : plan.annualPrice;
+  // Contrat (Article 4) : facturation ANNUELLE uniquement.
+  const annualPrice = plan.annualPrice;
+  const setupFee = plan.setupFee;
+  const yearOneTotal = (annualPrice ?? 0) + (setupFee ?? 0);
 
   const studentsRange =
     planKey === 'SEED'
-      ? '1 – 150 élèves'
+      ? '1 – 50 élèves'
       : planKey === 'GROW'
-      ? '151 – 400 élèves'
+      ? '51 – 150 élèves'
       : planKey === 'LEAD'
-      ? '401 – 800 élèves'
-      : 'Multi-campus';
+      ? '151 – 400 élèves'
+      : '401 élèves et +';
 
   const borderClass =
     planKey === 'SEED'
@@ -232,35 +234,31 @@ function LandingPlanCard({
 
         <div className="mb-6">
           <div className="text-sm text-gray-500 mb-1">
-            {billingCycle === 'monthly' ? 'Abonnement mensuel' : 'Abonnement annuel'}
+            Frais annuels
           </div>
           <div className="flex items-baseline justify-center gap-2">
             <span className="text-4xl font-extrabold text-blue-700">
-              {price == null ? 'Sur devis' : formatCurrency(plan[billingCycle === 'monthly' ? 'monthlyPrice' : 'annualPrice'])}
+              {annualPrice == null ? 'Sur devis' : formatCurrency(annualPrice)}
             </span>
-            {price != null && (
+            {annualPrice != null && (
               <span className="text-base text-gray-600 font-medium">
-                {billingCycle === 'monthly' ? '/ mois' : '/ an'}
+                / an
               </span>
             )}
           </div>
-          {billingCycle === 'annual' && price != null && plan.monthlyPrice != null && (
-            <p className={`${typo('small')} text-gold-600 text-center font-medium mt-1`}>
-              Équivalent {formatCurrency(Math.round(plan.annualPrice! / 12))}/mois — 2 mois offerts
-            </p>
-          )}
         </div>
 
         <div className="mb-4 p-4 bg-blue-50 rounded-2xl border border-blue-200">
           <p className={`${typo('base')} text-blue-900 font-semibold text-center`}>
-            9 modules inclus dans chaque plan
+            21 modules métier + 6 modules complémentaires inclus
           </p>
         </div>
 
         <ul className="space-y-3 mb-6 flex-grow">
           {[
-            'Accès complet aux 9 modules (élèves, finances, ORION, QHSE, RH, etc.)',
-            'Mode offline / online',
+            'Accès complet aux 21 modules métier + 6 modules complémentaires',
+            'Web + Desktop + Mobile — Offline-first',
+            'Agents IA (ORION, SARA, ATLAS) inclus',
             'Support inclus',
           ].map((item, index) => (
             <li key={index} className="flex items-start space-x-3">
@@ -274,11 +272,14 @@ function LandingPlanCard({
 
         <div className="mb-4 p-3 bg-gray-50 rounded-xl border border-gray-200">
           <p className={`${typo('small')} text-gray-600 text-center leading-relaxed`}>
-            Souscription initiale :{' '}
+            Frais d&apos;activation :{' '}
             <span className="font-semibold text-blue-900">
-              {formatCurrency(plan.setupFee)}
+              {formatCurrency(setupFee)}
             </span>{' '}
-            (one-shot à l&apos;ouverture)
+            (one-shot à la signature)
+          </p>
+          <p className={`${typo('small')} mt-2 text-emerald-700 text-center font-semibold`}>
+            Coût total Année 1 : {formatCurrency(yearOneTotal)} FCFA
           </p>
         </div>
 
@@ -300,7 +301,11 @@ function LandingPlanCard({
 
 export default function CompleteLandingPage() {
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
-  const [pricingPeriod, setPricingPeriod] = useState<'monthly' | 'annual'>('monthly');
+  // ⭐ Contrat (Article 4) : facturation annuelle uniquement — plus de toggle mensuel/annuel.
+  // La variable ci-dessous est conservée pour rétro-compatibilité mais n'est plus utilisée
+  // pour basculer entre mensuel et annuel (l'UI affiche toujours le prix annuel).
+  const [, setPricingPeriod] = useState<'monthly' | 'annual'>('annual');
+  void setPricingPeriod;
   const [isOfflineSectionVisible, setIsOfflineSectionVisible] = useState(false);
   const offlineSectionRef = useRef<HTMLElement>(null);
   const [testimonialStats, setTestimonialStats] = useState({
@@ -827,7 +832,7 @@ export default function CompleteLandingPage() {
         </div>
       </section>
 
-      {/* 7️⃣ SECTION — TARIFICATION (alignée sur HELM SEED / GROW / LEAD / NETWORK) */}
+      {/* 7️⃣ SECTION — TARIFICATION (alignée sur le contrat : Helm Essentiel / Croissance / Performance / Institution) */}
       <section id="tarification" className={`py-12 md:py-16 lg:py-24 ${bgColor('sidebar')} ${textColor('inverse')} relative overflow-hidden`}>
         {/* Decorative background elements */}
         <div className="absolute inset-0 opacity-5">
@@ -842,44 +847,23 @@ export default function CompleteLandingPage() {
               Pilotez votre école avec une tarification tout inclus
             </h2>
             <p className={`${typo('large')} text-white/90 max-w-3xl mx-auto leading-relaxed mb-4`}>
-              Tous les plans incluent les 9 modules complets d&apos;Academia Helm : élèves, finances,
-              examens, RH, QHSE, communication, IA ORION et modules complémentaires.
+              Tous les plans incluent les 21 modules métier + 6 modules complémentaires d&apos;Academia Helm :
+              élèves, finances, examens, RH, QHSE, communication, IA ORION et plus encore.
             </p>
             <p className={`${typo('small')} text-white/80 max-w-2xl mx-auto`}>
               La seule variable est le nombre d&apos;élèves inscrits dans votre établissement.
             </p>
             
-            {/* Toggle Mensuel/Annuel */}
+            {/* Bandeau facturation annuelle (contrat Article 4) */}
             <div className="flex items-center justify-center gap-4 mb-20 mt-8">
               <div className="bg-white/10 backdrop-blur-sm rounded-2xl px-6 py-2.5 border border-gold-500/50 shadow-lg">
                 <div className="flex items-center justify-center gap-4">
-                  <span className={`${typo('base')} ${pricingPeriod === 'monthly' ? 'text-white font-semibold' : 'text-white/60'}`}>
-                    Mensuel
+                  <span className={`${typo('base')} text-white font-semibold`}>
+                    Facturation annuelle
                   </span>
-                  <button
-                    onClick={() => setPricingPeriod(pricingPeriod === 'monthly' ? 'annual' : 'monthly')}
-                    className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-gold-500 focus:ring-offset-2 focus:ring-offset-blue-900 ${
-                      pricingPeriod === 'annual' ? 'bg-gold-500/30' : 'bg-white/20'
-                    }`}
-                    role="switch"
-                    aria-checked={pricingPeriod === 'annual'}
-                  >
-                    <span
-                      className={`inline-block h-6 w-6 transform rounded-full shadow-lg transition-transform ${
-                        pricingPeriod === 'annual' 
-                          ? 'translate-x-7 bg-gold-500' 
-                          : 'translate-x-1 bg-white'
-                      }`}
-                    />
-                  </button>
-                  <span className={`${typo('base')} ${pricingPeriod === 'annual' ? 'text-gold-400 font-semibold' : 'text-white/60'}`}>
-                    Annuel
+                  <span className="ml-2 px-3 py-1 bg-gold-500/20 text-gold-400 rounded-full text-xs font-medium">
+                    Frais d&apos;activation : 300 000 FCFA
                   </span>
-                  {pricingPeriod === 'annual' && (
-                    <span className="ml-2 px-3 py-1 bg-gold-500/20 text-gold-400 rounded-full text-xs font-medium">
-                      2 mois offerts
-                    </span>
-                  )}
                 </div>
               </div>
             </div>
@@ -887,10 +871,10 @@ export default function CompleteLandingPage() {
 
           {/* Cartes de Pricing basées sur HELM_PLANS */}
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8 mb-12 md:mb-16">
-            <LandingPlanCard planKey="SEED" billingCycle={pricingPeriod} />
-            <LandingPlanCard planKey="GROW" billingCycle={pricingPeriod} />
-            <LandingPlanCard planKey="LEAD" billingCycle={pricingPeriod} />
-            <LandingPlanCard planKey="NETWORK" billingCycle={pricingPeriod} />
+            <LandingPlanCard planKey="SEED" />
+            <LandingPlanCard planKey="GROW" />
+            <LandingPlanCard planKey="LEAD" />
+            <LandingPlanCard planKey="NETWORK" />
           </div>
 
           {/* BANDEAU FREE TRIAL */}

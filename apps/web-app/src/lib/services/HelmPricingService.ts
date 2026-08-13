@@ -2,24 +2,31 @@
 // MAINTENANT DYNAMIQUE — fetch depuis /api/public/pricing/plans (DB pricing_plans)
 // Fallback sur les valeurs codées en dur si l'API ne répond pas.
 //
-// ⭐ PRICING MIS À JOUR — Août 2026
+// ⭐ PRICING MIS À JOUR — Alignement contrat d'abonnement Academia Helm
 //
-// Principe : TOUS les modules sont inclus quel que soit le plan.
-// Le pricing dépend uniquement de la taille de l'école (nombre d'élèves).
+// Principe : TOUS les modules (21 modules métier + 6 modules complémentaires)
+// sont inclus quel que soit le plan. Le pricing dépend uniquement de la taille
+// de l'école (nombre d'élèves).
 //
-// Règles additionnelles :
-//   - Bilingue (FR/EN) : +5 000 FCFA/mois ou +50 000 FCFA/an (option payante)
-//   - SMS / Email : à la charge de l'école (facturés en sus selon consommation)
-//   - WhatsApp : gratuit (inclus dans tous les plans)
-//   - Frais d'activation : facturés une fois à l'inscription
+// Règles du contrat (Article 4) :
+//   - Facturation ANNUELLE uniquement (pas d'option mensuelle)
+//   - Frais d'activation : 300 000 FCFA (uniforme, payables à la signature)
+//   - Frais annuels : dus chaque année à la date anniversaire
+//   - Pénalité de retard : 15 jours après échéance → suspension possible
+//   - Réglement : virement bancaire, Mobile Money (FedaPay/FeexPay), espèces
+//
+// Add-ons (Article 4) :
+//   - Option bilingue FR/EN : 50 000 FCFA/an (en supplément du plan)
+//   - SMS / Email / Voice : facturés au prix coûtant selon consommation
+//   - WhatsApp : GRATUIT et illimité, inclus dans tous les plans
 //
 // ┌──────────────────┬────────────┬──────────┬──────────┬──────────┐
-// │ Plan              │ Élèves     │ Mensuel  │ Annuel   │ Setup    │
+// │ Plan              │ Élèves     │ Annuel   │ Setup    │ Total An │
 // ├──────────────────┼────────────┼──────────┼──────────┼──────────┤
-// │ Helm Essentiel    │ 1-50       │ 10 000   │ 100 000  │ 50 000   │
-// │ Helm Croissance   │ 51-150     │ 15 000   │ 150 000  │ 75 000   │
-// │ Helm Performance  │ 151-400    │ 25 000   │ 250 000  │ 100 000  │
-// │ Helm Institution  │ 401+       │ 50 000   │ 500 000  │ 150 000  │
+// │ Helm Essentiel    │ 1-50       │ 50 000   │ 300 000  │ 350 000  │
+// │ Helm Croissance   │ 51-150     │ 75 000   │ 300 000  │ 375 000  │
+// │ Helm Performance  │ 151-400    │ 100 000  │ 300 000  │ 400 000  │
+// │ Helm Institution  │ 401+       │ 150 000  │ 300 000  │ 450 000  │
 // └──────────────────┴────────────┴──────────┴──────────┴──────────┘
 
 export const HELM_PLANS = {
@@ -30,9 +37,9 @@ export const HELM_PLANS = {
     taglineEn: 'Get Started',
     color: '#0D1F6E',
     maxStudents: 50,
-    monthlyPrice: 10000,
-    annualPrice: 100000,
-    setupFee: 50000,
+    monthlyPrice: null as number | null, // Plus d'option mensuelle — contrat en annuel uniquement
+    annualPrice: 50000,
+    setupFee: 300000, // Frais d'activation uniforme (Article 4)
     highlighted: false,
     badge: null as string | null,
   },
@@ -43,9 +50,9 @@ export const HELM_PLANS = {
     taglineEn: 'Grow',
     color: '#F5A623',
     maxStudents: 150,
-    monthlyPrice: 15000,
-    annualPrice: 150000,
-    setupFee: 75000,
+    monthlyPrice: null as number | null,
+    annualPrice: 75000,
+    setupFee: 300000,
     highlighted: true,
     badge: 'Populaire',
   },
@@ -56,9 +63,9 @@ export const HELM_PLANS = {
     taglineEn: 'Lead',
     color: '#1A3490',
     maxStudents: 400,
-    monthlyPrice: 25000,
-    annualPrice: 250000,
-    setupFee: 100000,
+    monthlyPrice: null as number | null,
+    annualPrice: 100000,
+    setupFee: 300000,
     highlighted: false,
     badge: null as string | null,
   },
@@ -69,9 +76,9 @@ export const HELM_PLANS = {
     taglineEn: 'Scale',
     color: '#070F40',
     maxStudents: Infinity,
-    monthlyPrice: 50000,
-    annualPrice: 500000,
-    setupFee: 150000,
+    monthlyPrice: null as number | null,
+    annualPrice: 150000,
+    setupFee: 300000,
     highlighted: false,
     badge: 'Multi-école',
   },
@@ -80,12 +87,14 @@ export const HELM_PLANS = {
 export type HelmPlanKey = keyof typeof HELM_PLANS;
 
 // ⭐ Option bilingue (FR/EN) — payante, ajoutée au plan de base
+// Contrat Article 4 : 50 000 FCFA/an (pas d'option mensuelle)
 export const BILINGUAL_ADDON = {
-  monthly: 5000,    // 5 000 FCFA/mois
-  annual: 50000,     // 50 000 FCFA/an
+  monthly: null as number | null, // Plus d'option mensuelle
+  annual: 50000, // 50 000 FCFA/an
 } as const;
 
 // ⭐ Tous les modules inclus quel que soit le plan
+// Contrat : 21 modules métier + 6 modules complémentaires (27 modules au total)
 export const ALL_MODULES = [
   { icon: 'students', name: 'Élèves & Inscriptions', desc: 'Dossiers, admissions, export Educmaster' },
   { icon: 'pedagogie', name: 'Organisation Pédagogique', desc: 'EDT, matières, affectations, espace enseignant' },
@@ -99,12 +108,16 @@ export const ALL_MODULES = [
 ] as const;
 
 // ⭐ Notes de pricing affichées sur la page tarif
+// Alignées sur le contrat d'abonnement Academia Helm (Article 4)
 export const PRICING_NOTES = [
-  'Tous les modules sont inclus quel que soit le plan — aucune restriction',
-  'Option bilingue (FR/EN) : +5 000 FCFA/mois ou +50 000 FCFA/an',
-  'WhatsApp inclus gratuitement dans tous les plans',
-  'SMS et email : à la charge de l\'école (facturés selon consommation)',
-  'Frais d\'activation facturés une fois à l\'inscription',
+  '21 modules métier + 6 modules complémentaires inclus dans TOUS les plans — aucune restriction',
+  'Frais d\'activation uniques : 300 000 FCFA (payables à la signature)',
+  'Frais annuels dus chaque année à la date anniversaire',
+  'Option bilingue FR/EN : 50 000 FCFA/an (en supplément du plan)',
+  'WhatsApp inclus gratuitement et illimité dans tous les plans',
+  'SMS, Email et Voice : facturés au prix coûtant selon consommation',
+  'Web + Desktop + Mobile — Offline-first — Agents IA (ORION, SARA, ATLAS)',
+  'Règlement : virement bancaire, Mobile Money (FedaPay/FeexPay), espèces contre reçu',
 ] as const;
 
 export function getRecommendedPlan(studentCount: number): HelmPlanKey {

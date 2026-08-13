@@ -6,8 +6,8 @@
  * ⚠️ RÔLE STRICT : Ce service ne charge QUE le PRICING depuis la base de données.
  *
  * Sarah (widget landing page) a un accès DB LIMITÉ au pricing uniquement :
- *   - Plans d'abonnement (SubscriptionPlan)
- *   - Configuration pricing (PricingConfig — frais de souscription, add-ons)
+ *   - Plans d'abonnement (PricingPlan — pricing_plans)
+ *   - Configuration pricing (PricingConfig — frais d'activation, add-ons)
  *
  * Sarah N'A PAS ACCÈS à :
  *   - Les données opérationnelles des écoles (élèves, paiements, notes, etc.)
@@ -127,11 +127,22 @@ CRÉATEUR : YEHI OR Tech — entreprise technologique béninoise (Parakou, Béni
 
   // ─── PRICING (depuis la DB — SEULE source dynamique) ─────────────────
 
+  /**
+   * Charge le contenu pricing depuis la DB.
+   *
+   * ⭐ Aligné sur le contrat d'abonnement Academia Helm (Article 4) :
+   *   - 4 plans : Helm Essentiel / Helm Croissance / Helm Performance / Helm Institution
+   *   - Facturation annuelle uniquement (plus d'option mensuelle)
+   *   - Frais d'activation uniformes : 300 000 FCFA
+   *   - Tranches d'élèves : 1-50, 51-150, 151-400, 401+
+   *   - Add-ons : bilingue 50 000 FCFA/an, WhatsApp gratuit, SMS/Email/Voice au prix coûtant
+   */
   private async loadPricingContent(): Promise<string> {
     try {
-      // Récupérer les plans depuis la DB
-      const plans = await this.prisma.subscriptionPlan.findMany({
-        orderBy: { monthlyPrice: 'asc' },
+      // ⭐ Utiliser pricing_plans (table dynamique source de vérité — codes SEED/GROW/LEAD/NETWORK)
+      const plans = await this.prisma.pricingPlan.findMany({
+        where: { isActive: true },
+        orderBy: { sortOrder: 'asc' },
       });
 
       // Récupérer la config pricing active
@@ -145,50 +156,66 @@ CRÉATEUR : YEHI OR Tech — entreprise technologique béninoise (Parakou, Béni
       }
 
       const lines: string[] = [
-        'GRILLE TARIFAIRE (données en temps réel du site) :',
+        'GRILLE TARIFAIRE (données en temps réel du site — contrat Article 4) :',
+        '',
+        'FACTURATION ANNUELLE UNIQUEMENT — pas d\'option mensuelle.',
+        'Frais d\'activation uniques : 300 000 FCFA (payables à la signature, uniformes quel que soit le plan).',
+        '',
+        'PLANS D\'ABONNEMENT (par tranche d\'élèves) :',
       ];
 
       for (const plan of plans) {
-        const monthlyFCFA = this.toFCFA(plan.monthlyPrice);
-        const yearlyFCFA = this.toFCFA(plan.yearlyPrice);
-        const setupFCFA = config
-          ? this.toFCFA(config.initialSubscriptionFee)
-          : 'sur devis';
+        const studentRange = plan.studentMax == null
+          ? `${plan.studentMin} élèves et +`
+          : `${plan.studentMin} à ${plan.studentMax} élèves`;
+        const yearlyFCFA = this.toFCFA(plan.yearlyAmount);
+        const setupFCFA = this.toFCFA(plan.initialFee ?? config?.initialSubscriptionFee);
 
         lines.push(
-          `- **${plan.name}** (${plan.code}) : ${setupFCFA} FCFA souscription + ${monthlyFCFA} FCFA/mois ou ${yearlyFCFA} FCFA/an — max ${plan.maxSchools} école(s)`,
+          `- **${plan.name}** (${plan.code}) : ${studentRange} — Frais annuels ${yearlyFCFA} FCFA/an + Frais d'activation ${setupFCFA} FCFA (one-shot)`,
+        );
+      }
+
+      // Coût total Année 1 pour chaque plan
+      lines.push('');
+      lines.push('COÛT TOTAL ANNÉE 1 (activation + frais annuels) :');
+      for (const plan of plans) {
+        const total = (plan.yearlyAmount ?? 0) + (plan.initialFee ?? config?.initialSubscriptionFee ?? 0);
+        lines.push(
+          `- ${plan.name} : ${this.toFCFA(total)} FCFA`,
         );
       }
 
       if (config) {
-        const discount = config.yearlyDiscountPercent || 0;
-        if (discount > 0) {
-          lines.push(
-            `Avantage annuel : **${Math.round(discount)}% de réduction** (environ 2 mois offerts)`,
-          );
-        }
-        lines.push(
-          `Tous les plans incluent : 15 modules complets, mode offline/online, support inclus`,
-        );
-
-        // Add-ons
         lines.push('');
-        lines.push('ADD-ONS OPTIONNELS :');
-        if (config.bilingualMonthlyAddon) {
-          lines.push(
-            `- Bilingue FR/EN : ${this.toFCFA(config.bilingualMonthlyAddon)} FCFA/mois`,
-          );
-        }
-        if (config.schoolAdditionalPrice) {
-          lines.push(
-            `- École supplémentaire : ${this.toFCFA(config.schoolAdditionalPrice)} FCFA/mois`,
-          );
-        }
+        lines.push('TOUS LES PLANS INCLUENT (sans exception) :');
+        lines.push('- 21 modules métier + 6 modules complémentaires (27 modules au total)');
+        lines.push('- Web + Desktop + Mobile — Offline-first');
+        lines.push('- Agents IA : ORION (analytique), SARA (closing & guide), ATLAS (exécution)');
+        lines.push('- Paiements en ligne (FedaPay/FeexPay)');
+        lines.push('- Multi-caisses, multi-niveaux (Maternelle + Primaire + Secondaire)');
+        lines.push('- Reçus PDF/WhatsApp/SMS');
+        lines.push('- Personnalisation de marque');
+        lines.push('- Site institutionnel');
+
+        lines.push('');
+        lines.push('ADD-ONS (Article 4 du contrat) :');
+        lines.push(`- Option bilingue FR/EN : ${this.toFCFA(config.bilingualYearlyAddon || 50000)} FCFA/an (en supplément du plan, quel que soit le plan)`);
+        lines.push('- WhatsApp : GRATUIT et illimité (inclus dans tous les plans)');
+        lines.push('- SMS : facturé au prix coûtant (selon pays de destination)');
+        lines.push('- Email : facturé au prix coûtant');
+        lines.push('- Voice (appel vocal) : facturé au prix coûtant');
+
+        lines.push('');
+        lines.push('MODALITÉS DE PAIEMENT (Article 4) :');
+        lines.push('- Frais d\'activation : dus intégralement à la signature');
+        lines.push('- Frais annuels : dus chaque année à la date anniversaire');
+        lines.push(`- Pénalité de retard : ${config.graceDays || 15} jours après échéance → suspension possible`);
+        lines.push('- Réglement : virement bancaire, Mobile Money (FedaPay/FeexPay), ou espèces contre reçu');
       }
 
-      lines.push(
-        'Réassurance : "Paiement sécurisé • Aucun prélèvement automatique • Données conservées en cas de suspension"',
-      );
+      lines.push('');
+      lines.push('Réassurance : "Paiement sécurisé via FedaPay/FeexPay • Données conservées en cas de suspension"');
 
       return lines.join('\n');
     } catch (error: any) {

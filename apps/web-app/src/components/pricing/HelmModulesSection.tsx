@@ -6,12 +6,13 @@ export default function HelmModulesSection() {
     <section className="mt-16 max-w-6xl mx-auto">
       <div className="text-center mb-8">
         <h2 className="text-2xl md:text-3xl font-bold text-navy-900 mb-3">
-          Les 9 modules. Dans chaque plan. Sans exception.
+          21 modules métier + 6 modules complémentaires. Dans chaque plan. Sans exception.
         </h2>
         <p className="text-sm md:text-base text-slate-600 max-w-3xl mx-auto">
           Nos concurrents vendent chaque brique séparément. Avec Academia Helm, vous
           pilotez l&apos;école entière dès le premier jour : élèves, finances, examens,
-          RH, QHSE, communication, IA ORION et modules complémentaires.
+          RH, QHSE, communication, IA ORION et modules complémentaires. Web + Desktop +
+          Mobile, offline-first, agents IA (ORION, SARA, ATLAS).
         </p>
       </div>
 
@@ -36,4 +37,3 @@ export default function HelmModulesSection() {
     </section>
   );
 }
-

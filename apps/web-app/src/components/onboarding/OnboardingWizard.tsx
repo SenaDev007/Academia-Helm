@@ -2588,10 +2588,9 @@ export default function OnboardingWizard() {
                   </p>
 
                   {/* Cartes de sélection de plan — 4 plans (contrat Academia Helm) */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
                     {(['SEED', 'GROW', 'LEAD', 'NETWORK'] as const).map((planKey) => {
                       const plan = HELM_PLANS[planKey];
-                      const dynamicPlan = pricingPlans.find((p: any) => p.code === planKey);
                       const isSelected = data.planCode === planKey;
                       const rangeLabel = planKey === 'SEED'
                         ? '1 – 50 élèves'
@@ -2600,20 +2599,18 @@ export default function OnboardingWizard() {
                           : planKey === 'LEAD'
                             ? '151 – 400 élèves'
                             : '401 élèves et +';
-                      // Contrat (Article 4) : facturation annuelle uniquement.
-                      // On affiche le prix annuel et les frais d'activation (300 000 FCFA uniformes).
-                      const yearlyAmount = dynamicPlan?.yearlyAmount ?? plan.annualPrice ?? 0;
-                      const setupFee = dynamicPlan?.initialFee ?? plan.setupFee ?? 0;
-                      const yearOneTotal = (yearlyAmount ?? 0) + (setupFee ?? 0);
+                      // ⭐ Contrat (Article 4) : valeurs fixes du contrat, pas de la DB
+                      //    Frais d'activation : 300 000 FCFA (uniforme pour tous les plans)
+                      //    Frais annuels : 50k/75k/100k/150k selon le plan
+                      const yearlyAmount = plan.annualPrice;
+                      const setupFee = 300000; // ⭐ Toujours 300 000 (contrat)
+                      const yearOneTotal = yearlyAmount + setupFee;
 
                       return (
                         <button
                           key={planKey}
                           type="button"
                           onClick={() => {
-                            // ⭐ Quand l'utilisateur sélectionne un plan, on met à jour
-                            // planCode ET estimatedStudentCount (valeur représentative pour
-                            // la suite du workflow — la validation step 3 l'exige).
                             const representativeCount =
                               planKey === 'SEED' ? 1
                                 : planKey === 'GROW' ? 51
@@ -2622,13 +2619,13 @@ export default function OnboardingWizard() {
                               ...data,
                               planCode: planKey,
                               estimatedStudentCount: representativeCount,
-                              billingPeriod: 'yearly', // Contrat : facturation annuelle uniquement
+                              billingPeriod: 'yearly',
                             });
                             if (errors.planCode || errors.estimatedStudentCount) {
                               setErrors({ ...errors, planCode: '', estimatedStudentCount: '' });
                             }
                           }}
-                          className={`relative p-5 border-2 rounded-xl text-left transition-all duration-300 ${
+                          className={`relative p-6 border-2 rounded-xl text-left transition-all duration-300 min-h-[200px] ${
                             isSelected
                               ? 'border-blue-700 bg-white shadow-lg scale-[1.02]'
                               : 'border-gray-300 bg-white hover:border-blue-400 hover:shadow-md'
@@ -2636,7 +2633,7 @@ export default function OnboardingWizard() {
                         >
                           {/* Badge "Populaire" pour GROW */}
                           {plan.badge && (
-                            <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-gold-500 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wide">
+                            <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-gold-500 text-white text-[10px] font-bold px-3 py-0.5 rounded-full uppercase tracking-wide whitespace-nowrap">
                               {plan.badge}
                             </div>
                           )}
@@ -2648,32 +2645,32 @@ export default function OnboardingWizard() {
                           )}
 
                           {/* Nom du plan + couleur */}
-                          <div className="flex items-center mb-2">
+                          <div className="flex items-center gap-2 mb-2">
                             <div
-                              className="w-2.5 h-2.5 rounded-full mr-2"
+                              className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                               style={{ backgroundColor: plan.color }}
                             />
-                            <span className="font-bold text-base text-blue-900">{plan.name}</span>
+                            <span className="font-bold text-sm text-blue-900 whitespace-nowrap">{plan.name}</span>
                           </div>
                           <p className="text-xs text-graphite-600 italic mb-3">{plan.tagline}</p>
 
                           {/* Range d'élèves */}
-                          <div className="text-sm font-semibold text-blue-800 bg-blue-50 rounded-md px-2 py-1 inline-block mb-3">
+                          <div className="text-xs font-semibold text-blue-800 bg-blue-50 rounded-md px-2 py-1 inline-block mb-3 whitespace-nowrap">
                             {rangeLabel}
                           </div>
 
                           {/* Prix annuel + frais d'activation + total Année 1 */}
-                          <div className="space-y-1">
+                          <div className="space-y-1.5">
                             <div className="flex items-baseline gap-1">
-                              <span className="text-xl font-bold text-blue-900">
+                              <span className="text-lg font-bold text-blue-900 whitespace-nowrap">
                                 {formatCurrency(yearlyAmount)}
                               </span>
                               <span className="text-[11px] text-graphite-600">/ an</span>
                             </div>
-                            <div className="text-[11px] text-graphite-500">
+                            <div className="text-[11px] text-graphite-500 whitespace-nowrap">
                               Activation : <strong>{formatCurrency(setupFee)}</strong>
                             </div>
-                            <div className="text-[11px] font-semibold text-emerald-700">
+                            <div className="text-[11px] font-semibold text-emerald-700 whitespace-nowrap">
                               Total Année 1 : {formatCurrency(yearOneTotal)} FCFA
                             </div>
                           </div>

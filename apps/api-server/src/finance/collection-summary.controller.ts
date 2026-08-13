@@ -108,6 +108,10 @@ export class CollectionSummaryController {
     // Collecter tous les installments uniques — dédupliquer par LABEL (pas par ID)
     // pour éviter d'avoir 5 colonnes "Tranche 1" quand 5 fee_structures ont chacune
     // leur propre "Tranche 1" avec un ID différent.
+    // ⭐ FIX : on garde l'ID pour rétro-compat, mais la CLÉ utilisée pour
+    //    tuitionInstallments[...] est le LABEL (pas l'ID) — voir plus bas.
+    //    Sinon, un élève de PRIMAIRE (UUID-A) ne matche pas la colonne
+    //    installments[i].id (UUID-MATERNELLE du 1er niveau) → colonne vide.
     const installmentsMap = new Map<string, { id: string; label: string; amount: number; orderIndex: number }>();
     for (const fs of feeStructures) {
       if (fs.feeType !== 'TUITION' || !fs.isInstallment) continue;
@@ -116,7 +120,7 @@ export class CollectionSummaryController {
         if (!installmentsMap.has(key)) {
           installmentsMap.set(key, {
             id: inst.id,
-            label: inst.label,
+            label: key,  // ⭐ utiliser le label normalisé (avec fallback)
             amount: Number(inst.amount),
             orderIndex: inst.orderIndex,
           });
@@ -449,7 +453,12 @@ export class CollectionSummaryController {
       // Si un parent paie plus que la Tranche 1, le surplus est affecté
       // automatiquement à la Tranche 2, et ainsi de suite. Permet d'absorber
       // les paiements "globaux" non-allocinés à une tranche précise.
-      const tuitionInstallments: { [id: string]: number } = {};
+      //
+      // ⭐ FIX : la clé de tuitionInstallments est le LABEL (pas l'ID),
+      //    pour matcher avec installments[i].label côté frontend.
+      //    Sinon, un élève de PRIMAIRE (UUID-A) ne matche pas la colonne
+      //    installments[i].id (UUID-MATERNELLE) → colonne vide.
+      const tuitionInstallments: { [label: string]: number } = {};
       let remainingTuitionPaid = totalTuitionPaid;
 
       // Récupérer les tranches de la(les) structure(s) TUITION matchée(s),
@@ -460,13 +469,14 @@ export class CollectionSummaryController {
         .sort((a, b) => a.orderIndex - b.orderIndex);
 
       for (const inst of matchedInstallments) {
+        const labelKey = inst.label || `Tranche ${inst.orderIndex + 1}`;
         if (remainingTuitionPaid <= 0) {
-          tuitionInstallments[inst.id] = 0;
+          tuitionInstallments[labelKey] = 0;
           continue;
         }
         const trancheAmount = Number(inst.amount);
         const allocated = Math.min(remainingTuitionPaid, trancheAmount);
-        tuitionInstallments[inst.id] = allocated;
+        tuitionInstallments[labelKey] = allocated;
         remainingTuitionPaid -= allocated;
       }
       // Si remainingTuitionPaid > 0 à ce stade, c'est que l'élève a payé PLUS que
@@ -568,9 +578,10 @@ export class CollectionSummaryController {
       // Reste
       row.reste += student.reste;
       // Tranches (payé)
+      // ⭐ FIX : clé par LABEL (pas par ID) pour matcher avec installments[i].label
       for (const inst of installments) {
-        row.tuitionInstallments[inst.id] =
-          (row.tuitionInstallments[inst.id] || 0) + (student.tuitionInstallments[inst.id] || 0);
+        row.tuitionInstallments[inst.label] =
+          (row.tuitionInstallments[inst.label] || 0) + (student.tuitionInstallments[inst.label] || 0);
       }
     }
 

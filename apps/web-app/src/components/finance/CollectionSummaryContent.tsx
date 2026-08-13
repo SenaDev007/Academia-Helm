@@ -18,8 +18,8 @@ import ImportBilanModal from './ImportBilanModal';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface FeeInstallment {
-  id: string;
-  label: string;
+  id: string;       // ⭐ conservé pour key React, mais la clé de tuitionInstallments est le label
+  label: string;     // ⭐ utilisée comme clé de tuitionInstallments (voir fix ci-dessous)
   amount: number;
   orderIndex: number;
 }
@@ -44,7 +44,7 @@ interface StudentPaymentRow {
   inscriptionPaid: number;
   reinscriptionPaid: number;
   arrearPaid: number;
-  tuitionInstallments: { [installmentId: string]: number };
+  tuitionInstallments: { [installmentLabel: string]: number };
   totalTuitionPaid: number;
   // Totaux cohérents
   totalDue: number;
@@ -71,7 +71,7 @@ interface RecapRow {
   reinscriptionPaid: number;
   totalTuitionPaid: number;
   totalPaid: number;
-  tuitionInstallments: { [installmentId: string]: number };
+  tuitionInstallments: { [installmentLabel: string]: number };
   // Reste
   reste: number;
   soldeParClasse: number;
@@ -465,7 +465,7 @@ function DetailTable({
                 )}
               </TableCell>
               {installments.map((inst) => {
-                const paid = row.tuitionInstallments[inst.id] || 0;
+                const paid = row.tuitionInstallments[inst.label] || 0;
                 return (
                   <TableCell key={inst.id} className="text-sm text-right whitespace-nowrap">
                     {paid > 0 ? formatCurrency(paid) : '—'}
@@ -532,7 +532,7 @@ function RecapTable({
       acc.reste += row.reste;
       acc.soldeParClasse += row.soldeParClasse;
       for (const inst of installments) {
-        acc.installments[inst.id] = (acc.installments[inst.id] || 0) + (row.tuitionInstallments[inst.id] || 0);
+        acc.installments[inst.label] = (acc.installments[inst.label] || 0) + (row.tuitionInstallments[inst.label] || 0);
       }
       return acc;
     },
@@ -599,7 +599,7 @@ function RecapTable({
                 )}
               </TableCell>
               {installments.map((inst) => {
-                const amount = row.tuitionInstallments[inst.id] || 0;
+                const amount = row.tuitionInstallments[inst.label] || 0;
                 return (
                   <TableCell key={inst.id} className="text-sm text-right whitespace-nowrap">
                     {amount > 0 ? formatCurrency(amount) : '—'}
@@ -641,7 +641,7 @@ function RecapTable({
             </TableCell>
             {installments.map((inst) => (
               <TableCell key={inst.id} className="text-right whitespace-nowrap">
-                {formatCurrency(totals.installments[inst.id] || 0)}
+                {formatCurrency(totals.installments[inst.label] || 0)}
               </TableCell>
             ))}
             <TableCell className="text-right whitespace-nowrap">{formatCurrency(totals.totalDue)}</TableCell>

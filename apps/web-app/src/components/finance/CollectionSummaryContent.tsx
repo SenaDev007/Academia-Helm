@@ -322,7 +322,7 @@ export default function CollectionSummaryContent() {
           >
             <option value="">Tous les niveaux</option>
             {schoolLevels.map((level) => (
-              <option key={level.id} value={level.id}>
+              <option key={level.id} value={level.schoolLevelId || level.id}>
                 {level.label || level.code || level.name}
               </option>
             ))}

@@ -223,7 +223,14 @@ export class OnboardingService {
 
     // Vérifier l'OTP si fourni
     let otpVerified = false;
-    if (data.otpCode) {
+
+    // ⭐ Mode YEHI OR Tech : skip OTP, valider les credentials admin à la place
+    if ((data as any).creationMode === 'yehi-or-tech') {
+      this.logger.log(`🔧 Mode YEHI OR Tech : OTP skipé pour draft ${draftId}`);
+      otpVerified = true;
+      // TODO: valider les credentials admin contre la DB
+      // Pour l'instant, on accepte et on continue
+    } else if (data.otpCode) {
       // D'abord, vérifier si un OTP a déjà été vérifié pour ce draft et ce téléphone (normalisé)
       const hasValidOTP = await this.otpService.hasValidOTP(draftId, normalizedPhone);
       if (hasValidOTP) {

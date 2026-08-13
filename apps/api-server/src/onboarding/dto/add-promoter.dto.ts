@@ -61,4 +61,17 @@ export class AddPromoterDto {
   @IsOptional()
   @IsString()
   otpCode?: string;
+
+  // ⭐ Mode YEHI OR Tech : credentials admin (skip OTP)
+  @IsOptional()
+  @IsString()
+  creationMode?: string;
+
+  @IsOptional()
+  @IsEmail()
+  adminEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  adminPassword?: string;
 }

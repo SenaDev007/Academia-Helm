@@ -195,6 +195,26 @@ export default function OnboardingWizard() {
     preferredSubdomain: '',
   });
 
+  // ⭐ Lire les query params au montage (?plan=seed&bilingual=true)
+  //    Permet à la page /tarification de pré-remplir l'onboarding quand
+  //    l'utilisateur clique sur "Choisir" un plan ou "Ajouter l'option" bilingue.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const bilingualParam = params.get('bilingual');
+    const planParam = params.get('plan');
+
+    if (bilingualParam === 'true') {
+      setData((prev) => ({ ...prev, bilingual: true }));
+    }
+    if (planParam) {
+      const planUpper = planParam.toUpperCase();
+      if (['SEED', 'GROW', 'LEAD', 'NETWORK'].includes(planUpper)) {
+        setData((prev) => ({ ...prev, planCode: planUpper }));
+      }
+    }
+  }, []);
+
   // Sauvegarder les données dans localStorage à chaque changement
   useEffect(() => {
     if (typeof window !== 'undefined' && data.draftId) {
@@ -2755,9 +2775,9 @@ export default function OnboardingWizard() {
                         <DollarSign className="w-6 h-6 text-white" />
                   </div>
                       <div>
-                        <div className="text-lg font-semibold text-white mb-1">Paiement initial</div>
+                        <div className="text-lg font-semibold text-white mb-1">Frais d'activation</div>
                         <p className="text-sm text-blue-100 max-w-md">
-                    Paiement unique pour activer votre compte et démarrer la période d'essai de 30 jours.
+                    Paiement unique à la signature du contrat pour activer votre compte.
                   </p>
                       </div>
                     </div>
@@ -2769,12 +2789,12 @@ export default function OnboardingWizard() {
                           <span className="text-lg">Chargement...</span>
                         )}
                       </div>
-                      <div className="text-xs text-blue-200 mt-1">Paiement unique</div>
+                      <div className="text-xs text-blue-200 mt-1">Paiement unique à la signature</div>
                     </div>
                   </div>
                 </div>
 
-                {/* Section 4: Total après essai - Design distinctif avec accent vert */}
+                {/* Section 4: Total Année 1 - Design distinctif avec accent vert */}
                 <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-6 border-2 border-green-300 shadow-lg">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center">
@@ -2783,14 +2803,14 @@ export default function OnboardingWizard() {
                       </div>
                     <div>
                         <div className="font-bold text-lg text-blue-900 mb-1">
-                          Total {data.billingPeriod === 'monthly' ? 'mensuel' : 'annuel'} après essai
+                          Total Année 1 (activation + annuel)
                         </div>
                         <div className="flex items-center gap-2 text-sm text-graphite-700 mt-2">
                           <School className="w-4 h-4" />
                           <span>
                         {data.bilingual && 'Bilingue'}
                             {!data.bilingual && 'Monolingue'}
-                            {data.billingPeriod === 'yearly' && ' • Paiement annuel'}
+                            {' • Facturation annuelle'}
                           </span>
                       </div>
                     </div>
@@ -2800,24 +2820,17 @@ export default function OnboardingWizard() {
                         <div className="flex items-center gap-2">
                           <Loader className="w-5 h-5 animate-spin text-green-600" />
                   </div>
-                      ) : (
+                      ) : priceCalculation.yearly ? (
                         <>
                           <div className="text-3xl font-bold text-green-700">
-                            {formatCurrency(data.billingPeriod === 'monthly' && priceCalculation.monthly
-                              ? priceCalculation.monthly.total
-                              : data.billingPeriod === 'yearly' && priceCalculation.yearly
-                              ? priceCalculation.yearly.total
-                              : 0)}
+                            {formatCurrency((priceCalculation.yearly.total || 0) + (initialPayment || 300000))}
                           </div>
-                          {data.billingPeriod === 'yearly' && priceCalculation.monthly && priceCalculation.yearly && (
-                            <div className="text-xs text-green-600 mt-1 font-medium">
-                              Équivalent {formatCurrency(Math.round(priceCalculation.yearly.total / 12))}/mois
-                            </div>
-                          )}
                           <div className="text-xs text-graphite-600 mt-1">
-                            {data.billingPeriod === 'monthly' ? '/ mois' : '/ an'}
+                            / an (activation + frais annuels)
                           </div>
                         </>
+                      ) : (
+                        <div className="text-sm text-graphite-600">Chargement...</div>
                       )}
                     </div>
                   </div>

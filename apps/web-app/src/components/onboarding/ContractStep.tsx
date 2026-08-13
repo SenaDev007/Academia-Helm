@@ -219,7 +219,10 @@ export default function ContractStep({
           <div><span className="text-gray-500">Élèves :</span> <strong>{studentCount}</strong></div>
           <div><span className="text-gray-500">Activation :</span> <strong>{activationFee.toLocaleString('fr-FR')} FCFA</strong></div>
           <div><span className="text-gray-500">Abonnement annuel :</span> <strong>{annualFee.toLocaleString('fr-FR')} FCFA/an</strong></div>
-          <div className="col-span-2"><span className="text-gray-500">Coût total Année 1 :</span> <strong className="text-blue-700">{totalYearOne.toLocaleString('fr-FR')} FCFA</strong></div>
+          {bilingual && (
+            <div><span className="text-gray-500">Option bilingue :</span> <strong>50 000 FCFA/an</strong></div>
+          )}
+          <div className="col-span-2"><span className="text-gray-500">Coût total Année 1 :</span> <strong className="text-blue-700">{(totalYearOne + (bilingual ? 50000 : 0)).toLocaleString('fr-FR')} FCFA</strong></div>
         </div>
       </div>
 

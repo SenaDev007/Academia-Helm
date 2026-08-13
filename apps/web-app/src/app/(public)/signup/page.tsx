@@ -5,9 +5,13 @@
  * 1. Informations établissement
  * 2. Informations promoteur
  * 3. Plan & Options (plans dynamiques depuis pricing_plans)
- * 4. Paiement initial (FedaPay)
+ * 4. Paiement initial (FedaPay) OU Contrat (mode YEHI OR Tech)
  *
  * Layout : Header public + Footer public de Academia Helm
+ *
+ * ⭐ Query params supportés :
+ *   ?plan=seed|grow|lead|network → pré-sélectionner un plan
+ *   ?bilingual=true → activer automatiquement l'option bilingue
  */
 
 import type { Metadata } from 'next';

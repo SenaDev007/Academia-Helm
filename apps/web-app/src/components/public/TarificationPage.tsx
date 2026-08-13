@@ -181,6 +181,13 @@ export default function TarificationPage() {
                   Interface et documents générés en FR et EN simultanément. Séparation
                   des matières, examens et bulletins par langue.
                 </p>
+                {/* ⭐ Bouton "Ajouter l'option" → redirige vers /signup?bilingual=true */}
+                <Link
+                  href="/signup?bilingual=true"
+                  className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-[#f5b335] text-[#0a1d3f] rounded-lg text-xs font-bold hover:scale-105 transition-transform"
+                >
+                  Ajouter l'option <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
               </div>
 
               {/* WhatsApp */}

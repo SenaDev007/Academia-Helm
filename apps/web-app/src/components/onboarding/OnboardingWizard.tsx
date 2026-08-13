@@ -520,33 +520,34 @@ export default function OnboardingWizard() {
   };
 
   const calculatePrices = async () => {
-    if (!data.planCode || pricingPlans.length === 0) {
+    if (!data.planCode) {
       return;
     }
 
-    // Trouver le plan correspondant au planCode (SEED, GROW, LEAD, NETWORK)
-    const plan = pricingPlans.find(p => p.code === data.planCode) || getPlanForStudentCount(pricingPlans, data.estimatedStudentCount);
+    // ⭐ Utiliser les valeurs du CONTRAT (HELM_PLANS), pas de la DB
+    //    La DB peut avoir d'anciennes valeurs non mises à jour.
+    //    Le contrat est la source de vérité.
+    const planKey = data.planCode as keyof typeof HELM_PLANS;
+    const plan = HELM_PLANS[planKey];
     if (!plan) {
       setPriceCalculation(prev => ({ ...prev, isLoading: false, error: 'Plan introuvable' }));
       return;
     }
 
-    // L'initial fee dépend du plan sélectionné
-    setInitialPayment(plan.initialFee);
+    // ⭐ Frais d'activation : 300 000 FCFA (uniforme, contrat Article 4)
+    setInitialPayment(300000);
 
-    // Prix de base (mensuel et annuel)
-    const monthlyBase = plan.monthlyAmount || 0;
-    const yearlyBase = plan.yearlyAmount || 0;
+    // Prix de base annuel (contrat : pas d'option mensuelle)
+    const yearlyBase = plan.annualPrice;
 
-    // Prix de l'option bilingue (contrat Article 4 : 50 000 FCFA/an uniquement, pas d'option mensuelle)
-    const bilingualMonthly = 0; // Plus d'option mensuelle — contrat en annuel uniquement
-    const bilingualYearly = data.bilingual ? (plan.bilingualYearly || 50000) : 0;
+    // Prix de l'option bilingue (contrat Article 4 : 50 000 FCFA/an)
+    const bilingualYearly = data.bilingual ? 50000 : 0;
 
     setPriceCalculation({
       monthly: {
-        basePrice: monthlyBase,
-        bilingualPrice: bilingualMonthly,
-        total: monthlyBase + bilingualMonthly,
+        basePrice: 0,
+        bilingualPrice: 0,
+        total: 0,
       },
       yearly: {
         basePrice: yearlyBase,
@@ -2729,9 +2730,6 @@ export default function OnboardingWizard() {
                             {formatCurrency(priceCalculation.yearly.basePrice)}
                           </div>
                           <div className="text-sm text-graphite-600 mb-2">/ an · frais annuels</div>
-                          <div className="text-xs text-graphite-500">
-                            + Frais d&apos;activation : <strong>300 000 FCFA</strong> (one-shot)
-                          </div>
                         </>
                       ) : (
                         <div className="text-sm text-graphite-600">Chargement...</div>
@@ -2758,52 +2756,19 @@ export default function OnboardingWizard() {
                       </div>
                       <div className="text-right">
                         <div className="text-2xl font-bold text-blue-900">
-                          {priceCalculation.isLoading ? (
-                            <Loader className="w-5 h-5 animate-spin text-blue-600" />
-                          ) : data.billingPeriod === 'monthly' && priceCalculation.monthly ? (
-                            <>+{formatCurrency(priceCalculation.monthly.bilingualPrice)}</>
-                          ) : data.billingPeriod === 'yearly' && priceCalculation.yearly ? (
+                          {priceCalculation.yearly ? (
                             <>+{formatCurrency(priceCalculation.yearly.bilingualPrice)}</>
                           ) : (
                             <>+{formatCurrency(0)}</>
                           )}
                         </div>
-                        <div className="text-xs text-graphite-600 mt-1">
-                          {data.billingPeriod === 'monthly' ? '/ mois' : '/ an'}
-                        </div>
+                        <div className="text-xs text-graphite-600 mt-1">/ an</div>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* Section 3: Paiement initial - Design premium avec accent bleu */}
-                <div className="bg-gradient-to-br from-blue-900 to-blue-800 rounded-xl p-6 border-2 border-blue-700 shadow-xl">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center">
-                      <div className="p-3 bg-white/20 rounded-lg mr-4">
-                        <DollarSign className="w-6 h-6 text-white" />
-                  </div>
-                      <div>
-                        <div className="text-lg font-semibold text-white mb-1">Frais d'activation</div>
-                        <p className="text-sm text-blue-100 max-w-md">
-                    Paiement unique à la signature du contrat pour activer votre compte.
-                  </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-3xl font-bold text-white">
-                        {initialPayment ? (
-                          formatCurrency(initialPayment)
-                        ) : (
-                          <span className="text-lg">Chargement...</span>
-                        )}
-                      </div>
-                      <div className="text-xs text-blue-200 mt-1">Paiement unique à la signature</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Section 4: Total Année 1 - Design distinctif avec accent vert */}
+                {/* Section 3: Total Année 1 (activation + annuel + bilingue) */}
                 <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-6 border-2 border-green-300 shadow-lg">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center">
@@ -2812,7 +2777,7 @@ export default function OnboardingWizard() {
                       </div>
                     <div>
                         <div className="font-bold text-lg text-blue-900 mb-1">
-                          Total Année 1 (activation + annuel)
+                          Total Année 1
                         </div>
                         <div className="flex items-center gap-2 text-sm text-graphite-700 mt-2">
                           <School className="w-4 h-4" />
@@ -2825,17 +2790,13 @@ export default function OnboardingWizard() {
                     </div>
                     </div>
                     <div className="text-right">
-                      {priceCalculation.isLoading ? (
-                        <div className="flex items-center gap-2">
-                          <Loader className="w-5 h-5 animate-spin text-green-600" />
-                  </div>
-                      ) : priceCalculation.yearly ? (
+                      {priceCalculation.yearly ? (
                         <>
                           <div className="text-3xl font-bold text-green-700">
-                            {formatCurrency((priceCalculation.yearly.total || 0) + (initialPayment || 300000))}
+                            {formatCurrency((priceCalculation.yearly.total || 0) + 300000)}
                           </div>
                           <div className="text-xs text-graphite-600 mt-1">
-                            / an (activation + frais annuels)
+                            / an (activation 300 000 + frais annuels)
                           </div>
                         </>
                       ) : (

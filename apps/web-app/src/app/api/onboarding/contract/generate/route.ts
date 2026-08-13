@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApiBaseUrlForRoutes } from '@/lib/utils/api-urls';
-import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
+import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const baseUrl = getApiBaseUrlForRoutes();
-  const authHeaders = getClientAuthorizationHeader();
+  const authHeaders = await getProxyAuthHeaders(request);
 
   const response = await fetch(`${baseUrl}/onboarding/contract/generate`, {
     method: 'POST',

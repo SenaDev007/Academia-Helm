@@ -21,6 +21,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as https from 'https';
 
 export interface ContractData {
   // Fiche de souscription (Article 1)
@@ -54,6 +55,55 @@ export interface ContractData {
 export class ContractGenerationService {
   private readonly logger = new Logger(ContractGenerationService.name);
 
+  // ⭐ Cache des logos en base64 (évite de re-fetch à chaque génération)
+  private logoCache: { yehiOrTech?: string; academiaHelm?: string } = {};
+
+  /**
+   * Fetch une image depuis une URL et la convertit en base64 data URI.
+   * Utilisé pour embed les logos dans le PDF HTML (self-contained).
+   */
+  private async fetchImageAsBase64(url: string): Promise<string | null> {
+    return new Promise((resolve) => {
+      https.get(url, (res) => {
+        if (res.statusCode !== 200) {
+          this.logger.warn(`Failed to fetch ${url}: ${res.statusCode}`);
+          resolve(null);
+          return;
+        }
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => {
+          const buffer = Buffer.concat(chunks);
+          const base64 = buffer.toString('base64');
+          const ext = url.split('.').pop()?.toLowerCase() || 'webp';
+          resolve(`data:image/${ext};base64,${base64}`);
+        });
+        res.on('error', () => resolve(null));
+      }).on('error', () => resolve(null));
+    });
+  }
+
+  /**
+   * Récupère les logos en base64 (avec cache).
+   */
+  private async getLogos(): Promise<{ yehiOrTech: string; academiaHelm: string }> {
+    if (this.logoCache.yehiOrTech && this.logoCache.academiaHelm) {
+      return this.logoCache as { yehiOrTech: string; academiaHelm: string };
+    }
+
+    const baseUrl = process.env.FRONTEND_URL || 'https://academiahelm.com';
+    const [yehi, helm] = await Promise.all([
+      this.fetchImageAsBase64(`${baseUrl}/images/logo-yehi-or-tech.webp`),
+      this.fetchImageAsBase64(`${baseUrl}/images/logo-academia-helm-signature.webp`),
+    ]);
+
+    this.logoCache = {
+      yehiOrTech: yehi || `${baseUrl}/images/logo-yehi-or-tech.webp`,
+      academiaHelm: helm || `${baseUrl}/images/logo-academia-helm-signature.webp`,
+    };
+    return this.logoCache as { yehiOrTech: string; academiaHelm: string };
+  }
+
   /**
    * Génère le PDF du contrat et retourne l'URL publique.
    */
@@ -68,7 +118,10 @@ export class ContractGenerationService {
     }
 
     const filePath = path.join(contractsDir, fileName);
-    const html = this.buildContractHtml(data);
+
+    // ⭐ Récupérer les logos en base64 (self-contained PDF)
+    const logos = await this.getLogos();
+    const html = this.buildContractHtml(data, logos);
 
     fs.writeFileSync(filePath, html, 'utf-8');
 
@@ -81,7 +134,10 @@ export class ContractGenerationService {
    * Construit le HTML du contrat avec tous les articles.
    * Le design correspond à celui de ContractStep.tsx (interface React).
    */
-  private buildContractHtml(data: ContractData): string {
+  private buildContractHtml(
+    data: ContractData,
+    logos: { yehiOrTech: string; academiaHelm: string },
+  ): string {
     const planTable = this.getPlanTable(data.planCode);
     const dateStr = new Date().toLocaleDateString('fr-FR', {
       day: '2-digit', month: 'long', year: 'numeric',
@@ -273,7 +329,7 @@ export class ContractGenerationService {
 <div class="header">
   <div class="brand">
     <div class="logo-box">
-      <img src="https://academiahelm.com/images/logo-yehi-or-tech.webp" alt="YEHI OR Tech" />
+      <img src="${logos.yehiOrTech}" alt="YEHI OR Tech" />
     </div>
     <div class="brand-text">
       <div class="name">YEHI OR <span class="gold">Tech</span></div>
@@ -292,7 +348,7 @@ export class ContractGenerationService {
       <div class="tagline">School Management</div>
     </div>
     <div class="logo-box">
-      <img src="https://academiahelm.com/images/logo-academia-helm-signature.webp" alt="Academia Helm" />
+      <img src="${logos.academiaHelm}" alt="Academia Helm" />
     </div>
   </div>
 </div>

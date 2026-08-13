@@ -89,6 +89,12 @@ export default function ContractStep({
         body: JSON.stringify({
           draftId, promoterSignature, providerSignature: providerSignature || undefined,
           signLater: false,
+          contractData: {
+            schoolName, promoterName, directorName: directorName || promoterName,
+            schoolAddress, schoolCity, schoolPhone, schoolEmail,
+            studentCount, planCode, planName, bilingual, subdomain,
+            effectiveDate: today, activationFee, annualFee, totalYearOne,
+          },
         }),
       });
 

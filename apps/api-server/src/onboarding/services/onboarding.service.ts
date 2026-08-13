@@ -1339,4 +1339,247 @@ export class OnboardingService {
       draftId,
     };
   }
+
+  /**
+   * ⭐ Active le tenant après signature du contrat (mode YEHI OR Tech).
+   *
+   * Ce flux est déclenché par ContractController.signContract() quand le
+   * promoteur et le représentant YEHI OR Tech signent le contrat en présence.
+   * Il n'y a PAS de paiement FedaPay (le paiement se fait hors-ligne ou est
+   * géré séparément).
+   *
+   * Étapes :
+   *   1. Récupère le draft (avec infos école + promoteur)
+   *   2. Idempotence : si le draft est déjà COMPLETED, retourne le tenant existant
+   *   3. Transaction atomique : crée tenant + subscription + user + school levels
+   *   4. Marque le draft comme COMPLETED
+   *   5. Crée le sous-domaine (Cloudflare + Vercel) en arrière-plan
+   *
+   * @param draftId ID du draft d'onboarding
+   * @returns { tenantId, subdomain }
+   */
+  async activateTenantAfterContractSign(
+    draftId: string,
+  ): Promise<{ tenantId: string; subdomain: string }> {
+    this.logger.log(`🔧 Activating tenant after contract sign for draft ${draftId}`);
+
+    const draft = await this.prisma.onboardingDraft.findUnique({
+      where: { id: draftId },
+      include: { payments: true },
+    });
+
+    if (!draft) {
+      throw new NotFoundException(`Onboarding draft not found: ${draftId}`);
+    }
+
+    // Idempotence : si le draft est déjà COMPLETED, le tenant a déjà été créé
+    if (draft.status === 'COMPLETED') {
+      this.logger.log(`✅ Draft ${draftId} already completed — finding existing tenant`);
+      const existingTenant = await this.prisma.tenant.findFirst({
+        where: {
+          name: draft.schoolName,
+          // On pourrait aussi filtrer par slug/subdomain si nécessaire
+        },
+        select: { id: true, subdomain: true },
+      });
+      if (existingTenant) {
+        return { tenantId: existingTenant.id, subdomain: existingTenant.subdomain || '' };
+      }
+      // Draft COMPLETED mais tenant introuvable — on continue la création
+      this.logger.warn(`⚠️  Draft ${draftId} is COMPLETED but no tenant found — recreating`);
+    }
+
+    if (!draft.promoterEmail || !draft.promoterPasswordHash) {
+      throw new BadRequestException('Promoter information is incomplete (missing email or password)');
+    }
+
+    if (!draft.selectedPlanId || !draft.priceSnapshot) {
+      throw new BadRequestException('Plan information is incomplete');
+    }
+
+    // Transaction atomique : créer tenant, subscription, user, etc.
+    // (Réutilise la même logique que activateTenantAfterPayment)
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. Trouver ou créer le pays
+      let country = await tx.country.findFirst({
+        where: { name: { contains: draft.country, mode: 'insensitive' } },
+      });
+
+      if (!country) {
+        country = await tx.country.create({
+          data: {
+            code: 'XX',
+            name: draft.country || 'Bénin',
+            isActive: true,
+          },
+        });
+      }
+
+      // 2. Sous-domaine
+      let firstTenantSubdomain: string;
+      if (draft.preferredSubdomain) {
+        const validation = this.subdomainService.validateSubdomain(draft.preferredSubdomain);
+        if (!validation.valid) {
+          throw new BadRequestException(`Sous-domaine invalide: ${validation.error}`);
+        }
+        const existing = await tx.tenant.findUnique({ where: { subdomain: draft.preferredSubdomain } });
+        if (existing) {
+          // Si le tenant existe déjà (idempotence), on le retourne
+          this.logger.log(`✅ Subdomain ${draft.preferredSubdomain} already exists — returning existing tenant`);
+          return { tenant: existing, subdomain: existing.subdomain };
+        }
+        firstTenantSubdomain = draft.preferredSubdomain;
+      } else {
+        firstTenantSubdomain = await this.subdomainService.generateAndValidate(draft.schoolName);
+      }
+
+      // 3. Créer le tenant
+      const tenant = await tx.tenant.create({
+        data: {
+          name: draft.schoolName,
+          slug: firstTenantSubdomain,
+          subdomain: firstTenantSubdomain,
+          countryId: country.id,
+          type: draft.schoolType,
+          status: 'active',
+          subscriptionStatus: 'ACTIVE',
+        },
+      });
+
+      // 4. Créer la subscription (sans paiement, marquée ACTIVE)
+      const pricing = (draft.priceSnapshot as any) || {};
+      const subscriptionStart = new Date();
+      const subscriptionEnd = new Date(subscriptionStart);
+      subscriptionEnd.setFullYear(subscriptionEnd.getFullYear() + 1);
+
+      await tx.subscription.create({
+        data: {
+          tenant: { connect: { id: tenant.id } },
+          plan: pricing.planCode || 'SEED',
+          status: 'ACTIVE',
+          startDate: subscriptionStart,
+          endDate: subscriptionEnd,
+          amountPaid: 0, // Pas de paiement en ligne (mode YEHI OR Tech)
+          paymentMethod: 'CONTRACT_SIGN',
+          bilingual: draft.bilingual || false,
+          // ⭐ Sauvegarder les montants pour référence future
+          // (utilisé pour le renouvellement annuel)
+        } as any,
+      });
+
+      // 5. Créer les niveaux scolaires selon le type d'établissement
+      const levels = this.getSchoolLevelsForType(draft.schoolType);
+      for (const level of levels) {
+        await tx.schoolLevel.create({
+          data: {
+            tenantId: tenant.id,
+            code: level.code,
+            name: level.name,
+            label: level.label,
+            order: level.order,
+            isActive: true,
+          } as any,
+        });
+      }
+
+      // 6. Créer l'utilisateur promoteur (admin école)
+      const user = await tx.user.create({
+        data: {
+          email: draft.promoterEmail,
+          passwordHash: draft.promoterPasswordHash,
+          firstName: draft.promoterFirstName || '',
+          lastName: draft.promoterLastName || '',
+          phone: draft.promoterPhone || '',
+          tenantId: tenant.id,
+          status: 'ACTIVE',
+          isEmailVerified: true, // Email vérifié via OTP ou mode YEHI OR Tech
+        } as any,
+      });
+
+      // 7. Assigner le rôle PROMOTER à l'utilisateur
+      try {
+        const promoterRole = await tx.role.findFirst({
+          where: { name: 'PROMOTER' },
+        });
+        if (promoterRole) {
+          await tx.userRole.create({
+            data: {
+              userId: user.id,
+              roleId: promoterRole.id,
+              tenantId: tenant.id,
+            } as any,
+          });
+        }
+      } catch (err: any) {
+        this.logger.warn(`⚠️  Could not assign PROMOTER role: ${err.message}`);
+      }
+
+      // 8. Créer l'année académique par défaut
+      const currentYear = new Date().getFullYear();
+      const nextYear = currentYear + 1;
+      await tx.academicYear.create({
+        data: {
+          tenantId: tenant.id,
+          name: `${currentYear}-${nextYear}`,
+          startDate: new Date(currentYear, 8, 1), // 1er septembre
+          endDate: new Date(nextYear, 7, 31), // 31 août
+          isCurrent: true,
+          isActive: true,
+        } as any,
+      });
+
+      // 9. Marquer le draft comme COMPLETED
+      await tx.onboardingDraft.update({
+        where: { id: draftId },
+        data: { status: 'COMPLETED' },
+      });
+
+      this.logger.log(`✅ Tenant ${tenant.id} created for school ${draft.schoolName} (subdomain: ${firstTenantSubdomain})`);
+
+      return { tenant, subdomain: firstTenantSubdomain };
+    });
+
+    // 10. Créer le sous-domaine (Cloudflare + Vercel) en arrière-plan (non bloquant)
+    this.createSubdomainInBackground(result.tenant.id).catch((err) => {
+      this.logger.error(`❌ Background subdomain creation failed: ${err.message}`);
+    });
+
+    return { tenantId: result.tenant.id, subdomain: result.subdomain };
+  }
+
+  /**
+   * Crée le sous-domaine en arrière-plan (Cloudflare + Vercel).
+   * Non bloquant — ne fait pas échouer l'activation du tenant.
+   */
+  private async createSubdomainInBackground(tenantId: string): Promise<void> {
+    try {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { id: true, subdomain: true },
+      });
+      if (!tenant?.subdomain) {
+        this.logger.warn(`⚠️  No subdomain for tenant ${tenantId} — skipping domain creation`);
+        return;
+      }
+
+      const result = await this.domainManagementService.createSchoolSubdomain(
+        tenant.subdomain,
+        tenant.id,
+      );
+
+      if (result.success) {
+        this.logger.log(
+          `✅ Subdomain ${result.domain} created for tenant ${tenant.id}`,
+        );
+      } else {
+        this.logger.warn(
+          `⚠️  Subdomain creation partial/failed for ${result.domain}: ${result.error}`,
+        );
+      }
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Unexpected error creating subdomain for tenant ${tenantId}: ${error.message}`,
+      );
+    }
+  }
 }

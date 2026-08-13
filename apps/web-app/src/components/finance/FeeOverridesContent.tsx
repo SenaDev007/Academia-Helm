@@ -534,7 +534,7 @@ export default function FeeOverridesContent() {
                       </TableCell>
                     </TableRow>
                   );
-                )}
+                })
               )}
               {/* ⭐ Ligne TOTAUX en rouge — frappe l'œil */}
               {filteredOverrides.length > 0 && (

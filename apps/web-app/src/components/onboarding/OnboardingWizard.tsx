@@ -2210,7 +2210,7 @@ export default function OnboardingWizard() {
 
                 {/* ⭐ MODE SELF-SERVICE : OTP normal (flux existant) */}
                 {creationMode === 'self-service' && (
-                <div className="border-t pt-6">
+                  <div className="border-t pt-6">
                   <label className="block text-sm font-medium text-gray-900 mb-3">
                     {otpMethod === 'email' ? 'Vérification de l\'email' : 'Vérification du numéro'} <span className="text-red-600">*</span>
                   </label>
@@ -2431,8 +2431,8 @@ export default function OnboardingWizard() {
                   {errors.otp && (
                     <p className="mt-1.5 text-xs text-red-600">{errors.otp}</p>
                   )}
-                </div>
-              )}
+                  </div>
+                )}
 
               {/* ⭐ MODE YEHI OR TECH : credentials admin back-office (au lieu d'OTP) */}
               {creationMode === 'yehi-or-tech' && (

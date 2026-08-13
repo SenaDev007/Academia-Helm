@@ -795,9 +795,18 @@ function DownloadLink({
   }
 
   return (
-    <a
-      href={asset.downloadUrl}
-      className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
+    <button
+      onClick={() => {
+        // ⭐ Lancer le téléchargement directement (pas de nouvel onglet)
+        const link = document.createElement('a');
+        link.href = asset.downloadUrl;
+        link.download = asset.name;
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }}
+      className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group w-full text-left"
     >
       <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
         {fileFormat && <FileFormatIcon format={fileFormat} size={32} className="hidden sm:flex" />}
@@ -807,7 +816,7 @@ function DownloadLink({
         </div>
       </div>
       <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 group-hover:text-[#f5b335] group-hover:translate-y-0.5 transition-all flex-shrink-0" />
-    </a>
+    </button>
   );
 }
 

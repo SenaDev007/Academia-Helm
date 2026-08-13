@@ -76,20 +76,16 @@ export function DesktopUpdateBadge({
     latestVersion !== currentDesktopVersion;
 
   const handleDownload = () => {
-    // Rediriger vers la page de téléchargement publique
-    const url = downloadUrl || "/downloads";
-    window.open(url, "_blank");
-    toast.success("Téléchargement", {
-      description: "Redirection vers la page de téléchargement...",
-    });
+    // ⭐ Rediriger directement vers /downloads (pas de modal, pas de nouvel onglet)
+    window.location.href = '/downloads';
   };
 
   return (
     <>
-      {/* ── Bouton dans le header ── */}
+      {/* ── Bouton dans le header — redirige directement vers /downloads ── */}
       <div className="relative">
         <button
-          onClick={() => setShowBanner(true)}
+          onClick={handleDownload}
           className={cn(
             "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
             hasUpdate
@@ -111,106 +107,6 @@ export function DesktopUpdateBadge({
           )}
         </button>
       </div>
-
-      {/* ── Modal/banner de téléchargement ── */}
-      <AnimatePresence>
-        {showBanner && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4"
-            onClick={() => setShowBanner(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* En-tête gradient */}
-              <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 text-white relative">
-                <button
-                  onClick={() => setShowBanner(false)}
-                  className="absolute top-4 right-4 p-1 hover:bg-white/20 rounded-lg transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-                <div className="flex items-center gap-3 mb-2">
-                  <Monitor className="w-8 h-8" />
-                  <h3 className="text-xl font-bold">Application Desktop</h3>
-                </div>
-                <p className="text-sm text-blue-100">
-                  Academia Helm pour Windows — accès plus rapide, hors connexion
-                </p>
-              </div>
-
-              {/* Contenu */}
-              <div className="p-6 space-y-4">
-                {hasUpdate && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-3">
-                    <Bell className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-semibold text-amber-900 text-sm">
-                        Mise à jour disponible
-                      </p>
-                      <p className="text-xs text-amber-700 mt-0.5">
-                        Version {latestVersion} disponible
-                        {currentDesktopVersion && ` (actuel: ${currentDesktopVersion})`}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <h4 className="font-semibold text-slate-900 text-sm">
-                    Avantages de l'app desktop :
-                  </h4>
-                  <ul className="space-y-1.5 text-sm text-slate-600">
-                    <li className="flex items-start gap-2">
-                      <span className="text-emerald-600 mt-0.5">✓</span>
-                      <span>Accès direct sans navigateur</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-emerald-600 mt-0.5">✓</span>
-                      <span>Mode hors connexion (base de données locale SQLite)</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-emerald-600 mt-0.5">✓</span>
-                      <span>Synchronisation automatique avec Neon</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-emerald-600 mt-0.5">✓</span>
-                      <span>Mises à jour automatiques</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-emerald-600 mt-0.5">✓</span>
-                      <span>Mêmes données que la version web</span>
-                    </li>
-                  </ul>
-                </div>
-
-                {/* Bouton de téléchargement */}
-                <button
-                  onClick={handleDownload}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-xl font-semibold text-sm hover:shadow-lg transition-all"
-                >
-                  <Download className="w-4 h-4" />
-                  {hasUpdate
-                    ? `Télécharger la version ${latestVersion}`
-                    : "Télécharger pour Windows"}
-                </button>
-
-                <p className="text-xs text-slate-400 text-center">
-                  L'installateur fait environ 10MB.
-                  Windows 10/11 requis.
-                </p>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </>
   );
 }

@@ -71,7 +71,7 @@ interface OnboardingData {
   schoolsCount: number;
   estimatedStudentCount: number;
   logoUrl?: string;
-  /** Sous-domaine personnalisé (ex: mon-ecole → mon-ecole.academia-hub.pro) */
+  /** Sous-domaine personnalisé (ex: mon-ecole → mon-ecole.academiahelm.com) */
   preferredSubdomain?: string;
 
   // Phase 2: Promoteur
@@ -1613,7 +1613,7 @@ export default function OnboardingWizard() {
                     Sous-domaine de votre espace <span className="text-gray-500 text-xs">(optionnel)</span>
                   </label>
                   <p className="text-xs text-slate-500 mb-2">
-                    Votre espace sera accessible à <strong>votre-sous-domaine.academia-hub.pro</strong>. Choisissez une proposition ou saisissez le vôtre (lettres minuscules, chiffres, tirets).
+                    Votre espace sera accessible à <strong>votre-sous-domaine.academiahelm.com</strong>. Choisissez une proposition ou saisissez le vôtre (lettres minuscules, chiffres, tirets).
                   </p>
                   <input
                     type="text"

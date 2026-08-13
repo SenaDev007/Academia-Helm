@@ -49,12 +49,15 @@ import {
   GraduationCap,
   Compass,
   Send,
+  Crown,
+  Lock,
 } from 'lucide-react';
 import { HELM_PLANS, fetchPricingPlans, getPlanForStudentCount, type DynamicPricingPlan } from '@/lib/services/HelmPricingService';
 import { formatCurrency } from '@/lib/utils';
 import { compressImageFileToDataUrl } from '@/lib/media';
 import FedaPayCheckout from './FedaPayCheckout';
 import OnboardingAnimation from './OnboardingAnimation';
+import ContractStep from './ContractStep';
 
 interface OnboardingData {
   // Phase 1: Établissement
@@ -116,6 +119,14 @@ export default function OnboardingWizard() {
   } | null>(null); // Données pour le checkout intégré (conformes à la doc FedaPay)
   const [isUploadingLogo, setIsUploadingLogo] = useState(false); // État de l'upload du logo
   const [logoPreview, setLogoPreview] = useState<string | null>(null); // Aperçu du logo
+
+  // ⭐ MODE DE CRÉATION : 'self-service' (le promoteur fait tout en ligne)
+  //    ou 'yehi-or-tech' (YEHI OR Tech crée l'école, skip OTP + paiement, add contrat)
+  const [creationMode, setCreationMode] = useState<'self-service' | 'yehi-or-tech'>('self-service');
+  // ⭐ Credentials admin back-office (pour mode 'yehi-or-tech')
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminVerified, setAdminVerified] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState<{
     score: number; // 0-4
     label: string; // 'Très faible', 'Faible', 'Moyen', 'Fort', 'Très fort'
@@ -617,7 +628,13 @@ export default function OnboardingWizard() {
       if (data.password && data.confirmPassword && data.password !== data.confirmPassword) {
         newErrors.confirmPassword = 'Les mots de passe ne correspondent pas';
       }
-      if (!otpVerified) newErrors.otp = 'Veuillez vérifier votre code OTP';
+      // ⭐ Mode self-service : OTP requis. Mode yehi-or-tech : credentials admin requis.
+      if (creationMode === 'self-service') {
+        if (!otpVerified) newErrors.otp = 'Veuillez vérifier votre code OTP';
+      } else {
+        if (!adminEmail) newErrors.admin = 'Email admin requis';
+        if (!adminPassword) newErrors.admin = 'Mot de passe admin requis';
+      }
     }
 
     if (stepNumber === 3) {
@@ -2150,6 +2167,49 @@ export default function OnboardingWizard() {
                   )}
                 </div>
 
+                {/* ⭐ TOGGLE MODE DE CRÉATION — après infos promoteur, avant OTP
+                    'self-service' : le promoteur fait tout en ligne (OTP + paiement)
+                    'yehi-or-tech' : YEHI OR Tech crée l'école (skip OTP + paiement, add contrat) */}
+                <div className="border-t pt-6 mb-6">
+                  <label className="block text-sm font-medium text-gray-900 mb-3">
+                    Mode de création <span className="text-red-600">*</span>
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setCreationMode('self-service')}
+                      className={`p-4 rounded-xl border-2 text-left transition-all ${
+                        creationMode === 'self-service'
+                          ? 'border-blue-600 bg-blue-50 shadow-sm'
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <User className="w-4 h-4 text-blue-600" />
+                        <span className="font-semibold text-sm">Création en ligne (self-service)</span>
+                      </div>
+                      <p className="text-xs text-slate-500">Le promoteur finalise lui-même : OTP, paiement, activation</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreationMode('yehi-or-tech')}
+                      className={`p-4 rounded-xl border-2 text-left transition-all ${
+                        creationMode === 'yehi-or-tech'
+                          ? 'border-amber-600 bg-amber-50 shadow-sm'
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <Crown className="w-4 h-4 text-amber-600" />
+                        <span className="font-semibold text-sm">Création par YEHI OR Tech</span>
+                      </div>
+                      <p className="text-xs text-slate-500">L'entreprise crée l'école : credentials admin, contrat, pas de paiement en ligne</p>
+                    </button>
+                  </div>
+                </div>
+
+                {/* ⭐ MODE SELF-SERVICE : OTP normal (flux existant) */}
+                {creationMode === 'self-service' && (
                 <div className="border-t pt-6">
                   <label className="block text-sm font-medium text-gray-900 mb-3">
                     {otpMethod === 'email' ? 'Vérification de l\'email' : 'Vérification du numéro'} <span className="text-red-600">*</span>
@@ -2373,6 +2433,60 @@ export default function OnboardingWizard() {
                   )}
                 </div>
               </div>
+              )}
+
+              {/* ⭐ MODE YEHI OR TECH : credentials admin back-office (au lieu d'OTP) */}
+              {creationMode === 'yehi-or-tech' && (
+                <div className="border-t pt-6">
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Crown className="w-5 h-5 text-amber-600" />
+                      <span className="font-semibold text-amber-800 text-sm">Création par YEHI OR Tech</span>
+                    </div>
+                    <p className="text-xs text-amber-700">
+                      Veuillez saisir vos identifiants admin du back-office pour valider la création.
+                      L'étape de paiement sera remplacée par la signature du contrat d'abonnement.
+                    </p>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Email admin back-office <span className="text-red-600">*</span>
+                      </label>
+                      <input
+                        type="email"
+                        value={adminEmail}
+                        onChange={(e) => setAdminEmail(e.target.value)}
+                        placeholder="admin@academiahelm.com"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Mot de passe admin <span className="text-red-600">*</span>
+                      </label>
+                      <input
+                        type="password"
+                        value={adminPassword}
+                        onChange={(e) => setAdminPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                      />
+                    </div>
+                    {adminVerified && (
+                      <div className="flex items-center gap-2 px-4 py-2.5 bg-green-50 border border-green-200 rounded-lg">
+                        <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
+                          <Check className="w-3 h-3 text-white" />
+                        </div>
+                        <span className="text-sm font-medium text-green-700">Identifiants validés</span>
+                      </div>
+                    )}
+                    {errors.admin && (
+                      <p className="text-xs text-red-600">{errors.admin}</p>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {errors.info && (
                 <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md flex items-start">
@@ -2751,8 +2865,38 @@ export default function OnboardingWizard() {
             </div>
           )}
 
-          {/* PHASE 4: Paiement */}
-          {step === 4 && (
+          {/* ⭐ PHASE 4 (YEHI OR Tech) : Contrat d'abonnement avec signature */}
+          {step === 4 && creationMode === 'yehi-or-tech' && (
+            <ContractStep
+              draftId={data.draftId || ''}
+              schoolName={data.schoolName}
+              promoterName={`${data.firstName} ${data.lastName}`}
+              schoolAddress={data.city}
+              schoolCity={data.city}
+              schoolPhone={data.promoterPhone}
+              schoolEmail={data.promoterEmail}
+              studentCount={data.estimatedStudentCount}
+              planCode={data.planCode}
+              planName={HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.name || data.planCode}
+              bilingual={data.bilingual}
+              subdomain={data.schoolName?.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 20) || 'ecole'}
+              activationFee={300000}
+              annualFee={HELM_PLANS[data.planCode as keyof typeof HELM_PLANS]?.annualPrice || 50000}
+              onComplete={(result) => {
+                if (result.signed) {
+                  // ⭐ Contrat signé → créer l'école (skip paiement)
+                  handleNext();
+                } else {
+                  // ⭐ Signature différée → avancer quand même
+                  handleNext();
+                }
+              }}
+              onBack={handleBack}
+            />
+          )}
+
+          {/* PHASE 4 (self-service): Paiement */}
+          {step === 4 && creationMode === 'self-service' && (
             <div className="bg-white rounded-xl shadow-xl border border-gray-100 p-8">
               {/* En-tête avec icône et titre */}
               <div className="flex items-center mb-2">

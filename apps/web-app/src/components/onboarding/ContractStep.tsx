@@ -49,7 +49,6 @@ export default function ContractStep({
   const { toast } = useToast();
 
   const totalYearOne = activationFee + annualFee + (bilingual ? 50000 : 0);
-  const selectedPlan = PLAN_TABLE.find(p => p.code === planCode) || PLAN_TABLE[0];
   const contractRef = `CT-AH-2026-${subdomain.toUpperCase().substring(0, 12)}`;
 
   const handleSignNow = async () => {
@@ -63,8 +62,6 @@ export default function ContractStep({
     }
     setLoading(true);
     try {
-      // ⭐ Endpoints publics — pas d'en-tête Authorization (le contrat est signé
-      //    pendant le flux d'onboarding, l'utilisateur n'est pas encore authentifié).
       const genResponse = await fetch('/api/onboarding/contract/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -133,6 +130,10 @@ export default function ContractStep({
     }
   };
 
+  // Classe commune pour les titres d'articles
+  const articleTitle = 'font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]';
+  const articleText = 'leading-snug text-[10px] text-gray-700';
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -152,15 +153,8 @@ export default function ContractStep({
 
       {/* ─── Document contrat — pleine page, sans scroll ─── */}
       <div
-        className="bg-white border border-gray-300 rounded-lg shadow-xl overflow-hidden"
-        style={{
-          // ⭐ On force une hauteur qui tient dans le viewport sans scroll.
-          //    Le contenu est dimensionné en `text-[10px]` à `text-xs` pour
-          //    rentrer intégralement dans la zone disponible.
-          maxHeight: 'calc(100vh - 220px)',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
+        className="bg-white border border-gray-300 rounded-lg shadow-xl overflow-hidden flex flex-col"
+        style={{ maxHeight: 'calc(100vh - 220px)' }}
       >
         {/* ── En-tête avec logos ── */}
         <div className="bg-gradient-to-r from-[#0a1d3f] via-[#0b2f73] to-[#0a1d3f] px-5 py-3 text-white flex items-center justify-between gap-4">
@@ -194,7 +188,7 @@ export default function ContractStep({
               <div className="text-[9px] text-blue-200">School Management</div>
             </div>
             <Image
-              src="/images/logo-academia-helm-signature.webp"
+              src="/images/logo-Academia Hub.webp"
               alt="Academia Helm"
               width={50}
               height={50}
@@ -204,28 +198,31 @@ export default function ContractStep({
           </div>
         </div>
 
-        {/* ── Corps du contrat — flex-1, pas de scroll interne ── */}
-        <div className="flex-1 overflow-hidden px-5 py-3 grid grid-cols-12 gap-3 text-[10px] text-gray-700">
-          {/* Colonne gauche — Parties + Objet + Fiche */}
-          <div className="col-span-5 space-y-2">
+        {/* ── Corps du contrat — 2 colonnes, articles en ORDRE SÉQUENTIEL ───
+            Colonne gauche : Entre les soussignés + Articles 1 à 7
+            Colonne droite : Articles 8 à 14 + Signatures
+            Lecture : gauche haut→bas (1→7), puis droite haut→bas (8→14) */}
+        <div className="flex-1 overflow-hidden px-5 py-3 grid grid-cols-12 gap-4 text-[10px] text-gray-700">
+
+          {/* ═══════════════ COLONNE GAUCHE — Articles 1 à 7 ═══════════════ */}
+          <div className="col-span-6 space-y-2 overflow-hidden">
+
+            {/* Entre les soussignés */}
             <section>
-              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
-                Entre les soussignés
-              </h4>
-              <p className="leading-snug">
+              <h4 className={articleTitle}>Entre les soussignés</h4>
+              <p className={articleText}>
                 <strong>YEHI OR Tech</strong>, éditrice de la plateforme SaaS Academia Helm, sise à Parakou,
                 République du Bénin, ci-après « <strong>le Prestataire</strong> ».
               </p>
-              <p className="leading-snug mt-1">
+              <p className={articleText + ' mt-0.5'}>
                 <strong>{schoolName}</strong>, représentée par son promoteur{' '}
                 <strong>{promoterName}</strong>, ci-après « <strong>le Client</strong> ».
               </p>
             </section>
 
+            {/* Article 1 */}
             <section>
-              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
-                Article 1 — Fiche de souscription
-              </h4>
+              <h4 className={articleTitle}>Article 1 — Fiche de souscription</h4>
               <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px]">
                 <div><span className="text-gray-500">École :</span> <strong>{schoolName}</strong></div>
                 <div><span className="text-gray-500">Promoteur :</span> <strong>{promoterName}</strong></div>
@@ -240,52 +237,19 @@ export default function ContractStep({
               </div>
             </section>
 
+            {/* Article 2 */}
             <section>
-              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
-                Article 2 — Objet
-              </h4>
-              <p className="leading-snug">
-                Concession d'un droit d'usage non exclusif de la plateforme Academia Helm (Web, Desktop, Mobile),
-                hébergement, maintenance, support et accès aux agents IA (ORION, SARA, ATLAS).
+              <h4 className={articleTitle}>Article 2 — Objet du contrat</h4>
+              <p className={articleText}>
+                Concession d'un droit d'usage non exclusif, non cessible et à titre onéreux de la plateforme
+                Academia Helm (Web, Desktop, Mobile), hébergement, maintenance corrective et évolutive, support
+                technique, onboarding, formation, et accès aux agents IA (ORION, SARA, ATLAS).
               </p>
             </section>
 
+            {/* Article 3 */}
             <section>
-              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
-                Article 5 — Durée et reconduction
-              </h4>
-              <p className="leading-snug">
-                Durée initiale d'un (1) an, renouvelable par tacite reconduction sauf dénonciation 60 jours
-                avant la <strong>date d'échéance annuelle</strong>.
-              </p>
-            </section>
-
-            <section>
-              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
-                Article 8 — Propriété intellectuelle
-              </h4>
-              <p className="leading-snug">
-                La plateforme demeure propriété exclusive du Prestataire. Les données saisies par le Client
-                demeurent sa propriété.
-              </p>
-            </section>
-
-            <section>
-              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
-                Article 13 — Droit applicable
-              </h4>
-              <p className="leading-snug">
-                Droit de la République du Bénin. Compétence des juridictions de Parakou en cas de différend.
-              </p>
-            </section>
-          </div>
-
-          {/* Colonne droite — Tarifs + Signatures */}
-          <div className="col-span-7 space-y-2 flex flex-col">
-            <section>
-              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
-                Article 3 — Plan souscrit et grille tarifaire
-              </h4>
+              <h4 className={articleTitle}>Article 3 — Plan souscrit et grille tarifaire</h4>
               <table className="w-full text-[9px] border border-gray-300 border-collapse">
                 <thead className="bg-[#0a1d3f] text-white">
                   <tr>
@@ -323,31 +287,116 @@ export default function ContractStep({
               </p>
             </section>
 
+            {/* Article 4 */}
             <section>
-              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
-                Article 4 — Prix et modalités de paiement
-              </h4>
-              <p className="leading-snug">
+              <h4 className={articleTitle}>Article 4 — Prix et modalités de paiement</h4>
+              <p className={articleText}>
                 Frais d'activation de <strong>300 000 FCFA</strong> dus à la signature. Frais annuels de{' '}
                 <strong>{formatCurrency(annualFee)} FCFA</strong> dus chaque année à la{' '}
                 <strong>date d'échéance annuelle</strong>. Réglement par virement bancaire, Mobile Money
-                (FedaPay) ou espèces contre reçu. WhatsApp inclus gratuitement et illimité. SMS, Email et
-                Voice facturés au prix coûtant.
+                (FedaPay) ou espèces contre reçu. WhatsApp inclus gratuitement et illimité.
               </p>
             </section>
 
+            {/* Article 5 */}
             <section>
-              <h4 className="font-bold text-[#0a1d3f] border-b border-gray-300 pb-0.5 mb-1 text-[10px]">
-                Articles 6 & 7 — Obligations des Parties
-              </h4>
-              <p className="leading-snug">
-                <strong>Prestataire :</strong> disponibilité, maintenance, support, onboarding, formation,
-                confidentialité des données. <strong>Client :</strong> paiement aux échéances, informations
-                exactes, usage conforme, confidentialité des identifiants.
+              <h4 className={articleTitle}>Article 5 — Durée et reconduction</h4>
+              <p className={articleText}>
+                Durée initiale d'un (1) an, renouvelable par tacite reconduction sauf dénonciation 60 jours
+                avant la <strong>date d'échéance annuelle</strong>. Révision tarifaire possible avec préavis
+                de 60 jours.
               </p>
             </section>
 
-            {/* ── Section signatures — intégrée sans scroll ── */}
+            {/* Article 6 */}
+            <section>
+              <h4 className={articleTitle}>Article 6 — Obligations du Prestataire</h4>
+              <p className={articleText}>
+                Disponibilité et maintenance de la plateforme, support technique, onboarding et formation
+                initiale, confidentialité et sécurité des données, information en cas d'évolution
+                substantielle.
+              </p>
+            </section>
+
+            {/* Article 7 */}
+            <section>
+              <h4 className={articleTitle}>Article 7 — Obligations du Client</h4>
+              <p className={articleText}>
+                Paiement des sommes dues aux échéances, informations exactes et à jour, usage conforme à la
+                destination, confidentialité des identifiants de connexion, respect de la législation
+                béninoise sur la protection des données.
+              </p>
+            </section>
+          </div>
+
+          {/* ═══════════════ COLONNE DROITE — Articles 8 à 14 + Signatures ═══════════════ */}
+          <div className="col-span-6 space-y-2 flex flex-col overflow-hidden">
+
+            {/* Article 8 */}
+            <section>
+              <h4 className={articleTitle}>Article 8 — Propriété intellectuelle</h4>
+              <p className={articleText}>
+                La plateforme Academia Helm demeure propriété exclusive du Prestataire. Le Client dispose
+                d'un droit d'usage personnel, non exclusif et non transférable. Les données saisies par le
+                Client demeurent sa propriété.
+              </p>
+            </section>
+
+            {/* Article 9 */}
+            <section>
+              <h4 className={articleTitle}>Article 9 — Protection des données et confidentialité</h4>
+              <p className={articleText}>
+                Mesures techniques et organisationnelles raisonnables pour assurer la sécurité des données.
+                Confidentialité réciproque pendant 2 ans post-contractuelles.
+              </p>
+            </section>
+
+            {/* Article 10 */}
+            <section>
+              <h4 className={articleTitle}>Article 10 — Résiliation</h4>
+              <p className={articleText}>
+                Résiliation pour manquement grave après mise en demeure infructueuse (30 jours). Non-paiement
+                persistant au-delà de 45 jours → résiliation de plein droit. Export des données sous 30 jours.
+              </p>
+            </section>
+
+            {/* Article 11 */}
+            <section>
+              <h4 className={articleTitle}>Article 11 — Responsabilité et garanties</h4>
+              <p className={articleText}>
+                Responsabilité du Prestataire limitée aux sommes perçues sur les 12 derniers mois.
+                L'architecture offline-first vise à limiter les pertes de données sans garantie absolue.
+              </p>
+            </section>
+
+            {/* Article 12 */}
+            <section>
+              <h4 className={articleTitle}>Article 12 — Force majeure</h4>
+              <p className={articleText}>
+                Aucune des Parties n'est responsable d'une non-exécution due à un cas de force majeure tel
+                que défini par la jurisprudence béninoise.
+              </p>
+            </section>
+
+            {/* Article 13 */}
+            <section>
+              <h4 className={articleTitle}>Article 13 — Droit applicable et juridiction</h4>
+              <p className={articleText}>
+                Droit de la République du Bénin. Résolution amiable préalable (30 jours). À défaut,
+                compétence des juridictions de Parakou.
+              </p>
+            </section>
+
+            {/* Article 14 */}
+            <section>
+              <h4 className={articleTitle}>Article 14 — Dispositions diverses</h4>
+              <p className={articleText}>
+                Le présent Contrat constitue l'intégralité de l'accord entre les Parties. Toute modification
+                doit faire l'objet d'un avenant écrit signé des deux Parties.
+              </p>
+            </section>
+
+            {/* ── Section signatures — intégrée en bas de colonne droite ── */}
             <section className="bg-gray-50 border border-gray-200 rounded p-2 mt-auto">
               <h4 className="font-bold text-[#0a1d3f] mb-1.5 flex items-center gap-1.5 text-[10px]">
                 <PenTool className="w-3 h-3" /> Signatures électroniques
@@ -360,7 +409,7 @@ export default function ContractStep({
                   </div>
                   <SignatureCanvas
                     width={300}
-                    height={80}
+                    height={70}
                     onSignatureChange={setPromoterSignature}
                     placeholder="Signature du promoteur"
                   />
@@ -373,7 +422,7 @@ export default function ContractStep({
                   </div>
                   <SignatureCanvas
                     width={300}
-                    height={80}
+                    height={70}
                     onSignatureChange={setProviderSignature}
                     placeholder="Signature du représentant YEHI OR Tech"
                   />

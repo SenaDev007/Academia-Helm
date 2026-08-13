@@ -94,12 +94,12 @@ export class ContractGenerationService {
     const baseUrl = process.env.FRONTEND_URL || 'https://academiahelm.com';
     const [yehi, helm] = await Promise.all([
       this.fetchImageAsBase64(`${baseUrl}/images/logo-yehi-or-tech.webp`),
-      this.fetchImageAsBase64(`${baseUrl}/images/logo-academia-helm-signature.webp`),
+      this.fetchImageAsBase64(`${baseUrl}/images/logo-Academia Hub.webp`),
     ]);
 
     this.logoCache = {
       yehiOrTech: yehi || `${baseUrl}/images/logo-yehi-or-tech.webp`,
-      academiaHelm: helm || `${baseUrl}/images/logo-academia-helm-signature.webp`,
+      academiaHelm: helm || `${baseUrl}/images/logo-Academia Hub.webp`,
     };
     return this.logoCache as { yehiOrTech: string; academiaHelm: string };
   }
@@ -354,7 +354,7 @@ export class ContractGenerationService {
 </div>
 
 <div class="body">
-  <!-- ─── Colonne gauche ─── -->
+  <!-- ═══════════════ COLONNE GAUCHE — Articles 1 à 7 ═══════════════ -->
   <div class="col-left">
     <h2 class="article">Entre les soussignés</h2>
     <p><strong>YEHI OR Tech</strong>, éditrice de la plateforme SaaS Academia Helm, sise à Parakou, République du Bénin, représentée par son Directeur Technique et Co-fondateur, ci-après « <strong>le Prestataire</strong> ».</p>
@@ -377,52 +377,72 @@ export class ContractGenerationService {
     <h2 class="article">Article 2 — Objet du contrat</h2>
     <p>Concession d'un droit d'usage non exclusif, non cessible et à titre onéreux de la plateforme Academia Helm (Web, Desktop, Mobile), hébergement, maintenance corrective et évolutive, support technique, onboarding, formation, et accès aux agents d'intelligence artificielle (ORION, SARA, ATLAS) dans le cadre d'un usage raisonnable et professionnel.</p>
 
+    <h2 class="article">Article 3 — Plan souscrit et grille tarifaire</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Plan</th>
+          <th>Élèves</th>
+          <th style="text-align: right;">Activation (FCFA)</th>
+          <th style="text-align: right;">Annuel (FCFA)</th>
+          <th style="text-align: right;">Total An 1 (FCFA)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${planTable}
+      </tbody>
+    </table>
+    ${data.bilingual ? '<p class="bilingual-note">Option bilingue FR/EN : <strong>50 000 FCFA/an</strong> (en supplément du plan)</p>' : ''}
+    <div class="highlight-box">Coût total Année 1 : ${data.totalYearOne.toLocaleString('fr-FR')} FCFA</div>
+
+    <h2 class="article">Article 4 — Prix et modalités de paiement</h2>
+    <p>Frais d'activation de <strong>300 000 FCFA</strong> dus à la signature. Frais annuels de <strong>${data.annualFee.toLocaleString('fr-FR')} FCFA</strong> dus chaque année à la <strong>date d'échéance annuelle</strong>. Réglement par virement bancaire, Mobile Money (FedaPay) ou espèces contre reçu. WhatsApp inclus gratuitement et illimité. SMS, Email et Voice facturés au prix coûtant selon la consommation réelle.</p>
+
     <h2 class="article">Article 5 — Durée et reconduction</h2>
     <p>Durée initiale d'un (1) an à compter de la date d'effet. Renouvelable par tacite reconduction pour des périodes successives d'un (1) an, sauf dénonciation par écrit au moins 60 jours avant la <strong>date d'échéance annuelle</strong>. Le Prestataire se réserve le droit de réviser la grille tarifaire pour les périodes de reconduction futures, sous réserve d'en informer le Client au moins 60 jours avant l'échéance.</p>
 
-    <h2 class="article">Article 8 — Propriété intellectuelle</h2>
-    <p>La plateforme Academia Helm demeure la propriété exclusive du Prestataire. Le présent Contrat confère au Client un droit d'usage personnel, non exclusif et non transférable. Les données saisies par le Client demeurent sa propriété exclusive ; le Prestataire s'engage à en permettre l'export à tout moment.</p>
+    <h2 class="article">Article 6 — Obligations du Prestataire</h2>
+    <p>Disponibilité et maintenance de la plateforme, support technique, onboarding et formation initiale, confidentialité et sécurité des données, information en cas d'évolution substantielle. Usage des agents IA dans le cadre d'un usage raisonnable et professionnel.</p>
 
-    <h2 class="article">Article 13 — Droit applicable et juridiction</h2>
-    <p>Le présent Contrat est soumis au droit de la République du Bénin. En cas de différend, les Parties recherchent une résolution amiable dans un délai de 30 jours. À défaut, compétence des juridictions de Parakou.</p>
+    <h2 class="article">Article 7 — Obligations du Client</h2>
+    <p>Paiement des sommes dues aux échéances, informations exactes et à jour, usage conforme à la destination, confidentialité des identifiants de connexion, respect de la législation béninoise applicable à la protection des données personnelles.</p>
   </div>
 
-  <!-- ─── Colonne droite ─── -->
+  <!-- ═══════════════ COLONNE DROITE — Articles 8 à 14 + Signatures ═══════════════ -->
   <div class="col-right">
     <div>
-      <h2 class="article">Article 3 — Plan souscrit et grille tarifaire</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Plan</th>
-            <th>Élèves</th>
-            <th style="text-align: right;">Activation (FCFA)</th>
-            <th style="text-align: right;">Annuel (FCFA)</th>
-            <th style="text-align: right;">Total An 1 (FCFA)</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${planTable}
-        </tbody>
-      </table>
-      ${data.bilingual ? '<p class="bilingual-note">Option bilingue FR/EN : <strong>50 000 FCFA/an</strong> (en supplément du plan)</p>' : ''}
-      <div class="highlight-box">Coût total Année 1 : ${data.totalYearOne.toLocaleString('fr-FR')} FCFA</div>
+      <h2 class="article">Article 8 — Propriété intellectuelle</h2>
+      <p>La plateforme Academia Helm demeure la propriété exclusive du Prestataire. Le présent Contrat confère au Client un droit d'usage personnel, non exclusif et non transférable. Les données saisies par le Client demeurent sa propriété exclusive ; le Prestataire s'engage à en permettre l'export à tout moment.</p>
     </div>
 
     <div>
-      <h2 class="article">Article 4 — Prix et modalités de paiement</h2>
-      <p>Frais d'activation de <strong>300 000 FCFA</strong> dus à la signature. Frais annuels de <strong>${data.annualFee.toLocaleString('fr-FR')} FCFA</strong> dus chaque année à la <strong>date d'échéance annuelle</strong>. Réglement par virement bancaire, Mobile Money (FedaPay) ou espèces contre reçu. WhatsApp inclus gratuitement et illimité. SMS, Email et Voice facturés au prix coûtant selon la consommation réelle.</p>
+      <h2 class="article">Article 9 — Protection des données et confidentialité</h2>
+      <p>Mesures techniques et organisationnelles raisonnables pour assurer la sécurité et la confidentialité des données. Confidentialité réciproque pendant 2 ans post-contractuelles.</p>
     </div>
 
     <div>
-      <h2 class="article">Articles 6 & 7 — Obligations des Parties</h2>
-      <p><strong>Prestataire :</strong> disponibilité et maintenance de la plateforme, support technique, onboarding et formation initiale, confidentialité et sécurité des données, information en cas d'évolution substantielle.</p>
-      <p><strong>Client :</strong> paiement des sommes dues aux échéances, informations exactes et à jour, usage conforme à la destination, confidentialité des identifiants de connexion, respect de la législation béninoise applicable à la protection des données personnelles.</p>
+      <h2 class="article">Article 10 — Résiliation</h2>
+      <p>Résiliation pour manquement grave après mise en demeure infructueuse (30 jours). Non-paiement persistant au-delà de 45 jours → résiliation de plein droit. Export des données sous 30 jours après résiliation.</p>
     </div>
 
     <div>
-      <h2 class="article">Articles 9 à 12 — Confidentialité, résiliation, responsabilité, force majeure</h2>
-      <p>Confidentialité réciproche pendant 2 ans post-contractuelles. Résiliation pour manquement grave après mise en demeure infructueuse (30 jours). Responsabilité du Prestataire limitée aux sommes perçues sur les 12 derniers mois. Force majeure selon la jurisprudence béninoise.</p>
+      <h2 class="article">Article 11 — Responsabilité et garanties</h2>
+      <p>Responsabilité du Prestataire limitée aux sommes perçues sur les 12 derniers mois. L'architecture offline-first vise à limiter les pertes de données sans garantie absolue.</p>
+    </div>
+
+    <div>
+      <h2 class="article">Article 12 — Force majeure</h2>
+      <p>Aucune des Parties n'est responsable d'une non-exécution due à un cas de force majeure tel que défini par la jurisprudence béninoise.</p>
+    </div>
+
+    <div>
+      <h2 class="article">Article 13 — Droit applicable et juridiction</h2>
+      <p>Droit de la République du Bénin. Résolution amiable préalable (30 jours). À défaut, compétence des juridictions de Parakou.</p>
+    </div>
+
+    <div>
+      <h2 class="article">Article 14 — Dispositions diverses</h2>
+      <p>Le présent Contrat constitue l'intégralité de l'accord entre les Parties. Toute modification doit faire l'objet d'un avenant écrit signé des deux Parties.</p>
     </div>
 
     <!-- ── Section signatures ── -->

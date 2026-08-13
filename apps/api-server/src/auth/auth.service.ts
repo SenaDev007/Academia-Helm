@@ -1063,7 +1063,7 @@ export class AuthService {
    */
   private buildOtpEmailTemplate(firstName: string, otpCode: string): string {
     const logoUrl = this.configService.get<string>('APP_PUBLIC_URL', 'https://academiahelm.com') + '/images/logo-academia-helm-email.png';
-    const signatureLogoUrl = this.configService.get<string>('APP_PUBLIC_URL', 'https://academiahelm.com') + '/images/logo-academia-helm-signature.png';
+    const signatureLogoUrl = this.configService.get<string>('APP_PUBLIC_URL', 'https://academiahelm.com') + '/images/logo-Academia Hub.png';
     const currentYear = new Date().getFullYear();
 
     return `

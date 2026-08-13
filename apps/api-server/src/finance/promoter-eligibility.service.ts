@@ -105,7 +105,7 @@ export class PromoterEligibilityService {
          pe.expecteddate, pe.isactive, pe.createdat,
          s."firstName", s."lastName", s.matricule,
          c.name as classname,
-         u.name as createdbyname
+         u."firstName" as userfirstname, u."lastName" as userlastname
        FROM promoter_payment_eligibility pe
        INNER JOIN students s ON s.id = pe.studentid
        LEFT JOIN classes c ON c.id = (
@@ -122,19 +122,24 @@ export class PromoterEligibilityService {
       tenantId, academicYearId,
     );
 
-    return rows.map((r) => ({
-      id: r.id,
-      studentId: r.studentid,
-      studentName: `${r.firstName || ''} ${r.lastName || ''}`.trim(),
-      studentMatricule: r.matricule || '',
-      className: r.classname || '—',
-      academicYearId: r.academicyearid,
-      motif: r.motif,
-      expectedDate: r.expecteddate ? new Date(r.expecteddate).toISOString() : null,
-      isActive: r.isactive,
-      createdAt: r.createdat ? new Date(r.createdat).toISOString() : '',
-      createdByName: r.createdbyname || '',
-    }));
+    return rows.map((r) => {
+      const userFirstName = r.userfirstname || '';
+      const userLastName = r.userlastname || '';
+      const createdByName = `${userFirstName} ${userLastName}`.trim();
+      return {
+        id: r.id,
+        studentId: r.studentid,
+        studentName: `${r.firstName || ''} ${r.lastName || ''}`.trim(),
+        studentMatricule: r.matricule || '',
+        className: r.classname || '—',
+        academicYearId: r.academicyearid,
+        motif: r.motif,
+        expectedDate: r.expecteddate ? new Date(r.expecteddate).toISOString() : null,
+        isActive: r.isactive,
+        createdAt: r.createdat ? new Date(r.createdat).toISOString() : '',
+        createdByName,
+      };
+    });
   }
 
   async getActiveStudentIds(tenantId: string, academicYearId: string): Promise<Set<string>> {

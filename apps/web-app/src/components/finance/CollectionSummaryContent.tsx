@@ -796,6 +796,19 @@ function PromoterEligibleList({
   loading: boolean;
   academicYearId: string;
 }) {
+  const [filterLevel, setFilterLevel] = useState('');
+  const [filterClass, setFilterClass] = useState('');
+
+  // Filtrer par niveau/classe
+  const filteredList = useMemo(() => {
+    if (!filterLevel && !filterClass) return list;
+    return list.filter((row) => {
+      const levelMatch = !filterLevel || row.className?.toLowerCase().includes(filterLevel.toLowerCase());
+      const classMatch = !filterClass || row.className?.toLowerCase().includes(filterClass.toLowerCase());
+      return levelMatch && classMatch;
+    });
+  }, [list, filterLevel, filterClass]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -805,7 +818,7 @@ function PromoterEligibleList({
     );
   }
 
-  if (list.length === 0) {
+  if (filteredList.length === 0) {
     return (
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-8 text-center">
         <Crown className="w-12 h-12 text-amber-400 mx-auto mb-3" />
@@ -827,7 +840,7 @@ function PromoterEligibleList({
           <Crown className="w-5 h-5" />
           <h3 className="font-bold">Élèves — Paiement direct au fondateur</h3>
           <Badge className="ml-auto bg-white/20 text-white border-white/30">
-            {list.length} élève(s)
+            {filteredList.length} élève(s)
           </Badge>
         </div>
       </div>
@@ -844,7 +857,7 @@ function PromoterEligibleList({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {list.map((row) => (
+            {filteredList.map((row) => (
               <TableRow key={row.id} className="hover:bg-amber-50/50">
                 <TableCell className="font-medium">
                   <div className="flex items-center gap-2">

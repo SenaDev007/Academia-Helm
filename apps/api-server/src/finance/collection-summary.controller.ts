@@ -160,24 +160,65 @@ export class CollectionSummaryController {
         class: { select: { id: true, name: true, code: true, schoolLevelId: true, schoolLevel: { select: { id: true, code: true, name: true, order: true } } } },
         academicClass: { select: { id: true, name: true, code: true, levelId: true } },
       },
-      orderBy: [
-        // ⭐ Tri par défaut : Maternelle → Primaire → Secondaire
-        //    Utilise schoolLevel.order (0=Maternelle, 1=Primaire, 2=Secondaire)
-        { class: { schoolLevel: { order: 'asc' } } },
-        { student: { lastName: 'asc' } },
-        { student: { firstName: 'asc' } },
-      ],
+    });
+
+    // ⭐ TRI PERSONNALISÉ : Maternelle 1 → Maternelle 2 → CI → CP → CE1 → CE2 → CM1 → CM2 → 6e → 5e → 4e → 3e → 2nde → 1ère → Terminale
+    //    Le tri alphabétique ne marche pas (CE1 < CI alphabetiquement mais CI vient avant CE1 logiquement).
+    //    On utilise le code de la classe pour définir l'ordre.
+    const CLASS_ORDER: Record<string, number> = {
+      'MAT1': 1, 'MAT2': 2, 'MATERNELLE1': 1, 'MATERNELLE2': 2,
+      'CI': 10, 'CI_A': 10, 'CI_B': 11,
+      'CP': 20, 'CP_A': 20, 'CP_B': 21,
+      'CE1': 30, 'CE1_A': 30, 'CE1_B': 31,
+      'CE2': 40, 'CE2_A': 40, 'CE2_B': 41,
+      'CM1': 50, 'CM1_A': 50, 'CM1_B': 51,
+      'CM2': 60, 'CM2_A': 60, 'CM2_B': 61,
+      '6EME': 70, '6E': 70,
+      '5EME': 80, '5E': 80,
+      '4EME': 90, '4E': 90,
+      '3EME': 100, '3E': 100,
+      '2NDE': 110, '2NDE_D': 110,
+      '1ERE': 120, '1ERE_D': 120,
+      'TERM': 130, 'TERMINALE': 130, 'TLE': 130,
+    };
+
+    function getClassOrder(classCode: string | null | undefined): number {
+      if (!classCode) return 999;
+      const upper = classCode.toUpperCase().replace(/[\s\-]/g, '');
+      // Essayer le code exact d'abord
+      if (CLASS_ORDER[upper] !== undefined) return CLASS_ORDER[upper];
+      // Essayer en remplaçant les espaces
+      const normalized = upper.replace(/[^A-Z0-9]/g, '');
+      if (CLASS_ORDER[normalized] !== undefined) return CLASS_ORDER[normalized];
+      // Fallback: tri alphabétique + offset pour ne pas casser l'ordre
+      return 500 + classCode.charCodeAt(0);
+    }
+
+    // Trier : 1) par niveau (Maternelle < Primaire < Secondaire), 2) par classe (CI < CP < CE1...), 3) par nom
+    let filteredEnrollments = enrollments.sort((a, b) => {
+      const levelOrderA = a.class?.schoolLevel?.order ?? 99;
+      const levelOrderB = b.class?.schoolLevel?.order ?? 99;
+      if (levelOrderA !== levelOrderB) return levelOrderA - levelOrderB;
+
+      const classOrderA = getClassOrder(a.class?.code);
+      const classOrderB = getClassOrder(b.class?.code);
+      if (classOrderA !== classOrderB) return classOrderA - classOrderB;
+
+      const lastNameA = (a.student?.lastName || '').toLowerCase();
+      const lastNameB = (b.student?.lastName || '').toLowerCase();
+      if (lastNameA !== lastNameB) return lastNameA.localeCompare(lastNameB);
+
+      const firstNameA = (a.student?.firstName || '').toLowerCase();
+      const firstNameB = (b.student?.firstName || '').toLowerCase();
+      return firstNameA.localeCompare(firstNameB);
     });
 
     // Filtrer par niveau si fourni (levelId = UUID de school_levels)
-    // ⭐ FIX : on matche sur class.schoolLevel ET student.schoolLevelId.
-    //    AcademicClass n'a PAS de schoolLevelId direct — on utilise student.schoolLevelId
-    //    comme fallback (source de vérité : l'élève a toujours un schoolLevelId).
-    //    Avant ce fix, les élèves sans classId physique étaient exclus du filtre → "Aucune donnée".
-    let filteredEnrollments = enrollments;
+    // ⭐ FIX : au lieu de comparer uniquement les UUIDs (qui diffèrent entre tenants),
+    //    on compare aussi par CODE de niveau (MATERNELLE, PRIMAIRE, SECONDAIRE).
+    //    Le frontend envoie l'UUID du niveau sélectionné, on charge son code,
+    //    puis on filtre les enrollments par code.
     if (levelId) {
-      // Charger le niveau scolaire pour récupérer son code (au cas où levelId
-      // serait un code plutôt qu'un UUID — robustesse).
       let levelCode: string | null = null;
       try {
         const level = await this.prisma.schoolLevel.findUnique({
@@ -186,23 +227,40 @@ export class CollectionSummaryController {
         });
         levelCode = level?.code || null;
       } catch {
-        // Si ce n'est pas un UUID valide, on suppose que c'est déjà un code.
-        levelCode = levelId;
+        levelCode = levelId; // Si ce n'est pas un UUID, c'est peut-être déjà un code
       }
 
       filteredEnrollments = enrollments.filter((e) => {
-        // Match par UUID sur class.schoolLevel.id
+        // Match par UUID
         if (e.class?.schoolLevel?.id === levelId) return true;
-        // Match par UUID sur class.schoolLevelId
         if (e.class?.schoolLevelId === levelId) return true;
-        // ⭐ Match par student.schoolLevelId (source de vérité — l'élève a toujours ce champ)
         if (e.student?.schoolLevelId === levelId) return true;
-        // Match par code (au cas où levelId soit un code comme "SECONDAIRE")
-        if (levelCode && e.class?.schoolLevel?.code === levelCode) return true;
-        // ⭐ Match par academicClass.levelId (classe officielle)
         if (e.academicClass?.levelId === levelId) return true;
+        // ⭐ Match par CODE (robuste — fonctionne même avec doublons d'UUIDs entre tenants)
+        if (levelCode) {
+          if (e.class?.schoolLevel?.code === levelCode) return true;
+          // Charger le code du student.schoolLevelId
+        }
         return false;
       });
+
+      // ⭐ Si le match par UUID a échoué mais qu'on a un levelCode, faire un second
+      //    passage en chargeant les school_levels des students
+      if (filteredEnrollments.length === 0 && levelCode) {
+        const studentLevelIds = enrollments.map(e => e.student?.schoolLevelId).filter(Boolean);
+        if (studentLevelIds.length > 0) {
+          const studentLevels = await this.prisma.schoolLevel.findMany({
+            where: { id: { in: studentLevelIds as string[] } },
+            select: { id: true, code: true },
+          });
+          const matchingStudentLevelIds = new Set(
+            studentLevels.filter(sl => sl.code === levelCode).map(sl => sl.id)
+          );
+          filteredEnrollments = enrollments.filter((e) =>
+            matchingStudentLevelIds.has(e.student?.schoolLevelId || '')
+          );
+        }
+      }
 
       this.logger.debug(`Filter by level: levelId=${levelId}, levelCode=${levelCode}, total=${enrollments.length}, filtered=${filteredEnrollments.length}`);
     }

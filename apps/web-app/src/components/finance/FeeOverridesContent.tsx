@@ -534,8 +534,8 @@ export default function FeeOverridesContent() {
                       </TableCell>
                     </TableRow>
                   );
-                })
-              }
+                )}
+              )}
               {/* ⭐ Ligne TOTAUX en rouge — frappe l'œil */}
               {filteredOverrides.length > 0 && (
                 <TableRow className="bg-red-50 border-t-2 border-red-300 font-bold">

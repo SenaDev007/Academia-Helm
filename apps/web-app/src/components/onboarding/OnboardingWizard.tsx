@@ -2432,7 +2432,6 @@ export default function OnboardingWizard() {
                     <p className="mt-1.5 text-xs text-red-600">{errors.otp}</p>
                   )}
                 </div>
-              </div>
               )}
 
               {/* ⭐ MODE YEHI OR TECH : credentials admin back-office (au lieu d'OTP) */}

@@ -231,16 +231,20 @@ export class FedaPayService implements OnModuleInit {
     const keyIsLive = this.apiKey.startsWith('sk_live_') || this.apiKey.startsWith('pk_live_');
 
     let environment: 'live' | 'sandbox';
+    // ⭐ FedaPay live réactivé — la restriction 20000 XOF a été levée par FedaPay
+    //    sur le compte. On force le mode live si FEDAPAY_ENVIRONMENT=live ou si
+    //    la clé commence par sk_live_.
     if (explicit === 'sandbox') {
       environment = 'sandbox';
     } else if (explicit === 'live') {
       environment = 'live';
-    } else if (envSandbox || keyIsSandbox) {
-      environment = 'sandbox';
     } else if (keyIsLive) {
       environment = 'live';
+    } else if (envSandbox || keyIsSandbox) {
+      environment = 'sandbox';
     } else {
-      environment = process.env.NODE_ENV === 'production' ? 'live' : 'sandbox';
+      // ⭐ Par défaut en production : LIVE (la restriction 20000 a été levée)
+      environment = 'live';
     }
 
     FedaPay.setEnvironment(environment);

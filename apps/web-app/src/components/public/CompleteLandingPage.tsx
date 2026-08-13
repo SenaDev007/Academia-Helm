@@ -877,23 +877,24 @@ export default function CompleteLandingPage() {
             <LandingPlanCard planKey="NETWORK" />
           </div>
 
-          {/* BANDEAU FREE TRIAL */}
+          {/* BANDEAU SIGNUP DIRECT — plus de free trial, aligné sur le contrat */}
           <div className="mb-16">
             <div className="bg-gradient-to-br from-blue-50 to-white rounded-3xl border-2 border-blue-200 p-8 shadow-xl">
               <div className="text-center max-w-3xl mx-auto">
                 <h3 className={`${typo('h3')} text-gray-900 font-bold mb-4`}>
-                  Découvrir Academia Helm sans engagement
+                  Prêt à digitaliser votre établissement ?
                 </h3>
                 <p className={`${typo('base')} text-gray-700 mb-6 leading-relaxed`}>
-                  Profitez de 3 jours de démonstration guidée avec des données fictives
-                  pour explorer la plateforme avant activation.
-            </p>
+                  Créez votre école sur Academia Helm en quelques minutes. Frais d&apos;activation
+                  de 300 000 FCFA à la signature du contrat, puis abonnement annuel à partir
+                  de 50 000 FCFA/an selon la taille de votre établissement.
+                </p>
                 <Link
-                  href="/trial"
+                  href="/signup"
                   prefetch={true}
                   className="inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-2xl font-semibold hover:from-blue-700 hover:to-blue-800 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105"
                 >
-                  Démarrer le free trial (3 jours)
+                  Créer mon école
                 </Link>
               </div>
             </div>

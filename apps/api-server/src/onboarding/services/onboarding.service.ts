@@ -318,7 +318,7 @@ export class OnboardingService {
       schoolsPrice: pricingResult.breakdown.schoolsPrice,
       bilingualFee: pricingResult.breakdown.bilingualPrice,
       schoolsCount: draft.schoolsCount,
-      subscriptionPrice: pricingResult.amount, // Prix de l'abonnement (après 30 jours)
+      subscriptionPrice: pricingResult.amount, // Prix de l'abonnement annuel
       monthlyPrice: pricingResult.plan.monthlyPrice?.toNumber?.() ?? Number(pricingResult.plan.monthlyPrice ?? 0),
       yearlyPrice: pricingResult.plan.yearlyPrice?.toNumber?.() ?? Number(pricingResult.plan.yearlyPrice ?? 0),
       initialPayment, // Prix initial (100k FCFA)
@@ -725,11 +725,13 @@ export class OnboardingService {
           );
         }
 
-        // Créer la souscription en trial pour ce tenant
+        // ⭐ Créer la souscription ACTIVE (pas de trial — aligné sur le contrat)
+        //    Le contrat prévoit : frais d'activation à la signature + frais annuels
+        //    à la date anniversaire. Pas de période d'essai.
         const pricing = draft.priceSnapshot as any;
-        const trialStart = new Date();
-        const trialEnd = new Date(trialStart);
-        trialEnd.setDate(trialEnd.getDate() + 30);
+        const subscriptionStart = new Date();
+        const subscriptionEnd = new Date(subscriptionStart);
+        subscriptionEnd.setFullYear(subscriptionEnd.getFullYear() + 1); // 1 an
         // ⭐ Ne PAS connecter subscriptionPlan (relation vers subscription_plans
         // qui est VIDE — anciens plans BASIC_MONTHLY supprimés).
         // Le champ `plan` (string) stocke le code du plan (SEED/GROW/LEAD/NETWORK).
@@ -740,10 +742,10 @@ export class OnboardingService {
             // ⭐ PAS de subscriptionPlan connect — la table subscription_plans est vide.
             // On stocke juste le code du plan dans le champ `plan` (string).
             plan: (pricing?.planCode as string) || 'UNKNOWN',
-            status: 'TRIAL_ACTIVE',
-            startDate: trialStart,
-            trialStart,
-            trialEnd, // 30 jours
+            status: 'ACTIVE', // ⭐ Actif immédiatement (pas de trial)
+            startDate: subscriptionStart,
+            trialStart: null, // ⭐ Pas de trial
+            trialEnd: null, // ⭐ Pas de trial
             amount: Number(payment.amount) || 0,
             currency: 'XOF',
             billingCycle: periodType === 'YEARLY' ? 'YEARLY' : 'MONTHLY',
@@ -778,13 +780,13 @@ export class OnboardingService {
               tenantId: tenant.id,
               plan: helmPlanEnum,
               billingCycle: periodType === 'YEARLY' ? 'ANNUAL' : 'MONTHLY',
-              status: 'TRIALING',
+              status: 'ACTIVE', // ⭐ Actif immédiatement (pas de trial)
               monthlyAmount,
               annualAmount,
               setupFee,
-              currentPeriodStart: trialStart,
-              currentPeriodEnd: trialEnd,
-              trialEnd,
+              currentPeriodStart: subscriptionStart,
+              currentPeriodEnd: subscriptionEnd, // 1 an
+              trialEnd: null, // ⭐ Pas de trial
               bilingualEnabled: draft.bilingual,
               lastPaymentDate: new Date(),
               lastPaymentAmount: setupFee,

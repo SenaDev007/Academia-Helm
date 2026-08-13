@@ -1304,32 +1304,40 @@ export default function PremiumLandingPage() {
             initial="hidden"
             whileInView="show"
             viewport={{ once: true, amount: 0.2 }}
-            className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-6 items-stretch"
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 md:gap-6 items-stretch"
           >
             {[
               {
-                name: 'SEED',
-                badge: '1 à 150 élèves',
+                name: 'Helm Essentiel',
+                badge: '1 – 50 élèves',
                 tagline: 'Pour démarrer',
-                desc: 'Idéal pour les petites structures : tous les modules essentiels inclus, sans engagement long terme.',
+                desc: 'Tous les modules inclus : élèves, finances, examens, pédagogie, RH, communication, IA ORION. Idéal pour les petites structures.',
                 featured: false,
-                features: ['Modules cœur inclus', 'Support standard', 'Offline-first', '1 établissement'],
+                features: ['21 modules métier + 6 complémentaires', 'Web + Desktop + Mobile', 'Offline-first', 'ORION, SARA, ATLAS (IA)', 'Support Email (48h)'],
               },
               {
-                name: 'GROW',
-                badge: '151 à 400 élèves',
+                name: 'Helm Croissance',
+                badge: '51 – 150 élèves',
                 tagline: 'Pour croître',
-                desc: 'Pour les établissements en croissance : modules avancés, ORION IA, et options de personnalisation.',
+                desc: 'Tous les modules + support prioritaire WhatsApp. Pour les établissements en croissance qui veulent aller plus vite.',
                 featured: true,
-                features: ['Tous modules cœur + avancés', 'ORION IA inclus', 'Support prioritaire', 'Options activables', 'Multi-niveaux'],
+                features: ['Tous les modules inclus', 'ORION IA inclus', 'Support Email + WhatsApp (24h)', 'Paiements en ligne (FedaPay)', 'Multi-caisses', 'Multi-niveaux'],
               },
               {
-                name: 'LEAD',
-                badge: '401+ élèves',
-                tagline: 'Pour leader',
-                desc: 'Pour les grandes institutions et groupes scolaires : tarifs dégressifs, accompagnement dédié.',
+                name: 'Helm Performance',
+                badge: '151 – 400 élèves',
+                tagline: 'Pour performer',
+                desc: 'Tous les modules + support téléphonique. Pour les établissements établis qui visent l\'excellence opérationnelle.',
                 featured: false,
-                features: ['Tous modules + EduCast', 'ORION + ATLAS', 'Account manager dédié', 'Groupe scolaire', 'SLA sur-mesure'],
+                features: ['Tous les modules inclus', 'Support WhatsApp + téléphone (4h)', 'Personnalisation de marque', 'Site institutionnel', 'Tous les add-ons activables'],
+              },
+              {
+                name: 'Helm Institution',
+                badge: '401 élèves et +',
+                tagline: 'Pour les grands groupes',
+                desc: 'Tous les modules + accompagnement dédié. Pour les grandes institutions et groupes scolaires multi-établissements.',
+                featured: false,
+                features: ['Tous les modules inclus', 'Account manager dédié', 'Groupe scolaire multi-écoles', 'SLA sur-mesure', 'Accompagnement sur site'],
               },
             ].map((plan) => (
               <motion.div

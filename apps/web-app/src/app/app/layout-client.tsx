@@ -168,6 +168,20 @@ export default function AppLayoutClient({
         // ⭐ Ne PAS poser le flag si l'import a échoué → retry au prochain mount
         console.warn('[Bootstrap] Failed to import offline-sync.service:', err);
       });
+
+      // ⭐ PRÉ-CACHE DE TOUS LES MODULES (chunks JS + HTML)
+      //    Démarré en parallèle du bootstrap IDB. Permet à l'utilisateur de
+      //    naviguer en offline vers N'IMPORTE QUEL module sans l'avoir visité
+      //    en online avant. Fire-and-forget, non bloquant.
+      import('@/lib/offline/module-precache.service').then(({ precacheAllModules }) => {
+        precacheAllModules((current, total) => {
+          if (current % 10 === 0 || current === total) {
+            console.log(`[ModulePrecache] Progress: ${current}/${total}`);
+          }
+        });
+      }).catch((err) => {
+        console.warn('[ModulePrecache] Failed to start:', err);
+      });
     }, 5000);
 
     return () => clearTimeout(bootstrapTimer);

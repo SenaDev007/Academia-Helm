@@ -23,7 +23,7 @@
  * ============================================================================
  */
 
-const CACHE_VERSION = 'ah-offline-v7'; // ⭐ bump v6 → v7 (pattern App Shell : offline immédiat sans timeout)
+const CACHE_VERSION = 'ah-offline-v8'; // ⭐ bump v7 → v8 (pré-cache automatique de tous les modules au login)
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -430,7 +430,91 @@ self.addEventListener('message', (event) => {
       Promise.all(names.map((name) => caches.delete(name)));
     });
   }
+
+  // ⭐ PRÉ-CACHE DE MODULE — le client demande au SW de fetcher une route
+  //    et de mettre en cache son HTML + tous les chunks JS/CSS référencés.
+  //    Le SW parse le HTML pour trouver les <script src="..."> et <link href="...">
+  //    et les fetch en parallèle.
+  if (event.data && event.data.type === 'PRECACHE_MODULE' && event.data.url) {
+    event.waitUntil(precacheModule(event.data.url));
+  }
 });
+
+// ─── Pré-cache d'un module (HTML + chunks JS/CSS référencés) ───
+//    Fetch la route, parse le HTML pour extraire les URLs des chunks,
+//    et les fetch + mettre en cache. Permet à l'utilisateur de naviguer
+//    offline vers n'importe quel module pré-caché.
+async function precacheModule(routeUrl) {
+  try {
+    const cache = await caches.open(PAGE_CACHE);
+    const staticCache = await caches.open(STATIC_CACHE);
+
+    // 1. Fetch la page HTML
+    const response = await fetchWithTimeout(new Request(routeUrl, {
+      credentials: 'include',
+      headers: { 'Accept': 'text/html,application/xhtml+xml' },
+    }), 10000);
+
+    if (!response || !response.ok) return;
+
+    // Mettre en cache le HTML
+    await cache.put(routeUrl, response.clone());
+
+    // 2. Parser le HTML pour trouver les chunks JS/CSS
+    const html = await response.text();
+    const chunkUrls = new Set();
+
+    // Regex pour <script src="..."> et <link href="..."> (CSS)
+    const scriptRegex = /<script[^>]+src=["']([^"']+)["']/g;
+    const linkRegex = /<link[^>]+href=["']([^"']+)["']/g;
+
+    let match;
+    while ((match = scriptRegex.exec(html)) !== null) {
+      const src = match[1];
+      if (src && (src.includes('/_next/') || src.endsWith('.js'))) {
+        // Résoudre en URL absolue
+        const absUrl = new URL(src, routeUrl).href;
+        chunkUrls.add(absUrl);
+      }
+    }
+    while ((match = linkRegex.exec(html)) !== null) {
+      const href = match[1];
+      if (href && (href.includes('/_next/') || href.endsWith('.css'))) {
+        const absUrl = new URL(href, routeUrl).href;
+        chunkUrls.add(absUrl);
+      }
+    }
+
+    // 3. Fetch tous les chunks en parallèle (batch de 5)
+    const chunks = Array.from(chunkUrls);
+    if (chunks.length === 0) return;
+
+    console.log(`[SW Precache] ${routeUrl}: ${chunks.length} chunks to cache`);
+
+    const BATCH = 5;
+    for (let i = 0; i < chunks.length; i += BATCH) {
+      const batch = chunks.slice(i, i + BATCH);
+      await Promise.allSettled(
+        batch.map(async (chunkUrl) => {
+          try {
+            // Vérifier si déjà en cache
+            const existing = await staticCache.match(chunkUrl);
+            if (existing) return; // déjà caché, skip
+
+            const chunkRes = await fetchWithTimeout(new Request(chunkUrl), 8000);
+            if (chunkRes && chunkRes.ok) {
+              await staticCache.put(chunkUrl, chunkRes.clone());
+            }
+          } catch (err) {
+            // Non-bloquant
+          }
+        }),
+      );
+    }
+  } catch (err) {
+    console.warn(`[SW Precache] Failed for ${routeUrl}:`, err.message);
+  }
+}
 
 // ─── BACKGROUND SYNC API ─────────────────────────────────────────────────
 // ⭐ P2 — Quand l'onglet est fermé et que le réseau revient, le SW déclenche

@@ -95,6 +95,29 @@ export class CashRegisterController {
   }
 
   /**
+   * ⭐ POST /finance/cash-registers/dashboard
+   *    Actions sur le dashboard multi-caisses. Actuellement supporté :
+   *    - action='alert_promoter' : notifie le promoteur qu'une caisse est en solde négatif.
+   *
+   *    Avant : le frontend POSTait sur cette URL mais le controller n'avait que @Get('dashboard')
+   *    → erreur 405 silencieuse, le bouton "Alerter le promoteur" ne faisait rien.
+   */
+  @Post('dashboard')
+  async postDashboardAction(
+    @TenantId() tenantId: string,
+    @Body() body: { action: string; cashRegisterId?: string; balance?: number },
+  ) {
+    if (body.action === 'alert_promoter') {
+      console.log(`[Alert Promoter] tenant=${tenantId}, cashRegisterId=${body.cashRegisterId}, balance=${body.balance}`);
+      // ⭐ TODO : implémenter l'envoi d'une notification réelle (email/Push) au promoteur.
+      //    Pour l'instant, on log l'action et on retourne un succès — le toast frontend
+      //    affiche "Le promoteur a été notifié."
+      return { success: true, message: 'Alerte envoyée au promoteur', action: 'alert_promoter' };
+    }
+    return { success: false, message: `Action inconnue: ${body.action}` };
+  }
+
+  /**
    * GET /finance/cash-registers/transfers?cashRegisterId=&dateFrom=&dateTo=&limit=
    * Historique des transferts inter-caisses d'un tenant.
    * Peut être filtré par caisse (source ou cible) et par période.

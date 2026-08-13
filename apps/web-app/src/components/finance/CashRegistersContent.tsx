@@ -9,7 +9,7 @@ import {
   ArrowLeftRight, Send, Loader2, PiggyBank, ArrowDownCircle,
   FileSpreadsheet, FileText,
   CreditCard, Calculator, Boxes, Truck, GraduationCap, BookOpen,
-  Users, Coffee, ShieldCheck,
+  Users, Coffee, ShieldCheck, Crown,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -133,6 +133,11 @@ function getCaisseIcon(reg: CashRegister) {
   // Caisse principale / coffre-fort
   if (code === 'MAIN' || name.includes('principal') || name.includes('coffre'))
     return Gem;
+
+  // ⭐ Caisse promoteur / fondateur (code FONDE)
+  //    Icône Crown pour distinguer visuellement la caisse du promoteur
+  if (code === 'FONDE' || name.includes('fondé') || name.includes('promoteur') || name.includes('fondateur'))
+    return Crown;
 
   // Paiements en ligne (Fedapay / FedaPay)
   if (code === 'ONLINE' || name.includes('en ligne') || name.includes('paiement en ligne'))
@@ -1137,6 +1142,13 @@ export default function CashRegistersContent() {
                         </div>
                         <p className="text-[10px] text-slate-400 uppercase tracking-wide font-mono">{reg.code}</p>
                         <p className="text-xs font-semibold text-slate-800 truncate">{reg.name}</p>
+                        {/* ⭐ Badge "Promoteur" pour la caisse FONDE */}
+                        {reg.code?.toUpperCase() === 'FONDE' && (
+                          <Badge className="mt-0.5 bg-amber-500/20 text-amber-700 border border-amber-500/30 text-[9px] px-1 py-0">
+                            <Crown className="w-2.5 h-2.5 mr-0.5" />
+                            Promoteur
+                          </Badge>
+                        )}
                         {/* Description défilante (marquee) si elle est longue */}
                         {reg.description && (
                           <div className="relative overflow-hidden h-4 mt-0.5">

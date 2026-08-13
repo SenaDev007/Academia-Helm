@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
+import { useAppSession } from '@/contexts/AppSessionContext';
 import { financeService } from '@/services/finance.service';
 import { networkDetectionService } from '@/lib/offline/network-detection.service';
 import { formatCurrency } from '@/lib/utils';
@@ -86,6 +87,14 @@ export default function NewPaymentModal({
   const [sendingChannel, setSendingChannel] = useState<string | null>(null);
   const { toast } = useToast();
   const { schoolLevel } = useModuleContext();
+  const { user } = useAppSession();
+
+  // ⭐ Rôles autorisés à encaisser sur la caisse FONDE (caisse promoteur)
+  //    Empêche un caissier (ACCOUNTANT) de sélectionner la caisse du promoteur.
+  //    Doit matcher avec PROMOTER_CAISSE_ALLOWED_ROLES côté backend.
+  const PROMOTER_CAISSE_ROLES = ['PROMOTER', 'PROMOTEUR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SUPER_ADMIN'];
+  const userRole = (user?.role || '').toUpperCase();
+  const canUsePromoterCaisse = PROMOTER_CAISSE_ROLES.includes(userRole);
 
   // Panier boutique (multi-action : frais + articles boutique en un seul encaissement)
   const [shopCartItems, setShopCartItems] = useState<ShopCartItem[]>([]);
@@ -106,11 +115,21 @@ export default function NewPaymentModal({
   // Charge les caisses ouvertes
   // ⭐ Recharge quand refreshTrigger change (après un paiement réussi, le parent
   //    l'incrémente pour forcer le refresh sans fermer le modal).
+  // ⭐ FILTRE PAR RÔLE : la caisse FONDE (caisse promoteur) n'est visible que
+  //    pour les rôles PROMOTER/PROMOTEUR/SUPER_ADMIN/PLATFORM_OWNER. Un caissier
+  //    (ACCOUNTANT) ne peut pas la sélectionner — double sécurité avec le backend.
   useEffect(() => {
     financeService.getCashRegisters({ isActive: true, isOpen: true })
-      .then((data) => setOpenCashRegisters(Array.isArray(data) ? data : []))
+      .then((data) => {
+        const all = Array.isArray(data) ? data : [];
+        // ⭐ Filtrer la caisse FONDE si l'utilisateur n'a pas le droit
+        const filtered = canUsePromoterCaisse
+          ? all
+          : all.filter((c: any) => c.code !== 'FONDE');
+        setOpenCashRegisters(filtered);
+      })
       .catch(() => setOpenCashRegisters([]));
-  }, [refreshTrigger]);
+  }, [refreshTrigger, canUsePromoterCaisse]);
 
   // Charge les niveaux scolaires activés
   useEffect(() => {

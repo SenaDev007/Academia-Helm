@@ -8,7 +8,7 @@
  * - Valide que la caisse est ouverte avant d'accepter un paiement
  */
 import * as crypto from 'crypto';
-import { Injectable, NotFoundException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { TransactionType, PaymentMethod } from '@prisma/client';
 import { ReceiptFinanceService } from './receipt-finance.service';
@@ -188,6 +188,7 @@ export class FinanceTransactionService {
       paymentMethod: PaymentMethod | string;
       reference?: string;
       cashierId: string;
+      cashierRole?: string;  // ⭐ rôle du caissier pour vérif caisse FONDE
       deviceId?: string;
       receiptUrl?: string;
       cashRegisterId?: string;  // ← NOUVEAU : caisse utilisée pour ce paiement
@@ -226,6 +227,32 @@ export class FinanceTransactionService {
       }
       if (!register.isOpen) {
         throw new BadRequestException('Caisse fermée — ouvrez-la avant d\'encaisser.');
+      }
+
+      // ⭐ RESTRICTION CAISSE FONDE (caisse promoteur/fondateur)
+      //    Seuls les rôles PROMOTER/PROMOTEUR/PLATFORM_OWNER/SUPER_ADMIN peuvent
+      //    encaisser sur la caisse FONDE. Empêche un caissier (ACCOUNTANT) de
+      //    détourner des paiements destinés au promoteur.
+      //
+      //    Convention : la caisse promoteur est identifiée par son code 'FONDE'.
+      //    Cette convention est documentée dans CashRegistersContent.tsx
+      //    (PREDEFINED_CAISSES) et ne peut pas être changée par l'utilisateur
+      //    sans casser cette restriction.
+      if (register.code === 'FONDE') {
+        const PROMOTER_CAISSE_ALLOWED_ROLES = [
+          'PROMOTER', 'PROMOTEUR',
+          'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SUPER_ADMIN',
+        ];
+        const userRole = (data.cashierRole || '').toUpperCase();
+        if (!PROMOTER_CAISSE_ALLOWED_ROLES.includes(userRole)) {
+          this.logger.warn(
+            `Tentative d'encaissement sur caisse FONDE refusée — user ${data.cashierId} (role=${userRole})`,
+          );
+          throw new ForbiddenException(
+            'Seul le promoteur/fondateur peut encaisser sur la caisse FONDE. ' +
+            'Veuillez sélectionner une autre caisse.',
+          );
+        }
       }
     }
 

@@ -71,12 +71,19 @@ export class CollectionSummaryController {
     @Query('classId') classId?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('excludePromoterCaisse') excludePromoterCaisse?: string,
   ) {
     if (!academicYearId) {
       return { students: [], recap: [], installments: [] };
     }
 
-    this.logger.log(`Collection summary: tenant=${tenantId}, year=${academicYearId}, level=${levelId || 'all'}, class=${classId || 'all'}, page=${page || 'all'}, limit=${limit || 'all'}`);
+    this.logger.log(`Collection summary: tenant=${tenantId}, year=${academicYearId}, level=${levelId || 'all'}, class=${classId || 'all'}, page=${page || 'all'}, limit=${limit || 'all'}, excludePromoterCaisse=${excludePromoterCaisse || 'false'}`);
+
+    // ⭐ Toggle : exclure les paiements reçus sur la caisse FONDE (caisse promoteur)
+    //    pour ne pas gonfler les stats caissiers. Par défaut false (comportement
+    //    actuel préservé). Quand true, on filtre les transactions dont le
+    //    cashRegister.code === 'FONDE'.
+    const shouldExcludePromoter = excludePromoterCaisse === 'true' || excludePromoterCaisse === '1';
 
     // ⭐ Pagination optionnelle pour la liste `students` (pas pour `recap` qui reste non paginé).
     const pageNum = page ? parseInt(page, 10) : undefined;
@@ -199,11 +206,28 @@ export class CollectionSummaryController {
     // finance_transactions avec leurs allocations dans finance_transaction_allocations.
     // On joint les allocations → accountBreakdowns → feeStructures pour récupérer le feeType.
     const studentIds = filteredEnrollments.map((e) => e.studentId);
+
+    // ⭐ Si excludePromoterCaisse=true, récupérer l'ID de la caisse FONDE pour filtrer
+    //    les transactions. On fait une requête séparée car Prisma ne supporte pas
+    //    facilement un filtre WHERE cashRegister.code = 'FONDE' sur la relation.
+    let promoterCaisseId: string | null = null;
+    if (shouldExcludePromoter) {
+      const promoterCaisse = await this.prisma.cashRegister.findFirst({
+        where: { tenantId, code: 'FONDE' },
+        select: { id: true },
+      });
+      promoterCaisseId = promoterCaisse?.id ?? null;
+    }
+
     const transactions = await this.prisma.financeTransaction.findMany({
       where: {
         tenantId,
         academicYearId,
         studentAccount: { studentId: { in: studentIds } },
+        // ⭐ Exclure les paiements de la caisse FONDE si demandé
+        ...(shouldExcludePromoter && promoterCaisseId
+          ? { cashRegisterId: { not: promoterCaisseId } }
+          : {}),
       },
       include: {
         studentAccount: { select: { studentId: true } },

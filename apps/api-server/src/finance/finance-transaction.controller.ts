@@ -14,7 +14,14 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateTransactionDto } from './dto';
 
 const PARENT_ROLES = ['PARENT', 'PARENT_PRIMARY', 'LEGAL_GUARDIAN', 'FINANCIAL_RESPONSIBLE', 'GUARDIAN'];
-const STAFF_ROLES = ['DIRECTOR', 'SUPER_DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'CENSEUR', 'SURVEILLANT_GENERAL', 'SECRETARY_GENERAL', 'COMPTABLE', 'PROMOTER'];
+// ⭐ FIX : ajouter 'PROMOTEUR' (FR) en plus de 'PROMOTER' (EN) — le RBAC bootstrap
+//    crée le rôle système 'PROMOTEUR' (FR), mais l'onboarding crée les users avec
+//    'PROMOTER' (EN). Les deux variantes doivent être reconnues comme staff.
+const STAFF_ROLES = ['DIRECTOR', 'SUPER_DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'CENSEUR', 'SURVEILLANT_GENERAL', 'SECRETARY_GENERAL', 'COMPTABLE', 'PROMOTER', 'PROMOTEUR'];
+
+// ⭐ Rôles autorisés à encaisser sur la caisse FONDE (caisse promoteur/fondateur).
+//    Empêche un caissier (ACCOUNTANT) d'encaisser sur la caisse du promoteur.
+const PROMOTER_CAISSE_ALLOWED_ROLES = ['PROMOTER', 'PROMOTEUR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SUPER_ADMIN'];
 
 @Controller('finance/transactions')
 @UseGuards(JwtAuthGuard)
@@ -113,6 +120,8 @@ export class FinanceTransactionController {
       paymentMethod: body.paymentMethod,
       reference: body.reference,
       cashierId: user?.id ?? '',
+      // ⭐ Passer le rôle pour vérification caisse FONDE (caisse promoteur)
+      cashierRole: (user?.role || '').toUpperCase(),
       deviceId: body.deviceId,
       receiptUrl: body.receiptUrl,
       cashRegisterId: body.cashRegisterId,

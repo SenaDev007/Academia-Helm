@@ -518,6 +518,7 @@ export class ReceiptFinanceService {
       <div class="info-item"><span class="info-label">Mode de paiement :</span><span class="info-value">${methodLabels[tx.paymentMethod] || tx.paymentMethod}</span></div>
       <div class="info-item"><span class="info-label">Référence :</span><span class="info-value">${tx.reference || '—'}</span></div>
       ${tx.cashRegister ? `<div class="info-item"><span class="info-label">Caisse :</span><span class="info-value">${tx.cashRegister.code} — ${tx.cashRegister.name}</span></div>` : ''}
+      ${tx.cashRegister?.code === 'FONDE' ? `<div class="info-item" style="grid-column: 1 / -1;"><span class="info-label" style="color: #92400e; font-weight: 700;">⚠ Reçu directement par le promoteur/fondateur</span><span class="info-value"></span></div>` : ''}
       ${tx.paymentMethod === 'CASH' && tx.tenderedAmount != null ? `
         <div class="info-item"><span class="info-label">Montant remis :</span><span class="info-value" style="font-weight: 700;">${Number(tx.tenderedAmount).toLocaleString('fr-FR')} FCFA</span></div>
         <div class="info-item"><span class="info-label">Reliquat rendu :</span><span class="info-value" style="font-weight: 700; color: #059669;">${Number(tx.changeGiven ?? 0).toLocaleString('fr-FR')} FCFA</span></div>

@@ -90,6 +90,9 @@ export default function CollectionSummaryContent() {
   const [selectedLevelId, setSelectedLevelId] = useState<string>('');
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [academicYearId, setAcademicYearId] = useState<string>('');
+  // ⭐ Toggle : exclure les paiements reçus sur la caisse FONDE (caisse promoteur)
+  //    du bilan des encaissements. Permet d'isoler les stats caissiers.
+  const [excludePromoterCaisse, setExcludePromoterCaisse] = useState<boolean>(false);
 
   // Données
   const [installments, setInstallments] = useState<FeeInstallment[]>([]);
@@ -148,6 +151,8 @@ export default function CollectionSummaryContent() {
       const params = new URLSearchParams({ academicYearId });
       if (selectedLevelId) params.set('levelId', selectedLevelId);
       if (selectedClassId) params.set('classId', selectedClassId);
+      // ⭐ Exclure la caisse FONDE si demandé (filtre caissiers vs promoteur)
+      if (excludePromoterCaisse) params.set('excludePromoterCaisse', 'true');
       // ⭐ Pagination uniquement sur la liste `students` (pas sur `recap` qui reste global)
       params.set('page', String(currentPage));
       params.set('limit', String(PAGE_SIZE));
@@ -176,7 +181,7 @@ export default function CollectionSummaryContent() {
     } finally {
       setLoading(false);
     }
-  }, [academicYearId, selectedLevelId, selectedClassId, currentPage]);
+  }, [academicYearId, selectedLevelId, selectedClassId, currentPage, excludePromoterCaisse]);
 
   useEffect(() => {
     loadData();
@@ -292,6 +297,18 @@ export default function CollectionSummaryContent() {
             ))}
           </select>
         </div>
+        {/* ⭐ Toggle : exclure la caisse FONDE (caisse promoteur) du bilan.
+            Permet d'isoler les encaissements des caissiers (exclut les paiements
+            reçus directement par le promoteur/fondateur). */}
+        <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer pb-2">
+          <input
+            type="checkbox"
+            checked={excludePromoterCaisse}
+            onChange={(e) => setExcludePromoterCaisse(e.target.checked)}
+            className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+          />
+          Exclure caisse promoteur
+        </label>
       </div>
 
       {/* Tableaux */}

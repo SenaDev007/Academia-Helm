@@ -83,6 +83,21 @@ export class PromoterEligibilityController {
   }
 
   /**
+   * ⭐ Marquer une éligibilité comme soldée (l'élève a payé la totalité au fondateur).
+   * L'élève est ensuite retiré de la liste des "à payer" (getActiveStudentIds
+   * filtre sur issettled = FALSE).
+   */
+  @Post(':id/settle')
+  async markAsSettled(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Param('id') eligibilityId: string,
+  ) {
+    this.logger.log(`Mark eligibility ${eligibilityId} as settled by user ${user?.id}`);
+    return this.service.markAsSettled(tenantId, user?.id ?? '', eligibilityId);
+  }
+
+  /**
    * Vérifie si un élève est marqué (pour le toggle sur la ligne).
    */
   @Get('check')

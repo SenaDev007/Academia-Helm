@@ -448,16 +448,28 @@ export class CollectionSummaryController {
         feeStructure: { select: { id: true, feeType: true, totalAmount: true } },
       },
     });
-    // Map: studentId → { hasPersonalization: boolean, totalCustomAmount: number, totalReduction: number }
-    const overrideByStudent = new Map<string, { hasPersonalization: boolean; totalCustomAmount: number; totalReduction: number }>();
+    // Map: studentId → { hasPersonalization: boolean, totalCustomAmount: number, totalReduction: number, byFeeType: Map<feeType, {customAmount, reduction}> }
+    const overrideByStudent = new Map<string, {
+      hasPersonalization: boolean;
+      totalCustomAmount: number;
+      totalReduction: number;
+      byFeeType: Map<string, { customAmount: number; reduction: number }>;
+    }>();
     for (const ov of feeOverrides) {
       const standardAmount = Number(ov.feeStructure?.totalAmount || 0);
       const customAmount = Number(ov.customAmount || 0);
       const reduction = Math.max(0, standardAmount - customAmount);
-      const current = overrideByStudent.get(ov.studentId) || { hasPersonalization: false, totalCustomAmount: 0, totalReduction: 0 };
+      const feeType = ov.feeStructure?.feeType || 'UNKNOWN';
+      const current = overrideByStudent.get(ov.studentId) || {
+        hasPersonalization: false,
+        totalCustomAmount: 0,
+        totalReduction: 0,
+        byFeeType: new Map<string, { customAmount: number; reduction: number }>(),
+      };
       current.hasPersonalization = true;
       current.totalCustomAmount += customAmount;
       current.totalReduction += reduction;
+      current.byFeeType.set(feeType, { customAmount, reduction });
       overrideByStudent.set(ov.studentId, current);
     }
 
@@ -537,22 +549,47 @@ export class CollectionSummaryController {
 
       // ─── Montants attendus (Total dû) par type ────────────────────────────
       const inscriptionStructures = matchByType('INSCRIPTION');
-      const inscriptionExpected = inscriptionStructures.reduce(
+      const inscriptionStandard = inscriptionStructures.reduce(
         (sum, fs) => sum + Number(fs.totalAmount), 0,
       );
 
       const reinscriptionStructures = matchByType('REINSCRIPTION');
-      const reinscriptionExpected = reinscriptionStructures.reduce(
+      const reinscriptionStandard = reinscriptionStructures.reduce(
         (sum, fs) => sum + Number(fs.totalAmount), 0,
       );
 
       const tuitionStructures = matchByType('TUITION');
-      const totalTuitionExpected = tuitionStructures.reduce(
+      const tuitionStandard = tuitionStructures.reduce(
         (sum, fs) => sum + Number(fs.totalAmount), 0,
       );
 
       // Arriéré attendu depuis StudentArrear (importé / reporté de l'année précédente)
       const arrearExpected = arrearInfo.expected;
+
+      // ⭐ Appliquer les FeeOverride (personnalisations) sur les montants individuels
+      //    Si l'élève a un FeeOverride sur INSCRIPTION → utiliser customAmount au lieu de standard
+      //    Si l'élève a un FeeOverride sur TUITION → utiliser customAmount au lieu de standard
+      const overrideInfo = overrideByStudent.get(enrollment.studentId) || {
+        hasPersonalization: false,
+        totalCustomAmount: 0,
+        totalReduction: 0,
+        byFeeType: new Map<string, { customAmount: number; reduction: number }>(),
+      };
+
+      const inscriptionOverride = overrideInfo.byFeeType.get('INSCRIPTION');
+      const reinscriptionOverride = overrideInfo.byFeeType.get('REINSCRIPTION');
+      const tuitionOverride = overrideInfo.byFeeType.get('TUITION');
+
+      // ⭐ Montants attendus APRÈS personnalisation
+      const inscriptionExpected = inscriptionOverride
+        ? inscriptionOverride.customAmount  // Montant personnalisé
+        : inscriptionStandard;              // Montant standard
+      const reinscriptionExpected = reinscriptionOverride
+        ? reinscriptionOverride.customAmount
+        : reinscriptionStandard;
+      const totalTuitionExpected = tuitionOverride
+        ? tuitionOverride.customAmount
+        : tuitionStandard;
 
       // ─── Distribution FIFO des paiements de scolarité sur les tranches ────
       // Si un parent paie plus que la Tranche 1, le surplus est affecté
@@ -590,12 +627,10 @@ export class CollectionSummaryController {
       // dans totalTuitionPaid → Total payé.
 
       // ─── Totaux cohérents ─────────────────────────────────────────────────
-      // ⭐ totalTuitionExpected = "Scolarité" (colonne demandée par l'utilisateur)
-      //    totalDue = Inscription + Réinscription + Scolarité + Arriérés
-      // ⭐ Personnalisation : si l'élève a un FeeOverride, on ajuste totalDue en
-      //    remplaçant le montant standard par le montant personnalisé.
-      const overrideInfo = overrideByStudent.get(enrollment.studentId) || { hasPersonalization: false, totalCustomAmount: 0, totalReduction: 0 };
-      const totalDue = inscriptionExpected + reinscriptionExpected + totalTuitionExpected + arrearExpected - overrideInfo.totalReduction;
+      // ⭐ Les montants inscriptionExpected, reinscriptionExpected, totalTuitionExpected
+      //    sont DÉJÀ personnalisés (FeeOverride appliqué ci-dessus).
+      //    Donc totalDue = somme directe (pas besoin de soustraire la réduction).
+      const totalDue = inscriptionExpected + reinscriptionExpected + totalTuitionExpected + arrearExpected;
       const totalPaid = inscriptionPaid + reinscriptionPaid + arrearPaid + totalTuitionPaid + otherPaid;
       const reste = Math.max(0, totalDue - totalPaid);
 

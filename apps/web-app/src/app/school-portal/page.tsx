@@ -18,7 +18,7 @@ import { headers } from 'next/headers';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 import InstitutionalWebsite from '@/components/portal/InstitutionalWebsite';
-import PWAInstallPrompt from '@/components/pwa/PWAInstallPrompt';
+import { PWAInstallPrompt } from '@/components/pwa/PWAInstallPrompt';
 import { BRAND } from '@/lib/brand';
 import { isReservedSubdomain } from '@/lib/tenant/constants';
 import { extractBrandingFromTenant } from '@/lib/tenant/branding';

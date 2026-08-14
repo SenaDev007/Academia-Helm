@@ -315,7 +315,7 @@ export class ContractController {
 
   <div style="background: #0a1d3f; padding: 16px; border-radius: 0 0 8px 8px; text-align: center;">
     <p style="color: #bfdbfe; font-size: 11px; margin: 0;">
-      YEHI OR Tech — Academia Helm · contact@academiahelm.com · www.academiahelm.com<br>
+      YEHI OR Tech — Academia Helm · support@academiahelm.com · www.academiahelm.com<br>
       Parakou, République du Bénin · © 2026
     </p>
   </div>
@@ -403,7 +403,7 @@ export class ContractController {
 
   <div style="background: #0a1d3f; padding: 16px; border-radius: 0 0 8px 8px; text-align: center;">
     <p style="color: #bfdbfe; font-size: 11px; margin: 0;">
-      YEHI OR Tech — Academia Helm · contact@academiahelm.com · www.academiahelm.com
+      YEHI OR Tech — Academia Helm · support@academiahelm.com · www.academiahelm.com
     </p>
   </div>
 </body>

@@ -474,7 +474,7 @@ export class ContractGenerationService {
 </div>
 
 <div class="footer">
-  YEHI OR Tech — Academia Helm · contact@academiahelm.com · www.academiahelm.com · Parakou, République du Bénin
+  YEHI OR Tech — Academia Helm · support@academiahelm.com · www.academiahelm.com · Parakou, République du Bénin
 </div>
 
 </body>

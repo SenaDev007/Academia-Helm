@@ -10,7 +10,7 @@
  * Configuration (env vars) :
  *   - VAPID_PUBLIC_KEY   : clé publique VAPID (base64 URL-safe)
  *   - VAPID_PRIVATE_KEY  : clé privée VAPID (base64 URL-safe)
- *   - VAPID_SUBJECT      : mailto:contact@academiahelm.com (ou URL)
+ *   - VAPID_SUBJECT      : mailto:support@academiahelm.com (ou URL)
  *
  * Générer les clés : npx web-push generate-vapid-keys
  *
@@ -46,7 +46,7 @@ export class PushService implements OnModuleInit {
     const publicKey = this.configService.get<string>('VAPID_PUBLIC_KEY');
     const privateKey = this.configService.get<string>('VAPID_PRIVATE_KEY');
     const subject = this.configService.get<string>('VAPID_SUBJECT')
-      || 'mailto:contact@academiahelm.com';
+      || 'mailto:support@academiahelm.com';
 
     if (!publicKey || !privateKey) {
       this.logger.warn(

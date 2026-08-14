@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import * as XLSX from 'xlsx';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  Download, FileText, Loader2, Filter,
+  Download, Loader2, Filter,
   ChevronLeft, ChevronRight, MoreHorizontal, Upload, Crown, Search, X, CheckCircle2,
   Pencil, Save, XCircle, AlertTriangle,
 } from 'lucide-react';
@@ -334,13 +335,90 @@ export default function CollectionSummaryContent() {
   }, [studentRows, searchQuery]);
 
   // ─── Export Excel ───────────────────────────────────────────────────────────
+  // ⭐ Génère un fichier Excel (.xlsx) avec 2 feuilles :
+  //    1. "Bilan détaillé" — un élève par ligne avec toutes les colonnes
+  //    2. "Récapitulatif" — une classe par ligne avec totaux
+  //    Utilise la lib xlsx (déjà présente dans les dépendances web-app).
   const handleExportExcel = () => {
-    console.log('Export Excel — à implémenter');
-  };
+    if (studentRows.length === 0 && recapRows.length === 0) {
+      alert('Aucune donnée à exporter. Veuillez sélectionner une année scolaire et une classe.');
+      return;
+    }
 
-  // ─── Export PDF ─────────────────────────────────────────────────────────────
-  const handleExportPDF = () => {
-    console.log('Export PDF — à implémenter');
+    try {
+      const wb = XLSX.utils.book_new();
+      const instLabels = installments.map((i) => i.label);
+
+      // ── Feuille 1 : Bilan détaillé (un élève par ligne) ──
+      const detailData = studentRows.map((row) => {
+        const instData: Record<string, number> = {};
+        for (const label of instLabels) {
+          instData[label] = row.tuitionInstallments?.[label] || 0;
+        }
+        return {
+          'Noms et Prénoms': row.studentName,
+          'Classe': row.className,
+          'Arriéré payé': row.arrearPaid || 0,
+          'Inscription payée': row.inscriptionPaid || 0,
+          'Réinscription payée': row.reinscriptionPaid || 0,
+          'Scolarité (attendu)': row.scolarite ?? row.totalTuitionExpected ?? 0,
+          'Personnalisation': row.hasPersonalization ? `Oui (${formatCurrency(row.personalizationReduction || 0)})` : 'Non',
+          ...instData,
+          'Total dû': row.totalDue || 0,
+          'Total payé': row.totalPaid || 0,
+          'Reste à payer': row.reste || 0,
+        };
+      });
+      const wsDetail = XLSX.utils.json_to_sheet(detailData);
+      wsDetail['!cols'] = [
+        { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 16 },
+        { wch: 16 }, { wch: 18 },
+        ...instLabels.map(() => ({ wch: 12 })),
+        { wch: 12 }, { wch: 12 }, { wch: 14 },
+      ];
+      XLSX.utils.book_append_sheet(wb, wsDetail, 'Bilan détaillé');
+
+      // ── Feuille 2 : Récapitulatif (une classe par ligne) ──
+      if (recapRows.length > 0) {
+        const recapData = recapRows.map((row) => {
+          const instData: Record<string, number> = {};
+          for (const label of instLabels) {
+            instData[label] = row.tuitionInstallments?.[label] || 0;
+          }
+          return {
+            'Effectif': row.effectif,
+            'Classe': row.className,
+            'Arriérés payés': row.arrieresPaid || 0,
+            'Inscription payée': row.inscriptionPaid || 0,
+            'Réinscription payée': row.reinscriptionPaid || 0,
+            'Scolarité (attendu)': row.scolarite ?? row.totalTuition ?? 0,
+            'Personnalisations': row.personalizationCount || 0,
+            'Réduction totale': row.personalizationReduction || 0,
+            ...instData,
+            'Total dû': row.totalDue || 0,
+            'Total payé': row.totalPaid || 0,
+            'Reste à payer': row.reste || 0,
+            'Solde par classe': row.soldeParClasse || 0,
+          };
+        });
+        const wsRecap = XLSX.utils.json_to_sheet(recapData);
+        wsRecap['!cols'] = [
+          { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 18 },
+          { wch: 18 }, { wch: 14 }, { wch: 16 },
+          ...instLabels.map(() => ({ wch: 12 })),
+          { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 16 },
+        ];
+        XLSX.utils.book_append_sheet(wb, wsRecap, 'Récapitulatif');
+      }
+
+      // ── Générer le fichier et déclencher le téléchargement ──
+      const dateStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      const fileName = `bilan-encaissements-${dateStr}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+    } catch (err: any) {
+      console.error('Export Excel error:', err);
+      alert(`Erreur lors de l'export Excel: ${err.message}`);
+    }
   };
 
   // ─── Render ─────────────────────────────────────────────────────────────────
@@ -384,14 +462,24 @@ export default function CollectionSummaryContent() {
               </Button>
             </>
           )}
-          <Button variant="outline" size="sm" onClick={() => setModalImport(true)} disabled={!academicYearId}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setModalImport(true)}
+            disabled={!academicYearId}
+            className="hover:bg-blue-50 hover:border-blue-400 hover:text-blue-700 transition-colors"
+          >
             <Upload className="w-4 h-4 mr-2" /> Importer
           </Button>
-          <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={loading}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportExcel}
+            disabled={loading || (studentRows.length === 0 && recapRows.length === 0)}
+            className="hover:bg-green-50 hover:border-green-400 hover:text-green-700 transition-colors"
+            title="Exporter le bilan des encaissements en Excel"
+          >
             <Download className="w-4 h-4 mr-2" /> Excel
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleExportPDF} disabled={loading}>
-            <FileText className="w-4 h-4 mr-2" /> PDF
           </Button>
         </div>
       </div>

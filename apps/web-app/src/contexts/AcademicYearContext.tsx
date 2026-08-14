@@ -109,34 +109,44 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!availableYears.length) {
       // ⭐ NE PAS clear l'année si on est en train de charger (isLoading/isFetching).
-      //    Une connexion instable peut faire retourner [] au fetch, mais ça
-      //    ne veut pas dire qu'il n'y a pas d'année — juste que le réseau a
-      //    flanché temporairement. On garde le currentYear et le localStorage
-      //    intacts pour que l'utilisateur puisse continuer à travailler.
-      //    L'année sera rechargée quand le réseau sera stable.
       return;
     }
+
+    // ⭐ Priorité 1 : l'année active (isActive=true en DB) — c'est la source
+    //    de vérité serveur. Si l'année active a changé (ex: passage 2025-2026
+    //    → 2026-2027), on DOIT l'utiliser même si le localStorage a encore
+    //    l'ancienne année.
     const activeYear = availableYears.find((y) => y.isCurrent);
+
+    // ⭐ Priorité 2 : l'année sauvegardée dans localStorage (choix utilisateur)
+    //    MAIS seulement si cette année existe encore dans availableYears.
     const savedYearId = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_ID) : null;
-    const selectedYear =
-      activeYear ?? (savedYearId ? availableYears.find((y) => y.id === savedYearId) : null) ?? availableYears[0] ?? null;
+    const savedYear = savedYearId ? availableYears.find((y) => y.id === savedYearId) : null;
+
+    // ⭐ Si l'année active du serveur est différente de l'année sauvegardée,
+    //    l'année active gagne — le serveur a la vérité (ex: admin a activé
+    //    2026-2027 en DB, le localStorage a encore 2025-2026).
+    const selectedYear = activeYear ?? savedYear ?? availableYears[0] ?? null;
 
     if (selectedYear) {
       const previousYearId = currentYear?.id;
       setCurrentYearState(selectedYear);
+
+      // ⭐ TOUJOURS écrire dans localStorage, même si l'année n'a pas changé.
+      //    Cela garantit que si le localStorage était stale (ancienne année),
+      //    il est mis à jour avec l'année active du serveur.
       if (typeof window !== 'undefined') {
         localStorage.setItem(STORAGE_KEY_ID, selectedYear.id);
-        // Synchroniser aussi l'objet JSON complet pour l'intercepteur Axios
         try {
           localStorage.setItem(STORAGE_KEY_OBJ, JSON.stringify(selectedYear));
         } catch {
           /* ignore quota errors */
         }
       }
+
       // Si l'année a changé (pas juste le premier chargement), invalider les queries
       if (previousYearId && previousYearId !== selectedYear.id) {
         invalidateQueriesForYearChange();
-        // Dispatcher un CustomEvent pour informer les composants hors React
         if (typeof window !== 'undefined') {
           window.dispatchEvent(
             new CustomEvent(ACADEMIC_YEAR_CHANGED_EVENT, {

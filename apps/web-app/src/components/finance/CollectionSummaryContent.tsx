@@ -1109,41 +1109,35 @@ function PromoterEligibleList({
         <Table>
           <TableHeader>
             <TableRow className="bg-amber-50">
-              <TableHead>Élève</TableHead>
-              <TableHead>Classe</TableHead>
-              <TableHead>Motif</TableHead>
-              <TableHead className="text-right">Total dû</TableHead>
-              <TableHead className="text-right">Avance reçue</TableHead>
-              <TableHead className="text-right">Reste à payer</TableHead>
-              <TableHead className="text-center">Échéance</TableHead>
-              <TableHead className="text-center">Marqué par</TableHead>
-              <TableHead className="text-center">Statut</TableHead>
+              <TableHead className="whitespace-nowrap">Élève</TableHead>
+              <TableHead className="whitespace-nowrap">Classe</TableHead>
+              <TableHead className="whitespace-nowrap">Motif</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Total dû</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Avance reçue</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Reste à payer</TableHead>
+              <TableHead className="text-center whitespace-nowrap">Échéance</TableHead>
+              <TableHead className="text-center whitespace-nowrap">Marqué par</TableHead>
+              <TableHead className="text-center whitespace-nowrap">Statut</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredList.map((row) => (
               <TableRow key={row.id} className={`hover:bg-amber-50/50 ${row.isSettled ? 'opacity-50' : ''}`}>
-                <TableCell className="font-medium">
+                <TableCell className="font-medium whitespace-nowrap">
                   <div className="flex items-center gap-2">
                     <Crown className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                    <div>
-                      <div className="font-semibold">{row.studentName}</div>
-                      <div className="text-xs text-gray-500">{row.studentMatricule || '—'}</div>
+                    <div className="whitespace-nowrap">
+                      <div className="font-semibold whitespace-nowrap">{row.studentName}</div>
+                      <div className="text-xs text-gray-500 whitespace-nowrap">{row.studentMatricule || '—'}</div>
                     </div>
                   </div>
                 </TableCell>
-                <TableCell>{row.className}</TableCell>
-                <TableCell className="text-sm text-gray-700 max-w-xs">
-                  <div className="truncate" title={row.motif}>{row.motif}</div>
-                  {/* ⭐ Détail des montants */}
-                  {(row.inscriptionExpected > 0 || row.tuitionExpected > 0) && (
-                    <div className="text-[10px] text-gray-400 mt-1">
-                      {row.inscriptionExpected > 0 && `Insc: ${formatCurrency(row.inscriptionExpected)} · `}
-                      {row.reinscriptionExpected > 0 && `Réinsc: ${formatCurrency(row.reinscriptionExpected)} · `}
-                      {row.tuitionExpected > 0 && `Scol: ${formatCurrency(row.tuitionExpected)} · `}
-                      {row.arrearExpected > 0 && `Arrier: ${formatCurrency(row.arrearExpected)}`}
-                    </div>
-                  )}
+                <TableCell className="whitespace-nowrap">{row.className}</TableCell>
+                <TableCell className="text-sm text-gray-700">
+                  {/* ⭐ Motif sur une seule ligne avec truncate + tooltip */}
+                  <div className="truncate max-w-[200px] whitespace-nowrap" title={row.motif}>
+                    {row.motif}
+                  </div>
                 </TableCell>
                 <TableCell className="text-right text-sm font-bold text-red-700 whitespace-nowrap">
                   {row.totalDue > 0 ? formatCurrency(row.totalDue) : '—'}
@@ -1160,25 +1154,25 @@ function PromoterEligibleList({
                     <span className="text-gray-400">—</span>
                   )}
                 </TableCell>
-                <TableCell className="text-center text-sm">
+                <TableCell className="text-center text-sm whitespace-nowrap">
                   {row.expectedDate
                     ? new Date(row.expectedDate).toLocaleDateString('fr-FR', {
                         day: '2-digit', month: 'short', year: 'numeric',
                       })
                     : <span className="text-gray-400">—</span>}
                 </TableCell>
-                <TableCell className="text-center text-sm text-gray-600">
+                <TableCell className="text-center text-sm text-gray-600 whitespace-nowrap">
                   {row.createdByName || '—'}
                 </TableCell>
-                <TableCell className="text-center">
+                <TableCell className="text-center whitespace-nowrap">
                   {row.isSettled ? (
-                    <Badge className="bg-green-100 text-green-700 border border-green-200 text-[10px]">
+                    <Badge className="bg-green-100 text-green-700 border border-green-200 text-[10px] whitespace-nowrap">
                       <CheckCircle2 className="w-3 h-3 mr-1" /> Soldé
                     </Badge>
                   ) : (
                     <button
                       onClick={() => handleSettle(row.id)}
-                      className="px-2 py-1 text-[10px] font-bold bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                      className="px-2 py-1 text-[10px] font-bold bg-green-600 text-white rounded hover:bg-green-700 transition-colors whitespace-nowrap"
                       title="Marquer comme soldé (l'élève a payé la totalité au fondateur)"
                     >
                       Marquer soldé

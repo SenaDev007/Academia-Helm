@@ -122,6 +122,9 @@ export class PromoterEligibilityService {
   }
 
   async listActive(tenantId: string, academicYearId: string): Promise<PromoterEligibilityRow[]> {
+    // ⭐ Récupère aussi les montants attendus depuis student_accounts + account_breakdowns
+    // pour les anciens enregistrements où advanceAmount/totalDue/remainingAmount
+    // n'ont pas été renseignés à l'activation.
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT
          pe.id, pe.studentid, pe.academicyearid, pe.motif,
@@ -130,9 +133,16 @@ export class PromoterEligibilityService {
          pe.tuitionexpected, pe.arrearexpected, pe.totaldue, pe.remainingamount,
          s."firstName", s."lastName", s.matricule,
          c.name as classname,
-         u."firstName" as userfirstname, u."lastName" as userlastname
+         u."firstName" as userfirstname, u."lastName" as userlastname,
+         sa."totalDue" as sa_totaldue,
+         sa."totalPaid" as sa_totalpaid,
+         sa."balance" as sa_balance,
+         sa."arrearsAmount" as sa_arrears
        FROM promoter_payment_eligibility pe
        INNER JOIN students s ON s.id = pe.studentid
+       LEFT JOIN student_accounts sa ON sa."studentId" = pe.studentid
+         AND sa."academicYearId" = pe.academicyearid
+         AND sa."tenantId" = pe.tenantid
        LEFT JOIN classes c ON c.id = (
          SELECT se."classId" FROM student_enrollments se
          WHERE se."studentId" = pe.studentid
@@ -151,6 +161,24 @@ export class PromoterEligibilityService {
       const userFirstName = r.userfirstname || '';
       const userLastName = r.userlastname || '';
       const createdByName = `${userFirstName} ${userLastName}`.trim();
+
+      // ⭐ Si les montants détaillés ne sont pas renseignés (anciens enregistrements),
+      //    on les calcule depuis student_accounts.
+      const saTotalDue = Number(r.sa_totaldue || 0);
+      const saTotalPaid = Number(r.sa_totalpaid || 0);
+      const saBalance = Number(r.sa_balance || 0);
+      const saArrears = Number(r.sa_arrears || 0);
+
+      const advanceAmount = Number(r.advanceamount) > 0
+        ? Number(r.advanceamount)
+        : saTotalPaid; // fallback: avance = total payé
+      const totalDue = Number(r.totaldue) > 0
+        ? Number(r.totaldue)
+        : saTotalDue; // fallback: total dû depuis student_accounts
+      const remainingAmount = Number(r.remainingamount) > 0
+        ? Number(r.remainingamount)
+        : saBalance > 0 ? saBalance : Math.max(0, totalDue - advanceAmount);
+
       return {
         id: r.id,
         studentId: r.studentid,
@@ -164,13 +192,13 @@ export class PromoterEligibilityService {
         isSettled: r.issettled || false,
         createdAt: r.createdat ? new Date(r.createdat).toISOString() : '',
         createdByName,
-        advanceAmount: Number(r.advanceamount || 0),
+        advanceAmount,
         inscriptionExpected: Number(r.inscriptionexpected || 0),
         reinscriptionExpected: Number(r.reinscriptionexpected || 0),
         tuitionExpected: Number(r.tuitionexpected || 0),
-        arrearExpected: Number(r.arrearexpected || 0),
-        totalDue: Number(r.totaldue || 0),
-        remainingAmount: Number(r.remainingamount || 0),
+        arrearExpected: Number(r.arrearexpected || 0) || saArrears,
+        totalDue,
+        remainingAmount,
       };
     });
   }

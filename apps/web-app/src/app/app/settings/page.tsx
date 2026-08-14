@@ -1326,6 +1326,26 @@ export default function SettingsPage() {
     }
   };
 
+  /**
+   * ⭐ Active/désactive individuellement une classe pédagogique (EducationGrade).
+   *    Permet à l'école de n'activer que les classes réellement disponibles
+   *    au niveau Secondaire (ex: 6e+5e mais pas 2nde si pas de 2nd cycle).
+   */
+  const handleSetEducationGradeEnabled = async (gradeId: string, isEnabled: boolean) => {
+    try {
+      setStructureBusy(true);
+      await settingsService.setEducationGradeEnabled(gradeId, isEnabled, effectiveTenantId ?? undefined);
+      const res = await settingsService.getEducationStructure(effectiveTenantId ?? undefined);
+      if (res?.levels) setEducationStructure(res);
+      showToast('success', isEnabled ? 'Classe activée' : 'Classe désactivée');
+      notifySchoolLevelsUpdated();
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur');
+    } finally {
+      setStructureBusy(false);
+    }
+  };
+
   // ── Séries du 2nd cycle secondaire (CRUD) ──
   // Charger la liste des séries depuis le backend
   const loadEducationSeries = useCallback(async () => {
@@ -3432,21 +3452,61 @@ export default function SettingsPage() {
                             <div key={cycle.id} className="ml-2">
                               <div className="text-sm font-medium text-gray-700 mb-1">{cycle.name}</div>
                               <div className="flex flex-wrap gap-2 ml-2">
-                                {(cycle.grades || []).map((grade: any) => (
-                                  <span key={grade.id} className="inline-flex items-center gap-1.5 flex-wrap">
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-800 text-sm">
-                                      {formatGradeLabel(grade.name)}
-                                    </span>
-                                    {grade.series && (
-                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 text-xs font-medium" title="Série">
-                                        Série {grade.series.code}
+                                {(cycle.grades || []).map((grade: any) => {
+                                  const gradeEnabled = grade.isEnabled !== false;
+                                  // ⭐ Pour le niveau SECONDAIRE, on affiche un toggle individuel
+                                  //    sur chaque classe (6e, 5e, 2nde, etc.) pour permettre
+                                  //    à l'école de n'activer que les classes réellement disponibles.
+                                  const isSecondary = level.name === 'SECONDAIRE';
+                                  return (
+                                    <span
+                                      key={grade.id}
+                                      className={`inline-flex items-center gap-1.5 flex-wrap rounded ${gradeEnabled ? '' : 'opacity-40'}`}
+                                    >
+                                      <span
+                                        className={`inline-flex items-center px-2 py-0.5 rounded text-sm ${
+                                          gradeEnabled
+                                            ? 'bg-blue-50 text-blue-800'
+                                            : 'bg-gray-100 text-gray-500 line-through'
+                                        }`}
+                                      >
+                                        {formatGradeLabel(grade.name)}
                                       </span>
-                                    )}
-                                  </span>
-                                ))}
+                                      {grade.series && (
+                                        <span
+                                          className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 text-xs font-medium"
+                                          title="Série"
+                                        >
+                                          Série {grade.series.code}
+                                        </span>
+                                      )}
+                                      {isSecondary && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSetEducationGradeEnabled(grade.id, !gradeEnabled)}
+                                          disabled={structureBusy}
+                                          className="p-0.5"
+                                          title={gradeEnabled ? 'Désactiver cette classe' : 'Activer cette classe'}
+                                        >
+                                          {gradeEnabled ? (
+                                            <ToggleRight className="w-5 h-5 text-green-600" aria-label="Désactiver la classe" />
+                                          ) : (
+                                            <ToggleLeft className="w-5 h-5 text-gray-400" aria-label="Activer la classe" />
+                                          )}
+                                        </button>
+                                      )}
+                                    </span>
+                                  );
+                                })}
                               </div>
                             </div>
                           ))}
+                          {level.name === 'SECONDAIRE' && (
+                            <p className="text-xs text-gray-500 ml-2 mt-1">
+                              💡 Activez uniquement les classes/séries réellement disponibles dans votre école.
+                              Les classes désactivées n'apparaîtront pas dans les listes déroulantes.
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>

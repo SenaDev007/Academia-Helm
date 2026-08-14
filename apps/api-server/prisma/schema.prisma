@@ -900,6 +900,7 @@ model EducationGrade {
   name       String
   code       String
   order      Int              @default(0)
+  isEnabled  Boolean          @default(true)
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
   seriesId   String?
@@ -910,6 +911,7 @@ model EducationGrade {
   @@unique([cycleId, code])
   @@index([cycleId])
   @@index([seriesId])
+  @@index([isEnabled])
   @@map("education_grades")
 }
 

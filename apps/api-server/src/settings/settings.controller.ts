@@ -1963,6 +1963,23 @@ export class SettingsController {
     return this.educationStructureService.setLevelEnabled(this.resolveTid(tenantId, user, req), id, data.isEnabled);
   }
 
+  /**
+   * ⭐ PUT /settings/education/grades/:id/enabled
+   * Active/désactive individuellement une classe pédagogique (EducationGrade).
+   * Permet à l'école de n'activer que les classes réellement disponibles
+   * au niveau Secondaire (ex: 6e+5e mais pas 2nde).
+   */
+  @Put('education/grades/:id/enabled')
+  async setEducationGradeEnabled(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Param('id') id: string,
+    @Body() data: { isEnabled: boolean },
+  ) {
+    return this.educationStructureService.setGradeEnabled(this.resolveTid(tenantId, user, req), id, data.isEnabled);
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   //  SÉRIES DU 2ND CYCLE SECONDAIRE — CRUD
   //  Permet à l'utilisateur d'ajouter/supprimer des séries (A1, A2, B, C, D,

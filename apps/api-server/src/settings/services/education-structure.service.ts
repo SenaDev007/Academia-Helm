@@ -488,6 +488,38 @@ export class EducationStructureService {
     });
   }
 
+  /**
+   * ⭐ Activer/désactiver individuellement une classe pédagogique (EducationGrade).
+   *    Permet à l'école de n'activer que les classes réellement disponibles
+   *    au niveau Secondaire (ex: activer 6e+5e mais pas 2nde si pas de 2nd cycle).
+   *
+   *    Vérifie que le grade appartient bien au tenant (via cycle → level → tenantId).
+   */
+  async setGradeEnabled(tenantId: string, gradeId: string, isEnabled: boolean) {
+    const grade = await this.prisma.educationGrade.findFirst({
+      where: { id: gradeId },
+      include: { cycle: { include: { level: true } } },
+    });
+    if (!grade) {
+      throw new NotFoundException('Classe pédagogique non trouvée.');
+    }
+    // Vérifier que le grade appartient bien au tenant
+    if (grade.cycle?.level?.tenantId !== tenantId) {
+      throw new NotFoundException('Classe pédagogique non trouvée dans ce tenant.');
+    }
+
+    const updated = await this.prisma.educationGrade.update({
+      where: { id: gradeId },
+      data: { ...prismaUpdateDefaults(), isEnabled },
+    });
+
+    this.logger.log(
+      `Grade ${grade.code} (${grade.name}) ${isEnabled ? 'activé' : 'désactivé'} pour tenant ${tenantId}`,
+    );
+
+    return updated;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   //  SÉRIES DU 2ND CYCLE SECONDAIRE — CRUD
   // ═══════════════════════════════════════════════════════════════════════

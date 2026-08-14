@@ -549,6 +549,19 @@ export async function setEducationLevelEnabled(id: string, isEnabled: boolean, t
   });
 }
 
+/**
+ * ⭐ Active/désactive individuellement une classe pédagogique (EducationGrade).
+ *    Permet à l'école de n'activer que les classes réellement disponibles
+ *    au niveau Secondaire (ex: 6e+5e mais pas 2nde si pas de 2nd cycle).
+ */
+export async function setEducationGradeEnabled(id: string, isEnabled: boolean, tenantId?: string | null) {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/education/grades/${id}/enabled${qs}`, {
+    method: 'PUT',
+    body: JSON.stringify({ isEnabled }),
+  });
+}
+
 // ============================================================================
 // SÉRIES DU 2ND CYCLE SECONDAIRE — CRUD
 // Permet d'ajouter/supprimer des séries (A1, A2, B, C, D, G1, G2, F1-F4, etc.)

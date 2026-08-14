@@ -77,6 +77,7 @@ interface School {
   id: string;
   name: string;
   slug: string;
+  subdomain?: string;
   logoUrl?: string;
   city?: string;
   schoolType?: string;
@@ -236,6 +237,16 @@ export default function PortalPage() {
   const handleContinue = async () => {
     if (!selectedPortal || !selectedSchool) return;
 
+    // ⭐ FIX : s'assurer qu'on a un tenantSlug valide avant d'appeler
+    //    getTenantRedirectUrl qui lance une exception si slug est vide.
+    //    Utiliser subdomain comme fallback si slug est manquant.
+    const effectiveSlug = selectedSchool.slug || (selectedSchool as any).subdomain || '';
+    if (!effectiveSlug) {
+      console.error('[Portal] Aucun slug/subdomain trouvé pour:', selectedSchool);
+      alert('Erreur: cette école n\\'a pas de slug configuré. Veuillez contacter le support.');
+      return;
+    }
+
     setIsContinuing(true);
 
     try {
@@ -246,7 +257,7 @@ export default function PortalPage() {
             'academia_portal_school',
             JSON.stringify({
               name: selectedSchool.name,
-              slug: selectedSchool.slug || null,
+              slug: effectiveSlug,
               logoUrl: selectedSchool.logoUrl || null,
               city: selectedSchool.city || null,
               schoolType: selectedSchool.schoolType || null,
@@ -258,33 +269,25 @@ export default function PortalPage() {
       if (selectedPortal === 'PUBLIC') {
         // Conforme au document : pré-inscription & acquisition, aucune auth requise
         // Redirige vers la page publique de l'école pour pré-inscription
-        window.location.href = `/public/pre-enrollment?school=${selectedSchool.slug}`;
+        window.location.href = `/public/pre-enrollment?school=${effectiveSlug}`;
         return;
       }
 
       // ── Redirection IMMÉDIATE vers /login (sans attendre le logging) ──
-      // On calcule l'URL et on redirige tout de suite. Le logging se fait
-      // en arrière-plan via navigator.sendBeacon (non-bloquant).
-      //
-      // Avant : `await redirectToTenant(...)` pouvait attendre 5s+ si le
-      // backend était en cold start (logging fetch). Maintenant : calcul URL
-      // synchrone + logging fire-and-forget via sendBeacon.
       const redirectUrl = getTenantRedirectUrl({
-        tenantSlug: selectedSchool.slug,
+        tenantSlug: effectiveSlug,
         tenantId: selectedSchool.id,
         path: '/login',
         portalType: selectedPortal,
         queryParams: { portal: selectedPortal.toLowerCase() },
-        skipLogging: true, // on gère le logging nous-mêmes ci-dessous
+        skipLogging: true,
       });
 
       // Logger en arrière-plan (fire-and-forget, ne bloque pas la navigation)
-      // navigator.sendBeacon est spécifiquement conçu pour envoyer des données
-      // juste avant un changement de page sans ralentir le navigateur.
       try {
         const logPayload = JSON.stringify({
           tenantId: selectedSchool.id,
-          tenantSlug: selectedSchool.slug,
+          tenantSlug: effectiveSlug,
           fromUrl: window.location.href,
           toUrl: redirectUrl,
           method: 'query',
@@ -308,6 +311,9 @@ export default function PortalPage() {
       window.location.href = redirectUrl;
     } catch (error) {
       console.error('[Portal] Erreur lors de la redirection:', error);
+      // ⭐ FIX : ne pas juste logger — afficher une erreur user-friendly
+      //    au lieu de laisser l'erreur remonter jusqu'à l'error boundary
+      alert('Une erreur est survenue lors de la redirection. Veuillez réessayer ou contacter le support.');
       setIsContinuing(false);
     }
   };

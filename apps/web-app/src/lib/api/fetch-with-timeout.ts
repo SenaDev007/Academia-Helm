@@ -13,8 +13,19 @@
  * ============================================================================
  */
 
-/** Timeout par défaut pour les appels backend internes (ms) */
-export const DEFAULT_FETCH_TIMEOUT = 8_000;
+/** Timeout par défaut pour les appels backend internes (ms)
+ *
+ * ⭐ Porté de 8s à 15s — Neon (free tier) suspend le compute après 5 min d'inactivité.
+ *    Au réveil (cold start), Neon met 5-10s à répondre. Un timeout de 8s provoque
+ *    des "Failed to fetch" intermittents quand un parent/promoteur se connecte
+ *    après une période d'inactivité.
+ *
+ *    Le retry côté PrismaService gère les erreurs de connexion stale, mais le
+ *    BFF doit aussi laisser le temps au backend de répondre. 15s est un bon
+ *    compromis : assez long pour un cold start Neon, assez court pour ne pas
+ *    bloquer l'utilisateur si le backend est vraiment down.
+ */
+export const DEFAULT_FETCH_TIMEOUT = 15_000;
 
 /** Timeout pour les appels LLM externes (OpenRouter, OpenAI, Anthropic) */
 export const LLM_FETCH_TIMEOUT = 15_000;
@@ -26,19 +37,23 @@ export const LOG_FETCH_TIMEOUT = 5_000;
 export const STREAM_FETCH_TIMEOUT = 30_000;
 
 /**
- * Wrapper fetch avec timeout automatique via AbortController.
+ * Wrapper fetch avec timeout automatique via AbortController + RETRY.
  *
  * Si `init.signal` est déjà fourni, on le respecte (l'appelant gère son propre timeout).
  * Sinon, on applique un AbortSignal.timeout(timeoutMs).
  *
+ * ⭐ RETRY automatique : si le fetch échoue (timeout, Connection terminated,
+ *    ECONNRESET, ou réponse 502/503/504), on réessaie une fois après 500ms.
+ *    Cela gère les cold starts Neon et les recycling de connexions stale.
+ *
  * @param url - URL à fetcher
  * @param init - Options fetch (même signature que fetch())
- * @param timeoutMs - Timeout en ms (défaut: 8s)
+ * @param timeoutMs - Timeout en ms (défaut: 15s)
  * @returns Response
  *
  * @example
  * ```ts
- * // Utilisation simple (8s timeout par défaut)
+ * // Utilisation simple (15s timeout par défaut + 1 retry)
  * const response = await fetchWithTimeout('/api/students');
  *
  * // Timeout personnalisé
@@ -49,21 +64,51 @@ export const STREAM_FETCH_TIMEOUT = 30_000;
  * const response = await fetchWithTimeout('/api/data', { signal: controller.signal });
  * ```
  */
-export function fetchWithTimeout(
+export async function fetchWithTimeout(
   url: string | URL,
   init?: RequestInit,
   timeoutMs: number = DEFAULT_FETCH_TIMEOUT,
 ): Promise<Response> {
-  // Si l'appelant a déjà fourni un signal, on le respecte
+  // Si l'appelant a déjà fourni un signal, on le respecte (pas de retry possible)
   if (init?.signal) {
     return fetch(url, init);
   }
 
-  // Sinon, on applique un timeout automatique
-  return fetch(url, {
-    ...init,
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  // ⭐ Première tentative avec timeout
+  const doFetch = async (): Promise<Response> => {
+    return fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  };
+
+  try {
+    const response = await doFetch();
+
+    // ⭐ Retry sur 502/503/504 (backend temporairement indisponible — souvent cold start)
+    if ([502, 503, 504].includes(response.status)) {
+      await new Promise((r) => setTimeout(r, 500));
+      return doFetch();
+    }
+
+    return response;
+  } catch (error: any) {
+    // ⭐ Retry sur timeout / connection error (Neon cold start, socket stale)
+    const isRetryable =
+      error?.name === 'TimeoutError' ||
+      error?.name === 'AbortError' ||
+      error?.code === 'ECONNRESET' ||
+      error?.code === 'ECONNREFUSED' ||
+      String(error?.message || '').toLowerCase().includes('fetch failed') ||
+      String(error?.message || '').toLowerCase().includes('connection terminated');
+
+    if (isRetryable) {
+      await new Promise((r) => setTimeout(r, 500));
+      return doFetch();
+    }
+
+    throw error;
+  }
 }
 
 /**

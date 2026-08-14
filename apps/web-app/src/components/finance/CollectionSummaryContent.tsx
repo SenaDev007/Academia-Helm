@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   Download, FileText, Loader2, Filter,
   ChevronLeft, ChevronRight, MoreHorizontal, Upload, Crown, Search, X, CheckCircle2,
+  Pencil, Save, XCircle, AlertTriangle,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { getClientAuthorizationHeader } from '@/lib/auth/client-access-token';
@@ -117,6 +118,100 @@ export default function CollectionSummaryContent() {
 
   // Modal d'import en masse du bilan des encaissements
   const [modalImport, setModalImport] = useState(false);
+
+  // ⭐ MODE ÉDITION — permet de modifier directement les montants payés par élève
+  //    pour réaligner les données de l'année scolaire écoulée avant le basculement
+  //    vers l'année prochaine. Bouton "Modifier" activé → champs éditables →
+  //    boutons "Enregistrer" / "Annuler" → persistance en DB via endpoint dédié.
+  const [editMode, setEditMode] = useState(false);
+  // Map: studentId → { inscriptionPaid, reinscriptionPaid, arrearPaid, tuitionInstallments: {label: amount} }
+  const [editBuffer, setEditBuffer] = useState<Map<string, any>>(new Map());
+  const [savingStudent, setSavingStudent] = useState<string | null>(null);
+
+  // Initialise le buffer d'édition quand on entre en mode édition
+  const enterEditMode = () => {
+    const buffer = new Map<string, any>();
+    for (const row of studentRows) {
+      buffer.set(row.studentId, {
+        inscriptionPaid: row.inscriptionPaid,
+        reinscriptionPaid: row.reinscriptionPaid,
+        arrearPaid: row.arrearPaid,
+        tuitionInstallments: { ...(row.tuitionInstallments || {}) },
+      });
+    }
+    setEditBuffer(buffer);
+    setEditMode(true);
+  };
+
+  const cancelEditMode = () => {
+    setEditMode(false);
+    setEditBuffer(new Map());
+  };
+
+  // Met à jour une valeur dans le buffer d'édition
+  const updateEditValue = (studentId: string, field: string, value: number) => {
+    setEditBuffer(prev => {
+      const newBuffer = new Map(prev);
+      const current = newBuffer.get(studentId) || {};
+      newBuffer.set(studentId, { ...current, [field]: value });
+      return newBuffer;
+    });
+  };
+
+  const updateEditInstallment = (studentId: string, label: string, value: number) => {
+    setEditBuffer(prev => {
+      const newBuffer = new Map(prev);
+      const current = newBuffer.get(studentId) || { tuitionInstallments: {} };
+      newBuffer.set(studentId, {
+        ...current,
+        tuitionInstallments: { ...(current.tuitionInstallments || {}), [label]: value },
+      });
+      return newBuffer;
+    });
+  };
+
+  // Sauvegarde les modifications d'un élève vers le backend
+  const saveStudentEdit = async (studentId: string) => {
+    const edits = editBuffer.get(studentId);
+    if (!edits || !academicYearId) return;
+
+    setSavingStudent(studentId);
+    try {
+      const authHeaders = getClientAuthorizationHeader();
+      const response = await fetch('/api/finance/collection-summary/update-student', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        credentials: 'include',
+        body: JSON.stringify({
+          studentId,
+          academicYearId,
+          inscriptionPaid: Number(edits.inscriptionPaid) || 0,
+          reinscriptionPaid: Number(edits.reinscriptionPaid) || 0,
+          arrearPaid: Number(edits.arrearPaid) || 0,
+          tuitionInstallments: edits.tuitionInstallments,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData?.message || `HTTP ${response.status}`);
+      }
+
+      // Recharger les données pour refléter les changements
+      await loadData();
+      // Le buffer sera réinitialisé par loadData() car editBuffer est conservé
+      // mais les valeurs ont été sauvegardées → on marque l'élève comme "saved"
+      setEditBuffer(prev => {
+        const newBuffer = new Map(prev);
+        newBuffer.delete(studentId); // Plus de modifications en attente pour cet élève
+        return newBuffer;
+      });
+    } catch (err: any) {
+      alert(`Erreur lors de la sauvegarde: ${err.message}`);
+    } finally {
+      setSavingStudent(null);
+    }
+  };
 
   // ─── Load school levels + classes + academic year ──────────────────────────
   useEffect(() => {
@@ -259,7 +354,36 @@ export default function CollectionSummaryContent() {
             Suivi détaillé des encaissements par élève et récapitulatif par classe
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {/* ⭐ Bouton Modifier — active le mode édition des lignes élèves */}
+          {activeSubTab === 'detail' && !editMode && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={enterEditMode}
+              disabled={!academicYearId || studentRows.length === 0}
+              className="border-amber-400 text-amber-700 hover:bg-amber-50"
+              title="Modifier les montants payés par élève pour réaligner les données de l'année écoulée"
+            >
+              <Pencil className="w-4 h-4 mr-2" /> Modifier
+            </Button>
+          )}
+          {editMode && (
+            <>
+              <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-300 rounded-md px-3 py-1.5 mr-1">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                Mode édition actif
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={cancelEditMode}
+                className="border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                <XCircle className="w-4 h-4 mr-2" /> Quitter édition
+              </Button>
+            </>
+          )}
           <Button variant="outline" size="sm" onClick={() => setModalImport(true)} disabled={!academicYearId}>
             <Upload className="w-4 h-4 mr-2" /> Importer
           </Button>
@@ -393,9 +517,27 @@ export default function CollectionSummaryContent() {
         </div>
       ) : activeSubTab === 'detail' ? (
         <div className="space-y-3">
+          {editMode && (
+            <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-amber-800">
+                <strong>Mode édition actif.</strong> Vous pouvez modifier directement les montants payés par élève
+                (inscription, réinscription, arriéré, tranches P1-P6). Cliquez sur « Enregistrer » à côté du nom
+                de l'élève pour persister les modifications en base de données. Les colonnes « Total payé » et
+                « Reste à payer » se recalculent en temps réel. Une fois les modifications terminées, cliquez sur
+                « Quitter édition » pour désactiver ce mode.
+              </div>
+            </div>
+          )}
           <DetailTable
             studentRows={filteredStudentRows}
             installments={installments}
+            editMode={editMode}
+            editBuffer={editBuffer}
+            savingStudent={savingStudent}
+            onUpdateValue={updateEditValue}
+            onUpdateInstallment={updateEditInstallment}
+            onSaveStudent={saveStudentEdit}
           />
           {/* ⭐ Pagination serveur — uniquement sur le sous-onglet « Bilan détaillé ».
               Pattern identique à StudentMovementsContent.tsx. */}
@@ -491,9 +633,21 @@ export default function CollectionSummaryContent() {
 function DetailTable({
   studentRows,
   installments,
+  editMode = false,
+  editBuffer,
+  savingStudent,
+  onUpdateValue,
+  onUpdateInstallment,
+  onSaveStudent,
 }: {
   studentRows: StudentPaymentRow[];
   installments: FeeInstallment[];
+  editMode?: boolean;
+  editBuffer: Map<string, any>;
+  savingStudent: string | null;
+  onUpdateValue: (studentId: string, field: string, value: number) => void;
+  onUpdateInstallment: (studentId: string, label: string, value: number) => void;
+  onSaveStudent: (studentId: string) => void;
 }) {
   if (studentRows.length === 0) {
     return (
@@ -528,26 +682,90 @@ function DetailTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {studentRows.map((row) => (
-            <TableRow key={row.studentId} className="hover:bg-slate-50">
+          {studentRows.map((row) => {
+            const edits = editBuffer.get(row.studentId);
+            const isSaving = savingStudent === row.studentId;
+            const hasEdits = !!edits;
+
+            // Calculer les montants affichés (édités ou originaux)
+            const displayInscriptionPaid = editMode && edits ? Number(edits.inscriptionPaid) || 0 : row.inscriptionPaid;
+            const displayReinscriptionPaid = editMode && edits ? Number(edits.reinscriptionPaid) || 0 : row.reinscriptionPaid;
+            const displayArrearPaid = editMode && edits ? Number(edits.arrearPaid) || 0 : row.arrearPaid;
+            // Total tuition payé = somme des tranches éditées
+            const displayTotalTuitionPaid = editMode && edits
+              ? Object.values(edits.tuitionInstallments || {}).reduce((s: number, n: any) => s + Number(n || 0), 0)
+              : row.totalTuitionPaid;
+            const displayTotalPaid = displayInscriptionPaid + displayReinscriptionPaid + displayArrearPaid + displayTotalTuitionPaid;
+            const displayReste = row.totalDue - displayTotalPaid;
+
+            return (
+            <TableRow key={row.studentId} className={cn('hover:bg-slate-50', editMode && 'bg-amber-50/30')}>
               <TableCell className="font-medium sticky left-0 bg-white z-10 whitespace-nowrap">
-                {row.studentName}
+                <div className="flex flex-col">
+                  <span>{row.studentName}</span>
+                  {editMode && (
+                    <button
+                      onClick={() => onSaveStudent(row.studentId)}
+                      disabled={isSaving || !hasEdits}
+                      className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 hover:text-emerald-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Enregistrer les modifications de cet élève"
+                    >
+                      {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                      {isSaving ? 'Sauvegarde...' : 'Enregistrer'}
+                    </button>
+                  )}
+                </div>
               </TableCell>
               <TableCell className="text-sm whitespace-nowrap">{row.className}</TableCell>
+
+              {/* Arriéré — éditable en mode édition */}
               <TableCell className="text-sm text-right whitespace-nowrap">
-                {row.arrearPaid > 0 ? formatCurrency(row.arrearPaid) : '—'}
+                {editMode ? (
+                  <input
+                    type="number"
+                    value={displayArrearPaid}
+                    onChange={(e) => onUpdateValue(row.studentId, 'arrearPaid', Number(e.target.value) || 0)}
+                    className="w-20 px-1 py-0.5 text-xs text-right border border-amber-300 rounded focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  />
+                ) : (
+                  row.arrearPaid > 0 ? formatCurrency(row.arrearPaid) : '—'
+                )}
               </TableCell>
+
+              {/* Inscription — éditable */}
               <TableCell className="text-sm text-right whitespace-nowrap">
-                {row.inscriptionPaid > 0 ? formatCurrency(row.inscriptionPaid) : '—'}
+                {editMode ? (
+                  <input
+                    type="number"
+                    value={displayInscriptionPaid}
+                    onChange={(e) => onUpdateValue(row.studentId, 'inscriptionPaid', Number(e.target.value) || 0)}
+                    className="w-20 px-1 py-0.5 text-xs text-right border border-amber-300 rounded focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  />
+                ) : (
+                  row.inscriptionPaid > 0 ? formatCurrency(row.inscriptionPaid) : '—'
+                )}
               </TableCell>
+
+              {/* Réinscription — éditable */}
               <TableCell className="text-sm text-right whitespace-nowrap">
-                {row.reinscriptionPaid > 0 ? formatCurrency(row.reinscriptionPaid) : '—'}
+                {editMode ? (
+                  <input
+                    type="number"
+                    value={displayReinscriptionPaid}
+                    onChange={(e) => onUpdateValue(row.studentId, 'reinscriptionPaid', Number(e.target.value) || 0)}
+                    className="w-20 px-1 py-0.5 text-xs text-right border border-amber-300 rounded focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  />
+                ) : (
+                  row.reinscriptionPaid > 0 ? formatCurrency(row.reinscriptionPaid) : '—'
+                )}
               </TableCell>
-              {/* ⭐ Scolarité = totalTuitionExpected (montant attendu, pas payé) */}
+
+              {/* ⭐ Scolarité = totalTuitionExpected (montant attendu, pas payé) — non éditable */}
               <TableCell className="text-sm font-semibold text-right whitespace-nowrap">
                 {row.scolarite || row.totalTuitionExpected ? formatCurrency(row.scolarite ?? row.totalTuitionExpected) : '—'}
               </TableCell>
-              {/* ⭐ Personnalisation : badge Oui/Non + montant réduction */}
+
+              {/* ⭐ Personnalisation */}
               <TableCell className="text-sm text-center whitespace-nowrap">
                 {row.hasPersonalization ? (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[10px] font-bold" title={`Réduction: ${formatCurrency(row.personalizationReduction || 0)}`}>
@@ -557,27 +775,47 @@ function DetailTable({
                   <span className="text-slate-400 text-xs">—</span>
                 )}
               </TableCell>
+
+              {/* Tranches de scolarité (P1-P6) — éditables */}
               {installments.map((inst) => {
-                const paid = row.tuitionInstallments[inst.label] || 0;
+                const paid = editMode && edits
+                  ? Number(edits.tuitionInstallments?.[inst.label]) || 0
+                  : row.tuitionInstallments[inst.label] || 0;
                 return (
                   <TableCell key={inst.id} className="text-sm text-right whitespace-nowrap">
-                    {paid > 0 ? formatCurrency(paid) : '—'}
+                    {editMode ? (
+                      <input
+                        type="number"
+                        value={paid}
+                        onChange={(e) => onUpdateInstallment(row.studentId, inst.label, Number(e.target.value) || 0)}
+                        className="w-20 px-1 py-0.5 text-xs text-right border border-amber-300 rounded focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                      />
+                    ) : (
+                      paid > 0 ? formatCurrency(paid) : '—'
+                    )}
                   </TableCell>
                 );
               })}
+
+              {/* Total dû — non éditable (calculé depuis les fee structures) */}
               <TableCell className="text-sm font-bold text-right whitespace-nowrap">
                 {formatCurrency(row.totalDue)}
               </TableCell>
+
+              {/* Total payé — recalculé en temps réel en mode édition */}
               <TableCell className="text-sm font-bold text-right whitespace-nowrap">
-                {formatCurrency(row.totalPaid)}
+                {formatCurrency(displayTotalPaid)}
               </TableCell>
+
+              {/* Reste à payer — recalculé en temps réel */}
               <TableCell className="text-sm font-bold text-right whitespace-nowrap">
-                <span className={row.reste > 0 ? 'text-red-600' : 'text-green-600'}>
-                  {formatCurrency(row.reste)}
+                <span className={displayReste > 0 ? 'text-red-600' : 'text-green-600'}>
+                  {formatCurrency(displayReste)}
                 </span>
               </TableCell>
             </TableRow>
-          ))}
+            );
+          })}
           {/* ⭐ Ligne TOTAUX en rouge — frappe l'œil */}
           {studentRows.length > 0 && (
             <TableRow className="bg-red-50 border-t-2 border-red-300 font-bold">

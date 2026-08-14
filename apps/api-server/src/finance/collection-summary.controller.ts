@@ -46,6 +46,7 @@ import {
   Logger,
   BadRequestException,
 } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { Response } from 'express';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -816,6 +817,324 @@ export class CollectionSummaryController {
     }
     this.logger.log(`Run bilan import: tenant=${tenantId}, user=${user?.id}`);
     return this.importService.runImport(tenantId, body.academicYearId, body.fileDataUrl, user?.id);
+  }
+
+  /**
+   * ⭐ MODIFICATION DIRECTE D'UNE LIGNE ÉLÈVE — BILAN DES ENCAISSEMENTS
+   *
+   * Permet à l'administrateur de modifier directement les montants payés par
+   * un élève pour réaligner les données de l'année scolaire écoulée avant
+   * le basculement vers l'année prochaine.
+   *
+   * Body:
+   *   - studentId : UUID de l'élève
+   *   - academicYearId : UUID de l'année scolaire
+   *   - inscriptionPaid : nouveau montant payé pour l'inscription
+   *   - reinscriptionPaid : nouveau montant payé pour la réinscription
+   *   - arrearPaid : nouveau montant payé pour les arriérés
+   *   - tuitionInstallments : { [label]: montant } pour chaque tranche
+   *   - totalTuitionPaid : (calculé automatiquement si non fourni)
+   *
+   * Stratégie :
+   *   1. Drop triggers d'immutabilité (prevent_balance_update, no_delete_finance_transaction, etc.)
+   *   2. Pour chaque type de frais (INSCRIPTION, REINSCRIPTION, TUITION, ARREAR) :
+   *      - Trouver ou créer le breakdown
+   *      - Supprimer les anciennes transactions IMP-EDIT-* de ce type
+   *      - Créer une nouvelle transaction IMP-EDIT-{feeType}-{studentId}-{timestamp}
+   *      - Mettre à jour le breakdown.paidAmount
+   *   3. Recalculer student_account.totalPaid, totalDue, balance
+   *   4. Recreate triggers
+   */
+  @Post('collection-summary/update-student')
+  async updateStudentRow(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: {
+      studentId: string;
+      academicYearId: string;
+      inscriptionPaid?: number;
+      reinscriptionPaid?: number;
+      arrearPaid?: number;
+      tuitionInstallments?: { [label: string]: number };
+      totalTuitionPaid?: number;
+    },
+  ) {
+    if (!body.studentId || !body.academicYearId) {
+      throw new BadRequestException('studentId et academicYearId sont requis');
+    }
+
+    this.logger.log(`Update student row: tenant=${tenantId}, student=${body.studentId}, user=${user?.id}`);
+
+    // ── 1. Drop triggers d'immutabilité ──
+    await this.prisma.$executeRaw`DROP TRIGGER IF EXISTS prevent_balance_update_trigger ON student_accounts`;
+    await this.prisma.$executeRaw`DROP TRIGGER IF EXISTS no_delete_finance_transaction ON finance_transactions`;
+    await this.prisma.$executeRaw`DROP TRIGGER IF EXISTS trg_no_delete_finance_transaction ON finance_transactions`;
+    await this.prisma.$executeRaw`DROP TRIGGER IF EXISTS lock_transaction_after_closure ON finance_transactions`;
+    await this.prisma.$executeRaw`DROP TRIGGER IF EXISTS verify_integrity_hash_trigger ON finance_transactions`;
+    await this.prisma.$executeRaw`DROP TRIGGER IF EXISTS trg_update_balance_after_tx ON finance_transactions`;
+
+    try {
+      // ── 2. Récupérer le compte de l'élève ──
+      const account = await this.prisma.studentAccount.findFirst({
+        where: {
+          tenantId,
+          academicYearId: body.academicYearId,
+          studentId: body.studentId,
+        },
+        include: {
+          breakdowns: { include: { feeStructure: true } },
+        },
+      });
+
+      if (!account) {
+        throw new BadRequestException('Compte élève introuvable');
+      }
+
+      // ── 3. Pour chaque type de frais, mettre à jour le paidAmount + transactions ──
+      const timestamp = Date.now();
+      const cashierId = user?.id || '00000000-0000-0000-0000-000000000000';
+
+      const updateFeeType = async (
+        feeType: 'INSCRIPTION' | 'REINSCRIPTION' | 'TUITION',
+        newPaidAmount: number,
+      ) => {
+        // Trouver le breakdown existant
+        let breakdown = account.breakdowns.find(b => b.feeStructure?.feeType === feeType);
+        let feeStructure = breakdown?.feeStructure;
+
+        // Si pas de breakdown, trouver la fee structure standard pour cette classe
+        if (!breakdown) {
+          // Récupérer l'inscription de l'élève pour connaître la classe
+          const enrollment = await this.prisma.academicClassEnrollment.findFirst({
+            where: { studentId: body.studentId, academicYearId: body.academicYearId },
+            include: { class: true, academicClass: true },
+          });
+
+          // Chercher la fee structure qui matche (par classe > niveau > global)
+          const feeStructures = await this.prisma.feeStructure.findMany({
+            where: {
+              tenantId,
+              academicYearId: body.academicYearId,
+              feeType,
+              isActive: true,
+            },
+            include: { structureInstallments: true },
+          });
+
+          // Priorité : academicClass > physicalClass > level > global
+          let matched: any = null;
+          if (enrollment?.academicClassId) {
+            matched = feeStructures.find(fs => fs.academicClassId === enrollment.academicClassId);
+          }
+          if (!matched && enrollment?.classId) {
+            matched = feeStructures.find(fs => !fs.academicClassId && fs.classId === enrollment.classId);
+          }
+          if (!matched && enrollment?.class?.schoolLevelId) {
+            matched = feeStructures.find(fs => !fs.academicClassId && !fs.classId && fs.levelId === enrollment.class.schoolLevelId);
+          }
+          if (!matched) {
+            matched = feeStructures.find(fs => !fs.academicClassId && !fs.classId && !fs.levelId);
+          }
+
+          if (matched) {
+            feeStructure = matched;
+            // Créer le breakdown
+            breakdown = await this.prisma.accountBreakdown.create({
+              data: {
+                id: crypto.randomUUID(),
+                studentAccountId: account.id,
+                feeStructureId: matched.id,
+                initialAmount: Number(matched.totalAmount) || 0,
+                adjustedAmount: Number(matched.totalAmount) || 0,
+                paidAmount: 0,
+                remainingAmount: Number(matched.totalAmount) || 0,
+                createdAt: new Date(),
+              },
+            } as any) as any;
+            this.logger.log(`Created breakdown for ${feeType}: ${breakdown.id}`);
+          } else {
+            this.logger.warn(`No fee structure found for ${feeType} — skipping`);
+            return;
+          }
+        }
+
+        if (!breakdown || !feeStructure) return;
+
+        const oldPaid = Number(breakdown.paidAmount) || 0;
+        const initialAmount = Number(breakdown.initialAmount) || Number(feeStructure.totalAmount) || 0;
+        const newRemaining = Math.max(0, initialAmount - newPaidAmount);
+
+        // ── Supprimer les anciennes transactions IMP-EDIT-* pour ce feeType ──
+        const oldEditTxs = await this.prisma.$queryRaw<any[]>`
+          SELECT ft.id FROM finance_transactions ft
+          JOIN finance_transaction_allocations fta ON fta."financeTransactionId" = ft.id
+          WHERE ft."studentAccountId" = ${account.id}
+            AND fta."accountBreakdownId" = ${breakdown.id}
+            AND ft."receiptNumber" LIKE ${'IMP-EDIT-' + feeType + '-%'}
+        `;
+
+        for (const old of oldEditTxs) {
+          await this.prisma.$executeRaw`DELETE FROM finance_transaction_allocations WHERE "financeTransactionId" = ${old.id}`;
+          await this.prisma.$executeRaw`DELETE FROM finance_transactions WHERE id = ${old.id}`;
+        }
+
+        // ── Créer une nouvelle transaction IMP-EDIT ──
+        if (newPaidAmount > 0) {
+          const txId = crypto.randomUUID();
+          const receiptNumber = `IMP-EDIT-${feeType}-${body.studentId.substring(0, 8)}-${timestamp}`;
+          await this.prisma.$executeRaw`
+            INSERT INTO finance_transactions (id, "tenantId", "academicYearId", "studentAccountId", type, amount, "paymentMethod", "receiptNumber", "cashierId", "createdAt")
+            VALUES (${txId}, ${tenantId}, ${body.academicYearId}, ${account.id}, 'PAYMENT'::text, ${newPaidAmount}, 'CASH'::text, ${receiptNumber}, ${cashierId}, NOW())
+          `;
+
+          // Créer l'allocation vers le breakdown
+          const allocId = crypto.randomUUID();
+          await this.prisma.$executeRaw`
+            INSERT INTO finance_transaction_allocations (id, "financeTransactionId", "accountBreakdownId", amount)
+            VALUES (${allocId}, ${txId}, ${breakdown.id}, ${newPaidAmount})
+          `;
+        }
+
+        // ── Mettre à jour le breakdown ──
+        await this.prisma.$executeRaw`
+          UPDATE account_breakdowns
+          SET "paidAmount" = ${newPaidAmount},
+              "remainingAmount" = ${newRemaining}
+          WHERE id = ${breakdown.id}
+        `;
+
+        this.logger.log(`Updated ${feeType} for student ${body.studentId}: ${oldPaid} → ${newPaidAmount}`);
+      };
+
+      // ── 4. Appliquer les mises à jour pour chaque type ──
+      if (body.inscriptionPaid !== undefined) {
+        await updateFeeType('INSCRIPTION', Number(body.inscriptionPaid) || 0);
+      }
+      if (body.reinscriptionPaid !== undefined) {
+        await updateFeeType('REINSCRIPTION', Number(body.reinscriptionPaid) || 0);
+      }
+
+      // Pour TUITION : la somme des tranches = totalTuitionPaid
+      let totalTuitionPaid = body.totalTuitionPaid;
+      if (totalTuitionPaid === undefined && body.tuitionInstallments) {
+        totalTuitionPaid = Object.values(body.tuitionInstallments).reduce((s, n) => s + Number(n || 0), 0);
+      }
+      if (totalTuitionPaid !== undefined) {
+        await updateFeeType('TUITION', Number(totalTuitionPaid) || 0);
+      }
+
+      // ── 5. Mettre à jour l'arriéré (fee_arrears + student_arrears) ──
+      if (body.arrearPaid !== undefined) {
+        const newArrearPaid = Number(body.arrearPaid) || 0;
+        // Mettre à jour fee_arrears pour cet élève
+        const existingFeeArrear = await this.prisma.$queryRaw<any[]>`
+          SELECT id, "totalDue" FROM fee_arrears
+          WHERE "tenantId" = ${tenantId}
+            AND "academicYearId" = ${body.academicYearId}
+            AND "studentId" = ${body.studentId}
+          LIMIT 1
+        `;
+        if (existingFeeArrear.length > 0) {
+          const fa = existingFeeArrear[0];
+          const arrearDue = Number(fa.totalDue) || 0;
+          const arrearRemaining = Math.max(0, arrearDue - newArrearPaid);
+          await this.prisma.$executeRaw`
+            UPDATE fee_arrears
+            SET "totalPaid" = ${newArrearPaid},
+                "balanceDue" = ${arrearRemaining},
+                "updatedAt" = NOW()
+            WHERE id = ${fa.id}
+          `;
+        }
+      }
+
+      // ── 6. Recalculer student_account.totalPaid, balance ──
+      // totalPaid = somme de tous les paidAmount des breakdowns + arrearPaid
+      const updatedBreakdowns = await this.prisma.$queryRaw<any[]>`
+        SELECT COALESCE(SUM("paidAmount"), 0) as total_paid
+        FROM account_breakdowns
+        WHERE "studentAccountId" = ${account.id}
+      `;
+      const breakdownsPaid = Number(updatedBreakdowns[0]?.total_paid || 0);
+
+      const arrearRow = await this.prisma.$queryRaw<any[]>`
+        SELECT COALESCE(SUM("totalPaid"), 0) as total_paid
+        FROM fee_arrears
+        WHERE "tenantId" = ${tenantId}
+          AND "academicYearId" = ${body.academicYearId}
+          AND "studentId" = ${body.studentId}
+      `;
+      const arrearPaidTotal = Number(arrearRow[0]?.total_paid || 0);
+
+      // autres paiements (CANTEEN, EXAMEN, OTHER, ou null feeType)
+      const otherTxRow = await this.prisma.$queryRaw<any[]>`
+        SELECT COALESCE(SUM(ft.amount), 0) as total_other
+        FROM finance_transactions ft
+        LEFT JOIN finance_transaction_allocations fta ON fta."financeTransactionId" = ft.id
+        LEFT JOIN account_breakdowns ab ON ab.id = fta."accountBreakdownId"
+        LEFT JOIN fee_structures fs ON fs.id = ab."feeStructureId"
+        WHERE ft."studentAccountId" = ${account.id}
+          AND (fs."feeType" IS NULL OR fs."feeType" NOT IN ('INSCRIPTION', 'REINSCRIPTION', 'TUITION'))
+      `;
+      const otherPaid = Number(otherTxRow[0]?.total_other || 0);
+
+      const newTotalPaid = breakdownsPaid + arrearPaidTotal + otherPaid;
+      const newTotalDue = Number(account.totalDue) || 0;
+      const newBalance = newTotalDue - newTotalPaid;
+
+      await this.prisma.$executeRaw`
+        UPDATE student_accounts
+        SET "totalPaid" = ${newTotalPaid},
+            "balance" = ${newBalance},
+            "updatedAt" = NOW()
+        WHERE id = ${account.id}
+      `;
+
+      this.logger.log(`✅ Updated student_account ${account.id}: totalPaid=${newTotalPaid}, balance=${newBalance}`);
+
+      return {
+        success: true,
+        message: 'Ligne élève mise à jour avec succès',
+        accountId: account.id,
+        newTotalPaid,
+        newBalance,
+        newTotalDue,
+      };
+    } finally {
+      // ── 7. Recreate triggers (toujours, même en cas d'erreur) ──
+      await this.prisma.$executeRaw`DROP TRIGGER IF EXISTS prevent_balance_update_trigger ON student_accounts`;
+      await this.prisma.$executeRaw`
+        CREATE TRIGGER prevent_balance_update_trigger
+        BEFORE UPDATE OF "totalPaid", "balance" ON student_accounts
+        FOR EACH ROW EXECUTE FUNCTION prevent_balance_update()
+      `;
+      await this.prisma.$executeRaw`
+        CREATE TRIGGER no_delete_finance_transaction
+        BEFORE DELETE ON finance_transactions
+        FOR EACH ROW EXECUTE FUNCTION prevent_finance_transaction_delete()
+      `;
+      await this.prisma.$executeRaw`
+        CREATE TRIGGER trg_no_delete_finance_transaction
+        BEFORE DELETE ON finance_transactions
+        FOR EACH ROW EXECUTE FUNCTION prevent_finance_transaction_delete()
+      `;
+      await this.prisma.$executeRaw`
+        CREATE TRIGGER verify_integrity_hash_trigger
+        BEFORE UPDATE ON finance_transactions
+        FOR EACH ROW EXECUTE FUNCTION verify_integrity_hash()
+      `;
+      await this.prisma.$executeRaw`
+        CREATE TRIGGER trg_update_balance_after_tx
+        AFTER INSERT ON finance_transactions
+        FOR EACH ROW EXECUTE FUNCTION update_account_balance_after_tx()
+      `;
+      await this.prisma.$executeRaw`
+        CREATE TRIGGER lock_transaction_after_closure
+        BEFORE UPDATE ON finance_transactions
+        FOR EACH ROW EXECUTE FUNCTION prevent_update_after_closure()
+      `;
+      this.logger.log('✅ Triggers recreated');
+    }
   }
 }
 

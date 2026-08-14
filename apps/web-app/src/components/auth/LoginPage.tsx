@@ -378,8 +378,32 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   //    Maintenant : auto-redirect vers /app si session locale détectée.
   useEffect(() => {
     if (hasLocalSessionHints()) {
-      const redirectUrl = getTenantRedirectUrl(tenantSlug || tenantIdFromUrl || '');
-      window.location.href = redirectUrl;
+      // ⭐ FIX : si on n'a pas de tenantSlug dans l'URL ni dans le sous-domaine,
+      //    on essaie de le récupérer depuis la session locale (localStorage).
+      //    Si toujours rien, on redirige vers /portal pour que l'utilisateur
+      //    sélectionne son école — au lieu de crasher avec
+      //    "tenantSlug is required for tenant redirection".
+      let effectiveSlug = tenantSlug || tenantIdFromUrl || '';
+
+      if (!effectiveSlug && typeof window !== 'undefined') {
+        try {
+          const sessionStr = localStorage.getItem('session');
+          if (sessionStr) {
+            const session = JSON.parse(sessionStr);
+            effectiveSlug = session?.tenant?.slug || session?.tenant?.subdomain || session?.tenantId || '';
+          }
+        } catch {
+          // ignore parse errors
+        }
+      }
+
+      if (effectiveSlug) {
+        const redirectUrl = getTenantRedirectUrl(effectiveSlug);
+        window.location.href = redirectUrl;
+      } else {
+        // Pas de tenant trouvé — rediriger vers /portal pour sélection
+        window.location.href = '/portal';
+      }
     }
   }, []); // Au montage uniquement
 
